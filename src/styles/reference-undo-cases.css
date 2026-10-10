@@ -1,0 +1,68 @@
+.reference-undo-cases{display:grid;gap:18px;margin:14px 0;padding:20px;border:1px solid #dce5ed;border-radius:16px;background:#fff;color:#24374b}
+.reference-undo-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.reference-undo-head h3{margin:0 0 7px;font-size:1.22rem;line-height:1.3;color:#213a52}
+.reference-undo-head p{margin:0;max-width:68ch;color:#596d7f;line-height:1.55}
+.reference-undo-readonly{flex:none;border:1px solid #ccdbe8;border-radius:999px;padding:6px 11px;background:#f5f8fb;color:#52697d;font-size:.83rem;font-weight:700}
+.reference-undo-picker{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.reference-undo-picker>label{display:grid;gap:7px;flex:1 1 340px;min-width:0;font-weight:650}
+.reference-undo-picker select,.reference-undo-older input{width:100%;min-height:43px;padding:8px 11px;border:1px solid #c5d4e1;border-radius:10px;background:white;color:#20354c;font:inherit}
+.reference-undo-picker>button{min-height:43px}
+.reference-undo-older{padding:12px 15px;border:1px solid #e0e8ee;border-radius:10px;color:#546b7c;background:#f9fbfc}
+.reference-undo-older summary{cursor:pointer;font-weight:600}
+.reference-undo-older label{display:grid;max-width:360px;gap:6px;margin:12px 0 0;font-size:.88rem}
+.reference-undo-chosen{display:flex;gap:6px 13px;flex-wrap:wrap;margin:0;color:#405d75}
+.reference-undo-chosen span{color:#738092}
+.reference-undo-error{border:1px solid #f7c8c3;border-radius:9px;padding:11px 13px;margin:0;color:#9d2a26;background:#fff5f3}
+.reference-undo-note{padding:12px 14px;margin:0;border:1px solid #e7dac0;border-radius:10px;background:#fffaf0;color:#69532d;line-height:1.5}
+.reference-undo-result{padding:15px 17px;border:1px solid #d6e0e9;border-radius:12px;background:#f5f8fc}
+.reference-undo-result strong{color:#273e57}.reference-undo-result p{margin:6px 0 0;color:#576e81;line-height:1.5}
+.reference-undo-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.reference-undo-metrics>div{display:grid;gap:9px;min-width:0;padding:13px;border-radius:11px;border:1px solid #e0e7ef;background:#fafdff}
+.reference-undo-metrics span{font-size:.82rem;color:#65768a;line-height:1.35}
+.reference-undo-metrics strong{font-size:1.4rem;color:#233d59;font-variant-numeric:tabular-nums}
+.reference-undo-blockers{padding:13px 15px;border:1px solid #e5e9ed;border-radius:10px;background:#fbfcfd}
+.reference-undo-blockers summary{cursor:pointer;font-weight:650;color:#4c6177}
+.reference-undo-blockers ul{margin:11px 0 0;padding-left:20px;line-height:1.65;color:#506377}
+.reference-undo-locations,.reference-undo-plan,.reference-undo-evidence{display:grid;gap:12px;padding-top:8px}
+.reference-undo-locations h4,.reference-undo-section-head h4{margin:0;font-size:1.06rem;color:#273f5b}
+.reference-undo-location-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.reference-undo-location{display:grid;gap:10px;min-width:0;border:1px solid #dce5ed;border-radius:13px;background:#fff;padding:15px}
+.reference-undo-location-top,.reference-undo-section-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.reference-undo-location-top strong{color:#263c54;font-size:1rem}
+.reference-undo-location-top span{font-size:.78rem;font-weight:650;color:#516d88;padding:5px 9px;border-radius:999px;background:#edf4fa}
+.reference-undo-location-numbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.reference-undo-location-numbers>div{display:grid;gap:5px;padding:10px;border-radius:10px;background:#f6f9fc}
+.reference-undo-location-numbers small,.reference-undo-location>small{color:#698092;line-height:1.5}
+.reference-undo-location-numbers strong{color:#21405e;font-size:1.16rem}
+.reference-undo-location p{margin:0;color:#50657a;font-size:.88rem;line-height:1.45}
+.reference-undo-plan{border-top:1px solid #e5ebf0;padding-top:16px}
+.reference-undo-section-head>span,.reference-undo-section-head>p{margin:0;color:#6b7c8d;font-size:.85rem}
+.reference-undo-plan ol{display:grid;gap:9px;margin:0;padding-left:29px}
+.reference-undo-plan li{padding:10px 13px;border:1px solid #e3e9f0;border-radius:10px;background:#fbfcff}
+.reference-undo-plan li strong{color:#254361}.reference-undo-plan li p{margin:6px 0 0;color:#50677a;line-height:1.48}
+.reference-undo-plan li small{display:block;margin-top:6px;color:#8b5a2d}
+.reference-undo-navigation{display:flex;flex-wrap:wrap;gap:9px}
+.reference-undo-navigation a{display:inline-flex;align-items:center;justify-content:center;padding:8px 13px;text-decoration:none}
+.reference-undo-evidence{border-top:1px solid #e5ebf0;padding-top:17px}
+.reference-undo-tabs{display:flex;flex-wrap:wrap;gap:7px}
+.reference-undo-tabs button.is-active{border-color:#9fbad1;background:#eaf2fa;color:#204b70}
+.reference-undo-page-meta{font-size:.87rem;color:#596e81;margin:0}
+.reference-undo-records{display:grid;gap:9px}
+.reference-undo-record{display:grid;gap:9px;padding:13px 15px;border:1px solid #e0e7ef;border-radius:10px;background:#fcfdfe}
+.reference-undo-record>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 14px}
+.reference-undo-record strong{font-size:.93rem;color:#294763}
+.reference-undo-record span{font-size:.86rem;color:#60788d}
+.reference-undo-record p{font-size:.89rem;line-height:1.5;color:#546a7c;margin:0}
+.reference-undo-footer{display:flex;gap:10px 15px;flex-wrap:wrap;align-items:center;border-top:1px solid #e1e9f0;padding-top:15px}
+.reference-undo-footer strong{color:#2a4963}.reference-undo-footer span{flex:1 1 260px;color:#617487;font-size:.87rem;line-height:1.45}
+.reference-undo-footer button{flex:none}
+@media(max-width:800px){.reference-undo-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){
+ .reference-undo-cases{padding:13px;gap:15px}
+ .reference-undo-head{flex-direction:column;gap:9px}
+ .reference-undo-picker>button{width:100%}
+ .reference-undo-location-grid{grid-template-columns:minmax(0,1fr)}
+ .reference-undo-navigation{display:grid}
+ .reference-undo-record>div{display:grid}
+ .reference-undo-footer button{width:100%}
+}

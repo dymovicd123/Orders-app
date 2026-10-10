@@ -1,8 +1,14 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { useEffect, useState } from 'react'
+import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
+import { ReferenceMergeWorkspace } from './ReferenceMergeWorkspace'
+import { CatalogUndoCases } from './CatalogUndoCases'
+import '../../styles/reference-integrity-entry.css'
 type SectionContext = Record<string, any>
 
 export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
   const {
+    apiFetch,
     filteredReferenceItems,
     formatDateShort,
     FriendlyNumberInput,
@@ -28,21 +34,48 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
     setReferenceStatusFilter,
   } = ctx
 
+  // Keep the daily reference list first; maintenance tools load only on request.
+  type MaintenanceView = 'duplicates' | 'merge' | 'cases'
+  const [maintenanceView, setMaintenanceView] = useState<MaintenanceView | null>(null)
+  const [navigationRequest, setNavigationRequest] = useState<{ view: MaintenanceView; sequence: number } | null>(null)
+  const showMaintenance = (view: MaintenanceView) => {
+    setMaintenanceView(view)
+    // Increment even when already open: every shortcut click must navigate.
+    setNavigationRequest(previous => ({ view, sequence: (previous?.sequence ?? 0) + 1 }))
+  }
+  useEffect(() => {
+    if (!navigationRequest) return
+    // Wait until React has opened the target details and laid out its contents.
+    const frame = window.requestAnimationFrame(() => {
+      const id = navigationRequest.view === 'merge' ? 'reference-merge-actions'
+        : navigationRequest.view === 'cases' ? 'reference-undo-cases-actions'
+        : 'reference-duplicates-actions'
+      const summary = document.getElementById(id)?.querySelector<HTMLElement>('summary')
+      if (!summary) return
+      summary.focus({ preventScroll: true })
+      summary.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [navigationRequest])
+
   return (
     <section className="card wide sector-references" id="references" style={sectorStyle('references')}>
               <div className="references-hero">
                 <div className="references-hero-main">
                   <div className="card-label">Справочники</div>
-                  <h2>Чистые вспомогательные списки</h2>
+                  <h2>Все рабочие справочники</h2>
                   <p>
-                    Здесь остались только общие списки заказов: города, доставка и причины возврата.
-                    Характеристики одежды теперь редактируются там, где ими пользуются: «Склад → Товары».
+                    Единое место для городов, доставки, способов оплаты, цветов, материалов, длин,
+                    размеров и причин операций. Эти значения доступны и в соответствующих рабочих формах.
                   </p>
                   <div className="reference-hero-badges">
                     <span className="status-pill status-online">Активных: {referenceStats.active}</span>
                     <span className="status-pill status-offline">Отключённых: {referenceStats.inactive}</span>
-                    <span className="status-pill">Всего: {referenceStats.total}</span>
-                    <span className="status-pill">Списков: {referenceStats.kinds}</span>
+                    <span className="status-pill">Всего в выбранном списке: {referenceStats.total}</span>
+                    <span className="status-pill">Списков всего: {referenceStats.kinds}</span>
                   </div>
                 </div>
                 <div className="references-hero-aside">
@@ -60,9 +93,9 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
               </div>
     
               <div className="reference-routing-note">
-                <span><strong>Команда</strong> управляет менеджерами.</span>
-                <span><strong>Склад → Товары</strong> управляет товарами, цветами, материалами, длинами и размерами.</span>
-                <span><strong>Финансы</strong> управляют способами оплаты.</span>
+                <span><strong>Справочники</strong> — центральное место для значений.</span>
+                <span><strong>Склад → Товары</strong> — быстрый доступ к характеристикам.</span>
+                <span><strong>Команда</strong> — сотрудники и их доступ.</span>
               </div>
     
               <div className="reference-kind-grid">
@@ -82,6 +115,21 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                 ))}
               </div>
     
+              <div className="reference-maintenance-shortcuts" aria-label="Дополнительные действия со справочниками">
+                <span>Нужно исправить повторяющиеся значения?</span>
+                <div className="reference-maintenance-shortcut-actions">
+                  <button className="secondary compact" type="button" onClick={() => showMaintenance('duplicates')}>
+                    Найти дубли
+                  </button>
+                  <button className="secondary compact" type="button" onClick={() => showMaintenance('merge')}>
+                    Объединить значения
+                  </button>
+                  {isAdmin ? <button className="secondary compact" type="button" onClick={() => showMaintenance('cases')}>
+                    Разобрать прежнее объединение
+                  </button> : null}
+                </div>
+              </div>
+
               <div className="references-toolbar">
                 <label className="inventory-search">
                   <span>Поиск</span>
@@ -204,10 +252,12 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    void removeReferenceEntry(item.id)
+                                    if (window.confirm('Удалить «' + item.value + '» из списка выбора? Ранее оформленные заказы сохранятся. Если нужно заменить название в заказах текущего месяца, сначала используйте объединение.')) {
+                                      void removeReferenceEntry(item.id)
+                                    }
                                   }}
                                 >
-                                  Убрать
+                                  Удалить из списка
                                 </button>
                               </div>
                             ) : null}
@@ -274,6 +324,85 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 </section>
               </div>
+              <section className="reference-maintenance" id="reference-maintenance" aria-label="Дополнительные действия со справочниками">
+                <div className="reference-maintenance-heading">
+                  <h3>Дополнительные действия</h3>
+                  <p>Для повседневной работы используйте список и форму выше. Здесь можно найти повторы и объединить значения, когда это действительно нужно.</p>
+                </div>
+                <details
+                  className="reference-integrity-entry"
+                  id="reference-duplicates-actions"
+                  data-feature="reference-duplicates"
+                  open={maintenanceView === 'duplicates'}
+                >
+                  <summary className="reference-integrity-entry-summary"
+                    onClick={(event) => { event.preventDefault(); setMaintenanceView(current => current === 'duplicates' ? null : 'duplicates') }}>
+                    <span className="reference-integrity-entry-copy">
+                      <strong>Найти похожие записи и варианты товаров</strong>
+                      <small>Проверить совпадения, остатки и связанные заказы, прежде чем убирать лишнее.</small>
+                    </span>
+                    <span className="reference-integrity-entry-open">{maintenanceView === 'duplicates' ? 'Свернуть' : 'Посмотреть совпадения'}</span>
+                  </summary>
+                  {maintenanceView === 'duplicates' ? (
+                    isAdmin ? (
+                      <ReferenceIntegrityPanel
+                        apiFetch={apiFetch}
+                        isAdmin={isAdmin}
+                        onHidden={async () => {
+                          await Promise.all([
+                            ctx.loadReferencesData(true),
+                            ctx.loadReferenceItems(ctx.referenceKind, true),
+                            ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
+                          ])
+                        }}
+                      />
+                    ) : (
+                      <p className="reference-integrity-entry-restricted">
+                        Проверка и объединение дублей доступны администратору. Войдите с административной учётной записью.
+                      </p>
+                    )
+                  ) : null}
+                </details>
+                <details
+                  className="reference-integrity-entry reference-merge-entry"
+                  id="reference-merge-actions"
+                  open={maintenanceView === 'merge'}
+                >
+                  <summary className="reference-integrity-entry-summary"
+                    onClick={(event) => { event.preventDefault(); setMaintenanceView(current => current === 'merge' ? null : 'merge') }}>
+                    <span className="reference-integrity-entry-copy">
+                      <strong>Объединить значения</strong>
+                      <small>Выбрать, какое название убрать и какое сохранить. Перед изменениями система покажет последствия.</small>
+                    </span>
+                    <span className="reference-integrity-entry-open">{maintenanceView === 'merge' ? 'Свернуть' : 'Открыть объединение'}</span>
+                  </summary>
+                  {maintenanceView === 'merge' ? (
+                    <ReferenceMergeWorkspace apiFetch={apiFetch} isAdmin={isAdmin} initialKind={referenceKind}
+                      onMerged={async () => {
+                        await Promise.all([
+                          ctx.loadReferencesData(true),
+                          ctx.loadReferenceItems(ctx.referenceKind, true),
+                          ctx.loadReferenceKindCounts(ctx.referenceGroups.map((group: any) => group.kind), true),
+                        ])
+                      }} />
+                  ) : null}
+                </details>
+                {isAdmin ? <details
+                  className="reference-integrity-entry reference-undo-entry"
+                  id="reference-undo-cases-actions"
+                  open={maintenanceView === 'cases'}
+                >
+                  <summary className="reference-integrity-entry-summary"
+                    onClick={(event) => { event.preventDefault(); setMaintenanceView(current => current === 'cases' ? null : 'cases') }}>
+                    <span className="reference-integrity-entry-copy">
+                      <strong>Разобрать прежнее объединение товаров</strong>
+                      <small>Проверить связанные заказы, резервы и движения склада. Получить план исправления без опасного автоматического отката.</small>
+                    </span>
+                    <span className="reference-integrity-entry-open">{maintenanceView === 'cases' ? 'Свернуть' : 'Открыть разбор'}</span>
+                  </summary>
+                  {maintenanceView === 'cases' ? <CatalogUndoCases apiFetch={apiFetch} isAdmin={isAdmin} /> : null}
+                </details> : null}
+              </section>
             </section>
   )
 }

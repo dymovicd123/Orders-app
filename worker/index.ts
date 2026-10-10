@@ -25,6 +25,27 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
+import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
+import { previewUserSelectedReferenceMerge } from './domains/reference-merge-preview.ts'
+import { previewCharacteristicSkuMapping } from './domains/reference-characteristic-sku-mapping.ts'
+import { applyMonthBoundReferenceMerge } from './domains/reference-merge-apply.ts'
+import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
+import { applyReasonChoiceMerge } from './domains/reference-reason-merge.ts'
+import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
+import { businessMonthRange } from './domains/reference-merge-preview.ts'
+import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
+import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
+import { previewComplexCatalogUndoCase } from './domains/catalog-complex-undo-case.ts'
+import { listComplexUndoEvidence } from './domains/catalog-complex-undo-details.ts'
+import { getComplexUndoWorkplan } from './domains/catalog-complex-undo-workplan.ts'
+import { previewUntouchedReservationUndo } from './domains/catalog-reserved-undo-preview.ts'
+import { undoUntouchedReservationConsolidation } from './domains/catalog-reserved-stock-undo.ts'
+import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
+import { previewCountedCatalogUndo, undoCountedCatalogConsolidation } from './domains/catalog-counted-stock-undo.ts'
+import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
+import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
+import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
+import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
@@ -185,6 +206,251 @@ export default {
 
       if (url.pathname === '/api/reference-data' && request.method === 'GET') {
         return json(await getReferenceData(env.DB));
+      }
+
+      if (url.pathname === '/api/reference-values/merge-history' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'История объединений доступна администратору.');
+        if(denied)return denied;
+        return json(await listRecentReferenceValueMerges(env.DB));
+      }
+
+      if (url.pathname === '/api/reference-values/merge' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Объединение значений доступно администратору.');
+        if (denied) return denied;
+        const data=await readJson<{sourceId?:number;targetId?:number;expectedToken?:string}>(request);
+        const sourceId=Number(data.sourceId),targetId=Number(data.targetId)
+        const choice=await env.DB.prepare('SELECT kind FROM reference_values WHERE id=?')
+          .bind(sourceId).first<{kind:string}>()
+        if (choice?.kind==='return_reason'||choice?.kind==='writeoff_reason') {
+          return json(await applyReasonChoiceMerge(
+            env.DB,sourceId,targetId,cleanText(data.expectedToken),authUser?.login||'',
+          ))
+        }
+        if (choice?.kind==='payment_method') {
+          return json(await applyPaymentMethodMerge(
+            env.DB,sourceId,targetId,cleanText(data.expectedToken),
+            authUser?.login||'',businessMonthRange(),
+          ))
+        }
+        return json(await applyMonthBoundReferenceMerge(
+          env.DB,sourceId,targetId,cleanText(data.expectedToken),authUser?.login||'',
+        ));
+      }
+
+      if (url.pathname === '/api/reference-values/characteristic-sku-plan' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Сопоставление характеристик доступно только администратору.');
+        if(denied)return denied;
+        const after=url.searchParams.get('afterVariantId');
+        const limit=url.searchParams.get('limit');
+        return json(await previewCharacteristicSkuMapping(
+          env.DB,Number(url.searchParams.get('sourceId')),Number(url.searchParams.get('targetId')),
+          after===null?0:Number(after),limit===null?20:Number(limit)
+        ));
+      }
+
+      if (url.pathname === '/api/reference-values/merge-preview' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Наведение порядка в справочниках доступно администратору.');
+        if (denied) return denied;
+        const sourceId = Number(url.searchParams.get('sourceId'));
+        const targetId = Number(url.searchParams.get('targetId'));
+        return json(await previewUserSelectedReferenceMerge(env.DB, sourceId, targetId));
+      }
+
+      if (url.pathname === '/api/reference-values/duplicates' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
+        if (denied) return denied;
+        return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-counted-preview' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Подтверждённая отмена доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;allocations:Array<{
+          location:string;sourceQuantity:number;keeperQuantity:number;physicallyVerified:boolean
+        }>}>(request);
+        return json(await previewCountedCatalogUndo(env.DB,Number(data.consolidationId),data.allocations));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-counted' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Подтверждённая отмена доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;reason:string;expectedToken:string;allocations:Array<{
+          location:string;sourceQuantity:number;keeperQuantity:number;physicallyVerified:boolean
+        }>}>(request);
+        return json(await undoCountedCatalogConsolidation(
+          env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,
+          data.expectedToken,data.allocations
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-reserved-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Отмена резервов доступна только администратору.');
+        if(denied)return denied;
+        return json(await previewUntouchedReservationUndo(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-reserved' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Отмена резервов доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;reason:string;expectedToken:string}>(request);
+        return json(await undoUntouchedReservationConsolidation(
+          env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-workplan' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'План урегулирования объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await getComplexUndoWorkplan(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-details' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Полная история сложной отмены доступна только администратору.');
+        if(denied)return denied;
+        const afterId=url.searchParams.get('afterId');
+        const limit=url.searchParams.get('limit');
+        return json(await listComplexUndoEvidence(
+          env.DB,
+          Number(url.searchParams.get('consolidationId')),
+          url.searchParams.get('section') as 'reservations'|'orders'|'movements'|'checks',
+          afterId===null?0:Number(afterId),
+          limit===null?25:Number(limit)
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-review' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Разбор зависимостей объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await previewComplexCatalogUndoCase(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-corrected-review' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Разбор сложной отмены объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await previewCorrectedCatalogConsolidationUndo(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-positive-stock-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Отмена объединения с остатками доступна только администратору.');
+        if(denied)return denied;
+        return json(await previewPositiveStockConsolidationUndo(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-positive-stock' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Отмена объединения с остатками доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;reason:string;expectedToken:string}>(request);
+        return json(await undoPositiveStockCatalogConsolidation(
+          env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-zero-stock' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Отмена объединения доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{
+          consolidationId:number;reason:string;expectedToken:string;
+        }>(request);
+        return json(await undoUnusedCatalogConsolidation(env.DB,
+          Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Проверка отмены объединения доступна только администратору.');
+        if(denied)return denied;
+        return json(await previewCatalogConsolidationUndo(env.DB,Number(url.searchParams.get('consolidationId'))));
+      }
+
+      if (url.pathname === '/api/catalog/variants/remerge-zero-stock-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Повторное объединение доступно только администратору.');
+        if(denied)return denied;
+        return json(await previewZeroStockReMerge(
+          env.DB,Number(url.searchParams.get('sourceId')),Number(url.searchParams.get('keeperId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/remerge-zero-stock' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Повторное объединение доступно только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{sourceId:number;keeperId:number;expectedToken:string;reason:string}>(request);
+        return json(await reMergeZeroStockCatalogVariant(
+          env.DB,Number(data.sourceId),Number(data.keeperId),
+          authUser?.login||'',data.reason,data.expectedToken
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-history' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'История объединений доступна только администратору.');
+        if (denied) return denied;
+        return json(await listRecentCatalogVariantConsolidations(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/reconcile-stock/history' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'История корректировок каталога доступна только администратору.');
+        if (denied) return denied;
+        return json(await recentCatalogStockReconciliations(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/reconcile-stock' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Корректировка остатков при объединении доступна только администратору.');
+        if (denied) return denied;
+        // Retired: the separate stock writer left a live source SKU and allowed
+        // staff to create new commitments before the later retirement. Existing
+        // immutable history stays readable; only the unsafe two-step write path
+        // is disabled. Use a single guarded SKU consolidation instead.
+        return json({
+          ok:false,
+          code:'stock_reconciliation_requires_atomic_finalization',
+          message:'Отдельная корректировка перед объединением отключена. Обновите предпросмотр и подтвердите сверку вместе с объединением варианта.',
+        }, { status:409 });
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-preview' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Объединение вариантов доступно только администратору.');
+        if (denied) return denied;
+        return json(await previewCatalogVariantConsolidation(
+          env.DB, Number(url.searchParams.get('sourceId')), Number(url.searchParams.get('targetId')),
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidate-unused' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Объединение вариантов доступно только администратору.');
+        if (denied) return denied;
+        const data = await readJson<{
+          sourceId?: number; targetId?: number; expectedToken?: string;
+          verifiedStockDecisions?: Array<{
+            location:string;method:string;physicallyVerified:boolean;countedQuantity?:number;reason?:string
+          }>;
+        }>(request);
+        return json(await consolidateUnusedCatalogVariant(
+          env.DB, Number(data.sourceId), Number(data.targetId), authUser?.login || '', cleanText(data.expectedToken),
+          data.verifiedStockDecisions ?? [],
+        ));
+      }
+
+      if (url.pathname === '/api/reference-values/hide-unused-duplicate' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Очистка справочников доступна только администратору.');
+        if (denied) return denied;
+        const data = await readJson<{ sourceId?: number; targetId?: number }>(request);
+        return json(await hideUnusedEquivalentReference(env.DB, Number(data.sourceId), Number(data.targetId)));
+      }
+
+      if (url.pathname === '/api/reference-values/consolidation-preview' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Проверка объединения доступна только администратору.');
+        if (denied) return denied;
+        const source = Number(url.searchParams.get('sourceId'));
+        const target = Number(url.searchParams.get('targetId'));
+        return json(await previewReferenceConsolidation(env.DB, source, target));
       }
 
       if (url.pathname === '/api/reference-values/counts' && request.method === 'GET') {

@@ -5,6 +5,7 @@ import { mapSqlRows } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizePhone, toInt, upperText } from '../core/text.ts'
 import type { ReferenceKind, ReferenceValueRecord } from '../core/types.ts'
 import { normalizeManagerColor } from './activity.ts'
+import { catalogColorIdentity } from './catalog.ts'
 
 export async function getPendingInventoryWriteoffCount(db: D1Database) {
   const row = await db.prepare(
@@ -181,7 +182,34 @@ export async function countCatalogReferenceUsage(db: D1Database, dbKind: string,
   else sql = `SELECT COUNT(*) AS count FROM catalog_variants WHERE is_active = 1 AND COALESCE(category,'adult') = 'child' AND UPPER(TRIM(COALESCE(size_label,''))) = ?`;
   const normalized = (dbKind === 'material' || dbKind === 'length') ? (canonicalStockPositionValue(value) || 'СТАНДАРТ') : value;
   const row = await db.prepare(sql).bind(normalized).first<{ count: number }>();
-  return Math.max(0, toInt(row?.count, 0));
+  const activeVariants = Math.max(0, toInt(row?.count, 0));
+  // An execution (material + length) exists independently of variants.
+  // Editing its reference label while it is still in use would create a
+  // different stock identity even when no active SKU currently points to it.
+  const executions = dbKind === 'material' || dbKind === 'length'
+    ? await db.prepare(
+      `SELECT COUNT(*) AS count FROM catalog_stock_positions
+        WHERE is_active=1 AND COALESCE(NULLIF(UPPER(TRIM(${dbKind})),''),'СТАНДАРТ')=?`
+    ).bind(normalized).first<{ count:number }>()
+    : null;
+  // Retired SKUs can still carry stock/reserves after an interrupted
+  // operation. Do not silently hide their characteristic in that state.
+  const stockColumn = dbKind === 'size' || dbKind === 'child_age' ? 'size_label' : dbKind;
+  const categoryScope = dbKind === 'size'
+    ? " AND COALESCE(v.category,'adult')<>'child'"
+    : dbKind === 'child_age' ? " AND COALESCE(v.category,'adult')='child'" : '';
+  const stockValue = dbKind === 'material' || dbKind === 'length'
+    ? `COALESCE(NULLIF(UPPER(TRIM(v.${stockColumn})),''),'СТАНДАРТ')`
+    : `UPPER(TRIM(COALESCE(v.${stockColumn},'')))`;
+  const orphaned = await db.prepare(
+    `SELECT COUNT(DISTINCT v.id) AS count FROM catalog_variants v
+      JOIN inventory_stock st ON st.variant_id=v.id
+      WHERE v.is_active<>1 AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0)
+        AND ${stockValue}=? ${categoryScope}`
+  ).bind(normalized).first<{count:number}>();
+  return activeVariants
+    + Math.max(0,toInt(executions?.count,0))
+    + Math.max(0,toInt(orphaned?.count,0));
 }
 
 
@@ -195,28 +223,62 @@ export async function assertReferenceValueCanChange(db: D1Database, dbKind: stri
   if (!valueChanges && !disables) return;
   const usage = await countCatalogReferenceUsage(db, dbKind, currentValue);
   if (!usage) return;
-  throw new Error(`Значение «${currentValue}» используется в ${usage} активн${usage === 1 ? 'ом варианте' : 'ых вариантах'} каталога. Простое переименование/отключение разорвёт справочник и варианты. Добавьте новое значение отдельно; объединение используемых значений выполняется только контролируемой миграцией каталога.`);
+  throw new Error(`Значение «${currentValue}» используется в связанных записях каталога (варианты, исполнения или складские остатки: ${usage}). Переименование или удаление из списка разорвёт связи. Сначала выполните безопасную проверку и объединение.`);
 }
 
 
+// Share the Catalog/Arrival/Stocktake rule: hyphens and whitespace cannot
+// manufacture a second business identity.
 export function referenceValueIdentityKey(value: unknown) {
-  return upperText(value)
-    .replace(/[‐‑‒–—-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const text = upperText(value).replace(/[‐‑‒–—-]+/g, ' ');
+  return text ? catalogColorIdentity(text) : '';
 }
 
+
+type EquivalentReferenceValue = { id: number; value: string; is_active: number };
+
+export async function findEquivalentReferenceValue(db: D1Database, dbKind: string, value: string, excludeId = 0) {
+  const identity = referenceValueIdentityKey(value);
+  if (!identity) return null;
+  const rows = await db.prepare(
+    `SELECT id, value, is_active FROM reference_values WHERE kind = ? AND id <> ?
+     ORDER BY is_active DESC, id ASC`
+  ).bind(dbKind, excludeId).all<EquivalentReferenceValue>();
+  return (rows.results || []).find((row) => referenceValueIdentityKey(row.value) === identity) || null;
+}
 
 export async function assertNoEquivalentReferenceValue(db: D1Database, dbKind: string, value: string, excludeId = 0) {
-  const identity = referenceValueIdentityKey(value);
-  if (!identity) return;
-  const rows = await db.prepare(
-    `SELECT id, value FROM reference_values WHERE kind = ? AND id <> ? ORDER BY is_active DESC, id ASC`
-  ).bind(dbKind, excludeId).all<{ id: number; value: string }>();
-  const duplicate = (rows.results || []).find((row) => referenceValueIdentityKey(row.value) === identity);
+  const duplicate = await findEquivalentReferenceValue(db, dbKind, value, excludeId);
   if (duplicate?.id) {
-    throw new Error(`Такое значение уже есть: «${cleanText(duplicate.value)}». Используйте существующий вариант вместо создания дубликата.`);
+    throw new Error(`Такое значение уже есть: «${cleanText(duplicate.value)}». Используйте существующее значение вместо создания дубля.`);
   }
+}
+
+// Database-side guard against a SKU/stock-position appearing between a
+// reference preflight and its UPDATE. Column names come from a fixed allowlist.
+export function referenceCharacteristicWriteGuard(dbKind: string) {
+  if (!isCatalogCharacteristicDbKind(dbKind)) return '';
+  const column = dbKind === 'size' || dbKind === 'child_age' ? 'size_label' : dbKind;
+  const scope = dbKind === 'size' ? "AND COALESCE(v.category,'adult')<>'child'"
+    : dbKind === 'child_age' ? "AND COALESCE(v.category,'adult')='child'" : '';
+  const expression = dbKind === 'material' || dbKind === 'length'
+    ? `COALESCE(NULLIF(UPPER(TRIM(v.${column})),''),'СТАНДАРТ')`
+    : `UPPER(TRIM(COALESCE(v.${column},'')))`;
+  const matchingReference = dbKind === 'material' || dbKind === 'length'
+    ? "COALESCE(NULLIF(UPPER(TRIM(reference_values.value)),''),'СТАНДАРТ')"
+    : "UPPER(TRIM(COALESCE(reference_values.value,'')))";
+  const executionGuard = dbKind === 'material' || dbKind === 'length' ? `
+    AND NOT EXISTS (SELECT 1 FROM catalog_stock_positions sp
+       WHERE sp.is_active=1
+         AND COALESCE(NULLIF(UPPER(TRIM(sp.${column})),''),'СТАНДАРТ')=${matchingReference})` : '';
+  return ` AND NOT EXISTS (
+      SELECT 1 FROM catalog_variants v WHERE
+        ${expression}=${matchingReference} ${scope}
+        AND (v.is_active=1 OR EXISTS (
+          SELECT 1 FROM inventory_stock st WHERE st.variant_id=v.id
+            AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0)
+        ))
+     ) ${executionGuard}`;
 }
 
 
@@ -257,25 +319,49 @@ export async function upsertReferenceValue(db: D1Database, input: { kind?: unkno
     const current = await db.prepare(
       `SELECT value FROM reference_values WHERE id = ? AND kind = ? LIMIT 1`
     ).bind(id, dbKind).first<{ value: string }>();
-    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value)) {
+    if (!current || referenceValueIdentityKey(current.value) !== referenceValueIdentityKey(value) || upperText(current.value) !== value) {
       await assertNoEquivalentReferenceValue(db, dbKind, value, id);
     }
     await assertReferenceValueCanChange(db, dbKind, id, value, isActive);
-    await db.prepare(
+    const oldValue = current?.value;
+    if (oldValue === undefined) throw new Error('Значение не найдено. Обновите справочник.');
+    const needsUsageGuard = upperText(oldValue) !== value || isActive === 0;
+    const guard = needsUsageGuard ? referenceCharacteristicWriteGuard(dbKind) : '';
+    const updated = await db.prepare(
       `UPDATE reference_values
        SET value = ?, is_active = ?, sort_order = ?, updated_at = ?
-       WHERE id = ?`
-    ).bind(value, isActive, sortOrder, now, id).run();
+       WHERE id = ? AND kind = ? AND value = ? ${guard}`
+    ).bind(value, isActive, sortOrder, now, id, dbKind, oldValue).run();
+    if (toInt(updated.meta?.changes, 0) !== 1) {
+      throw new Error('Значение или его связи изменились одновременно. Обновите справочник и проверьте действие заново.');
+    }
   } else {
+    const equivalent = await findEquivalentReferenceValue(db, dbKind, value);
+    if (equivalent?.id) {
+      if (toInt(equivalent.is_active, 0) === 1) {
+        return { ok: true, kind, id: equivalent.id, value: equivalent.value, reused: true };
+      }
+      if (isActive === 1) {
+        await db.prepare(
+          'UPDATE reference_values SET is_active = 1, updated_at = ? WHERE id = ? AND kind = ? AND is_active = 0'
+        ).bind(now, equivalent.id, dbKind).run();
+        return { ok: true, kind, id: equivalent.id, value: equivalent.value, restored: true };
+      }
+      return { ok: true, kind, id: equivalent.id, value: equivalent.value, reused: true };
+    }
     await assertNoEquivalentReferenceValue(db, dbKind, value, 0);
-    await db.prepare(
+    const inserted = await db.prepare(
       `INSERT INTO reference_values (kind, value, is_active, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(kind, value) DO UPDATE SET
-         is_active = excluded.is_active,
-         sort_order = excluded.sort_order,
-         updated_at = excluded.updated_at`
+       ON CONFLICT(kind, value) DO NOTHING`
     ).bind(dbKind, value, isActive, sortOrder, now, now).run();
+    if (!toInt(inserted.meta?.changes, 0)) {
+      const winner = await findEquivalentReferenceValue(db, dbKind, value);
+      if (winner?.id) {
+        return { ok: true, kind, id: winner.id, value: winner.value, reused: true };
+      }
+      throw new Error('Справочник изменился одновременно. Обновите список и повторите действие.');
+    }
   }
 
   return { ok: true, kind, value };
@@ -290,8 +376,20 @@ export async function disableReferenceValue(db: D1Database, kind: ReferenceKind,
   }
 
   const dbKind = referenceKindToDbKind(kind);
+  const current = await db.prepare(
+    'SELECT value, is_active FROM reference_values WHERE id=? AND kind=?'
+  ).bind(id,dbKind).first<{value:string;is_active:number}>();
+  if (!current) throw new Error('Значение справочника не найдено. Обновите страницу.');
+  if (toInt(current.is_active,0) !== 1) return { ok:true,alreadyHidden:true };
   await assertReferenceValueCanChange(db, dbKind, id, undefined, 0);
-  await db.prepare('UPDATE reference_values SET is_active = 0, updated_at = ? WHERE id = ?').bind(now, id).run();
+  const updated = await db.prepare(
+    `UPDATE reference_values SET is_active=0,updated_at=?
+     WHERE id=? AND kind=? AND value=? AND is_active=1
+       ${referenceCharacteristicWriteGuard(dbKind)}`
+  ).bind(now,id,dbKind,current.value).run();
+  if (toInt(updated.meta?.changes,0)!==1) {
+    throw new Error('Справочник или связанные товары изменились одновременно. Обновите страницу и повторите проверку.');
+  }
   return { ok: true };
 }
 
