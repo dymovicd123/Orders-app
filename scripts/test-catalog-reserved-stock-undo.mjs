@@ -169,6 +169,18 @@ await assert.rejects(()=>undoUntouchedReservationConsolidation(db,1,'admin',reas
 sqlite.exec("UPDATE orders SET shipping_status='sent' WHERE id=2")
 assert.equal((await previewUntouchedReservationUndo(db,1)).canRestoreUntouchedReservations,false)
 sqlite.exec("UPDATE orders SET shipping_status='not_sent' WHERE id=2")
+sqlite.exec("UPDATE orders SET shipping_status='other' WHERE id=2")
+assert.equal((await previewUntouchedReservationUndo(db,1)).canRestoreUntouchedReservations,false,
+ 'Unknown shipping status cannot be undone')
+sqlite.exec("UPDATE orders SET shipping_status='not_sent' WHERE id=2")
+sqlite.exec('UPDATE inventory_reservations SET product_id=999 WHERE id=51')
+assert.equal((await previewUntouchedReservationUndo(db,1)).canRestoreUntouchedReservations,false,
+ 'Mismatched reservation product identity denied')
+sqlite.exec('UPDATE inventory_reservations SET product_id=100 WHERE id=51')
+sqlite.exec('UPDATE order_items SET product_id=999 WHERE id=41')
+assert.equal((await previewUntouchedReservationUndo(db,1)).canRestoreUntouchedReservations,false,
+ 'Mismatched order item product identity denied')
+sqlite.exec('UPDATE order_items SET product_id=100 WHERE id=41')
 sqlite.exec('UPDATE inventory_reservations SET quantity=1 WHERE id=51')
 assert.equal((await previewUntouchedReservationUndo(db,1)).canRestoreUntouchedReservations,false)
 sqlite.exec('UPDATE inventory_reservations SET quantity=2 WHERE id=51')
