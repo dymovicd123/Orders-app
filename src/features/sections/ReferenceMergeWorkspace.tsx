@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import '../../styles/reference-merge-workspace.css'
+import { CharacteristicSkuMapReview } from './CharacteristicSkuMapReview'
 
 type Value = { id: number; value: string; isActive: boolean }
 type MergeHistoryItem={id:number;kind:string;source:string;target:string;affected:number;actor:string;createdAt:string;sourceId:number;targetId:number}
@@ -370,6 +371,15 @@ export function ReferenceMergeWorkspace({
                     <strong>Что нужно учесть перед объединением</strong>
                     <ul>{impact.catalogImpact.warnings.map((warning,index)=><li key={index}>{warning}</li>)}</ul>
                   </div>
+                ) : null}
+                {(['color','material','length','size','child_age'] as string[]).includes(impact.kind) ? (
+                  <CharacteristicSkuMapReview
+                    key={impact.kind + ':' + impact.source.id + ':' + impact.target.id + ':' + impact.stateToken}
+                    apiFetch={apiFetch}
+                    kind={impact.kind as 'color'|'material'|'length'|'size'|'child_age'}
+                    sourceId={impact.source.id}
+                    targetId={impact.target.id}
+                  />
                 ) : null}
                 {impact.catalogImpact.sampleVariants.length ? (
                   <details className="reference-merge-catalog-samples">
