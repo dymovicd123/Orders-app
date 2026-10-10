@@ -68,7 +68,7 @@
     "migrations/0084_v72_workshop_settlement_status_capture.sql": "2e3f51ab0b055d5b82d6b542cec28cf661359003"
   },
   "addedFiles": {
-    "worker/domains/catalog-variant-consolidation.ts": "96dbc0ff95aacde35c42418a33297abb3fe726b5",
+    "worker/domains/catalog-variant-consolidation.ts": "7a69c78d2c7c65e1b7b676b619e8d16b8db9d447",
     "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
     "src/features/sections/ReferenceIntegrityPanel.tsx": "b06f982d124390bbb24dc386af7e16f58e4864cf",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
@@ -93,12 +93,12 @@
     "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
     "worker/domains/reference-characteristic-impact.ts": "1536f8e30942b461079cea7e045863d5b9f4d980",
     "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66",
-    "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "417d4466a7442dd839b9b16157ee86bad9a95c00",
+    "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "90fa7d5ebdb9b5f3f6f5738853247fb8a786b307",
     "scripts/test-reference-crud-integrity.mjs": "32c37466b2b5194c8edcec7d1e726ffeff10ef8f",
     "worker/domains/catalog-stock-reconciliation.ts": "2d6e82270c805740b8b2ffd66a1503b0427db4b8",
     "scripts/test-catalog-stock-reconciliation.mjs": "9bf7834627ea9b1104069dbb8240f7a59ad7c9db",
     "worker/domains/catalog-stock-reconciliation-write.ts": "b3af017fb3f469f2bb885e2444317ed0d6262bfe",
-    "scripts/test-catalog-stock-reconciliation-write.mjs": "5acdf296d8e00cfeabf58e1b147b45a8557e9a3c",
+    "scripts/test-catalog-stock-reconciliation-write.mjs": "531639f570a24f58ad8fd24e1a00921965f4eeb7",
     "migrations/0095_v72_catalog_stock_reconciliation_journal.sql": "0a35ae87effae25fd1e5d0d5befafd9aff0270f1",
     "migrations/0096_v72_catalog_atomic_stock_finalization.sql": "0f6cde970b9cb535d28e762e4002a87820625a2e",
     "worker/domains/catalog-merged-identity.ts": "f06c13b0738bdf989a85234597c1e6ec68a15294",
