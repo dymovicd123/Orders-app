@@ -121,6 +121,6 @@
     "worker/domains/catalog-positive-stock-undo.ts": "1e2042f13dd62472266733024afc230410cb46b8",
     "scripts/test-catalog-positive-stock-undo.mjs": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa",
     "worker/domains/catalog-corrected-undo-review.ts": "7154d8465d16595e65ea6653ff2fe9fe9c716cdf",
-    "scripts/test-catalog-corrected-undo-review.mjs": "1ac65bfaa036e01239b848b332a8b7c7918ec7ae"
+    "scripts/test-catalog-corrected-undo-review.mjs": "481a5789da744c29fb979413316092fb23b1abdb"
   }
 }
