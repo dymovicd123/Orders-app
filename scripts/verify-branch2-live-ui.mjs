@@ -14,6 +14,9 @@ const expected=[
   'Всего в выбранном списке:',
   'Списков всего:',
   'Проверьте номер в истории объединений.',
+  // PR #357: ensure the real public build includes the paged SKU matching UI.
+  'Проверить соответствия товаров по каждой вариации',
+  'Посмотреть все соответствия',
 ]
 async function get(uri) {
   const response=await fetch(uri, {
