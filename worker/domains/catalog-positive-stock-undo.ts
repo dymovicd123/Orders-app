@@ -20,7 +20,8 @@ const stockFingerprint=`(SELECT COALESCE(json_group_array(json_array(
 // The employee-facing operations are NEVER held in a long-lived lock. The
 // administrator's insertion fails if those operations succeeded first.
 const noLaterActivity=`
-  NOT EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+  julianday(c.created_at) IS NOT NULL
+  AND NOT EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
     WHERE oi.variant_id IN (s.id,k.id) AND (
       julianday(oi.created_at) IS NULL OR julianday(o.updated_at) IS NULL
       OR MAX(julianday(oi.created_at),julianday(o.updated_at))>=julianday(c.created_at)
@@ -110,12 +111,22 @@ const beforeStockValid=`
 `
 export async function previewPositiveStockConsolidationUndo(db:D1Database,consolidationId:number){
   const original=await previewCatalogConsolidationUndo(db,consolidationId)
-  const [stocks,events]=await Promise.all([
+  const [stocks,events,lateStock]=await Promise.all([
     db.prepare(snapshotSql).bind(original.sourceId,original.keeperId).first<StockSnapshot>(),
     db.prepare(`SELECT COUNT(*) AS count FROM catalog_variant_merge_generation_events
-      WHERE source_variant_id IN (?,?)`).bind(original.sourceId,original.keeperId).first<{count:number}>()
+      WHERE source_variant_id IN (?,?)`).bind(original.sourceId,original.keeperId).first<{count:number}>(),
+    db.prepare(`SELECT COUNT(*) AS count FROM inventory_stock
+      WHERE variant_id IN (?,?) AND (
+        julianday(updated_at) IS NULL OR julianday(updated_at)>julianday(?)
+      )`).bind(original.sourceId,original.keeperId,original.mergedAt).first<{count:number}>()
   ])
   const blockers=original.blockers.filter(x=>x.code!=='physical_undo_requires_accounting')
+  if(!Number.isFinite(Date.parse(original.mergedAt))){
+    blockers.push({code:'invalid_merge_date',message:'Дата первоначального объединения некорректна. Автоматическое восстановление запрещено.'})
+  }
+  if((lateStock?.count??-1)!==0){
+    blockers.push({code:'stock_touched_after_merge',message:'После объединения складские записи изменялись либо их дата неизвестна. Требуется отдельная проверка.'})
+  }
   if(events?.count!==0)blockers.push({code:'previous_generation',message:'Вариант уже отменяли или объединяли повторно. Для следующего поколения нужен отдельный сценарий.'})
   if(!original.locations.length||!original.locations.some(l=>l.before.source>0)
     ||original.locations.some(l=>l.before.sourceReserved!==0||l.before.keeperReserved!==0
