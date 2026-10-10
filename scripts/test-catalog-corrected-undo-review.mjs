@@ -163,7 +163,7 @@ sqlite.exec(`
 assert.ok((await preview()).blockers.some(x=>x.code==='prior_generations'))
 assert.notEqual((await preview()).stateToken,stableToken,'Journal addition invalidates review token')
 assert.deepEqual(sqlite.prepare('SELECT * FROM order_items ORDER BY id').all(),before)
-assert.equal(count('catalog_variant_merge_generation_events'),0)
+assert.equal(count('catalog_variant_merge_generation_events'),1)
 assert.equal(count('inventory_movements'),1)
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=11').get().quantity,3)
 const router=fs.readFileSync('worker/index.ts','utf8')
