@@ -47,7 +47,10 @@ const sourceDependenciesSafe=`
   AND NOT EXISTS(SELECT 1 FROM inventory_stock st WHERE st.variant_id=s.id
     AND (st.quantity IS NULL OR st.quantity<>0
       OR st.reserved_quantity IS NULL OR st.reserved_quantity<>0
-      OR st.inventory_source NOT IN ('warehouse','boutique')))
+      OR st.inventory_source NOT IN ('warehouse','boutique')
+      OR julianday(st.updated_at) IS NULL
+      OR julianday(st.updated_at)>=julianday(undo.created_at)
+      OR st.last_source_ref<>('catalog-consolidation:'||s.id||'->'||c.target_variant_id)))
   AND (SELECT COUNT(*) FROM inventory_stock st WHERE st.variant_id=s.id)>0
   AND (SELECT COUNT(*) FROM inventory_stock st WHERE st.variant_id=s.id)
       =(SELECT COUNT(*) FROM catalog_variant_consolidation_stock_rows l
