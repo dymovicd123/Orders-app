@@ -112,6 +112,8 @@
     "scripts/test-catalog-merge-generation-foundation.mjs": "ffe9350f04e09e867ce6d1c15300034bc8495c23",
     "worker/domains/catalog-zero-stock-undo.ts": "f71b0879fbb7bc239e203da4a83783013ad2c57a",
     "scripts/test-catalog-zero-stock-undo.mjs": "5dbb22713ee4cdfc103e148b832a1a007e15562a",
-    "migrations/0100_v72_catalog_zero_stock_undo_validation.sql": "94937dd3b455e11742bc363ddfd267fc0c2dd466"
+    "migrations/0100_v72_catalog_zero_stock_undo_validation.sql": "94937dd3b455e11742bc363ddfd267fc0c2dd466",
+    "scripts/test-catalog-zero-stock-remerge-schema.mjs": "073fc6f3b6a7dd1569baf3cb7eb87692a6ad2c32",
+    "migrations/0101_v72_catalog_zero_stock_remerge_validation.sql": "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3"
   }
 }
