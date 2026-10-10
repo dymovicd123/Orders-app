@@ -36,6 +36,7 @@ jobs:
           node --experimental-strip-types scripts/test-reference-merge-history.mjs
           node --experimental-strip-types scripts/test-catalog-integrity-r2-sku-consolidation.mjs
           node --experimental-strip-types scripts/test-catalog-consolidation-undo-preview.mjs
+          node --experimental-strip-types scripts/test-catalog-merge-generation-foundation.mjs
           node --experimental-strip-types scripts/test-catalog-stale-order-merge-bridge.mjs
           node --experimental-strip-types scripts/test-inventory-writeoff-review.mjs
       - name: Full historical Branch2 regression gate
