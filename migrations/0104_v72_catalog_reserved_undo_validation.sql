@@ -27,8 +27,7 @@ CREATE TABLE IF NOT EXISTS catalog_variant_reserved_undo_reservations(
  quantity INTEGER NOT NULL CHECK(quantity>0),
  source_variant_id INTEGER NOT NULL REFERENCES catalog_variants(id),
  keeper_variant_id INTEGER NOT NULL REFERENCES catalog_variants(id),
- PRIMARY KEY(generation_event_id,reservation_id),
- UNIQUE(generation_event_id,order_item_id)
+ PRIMARY KEY(generation_event_id,reservation_id)
 );
 CREATE TABLE IF NOT EXISTS catalog_variant_reserved_undo_validations(
  generation_event_id INTEGER PRIMARY KEY REFERENCES catalog_variant_merge_generation_events(id),
@@ -109,6 +108,7 @@ BEGIN
         OR ss.quantity<>a.source_quantity_restored OR ks.quantity<>a.keeper_quantity_restored
         OR ss.reserved_quantity<>a.source_reserved_restored
         OR ks.reserved_quantity<>a.keeper_reserved_restored
+        OR ss.reserved_quantity>ss.quantity OR ks.reserved_quantity>ks.quantity
         OR (SELECT COALESCE(SUM(rr.quantity),0)
             FROM catalog_variant_reserved_undo_reservations rr
             WHERE rr.generation_event_id=e.id AND rr.inventory_source=l.inventory_source)
@@ -147,6 +147,9 @@ BEGIN
         OR now.order_id<>r.order_id OR now.order_item_id<>r.order_item_id
         OR oi.id IS NULL OR oi.variant_id<>s.id OR oi.order_id<>r.order_id
         OR oi.source_type<>r.inventory_source OR oi.quantity<r.quantity
+        OR oi.quantity<(SELECT COALESCE(SUM(sub.quantity),0)
+          FROM catalog_variant_consolidation_reservation_rows sub
+          WHERE sub.consolidation_id=c.id AND sub.order_item_id=oi.id)
         OR o.id IS NULL OR o.order_status<>'active'
         OR COALESCE(o.shipping_status,'not_sent')='sent'
         OR EXISTS(SELECT 1 FROM return_items ret WHERE ret.order_item_id=oi.id)
