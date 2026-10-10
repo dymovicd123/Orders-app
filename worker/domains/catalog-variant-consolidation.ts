@@ -523,7 +523,7 @@ export async function consolidateUnusedCatalogVariant(
         material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity,
         last_action,last_source_ref,created_at,updated_at,external_product_id,external_variant_id)
       SELECT s.inventory_source,v.product_id,v.id,p.name,NULLIF(v.gender,''),NULLIF(v.color,''),
-        COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),COALES(NULLIF(v.length,''),'СТАНДАРТ'),
+        COALESCE(NULLIF(v.material,''),'СТАНДАРТ'),COALESCE(NULLIF(v.length,''),'СТАНДАРТ'),
         NULLIF(v.size_label,''),d.final_quantity,s.reserved_quantity,'Объединение вариаций',?,?,?,p.external_id,v.external_id
       FROM inventory_stock s JOIN catalog_variants v ON v.id=?
       JOIN catalog_products p ON p.id=v.product_id
