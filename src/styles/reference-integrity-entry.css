@@ -80,3 +80,10 @@
 .reference-integrity-stock-location>span{min-width:0;overflow-wrap:anywhere;font-size:.88rem}
 .reference-integrity-stock-location:focus-within{outline:2px solid #6486b3;outline-offset:2px}
 @media(max-width:640px){.reference-integrity-stock-confirmation{padding:11px}.reference-integrity-stock-location{padding:10px}}
+
+.reference-integrity-stock-location-choice{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid #e4d9c6;border-radius:10px;background:#fff}
+.reference-integrity-stock-location-choice>strong{font-size:.9rem;color:#493820}
+.reference-integrity-stock-location-choice>label:not(.reference-integrity-stock-location){display:grid;gap:6px;font-size:.86rem;color:#526274;line-height:1.5}
+.reference-integrity-stock-location-choice select,.reference-integrity-stock-location-choice input[type=number],.reference-integrity-stock-location-choice textarea{display:block;width:100%;max-width:100%;min-width:0;padding:10px;border:1px solid #bfcedd;border-radius:8px;background:#fff;color:#26374a;font:inherit}
+.reference-integrity-stock-location-choice textarea{resize:vertical}
+@media(max-width:640px){.reference-integrity-stock-location-choice{padding:10px}}

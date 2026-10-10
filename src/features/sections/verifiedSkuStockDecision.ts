@@ -1,5 +1,5 @@
-// Additional client-side guard for explicit per-location stock decisions.
-// Server-side SQL/CAS validation is always the source of truth.
+// UI-side fail-closed stock choices for an EXACT business-identity SKU pair.
+// Backend remains authoritative: D1 CAS and immutable stock journal must recheck.
 export type VerifiedSkuLocation={
  location:string;sourcePhysical:number;keeperPhysical:number;
  sourceReserved:number;keeperReserved:number;reservedTotal:number;
@@ -9,15 +9,23 @@ export type VerifiedSkuPreview={
  canConsolidate:boolean;canConsolidateAfterVerifiedSum:boolean;
  blockers:string[];stockReconciliation:{locations:VerifiedSkuLocation[]}
 }
-export type VerifiedSumChoice={location:string;method:'sum';physicallyVerified:true}
+export type SkuDecisionMethod='sum'|'keep_source'|'keep_keeper'|'physical_count'|'defer'
+export type SkuPlaceChoice={method?:SkuDecisionMethod;verified?:boolean;reason?:string;counted?:string}
+export type SkuChoiceMap=Record<string,SkuPlaceChoice>
+export type VerifiedChoice={
+ location:string;method:Exclude<SkuDecisionMethod,'defer'>;
+ physicallyVerified:true;countedQuantity?:number;reason?:string
+}
 const allowed=new Set(['warehouse','boutique'])
 const valid=(n:number)=>Number.isSafeInteger(n)&&n>=0
+const METHODS=new Set(['sum','keep_source','keep_keeper','physical_count'])
 
 export function confirmedSkuStockDecisions(
  preview:VerifiedSkuPreview,
- confirmed:Record<string,boolean>,
-):VerifiedSumChoice[]|null{
- if(!preview || !preview.canConsolidateAfterVerifiedSum || preview.blockers.length>0
+ choices:SkuChoiceMap,
+):VerifiedChoice[]|null{
+ if(!preview?.canConsolidateAfterVerifiedSum
+   || !Array.isArray(preview.blockers) || preview.blockers.length>0
    || !Array.isArray(preview.stockReconciliation?.locations)
    || preview.stockReconciliation.locations.length!==2) return null
  const places=preview.stockReconciliation.locations
@@ -30,9 +38,31 @@ export function confirmedSkuStockDecisions(
      ||x.requiresDecision!==(x.sourcePhysical>0))) return null
  const needed=places.filter(x=>x.requiresDecision)
  if(needed.length===0)return preview.canConsolidate?[]:null
- // Each source-positive location must be verified independently. There is
- // deliberately no default and no global checkbox for all places.
- if(needed.some(place=>confirmed[place.location]!==true))return null
- if(needed.some(place=>place.combinedPhysical<place.reservedTotal))return null
- return needed.map(place=>({location:place.location,method:'sum',physicallyVerified:true}))
+ const results:VerifiedChoice[]=[]
+ for(const place of needed){
+  const choice=choices[place.location]
+  if(!choice || choice.verified!==true || !choice.method || !METHODS.has(choice.method))return null
+  const method=choice.method as VerifiedChoice['method']
+  const reason=(choice.reason||'').trim()
+  let resulting=place.combinedPhysical
+  let countedQuantity:number|undefined
+  if(method==='keep_source')resulting=place.sourcePhysical
+  if(method==='keep_keeper')resulting=place.keeperPhysical
+  if(method==='physical_count'){
+   const raw=(choice.counted||'').trim()
+   if(!/^\d+$/.test(raw))return null
+   countedQuantity=Number(raw)
+   if(!valid(countedQuantity))return null
+   resulting=countedQuantity
+  }
+  if(method!=='sum' && (reason.length<12||reason.length>500))return null
+  // Customer commitments are never implicitly reduced to make accounting fit.
+  if(resulting<place.reservedTotal)return null
+  results.push({
+   location:place.location,method,physicallyVerified:true,
+   ...(method==='physical_count'?{countedQuantity}:{}),
+   ...(method!=='sum'?{reason}:{})
+  })
+ }
+ return results
 }
