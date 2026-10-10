@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { confirmedSkuStockDecisions, type VerifiedSkuLocation } from './verifiedSkuStockDecision'
+import { confirmedSkuStockDecisions, type VerifiedSkuLocation,
+  type SkuChoiceMap, type SkuDecisionMethod } from './verifiedSkuStockDecision'
 
 type DuplicateValue = { id: number; value: string; isActive: boolean }
 type DuplicateGroup = { kind: string; identity: string; suggestedTargetId: number; items: DuplicateValue[] }
@@ -65,7 +66,7 @@ export function ReferenceIntegrityPanel({
   const [skuSelected, setSkuSelected] = useState('')
   const [skuPreview, setSkuPreview] = useState<SkuPreview | null>(null)
   const [skuPreviewBusy, setSkuPreviewBusy] = useState(false)
-  const [verifiedLocations, setVerifiedLocations] = useState<Record<string,boolean>>({})
+  const [stockChoices, setStockChoices] = useState<SkuChoiceMap>({})
   const [mergeHistory, setMergeHistory] = useState<SkuMergeHistory[] | null>(null)
   const [historyBusy, setHistoryBusy] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -84,7 +85,7 @@ export function ReferenceIntegrityPanel({
     setError('')
     setPreview(null)
     setSkuPreview(null)
-    setVerifiedLocations({})
+    setStockChoices({})
     setSkuKeeper({})
     setSelected('')
     try {
@@ -147,7 +148,7 @@ export function ReferenceIntegrityPanel({
       || !Number.isSafeInteger(sourceId) || sourceId<=0 || targetId===sourceId) return
     setSkuPreviewBusy(true)
     setSkuPreview(null)
-    setVerifiedLocations({})
+    setStockChoices({})
     setPreview(null)
     setSkuSelected(sourceId + ':' + targetId)
     setError('')
@@ -166,20 +167,24 @@ export function ReferenceIntegrityPanel({
 
   async function consolidateSku() {
     if (!skuPreview || actionBusy) return
-    const verifiedStockDecisions=confirmedSkuStockDecisions(skuPreview,verifiedLocations)
+    const verifiedStockDecisions=confirmedSkuStockDecisions(skuPreview,stockChoices)
     if(verifiedStockDecisions===null)return
     const { source, target } = skuPreview
     if (!window.confirm(
       'Объединить вариант #' + source.id + ' с основным #' + target.id + '? '
       + (verifiedStockDecisions.length
-        ? 'Вы отдельно подтвердили, что учётные остатки представляют РАЗНЫЕ физические экземпляры в '
-          +verifiedStockDecisions.map(d=>d.location==='warehouse'?'складе':'бутике').join(' и ')
-          +'. Они будут сложены именно в проверенных местах хранения. '
+        ? 'Подтверждённые решения по остатку: '
+          +verifiedStockDecisions.map(d=>(d.location==='warehouse'?'Склад':'Бутик')
+            + ' — ' + (d.method==='sum'?'сложить независимые экземпляры'
+              :d.method==='keep_source'?'оставить исходный остаток'
+              :d.method==='keep_keeper'?'оставить основной остаток'
+              :'по фактическому пересчёту '+d.countedQuantity+' шт.')).join('; ')
+          + '. '
         : 'У исходного варианта нет физического остатка для переноса. ')
       + (skuPreview.reservationCount
         ? 'Действующие резервы ' + skuPreview.reservationCount + ' строк заказов перейдут на основной вариант. '
         : '')
-      + 'Цены, названия в истории и складские движения сохранятся, списания не будет.'
+      + 'Исторические документы и деньги сохранятся. При исправлении количества система запишет отдельную складскую корректировку, не фиктивное списание.'
     )) return
     setActionBusy(true)
     setError('')
@@ -296,7 +301,7 @@ export function ReferenceIntegrityPanel({
                         onChange={e => {
                           setSkuKeeper(old => ({ ...old, [key]: Number(e.target.value) || 0 }))
                           setSkuPreview(null)
-                          setVerifiedLocations({})
+                          setStockChoices({})
                           setSkuSelected('')
                         }}>
                         <option value="">— Выберите основной вариант —</option>
@@ -399,7 +404,7 @@ export function ReferenceIntegrityPanel({
           {skuPreview.canConsolidateAfterVerifiedSum ? (
             <div className="actions">
               <button className="primary compact" type="button"
-                disabled={actionBusy || confirmedSkuStockDecisions(skuPreview,verifiedLocations)===null}
+                disabled={actionBusy || confirmedSkuStockDecisions(skuPreview,stockChoices)===null}
                 onClick={() => void consolidateSku()}>
                 {actionBusy ? 'Проверяю и сохраняю…' : skuPreview.transferQuantity > 0 || skuPreview.reservationCount > 0 ? 'Объединить варианты и резервы' : 'Убрать дублирующий вариант'}
               </button>
