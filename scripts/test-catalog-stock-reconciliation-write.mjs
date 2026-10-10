@@ -70,6 +70,7 @@ sqlite.exec(fs.readFileSync('migrations/0090_v72_catalog_variant_consolidations.
 sqlite.exec(fs.readFileSync('migrations/0091_v72_catalog_variant_stock_consolidation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0092_v72_catalog_variant_reservation_consolidation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0095_v72_catalog_stock_reconciliation_journal.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0099_v72_catalog_merge_generation_events.sql','utf8'))
 
 let beforeUpdate = () => {}
 let beforeValidation = () => {}
