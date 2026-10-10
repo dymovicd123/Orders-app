@@ -1,6 +1,7 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { previewPaymentMethodMerge } from './reference-payment-merge.ts'
 import { previewCharacteristicImpact } from './reference-characteristic-impact.ts'
+import { previewReasonChoiceMerge } from './reference-reason-merge.ts'
 
 export type Reference = { id: number; kind: string; value: string; is_active: number; updated_at:string }
 const supported = new Set([
@@ -161,11 +162,15 @@ export async function previewUserSelectedReferenceMerge(
     ? await readCurrentReferenceOrderRows(db,source.kind as 'city'|'delivery_type',source.value,month.from,month.toExclusive)
     : []
   const paymentSafety=isMoney ? await previewPaymentMethodMerge(db,source,target,month) : null
+  const isReason=source.kind==='return_reason'||source.kind==='writeoff_reason'
+  const reasonSafety=isReason ? await previewReasonChoiceMerge(db,sourceId,targetId) : null
   const publicPaymentSafety=paymentSafety ? { ...paymentSafety, snapshot:undefined } : null
-  const canApply=paymentSafety
-    ? paymentSafety.canApply
-    : mergeableKind && currentRows.length<=5000 && currentRows.length===summary.current
-  const stateToken=paymentSafety?.stateToken ||
+  const canApply=reasonSafety
+    ? reasonSafety.canApply
+    : paymentSafety
+      ? paymentSafety.canApply
+      : mergeableKind && currentRows.length<=5000 && currentRows.length===summary.current
+  const stateToken=reasonSafety?.stateToken || paymentSafety?.stateToken ||
     (canApply ? await referenceMergeToken(source,target,month,currentRows) : '')
   return {
     ok:true,
@@ -182,7 +187,10 @@ export async function previewUserSelectedReferenceMerge(
     stateToken,
     matchedCurrentOrders:currentRows.length,
     paymentSafety:publicPaymentSafety,
-    explanation: isMoney
+    reasonSafety:reasonSafety ? {affectsFutureSelectionsOnly:true,historicalRecordsPreserved:true} : null,
+    explanation: reasonSafety
+      ? reasonSafety.explanation
+      : isMoney
       ? paymentSafety?.canApply
         ? 'Способ оплаты будет заменён только в заказах этого месяца и связанных безналичных операциях. Суммы и даты останутся прежними, исходные названия будут сохранены в истории объединения.'
         : paymentSafety?.blockers[0] || 'Способ оплаты требует дополнительной проверки денежных операций.'
