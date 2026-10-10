@@ -1,6 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
+import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
@@ -414,8 +415,13 @@ export async function insertOrderContent(
   }
 
   for (const [itemIndex, item] of items.entries()) {
-    const resolved = preResolvedCatalog?.[itemIndex]
+    const initiallyResolved = preResolvedCatalog?.[itemIndex]
       || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
+    // An order may be validated minutes before the source SKU is consolidated.
+    // Resolve only the audited exact-SKU lineage here, immediately before the
+    // order-item INSERT. Never resurrect the retired variant or guess another SKU.
+    const resolved = item.isWorkshop ? initiallyResolved
+      : await resolveConsolidatedOrderWriteVariant(db, initiallyResolved.productId, initiallyResolved.variantId);
     const commonOrderItemValues = [
       orderId,
       resolved.productId,
