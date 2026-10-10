@@ -67,6 +67,7 @@ sqlite.exec(fs.readFileSync('migrations/0090_v72_catalog_variant_consolidations.
 sqlite.exec(fs.readFileSync('migrations/0091_v72_catalog_variant_stock_consolidation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0092_v72_catalog_variant_reservation_consolidation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0096_v72_catalog_atomic_stock_finalization.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0099_v72_catalog_merge_generation_events.sql','utf8'))
 
 let beforeUpdate = () => {}
 let beforeValidation = () => {}
@@ -178,6 +179,44 @@ assert.equal(history.items.length,1)
 assert.equal(history.items[0].sourceId,7)
 assert.equal(history.items[0].targetId,8)
 assert.equal(history.items[0].createdBy,'admin-test')
+
+// R5: an original receipt must never masquerade as a successful re-merge
+// after a guarded undo; idempotency follows the LATEST effective generation.
+const rootOne=Number(sqlite.prepare('SELECT id FROM catalog_variant_consolidations WHERE source_variant_id=7').get().id)
+const reasonForGeneration='Администратор проверил историю восстановленного SKU'
+const eventInsert=sqlite.prepare(`INSERT INTO catalog_variant_merge_generation_events
+ (root_consolidation_id,source_variant_id,target_variant_id,generation,event_kind,reason,created_by,created_at)
+ VALUES(?,?,?,?,?,?,?,?)`)
+eventInsert.run(rootOne,7,8,2,'undo',reasonForGeneration,'admin','2026-10-10T10:00:00Z')
+sqlite.exec("UPDATE catalog_variants SET is_active=1,updated_at='after-undo' WHERE id=7")
+const restoredPreview=await previewCatalogVariantConsolidation(db,7,8)
+assert.equal(restoredPreview.requiresGenerationAwareReMerge,true)
+assert.equal(restoredPreview.canConsolidate,false)
+assert.ok(restoredPreview.blockers.some(x=>x.includes('защищённой операции')))
+await assert.rejects(
+ () => consolidateUnusedCatalogVariant(db,7,8,'admin',restoredPreview.stateToken),
+ /был восстановлен|повторное объединение/,
+ 'An active restored SKU must not return alreadyConsolidated'
+)
+assert.equal(active(7),1)
+assert.equal(activity(),1,'Undo cannot overwrite the immutable root merge receipt')
+// Simulate a future separately validated generation-3 writer in the isolated
+// fixture. The ordinary endpoint must recognize only the EFFECTIVE keeper.
+sqlite.exec(`INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,size_label,material,length,is_active,updated_at)
+ SELECT 700,product_id,stock_position_id,category,gender,color,size_label,material,length,1,'before'
+ FROM catalog_variants WHERE id=8`)
+sqlite.exec("UPDATE catalog_variants SET is_active=0 WHERE id=7")
+eventInsert.run(rootOne,7,700,3,'merge',reasonForGeneration,'admin','2026-10-10T10:01:00Z')
+await assert.rejects(
+ () => consolidateUnusedCatalogVariant(db,7,8,'admin'),
+ /другим основным SKU|История объединений/,
+ 'Old root keeper is not an idempotent success after a new generation'
+)
+assert.equal((await consolidateUnusedCatalogVariant(db,7,700,'admin')).alreadyConsolidated,true)
+assert.equal(Number(sqlite.prepare('SELECT target_variant_id FROM catalog_variant_consolidations WHERE id=?').get(rootOne).target_variant_id),8)
+assert.deepEqual(sqlite.prepare('SELECT * FROM order_items ORDER BY id').all(),beforeOrder,
+ 'Shipped order history must not change during lifecycle detection')
+
 assert.equal(query('SELECT target_variant_id FROM catalog_variant_consolidations').target_variant_id,8)
 const replay=await consolidateUnusedCatalogVariant(db,7,8,'admin-test')
 assert.equal(replay.alreadyConsolidated,true)
