@@ -3,7 +3,6 @@
 import { setAppSetting } from '../core/settings.ts'
 import { chunksOf, mapSqlRows } from '../core/sql.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeCatalogCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
-import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import type { InventoryItemInput, InventoryMovementKind, SourceType } from '../core/types.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { assertCatalogGenderAllowedForScope, catalogColorIdentity, isCatalogIdentityV3Enabled, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductIdentityKey } from './catalog.ts'
@@ -737,44 +736,6 @@ export async function applyInventoryMovement(
             productActive: toInt(row.product_active, 0) === 1,
             retirementId: Math.max(0, toInt(row.retirement_id, 0)),
           });
-        }
-        // An Arrival form may remain open while an admin consolidates a SKU.
-        // A genuine audited merge is a physical identity redirect, not a
-        // retired-product restoration. Remap that selected SKU to the active
-        // keeper rather than offering to create another physical variant.
-        const merged = await db.prepare(
-          `SELECT c.source_variant_id FROM catalog_variant_consolidations c
-           WHERE c.source_variant_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
-        ).bind(JSON.stringify(missingVariantIds)).all<{source_variant_id:number}>()
-        for (const receipt of merged.results || []) {
-          const oldId = toInt(receipt.source_variant_id,0)
-          const stale = staleArrivalById.get(oldId)
-          if (!stale?.productActive || !stale.productId) continue
-          const canonical = await resolveConsolidatedOrderWriteVariant(db,stale.productId,oldId)
-          if (!canonical.redirected || !canonical.variantId) continue
-          const keeper = await db.prepare(
-            `SELECT v.id AS variant_id,v.product_id,p.name AS product_name,
-                    COALESCE(v.category,p.category,'adult') AS category,
-                    v.gender,v.color,v.material,v.length,v.size_label
-             FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
-             WHERE v.id=? AND v.is_active=1 AND p.is_active=1 LIMIT 1`
-          ).bind(canonical.variantId).first<Record<string,unknown>>()
-          if (!keeper || toInt(keeper.product_id,0)!==stale.productId) {
-            throw new Error('Основной вариант объединения больше недоступен. Обновите форму Прихода.')
-          }
-          canonicalById.set(oldId,{
-            productId:stale.productId,
-            variantId:toInt(keeper.variant_id,0),
-            productName:upperText(keeper.product_name),
-            category:normalizeCatalogCategory(keeper.category) as 'adult'|'child',
-            gender:upperText(keeper.gender)||null,
-            color:upperText(keeper.color)||null,
-            material:canonicalStockPositionValue(keeper.material),
-            length:canonicalStockPositionValue(keeper.length),
-            size:cleanText(keeper.size_label)||null,
-            quantity:0,
-            expectedQuantity:null,
-          })
         }
       }
     }
