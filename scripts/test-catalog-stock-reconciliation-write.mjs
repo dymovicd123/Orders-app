@@ -136,8 +136,8 @@ assert.equal(count('catalog_stock_reconciliation_journal'),1)
 assert.equal(count('catalog_stock_reconciliation_validations'),1)
 assert.equal(count('inventory_movements'),2)
 assert.equal(count('inventory_stock_checks'),2)
-assert.equal(q('SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_type="catalog_stock_reconciliation"').n,2)
-assert.equal(q('SELECT COUNT(*) AS n FROM inventory_stock_checks WHERE check_type="catalog_merge_correction"').n,2)
+assert.equal(q(`SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_type='catalog_stock_reconciliation'`).n,2)
+assert.equal(q(`SELECT COUNT(*) AS n FROM inventory_stock_checks WHERE check_type='catalog_merge_correction'`).n,2)
 assert.equal(q('SELECT COUNT(*) AS n FROM order_items WHERE variant_id=7').n,1,
  'Shipped order must preserve its historical source SKU')
 assert.equal(q('SELECT is_active FROM catalog_variants WHERE id=7').is_active,1,
