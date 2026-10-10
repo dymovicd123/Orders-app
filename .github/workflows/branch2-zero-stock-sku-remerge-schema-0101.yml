@@ -35,7 +35,7 @@ jobs:
           [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 42
           [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 43
           [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 44
-          [[ "$(git hash-object migrations/0101_v72_catalog_zero_stock_remerge_validation.sql)" == "2957d4f9570ca728b38f4614ba09631c4daa1a0c" ]] || exit 45
+          [[ "$(git hash-object migrations/0101_v72_catalog_zero_stock_remerge_validation.sql)" == "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3" ]] || exit 45
           if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0101_v72_catalog_zero_stock_remerge_validation.sql; then
             echo 'Schema must be additive-only' >&2; exit 46
           fi
