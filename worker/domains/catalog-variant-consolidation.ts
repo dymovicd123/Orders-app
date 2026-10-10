@@ -90,6 +90,26 @@ function stockSnapshotJson(stocks: StockRow[]) {
   return JSON.stringify(stocks.map(x=>[x.id,x.inventory_source,x.variant_id,x.quantity,x.reserved_quantity]))
 }
 
+type HistoricalLineage = {
+  original_target: number; latest_target: number | null;
+  latest_kind: 'merge' | 'undo' | null; source_active: number;
+}
+async function readHistoricalLineage(db: D1Database, sourceId: number) {
+  return db.prepare(`
+    SELECT c.target_variant_id AS original_target,
+      e.target_variant_id AS latest_target, e.event_kind AS latest_kind,
+      s.is_active AS source_active
+    FROM catalog_variant_consolidations c
+    JOIN catalog_variants s ON s.id=c.source_variant_id
+    LEFT JOIN catalog_variant_merge_generation_events e ON e.id=(
+      SELECT last.id FROM catalog_variant_merge_generation_events last
+      WHERE last.source_variant_id=c.source_variant_id
+      ORDER BY last.generation DESC LIMIT 1
+    )
+    WHERE c.source_variant_id=? LIMIT 1
+  `).bind(sourceId).first<HistoricalLineage>()
+}
+
 async function readSku(db: D1Database, id: number) {
   return await db.prepare(
     `SELECT v.id, v.product_id, v.stock_position_id, v.category, v.gender, v.color,
@@ -168,6 +188,7 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
   if (!target.is_active || !source.product_active || !source.position_active) {
     throw new Error('Основной вариант, товар и исполнение должны оставаться активными.')
   }
+  const previousMerge=await readHistoricalLineage(db,sourceId)
   const [sourceImpact, targetImpact, stocks, reservations] = await Promise.all([
     readImpact(db, sourceId), readImpact(db, targetId), readStocks(db, sourceId, targetId),
     readActiveReservations(db, sourceId, targetId),
@@ -197,6 +218,11 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
     blockers.push('Есть незавершённые заказы других месяцев. Их SKU нельзя менять задним числом.')
   }
   if (!source.is_active) blockers.push('Лишний вариант уже неактивен.')
+  if (previousMerge) {
+    blockers.push(previousMerge.latest_kind==='undo' && source.is_active===1
+      ? 'Этот вариант уже объединяли и затем восстановили. Повторное объединение требует отдельной защищённой операции; обычная кнопка пока недоступна.'
+      : 'У этого варианта уже есть история объединений. Повторная запись первоначального объединения запрещена.')
+  }
   if (stocks.some(s => !['warehouse','boutique'].includes(s.inventory_source))) blockers.push('Обнаружено неизвестное место хранения')
   if (stocks.some(s => !Number.isSafeInteger(s.quantity) || s.quantity < 0 || !Number.isSafeInteger(s.reserved_quantity) || s.reserved_quantity < 0)) {
     blockers.push('Складские количества некорректны: требуется сверка')
@@ -242,6 +268,7 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
     productName: source.product_name, material: source.execution_material, length: source.execution_length,
     sourceImpact, targetImpact, stockBreakdown, stockReconciliation, month, reservationCount: sourceReservations.length,
     stateToken: snapshotToken(source,target,stocks,reservations,month),
+    requiresGenerationAwareReMerge: Boolean(previousMerge?.latest_kind==='undo' && source.is_active===1),
     transferQuantity: stockBreakdown.reduce((sum,r)=>sum + r.sourcePhysical,0),
     blockers,
     // The currently shipped UI cannot attest independent physical inventory.
@@ -264,12 +291,17 @@ export async function consolidateUnusedCatalogVariant(
     location:string; method:string; physicallyVerified:boolean; countedQuantity?:number; reason?:string
   }> = [],
 ) {
-  const prior = await db.prepare(
-    'SELECT target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=?'
-  ).bind(sourceId).first<{ target_variant_id: number }>()
+  const prior = await readHistoricalLineage(db,sourceId)
   if (prior) {
-    if (toInt(prior.target_variant_id,0) === targetId) return { ok:true, alreadyConsolidated:true, sourceId,targetId }
-    throw new Error('Эта вариация уже объединена с другой. Обновите список.')
+    const effectiveKeeper=prior.latest_kind==='undo' ? null
+      :prior.latest_kind==='merge' ? prior.latest_target : prior.original_target
+    if (prior.source_active===0 && effectiveKeeper===targetId) {
+      return { ok:true, alreadyConsolidated:true, sourceId,targetId }
+    }
+    if (prior.source_active===1 && prior.latest_kind==='undo') {
+      throw new Error('Этот вариант был восстановлен после объединения. Обычная операция не может повторно использовать старый журнал: требуется отдельное защищённое повторное объединение.')
+    }
+    throw new Error('История объединений изменилась: этот вариант уже связан с другим основным SKU либо находится в некорректном состоянии. Обновите список.')
   }
   const preview = await previewCatalogVariantConsolidation(db,sourceId,targetId)
   // Even a zero-stock SKU can have live order, lifecycle or identity references.
