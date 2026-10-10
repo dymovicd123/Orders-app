@@ -46,6 +46,7 @@ const tests=[
   ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs',true],
   ['scripts/test-catalog-exhaustive-sku-identity.mjs',true],
   ['scripts/test-characteristic-sku-mapping.mjs',true],
+  ['scripts/test-characteristic-sku-map-ui.mjs',false],
   ['scripts/test-catalog-stale-order-merge-bridge.mjs',true],
   ['scripts/test-arrival-merged-sku-safety.mjs',true],
   ['scripts/test-catalog-consolidation-undo-preview.mjs',true],
