@@ -5,7 +5,7 @@ import { situation } from './catalog-complex-undo-case.ts'
 import type { Reservation } from './catalog-complex-undo-case.ts'
 
 export type CaseSection='reservations'|'orders'|'movements'|'checks'
-type IdRow={id:number}
+type IdRow={id:number;has_exchange_return?:number}
 type Bind=string|number
 const MAX_PAGE=50
 const valid=(n:number,allowZero=false)=>Number.isSafeInteger(n)&&(allowZero?n>=0:n>0)
