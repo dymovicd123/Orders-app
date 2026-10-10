@@ -133,7 +133,7 @@
     "worker/domains/catalog-reserved-undo-preview.ts": "b515e8a4c7a74cc66a3262cba387d1645a78cc92",
     "worker/domains/catalog-reserved-stock-undo.ts": "42365e4120c3d6a2ad70173e60cde24f8a9a5d9b",
     "scripts/test-catalog-reserved-stock-undo.mjs": "8fc119f3405d74584f7e1bfc5c866a97016a9e4d",
-    "worker/domains/catalog-complex-undo-details.ts": "4cfaf0005e9036a3cc327e27423b0c68b3ee0960",
+    "worker/domains/catalog-complex-undo-details.ts": "039dd6f627389ec2a9d39925f2b4039161d1f8ba",
     "scripts/test-catalog-complex-undo-pages.mjs": "74dd2027aed58bfe6c19414491fcad971bb1128a",
     "worker/domains/catalog-complex-undo-workplan.ts": "895426882e5338b9bb8adeef898658376ad1941e",
     "scripts/test-catalog-complex-undo-workplan.mjs": "6cf244f915acf8bb608747a70c56ae81747d889f"
