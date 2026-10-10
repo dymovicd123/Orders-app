@@ -12,6 +12,10 @@ async function api(path){
 }
 for(const name of ['orders-app-branch2','branch2-orders-app']){
  console.log('=== SCRIPT '+name+' ===')
+ const subdomain=await api('/workers/scripts/'+encodeURIComponent(name)+'/subdomain')
+ console.log('WORKER SUBDOMAIN',subdomain?JSON.stringify(subdomain):'not accessible or unconfigured')
+ const settings=await api('/workers/scripts/'+encodeURIComponent(name)+'/settings')
+ if(settings)console.log('WORKER SETTINGS',JSON.stringify({compatibility_date:settings.compatibility_date,has_assets:!!settings.assets,bindings:(settings.bindings||[]).map(b=>({type:b.type,name:b.name}))}))
  const result=await api('/workers/scripts/'+encodeURIComponent(name)+'/deployments?per_page=8')
  if(!result){console.log('Worker may not exist or deployment read restricted.');continue}
  const deployments=Array.isArray(result)?result:result.deployments||[]
