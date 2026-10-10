@@ -47,6 +47,7 @@ jobs:
           node scripts/test-stage04a-workshop-settlements.mjs
           node scripts/test-stage04b-workshop-status-capture.mjs
           node --experimental-strip-types scripts/test-catalog-zero-stock-undo.mjs
+          node scripts/test-catalog-zero-stock-remerge-schema.mjs
       - name: Read exact stock, orders, finance, Stage04 fingerprint
         shell: bash
         run: |
