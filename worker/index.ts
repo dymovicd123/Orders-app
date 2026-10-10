@@ -33,6 +33,7 @@ import { listRecentReferenceValueMerges } from './domains/reference-merge-histor
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
+import { previewComplexCatalogUndoCase } from './domains/catalog-complex-undo-case.ts'
 import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
 import { previewCountedCatalogUndo, undoCountedCatalogConsolidation } from './domains/catalog-counted-stock-undo.ts'
 import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
@@ -257,6 +258,14 @@ export default {
         return json(await undoCountedCatalogConsolidation(
           env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,
           data.expectedToken,data.allocations
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-review' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Разбор зависимостей объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await previewComplexCatalogUndoCase(
+          env.DB,Number(url.searchParams.get('consolidationId'))
         ));
       }
 
