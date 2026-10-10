@@ -67,29 +67,63 @@ export function groupEquivalentCatalogVariants(rows: CatalogCollisionRow[]) {
     .sort((a,b) => a.productName.localeCompare(b.productName) || a.color.localeCompare(b.color) || a.size.localeCompare(b.size))
 }
 
-export async function listReferenceDuplicateGroups(db: D1Database) {
-  const result = await db.prepare(
-    'SELECT id, kind, value, is_active FROM reference_values ORDER BY kind, is_active DESC, id ASC LIMIT 1500'
-  ).all<ReferenceRow>()
-  const groups = groupEquivalentReferenceValues(result.results || [])
-  const catalog = await db.prepare(
-    `SELECT v.id, v.product_id, v.stock_position_id, v.category, v.gender,
-       v.color, v.size_label, v.material, v.length, p.name AS product_name,
-       COALESCE(SUM(s.quantity),0) AS physical, COALESCE(SUM(s.reserved_quantity),0) AS reserved
-     FROM catalog_variants v
-     JOIN catalog_products p ON p.id=v.product_id
-     LEFT JOIN inventory_stock s ON s.variant_id=v.id
-     WHERE v.is_active=1
-     GROUP BY v.id
-     ORDER BY v.product_id,v.stock_position_id,v.id
-     LIMIT 2000`
-  ).all<CatalogCollisionRow>()
-  const skuGroups = groupEquivalentCatalogVariants(catalog.results || [])
-  return {
-    ok: true, groups, skuGroups,
-    limited: (result.results || []).length >= 1500,
-    skuLimited: (catalog.results || []).length >= 2000,
+// Fetch all duplicate candidates across page boundaries instead of silently
+// treating an initial LIMIT 1500/2000 window as the whole dictionary/catalog.
+// Bounded reads protect Cloudflare D1 usage; a reached bound is surfaced as
+// INCOMPLETE, never as evidence that all duplicates have been discovered.
+const DUPLICATE_SCAN_PAGE_SIZE = 400
+const DUPLICATE_SCAN_MAX_ROWS = 12000
+async function scanDuplicateRows<T extends {id:number}>(
+ db:D1Database, query:string,
+) {
+ const all:T[]=[]
+ let cursor=0,limited=false
+ for(;;){
+  const result=await db.prepare(query).bind(cursor,DUPLICATE_SCAN_PAGE_SIZE+1).all<T>()
+  const fetched=result.results||[]
+  if(fetched.some((row,i)=>!Number.isSafeInteger(row.id)
+    ||row.id <= (i===0?cursor:fetched[i-1].id))) {
+   throw new Error('Порядок записей изменился во время проверки дублей. Повторите поиск.')
   }
+  const batch=fetched.slice(0,DUPLICATE_SCAN_PAGE_SIZE)
+  all.push(...batch)
+  const more=fetched.length>DUPLICATE_SCAN_PAGE_SIZE
+  if(!more)break
+  const next=batch[batch.length-1]?.id
+  if(!Number.isSafeInteger(next)||next<=cursor) {
+   throw new Error('Не удалось завершить поиск дублей. Повторите проверку.')
+  }
+  cursor=next
+  if(all.length>=DUPLICATE_SCAN_MAX_ROWS){
+   limited=true
+   break
+  }
+ }
+ return {rows:all,limited}
+}
+
+export async function listReferenceDuplicateGroups(db: D1Database) {
+ const refs=await scanDuplicateRows<ReferenceRow>(db,
+  'SELECT id,kind,value,is_active FROM reference_values WHERE id>? ORDER BY id ASC LIMIT ?')
+ const catalog=await scanDuplicateRows<CatalogCollisionRow>(db,
+  `SELECT v.id,v.product_id,v.stock_position_id,v.category,v.gender,
+    v.color,v.size_label,v.material,v.length,p.name AS product_name,
+    COALESCE(SUM(s.quantity),0) AS physical,COALESCE(SUM(s.reserved_quantity),0) AS reserved
+   FROM catalog_variants v
+   JOIN catalog_products p ON p.id=v.product_id
+   LEFT JOIN inventory_stock s ON s.variant_id=v.id
+   WHERE v.is_active=1 AND v.id>?
+   GROUP BY v.id ORDER BY v.id ASC LIMIT ?`)
+ return {
+  ok:true,
+  groups:groupEquivalentReferenceValues(refs.rows),
+  skuGroups:groupEquivalentCatalogVariants(catalog.rows),
+  limited:refs.limited,skuLimited:catalog.limited,
+  referenceScanned:refs.rows.length,skuScanned:catalog.rows.length,
+  scanPageSize:DUPLICATE_SCAN_PAGE_SIZE,
+  // Pages are sequential reads, not an immutable transactional snapshot.
+  crossPageSnapshot:false,
+ }
 }
 
 function supportedCatalogKind(dbKind: string) {
