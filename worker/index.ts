@@ -35,6 +35,7 @@ import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { previewComplexCatalogUndoCase } from './domains/catalog-complex-undo-case.ts'
 import { listComplexUndoEvidence } from './domains/catalog-complex-undo-details.ts'
+import { getComplexUndoWorkplan } from './domains/catalog-complex-undo-workplan.ts'
 import { previewUntouchedReservationUndo } from './domains/catalog-reserved-undo-preview.ts'
 import { undoUntouchedReservationConsolidation } from './domains/catalog-reserved-stock-undo.ts'
 import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
@@ -278,6 +279,14 @@ export default {
         const data=await readJson<{consolidationId:number;reason:string;expectedToken:string}>(request);
         return json(await undoUntouchedReservationConsolidation(
           env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-case-workplan' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'План урегулирования объединения доступен только администратору.');
+        if(denied)return denied;
+        return json(await getComplexUndoWorkplan(
+          env.DB,Number(url.searchParams.get('consolidationId'))
         ));
       }
 
