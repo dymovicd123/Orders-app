@@ -108,7 +108,6 @@ const beforeStockValid=`
         OR (st.variant_id=k.id AND st.id=l.target_stock_id_before)
       )))
 `
-type Result=Awaited<ReturnType<typeof previewCatalogConsolidationUndo>>
 export async function previewPositiveStockConsolidationUndo(db:D1Database,consolidationId:number){
   const original=await previewCatalogConsolidationUndo(db,consolidationId)
   const [stocks,events]=await Promise.all([
