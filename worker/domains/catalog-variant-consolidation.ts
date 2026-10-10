@@ -241,8 +241,14 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
     sourceImpact, targetImpact, stockBreakdown, stockReconciliation, month, reservationCount: sourceReservations.length,
     stateToken: snapshotToken(source,target,stocks,reservations,month),
     transferQuantity: stockBreakdown.reduce((sum,r)=>sum + r.sourcePhysical,0),
-    blockers, canConsolidate: blockers.length === 0,
-    explanation: blockers.length
+    blockers,
+    // The currently shipped UI cannot attest independent physical inventory.
+    // Do not offer a one-click additive merge for positive source stock.
+    canConsolidate: blockers.length === 0 && !stockReconciliation.requiresHumanStockDecision,
+    canConsolidateAfterVerifiedSum: blockers.length === 0,
+    explanation: stockReconciliation.requiresHumanStockDecision
+      ? 'Есть физические остатки. Их нельзя автоматически складывать: требуется отдельное подтверждённое решение для каждого места хранения.'
+      : blockers.length
       ? 'Система не будет менять заказы, резервы и историю. Проверьте указанные связи; не списывайте товар ради очистки.'
       : 'Остатки и действующие резервы будут объединены по месту хранения. Открытые позиции заказов перейдут на основной SKU; названия, цены и другие снимки истории останутся прежними. Фиктивного списания нет.',
   }
@@ -252,6 +258,7 @@ export async function previewCatalogVariantConsolidation(db: D1Database, sourceI
 // a failing CHECK(passed=1) validation INSERT rolls back the entire batch.
 export async function consolidateUnusedCatalogVariant(
   db: D1Database, sourceId: number, targetId: number, actor = '', expectedToken = '',
+  verifiedStockDecisions: Array<{location:string; method:string; physicallyVerified:boolean}> = [],
 ) {
   const prior = await db.prepare(
     'SELECT target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=?'
@@ -269,7 +276,31 @@ export async function consolidateUnusedCatalogVariant(
   if (expectedToken !== preview.stateToken) {
     throw new Error('Данные склада или заказов изменились после проверки. Обновите предпросмотр объединения.')
   }
-  if (!preview.canConsolidate) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
+  if (preview.blockers.length) throw new Error('Объединение пока невозможно: '+preview.blockers.join('; '))
+  // No implicit physical sum, even if the caller bypasses the current UI.
+  // Independently confirm only the locations with actual source quantity.
+  // Other methods need a separate auditable stock adjustment and remain blocked.
+  const requiredLocations=preview.stockReconciliation.locations
+    .filter(location=>location.requiresDecision).map(location=>location.location)
+  if (requiredLocations.length) {
+    const approved=new Set<string>()
+    if (!Array.isArray(verifiedStockDecisions)) {
+      throw new Error('Для объединения остатков нужно отдельно подтвердить каждое место хранения.')
+    }
+    for (const decision of verifiedStockDecisions) {
+      if (!decision || !requiredLocations.includes(decision.location)
+        || approved.has(decision.location) || decision.method!=='sum'
+        || decision.physicallyVerified !== true) {
+        throw new Error('Недопустимое решение по остаткам. Для каждой точки требуется отдельная проверка.')
+      }
+      approved.add(decision.location)
+    }
+    if (approved.size!==requiredLocations.length) {
+      throw new Error('Нельзя автоматически складывать остатки. Подтвердите их физическую независимость отдельно для склада и бутика.')
+    }
+  } else if (verifiedStockDecisions.length) {
+    throw new Error('Подтверждение остатков устарело. Обновите предпросмотр.')
+  }
 
   const [source,target,stocks,reservations] = await Promise.all([readSku(db,sourceId),readSku(db,targetId),readStocks(db,sourceId,targetId),readActiveReservations(db,sourceId,targetId)])
   if (!source || !target || !sameBusinessIdentity(source,target) || snapshotToken(source,target,stocks,reservations,businessMonthRange())!==preview.stateToken) {
