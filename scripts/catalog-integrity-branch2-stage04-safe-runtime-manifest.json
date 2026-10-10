@@ -130,8 +130,8 @@
     "scripts/test-catalog-complex-undo-case.mjs": "ba22437722421d9810333f262d12a1059878f8a0",
     "migrations/0104_v72_catalog_reserved_undo_validation.sql": "5a03ea7ab8bc51afe90b18de502e2053b427c90d",
     "scripts/test-catalog-reserved-undo-proof-schema.mjs": "047105f9d189e9f0685ca42e98289921c0ddab15",
-    "worker/domains/catalog-reserved-undo-preview.ts": "c3a4c580e15a3330839165b04d2e42b1f86ea5d9",
-    "worker/domains/catalog-reserved-stock-undo.ts": "f2f09c955fc2a70ab50030b644f3ec034914c315",
-    "scripts/test-catalog-reserved-stock-undo.mjs": "f18bf97fa1be4d767a5535ba0e3dfed8914c531e"
+    "worker/domains/catalog-reserved-undo-preview.ts": "b515e8a4c7a74cc66a3262cba387d1645a78cc92",
+    "worker/domains/catalog-reserved-stock-undo.ts": "42365e4120c3d6a2ad70173e60cde24f8a9a5d9b",
+    "scripts/test-catalog-reserved-stock-undo.mjs": "8fc119f3405d74584f7e1bfc5c866a97016a9e4d"
   }
 }
