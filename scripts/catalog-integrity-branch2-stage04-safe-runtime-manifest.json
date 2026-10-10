@@ -88,7 +88,7 @@
     "worker/domains/catalog-stock-reconciliation.ts": "2d6e82270c805740b8b2ffd66a1503b0427db4b8",
     "scripts/test-catalog-stock-reconciliation.mjs": "9bf7834627ea9b1104069dbb8240f7a59ad7c9db",
     "worker/domains/catalog-stock-reconciliation-write.ts": "b3af017fb3f469f2bb885e2444317ed0d6262bfe",
-    "scripts/test-catalog-stock-reconciliation-write.mjs": "4b880ee2c280fbb89ccf4fe938443c34c71f13f6",
+    "scripts/test-catalog-stock-reconciliation-write.mjs": "5acdf296d8e00cfeabf58e1b147b45a8557e9a3c",
     "migrations/0095_v72_catalog_stock_reconciliation_journal.sql": "0a35ae87effae25fd1e5d0d5befafd9aff0270f1"
   }
 }
