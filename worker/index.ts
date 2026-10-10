@@ -32,6 +32,7 @@ import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
 import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
+import { applyCatalogStockReconciliation, recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
@@ -236,6 +237,24 @@ export default {
         const denied = requireAdminUser(authUser, 'История объединений доступна только администратору.');
         if (denied) return denied;
         return json(await listRecentCatalogVariantConsolidations(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/reconcile-stock/history' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'История корректировок каталога доступна только администратору.');
+        if (denied) return denied;
+        return json(await recentCatalogStockReconciliations(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/reconcile-stock' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Корректировка остатков при объединении доступна только администратору.');
+        if (denied) return denied;
+        const data = await readJson<{
+          sourceId:number; keeperId:number; location:'warehouse'|'boutique';
+          method:'keep_source'|'keep_keeper'|'physical_count';
+          countedQuantity?:number; reason:string; requestId:string;
+          expectedToken:string; physicallyVerified:boolean;
+        }>(request);
+        return json(await applyCatalogStockReconciliation(env.DB,data,authUser?.login || ''));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-preview' && request.method === 'GET') {
