@@ -121,6 +121,8 @@
     "worker/domains/catalog-positive-stock-undo.ts": "1e2042f13dd62472266733024afc230410cb46b8",
     "scripts/test-catalog-positive-stock-undo.mjs": "73ee8e895601be2dd39b04d2fce0bf4ca620c6fa",
     "worker/domains/catalog-corrected-undo-review.ts": "8d9779a39fad11a86e607cd7e0ad764e8527981b",
-    "scripts/test-catalog-corrected-undo-review.mjs": "e6e146a844307ac2c82040ed750e463b50f143d2"
+    "scripts/test-catalog-corrected-undo-review.mjs": "e6e146a844307ac2c82040ed750e463b50f143d2",
+    "migrations/0103_v72_catalog_counted_undo_validation.sql": "ce925e9d87473a5490f4bbb5e9652d5c10d194e3",
+    "scripts/test-catalog-counted-undo-proof-schema.mjs": "6b5a3dbbd3257a8dbe4984a5a3de518fc5d3729a"
   }
 }
