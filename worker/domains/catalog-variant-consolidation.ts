@@ -288,7 +288,7 @@ export async function consolidateUnusedCatalogVariant(
     throw new Error('Укажите решение отдельно для каждого места хранения.')
   }
   const positive=preview.stockReconciliation.locations.filter(place=>place.requiresDecision)
-  const requiredLocations=new Set(positive.map(place=>place.location))
+  const requiredLocations=new Set<string>(positive.map(place=>place.location))
   const chosen=new Map<string,LocalChoice>()
   for(const decision of verifiedStockDecisions){
     if(!decision || !requiredLocations.has(decision.location) || chosen.has(decision.location)
