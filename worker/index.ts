@@ -270,7 +270,9 @@ export default {
         if (denied) return denied;
         const data = await readJson<{
           sourceId?: number; targetId?: number; expectedToken?: string;
-          verifiedStockDecisions?: Array<{location:string;method:string;physicallyVerified:boolean}>;
+          verifiedStockDecisions?: Array<{
+            location:string;method:string;physicallyVerified:boolean;countedQuantity?:number;reason?:string
+          }>;
         }>(request);
         return json(await consolidateUnusedCatalogVariant(
           env.DB, Number(data.sourceId), Number(data.targetId), authUser?.login || '', cleanText(data.expectedToken),
