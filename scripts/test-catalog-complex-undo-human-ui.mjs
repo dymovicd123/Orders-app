@@ -18,7 +18,7 @@ assert.match(ui,/\/api\/catalog\/variants\/consolidation-undo-case-details/)
 for(const type of ['reservations','orders','movements','checks'])assert.ok(ui.includes("id:'"+type+"'"),type)
 for(const word of ['Перейти к заказам','Перейти к складу','Показать ещё 20',
   'Обновить данные','Нужного объединения нет','Автоматически отменять нельзя',
-  'Текущие остатки','Резерве','Ревизии']){
+  'Текущие остатки','В резерве','Ревизии']){
  assert.ok(ui.includes(word),'Missing human-friendly language: '+word)
 }
 assert.match(ui,/href="#orders"/)
