@@ -1,0 +1,15 @@
+name: Branch2 public-address read-only diagnostic
+on:
+  push:
+    branches:
+      - ci-public-address-audit-*
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare public Workers HTML and bundled References UI
+        run: node scripts/public-worker-address-audit.mjs
