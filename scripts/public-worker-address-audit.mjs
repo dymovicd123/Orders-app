@@ -17,14 +17,14 @@ for (const base of hosts) {
   console.log('=== ORIGIN '+base+' ===');
   try {
     const index = await read(base+'/?branch2-url-audit='+Date.now());
-    const file = index.text.match(/src=["'](\\/assets\\/index-[^"']+\\.js)["']/);
+    const file = index.text.match(/src=["'](\/assets\/index-[^"']+\.js)["']/);
     console.log(JSON.stringify({htmlStatus:index.status,canonicalUrl:index.url,
       htmlBytes:index.text.length,indexAsset:file?.[1]||null,cacheControl:index.cacheControl,
       cfCache:index.cfCache,server:index.server,contentType:index.contentType,
       title:(index.text.match(/<title>([^<]+)/)||[])[1]||null}));
     if (!file) continue;
     const js = await read(base+file[1]);
-    const chunk = js.text.match(/ReferencesSection-[A-Za-z0-9_-]+\\.js/);
+    const chunk = js.text.match(/ReferencesSection-[A-Za-z0-9_-]+\.js/);
     console.log(JSON.stringify({entryStatus:js.status,entryBytes:js.text.length,
       referencesChunk:chunk?.[0]||null}));
     if(!chunk)continue;
