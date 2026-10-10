@@ -34,6 +34,7 @@ import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
+import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
 import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
@@ -249,6 +250,24 @@ export default {
         const denied=requireAdminUser(authUser,'Проверка отмены объединения доступна только администратору.');
         if(denied)return denied;
         return json(await previewCatalogConsolidationUndo(env.DB,Number(url.searchParams.get('consolidationId'))));
+      }
+
+      if (url.pathname === '/api/catalog/variants/remerge-zero-stock-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Повторное объединение доступно только администратору.');
+        if(denied)return denied;
+        return json(await previewZeroStockReMerge(
+          env.DB,Number(url.searchParams.get('sourceId')),Number(url.searchParams.get('keeperId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/remerge-zero-stock' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Повторное объединение доступно только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{sourceId:number;keeperId:number;expectedToken:string;reason:string}>(request);
+        return json(await reMergeZeroStockCatalogVariant(
+          env.DB,Number(data.sourceId),Number(data.keeperId),
+          authUser?.login||'',data.reason,data.expectedToken
+        ));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-history' && request.method === 'GET') {
