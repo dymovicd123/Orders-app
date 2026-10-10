@@ -27,6 +27,7 @@ import { createOrder, getOrder, updateOrderCritical } from './domains/orders-wri
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
 import { hideUnusedEquivalentReference, listReferenceDuplicateGroups, previewReferenceConsolidation } from './domains/reference-integrity.ts'
 import { previewUserSelectedReferenceMerge } from './domains/reference-merge-preview.ts'
+import { previewCharacteristicSkuMapping } from './domains/reference-characteristic-sku-mapping.ts'
 import { applyMonthBoundReferenceMerge } from './domains/reference-merge-apply.ts'
 import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
 import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
@@ -227,6 +228,17 @@ export default {
         }
         return json(await applyMonthBoundReferenceMerge(
           env.DB,sourceId,targetId,cleanText(data.expectedToken),authUser?.login||'',
+        ));
+      }
+
+      if (url.pathname === '/api/reference-values/characteristic-sku-plan' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Сопоставление характеристик доступно только администратору.');
+        if(denied)return denied;
+        const after=url.searchParams.get('afterVariantId');
+        const limit=url.searchParams.get('limit');
+        return json(await previewCharacteristicSkuMapping(
+          env.DB,Number(url.searchParams.get('sourceId')),Number(url.searchParams.get('targetId')),
+          after===null?0:Number(after),limit===null?20:Number(limit)
         ));
       }
 
