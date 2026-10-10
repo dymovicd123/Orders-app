@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+const read=p=>fs.readFileSync(p,'utf8')
+const section=read('src/features/sections/ReferencesSection.tsx')
+const ui=read('src/features/sections/CatalogUndoCases.tsx')
+const css=read('src/styles/reference-undo-cases.css')
+const api=read('worker/index.ts')
+assert.match(section,/import \{ CatalogUndoCases \} from '\.\/CatalogUndoCases'/)
+assert.match(section,/maintenanceView === 'cases'/)
+assert.match(section,/\{isAdmin \? <details[\s\S]*reference-undo-cases-actions/)
+assert.match(section,/\{maintenanceView === 'cases' \? <CatalogUndoCases/)
+assert.match(section,/onClick=\{\(\) => showMaintenance\('cases'\)\}/)
+assert.match(ui,/!isAdmin\)return <p/)
+assert.match(ui,/\/api\/catalog\/variants\/consolidation-history/)
+assert.match(ui,/\/api\/catalog\/variants\/consolidation-undo-case-review/)
+assert.match(ui,/\/api\/catalog\/variants\/consolidation-undo-case-workplan/)
+assert.match(ui,/\/api\/catalog\/variants\/consolidation-undo-case-details/)
+for(const type of ['reservations','orders','movements','checks'])assert.ok(ui.includes("id:'"+type+"'"),type)
+for(const word of ['Перейти к заказам','Перейти к складу','Показать ещё 20',
+  'Обновить данные','Нужного объединения нет','Автоматически отменять нельзя',
+  'Текущие остатки','В резерве','Ревизии']){
+ assert.ok(ui.includes(word),'Missing human-friendly language: '+word)
+}
+assert.match(ui,/href="#orders"/)
+assert.match(ui,/href="#inventory"/)
+assert.match(ui,/Number\.isSafeInteger\(selectedId\)/)
+assert.match(ui,/latestLoad\.current\+\+/)
+assert.match(ui,/latestDetails\.current\+\+/)
+assert.match(ui,/data\.ok!==true/)
+assert.match(ui,/result\.consolidationId!==sourceCase/)
+assert.match(ui,/filter\(row=>!prev\.rows\.some/)
+assert.match(ui,/no-store/)
+assert.match(ui,/X-Orders-App-Stale/)
+assert.match(ui,/Нельзя сверять объединение по сохранённой копии данных/)
+assert.match(ui,/caseHasUninspectedRows/)
+assert.match(css,/@media\(max-width:620px\)/)
+assert.match(css,/grid-template-columns:minmax\(0,1fr\)/)
+assert.match(api,/consolidation-undo-case-workplan.*request\.method === 'GET'/)
+assert.match(api,/consolidation-undo-case-details.*request\.method === 'GET'/)
+assert.match(api,/consolidation-undo-case-review.*request\.method === 'GET'/)
+assert.ok(!ui.includes("method:'POST'")&&!ui.includes('method:"POST"')&&!ui.includes("window.confirm("),
+ 'Investigation view must not trigger any write/undo')
+assert.ok(!ui.includes('/consolidation-undo-reserved')&&!ui.includes('/consolidation-undo-counted'),
+ 'Investigation view must not expose guarded undo writers')
+const styles=read('src/styles/reference-integrity-entry.css')
+assert.ok(styles.includes('reference-integrity-entry'), 'New admin tool retains established accordion styling')
+console.log('CATALOG COMPLEX UNDO HUMAN UI PASSED — admin-only lazy entry, human stock/order guidance, all four paged sections, stale request protection, native navigation, mobile and read-only writes boundary')

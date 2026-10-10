@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ReferenceIntegrityPanel } from './ReferenceIntegrityPanel'
 import { ReferenceMergeWorkspace } from './ReferenceMergeWorkspace'
+import { CatalogUndoCases } from './CatalogUndoCases'
 import '../../styles/reference-integrity-entry.css'
 type SectionContext = Record<string, any>
 
@@ -34,10 +35,10 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   // Keep the daily reference list first; maintenance tools load only on request.
-  const [maintenanceView, setMaintenanceView] = useState<'duplicates' | 'merge' | null>(null)
-  const showMaintenance = (view: 'duplicates' | 'merge') => {
+  const [maintenanceView, setMaintenanceView] = useState<'duplicates' | 'merge' | 'cases' | null>(null)
+  const showMaintenance = (view: 'duplicates' | 'merge' | 'cases') => {
     setMaintenanceView(view)
-    const id = view === 'merge' ? 'reference-merge-actions' : 'reference-duplicates-actions'
+    const id = view === 'merge' ? 'reference-merge-actions' : view === 'cases' ? 'reference-undo-cases-actions' : 'reference-duplicates-actions'
     const entry = document.getElementById(id)
     entry?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     entry?.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
@@ -106,6 +107,9 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" onClick={() => showMaintenance('merge')}>
                     Объединить значения
                   </button>
+                  {isAdmin ? <button className="secondary compact" type="button" onClick={() => showMaintenance('cases')}>
+                    Разобрать прежнее объединение
+                  </button> : null}
                 </div>
               </div>
 
@@ -366,6 +370,21 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                       }} />
                   ) : null}
                 </details>
+                {isAdmin ? <details
+                  className="reference-integrity-entry reference-undo-entry"
+                  id="reference-undo-cases-actions"
+                  open={maintenanceView === 'cases'}
+                >
+                  <summary className="reference-integrity-entry-summary"
+                    onClick={(event) => { event.preventDefault(); setMaintenanceView(current => current === 'cases' ? null : 'cases') }}>
+                    <span className="reference-integrity-entry-copy">
+                      <strong>Разобрать прежнее объединение товаров</strong>
+                      <small>Проверить связанные заказы, резервы и движения склада. Получить план исправления без опасного автоматического отката.</small>
+                    </span>
+                    <span className="reference-integrity-entry-open">{maintenanceView === 'cases' ? 'Свернуть' : 'Открыть разбор'}</span>
+                  </summary>
+                  {maintenanceView === 'cases' ? <CatalogUndoCases apiFetch={apiFetch} isAdmin={isAdmin} /> : null}
+                </details> : null}
               </section>
             </section>
   )

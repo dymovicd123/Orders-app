@@ -29,7 +29,7 @@
     },
     "src/features/sections/ReferencesSection.tsx": {
       "beforeGitBlob": "f23c6133fa66a22d9986141b6b4cbd43678480b6",
-      "afterGitBlob": "ef98605f4d2cf5641fd36efe33c60f7fce508015",
+      "afterGitBlob": "9622ad507d2b8802be56bb1877a05cd38e1e9f16",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/sections/ReferencesSection.tsx"
     },
     "worker/index.ts": {
@@ -136,6 +136,9 @@
     "worker/domains/catalog-complex-undo-details.ts": "039dd6f627389ec2a9d39925f2b4039161d1f8ba",
     "scripts/test-catalog-complex-undo-pages.mjs": "74dd2027aed58bfe6c19414491fcad971bb1128a",
     "worker/domains/catalog-complex-undo-workplan.ts": "895426882e5338b9bb8adeef898658376ad1941e",
-    "scripts/test-catalog-complex-undo-workplan.mjs": "6cf244f915acf8bb608747a70c56ae81747d889f"
+    "scripts/test-catalog-complex-undo-workplan.mjs": "6cf244f915acf8bb608747a70c56ae81747d889f",
+    "src/features/sections/CatalogUndoCases.tsx": "ab1ecc9ae1deef1332be7f31b9dd819f70893d38",
+    "src/styles/reference-undo-cases.css": "0dd6eb479f452be3e10db012afcb215aebac39fd",
+    "scripts/test-catalog-complex-undo-human-ui.mjs": "50922483f6bc06c8c04c483cb80e205936dcd4ba"
   }
 }
