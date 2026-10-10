@@ -13,3 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compare public Workers HTML and bundled References UI
         run: node scripts/public-worker-address-audit.mjs
+      - name: Read latest Cloudflare deployments for both Worker names
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/public-worker-deployment-audit.mjs
