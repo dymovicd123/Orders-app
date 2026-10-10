@@ -280,7 +280,7 @@ export async function consolidateUnusedCatalogVariant(
   // No implicit physical sum, even if the caller bypasses the current UI.
   // Independently confirm only the locations with actual source quantity.
   // Other methods need a separate auditable stock adjustment and remain blocked.
-  const requiredLocations=preview.stockReconciliation.locations
+  const requiredLocations: string[]=preview.stockReconciliation.locations
     .filter(location=>location.requiresDecision).map(location=>location.location)
   if (requiredLocations.length) {
     const approved=new Set<string>()
