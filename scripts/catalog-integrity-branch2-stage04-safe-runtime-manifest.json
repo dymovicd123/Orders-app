@@ -56,6 +56,11 @@
       "beforeGitBlob": "6f470e1023d5479671bf279a802cbc60c616cb6f",
       "afterGitBlob": "25c787d32f5789ad39a128e554890acc0a9bca4e",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/orders-write.ts"
+    },
+    "worker/domains/inventory-movement.ts": {
+      "beforeGitBlob": "a5e6ffd5d1039d54dee2b35026ef37a9363408fa",
+      "afterGitBlob": "78ed3642479e9b961c01f063fb6900a041b9f0b5",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/inventory-movement.ts"
     }
   },
   "stage04Files": {
@@ -98,6 +103,8 @@
     "migrations/0096_v72_catalog_atomic_stock_finalization.sql": "0f6cde970b9cb535d28e762e4002a87820625a2e",
     "worker/domains/catalog-merged-identity.ts": "2692f480944421230c0f430ef76ddc3ed77ce4d5",
     "migrations/0097_v72_consolidated_sku_active_order_guard.sql": "7e443eceb367cb1c7aa6ab795c22f3e2d19e0e1d",
-    "scripts/test-catalog-stale-order-merge-bridge.mjs": "d79278d21a44b0fe2e4d4d07925c8db692b8a7f6"
+    "scripts/test-catalog-stale-order-merge-bridge.mjs": "d79278d21a44b0fe2e4d4d07925c8db692b8a7f6",
+    "migrations/0098_v72_consolidated_sku_stock_guard.sql": "700db59c2b37e6db43f3b9a9dc378b44b96858c6",
+    "scripts/test-arrival-merged-sku-safety.mjs": "5fe210622f8157899fbd46691260733424f1b05a"
   }
 }
