@@ -44,6 +44,7 @@ const tests=[
   ['scripts/test-catalog-integrity-r2-preview.mjs',true],
   ['scripts/test-catalog-integrity-r2-hide.mjs',true],
   ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs',true],
+  ['scripts/test-catalog-stale-order-merge-bridge.mjs',true],
   ['scripts/test-inventory-writeoff-review.mjs',true],
   ['scripts/test-reference-duplicates-discovery-r1.mjs',false],
   ['scripts/test-reference-merge-choice-preview.mjs',true],
