@@ -39,6 +39,7 @@ const tests=[
   ['scripts/test-stage04b-workshop-status-capture.mjs',false],
   ['scripts/test-catalog-integrity-r1-references.mjs',false],
   ['scripts/test-reference-crud-integrity.mjs',true],
+  ['scripts/test-catalog-stock-reconciliation.mjs',true],
   ['scripts/test-catalog-integrity-r2-preview.mjs',true],
   ['scripts/test-catalog-integrity-r2-hide.mjs',true],
   ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs',true],
