@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {previewCharacteristicSkuMapping} from '../worker/domains/reference-characteristic-sku-mapping.ts'
+import {publicApiError} from '../worker/core/http.ts'
 const sql=new DatabaseSync(':memory:')
 sql.exec(`
  CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER);
@@ -18,7 +19,7 @@ sql.exec(`
   (3,'material','АЛЬПАКА',1),(4,'material','ШЕРСТЬ',1),
   (5,'child_age','1',1),(6,'child_age','2',1),
   (7,'size','M',1),(8,'size','L',1),
-  (9,'color','ЧЁРНЫЙ',0);
+  (9,'color','ЧЁРНЫЙ',0),(10,'color','ХАКИ',1);
  INSERT INTO catalog_products VALUES(100,'КАФТАН',1),(200,'ПАЛЬТО',1),(300,'ДЕТСКИЙ ЖИЛЕТ',1);
  INSERT INTO catalog_stock_positions VALUES
   (11,100,'ДРАП','СТАНДАРТ',1),
@@ -40,10 +41,11 @@ put.run(4002,300,30,'child','ЖЕН','БЕЛЫЙ','СТАНДАРТ','СТАНД
 sql.exec(`
  INSERT INTO inventory_stock VALUES
   (1,1,'warehouse',3,1),(2,1,'boutique',2,0),
-  (3,9001,'warehouse',4,1),(4,2,'boutique',1,0);
- INSERT INTO inventory_reservations VALUES(1,1,'active',1),(2,1,'released',2);
- INSERT INTO orders VALUES(1,'active','not_sent'),(2,'active','sent');
- INSERT INTO order_items VALUES(1,1,1),(2,2,2);
+  (3,9001,'warehouse',4,1),(4,2,'boutique',1,0),
+  (5,9001,'boutique',0,2);
+ INSERT INTO inventory_reservations VALUES(1,1,'active',1),(2,1,'released',2),(3,9001,'active',2);
+ INSERT INTO orders VALUES(1,'active','not_sent'),(2,'active','sent'),(3,'active','not_sent');
+ INSERT INTO order_items VALUES(1,1,1),(2,2,2),(3,3,9001);
 `)
 const db={prepare(query){
  const st=sql.prepare(query)
@@ -52,9 +54,17 @@ const db={prepare(query){
 }}
 const first=sql.prepare('SELECT total_changes() AS n').get().n
 for(const args of [[0,2,0,20],[1,1,0,20],[1,9,0,20],[1,4,0,20],
- [1,2,-1,20],[1,2,0,0],[1,2,0,51],[1,2,0,1.5]]){
+ [1,2,-1,20],[1,2,0,0],[1,2,0,51],[1,2,0,1.5],
+ [1,10,0,20]]){
  await assert.rejects(()=>previewCharacteristicSkuMapping(db,...args))
 }
+await assert.rejects(()=>previewCharacteristicSkuMapping(db,1,10,0,20),error=>{
+ const response=publicApiError(error)
+ assert.equal(response.status,400)
+ assert.equal(response.code,'characteristic_mapping_indistinguishable')
+ assert.match(response.message,/одинаковое название/)
+ return true
+})
 assert.equal(sql.prepare('SELECT total_changes() AS n').get().n,first)
 let cursor=0,ids=[],firstPage=null
 for(let page=0;page<25;page++){
@@ -75,12 +85,22 @@ assert.equal(firstPage.rows[0].status,'unique_keeper')
 assert.equal(firstPage.rows[0].proposedKeeperId,9001)
 assert.equal(firstPage.rows[0].activeReservations,1)
 assert.equal(firstPage.rows[0].activeOrderLines,1)
+assert.equal(firstPage.rows[0].keeperActiveReservations,1)
+assert.equal(firstPage.rows[0].keeperActiveOrderLines,1)
 assert.deepEqual(firstPage.rows[0].places.map(x=>[x.location,x.sourcePhysical,x.keeperPhysical,x.sourceReserved,x.keeperReserved]),
- [['warehouse',3,4,1,1],['boutique',2,0,0,0]])
+ [['warehouse',3,4,1,1],['boutique',2,0,0,2]])
+assert.deepEqual(firstPage.rows[0].places.map(p=>[p.location,p.sourceShortage,p.keeperShortage]),
+ [['warehouse',0,0],['boutique',0,2]],'Keeper boutique shortage must not be hidden')
+assert.ok(firstPage.rows[0].reviewReasons.some(x=>x.includes('исходного варианта')))
+assert.ok(firstPage.rows[0].reviewReasons.some(x=>x.includes('основного варианта')))
+assert.ok(firstPage.rows[0].reviewReasons.some(x=>x.includes('дефицита')))
 assert.equal(firstPage.rows[1].status,'ambiguous_keepers')
 assert.equal(firstPage.rows[1].candidateCount,2)
 assert.deepEqual(firstPage.rows[1].possibleKeeperIds,[9002,9003])
 assert.equal(firstPage.rows[1].proposedKeeperId,null)
+assert.equal(firstPage.rows[1].keeperActiveReservations,null)
+assert.equal(firstPage.rows[1].keeperActiveOrderLines,null)
+assert.equal(firstPage.rows[1].places[0].keeperShortage,null)
 assert.equal(firstPage.rows[2].status,'no_keeper','Wrong-gender keeper cannot be selected')
 assert.equal(firstPage.rows[3].status,'historical')
 assert.ok(firstPage.rows.every(x=>x.canAutomaticallyMerge===false))

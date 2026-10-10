@@ -11,6 +11,8 @@ type Place = {
   sourceReserved: number
   keeperPhysical: number | null
   keeperReserved: number | null
+  sourceShortage: number
+  keeperShortage: number | null
 }
 type MappingRow = {
   sourceVariantId: number
@@ -30,6 +32,9 @@ type MappingRow = {
   places: Place[]
   activeReservations: number
   activeOrderLines: number
+  keeperActiveReservations: number | null
+  keeperActiveOrderLines: number | null
+  reviewReasons: string[]
   guidance: string
   canAutomaticallyMerge: false
 }
@@ -107,7 +112,13 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
         && Number.isSafeInteger(data.totalSourceVariants) && data.totalSourceVariants >= 0
         && data.rows.every((row, index) => row.canAutomaticallyMerge === false
           && Number.isSafeInteger(row.sourceVariantId)
-          && row.sourceVariantId > (index ? data.rows[index - 1].sourceVariantId : after))
+          && row.sourceVariantId > (index ? data.rows[index - 1].sourceVariantId : after)
+          && Array.isArray(row.reviewReasons)
+          && Array.isArray(row.places)
+          && row.places.every(place => Number.isSafeInteger(place.sourceShortage)
+            && place.sourceShortage >= 0
+            && (place.keeperShortage === null || (Number.isSafeInteger(place.keeperShortage)
+              && place.keeperShortage >= 0))))
         && (!data.hasMore || (Number.isSafeInteger(data.nextCursor)
           && Number(data.nextCursor) > after
           && Number(data.nextCursor) === data.rows[data.rows.length - 1]?.sourceVariantId))
@@ -206,15 +217,32 @@ export function CharacteristicSkuMapReview({ apiFetch, kind, sourceId, targetId 
                           <div key={place.location}>
                             <strong>{placeName(place.location)}</strong>
                             <span>Исходный: {quantity(place.sourcePhysical)} шт. · резерв {quantity(place.sourceReserved)}</span>
+                            {place.sourceShortage > 0 ? (
+                              <span className="reference-characteristic-map-shortage">Дефицит исходного: {quantity(place.sourceShortage)} шт.</span>
+                            ) : null}
                             {place.keeperPhysical !== null && place.keeperReserved !== null ? (
-                              <span>Возможный основной: {quantity(place.keeperPhysical)} шт. · резерв {quantity(place.keeperReserved)}</span>
-                            ) : <span>Остатки основного варианта не определены</span>}
+                              <>
+                                <span>Возможный основной: {quantity(place.keeperPhysical)} шт. · резерв {quantity(place.keeperReserved)}</span>
+                                {place.keeperShortage !== null && place.keeperShortage > 0 ? (
+                                  <span className="reference-characteristic-map-shortage">Дефицит основного: {quantity(place.keeperShortage)} шт.</span>
+                                ) : null}
+                              </>
+                            ) : <span>Основной вариант не определён — его остатки неизвестны</span>}
                           </div>
                         ))}
                       </div>
-                      <p className="reference-characteristic-map-obligations">
-                        Открытые строки заказов: <strong>{quantity(item.activeOrderLines)}</strong> · действующие резервы: <strong>{quantity(item.activeReservations)}</strong>
-                      </p>
+                      <div className="reference-characteristic-map-obligations">
+                        <span>Исходный SKU — открытые позиции заказов: <strong>{quantity(item.activeOrderLines)}</strong> · действующие резервы (записей): <strong>{quantity(item.activeReservations)}</strong></span>
+                        {item.keeperActiveOrderLines !== null && item.keeperActiveReservations !== null ? (
+                          <span>Возможный основной SKU — открытые позиции заказов: <strong>{quantity(item.keeperActiveOrderLines)}</strong> · действующие резервы (записей): <strong>{quantity(item.keeperActiveReservations)}</strong></span>
+                        ) : null}
+                      </div>
+                      {item.reviewReasons.length ? (
+                        <div className="reference-characteristic-map-attention">
+                          <strong>Нужно урегулировать до будущего объединения:</strong>
+                          <ul>{item.reviewReasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+                        </div>
+                      ) : null}
                       <p className="reference-characteristic-map-guidance">{item.guidance}</p>
                     </article>
                   ))}

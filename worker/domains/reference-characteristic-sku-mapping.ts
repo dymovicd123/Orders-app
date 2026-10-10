@@ -47,10 +47,15 @@ function otherKey(row:Variant,kind:Kind){
 }
 function site(stocks:Map<string,Stock>,sourceId:number,keeperId:number|null,location:string){
  const source=stocks.get(sourceId+':'+location),keeper=keeperId?stocks.get(keeperId+':'+location):undefined
+ const sourcePhysical=toInt(source?.physical,0),sourceReserved=toInt(source?.reserved,0)
+ const keeperPhysical=keeperId?toInt(keeper?.physical,0):null
+ const keeperReserved=keeperId?toInt(keeper?.reserved,0):null
  return {
-  location,sourcePhysical:toInt(source?.physical,0),sourceReserved:toInt(source?.reserved,0),
-  keeperPhysical:keeperId?toInt(keeper?.physical,0):null,
-  keeperReserved:keeperId?toInt(keeper?.reserved,0):null,
+  location,sourcePhysical,sourceReserved,keeperPhysical,keeperReserved,
+  // Shortages are informational, never a license to reduce customer reserves.
+  sourceShortage:Math.max(0,sourceReserved-sourcePhysical),
+  keeperShortage:keeperPhysical===null||keeperReserved===null?null
+   :Math.max(0,keeperReserved-keeperPhysical),
  }
 }
 export async function previewCharacteristicSkuMapping(
@@ -69,6 +74,12 @@ export async function previewCharacteristicSkuMapping(
   throw new Error('Выберите две характеристики одного списка: цвет, материал, длина, размер или возраст.')
  if(target.is_active!==1)throw new Error('Основное значение должно быть активным.')
  const kind=source.kind as Kind,from=dbValue(source.value),to=dbValue(target.value)
+ // Characteristics are stored as display text on SKUs, not by reference_values.id.
+ // Identical labels cannot distinguish source from keeper: otherwise the source
+ // variant itself may be incorrectly proposed as its own keeper.
+ if(from===to)throw Object.assign(new Error(
+  'У выбранных значений одинаковое название. По тексту товара нельзя отличить исходный вариант от основного. Не объединяйте SKU по такой карте.'
+ ),{status:400,code:'characteristic_mapping_indistinguishable'})
  const matcher=matchingSql(kind),scope=aud(kind),bindings=bindValue(kind,from)
  const fromWhere=" WHERE "+matcher+scope
  const fromQuery=selectVariant+fromWhere
@@ -138,8 +149,17 @@ export async function previewCharacteristicSkuMapping(
  }
  const mapped=chosen.map(x=>{
   const v=x.row,keeper=x.keeperId
-  const o=obligations.get(v.id)
+  const o=obligations.get(v.id),keeperObligations=keeper?obligations.get(keeper):undefined
   const places=['warehouse','boutique'].map(loc=>site(stockMap,v.id,keeper,loc))
+  const reviewReasons:string[]=[]
+  if(x.status==='unique_keeper'){
+   if((o?.active_reservations||0)>0||(o?.active_order_lines||0)>0)
+    reviewReasons.push('У исходного варианта есть действующие клиентские обязательства.')
+   if((keeperObligations?.active_reservations||0)>0||(keeperObligations?.active_order_lines||0)>0)
+    reviewReasons.push('У возможного основного варианта тоже есть действующие клиентские обязательства.')
+   if(places.some(p=>p.sourceShortage>0||((p.keeperShortage??0)>0)))
+    reviewReasons.push('По одному из мест хранения резерв превышает физический остаток: требуется отдельное урегулирование дефицита.')
+  }
   const guidance=x.status==='unique_keeper'
    ?'Есть возможный основной вариант. Цвет, размер, материал или длина отличаются: проверьте реальные вещи, резервы и цену, не объединяйте автоматически.'
    :x.status==='no_keeper'
@@ -155,6 +175,9 @@ export async function previewCharacteristicSkuMapping(
    candidateCount:x.candidateCount,proposedKeeperId:keeper,
    possibleKeeperIds:x.keeperChoices,places,
    activeReservations:o?.active_reservations||0,activeOrderLines:o?.active_order_lines||0,
+   keeperActiveReservations:keeper===null?null:keeperObligations?.active_reservations||0,
+   keeperActiveOrderLines:keeper===null?null:keeperObligations?.active_order_lines||0,
+   reviewReasons,
    guidance,canAutomaticallyMerge:false}
  })
  const hasMore=fetched.length>limit
