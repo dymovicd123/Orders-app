@@ -112,7 +112,7 @@ let p=await preview()
 assert.equal(p.canPrepareCountedSplit,false)
 assert.ok(p.blockers.some(x=>x.code==='not_corrected'))
 sqlite.exec(`
-UPDATE inventory_stock SET quantity=3 WHERE id=11;
+UPDATE inventory_stock SET quantity=3,updated_at='2026-10-10T07:00:00Z' WHERE id=11;
 UPDATE catalog_variant_consolidation_stock_rows
  SET combined_quantity_after=3 WHERE consolidation_id=1;
 UPDATE catalog_variant_consolidation_stock_decisions
@@ -123,6 +123,10 @@ INSERT INTO inventory_movements
  (id,variant_id,inventory_source,quantity_delta,quantity_after,reference_type,reference_id,created_at)
  VALUES(111,8,'warehouse',1,3,'catalog_stock_finalization','1','2026-10-10T07:00:00Z');
 `)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_type='catalog_stock_finalization' AND reference_id=CAST(? AS TEXT)").get(1).n,1,'Correction fixture must have one matching journal movement')
+const underlying=await previewCatalogConsolidationUndo(db,1)
+assert.equal(underlying.impact.postMergeMovements,0,'Own merge-time physical correction is not a later stock movement')
+assert.ok(!underlying.blockers.some(x=>x.code==='movement_audit_mismatch'),JSON.stringify(underlying.blockers))
 p=await preview()
 assert.equal(p.canPrepareCountedSplit,true,JSON.stringify(p.blockers))
 assert.equal(p.requiresPhysicalCount,true)
