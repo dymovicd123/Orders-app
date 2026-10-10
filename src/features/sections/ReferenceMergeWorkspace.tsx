@@ -44,6 +44,7 @@ type Impact = {
   canApply:boolean;
   stateToken:string;
   paymentSafety?:{blockers:string[];affectedOrders:number;cashRegisterRecords:number}|null;
+  reasonSafety?:{affectsFutureSelectionsOnly:boolean;historicalRecordsPreserved:boolean}|null;
   explanation:string;
 }
 const dictionaries = [
@@ -213,10 +214,12 @@ export function ReferenceMergeWorkspace({
 
   async function apply(){
     if (!impact?.canApply || !impact.stateToken || saving) return
-    const confirmed=window.confirm(
-      'Объединить «'+impact.source.value+'» с «'+impact.target.value+'»? '
-      +'Будут обновлены '+impact.orders.current+' заказов за '+impact.month.label+'. '
-      +'Заказы предыдущих месяцев и история останутся без изменений.'
+    const confirmed=window.confirm(impact.reasonSafety
+      ? 'Оставить «'+impact.target.value+'» вместо «'+impact.source.value+'» в списке причин? '
+        +'Старые возвраты, списания и комментарии не изменятся. Это действие сохранится в журнале.'
+      : 'Объединить «'+impact.source.value+'» с «'+impact.target.value+'»? '
+        +'Будут обновлены '+impact.orders.current+' заказов за '+impact.month.label+'. '
+        +'Заказы предыдущих месяцев и история останутся без изменений.'
     )
     if (!confirmed)return
     setSaving(true);setError('')
@@ -230,7 +233,9 @@ export function ReferenceMergeWorkspace({
       await onMerged()
       setValues(old=>old.filter(v=>v.id!==impact.source.id))
       setSourceId(0);setTargetId(0);setImpact(null)
-      setNotice('Готово. Обновлено заказов: '+Number(result.ordersUpdated||0)+'. Старые заказы сохранены.')
+      setNotice(impact.reasonSafety
+        ? 'Причины объединены для новых операций. Старые возвраты, списания и комментарии сохранены.'
+        : 'Готово. Обновлено заказов: '+Number(result.ordersUpdated||0)+'. Старые заказы сохранены.')
       if (history!==null) void loadHistory()
     }catch(err){setError(err instanceof Error?err.message:'Не удалось сохранить изменения.')}
     finally{setSaving(false)}
@@ -293,7 +298,10 @@ export function ReferenceMergeWorkspace({
               {history.length===0?<p>Пока ничего не объединяли.</p>:history.map((item,index)=>(
                 <div className="reference-merge-history-item" key={item.kind+':'+item.id+':'+index}>
                   <div><strong><s>{item.source}</s> → {item.target}</strong>
-                    <small>{dictionaries.find(d=>d.kind===(item.kind==='payment_method'?'paymentMethods':item.kind==='city'?'cities':'deliveryTypes'))?.label||'Справочник'}</small>
+                    <small>{dictionaries.find(d=>d.kind===(item.kind==='payment_method'?'paymentMethods'
+                      :item.kind==='city'?'cities'
+                      :item.kind==='return_reason'?'returnReasons'
+                      :item.kind==='writeoff_reason'?'writeoffReasons':'deliveryTypes'))?.label||'Справочник'}</small>
                   </div>
                   <span>{item.actor} · {new Date(item.createdAt).toLocaleString('ru-RU')} · записей {item.affected}</span>
                 </div>
@@ -305,7 +313,9 @@ export function ReferenceMergeWorkspace({
           <div className="reference-merge-impact">
             <h4>Что произойдёт с записями?</h4>
             <p className="reference-merge-transform"><s>{impact.source.value}</s><span aria-hidden="true">→</span><strong>{impact.target.value}</strong></p>
-            {impact.ordersCovered ? (
+            {impact.reasonSafety ? (
+              <p className="reference-merge-next">Изменится только выбор причины в новых операциях. Старые возвраты, списания, комментарии, заказы и склад не затрагиваются.</p>
+            ) : impact.ordersCovered ? (
               <div className="reference-merge-stats">
                 <div><span>Заказы за {impact.month.label}</span><strong>{impact.orders.current}</strong><small>Требуют обновления</small></div>
                 <div><span>Заказы за предыдущие месяцы</span><strong>{impact.orders.older}</strong><small>Останутся в истории без изменений</small></div>
@@ -505,9 +515,9 @@ export function ReferenceMergeWorkspace({
             {impact.canApply?(
               <div className="reference-merge-action-row">
                 <button type="button" className="primary" disabled={saving} onClick={()=>void apply()}>
-                  {saving?'Сохраняю…':'Объединить значения'}
+                  {saving?'Сохраняю…':impact.reasonSafety?'Оставить выбранную причину':'Объединить значения'}
                 </button>
-                <span>Предыдущие месяцы останутся без изменений.</span>
+                <span>{impact.reasonSafety?'Все ранее сохранённые документы остаются без изменений.':'Предыдущие месяцы останутся без изменений.'}</span>
               </div>
             ):<p className="reference-merge-next">{impact.catalogImpact
               ? 'Полное объединение значения пока недоступно. Проверенные пары вариантов можно обработать отдельно выше; остальные связи требуют дополнительной проверки.'

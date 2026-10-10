@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "a60e874af02d8d99e07ad19f2f7d5fd0fbc4c3ca",
+      "afterGitBlob": "db6f0fd226af33f9f6fcbfb152e38a3fdf44d841",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -79,8 +79,8 @@
     "migrations/0092_v72_catalog_variant_reservation_consolidation.sql": "894164a039a76abfdf8d7ac8a49109329b9bc66d",
     "src/styles/reference-integrity-entry.css": "ca5ca534c7183bb522742c28c5168c84d2da7583",
     "scripts/test-reference-duplicates-discovery-r1.mjs": "2e73ea331b25a8589b21c32b38136a7e2c5378d6",
-    "worker/domains/reference-merge-preview.ts": "a94548ae819a0cb2f907f30c8bdd360c22383d75",
-    "src/features/sections/ReferenceMergeWorkspace.tsx": "dce630ac8302b2dba2e8370c650465b9d04e241e",
+    "worker/domains/reference-merge-preview.ts": "659537a2da42ffca38275c2b099fa976ed7b1700",
+    "src/features/sections/ReferenceMergeWorkspace.tsx": "5115e75647506e2dfc0e9764ef3887e1927a6140",
     "src/styles/reference-merge-workspace.css": "bd52b80c9727d20c00b4763230e6074fea450649",
     "scripts/test-reference-merge-choice-preview.mjs": "e0709f56747234237f7ceea7e2d4e84bfaa00feb",
     "worker/domains/reference-merge-apply.ts": "b0b85be1b6f8964ad7e7414ba178e1a7d371c4db",
@@ -89,8 +89,8 @@
     "worker/domains/reference-payment-merge.ts": "17aed8caa17f1978b0e2b658b270a9b5e37168d2",
     "scripts/test-reference-payment-merge.mjs": "015cb3ce422a84c50d68e1bce5b099141e9b3930",
     "migrations/0094_v72_reference_payment_method_merges.sql": "fd6d34164f59ac3856b113701e47a81e681e95f7",
-    "worker/domains/reference-merge-history.ts": "3e32522f40c45bfe41eee517297b82dbd450abdc",
-    "scripts/test-reference-merge-history.mjs": "cd5940072ec22f9edb27892138beb0745f8b12ff",
+    "worker/domains/reference-merge-history.ts": "b6f60b825fa84b881da5c1af1bd9f362cd24c537",
+    "scripts/test-reference-merge-history.mjs": "9e73a05ee34176b5705765d28d57669075f1febe",
     "worker/domains/reference-characteristic-impact.ts": "1536f8e30942b461079cea7e045863d5b9f4d980",
     "scripts/test-reference-characteristic-impact.mjs": "66b9bc03eb1545682c4bd12d99451f397c455d66",
     "scripts/test-catalog-integrity-r2-sku-consolidation.mjs": "90fa7d5ebdb9b5f3f6f5738853247fb8a786b307",
@@ -148,6 +148,8 @@
     "scripts/test-characteristic-sku-map-ui.mjs": "7cc6e841d138387d8126b2ab5798e3d111559a92",
     "migrations/0105_v72_reference_reason_choice_merges.sql": "6a3314e903349049740ccbe661f60f896a6e8a5b",
     "scripts/test-reference-reason-choice-schema.mjs": "570e2a06a142eaa8a9e3d4e1e99001f634277c5b",
-    ".github/workflows/branch2-reference-reason-schema-0105.yml": "5394b2f0e8830e043a83be7d700903304dbfe3f9"
+    ".github/workflows/branch2-reference-reason-schema-0105.yml": "5394b2f0e8830e043a83be7d700903304dbfe3f9",
+    "worker/domains/reference-reason-merge.ts": "ab74aa08b426ae00bbc6f1c5280b5e7cc82e7a0f",
+    "scripts/test-reference-reason-merge.mjs": "37f00701cd750bba2290b9c3743c4bbe8ff70b33"
   }
 }
