@@ -35,7 +35,7 @@ jobs:
           [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 42
           [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 43
           [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 44
-          [[ "$(git hash-object migrations/0104_v72_catalog_reserved_undo_validation.sql)" == "f9ec73a4b912fe97020b403e0d1f2a74303e000e" ]] || exit 45
+          [[ "$(git hash-object migrations/0104_v72_catalog_reserved_undo_validation.sql)" == "5a03ea7ab8bc51afe90b18de502e2053b427c90d" ]] || exit 45
           if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0104_v72_catalog_reserved_undo_validation.sql; then
             echo '0104 must remain additive-only' >&2; exit 46
           fi
