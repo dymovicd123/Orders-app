@@ -1,0 +1,128 @@
+name: Branch2 Positive-stock SKU Undo Schema 0102
+
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-positive-stock-sku-undo-schema-0102.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Guard isolated Branch2 D1 and immutable Stage04
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production database binding in Branch2. Abort.' >&2; exit 41
+          fi
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]] || exit 42
+          [[ "$(git hash-object migrations/0083_v72_workshop_settlement_foundation.sql)" == "d73a92f86317a9068a9a381742d55e5c96804879" ]] || exit 43
+          [[ "$(git hash-object migrations/0084_v72_workshop_settlement_status_capture.sql)" == "2e3f51ab0b055d5b82d6b542cec28cf661359003" ]] || exit 44
+          [[ "$(git hash-object migrations/0102_v72_catalog_positive_stock_undo_validation.sql)" == "9c26b192223a32d068d3e0e1cefebbe29959fdda" ]] || exit 45
+          if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0102_v72_catalog_positive_stock_undo_validation.sql; then
+            echo '0102 must remain additive-only' >&2; exit 46
+          fi
+      - run: npm ci
+      - name: Validate SQL, original Stage04 and undo proof
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          node scripts/test-catalog-positive-undo-proof-schema.mjs
+      - name: Record remote stock money order Stage04 fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS money_total,
+              (SELECT COUNT(*) FROM financial_events) AS finance_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_sum,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserve_sum,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservations_count,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements_count,
+              (SELECT COUNT(*) FROM inventory_stock_checks) AS stock_checks,
+              (SELECT COUNT(*) FROM catalog_variant_consolidations) AS consolidations,
+              (SELECT COUNT(*) FROM catalog_variant_merge_generation_events) AS generations,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json | jq -cSe '.[0].results[0]' > /tmp/positive-undo-before.json
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS n FROM sqlite_master
+            WHERE type='table' AND name IN
+              ('catalog_variant_positive_undo_stock_rows','catalog_variant_positive_undo_validations')
+          " --json)"
+          printf '%s' "$result" | jq -r '.[0].results[0].n' > /tmp/positive-undo-schema-before
+          [[ "$(cat /tmp/positive-undo-schema-before)" == "0" || "$(cat /tmp/positive-undo-schema-before)" == "2" ]] || {
+            echo "Incomplete 0102 schema detected"; exit 47
+          }
+      - name: Apply empty 0102 tables only to isolated Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/positive-undo-schema-before)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0102_v72_catalog_positive_stock_undo_validation.sql
+          else
+            echo '0102 tables already exist; inspecting schema without data rewrites'
+          fi
+      - name: Verify proof triggers and unchanged business fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN
+                ('catalog_variant_positive_undo_stock_rows','catalog_variant_positive_undo_validations')) AS tables_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
+                ('trg_catalog_positive_undo_validate','trg_positive_undo_row_update',
+                 'trg_positive_undo_row_delete','trg_positive_undo_validation_update',
+                 'trg_positive_undo_validation_delete')) AS trigger_count
+          " --json)"
+          [[ "$(jq -r '.[0].results[0].tables_count' <<<"$state")" == '2' ]] || exit 51
+          [[ "$(jq -r '.[0].results[0].trigger_count' <<<"$state")" == '5' ]] || exit 52
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS money_total,
+              (SELECT COUNT(*) FROM financial_events) AS finance_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_sum,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserve_sum,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservations_count,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements_count,
+              (SELECT COUNT(*) FROM inventory_stock_checks) AS stock_checks,
+              (SELECT COUNT(*) FROM catalog_variant_consolidations) AS consolidations,
+              (SELECT COUNT(*) FROM catalog_variant_merge_generation_events) AS generations,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_events,
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS stage04_capture
+          " --json | jq -cSe '.[0].results[0]' > /tmp/positive-undo-after.json
+          diff -u /tmp/positive-undo-before.json /tmp/positive-undo-after.json || {
+            echo 'Business/finance/stock/Stage04 changed during schema-only migration' >&2; exit 53
+          }
+          echo 'POSITIVE-STOCK UNDO 0102 SCHEMA PASSED: original money, stock, orders and Stage04 untouched'
