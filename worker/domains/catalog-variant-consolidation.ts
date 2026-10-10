@@ -70,7 +70,9 @@ async function readLatestPhysicalChecks(db: D1Database, sourceId: number, keeper
         ROW_NUMBER() OVER (
           PARTITION BY variant_id, inventory_source ORDER BY datetime(checked_at) DESC, id DESC
         ) AS rank
-      FROM inventory_stock_checks WHERE variant_id IN (?,?)
+      FROM inventory_stock_checks
+      WHERE variant_id IN (?,?)
+        AND check_type IN ('quick_stocktake','selective_stocktake','full_stocktake','cycle_count','physical_count')
     )
     SELECT variant_id, inventory_source, counted_quantity, checked_at, check_type, checked_by
     FROM ranked WHERE rank=1`
