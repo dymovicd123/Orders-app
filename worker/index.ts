@@ -32,7 +32,7 @@ import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
 import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
-import { applyCatalogStockReconciliation, recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
+import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
@@ -248,13 +248,15 @@ export default {
       if (url.pathname === '/api/catalog/variants/reconcile-stock' && request.method === 'POST') {
         const denied = requireAdminUser(authUser, 'Корректировка остатков при объединении доступна только администратору.');
         if (denied) return denied;
-        const data = await readJson<{
-          sourceId:number; keeperId:number; location:'warehouse'|'boutique';
-          method:'keep_source'|'keep_keeper'|'physical_count';
-          countedQuantity?:number; reason:string; requestId:string;
-          expectedToken:string; physicallyVerified:boolean;
-        }>(request);
-        return json(await applyCatalogStockReconciliation(env.DB,data,authUser?.login || ''));
+        // Retired: the separate stock writer left a live source SKU and allowed
+        // staff to create new commitments before the later retirement. Existing
+        // immutable history stays readable; only the unsafe two-step write path
+        // is disabled. Use a single guarded SKU consolidation instead.
+        return json({
+          ok:false,
+          code:'stock_reconciliation_requires_atomic_finalization',
+          message:'Отдельная корректировка перед объединением отключена. Обновите предпросмотр и подтвердите сверку вместе с объединением варианта.',
+        }, { status:409 });
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-preview' && request.method === 'GET') {
