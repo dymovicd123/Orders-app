@@ -107,7 +107,6 @@ sqlite.exec(`
 const before=sqlite.prepare('SELECT * FROM order_items ORDER BY id').all()
 const count=(table)=>sqlite.prepare('SELECT COUNT(*) AS n FROM '+table).get().n
 const preview=()=>previewCorrectedCatalogConsolidationUndo(db,1)
-const stamp='2026-10-10T07:00:00Z'
 await assert.rejects(()=>previewCorrectedCatalogConsolidationUndo(db,0),/корректный номер/)
 let p=await preview()
 assert.equal(p.canPrepareCountedSplit,false)
