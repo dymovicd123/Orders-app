@@ -22,7 +22,8 @@ type Counts={
  postMergeMovements:number;postMergeStockChecks:number;activeWorkshop:number;
  pendingLifecycle:number;appliedLifecycle:number;activeStocktake:number;appliedTransfers:number;
  returnExchangeLinks:number;laterIntoKeeper:number;sourceAsKeeper:number;keeperMerged:number;
- originalReservations:number;stockValidation:number;reservationValidation:number;correctionMovements:number
+ originalReservations:number;stockValidation:number;reservationValidation:number;correctionMovements:number;
+ invalidEventDates:number
 }
 const positiveId=(x:number)=>Number.isSafeInteger(x)&&x>0
 const reason=(code:string,message:string)=>({code,message})
@@ -58,15 +59,17 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
         WHERE oi.variant_id IN (?,?) AND o.order_status='active'
           AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0) AS activeOrders,
       (SELECT COUNT(*) FROM inventory_reservations r WHERE r.variant_id IN (?,?) AND r.status='active') AS activeReservations,
-      (SELECT COUNT(*) FROM order_items oi
-        WHERE oi.variant_id IN (?,?) AND oi.created_at>=?) AS postMergeOrders,
+      (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+        WHERE oi.variant_id IN (?,?)
+          AND MAX(COALESCE(julianday(oi.created_at),0),COALESCE(julianday(o.updated_at),0))
+            >=julianday(?)) AS postMergeOrders,
       (SELECT COUNT(*) FROM inventory_reservations r
-        WHERE r.variant_id IN (?,?) AND r.updated_at>=?) AS postMergeReservations,
+        WHERE r.variant_id IN (?,?) AND julianday(r.updated_at)>=julianday(?)) AS postMergeReservations,
       (SELECT COUNT(*) FROM inventory_movements m WHERE m.variant_id IN (?,?)
-        AND m.created_at>=? AND NOT (
+        AND julianday(m.created_at)>=julianday(?) AND NOT (
           m.reference_type='catalog_stock_finalization' AND m.reference_id=CAST(? AS TEXT))) AS postMergeMovements,
       (SELECT COUNT(*) FROM inventory_stock_checks c
-        WHERE c.variant_id IN (?,?) AND c.checked_at>=?) AS postMergeStockChecks,
+        WHERE c.variant_id IN (?,?) AND julianday(c.checked_at)>=julianday(?)) AS postMergeStockChecks,
       (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id IN (?,?) AND wt.status='active') AS activeWorkshop,
       (SELECT COUNT(*) FROM inventory_lifecycle_events e WHERE e.variant_id IN (?,?)
         AND e.status='pending') AS pendingLifecycle,
@@ -95,7 +98,17 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
       (SELECT COUNT(*) FROM catalog_variant_consolidation_reservation_validations v
         WHERE v.consolidation_id=? AND v.passed=1) AS reservationValidation,
       (SELECT COUNT(*) FROM inventory_movements m
-        WHERE m.reference_type='catalog_stock_finalization' AND m.reference_id=CAST(? AS TEXT)) AS correctionMovements
+        WHERE m.reference_type='catalog_stock_finalization' AND m.reference_id=CAST(? AS TEXT)) AS correctionMovements,
+      (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+        WHERE oi.variant_id IN (?,?) AND
+          (julianday(oi.created_at) IS NULL OR julianday(o.updated_at) IS NULL))
+       + (SELECT COUNT(*) FROM inventory_reservations r
+          WHERE r.variant_id IN (?,?) AND julianday(r.updated_at) IS NULL)
+       + (SELECT COUNT(*) FROM inventory_movements m
+          WHERE m.variant_id IN (?,?) AND julianday(m.created_at) IS NULL)
+       + (SELECT COUNT(*) FROM inventory_stock_checks c
+          WHERE c.variant_id IN (?,?) AND julianday(c.checked_at) IS NULL)
+        AS invalidEventDates
     `).bind(
        sourceId,keeperId,sourceId,keeperId,
        sourceId,keeperId,receipt.created_at,sourceId,keeperId,receipt.created_at,
@@ -104,6 +117,7 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
        sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,
        sourceId,keeperId,keeperId,consolidationId,sourceId,keeperId,
        consolidationId,consolidationId,consolidationId,consolidationId,
+       sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,sourceId,keeperId,
     ).first<Counts>()
   ])
   const variants=skus.results||[],ledger=ledgerResult.results||[],choices=choicesResult.results||[],
@@ -129,6 +143,10 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
   }
   if(n('postMergeMovements')||n('postMergeStockChecks')){
     blockers.push(reason('later_inventory_activity','После объединения есть новые движения склада либо результаты сверок.'))
+  }
+  if(n('invalidEventDates')){
+    blockers.push(reason('event_time_unknown',
+      'Есть связанные заказы или складские записи с некорректной либо отсутствующей датой. Нельзя подтвердить, что они предшествовали объединению.'))
   }
   if(n('activeWorkshop')||n('pendingLifecycle')||n('appliedLifecycle')
     ||n('activeStocktake')||n('appliedTransfers')||n('returnExchangeLinks')){
@@ -185,6 +203,13 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
       issues,
     }
   })
+  // Original audit does not snapshot keeper-only locations. Never assume a
+  // second location is untouched merely because no source row existed there.
+  if(stock.some(r=>r.variant_id===keeperId
+      && !ledger.some(l=>l.inventory_source===r.inventory_source))){
+    blockers.push(reason('keeper_only_location_unverified',
+      'У основного варианта есть другое место хранения, состояние которого не зафиксировано в журнале этого объединения.'))
+  }
   if(stock.some(r=>r.variant_id===sourceId&&!ledger.some(l=>l.source_stock_id===r.id))
     ||stock.some(r=>r.variant_id===keeperId
       && ledger.some(l=>l.inventory_source===r.inventory_source)
@@ -200,6 +225,7 @@ export async function previewCatalogConsolidationUndo(db:D1Database,consolidatio
       activeOrders:n('activeOrders'),activeReservations:n('activeReservations'),
       postMergeOrders:n('postMergeOrders'),postMergeReservations:n('postMergeReservations'),
       postMergeMovements:n('postMergeMovements'),postMergeStockChecks:n('postMergeStockChecks'),
+      invalidEventDates:n('invalidEventDates'),
       originalReservations:n('originalReservations'),
       nestedMerges:n('laterIntoKeeper')+n('sourceAsKeeper')+n('keeperMerged'),
       activeWorkshop:n('activeWorkshop'),activeStocktake:n('activeStocktake'),
