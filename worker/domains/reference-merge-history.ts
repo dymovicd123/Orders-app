@@ -14,6 +14,10 @@ export async function listRecentReferenceValueMerges(db:D1Database) {
     SELECT id,'payment_method' AS kind,source_value,target_value,expected_rows AS record_count,
       created_by,created_at,source_reference_id AS source_id,target_reference_id AS target_id
     FROM reference_payment_method_merges
+    UNION ALL
+    SELECT id,kind,source_value,target_value,0 AS record_count,
+      created_by,created_at,source_reference_id AS source_id,target_reference_id AS target_id
+    FROM reference_reason_choice_merges
     ORDER BY created_at DESC,kind,id DESC LIMIT 30
   `).all<HistoryRow>()
   return {ok:true,items:(rows.results||[]).map(x=>({
