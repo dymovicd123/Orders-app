@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "716028ebf1e78359e6e3cce228fa9818e6320b6e",
+      "afterGitBlob": "a60e874af02d8d99e07ad19f2f7d5fd0fbc4c3ca",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
@@ -140,6 +140,8 @@
     "src/features/sections/CatalogUndoCases.tsx": "ab1ecc9ae1deef1332be7f31b9dd819f70893d38",
     "src/styles/reference-undo-cases.css": "0dd6eb479f452be3e10db012afcb215aebac39fd",
     "scripts/test-catalog-complex-undo-human-ui.mjs": "50922483f6bc06c8c04c483cb80e205936dcd4ba",
-    "scripts/test-catalog-exhaustive-sku-identity.mjs": "3daad0539899bf4ea9ed764e9c858bd2eb3cf13c"
+    "scripts/test-catalog-exhaustive-sku-identity.mjs": "3daad0539899bf4ea9ed764e9c858bd2eb3cf13c",
+    "worker/domains/reference-characteristic-sku-mapping.ts": "96d895116669daeda30bc0c402d7b47cc13bb700",
+    "scripts/test-characteristic-sku-mapping.mjs": "14c830ddfa53fc1673b796b82ea12b7f754f5f59"
   }
 }
