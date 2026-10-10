@@ -69,8 +69,8 @@
   },
   "addedFiles": {
     "worker/domains/catalog-variant-consolidation.ts": "7a69c78d2c7c65e1b7b676b619e8d16b8db9d447",
-    "worker/domains/reference-integrity.ts": "392e2ec31161a6e31844c7d057a6d81625d9645b",
-    "src/features/sections/ReferenceIntegrityPanel.tsx": "eb20c1752833c9d2e4167aa775ca24cab8d7e6aa",
+    "worker/domains/reference-integrity.ts": "b562f84f7ee9d706132486ea048b51bc4bdcac57",
+    "src/features/sections/ReferenceIntegrityPanel.tsx": "d2de1bc4d505b990fbac6130fa78505fe8efc063",
     "src/features/inventory/writeoffReview.ts": "c7dc6cfb6981e979204c59808268dd332f0e1e08",
     "src/features/inventory/views/WriteoffReview.tsx": "efa0608b8836993f13dc6d8536a93ed195d1bc63",
     "src/styles/w4-writeoff-review.css": "261d5e7508a99b5de52284125bd7637440f771cc",
@@ -150,6 +150,7 @@
     "scripts/test-reference-reason-choice-schema.mjs": "570e2a06a142eaa8a9e3d4e1e99001f634277c5b",
     ".github/workflows/branch2-reference-reason-schema-0105.yml": "5394b2f0e8830e043a83be7d700903304dbfe3f9",
     "worker/domains/reference-reason-merge.ts": "ab74aa08b426ae00bbc6f1c5280b5e7cc82e7a0f",
-    "scripts/test-reference-reason-merge.mjs": "37f00701cd750bba2290b9c3743c4bbe8ff70b33"
+    "scripts/test-reference-reason-merge.mjs": "37f00701cd750bba2290b9c3743c4bbe8ff70b33",
+    "scripts/test-reference-exhaustive-duplicates.mjs": "6f7612c7bfc458b1981e3979fceba4ee3550b879"
   }
 }
