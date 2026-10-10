@@ -3,7 +3,7 @@
 export type VerifiedSkuLocation={
  location:string;sourcePhysical:number;keeperPhysical:number;
  sourceReserved:number;keeperReserved:number;reservedTotal:number;
- combinedPhysical:number;requiresDecision:boolean
+ combinedPhysical:number;requiresDecision:boolean;needsInvestigation:boolean
 }
 export type VerifiedSkuPreview={
  canConsolidate:boolean;canConsolidateAfterVerifiedSum:boolean;
