@@ -26,6 +26,10 @@ sqlite.exec(`
  CREATE TABLE inventory_transfer_items(id INTEGER PRIMARY KEY,transfer_id INTEGER,variant_id INTEGER);
  CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY,variant_id INTEGER,reference_type TEXT);
  CREATE TABLE inventory_movement_reversals(original_movement_id INTEGER PRIMARY KEY);
+ CREATE TABLE inventory_stock_checks(
+  id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,
+  counted_quantity INTEGER,checked_at TEXT,check_type TEXT,checked_by TEXT
+ );
  CREATE TABLE inventory_reservations(
     id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,
     inventory_source TEXT,product_id INTEGER,variant_id INTEGER,quantity INTEGER,
@@ -203,13 +207,42 @@ await assert.rejects(
 )
 assert.equal(active(12),1)
 sqlite.exec("UPDATE orders SET order_date=date('now','+5 hours') WHERE id=3")
+const verifiedSum=[
+ {location:'warehouse',method:'sum',physicallyVerified:true},
+ {location:'boutique',method:'sum',physicallyVerified:true},
+]
+sqlite.exec(`INSERT INTO inventory_stock_checks VALUES
+ (1,12,'warehouse',3,'2026-09-30T10:00:00Z','selective_stocktake','admin'),
+ (2,13,'warehouse',5,'2026-10-08T10:00:00Z','quick_stocktake','manager'),
+ (3,12,'boutique',4,'2026-10-07T10:00:00Z','full_stocktake','admin')`)
 let p=await previewCatalogVariantConsolidation(db,12,13)
-assert.equal(p.canConsolidate,true,'Valid stocked SKU can be merged')
+assert.equal(p.canConsolidate,false,'A stocked source must not offer implicit one-click addition')
+assert.equal(p.canConsolidateAfterVerifiedSum,true,'Stocked variants need explicit per-location confirmation')
+assert.equal(p.stockReconciliation.requiresHumanStockDecision,true)
+assert.equal(p.stockReconciliation.locations[0].combinedPhysical,8)
+assert.equal(p.stockReconciliation.locations[0].lastSourceCount.checkedBy,'admin')
+assert.equal(p.stockReconciliation.locations[0].lastKeeperCount.countedQuantity,5)
+assert.deepEqual(p.stockReconciliation.locations[0].scenarios.map(x=>x.method),
+ ['sum','keep_source','keep_keeper','physical_count','defer'])
 assert.equal(p.transferQuantity,7)
 assert.equal(p.reservationCount,2)
 assert.equal(p.sourceImpact.reserved,3)
 assert.deepEqual(p.stockBreakdown.map(x=>x.combinedPhysical),[8,4])
 await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin'),/требует подтверждённого предпросмотра/)
+await assert.rejects(
+ ()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),
+ /Подтвердите их физическую независимость/,
+)
+await assert.rejects(
+ ()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,
+ [{location:'warehouse',method:'sum',physicallyVerified:true}]),
+ /Подтвердите их физическую независимость/,
+)
+await assert.rejects(
+ ()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,
+ [{location:'warehouse',method:'keep_source',physicallyVerified:true},verifiedSum[1]]),
+ /Недопустимое решение/,
+)
 
 // Applied transfers must remain reversible, so cannot retire their live variant.
 sqlite.exec("INSERT INTO inventory_transfer_documents VALUES (1,'applied')")
@@ -225,22 +258,22 @@ assert.equal((await previewCatalogVariantConsolidation(db,12,13)).canConsolidate
   'An old manual operation can still be reversed into a retired SKU')
 sqlite.exec('INSERT INTO inventory_movement_reversals VALUES(1)')
 p=await previewCatalogVariantConsolidation(db,12,13)
-assert.equal(p.canConsolidate,true)
+assert.equal(p.canConsolidateAfterVerifiedSum,true)
 
 // Stale browser preview never quietly moves a newly observed quantity.
 sqlite.exec('UPDATE inventory_stock SET quantity=6 WHERE id=120')
-await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились/)
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,verifiedSum),/изменились/)
 sqlite.exec('UPDATE inventory_stock SET quantity=3 WHERE id=120')
 p=await previewCatalogVariantConsolidation(db,12,13)
 // Concurrency: an order is edited while the browser displays a preflight.
 sqlite.exec('UPDATE inventory_reservations SET quantity=5,updated_at=\'race\' WHERE id=3')
-await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились/)
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,verifiedSum),/изменились/)
 sqlite.exec("UPDATE inventory_reservations SET quantity=2,updated_at='before' WHERE id=3")
 p=await previewCatalogVariantConsolidation(db,12,13)
 
 // Atomic SQL guard catches a concurrent target change after application preview.
 beforeUpdate=()=>{ beforeUpdate=()=>{}; sqlite.exec('UPDATE inventory_stock SET quantity=6 WHERE id=121') }
-await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/изменились во время проверки/)
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,verifiedSum),/изменились во время проверки/)
 assert.equal(active(12),1)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidations WHERE source_variant_id=12').get().n,0)
 sqlite.exec('UPDATE inventory_stock SET quantity=5 WHERE id=121')
@@ -248,14 +281,14 @@ p=await previewCatalogVariantConsolidation(db,12,13)
 
 // Failed post-transfer conservation assertion must roll back all stock changes.
 beforeValidation=()=>{ beforeValidation=()=>{}; sqlite.exec('UPDATE inventory_stock SET quantity=999 WHERE id=121') }
-await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken),/CHECK constraint/)
+await assert.rejects(()=>consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,verifiedSum),/CHECK constraint/)
 assert.equal(active(12),1,'Failed postcondition rolls back source deactivation')
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=120').get().quantity,3)
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE id=121').get().quantity,5)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidations WHERE source_variant_id=12').get().n,0)
 
 p=await previewCatalogVariantConsolidation(db,12,13)
-const stocked=await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken)
+const stocked=await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,verifiedSum)
 assert.equal(stocked.transferredQuantity,7)
 assert.equal(active(12),0)
 assert.equal(active(13),1)
@@ -279,7 +312,7 @@ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolida
 assert.equal(sqlite.prepare('SELECT passed FROM catalog_variant_consolidation_validations WHERE consolidation_id=?').get(receipt.id).passed,1)
 assert.equal(sqlite.prepare('SELECT passed FROM catalog_variant_consolidation_reservation_validations WHERE consolidation_id=?').get(receipt.id).passed,1)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variant_consolidation_reservation_rows WHERE consolidation_id=?').get(receipt.id).n,2)
-assert.equal((await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken)).alreadyConsolidated,true)
+assert.equal((await consolidateUnusedCatalogVariant(db,12,13,'admin',p.stateToken,verifiedSum)).alreadyConsolidated,true)
 assert.equal(sqlite.prepare('SELECT variant_id FROM inventory_movements WHERE id=1').get().variant_id,12,
   'Historical manual movement keeps its original variant')
 
