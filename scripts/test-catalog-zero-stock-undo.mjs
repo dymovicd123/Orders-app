@@ -86,7 +86,7 @@ const db={
    try{
      const results=[]
      for(let i=0;i<statements.length;i++){
-       if(onStatement){const cb=onStatement;onStatement=null;cb(i)}
+       if(onStatement)onStatement(i)
        results.push(await statements[i].run())
      }
      sqlite.exec('COMMIT')
@@ -189,7 +189,7 @@ sqlite.exec('DELETE FROM order_items WHERE id=99; DELETE FROM orders WHERE id=99
 // Failed final proof must rollback the journal and attempted source activation.
 const p3=await previewCatalogConsolidationUndo(db,2)
 assert.equal(p3.canUndoZeroStockIdentity,true)
-onStatement=(i)=>{if(i===1)sqlite.exec("UPDATE catalog_variants SET updated_at='changed' WHERE id=17")}
+onStatement=(i)=>{if(i===1){onStatement=null;sqlite.exec("UPDATE catalog_variants SET updated_at='changed' WHERE id=17")}}
 await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,p3.undoStateToken),/Отмена не применена/)
 assert.equal(sku(17),0)
 assert.equal(sqlite.prepare('SELECT updated_at FROM catalog_variants WHERE id=17').get().updated_at,'before')
