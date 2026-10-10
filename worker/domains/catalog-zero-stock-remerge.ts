@@ -202,12 +202,14 @@ export async function reMergeZeroStockCatalogVariant(
     state.sourceIdentity,state.targetIdentity,state.stockFingerprint)
   const retire=db.prepare(`UPDATE catalog_variants SET is_active=0,updated_at=?
     WHERE id=? AND is_active=1
+      AND json_array(id,product_id,stock_position_id,category,gender,color,size_label,
+        material,length,is_active,updated_at)=?
       AND EXISTS(SELECT 1 FROM catalog_variant_merge_generation_events e
         WHERE e.root_consolidation_id=? AND e.source_variant_id=? AND e.target_variant_id=?
           AND e.generation=3 AND e.event_kind='merge' AND e.created_at=?)
       AND NOT EXISTS(SELECT 1 FROM inventory_stock st
         WHERE st.variant_id=? AND (st.quantity<>0 OR st.reserved_quantity<>0))
-  `).bind(stamp,sourceId,state.rootId,sourceId,keeperId,stamp,sourceId)
+  `).bind(stamp,sourceId,state.sourceIdentity,state.rootId,sourceId,keeperId,stamp,sourceId)
   const proof=db.prepare(`INSERT INTO catalog_variant_zero_stock_remerge_validations
     (generation_event_id,root_consolidation_id,source_variant_id,target_variant_id,
       source_stock_rows,stock_fingerprint,passed,created_by,checked_at)
