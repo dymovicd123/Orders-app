@@ -1,0 +1,106 @@
+name: Catalog reference schema Production 0090-0105
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/catalog-reference-production-schema-0090-0105.yml'
+permissions:
+  contents: read
+concurrency:
+  group: prod-catalog-reference-schema-0090-0105
+  cancel-in-progress: false
+jobs:
+  additive-production-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact Production config and pinned reference-only schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == main ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          [[ ! -f migrations/0083_v72_workshop_settlement_foundation.sql ]]
+          [[ ! -f migrations/0084_v72_workshop_settlement_status_capture.sql ]]
+          [[ "$(git hash-object migrations/0090_v72_catalog_variant_consolidations.sql)" == "b4405429db17fbca0f7e212b3dd47cc6ca800ae8" ]] || { echo "Migration drift: migrations/0090_v72_catalog_variant_consolidations.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0091_v72_catalog_variant_stock_consolidation.sql)" == "3bf9bf2496145aa19a919a3468d3fb3d0a13d1c7" ]] || { echo "Migration drift: migrations/0091_v72_catalog_variant_stock_consolidation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0092_v72_catalog_variant_reservation_consolidation.sql)" == "894164a039a76abfdf8d7ac8a49109329b9bc66d" ]] || { echo "Migration drift: migrations/0092_v72_catalog_variant_reservation_consolidation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0093_v72_reference_value_choice_merges.sql)" == "d3afb62545f1cca2fc195244db13d42ac7b6471b" ]] || { echo "Migration drift: migrations/0093_v72_reference_value_choice_merges.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0094_v72_reference_payment_method_merges.sql)" == "fd6d34164f59ac3856b113701e47a81e681e95f7" ]] || { echo "Migration drift: migrations/0094_v72_reference_payment_method_merges.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0095_v72_catalog_stock_reconciliation_journal.sql)" == "0a35ae87effae25fd1e5d0d5befafd9aff0270f1" ]] || { echo "Migration drift: migrations/0095_v72_catalog_stock_reconciliation_journal.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0096_v72_catalog_atomic_stock_finalization.sql)" == "0f6cde970b9cb535d28e762e4002a87820625a2e" ]] || { echo "Migration drift: migrations/0096_v72_catalog_atomic_stock_finalization.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0097_v72_consolidated_sku_active_order_guard.sql)" == "7e443eceb367cb1c7aa6ab795c22f3e2d19e0e1d" ]] || { echo "Migration drift: migrations/0097_v72_consolidated_sku_active_order_guard.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0098_v72_consolidated_sku_stock_guard.sql)" == "700db59c2b37e6db43f3b9a9dc378b44b96858c6" ]] || { echo "Migration drift: migrations/0098_v72_consolidated_sku_stock_guard.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0099_v72_catalog_merge_generation_events.sql)" == "af2d04967b27f750384a62ba7513ff8ff17e69db" ]] || { echo "Migration drift: migrations/0099_v72_catalog_merge_generation_events.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0100_v72_catalog_zero_stock_undo_validation.sql)" == "94937dd3b455e11742bc363ddfd267fc0c2dd466" ]] || { echo "Migration drift: migrations/0100_v72_catalog_zero_stock_undo_validation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0101_v72_catalog_zero_stock_remerge_validation.sql)" == "2750280cd66f4a8bf41aa19351fcd1a28fa0f1f3" ]] || { echo "Migration drift: migrations/0101_v72_catalog_zero_stock_remerge_validation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0102_v72_catalog_positive_stock_undo_validation.sql)" == "9c26b192223a32d068d3e0e1cefebbe29959fdda" ]] || { echo "Migration drift: migrations/0102_v72_catalog_positive_stock_undo_validation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0103_v72_catalog_counted_undo_validation.sql)" == "ce925e9d87473a5490f4bbb5e9652d5c10d194e3" ]] || { echo "Migration drift: migrations/0103_v72_catalog_counted_undo_validation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0104_v72_catalog_reserved_undo_validation.sql)" == "5a03ea7ab8bc51afe90b18de502e2053b427c90d" ]] || { echo "Migration drift: migrations/0104_v72_catalog_reserved_undo_validation.sql"; exit 30; }
+          [[ "$(git hash-object migrations/0105_v72_reference_reason_choice_merges.sql)" == "6a3314e903349049740ccbe661f60f896a6e8a5b" ]] || { echo "Migration drift: migrations/0105_v72_reference_reason_choice_merges.sql"; exit 30; }
+          for sql in migrations/009*.sql migrations/010*.sql; do
+            [[ -f "$sql" ]] || continue
+            if grep -Eiq '^[[:space:]]*(UPDATE|DELETE|INSERT|REPLACE|DROP)[[:space:]]' "$sql"; then
+              echo "Unexpected business data mutation in $sql" >&2; exit 31
+            fi
+            if grep -Eiq '\bworkshop_settlement_(capture_control|events)\b' "$sql"; then
+              echo "Stage04 dependency detected" >&2; exit 32
+            fi
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check foundational Production D1 and snapshot operational business facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$CLOUDFLARE_ACCOUNT_ID" && -n "$CLOUDFLARE_API_TOKEN" ]] || exit 33
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_variant_consolidations') AS merges,(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='reference_value_merges') AS values_table,(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='reference_reason_choice_merges') AS reason_table,(SELECT COUNT(*) FROM pragma_table_info('catalog_variant_consolidation_stock_rows') WHERE name='source_reserved_before') AS reserve_col" --json)"
+          echo "$schema"
+          # All three schema sentinels must be missing. A partial prior migration
+          # needs review rather than blind replay (0092 contains ALTER TABLE).
+          jq -e '.[0].results[0] | .merges==0 and .values_table==0 and .reason_table==0 and .reserve_col==0' <<<"$schema"
+          foundation="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_variants') v,(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='reference_values') r,(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_reservations') ir" --json)"
+          echo "$foundation"
+          jq -e '.[0].results[0] | .v==1 and .r==1 and .ir==1' <<<"$foundation"
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM orders) orders_count,(SELECT COALESCE(SUM(total_amount),0) FROM orders) total_orders,(SELECT COUNT(*) FROM order_items) item_count,(SELECT COALESCE(SUM(quantity),0) FROM order_items) item_quantity,(SELECT COUNT(*) FROM payments) payment_count,(SELECT COALESCE(SUM(amount),0) FROM payments) paid_amount,(SELECT COUNT(*) FROM inventory_stock) stock_rows,(SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical,(SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved,(SELECT COUNT(*) FROM reference_values) reference_count,(SELECT COALESCE(SUM(is_active),0) FROM reference_values) reference_active" --json | jq -ce '.[0].results[0]' | jq -cS . >/tmp/catalog-schema-before.json
+          cat /tmp/catalog-schema-before.json
+      - name: Apply only 0090-0105 additive reference/catalog schemas in exact order
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0090_v72_catalog_variant_consolidations.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0091_v72_catalog_variant_stock_consolidation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0092_v72_catalog_variant_reservation_consolidation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0093_v72_reference_value_choice_merges.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0094_v72_reference_payment_method_merges.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0095_v72_catalog_stock_reconciliation_journal.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0096_v72_catalog_atomic_stock_finalization.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0097_v72_consolidated_sku_active_order_guard.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0098_v72_consolidated_sku_stock_guard.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0099_v72_catalog_merge_generation_events.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0100_v72_catalog_zero_stock_undo_validation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0101_v72_catalog_zero_stock_remerge_validation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0102_v72_catalog_positive_stock_undo_validation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0103_v72_catalog_counted_undo_validation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0104_v72_catalog_reserved_undo_validation.sql
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0105_v72_reference_reason_choice_merges.sql
+      - name: Verify new schema and unchanged operational facts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM orders) orders_count,(SELECT COALESCE(SUM(total_amount),0) FROM orders) total_orders,(SELECT COUNT(*) FROM order_items) item_count,(SELECT COALESCE(SUM(quantity),0) FROM order_items) item_quantity,(SELECT COUNT(*) FROM payments) payment_count,(SELECT COALESCE(SUM(amount),0) FROM payments) paid_amount,(SELECT COUNT(*) FROM inventory_stock) stock_rows,(SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical,(SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved,(SELECT COUNT(*) FROM reference_values) reference_count,(SELECT COALESCE(SUM(is_active),0) FROM reference_values) reference_active" --json | jq -ce '.[0].results[0]' | jq -cS . >/tmp/catalog-schema-after.json
+          diff -u /tmp/catalog-schema-before.json /tmp/catalog-schema-after.json
+          schema="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_variant_consolidations') AS merges,(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='reference_value_merges') AS values_table,(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='reference_reason_choice_merges') AS reason_table,(SELECT COUNT(*) FROM pragma_table_info('catalog_variant_consolidation_stock_rows') WHERE name='source_reserved_before') AS reserve_col" --json)"
+          echo "$schema"
+          jq -e '.[0].results[0] | .merges==1 and .values_table==1 and .reason_table==1 and .reserve_col==1' <<<"$schema"
+          echo 'PRODUCTION REFERENCE SCHEMA 0090-0105 VERIFIED — NO STAGE04 OR OPERATIONAL ROW CHANGES'
