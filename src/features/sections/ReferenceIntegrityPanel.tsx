@@ -361,24 +361,69 @@ export function ReferenceIntegrityPanel({
           <p>{skuPreview.explanation}</p>
           {skuPreview.stockReconciliation.locations.some(place=>place.requiresDecision) ? (
             <div className="reference-integrity-stock-confirmation">
-              <strong>Сверка физического товара — отдельно по каждому месту</strong>
-              <p className="mini-panel-note">Подтверждайте только если действительно проверили, что исходный и основной остатки — разные физические единицы, а не два учёта одного товара. Это не простая правка названия.</p>
-              {skuPreview.stockReconciliation.locations.filter(place=>place.requiresDecision).map(place=>(
-                <label key={place.location} className="reference-integrity-stock-location">
-                  <input type="checkbox" disabled={actionBusy||skuPreview.blockers.length>0}
-                    checked={verifiedLocations[place.location]===true}
-                    onChange={event=>setVerifiedLocations(old=>({...old,[place.location]:event.target.checked}))}/>
-                  <span>
-                    <strong>{place.location==='warehouse'?'Склад':'Бутик'}:</strong>
-                    {' '}{place.sourcePhysical} + {place.keeperPhysical} = {place.combinedPhysical} шт.
-                    {' '}(резерв: {place.reservedTotal}).
-                    {' '}Я сверил физически: это разные экземпляры, их можно сложить.
-                  </span>
-                </label>
-              ))}
-              {skuPreview.stockReconciliation.locations.some(place=>place.needsInvestigation) ? (
-                <p className="mini-panel-note">Есть остатки на обеих карточках. Особенно важно исключить двойной учёт одних и тех же вещей.</p>
-              ) : null}
+              <strong>Как поступить с остатками — отдельно для каждой точки</strong>
+              <p className="mini-panel-note">Физически сверьте обе записи. Одинаковое название SKU ещё не означает, что два остатка можно сложить. Решение принимает администратор.</p>
+              {skuPreview.stockReconciliation.locations.filter(place=>place.requiresDecision).map(place=>{
+                const choice=stockChoices[place.location]||{}
+                return <div key={place.location} className="reference-integrity-stock-location-choice">
+                  <strong>{place.location==='warehouse'?'Склад':'Бутик'}: исходный {place.sourcePhysical} шт., основной {place.keeperPhysical} шт., резерв {place.reservedTotal} шт.</strong>
+                  <label>
+                    Какое количество верное?
+                    <select value={choice.method||''} disabled={actionBusy||skuPreview.blockers.length>0}
+                      onChange={event=>setStockChoices(old=>({
+                        ...old,[place.location]:{
+                          method:event.target.value as SkuDecisionMethod,verified:false,reason:'',counted:'',
+                        },
+                      }))}>
+                      <option value="">— Выберите решение —</option>
+                      <option value="sum">Сложить: это разные физические вещи ({place.combinedPhysical} шт.)</option>
+                      <option value="keep_source">Верный остаток — у исходного ({place.sourcePhysical} шт.)</option>
+                      <option value="keep_keeper">Верный остаток — у основного ({place.keeperPhysical} шт.)</option>
+                      <option value="physical_count">Указать фактический пересчёт</option>
+                      <option value="defer">Отложить: сейчас не объединять</option>
+                    </select>
+                  </label>
+                  {choice.method==='physical_count'?(
+                    <label>
+                      Сколько штук физически нашли?
+                      <input type="number" min="0" step="1" inputMode="numeric" value={choice.counted||''}
+                        disabled={actionBusy}
+                        onChange={event=>setStockChoices(old=>({
+                          ...old,[place.location]:{...old[place.location],counted:event.target.value,verified:false},
+                        }))}/>
+                    </label>
+                  ):null}
+                  {choice.method && !['sum','defer'].includes(choice.method)?(
+                    <label>
+                      Причина исправления (от 12 символов)
+                      <textarea rows={2} maxLength={500} value={choice.reason||''}
+                        placeholder="Почему учётное количество отличается от реального?"
+                        disabled={actionBusy}
+                        onChange={event=>setStockChoices(old=>({
+                          ...old,[place.location]:{...old[place.location],reason:event.target.value,verified:false},
+                        }))}/>
+                    </label>
+                  ):null}
+                  {choice.method && choice.method!=='defer'?(
+                    <label className="reference-integrity-stock-location">
+                      <input type="checkbox" checked={choice.verified===true}
+                        disabled={actionBusy||skuPreview.blockers.length>0}
+                        onChange={event=>setStockChoices(old=>({
+                          ...old,[place.location]:{...old[place.location],verified:event.target.checked},
+                        }))}/>
+                      <span>{choice.method==='sum'
+                        ? 'Я физически проверил: это разные экземпляры, их действительно можно сложить.'
+                        : 'Я сверил реальные вещи и подтверждаю правильность этого количества.'}</span>
+                    </label>
+                  ):null}
+                  {choice.method==='defer'?(
+                    <p className="mini-panel-note">Эту пару пока не изменяем. Вернитесь к ней после сверки.</p>
+                  ):null}
+                  {choice.method && choice.method!=='sum' && choice.method!=='defer'?(
+                    <p className="mini-panel-note">Исправление требует причины и отдельной проверки действующих заказов, резервов и обратимых операций. Сервер повторно проверит все ограничения.</p>
+                  ):null}
+                </div>
+              })}
             </div>
           ) : null}
           <p className="mini-panel-note">
@@ -390,7 +435,7 @@ export function ReferenceIntegrityPanel({
             {skuPreview.stockBreakdown.map(place => (
               <div className="reference-integrity-item" key={place.location}>
                 <strong>{place.location === 'warehouse' ? 'Склад' : 'Бутик'}</strong>
-                <span>{place.sourcePhysical} + {place.targetPhysical} = {place.combinedPhysical} шт. после объединения</span>
+                <span>Если сложить разные экземпляры: {place.sourcePhysical} + {place.targetPhysical} = {place.combinedPhysical} шт.</span>
                 <span>Резервы: {place.sourceReserved} + {place.targetReserved} = {place.sourceReserved + place.targetReserved} шт.</span>
               </div>
             ))}
