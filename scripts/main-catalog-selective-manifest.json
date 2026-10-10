@@ -339,7 +339,6 @@
   ],
   "currentTests": [
     "scripts/test-reference-crud-integrity.mjs",
-    "scripts/test-reference-duplicates-discovery-r1.mjs",
     "scripts/test-reference-exhaustive-duplicates.mjs",
     "scripts/test-reference-merge-choice-preview.mjs",
     "scripts/test-reference-merge-monthly-apply.mjs",
