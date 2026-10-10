@@ -32,6 +32,7 @@ import { applyPaymentMethodMerge } from './domains/reference-payment-merge.ts'
 import { listRecentReferenceValueMerges } from './domains/reference-merge-history.ts'
 import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
+import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
 import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
@@ -231,6 +232,12 @@ export default {
         const denied = requireAdminUser(authUser, 'Проверка дублей доступна только администратору.');
         if (denied) return denied;
         return json(await listReferenceDuplicateGroups(env.DB));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Проверка отмены объединения доступна только администратору.');
+        if(denied)return denied;
+        return json(await previewCatalogConsolidationUndo(env.DB,Number(url.searchParams.get('consolidationId'))));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-history' && request.method === 'GET') {
