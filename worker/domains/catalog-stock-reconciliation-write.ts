@@ -250,7 +250,7 @@ export async function applyCatalogStockReconciliation(
   }catch(error){
     const applied=await replay(db,{...input,reason},finalQuantity)
     if(applied)return applied
-    throw new Error('Корректировка отменена целиком: склад или заказы изменились. Обновите предпросмотр.')
+    throw new Error('Корректировка отменена целиком: склад или заказы изменились. Обновите предпросмотр.', {cause:error})
   }
   if(results.some(x=>toInt(x.meta?.changes,0)!==1)) {
     throw new Error('Корректировка не применена: изменилась связанная запись. Проверьте журнал перед повтором.')
