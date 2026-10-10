@@ -417,10 +417,15 @@ export async function findCatalogCombinationV3(
 
   // Human-safe punctuation differences (for example СВЕТЛО-СЕРЫЙ vs СВЕТЛО СЕРЫЙ)
   // are one color identity. Keep the exact lookup fast, then fall back only when it misses.
-  const candidates = await db.prepare(
+  // A 200-row LIMIT is not a completeness guarantee: a legitimate legacy
+  // dash/space equivalent may be the 201st match, letting Catalog create a
+  // second business SKU. Scan bounded pages with a stable id cursor instead.
+  // The exact index-backed path above still avoids this scan in normal use.
+  const semanticColor = catalogColorIdentity(normalizedColor);
+  const page = db.prepare(
     `SELECT id, product_id, stock_position_id, category, gender, color, size_label, is_active
      FROM catalog_variants
-     WHERE stock_position_id = ? AND id <> ? AND is_active = 1
+     WHERE stock_position_id = ? AND id <> ? AND is_active = 1 AND id > ?
        AND COALESCE(category, 'adult') = ?
        AND CASE
          WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
@@ -432,10 +437,17 @@ export async function findCatalogCombinationV3(
          ELSE UPPER(TRIM(size_label))
        END = ?
      ORDER BY id ASC
-     LIMIT 200`
-  ).bind(executionId, excludeId, normalizedCategory, normalizedGender, normalizedSize).all<CombinationRow>();
-  const semanticColor = catalogColorIdentity(normalizedColor);
-  return (candidates.results || []).find((row) => catalogColorIdentity(row.color) === semanticColor) || null;
+     LIMIT 200`);
+  let afterId = 0;
+  for (;;) {
+    const candidates = await page.bind(executionId, excludeId, afterId,
+      normalizedCategory, normalizedGender, normalizedSize).all<CombinationRow>();
+    const rows = candidates.results || [];
+    const found = rows.find((row) => catalogColorIdentity(row.color) === semanticColor);
+    if (found) return found;
+    if (rows.length < 200) return null;
+    afterId = rows[rows.length - 1].id;
+  }
 }
 
 
@@ -476,10 +488,14 @@ export async function findRetiredCatalogCombinationV3(
     .first<CombinationRow>();
   if (exact?.id) return exact;
 
-  const candidates = await db.prepare(
+  // Retired variants need the same exhaustive semantic lookup. Otherwise
+  // restoration may create a second identity beyond the first 200 entries.
+  // The exact index-backed path above still avoids this scan in normal use.
+  const semanticColor = catalogColorIdentity(normalizedColor);
+  const page = db.prepare(
     `SELECT id, product_id, stock_position_id, category, gender, color, size_label, is_active
      FROM catalog_variants
-     WHERE stock_position_id = ? AND id <> ? AND is_active = 0
+     WHERE stock_position_id = ? AND id <> ? AND is_active = 0 AND id < ?
        AND COALESCE(category, 'adult') = ?
        AND CASE
          WHEN UPPER(TRIM(COALESCE(gender, ''))) LIKE '%ЖЕН%' THEN 'ЖЕН'
@@ -491,10 +507,17 @@ export async function findRetiredCatalogCombinationV3(
          ELSE UPPER(TRIM(size_label))
        END = ?
      ORDER BY id DESC
-     LIMIT 200`
-  ).bind(executionId, excludeId, normalizedCategory, normalizedGender, normalizedSize).all<CombinationRow>();
-  const semanticColor = catalogColorIdentity(normalizedColor);
-  return (candidates.results || []).find((row) => catalogColorIdentity(row.color) === semanticColor) || null;
+     LIMIT 200`);
+  let beforeId = Number.MAX_SAFE_INTEGER;
+  for (;;) {
+    const candidates = await page.bind(executionId, excludeId, beforeId,
+      normalizedCategory, normalizedGender, normalizedSize).all<CombinationRow>();
+    const rows = candidates.results || [];
+    const found = rows.find((row) => catalogColorIdentity(row.color) === semanticColor);
+    if (found) return found;
+    if (rows.length < 200) return null;
+    beforeId = rows[rows.length - 1].id;
+  }
 }
 
 
