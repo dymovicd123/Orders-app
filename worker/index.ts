@@ -34,6 +34,8 @@ import { businessMonthRange } from './domains/reference-merge-preview.ts'
 import { consolidateUnusedCatalogVariant, listRecentCatalogVariantConsolidations, previewCatalogVariantConsolidation } from './domains/catalog-variant-consolidation.ts'
 import { previewCatalogConsolidationUndo } from './domains/catalog-consolidation-undo-preview.ts'
 import { previewComplexCatalogUndoCase } from './domains/catalog-complex-undo-case.ts'
+import { previewUntouchedReservationUndo } from './domains/catalog-reserved-undo-preview.ts'
+import { undoUntouchedReservationConsolidation } from './domains/catalog-reserved-stock-undo.ts'
 import { previewCorrectedCatalogConsolidationUndo } from './domains/catalog-corrected-undo-review.ts'
 import { previewCountedCatalogUndo, undoCountedCatalogConsolidation } from './domains/catalog-counted-stock-undo.ts'
 import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-undo.ts'
@@ -258,6 +260,23 @@ export default {
         return json(await undoCountedCatalogConsolidation(
           env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,
           data.expectedToken,data.allocations
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-reserved-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Отмена резервов доступна только администратору.');
+        if(denied)return denied;
+        return json(await previewUntouchedReservationUndo(
+          env.DB,Number(url.searchParams.get('consolidationId'))
+        ));
+      }
+
+      if (url.pathname === '/api/catalog/variants/consolidation-undo-reserved' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Отмена резервов доступна только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{consolidationId:number;reason:string;expectedToken:string}>(request);
+        return json(await undoUntouchedReservationConsolidation(
+          env.DB,Number(data.consolidationId),authUser?.login||'',data.reason,data.expectedToken
         ));
       }
 
