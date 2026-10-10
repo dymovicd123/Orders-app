@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { previewCatalogConsolidationUndo } from '../worker/domains/catalog-consolidation-undo-preview.ts'
 import { undoUnusedCatalogConsolidation } from '../worker/domains/catalog-zero-stock-undo.ts'
+import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from '../worker/domains/catalog-zero-stock-remerge.ts'
 
 const sqlite = new DatabaseSync(':memory:')
 sqlite.exec(`
@@ -70,6 +71,7 @@ sqlite.exec(fs.readFileSync('migrations/0092_v72_catalog_variant_reservation_con
 sqlite.exec(fs.readFileSync('migrations/0096_v72_catalog_atomic_stock_finalization.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0099_v72_catalog_merge_generation_events.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/0100_v72_catalog_zero_stock_undo_validation.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/0101_v72_catalog_zero_stock_remerge_validation.sql','utf8'))
 
 
 let beforeBatch=null
@@ -147,6 +149,61 @@ assert.equal(sqlite.prepare('SELECT event_kind FROM catalog_variant_merge_genera
 // Same token cannot accidentally apply again.
 await assert.rejects(()=>undoUnusedCatalogConsolidation(db,1,'admin',reason,baseline.undoStateToken),/Нельзя автоматически/)
 assert.equal(cnt('catalog_variant_merge_generation_events'),1)
+
+// Generation 3: after confirmed zero-stock undo, restore an immutable
+// source->NEW keeper mapping without touching stock, shipped history or money.
+sqlite.exec(`
+ INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,
+   size_label,material,length,is_active,updated_at)
+ SELECT 99,product_id,stock_position_id,category,gender,color,
+   size_label,material,length,1,'new-keeper'
+ FROM catalog_variants WHERE id=8;
+ INSERT INTO inventory_stock(id,variant_id,inventory_source,quantity,reserved_quantity,
+   updated_at,last_source_ref) VALUES(199,99,'warehouse',6,0,'new-keeper',NULL);
+`)
+await assert.rejects(()=>previewZeroStockReMerge(db,7,9),/отличаются/,'Different materials must remain separate SKUs')
+sqlite.exec('UPDATE inventory_stock SET quantity=1 WHERE id=10')
+const unsafePositive=await previewZeroStockReMerge(db,7,99)
+assert.equal(unsafePositive.canReMerge,false,'Positive source stock cannot be remerged by zero-stock writer')
+sqlite.exec('UPDATE inventory_stock SET quantity=0 WHERE id=10')
+const recheck=await previewZeroStockReMerge(db,7,99)
+assert.equal(recheck.canReMerge,true,JSON.stringify(recheck.blockers))
+await assert.rejects(()=>reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,'stale'),/изменились/)
+const stockBeforeRemerge=JSON.stringify(sqlite.prepare('SELECT id,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all())
+beforeBatch=()=>{
+  const later=new Date(Date.now()+60000).toISOString()
+  sqlite.prepare("INSERT INTO orders(id,order_status,shipping_status,updated_at) VALUES(901,'active','sent',?)").run(later)
+  sqlite.prepare('INSERT INTO order_items(id,order_id,variant_id,quantity,created_at) VALUES(901,901,7,1,?)').run(later)
+}
+await assert.rejects(
+ ()=>reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,recheck.stateToken),
+ /не применено|изменились/,
+ 'Concurrent customer order must win over stale administration'
+)
+assert.equal(sku(7),1)
+assert.equal(cnt('catalog_variant_merge_generation_events'),1)
+assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=901').get().variant_id,7)
+sqlite.exec('DELETE FROM order_items WHERE id=901; DELETE FROM orders WHERE id=901')
+const previewReMerge=await previewZeroStockReMerge(db,7,99)
+assert.equal(previewReMerge.canReMerge,true,JSON.stringify(previewReMerge.blockers))
+const reMerged=await reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,previewReMerge.stateToken)
+assert.equal(reMerged.reMerged,true)
+assert.equal(reMerged.generation,3)
+assert.equal(reMerged.physicalDelta,0)
+assert.equal(sku(7),0)
+assert.equal(cnt('catalog_variant_merge_generation_events'),2)
+assert.equal(cnt('catalog_variant_zero_stock_remerge_validations'),1)
+assert.equal(JSON.stringify(sqlite.prepare('SELECT id,variant_id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all()),stockBeforeRemerge)
+assert.equal(sqlite.prepare('SELECT target_variant_id FROM catalog_variant_effective_merge_lineage WHERE source_variant_id=7').get().target_variant_id,99)
+assert.equal(sqlite.prepare('SELECT target_variant_id FROM catalog_variant_consolidations WHERE id=1').get().target_variant_id,8)
+assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=21').get().variant_id,7)
+await assert.rejects(
+ ()=>reMergeZeroStockCatalogVariant(db,7,99,'admin',reason,previewReMerge.stateToken),
+ /недоступно|подтверждённой отмены|не имеет/,
+ 'A replay must never duplicate generation 3'
+)
+assert.equal(cnt('catalog_variant_merge_generation_events'),2)
+
 // Reset the fixture to a merged source for testing raced writes, leaving the
 // original event in place as immutable evidence, but use a second fresh receipt.
 sqlite.exec(`
@@ -205,4 +262,4 @@ await assert.rejects(()=>undoUnusedCatalogConsolidation(db,2,'admin',reason,unsa
 const api=fs.readFileSync('worker/index.ts','utf8')
 assert.ok(api.includes('/api/catalog/variants/consolidation-undo-zero-stock'))
 assert.ok(api.includes('requireAdminUser(authUser'))
-console.log('ZERO-STOCK IDENTITY UNDO PASSED — atomic generation + activation, zero inventory delta, shipped history, order race, stale state, proof rollback, nonzero stock rejected')
+console.log('ZERO-STOCK UNDO + GENERATION-3 RE-MERGE PASSED — atomic generation + activation, zero inventory delta, shipped history, order race, stale state, proof rollback, nonzero stock rejected')
