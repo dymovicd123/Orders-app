@@ -150,6 +150,6 @@
     "scripts/test-reference-reason-choice-schema.mjs": "570e2a06a142eaa8a9e3d4e1e99001f634277c5b",
     ".github/workflows/branch2-reference-reason-schema-0105.yml": "5394b2f0e8830e043a83be7d700903304dbfe3f9",
     "worker/domains/reference-reason-merge.ts": "ab74aa08b426ae00bbc6f1c5280b5e7cc82e7a0f",
-    "scripts/test-reference-reason-merge.mjs": "3c97e25a2758f512d0f633befd8f4c306ecb81df"
+    "scripts/test-reference-reason-merge.mjs": "37f00701cd750bba2290b9c3743c4bbe8ff70b33"
   }
 }
