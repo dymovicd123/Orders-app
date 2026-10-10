@@ -72,7 +72,7 @@ jobs:
           jq -cSe '.[0].results[0]' <<<"$state" > /tmp/catalog-zero-stock-undo-before.json
           schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
             SELECT COUNT(*) AS tables_count FROM sqlite_master WHERE (
-type='table' AND name='catalog_variant_zero_stock_undo_validations'
+              type='table' AND name='catalog_variant_zero_stock_undo_validations'
             );
           " --json)"
           count="$(jq -r '.[0].results[0].tables_count // -1' <<<"$schema")"
@@ -96,10 +96,10 @@ type='table' AND name='catalog_variant_zero_stock_undo_validations'
           schema="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
             SELECT
               (SELECT COUNT(*) FROM sqlite_master WHERE (
-type='table' AND name='catalog_variant_zero_stock_undo_validations'
+              type='table' AND name='catalog_variant_zero_stock_undo_validations'
             )) AS tables_count,
               (SELECT COUNT(*) FROM sqlite_master WHERE (
-type='table' AND name='catalog_variant_zero_stock_undo_validations'
+              type='table' AND name='catalog_variant_zero_stock_undo_validations'
             )) AS installed_triggers
           " --json)"
           [[ "$(jq -r '.[0].results[0].tables_count // -1' <<<"$schema")" == '1' ]] || exit 51
