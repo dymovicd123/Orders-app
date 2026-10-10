@@ -4,17 +4,18 @@ import { previewComplexCatalogUndoCase } from './catalog-complex-undo-case.ts'
 
 type Stock={id:number;variant_id:number;inventory_source:string;quantity:number;reserved_quantity:number;last_source_ref:string|null;updated_at:string|null}
 type Reserved={id:number;variant_id:number;inventory_source:string;quantity:number;status:string;updated_at:string|null;order_id:number;order_item_id:number}
-type Link={reservation_id:number;order_id:number;order_item_id:number;inventory_source:string;quantity:number;original_variant_id:number;keeper_variant_id:number;now_variant:number|null;now_status:string|null;now_qty:number|null;now_location:string|null;now_order:number|null;now_item:number|null;now_date:string|null;item_variant:number|null;item_quantity:number|null;item_source:string|null;item_status:string|null;is_workshop:number|null;item_created_at:string|null;order_status:string|null;shipping_status:string|null;order_updated_at:string|null}
+type Link={reservation_id:number;order_id:number;order_item_id:number;inventory_source:string;quantity:number;original_variant_id:number;keeper_variant_id:number;now_variant:number|null;now_status:string|null;now_qty:number|null;now_product:number|null;item_product:number|null;now_location:string|null;now_order:number|null;now_item:number|null;now_date:string|null;item_variant:number|null;item_quantity:number|null;item_source:string|null;item_status:string|null;is_workshop:number|null;item_created_at:string|null;order_status:string|null;shipping_status:string|null;order_updated_at:string|null}
 type Ledger={inventory_source:string;source_stock_id:number;target_stock_id_before:number|null;source_quantity_before:number;target_quantity_before:number;source_reserved_before:number;target_reserved_before:number;combined_quantity_after:number;decision_method:string;adjustment_quantity:number}
 
 export async function previewUntouchedReservationUndo(db:D1Database,id:number){
  const review=await previewComplexCatalogUndoCase(db,id)
- const [stocksResult,resResult,linkResult,ledgerResult,variantsResult]=await Promise.all([
+ const [stocksResult,resResult,linkResult,ledgerResult,variantsResult,rootResult]=await Promise.all([
   db.prepare("SELECT id,variant_id,inventory_source,quantity,reserved_quantity,last_source_ref,updated_at FROM inventory_stock WHERE variant_id IN (?,?) ORDER BY id").bind(review.sourceId,review.keeperId).all<Stock>(),
   db.prepare("SELECT id,variant_id,inventory_source,quantity,status,updated_at,order_id,order_item_id FROM inventory_reservations WHERE variant_id IN (?,?) ORDER BY id").bind(review.sourceId,review.keeperId).all<Reserved>(),
-  db.prepare("SELECT a.reservation_id,a.order_id,a.order_item_id,a.inventory_source,a.quantity,a.original_variant_id,a.keeper_variant_id,r.variant_id AS now_variant,r.status AS now_status,r.quantity AS now_qty,r.inventory_source AS now_location,r.order_id AS now_order,r.order_item_id AS now_item,r.updated_at AS now_date,oi.variant_id AS item_variant,oi.quantity AS item_quantity,oi.source_type AS item_source,oi.stock_writeoff_status AS item_status,oi.is_workshop,oi.created_at AS item_created_at,o.order_status,o.shipping_status,o.updated_at AS order_updated_at FROM catalog_variant_consolidation_reservation_rows a LEFT JOIN inventory_reservations r ON r.id=a.reservation_id LEFT JOIN order_items oi ON oi.id=a.order_item_id LEFT JOIN orders o ON o.id=a.order_id WHERE a.consolidation_id=? ORDER BY a.reservation_id").bind(id).all<Link>(),
+  db.prepare("SELECT a.reservation_id,a.order_id,a.order_item_id,a.inventory_source,a.quantity,a.original_variant_id,a.keeper_variant_id,r.variant_id AS now_variant,r.status AS now_status,r.quantity AS now_qty,r.inventory_source AS now_location,r.order_id AS now_order,r.order_item_id AS now_item,r.product_id AS now_product,r.updated_at AS now_date,oi.product_id AS item_product,oi.variant_id AS item_variant,oi.quantity AS item_quantity,oi.source_type AS item_source,oi.stock_writeoff_status AS item_status,oi.is_workshop,oi.created_at AS item_created_at,o.order_status,o.shipping_status,o.updated_at AS order_updated_at FROM catalog_variant_consolidation_reservation_rows a LEFT JOIN inventory_reservations r ON r.id=a.reservation_id LEFT JOIN order_items oi ON oi.id=a.order_item_id LEFT JOIN orders o ON o.id=a.order_id WHERE a.consolidation_id=? ORDER BY a.reservation_id").bind(id).all<Link>(),
   db.prepare("SELECT l.inventory_source,l.source_stock_id,l.target_stock_id_before,l.source_quantity_before,l.target_quantity_before,l.source_reserved_before,l.target_reserved_before,l.combined_quantity_after,d.decision_method,d.adjustment_quantity FROM catalog_variant_consolidation_stock_rows l LEFT JOIN catalog_variant_consolidation_stock_decisions d ON d.consolidation_id=l.consolidation_id AND d.inventory_source=l.inventory_source WHERE l.consolidation_id=? ORDER BY l.inventory_source").bind(id).all<Ledger>(),
   db.prepare("SELECT id,updated_at FROM catalog_variants WHERE id IN (?,?) ORDER BY id").bind(review.sourceId,review.keeperId).all<{id:number;updated_at:string}>(),
+  db.prepare("SELECT product_id FROM catalog_variant_consolidations WHERE id=?").bind(id).first<{product_id:number}>(),
  ])
  const stocks=stocksResult.results||[],reserves=resResult.results||[],links=linkResult.results||[],
   ledger=ledgerResult.results||[],variants=variantsResult.results||[]
@@ -39,7 +40,8 @@ export async function previewUntouchedReservationUndo(db:D1Database,id:number){
      ||r.now_status!=='active'||r.now_qty!==r.quantity||r.now_location!==r.inventory_source
      ||r.now_order!==r.order_id||r.now_item!==r.order_item_id
      ||r.item_source!==r.inventory_source||r.item_status!=='reserved'||r.is_workshop!==0
-     ||r.order_status!=='active'||r.shipping_status==='sent'
+     ||r.now_product!==rootResult?.product_id||r.item_product!==rootResult?.product_id
+     ||r.order_status!=='active'||(r.shipping_status??'not_sent')!=='not_sent'
      ||Date.parse(r.now_date||'')!==mergeTime
      ||!(Date.parse(r.item_created_at||'')<mergeTime)
      ||!(Date.parse(r.order_updated_at||'')<mergeTime))
