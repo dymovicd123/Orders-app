@@ -51,6 +51,14 @@ BEGIN
       AND NEW.source_stock_rows=(
         SELECT COUNT(*) FROM inventory_stock st WHERE st.variant_id=s.id
       )
+      AND NEW.stock_fingerprint=(
+        SELECT COALESCE(json_group_array(json_array(id,inventory_source,variant_id,quantity,reserved_quantity,updated_at,last_source_ref)),'[]')
+        FROM (
+          SELECT id,inventory_source,variant_id,quantity,reserved_quantity,updated_at,last_source_ref
+          FROM inventory_stock WHERE variant_id IN (NEW.source_variant_id,NEW.target_variant_id)
+          ORDER BY id
+        )
+      )
   ) THEN RAISE(ABORT,'Zero-stock re-merge proof failed') END;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_catalog_zero_stock_remerge_immutable_update
