@@ -52,6 +52,7 @@ const tests=[
   ['scripts/test-catalog-zero-stock-remerge-schema.mjs',false],
   ['scripts/test-catalog-positive-undo-proof-schema.mjs',false],
   ['scripts/test-catalog-counted-undo-proof-schema.mjs',false],
+  ['scripts/test-catalog-counted-stock-undo.mjs',true],
   ['scripts/test-catalog-positive-stock-undo.mjs',true],
   ['scripts/test-catalog-corrected-undo-review.mjs',true],
   ['scripts/test-inventory-writeoff-review.mjs',true],
