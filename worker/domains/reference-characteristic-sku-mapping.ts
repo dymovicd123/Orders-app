@@ -77,9 +77,9 @@ export async function previewCharacteristicSkuMapping(
  // Characteristics are stored as display text on SKUs, not by reference_values.id.
  // Identical labels cannot distinguish source from keeper: otherwise the source
  // variant itself may be incorrectly proposed as its own keeper.
- if(from===to)throw new Error(
+ if(from===to)throw Object.assign(new Error(
   'У выбранных значений одинаковое название. По тексту товара нельзя отличить исходный вариант от основного. Не объединяйте SKU по такой карте.'
- )
+ ),{status:400,code:'characteristic_mapping_indistinguishable'})
  const matcher=matchingSql(kind),scope=aud(kind),bindings=bindValue(kind,from)
  const fromWhere=" WHERE "+matcher+scope
  const fromQuery=selectVariant+fromWhere
