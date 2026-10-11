@@ -60,5 +60,8 @@ jobs:
       - name: Verify Stage04-D Workshop settlement UI and cost reconciliation
         run: node --experimental-strip-types scripts/test-stage04d-workshop-settlements.mjs
 
+      - name: Validate unique frozen legacy Workshop SKU cost capture
+        run: node scripts/test-stage04b3-unique-legacy-sku-capture.mjs
+
       - name: Build application
         run: npm run build
