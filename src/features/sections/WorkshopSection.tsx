@@ -44,7 +44,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
   // Persistent admin-only attention; status changes and returning from Catalog refresh it.
   const [unpricedCount, setUnpricedCount] = useState<number | null>(null)
   const [unpricedReadError, setUnpricedReadError] = useState(false)
-  const [settlementInitialView, setSettlementInitialView] = useState<'daily' | 'unpriced'>('daily')
+  const [openUnpricedRequest, setOpenUnpricedRequest] = useState(0)
   const refreshUnpricedCount = useCallback(async () => {
     if (!canSeeSettlements) return
     try {
@@ -71,7 +71,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     }
   }, [canSeeSettlements, refreshUnpricedCount])
   const showUnpricedQueue = () => {
-    setSettlementInitialView('unpriced')
+    setOpenUnpricedRequest(current => current + 1)
     setWorkshopChannel('settlements')
   }
 
@@ -236,7 +236,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
       ) : null}
 
       {workshopChannel === 'settlements' && canSeeSettlements ? (
-        <WorkshopSettlementsPanel initialView={settlementInitialView}
+        <WorkshopSettlementsPanel openUnpricedRequest={openUnpricedRequest}
           onUnpricedCountChange={setUnpricedCount}
           openCatalogPrice={ctx.openWorkshopCatalogPrice}/>
       ) : <>
