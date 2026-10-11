@@ -1,9 +1,10 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import { useMemo, useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
+import { WorkshopSettlementsPanel } from '../workshop/WorkshopSettlementsPanel'
 
 type SectionContext = Record<string, any>
-type WorkshopChannel = 'regular' | 'kaspi'
+type WorkshopChannel = 'regular' | 'kaspi' | 'settlements'
 type WorkshopPanel = 'orders' | 'invoice'
 
 export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
@@ -39,6 +40,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
 
   const [workshopChannel, setWorkshopChannel] = useState<WorkshopChannel>(workshopInvoiceIsKaspi ? 'kaspi' : 'regular')
   const [workshopPanel, setWorkshopPanel] = useState<WorkshopPanel>(workshopFilters.view === 'invoice' ? 'invoice' : 'orders')
+  const canSeeSettlements = Boolean(ctx.isAdmin)
 
   const isKaspiTask = (task: any) => String(task.orderPaymentMethod || '').trim().toUpperCase() === 'КАСПИ МАГАЗИН'
   const visibleWorkshopTasks = useMemo(
@@ -90,6 +92,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
 
   const changeChannel = (channel: WorkshopChannel) => {
     setWorkshopChannel(channel)
+    if (channel === 'settlements') return
     if (workshopPanel === 'invoice') {
       setWorkshopInvoiceMode(channel === 'kaspi' ? 'kaspi' : 'period')
       setWorkshopFilters((current: any) => {
@@ -177,8 +180,13 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
           <span>Kaspi магазин</span>
           <small>Отдельная приоритетная очередь</small>
         </button>
+        {canSeeSettlements && <button type="button" className={'workshop-channel-tab is-settlements ' + (workshopChannel === 'settlements' ? 'is-active' : '')} onClick={() => changeChannel('settlements')} aria-pressed={workshopChannel === 'settlements'}>
+          <span>Расчёты с Цехом</span>
+          <small>Готовые изделия, выплаты и долги</small>
+        </button>}
       </div>
 
+      {workshopChannel === 'settlements' && canSeeSettlements ? <WorkshopSettlementsPanel /> : <>
       <div className="workshop-section-tabs" role="tablist" aria-label="Раздел цеха">
         <button type="button" className={workshopPanel === 'orders' ? 'is-active' : ''} onClick={openOrders}>Заказы</button>
         <button type="button" className={workshopPanel === 'invoice' ? 'is-active' : ''} onClick={openInvoice}>Накладная</button>
@@ -498,6 +506,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
           </div>
         </>
       )}
+      </>}
     </article>
   )
 }
