@@ -37,10 +37,15 @@ const compatibleVariant = `
 
 export async function listUnpricedWorkshopCompletions(db: D1Database) {
   await assertWorkshopSettlementSchema(db)
-  const rows = await db.prepare(`
+  const [rows, total] = await Promise.all([
+    db.prepare(`
     SELECT c.id,c.workshop_task_id AS taskId,c.external_order_id AS orderRef,
       c.product_name_snapshot AS productName,c.quantity,c.business_date AS completedDate,
-      CASE WHEN ${compatibleVariant} THEN ep.cost_price ELSE NULL END AS availableUnitCost
+      CASE WHEN ${compatibleVariant} THEN ep.cost_price ELSE NULL END AS availableUnitCost,
+      CASE WHEN ${compatibleVariant} THEN cv.product_id ELSE NULL END AS catalogProductId,
+      CASE WHEN NOT (${compatibleVariant}) THEN 'needs_match'
+           WHEN ep.cost_price IS NULL THEN 'missing_cost'
+           ELSE 'ready' END AS resolutionState
     FROM workshop_settlement_events c
     LEFT JOIN workshop_tasks wt ON wt.id=c.workshop_task_id
     LEFT JOIN order_items oi ON oi.id=c.order_item_id
@@ -49,7 +54,10 @@ export async function listUnpricedWorkshopCompletions(db: D1Database) {
       ON ep.stock_position_id=cv.stock_position_id AND ep.category=cv.category
     WHERE ${completionUnpriced}
     ORDER BY c.id DESC LIMIT 51
-  `).all<Record<string,unknown>>()
+  `).all<Record<string,unknown>>(),
+    db.prepare(`SELECT COUNT(*) AS total FROM workshop_settlement_events c
+      WHERE ${completionUnpriced}`).first<{ total:number }>(),
+  ])
   const items=(rows.results||[]).slice(0,50).map(row=>({
     id:Number(row.id),
     taskId:Number(row.taskId),
@@ -58,8 +66,10 @@ export async function listUnpricedWorkshopCompletions(db: D1Database) {
     quantity:Number(row.quantity),
     completedDate:String(row.completedDate||''),
     availableUnitCost:row.availableUnitCost==null?null:Number(row.availableUnitCost),
+    catalogProductId:row.catalogProductId==null?null:Number(row.catalogProductId),
+    resolutionState:row.resolutionState==='missing_cost'?'missing_cost':row.resolutionState==='ready'?'ready':'needs_match',
   }))
-  return {ok:true,items,hasMore:(rows.results||[]).length>50}
+  return {ok:true,items,total:Number(total?.total||0),hasMore:(rows.results||[]).length>50}
 }
 
 export async function confirmUnpricedWorkshopCompletionCost(
