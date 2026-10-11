@@ -110,7 +110,7 @@ export async function postWorkshopSettlementPayment(
       AND NOT EXISTS (
         SELECT 1 FROM workshop_settlement_events WHERE event_key=?
       )
-  `).bind(eventKey, -amount, method, comment || null, actorId, amount, eventKey).run()
+  `).bind(eventKey, -amount, method || null, comment || null, actorId, amount, eventKey).run()
 
   const inserted = await findPaymentByKey(db, eventKey)
   if (inserted) {
