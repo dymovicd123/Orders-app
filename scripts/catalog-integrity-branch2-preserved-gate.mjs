@@ -14,6 +14,15 @@ const gitBlob = (value) => {
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
 const manifest=JSON.parse(fs.readFileSync('scripts/catalog-integrity-branch2-stage04-safe-runtime-manifest.json','utf8'))
 check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-stage04-safe-20261009','Invalid integration manifest')
+// Stage04-B2 is independently tested on current runtime; the exact old
+// migration-count regression must still run against its frozen historical tree.
+// Pin this additive SQL and hide it ONLY while invoking that original suite.
+const stage04B2Extensions={
+  'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
+}
+for(const [file,expected] of Object.entries(stage04B2Extensions)){
+  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
+}
 const run=(command,args,context,extraEnv={})=>{
   const x=spawnSync(command,args,{cwd:process.cwd(),stdio:'inherit',shell:false,
     windowsHide:true,env:{...process.env, CATALOG_INTEGRITY_PORT_CHECK:'1',...extraEnv}})
@@ -89,7 +98,10 @@ const hidden=[]
 try{
   // The historical size/count checks must see exactly the original Branch2
   // source tree; new modules are tested above against their own current code.
-  for(const [relative,expected] of Object.entries(manifest.addedFiles || {})){
+  for(const [relative,expected] of [
+    ...Object.entries(manifest.addedFiles || {}),
+    ...Object.entries(stage04B2Extensions),
+  ]){
     const from=path.resolve(relative)
     check(gitBlob(fs.readFileSync(from,'utf8'))===expected,'New module drifted: '+relative)
     const to=path.join(staged,relative)
