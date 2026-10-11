@@ -20,9 +20,9 @@ check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-sta
 const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
-  'worker/domains/workshop-settlements.ts':'8d2c11f76e4a722fc24cc542112a4c9d452373f7',
+  'worker/domains/workshop-settlements.ts':'aee77dfdb6a057d600bc1fb75b363f6cb1c92383',
   'worker/domains/workshop-settlement-prices.ts':'f18f1f2ca866e3c1ac910ba31ff6aa2028a30cbd',
-  'src/features/workshop/WorkshopSettlementsPanel.tsx':'e700d0f1dbfab1632f736c6ba5254c5e803f54d3',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx':'da76819a9515c8d10cc6959e02548b8b52f4281d',
   'src/styles/stage04-workshop-settlements.css':'c69192e37cbc63a9743559d0628c0a3a454e84ef',
 }
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
