@@ -8,6 +8,7 @@ import {
 const dbRaw=new DatabaseSync(':memory:')
 dbRaw.exec('PRAGMA foreign_keys=ON')
 dbRaw.exec(String(fs.readFileSync('migrations/0083_v72_workshop_settlement_foundation.sql','utf8')))
+dbRaw.exec(String(fs.readFileSync('migrations/0107_v72_workshop_settlement_payment_method.sql','utf8')))
 dbRaw.exec(`
   CREATE TABLE workshop_settlement_capture_control(id INTEGER PRIMARY KEY,enabled INTEGER NOT NULL);
   INSERT INTO workshop_settlement_capture_control VALUES(1,0);
