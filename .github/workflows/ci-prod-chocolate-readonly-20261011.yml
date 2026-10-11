@@ -48,7 +48,7 @@ jobs:
           query() {
             local title="$1"
             local sql="$2"
-            [[ "$sql" =~ ^SELECT[[:space:]] ]] || { echo "REJECTED NON SELECT query" >&2; exit 40; }
+            [[ "$sql" =~ ^(SELECT|WITH)[[:space:]] ]] || { echo "REJECTED NON SELECT QUERY" >&2; exit 40; }
             echo "===== $title ====="
             local response
             response="$(npx wrangler d1 execute orders_db_prod --remote --config audit-prod-only-read.jsonc --command "$sql" --json)"
