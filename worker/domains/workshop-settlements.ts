@@ -203,7 +203,7 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
   const [total, opening, daily, history] = await Promise.all([
     db.prepare(`
       SELECT COALESCE(SUM(amount_delta),0) AS balance,
-        COALESCE(SUM(CASE WHEN event_type='completion' THEN amount_delta ELSE 0 END),0) AS charged,
+        COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment') THEN amount_delta ELSE 0 END),0) AS charged,
         COALESCE(SUM(CASE WHEN event_type='payment' THEN -amount_delta ELSE 0 END),0) AS paid,
         COALESCE(SUM(CASE WHEN event_type='payment_reversal' THEN amount_delta ELSE 0 END),0) AS paymentsReversed,
         (SELECT COUNT(*) FROM workshop_settlement_events c
@@ -219,7 +219,7 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
       .bind(start).first<{ balance: number }>(),
     db.prepare(`
       SELECT business_date AS date,
-        COALESCE(SUM(CASE WHEN event_type='completion' THEN amount_delta ELSE 0 END),0) AS completed,
+        COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment') THEN amount_delta ELSE 0 END),0) AS completed,
         COALESCE(SUM(CASE WHEN event_type='completion_reversal' THEN amount_delta ELSE 0 END),0) AS completionCorrections,
         COALESCE(SUM(CASE WHEN event_type='payment' THEN -amount_delta ELSE 0 END),0) AS paid,
         COALESCE(SUM(CASE WHEN event_type='payment_reversal' THEN amount_delta ELSE 0 END),0) AS paymentCorrections,
