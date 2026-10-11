@@ -34,6 +34,12 @@ async function verifyPass(pass) {
   const referenceChunk=entrySource.match(/ReferencesSection-[A-Za-z0-9_-]+\.js/)
   if(!referenceChunk)throw new Error('Public index.js does not link ReferencesSection')
   const references=await get(base+'/assets/'+referenceChunk[0])
+  const workshopChunk=entrySource.match(/WorkshopSection-[A-Za-z0-9_-]+\.js/)
+  if(!workshopChunk)throw new Error('Public index.js does not link WorkshopSection')
+  const workshop=await get(base+'/assets/'+workshopChunk[0])
+  for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Начисления']){
+    if(!workshop.includes(marker))throw new Error('PUBLIC BRANCH2 IS MISSING STAGE04-D WORKSHOP UI: '+marker)
+  }
   const missing=expected.filter(marker=>!references.includes(marker))
   console.log('Branch2 pass '+pass+' entry:',entry[1])
   console.log('Branch2 pass '+pass+' references chunk:',referenceChunk[0])
