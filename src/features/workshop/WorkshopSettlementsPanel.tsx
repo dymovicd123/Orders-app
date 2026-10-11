@@ -119,14 +119,13 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
       return {...day,closing:running}
     }).reverse()
   },[details])
-  const [showLegacyMethod,setShowLegacyMethod]=useState(false)
   const openPayment=(mode:PaymentMode)=>{
     if(!activated||debt<=0)return
     setPaymentMode(mode)
     setAmountDraft(mode==='full'?String(debt):'')
     setError('');setNotice('')
   }
-  const closePayment=()=>{setPaymentMode(null);setAmountDraft('');setComment('');setShowOptional(false);setShowLegacyMethod(false)}
+  const closePayment=()=>{setPaymentMode(null);setAmountDraft('');setComment('');setShowOptional(false)}
   const successfulWrite=async(message:string)=>{
     setNotice(message);setError('');clearPaymentId();closePayment()
     // The write already succeeded. A later network read error is NOT a failed payment.
