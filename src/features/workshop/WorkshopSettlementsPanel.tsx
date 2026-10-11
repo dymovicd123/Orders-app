@@ -152,10 +152,10 @@ export function WorkshopSettlementsPanel(){
     </header>
     {ledger&&!activated&&<div className="ws-settlements-startup" role="status"><strong>Учёт пока не запущен.</strong> Новые начисления и выплаты отключены до сверки начальной задолженности на дату запуска. Исторические заказы не будут начисляться повторно.</div>}
     <div className="ws-settlements-kpis">
-      <div><span>Сегодня выполнено</span><strong>{money(Number(todayRow?.completed||0)+Number(todayRow?.completionCorrections||0))}</strong><small>Подтверждённая себестоимость</small></div>
-      <div><span>Сегодня выплачено</span><strong>{money(Number(todayRow?.paid||0)-Number(todayRow?.paymentCorrections||0))}</strong><small>За вычетом отмен выплат</small></div>
-      <div><span>Осталось выплатить</span><strong>{money(ledger?.confirmedDebt||0)}</strong><small>Общий накопленный долг</small></div>
-      <div><span>Без себестоимости</span><strong>{ledger?.unresolvedPrices??0}</strong><small>Не включены в долг</small></div>
+      <div><span>Сегодня выполнено</span><strong>{activated?money(Number(todayRow?.completed||0)+Number(todayRow?.completionCorrections||0)):'—'}</strong><small>Подтверждённая себестоимость</small></div>
+      <div><span>Сегодня выплачено</span><strong>{activated?money(Number(todayRow?.paid||0)-Number(todayRow?.paymentCorrections||0)):'—'}</strong><small>За вычетом отмен выплат</small></div>
+      <div><span>Осталось выплатить</span><strong>{activated?money(ledger?.confirmedDebt||0):'—'}</strong><small>Общий накопленный долг</small></div>
+      <div><span>Без себестоимости</span><strong>{activated?ledger?.unresolvedPrices??0:'—'}</strong><small>Не включены в долг</small></div>
     </div>
     {ledger&&ledger.correctionCredit>0&&<p className="ws-settlements-warning">После исправлений возникла переплата {money(ledger.correctionCredit)}. Это не аванс — проверьте корректировки и выплаты.</p>}
     {error&&<div className="ws-settlements-error" role="alert">{error}</div>}
