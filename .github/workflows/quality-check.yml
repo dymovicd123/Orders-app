@@ -51,5 +51,8 @@ jobs:
       - name: Run cumulative regression gate
         run: npm run release:check
 
+      - name: Verify Stage04-B2 Workshop Catalog cost snapshots
+        run: node scripts/test-stage04b2-workshop-catalog-cost.mjs
+
       - name: Build application
         run: npm run build
