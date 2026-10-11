@@ -75,3 +75,51 @@ jobs:
           jq -e '.[0].results | length==1' <<<"$result" >/dev/null
           echo 'BRANCH2 READ-ONLY DIAGNOSTIC (identity flags only; no customer/order or price values):'
           jq '.[0].results[0]' <<<"$result"
+
+      - name: Check unique price execution candidates without revealing product fields
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            WITH target AS (
+              SELECT c.id, c.order_id, c.order_item_id, c.product_name_snapshot, c.details_snapshot,
+                     oi.product_id, oi.audience_type,
+                     json_extract(c.details_snapshot,'$.color') AS color,
+                     json_extract(c.details_snapshot,'$.size') AS size,
+                     json_extract(c.details_snapshot,'$.material') AS material,
+                     json_extract(c.details_snapshot,'$.length') AS length,
+                     json_extract(c.details_snapshot,'$.gender') AS gender
+              FROM workshop_settlement_events c
+              LEFT JOIN order_items oi ON oi.id=c.order_item_id AND oi.order_id=c.order_id
+              WHERE c.event_type='completion' AND c.amount_delta IS NULL
+              AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events r WHERE r.related_event_id=c.id AND r.event_type='completion_reversal')
+              AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events a WHERE a.related_event_id=c.id AND a.event_type='price_adjustment')
+              ORDER BY c.id DESC LIMIT 1
+            ),
+            variants AS (
+              SELECT v.id, v.stock_position_id, v.category, v.gender, v.color, v.size_label, v.material, v.length, v.is_active, ep.cost_price,
+                (UPPER(TRIM(COALESCE(v.color,'')))=UPPER(TRIM(COALESCE(t.color,'')))) AS color_ok,
+                (UPPER(TRIM(COALESCE(v.size_label,'')))=UPPER(TRIM(COALESCE(t.size,'')))) AS size_ok,
+                (UPPER(TRIM(COALESCE(v.material,'')))=UPPER(TRIM(COALESCE(t.material,'')))) AS material_ok,
+                (UPPER(TRIM(COALESCE(v.length,'')))=UPPER(TRIM(COALESCE(t.length,'')))) AS length_ok,
+                (UPPER(TRIM(COALESCE(v.gender,'')))=UPPER(TRIM(COALESCE(t.gender,'')))) AS gender_ok
+              FROM target t
+              JOIN catalog_products p ON (p.id=t.product_id OR
+                (t.product_id IS NULL AND UPPER(TRIM(p.name))=UPPER(TRIM(t.product_name_snapshot))))
+              JOIN catalog_variants v ON v.product_id=p.id
+              LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=v.stock_position_id AND ep.category=v.category
+            )
+            SELECT
+              (SELECT product_id IS NOT NULL FROM target) AS order_item_product_linked,
+              (SELECT COUNT(*) FROM variants) AS product_variant_count,
+              (SELECT COUNT(*) FROM variants WHERE is_active=1) AS active_variant_count,
+              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok) AS color_size_matches,
+              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok) AS color_size_material_length_matches,
+              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND gender_ok) AS all_attributes_match,
+              (SELECT COUNT(DISTINCT CAST(stock_position_id AS TEXT) || ':' || category) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND gender_ok AND is_active=1) AS distinct_matching_executions,
+              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND gender_ok AND is_active=1 AND cost_price IS NOT NULL) AS priced_full_matches,
+              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND is_active=1 AND cost_price IS NOT NULL) AS priced_without_gender_check
+          " --json)"
+          echo 'BRANCH2 READ-ONLY PRICE SCOPE (aggregate counts only):'
+          jq -e '.[0].results | length==1' <<<"$result" >/dev/null
+          jq '.[0].results[0]' <<<"$result"
