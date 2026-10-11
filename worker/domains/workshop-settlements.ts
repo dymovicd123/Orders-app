@@ -81,7 +81,7 @@ export async function postWorkshopSettlementPayment(
   requireActor(actorId)
   const amount = validMoney(input.amount)
   const requestId = validRequestId(input.requestId)
-  const method = validatedText(input.method, 'Выберите способ выплаты.', 80, true)
+  const method = validatedText(input.method, 'Способ выплаты слишком длинный.', 80, false)
   const comment = validatedText(input.comment, 'Комментарий к выплате слишком длинный.', 500, false)
   const eventKey = 'workshop:payment:' + requestId
 
@@ -110,7 +110,7 @@ export async function postWorkshopSettlementPayment(
       AND NOT EXISTS (
         SELECT 1 FROM workshop_settlement_events WHERE event_key=?
       )
-  `).bind(eventKey, -amount, method, comment || null, actorId, amount, eventKey).run()
+  `).bind(eventKey, -amount, method || null, comment || null, actorId, amount, eventKey).run()
 
   const inserted = await findPaymentByKey(db, eventKey)
   if (inserted) {
@@ -184,6 +184,53 @@ function validDate(value: string): string {
   return value
 }
 
+// Lightweight first-screen request: no 90-day aggregation or paginated full journal.
+export async function readWorkshopSettlementSummary(db: D1Database) {
+  const enabled = await assertWorkshopSettlementSchema(db)
+  const [totals, latest] = await Promise.all([
+    db.prepare(`
+      SELECT COALESCE(SUM(amount_delta),0) AS balance,
+        COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
+          AND event_type='completion' THEN amount_delta ELSE 0 END),0) AS completedToday,
+        COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
+          AND event_type='price_adjustment' THEN amount_delta ELSE 0 END),0) AS pricedToday,
+        COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
+          AND event_type='completion_reversal' THEN amount_delta ELSE 0 END),0) AS revertedToday,
+        COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
+          AND event_type='payment' THEN -amount_delta ELSE 0 END),0) AS paidToday,
+        COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
+          AND event_type='payment_reversal' THEN amount_delta ELSE 0 END),0) AS reversedToday,
+        (SELECT COUNT(*) FROM workshop_settlement_events c
+          WHERE c.event_type='completion' AND c.amount_delta IS NULL
+            AND NOT EXISTS (SELECT 1 FROM workshop_settlement_events r
+              WHERE r.related_event_id=c.id AND r.event_type='completion_reversal')
+            AND NOT EXISTS (SELECT 1 FROM workshop_settlement_events a
+              WHERE a.related_event_id=c.id AND a.event_type='price_adjustment')
+        ) AS unresolvedPrices
+      FROM workshop_settlement_events
+    `).first<Record<string,number>>(),
+    db.prepare(`
+      SELECT id,event_type,business_date,product_name_snapshot,quantity,unit_cost,
+             amount_delta,payment_method,comment
+      FROM workshop_settlement_events ORDER BY id DESC LIMIT 6
+    `).all<Record<string,unknown>>(),
+  ])
+  const balance=Number(totals?.balance||0)
+  return {
+    ok:true, captureEnabled:enabled,
+    confirmedDebt:Math.max(0,balance), correctionCredit:Math.max(0,-balance),
+    unresolvedPrices:Number(totals?.unresolvedPrices||0),
+    today:{
+      completed:Number(totals?.completedToday||0),
+      costConfirmed:Number(totals?.pricedToday||0),
+      completionCorrections:Number(totals?.revertedToday||0),
+      paid:Number(totals?.paidToday||0),
+      paymentCorrections:Number(totals?.reversedToday||0),
+    },
+    recent:latest.results||[],
+  }
+}
+
 export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
   const enabled = await assertWorkshopSettlementSchema(db)
   const today = new Date(Date.now() + 5 * 3600000).toISOString().slice(0,10)
@@ -193,6 +240,10 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
   const range = (Date.parse(end + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z')) / 86400000
   if (range < 0 || range > 89) {
     throw new WorkshopSettlementError('Выберите период не более 90 дней.', 400, 'invalid_period')
+  }
+  const scope = url.searchParams.get('scope') || 'all'
+  if (!['all','work'].includes(scope)) {
+    throw new WorkshopSettlementError('Некорректный тип истории.',400,'invalid_history_scope')
   }
   const beforeRaw = url.searchParams.get('beforeId')
   const beforeId = beforeRaw === null ? Number.MAX_SAFE_INTEGER : Number(beforeRaw)
@@ -219,7 +270,8 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
       .bind(start).first<{ balance: number }>(),
     db.prepare(`
       SELECT business_date AS date,
-        COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment') THEN amount_delta ELSE 0 END),0) AS completed,
+        COALESCE(SUM(CASE WHEN event_type='completion' THEN amount_delta ELSE 0 END),0) AS completed,
+        COALESCE(SUM(CASE WHEN event_type='price_adjustment' THEN amount_delta ELSE 0 END),0) AS costConfirmed,
         COALESCE(SUM(CASE WHEN event_type='completion_reversal' THEN amount_delta ELSE 0 END),0) AS completionCorrections,
         COALESCE(SUM(CASE WHEN event_type='payment' THEN -amount_delta ELSE 0 END),0) AS paid,
         COALESCE(SUM(CASE WHEN event_type='payment_reversal' THEN amount_delta ELSE 0 END),0) AS paymentCorrections,
@@ -236,8 +288,9 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
           WHERE r.event_type='payment_reversal' AND r.related_event_id=e.id) AS isReversed
       FROM workshop_settlement_events e
       WHERE business_date BETWEEN ? AND ? AND id < ?
+        AND (?='all' OR event_type IN ('completion','completion_reversal','price_adjustment'))
       ORDER BY id DESC LIMIT 51
-    `).bind(start,end,beforeId).all<Record<string, unknown>>(),
+    `).bind(start,end,beforeId,scope).all<Record<string, unknown>>(),
     db.prepare(`
       SELECT COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment')
           THEN amount_delta ELSE 0 END),0) AS completed,

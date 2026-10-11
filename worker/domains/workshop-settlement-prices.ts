@@ -63,6 +63,15 @@ const resolvedVariantJoin = `
   )
 `
 
+export async function countUnpricedWorkshopCompletions(db: D1Database) {
+  await assertWorkshopSettlementSchema(db)
+  const row=await db.prepare(`
+    SELECT COUNT(*) AS total FROM workshop_settlement_events c
+    WHERE ${completionUnpriced}
+  `).first<{total:number}>()
+  return {ok:true,total:Number(row?.total||0)}
+}
+
 export async function listUnpricedWorkshopCompletions(db: D1Database) {
   await assertWorkshopSettlementSchema(db)
   const [rows, total] = await Promise.all([

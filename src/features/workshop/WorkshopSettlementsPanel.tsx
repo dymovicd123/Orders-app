@@ -1,230 +1,340 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import '../../styles/stage04-workshop-settlements.css'
 
-type LedgerEvent={id:number;isReversed:number;event_type:string;business_date:string;external_order_id:string|null;product_name_snapshot:string|null;quantity:number|null;unit_cost:number|null;amount_delta:number|null;payment_method:string|null;comment:string|null;related_event_id:number|null}
-type Day={date:string;completed:number;completionCorrections:number;paid:number;paymentCorrections:number;netChange:number;unpricedNewCount:number}
-type Ledger={ok:boolean;captureEnabled:boolean;balance:number;confirmedDebt:number;correctionCredit:number;unresolvedPrices:number;today:{completed:number;completionCorrections:number;paid:number;paymentCorrections:number};range:{from:string;to:string;openingBalance:number};days:Day[];events:LedgerEvent[];hasMore:boolean;nextBeforeId:number|null}
-type Unpriced={id:number;taskId:number;orderRef:string;productName:string;quantity:number;completedDate:string;availableUnitCost:number|null;catalogProductId:number|null;resolutionState:'missing_cost'|'needs_match'|'ready'}
-type UnpricedResponse={ok:boolean;items:Unpriced[];total:number;hasMore:boolean}
-type View='daily'|'history'|'unpriced'
-const formatter=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0})
-const money=(n:number|null|undefined)=>n==null?'Не указана':formatter.format(n)+' ₸'
-const todayKz=()=>new Date(Date.now()+5*3600000).toISOString().slice(0,10)
-const backDays=(date:string,n:number)=>new Date(Date.parse(date+'T00:00:00Z')-n*86400000).toISOString().slice(0,10)
-const eventNames:Record<string,string>={completion:'Готовая работа',completion_reversal:'Возврат в работу',price_adjustment:'Стоимость уточнена',payment:'Выплата цеху',payment_reversal:'Отмена выплаты',opening_balance:'Начальный долг',balance_adjustment:'Корректировка'}
-async function readApi<T>(url:string,init?:RequestInit):Promise<T>{
-  const response=await fetch(url,{...init,credentials:'include',cache:'no-store'})
-  const payload=await response.json().catch(()=>null) as ({ok?:boolean;message?:string}&T)|null
-  if(!response.ok||!payload||payload.ok===false)throw new Error(payload?.message||(response.status===401?'Войдите в систему повторно.':'Не удалось выполнить запрос.'))
-  return payload
+type RecentEvent = { id:number; event_type:string; business_date:string; product_name_snapshot:string|null; quantity:number|null; unit_cost:number|null; amount_delta:number|null; payment_method:string|null; comment:string|null }
+type LedgerEvent = RecentEvent & { isReversed:number; external_order_id:string|null; related_event_id:number|null }
+type Day = { date:string; completed:number; costConfirmed:number; completionCorrections:number; paid:number; paymentCorrections:number; netChange:number }
+type Summary = { ok:boolean; captureEnabled:boolean; confirmedDebt:number; correctionCredit:number; unresolvedPrices:number;
+  today:{ completed:number; costConfirmed:number; completionCorrections:number; paid:number; paymentCorrections:number };
+  recent:RecentEvent[] }
+type Ledger = { ok:boolean; range:{ from:string; to:string; openingBalance:number }; days:Day[]; events:LedgerEvent[]; hasMore:boolean; nextBeforeId:number|null }
+type Unpriced = { id:number; orderRef:string; productName:string; quantity:number; completedDate:string; availableUnitCost:number|null; catalogProductId:number|null; resolutionState:'missing_cost'|'needs_match'|'ready' }
+type UnpricedResponse = { ok:boolean; items:Unpriced[]; total:number; hasMore:boolean }
+type View = 'home'|'work'|'history'|'days'|'unpriced'
+type PaymentMode = 'full'|'partial'
+const number = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0})
+const money = (value:number|null|undefined) => value==null?'Не указана':number.format(value)+' ₸'
+const todayKz = () => new Date(Date.now()+5*3600000).toISOString().slice(0,10)
+const beforeDays = (day:string,n:number) => new Date(Date.parse(day+'T00:00:00Z')-n*86400000).toISOString().slice(0,10)
+const titles:Record<string,string> = {
+  completion:'Готовое изделие',completion_reversal:'Возврат в работу',
+  price_adjustment:'Подтверждена себестоимость',payment:'Выплата цеху',
+  payment_reversal:'Отменена выплата',opening_balance:'Начальный долг',balance_adjustment:'Корректировка',
 }
-const draftStorageKey='workshop:settlements:payment:pending'
-function paymentIdempotency(body:string){
-  try{
-    const saved=JSON.parse(sessionStorage.getItem(draftStorageKey)||'null') as {body:string;id:string}|null
-    if(saved?.body===body&&saved?.id)return saved.id
+async function api<T>(url:string,options?:RequestInit):Promise<T> {
+  const response=await fetch(url,{...options,credentials:'include',cache:'no-store'})
+  const result=await response.json().catch(()=>null) as (T & {ok?:boolean;message?:string})|null
+  if(!response.ok||!result||result.ok===false)
+    throw new Error(result?.message||(response.status===401?'Войдите в систему повторно.':'Не удалось выполнить операцию.'))
+  return result
+}
+const requestKey='workshop:settlements:payment:pending'
+function paymentIdempotency(body:string):string {
+  try {
+    const pending=JSON.parse(sessionStorage.getItem(requestKey)||'null') as {body:string;id:string}|null
+    if(pending?.body===body&&pending.id)return pending.id
   }catch{ /* private browsing */ }
   const id=crypto.randomUUID()
-  try{sessionStorage.setItem(draftStorageKey,JSON.stringify({body,id}))}catch{ /* optional */ }
+  try{sessionStorage.setItem(requestKey,JSON.stringify({body,id}))}catch{ /* optional */ }
   return id
 }
-const clearPaymentId=()=>{try{sessionStorage.removeItem(draftStorageKey)}catch{ /* optional */ }}
+function clearPaymentId(){try{sessionStorage.removeItem(requestKey)}catch{ /* optional */ }}
 
-export function WorkshopSettlementsPanel({ openUnpricedRequest, onUnpricedCountChange, openCatalogPrice }: { openUnpricedRequest:number; onUnpricedCountChange:(count:number)=>void; openCatalogPrice:(productId:number|null, productName:string)=>void }){
+export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice}:{
+  openUnpricedRequest:number;onUnpricedCountChange:(count:number)=>void;
+  openCatalogPrice:(productId:number|null,name:string)=>void;
+}) {
   const today=todayKz()
-  const [from,setFrom]=useState(backDays(today,29))
-  const [to,setTo]=useState(today)
-  const [period,setPeriod]=useState({from:backDays(today,29),to:today})
-  const [view,setView]=useState<View>('daily')
-  useEffect(() => { if(openUnpricedRequest>0) setView('unpriced') },[openUnpricedRequest])
-  const [ledger,setLedger]=useState<Ledger|null>(null)
+  const [view,setView]=useState<View>('home')
+  const [summary,setSummary]=useState<Summary|null>(null)
+  const [details,setDetails]=useState<Ledger|null>(null)
   const [unpriced,setUnpriced]=useState<UnpricedResponse|null>(null)
-  const [loading,setLoading]=useState(true)
+  const [summaryLoading,setSummaryLoading]=useState(true)
+  const [detailLoading,setDetailLoading]=useState(false)
   const [busy,setBusy]=useState(false)
   const [moreBusy,setMoreBusy]=useState(false)
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
-  const [showPayment,setShowPayment]=useState(false)
-  const [paymentAmount,setPaymentAmount]=useState('')
+  const [paymentMode,setPaymentMode]=useState<PaymentMode|null>(null)
+  const [amountDraft,setAmountDraft]=useState('')
   const [method,setMethod]=useState('')
   const [comment,setComment]=useState('')
-  const requestGeneration=useRef(0)
+  const [showOptional,setShowOptional]=useState(false)
+  const [fromDraft,setFromDraft]=useState(beforeDays(today,29))
+  const [toDraft,setToDraft]=useState(today)
+  const [period,setPeriod]=useState({from:beforeDays(today,29),to:today})
+  const summaryGeneration=useRef(0)
+  const detailGeneration=useRef(0)
   const writeLocked=useRef(false)
 
-  const refresh=useCallback(async()=>{
-    const generation=++requestGeneration.current
-    setLoading(true);setError('')
-    try{
-      const query=new URLSearchParams(period)
-      const [next,unknown]=await Promise.all([
-        readApi<Ledger>('/api/workshop/settlements?'+query.toString()),
-        readApi<UnpricedResponse>('/api/workshop/settlements/unpriced'),
-      ])
-      if(requestGeneration.current!==generation)return
-      setLedger(next);setUnpriced(unknown);onUnpricedCountChange(unknown.total)
-    }catch(e){
-      if(requestGeneration.current===generation)setError(e instanceof Error?e.message:'Ошибка обновления расчётов.')
-    }finally{
-      if(requestGeneration.current===generation)setLoading(false)
+  const refreshSummary=useCallback(async()=>{
+    const generation=++summaryGeneration.current
+    setSummaryLoading(true)
+    try {
+      const next=await api<Summary>('/api/workshop/settlements/summary')
+      if(generation!==summaryGeneration.current)return
+      setSummary(next);onUnpricedCountChange(next.unresolvedPrices)
+    }catch(e) {
+      if(generation===summaryGeneration.current)setError(e instanceof Error?e.message:'Не удалось загрузить расчёты.')
+    }finally {
+      if(generation===summaryGeneration.current)setSummaryLoading(false)
     }
-  },[period,onUnpricedCountChange])
-  useEffect(()=>{void refresh();return()=>{requestGeneration.current++}},[refresh])
+  },[onUnpricedCountChange])
 
-  const daily=useMemo(()=>{
-    let running=Number(ledger?.range.openingBalance||0)
-    return [...(ledger?.days||[])].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>{
+  const loadDetails=useCallback(async()=>{
+    if(view==='home')return
+    const generation=++detailGeneration.current
+    setDetailLoading(true)
+    try {
+      if(view==='unpriced'){
+        const result=await api<UnpricedResponse>('/api/workshop/settlements/unpriced')
+        if(generation!==detailGeneration.current)return
+        setUnpriced(result);onUnpricedCountChange(result.total)
+      }else{
+        const params=new URLSearchParams(period)
+        if(view==='work')params.set('scope','work')
+        const result=await api<Ledger>('/api/workshop/settlements?'+params.toString())
+        if(generation!==detailGeneration.current)return
+        setDetails(result)
+      }
+    }catch(e){
+      if(generation===detailGeneration.current)setError(e instanceof Error?e.message:'Не удалось открыть подробности.')
+    }finally{
+      if(generation===detailGeneration.current)setDetailLoading(false)
+    }
+  },[view,period,onUnpricedCountChange])
+
+  useEffect(()=>{void refreshSummary();return()=>{summaryGeneration.current++}},[refreshSummary])
+  useEffect(()=>{void loadDetails();return()=>{detailGeneration.current++}},[loadDetails])
+  useEffect(()=>{if(openUnpricedRequest>0)setView('unpriced')},[openUnpricedRequest])
+
+  const activated=Boolean(summary?.captureEnabled)
+  const debt=Number(summary?.confirmedDebt||0)
+  const amountValue=Number(amountDraft)
+  const validAmount=Number.isSafeInteger(amountValue)&&amountValue>0&&amountValue<=debt
+  const maySave=activated&&!busy&&!summaryLoading&&validAmount
+  const days=useMemo(()=>{
+    let running=Number(details?.range.openingBalance||0)
+    return [...(details?.days||[])].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>{
       running+=Number(day.netChange||0)
       return {...day,closing:running}
     }).reverse()
-  },[ledger])
-  const todayRow=ledger?.today
-  const activated=Boolean(ledger?.captureEnabled)
-  const amountValue=Number(paymentAmount)
-  const validAmount=Number.isSafeInteger(amountValue)&&amountValue>0&&amountValue<=(ledger?.confirmedDebt||0)
-  const allowSave=activated&&!busy&&!loading&&validAmount&&Boolean(method.trim())
-  const reversedIds=new Set((ledger?.events||[]).filter(x=>x.event_type==='payment_reversal').map(x=>Number(x.related_event_id)))
-
-  const applyPeriod=(e:FormEvent)=>{
-    e.preventDefault()
-    const first=Date.parse(from+'T00:00:00Z'),last=Date.parse(to+'T00:00:00Z')
-    if(!Number.isFinite(first)||!Number.isFinite(last)||first>last||(last-first)/86400000>89){
-      setError('Выберите корректный период не длиннее 90 дней.');return
-    }
-    setPeriod({from,to})
+  },[details])
+  const openPayment=(mode:PaymentMode)=>{
+    if(!activated||debt<=0)return
+    setPaymentMode(mode)
+    setAmountDraft(mode==='full'?String(debt):'')
+    setError('');setNotice('')
   }
-  const afterSave=async(note:string)=>{
-    setNotice(note);setShowPayment(false);setPaymentAmount('');setComment('');clearPaymentId()
-    await refresh()
+  const closePayment=()=>{setPaymentMode(null);setAmountDraft('');setComment('');setShowOptional(false)}
+  const successfulWrite=async(message:string)=>{
+    setNotice(message);setError('');clearPaymentId();closePayment()
+    // The write already succeeded. A later network read error is NOT a failed payment.
+    await Promise.all([refreshSummary(),...(view!=='home'?[loadDetails()]:[])])
   }
-  const savePayment=async(e:FormEvent)=>{
+  const submitPayment=async(e:FormEvent)=>{
     e.preventDefault()
-    if(writeLocked.current||!allowSave)return
+    if(writeLocked.current||!maySave)return
     const body={amount:amountValue,method:method.trim(),comment:comment.trim()}
-    const id=paymentIdempotency(JSON.stringify(body))
+    const requestId=paymentIdempotency(JSON.stringify(body))
     writeLocked.current=true;setBusy(true);setError('');setNotice('')
     try{
-      await readApi('/api/workshop/settlements/payments',{
-        method:'POST',headers:{'Content-Type':'application/json','X-Idempotency-Key':id},
-        body:JSON.stringify({...body,requestId:id}),
-      })
-      await afterSave('Выплата записана, задолженность обновлена.')
+      await api('/api/workshop/settlements/payments',{method:'POST',
+        headers:{'Content-Type':'application/json','X-Idempotency-Key':requestId},
+        body:JSON.stringify({...body,requestId})})
+      await successfulWrite('Выплата '+money(amountValue)+' сохранена. Задолженность обновлена.')
     }catch(e){
-      setError((e instanceof Error?e.message:'Не удалось записать выплату.')+' Если сеть прервалась, попробуйте повторить без изменения суммы.')
+      setError((e instanceof Error?e.message:'Не удалось записать выплату.')+' Если сеть прервалась, повторите без изменения данных.')
     }finally{writeLocked.current=false;setBusy(false)}
   }
-  const reversePayment=async(item:LedgerEvent)=>{
+  const reversePayment=async(event:LedgerEvent)=>{
     if(writeLocked.current||!activated)return
-    const reason=window.prompt('Почему отменяем выплату? Причина останется в истории:')
+    const reason=window.prompt('Причина отмены выплаты (сохранится в истории):')
     if(reason===null)return
-    if(reason.trim().length<5){setError('Укажите причину не короче 5 символов.');return}
-    if(!window.confirm('Отменить выплату '+money(-Number(item.amount_delta||0))+'? Задолженность увеличится.'))return
+    if(reason.trim().length<5){setError('Укажите причину отмены не короче 5 символов.');return}
+    if(!window.confirm('Отменить выплату '+money(-Number(event.amount_delta||0))+'? Задолженность увеличится.'))return
     writeLocked.current=true;setBusy(true);setError('')
-    try{
-      await readApi('/api/workshop/settlements/payments/'+item.id+'/reverse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:reason.trim()})})
-      await afterSave('Выплата отменена, история сохранена.')
+    try {
+      await api('/api/workshop/settlements/payments/'+event.id+'/reverse',
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:reason.trim()})})
+      await successfulWrite('Выплата отменена с сохранением истории.')
     }catch(e){setError(e instanceof Error?e.message:'Не удалось отменить выплату.')}
     finally{writeLocked.current=false;setBusy(false)}
   }
   const resolveCost=async(item:Unpriced)=>{
     if(writeLocked.current||!activated||item.availableUnitCost===null)return
-    if(!window.confirm('Подтвердить себестоимость '+money(item.availableUnitCost)+' × '+item.quantity+' шт. для «'+item.productName+'»?'))return
+    if(!window.confirm('Подтвердить начисление '+money(item.availableUnitCost*item.quantity)+
+      ' за «'+item.productName+'» ('+item.quantity+' шт.)?'))return
     writeLocked.current=true;setBusy(true);setError('')
-    try{
-      await readApi('/api/workshop/settlements/unpriced/'+item.id+'/confirm-cost',{method:'POST'})
-      await afterSave('Стоимость подтверждена по каталогу.')
-    }catch(e){setError(e instanceof Error?e.message:'Не удалось подтвердить себестоимость.')}
+    try {
+      await api('/api/workshop/settlements/unpriced/'+item.id+'/confirm-cost',{method:'POST'})
+      await successfulWrite('Себестоимость подтверждена. Начисление учтено.')
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось подтвердить стоимость.')}
     finally{writeLocked.current=false;setBusy(false)}
   }
+  const applyPeriod=(e:FormEvent)=>{
+    e.preventDefault()
+    const a=Date.parse(fromDraft+'T00:00:00Z'),b=Date.parse(toDraft+'T00:00:00Z')
+    if(!Number.isFinite(a)||!Number.isFinite(b)||a>b||(b-a)/86400000>89){
+      setError('Выберите корректный период не более 90 дней.');return
+    }
+    setError('')
+    setPeriod({from:fromDraft,to:toDraft})
+  }
   const loadMore=async()=>{
-    if(moreBusy||!ledger?.nextBeforeId)return
-    setMoreBusy(true);setError('')
+    if(moreBusy||!details?.nextBeforeId)return
+    setMoreBusy(true)
     try{
-      const query=new URLSearchParams({...period,beforeId:String(ledger.nextBeforeId)})
-      const page=await readApi<Ledger>('/api/workshop/settlements?'+query.toString())
-      setLedger(current=>current?{...current,events:[...current.events,...page.events],hasMore:page.hasMore,nextBeforeId:page.nextBeforeId}:current)
-    }catch(e){setError(e instanceof Error?e.message:'Не удалось загрузить историю.')}
+      const params=new URLSearchParams({...period,beforeId:String(details.nextBeforeId)})
+      if(view==='work')params.set('scope','work')
+      const page=await api<Ledger>('/api/workshop/settlements?'+params.toString())
+      setDetails(current=>current?{...current,events:[...current.events,...page.events],
+        hasMore:page.hasMore,nextBeforeId:page.nextBeforeId}:current)
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось загрузить продолжение.')}
     finally{setMoreBusy(false)}
   }
+  const isWork=(event:RecentEvent)=>['completion','completion_reversal','price_adjustment'].includes(event.event_type)
+  const eventLabel=(event:RecentEvent)=>event.product_name_snapshot||event.comment||(event.event_type==='payment'?'Выплата цеху':'Операция')
+  const openView=(next:View)=>{setError('');setView(next)}
 
-  return <section className="ws-settlements" aria-label="Расчёты с Цехом">
-    <header className="ws-settlements-head">
-      <div><h3>Расчёты с Цехом</h3><p>Общие начисления за обычные и Kaspi-заказы, выплаты и непогашенная задолженность.</p></div>
-      <button type="button" className="secondary compact" disabled={loading||busy} onClick={()=>void refresh()}>{loading?'Загружаю…':'Обновить'}</button>
-    </header>
-    {ledger&&!activated&&<div className="ws-settlements-startup" role="status"><strong>Учёт пока не запущен.</strong> Новые начисления и выплаты отключены до сверки начальной задолженности на дату запуска. Исторические заказы не будут начисляться повторно.</div>}
-    <div className="ws-settlements-kpis">
-      <div><span>Сегодня выполнено</span><strong>{activated?money(Number(todayRow?.completed||0)+Number(todayRow?.completionCorrections||0)):'—'}</strong><small>Подтверждённая себестоимость</small></div>
-      <div><span>Сегодня выплачено</span><strong>{activated?money(Number(todayRow?.paid||0)-Number(todayRow?.paymentCorrections||0)):'—'}</strong><small>За вычетом отмен выплат</small></div>
-      <div><span>Осталось выплатить</span><strong>{activated?money(ledger?.confirmedDebt||0):'—'}</strong><small>Общий накопленный долг</small></div>
-      <div><span>Без себестоимости</span><strong>{activated?ledger?.unresolvedPrices??0:'—'}</strong><small>Не включены в долг</small></div>
+  return <section className="ws-settlements ws-settlements-fast" aria-label="Расчёты с Цехом">
+    <div className="ws-fast-top">
+      <div><h3>Расчёты с Цехом</h3><p>Общие выплаты и задолженность по обычным и Kaspi-заказам.</p></div>
+      <button className="secondary compact" type="button" disabled={summaryLoading||busy} onClick={()=>void refreshSummary()}>
+        {summaryLoading?'Загружаю…':'Обновить'}
+      </button>
     </div>
-    {ledger&&ledger.correctionCredit>0&&<p className="ws-settlements-warning">После исправлений возникла переплата {money(ledger.correctionCredit)}. Это не аванс — проверьте корректировки и выплаты.</p>}
+    {summary&&!activated&&<div className="ws-settlements-startup" role="status">Учёт пока не запущен. Финансовые действия недоступны.</div>}
+    <div className="ws-fast-overview">
+      <div className="ws-fast-debt">
+        <span>Осталось выплатить</span>
+        <strong>{summaryLoading&&!summary?'…':activated?money(debt):'—'}</strong>
+        <small>Общий накопленный подтверждённый долг</small>
+      </div>
+      <div className="ws-fast-day">
+        <div><span>Сегодня выполнено</span><strong>{activated?money(Number(summary?.today.completed||0)):'—'}</strong></div>
+        <div><span>Сегодня выплачено</span><strong>{activated?money(Number(summary?.today.paid||0)-Number(summary?.today.paymentCorrections||0)):'—'}</strong></div>
+      </div>
+    </div>
+    {activated&&Number(summary?.today.costConfirmed||0)>0&&<p className="ws-fast-clarification">
+      Дополнительно сегодня уточнена стоимость ранее готовых изделий: <strong>{money(summary?.today.costConfirmed)}</strong>. Это не новая работа сегодня.
+    </p>}
+    {summary&&summary.correctionCredit>0&&<p className="ws-settlements-warning">
+      После корректировок сумма выплат превысила начисления на {money(summary.correctionCredit)}. Проверьте операции: это не аванс.
+    </p>}
     {error&&<div className="ws-settlements-error" role="alert">{error}</div>}
     {notice&&<p className="ws-settlements-success" role="status">{notice}</p>}
-    <div className="ws-settlements-actions">
-      <form className="ws-settlements-period" onSubmit={applyPeriod}>
-        <label>С <input type="date" value={from} onChange={e=>setFrom(e.target.value)} required/></label>
-        <label>По <input type="date" value={to} onChange={e=>setTo(e.target.value)} required/></label>
-        <button type="submit" className="secondary compact" disabled={loading}>Показать</button>
-      </form>
-      <button type="button" className="primary compact" disabled={!activated||busy||loading} onClick={()=>setShowPayment(open=>!open)}>{showPayment?'Закрыть форму':'+ Записать выплату'}</button>
-    </div>
-    {showPayment&&activated&&<form className="ws-settlements-payment" onSubmit={e=>void savePayment(e)}>
-      <div className="ws-settlements-form-head"><strong>Выплата цеху</strong><span>Доступно: {money(ledger?.confirmedDebt)}</span></div>
-      <div className="ws-settlements-fields">
-        <label>Сумма, ₸<input type="number" min="1" step="1" max={ledger?.confirmedDebt||0} required value={paymentAmount} onChange={e=>setPaymentAmount(e.target.value)} placeholder="Сумма"/></label>
-        <label>Способ оплаты<input type="text" maxLength={80} required value={method} onChange={e=>setMethod(e.target.value)} placeholder="Наличные, Kaspi Pay…"/></label>
-        <label>Комментарий<input type="text" maxLength={500} value={comment} onChange={e=>setComment(e.target.value)} placeholder="Необязательно"/></label>
+    {activated&&<div className="ws-fast-pay">
+      <div className="ws-fast-pay-head">
+        <strong>Выплата цеху</strong>
+        <span>Каждая выплата сохраняется в истории. С кассой магазина пока не связана.</span>
       </div>
-      {amountValue>(ledger?.confirmedDebt||0)&&<p className="ws-settlements-warning">Сумма превышает текущую задолженность. Авансы не предусмотрены.</p>}
-      <div className="ws-settlements-form-foot"><span>Дата выплаты фиксируется автоматически (время Казахстана).</span><button className="primary compact" type="submit" disabled={!allowSave}>{busy?'Сохраняю…':'Подтвердить выплату'}</button></div>
-    </form>}
-    <div className="workshop-section-tabs ws-settlements-tabs" role="tablist" aria-label="Просмотр расчётов">
-      <button role="tab" type="button" aria-selected={view==='daily'} className={view==='daily'?'is-active':''} onClick={()=>setView('daily')}>По дням</button>
-      <button role="tab" type="button" aria-selected={view==='history'} className={view==='history'?'is-active':''} onClick={()=>setView('history')}>История операций</button>
-      <button role="tab" type="button" aria-selected={view==='unpriced'} className={view==='unpriced'?'is-active':''} onClick={()=>setView('unpriced')}>Без себестоимости{ledger?.unresolvedPrices?' · '+ledger.unresolvedPrices:''}</button>
-    </div>
-    {view==='daily'&&<section aria-label="Расчёты по дням">
-      <div className="ws-settlements-table-scroll"><table className="data-table">
-        <thead><tr><th>Дата</th><th>Выполнено</th><th>Выплачено</th><th>Изменение долга</th><th>Остаток</th></tr></thead>
-        <tbody>{daily.map(day=><tr key={day.date}><td><strong>{day.date}</strong></td><td>{money(Number(day.completed||0)+Number(day.completionCorrections||0))}</td><td>{money(Number(day.paid||0)-Number(day.paymentCorrections||0))}</td><td>{money(Number(day.netChange||0))}</td><td><strong>{money(day.closing)}</strong></td></tr>)}
-          {!daily.length&&<tr><td className="empty-state" colSpan={5}>{loading?'Загружаю…':'За выбранный период операций нет.'}</td></tr>}
-        </tbody>
-      </table></div>
-      <p className="ws-settlements-footnote">Долг до начала периода: {money(ledger?.range.openingBalance)}. Выплаты цеху пока не списываются автоматически из кассы магазина.</p>
-    </section>}
-    {view==='history'&&<section aria-label="История начислений и выплат">
-      <div className="ws-settlements-table-scroll"><table className="data-table">
-        <thead><tr><th>Дата</th><th>Операция</th><th>Описание</th><th>Сумма</th><th>Действие</th></tr></thead>
-        <tbody>{(ledger?.events||[]).map(e=><tr key={e.id}>
-          <td>{e.business_date}</td><td><strong>{eventNames[e.event_type]||'Операция'}</strong>{e.payment_method&&<small>{e.payment_method}</small>}</td>
-          <td>{e.product_name_snapshot||e.comment||'—'}{e.external_order_id&&<small>Заказ {e.external_order_id}</small>}{e.quantity&&e.unit_cost!==null&&<small>{e.quantity} × {money(e.unit_cost)}</small>}</td>
-          <td>{e.amount_delta===null?'Цена не указана':money(e.amount_delta)}</td>
-          <td>{e.event_type==='payment'&&!e.isReversed&&!reversedIds.has(e.id)&&activated?<button className="secondary compact" type="button" disabled={busy} onClick={()=>void reversePayment(e)}>Отменить</button>:'—'}</td>
-        </tr>)}{!ledger?.events.length&&<tr><td colSpan={5} className="empty-state">Операций за выбранный период нет.</td></tr>}</tbody>
-      </table></div>
-      {ledger?.hasMore&&<button type="button" className="secondary compact ws-settlements-more" disabled={moreBusy} onClick={()=>void loadMore()}>{moreBusy?'Загружаю…':'Показать ещё'}</button>}
-    </section>}
-    {view==='unpriced'&&<section aria-label="Позиции без себестоимости">
-      <p className="ws-settlements-footnote">Позиции без цены не увеличивают подтверждённый долг. Назначать себестоимость может только администратор. После сохранения в каталоге вернитесь сюда, обновите список и подтвердите начисление.</p>
-      <div className="ws-settlements-table-scroll"><table className="data-table">
-        <thead><tr><th>Готово</th><th>Изделие</th><th>Кол-во</th><th>Себестоимость</th><th>Действие</th></tr></thead>
-        <tbody>{(unpriced?.items||[]).map(item=><tr key={item.id}>
-          <td>{item.completedDate}</td><td><strong>{item.productName}</strong>{item.orderRef&&<small>Заказ {item.orderRef}</small>}</td><td>{item.quantity}</td>
-          <td>{item.resolutionState==='needs_match'?'Требуется сверка товара':item.resolutionState==='missing_cost'?'Не назначена':money(item.availableUnitCost)}</td>
-          <td>
-            <div className="ws-unpriced-row-actions">
-              {item.resolutionState==='ready'&&item.availableUnitCost!==null&&activated
-                ? <button type="button" className="secondary compact" disabled={busy} onClick={()=>void resolveCost(item)}>Подтвердить начисление</button>
-                : <button type="button" className="secondary compact" onClick={()=>openCatalogPrice(item.catalogProductId,item.productName)}>
-                  {item.resolutionState==='needs_match'?'Проверить товар':'Указать себестоимость →'}
-                </button>}
-              {item.resolutionState==='needs_match'&&<small>Сначала проверьте, какая позиция каталога соответствует заказу. Цена сама по себе проблему не устранит.</small>}
-            </div>
-          </td>
-        </tr>)}{!unpriced?.items.length&&<tr><td colSpan={5} className="empty-state">Неразобранных позиций нет.</td></tr>}</tbody>
-      </table></div>
-      {unpriced?.hasMore&&<p className="ws-settlements-footnote">Показаны последние 50 позиций. После обработки обновите список.</p>}
-    </section>}
+      {!paymentMode?<div className="ws-fast-pay-actions">
+        <button type="button" className="primary compact" disabled={!debt||summaryLoading||busy}
+          onClick={()=>openPayment('full')}>Выплатили полностью · {money(debt)}</button>
+        <button type="button" className="secondary compact" disabled={!debt||summaryLoading||busy}
+          onClick={()=>openPayment('partial')}>Выплатили часть</button>
+      </div>:<form className="ws-fast-pay-form" onSubmit={e=>void submitPayment(e)}>
+        <div className="ws-fast-pay-input">
+          <label htmlFor="ws-payment-amount">{paymentMode==='full'?'Погашение всего долга':'Сколько выплатили, ₸'}</label>
+          {paymentMode==='full'
+            ?<strong>{money(amountValue)}</strong>
+            :<input id="ws-payment-amount" aria-label="Сумма выплаты, тенге" type="number" min="1" step="1" max={debt}
+              placeholder="Введите сумму" required autoFocus value={amountDraft} onChange={e=>setAmountDraft(e.target.value)}/>}
+        </div>
+        {paymentMode==='partial'&&Number(amountDraft)>debt&&<p className="ws-settlements-warning">Больше текущего долга выплатить нельзя. Авансы не предусмотрены.</p>}
+        <button type="button" className="ws-fast-optional-toggle" aria-expanded={showOptional}
+          onClick={()=>setShowOptional(open=>!open)}>Дополнительно (необязательно) {showOptional?'▴':'▾'}</button>
+        {showOptional&&<div className="ws-fast-optional-fields">
+          <label>Способ выплаты
+            <select value={method} onChange={e=>setMethod(e.target.value)}>
+              <option value="">Не указывать</option><option value="Наличные">Наличные</option>
+              <option value="Kaspi Pay">Kaspi Pay</option>
+            </select>
+          </label>
+          <label>Комментарий
+            <input type="text" maxLength={500} value={comment} onChange={e=>setComment(e.target.value)} placeholder="При необходимости"/>
+          </label>
+        </div>}
+        <div className="ws-fast-pay-confirm">
+          <button type="button" className="secondary compact" onClick={closePayment} disabled={busy}>Отмена</button>
+          <button type="submit" className="primary compact" disabled={!maySave}>
+            {busy?'Сохраняю…':'Подтвердить выплату '+(validAmount?money(amountValue):'')}
+          </button>
+        </div>
+      </form>}
+    </div>}
+    <nav className="ws-fast-nav" aria-label="Подробности расчётов">
+      <button type="button" className={view==='home'?'is-active':''} onClick={()=>openView('home')}>Обзор</button>
+      <button type="button" className={view==='work'?'is-active':''} onClick={()=>openView('work')}>Начисления</button>
+      <button type="button" className={view==='history'?'is-active':''} onClick={()=>openView('history')}>История операций</button>
+      <button type="button" className={view==='days'?'is-active':''} onClick={()=>openView('days')}>По дням</button>
+      <button type="button" className={view==='unpriced'?'is-active':''} onClick={()=>openView('unpriced')}>
+        Без себестоимости{summary?.unresolvedPrices?' · '+summary.unresolvedPrices:''}
+      </button>
+    </nav>
+    {view==='home'&&<div className="ws-fast-recent">
+      <div className="ws-fast-section-title"><strong>Последние операции</strong><button type="button" className="secondary compact" onClick={()=>openView('history')}>Вся история →</button></div>
+      {(summary?.recent||[]).map(item=><div className="ws-fast-event" key={item.id}>
+        <div><span>{titles[item.event_type]||'Операция'}</span><small>{item.business_date} · {eventLabel(item)}</small></div>
+        <strong>{item.amount_delta==null?'Без цены':money(item.amount_delta)}</strong>
+      </div>)}
+      {!summaryLoading&&!summary?.recent.length&&<p className="ws-settlements-footnote">Начислений и выплат пока нет.</p>}
+    </div>}
+    {view!=='home'&&view!=='unpriced'&&<div className="ws-fast-detail">
+      <form className="ws-fast-period" onSubmit={applyPeriod}>
+        <label>С <input type="date" required value={fromDraft} onChange={e=>setFromDraft(e.target.value)}/></label>
+        <label>По <input type="date" required value={toDraft} onChange={e=>setToDraft(e.target.value)}/></label>
+        <button type="submit" className="secondary compact" disabled={detailLoading}>Показать</button>
+      </form>
+      {detailLoading&&<p className="ws-settlements-footnote">Загружаю подробности…</p>}
+      {view==='days'?<div className="ws-settlements-table-scroll"><table className="data-table">
+        <thead><tr><th>Дата</th><th>Готовые изделия</th><th>Уточнено стоимости</th><th>Выплачено</th><th>Остаток долга</th></tr></thead>
+        <tbody>{days.map(day=><tr key={day.date}>
+          <td>{day.date}</td><td>{money(Number(day.completed||0))}</td>
+          <td>{money(day.costConfirmed||0)}</td><td>{money(Number(day.paid||0)-Number(day.paymentCorrections||0))}</td>
+          <td><strong>{money(day.closing)}</strong></td>
+        </tr>)}{!detailLoading&&!days.length&&<tr><td colSpan={5}>За выбранный период операций нет.</td></tr>}</tbody>
+      </table></div>:<div className="ws-fast-event-list">
+        {(details?.events||[]).filter(event=>view==='history'||isWork(event)).map(event=><div className="ws-fast-event" key={event.id}>
+          <div><span>{titles[event.event_type]||'Операция'}</span>
+            <small>{event.business_date} · {eventLabel(event)}{event.external_order_id?' · Заказ '+event.external_order_id:''}</small>
+            {event.quantity!=null&&event.unit_cost!=null&&<small>{event.quantity} шт. × {money(event.unit_cost)}</small>}
+            {event.payment_method&&<small>Способ выплаты: {event.payment_method}</small>}
+          </div>
+          <div className="ws-fast-event-side"><strong>{event.amount_delta===null?'Цена не указана':money(event.amount_delta)}</strong>
+            {event.event_type==='payment'&&!event.isReversed&&activated&&<button type="button" className="secondary compact" disabled={busy}
+              onClick={()=>void reversePayment(event)}>Отменить выплату</button>}
+          </div>
+        </div>)}
+        {!detailLoading&&!details?.events.length&&<p className="ws-settlements-footnote">За выбранный период событий нет.</p>}
+        {details?.hasMore&&<button className="secondary compact" type="button" disabled={moreBusy} onClick={()=>void loadMore()}>
+          {moreBusy?'Загружаю…':'Показать ещё операции'}
+        </button>}
+      </div>}
+      {view==='days'&&<p className="ws-settlements-footnote">Долг до начала периода: {money(details?.range.openingBalance)}. Уточнения стоимости показываются на дату подтверждения, а не дату выполнения работы.</p>}
+    </div>}
+    {view==='unpriced'&&<div className="ws-fast-detail">
+      <div className="ws-fast-section-title">
+        <div><strong>Без себестоимости{unpriced?.total?' · '+unpriced.total:''}</strong>
+          <p className="ws-settlements-footnote">Стоимость назначает администратор в каталоге. После этого подтвердите начисление.</p>
+        </div>
+        <button type="button" className="secondary compact" disabled={detailLoading} onClick={()=>void loadDetails()}>Обновить</button>
+      </div>
+      {detailLoading&&<p className="ws-settlements-footnote">Проверяю себестоимость…</p>}
+      {(unpriced?.items||[]).map(item=><div className="ws-fast-event ws-fast-unpriced-row" key={item.id}>
+        <div><strong>{item.productName}</strong>
+          <small>Готово {item.completedDate} · {item.quantity} шт. {item.orderRef?'· Заказ '+item.orderRef:''}</small>
+          <small>{item.resolutionState==='needs_match'?'Требуется сверка товара':item.resolutionState==='missing_cost'?'Себестоимость не назначена':'Себестоимость найдена: '+money(item.availableUnitCost)}</small>
+        </div>
+        {item.resolutionState==='ready'&&item.availableUnitCost!=null&&activated
+          ?<button type="button" className="secondary compact" disabled={busy} onClick={()=>void resolveCost(item)}>Подтвердить начисление · {money(item.availableUnitCost*item.quantity)}</button>
+          :<button type="button" className="secondary compact" onClick={()=>openCatalogPrice(item.catalogProductId,item.productName)}>
+             {item.resolutionState==='needs_match'?'Проверить товар':'Указать себестоимость →'}
+           </button>}
+      </div>)}
+      {!detailLoading&&!unpriced?.items.length&&<p className="ws-settlements-footnote">Неразобранных позиций нет.</p>}
+      {unpriced?.hasMore&&<p className="ws-settlements-footnote">Показаны последние 50 позиций. После разбора обновите список.</p>}
+    </div>}
   </section>
 }

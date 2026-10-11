@@ -21,10 +21,10 @@ const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
   'migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql':'dbe3150c5d97ffad90db9dabd42261baed222d7c',
-  'worker/domains/workshop-settlements.ts':'aee77dfdb6a057d600bc1fb75b363f6cb1c92383',
-  'worker/domains/workshop-settlement-prices.ts':'dda3eb0fa2e3edc92fff13c65367f534d837c359',
-  'src/features/workshop/WorkshopSettlementsPanel.tsx':'e11498a22e3f350e8a451f5cfc6f134221c788b3',
-  'src/styles/stage04-workshop-settlements.css':'184cb7f4a90ad40fe959aa38bb75621cc886d4d6',
+  'worker/domains/workshop-settlements.ts':'5f978831bbab325cd945b8e17677a412a0c2c6c4',
+  'worker/domains/workshop-settlement-prices.ts':'8f850b0540041daf688c48daf37642fe66f8c6ab',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx':'cf00e5297363427a281cd952f32572acb0d304e3',
+  'src/styles/stage04-workshop-settlements.css':'d3d91a237c9f7516249dff1d79ca9d91f770edc3',
 }
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
@@ -35,7 +35,7 @@ const stage04DWorkshopScreen={
   file:'src/features/sections/WorkshopSection.tsx',
   fixture:'scripts/fixtures/stage04d-workshop-20261011/WorkshopSection.tsx',
   before:'d21020d65f3469997a3a579d9233362a026a5336',
-  after:'907f7c344da250b488831c2176c6b311035da4fc',
+  after:'86a9fcea1a569a6a72f67cf42cea92f75ead5d1d',
 }
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Stage04-D Workshop UI drift')
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))===stage04DWorkshopScreen.before,'Stage04-D baseline fixture drift')
@@ -64,6 +64,7 @@ const tests=[
   ['scripts/test-stage04a-workshop-settlements.mjs',false],
   ['scripts/test-stage04b-workshop-status-capture.mjs',false],
   ['scripts/test-stage04c-workshop-payments.mjs',true],
+  ['scripts/test-stage04-fast-workshop-settlements.mjs',true],
   ['scripts/test-stage04d-workshop-settlements.mjs',true],
   ['scripts/test-stage04b3-unique-legacy-sku-capture.mjs',false],
   ['scripts/test-catalog-integrity-r1-references.mjs',false],
@@ -174,7 +175,7 @@ for(const marker of ['Все рабочие справочники','Прове�
 const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
 check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
 const workshopChunk=fs.readFileSync(path.join(assetsDir,workshopChunks[0]),'utf8')
-for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено','Не определена себестоимость','Указать себестоимость','Разобрать позиции']){
+for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено','Не определена себестоимость','Указать себестоимость','Разобрать позиции','Выплатили полностью','Выплатили часть','Дополнительно (необязательно)','Начисления']){
   check(workshopChunk.includes(marker),'Refusing Stage04-D frontend deploy: missing '+marker)
 }
 console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])

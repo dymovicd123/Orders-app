@@ -48,7 +48,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
   const refreshUnpricedCount = useCallback(async () => {
     if (!canSeeSettlements) return
     try {
-      const response = await fetch('/api/workshop/settlements/unpriced', { credentials: 'include', cache: 'no-store' })
+      const response = await fetch('/api/workshop/settlements/unpriced/count', { credentials: 'include', cache: 'no-store' })
       const data = await response.json() as { ok?: boolean; total?: number }
       if (!response.ok || data.ok === false || !Number.isSafeInteger(data.total)) throw Error('unpriced count unavailable')
       setUnpricedCount(Number(data.total))

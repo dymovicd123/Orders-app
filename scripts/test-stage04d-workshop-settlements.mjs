@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import {
-  listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost,
+  countUnpricedWorkshopCompletions, listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost,
 } from '../worker/domains/workshop-settlement-prices.ts'
 
 const dbRaw=new DatabaseSync(':memory:')
@@ -45,6 +45,7 @@ let queue=await listUnpricedWorkshopCompletions(adapter)
 assert.equal(queue.items.length,1)
 assert.equal(queue.items[0].availableUnitCost,null)
 assert.equal(queue.total,1)
+assert.equal((await countUnpricedWorkshopCompletions(adapter)).total,1)
 assert.equal(queue.items[0].catalogProductId,101)
 assert.equal(queue.items[0].resolutionState,'missing_cost')
 assert.equal(queue.items[0].productName,'ШАПАН')
@@ -126,6 +127,7 @@ dbRaw.exec(`INSERT INTO workshop_settlement_events
  VALUES('reversal','completion_reversal','2026-10-11','2026-10-11T11:00:00Z',3,12,1,NULL)`)
 assert.equal((await listUnpricedWorkshopCompletions(adapter)).items.length,1)
 assert.equal((await listUnpricedWorkshopCompletions(adapter)).items[0].id,6)
+assert.equal((await countUnpricedWorkshopCompletions(adapter)).total,1)
 dbRaw.close()
 
 const section=fs.readFileSync('src/features/sections/WorkshopSection.tsx','utf8')

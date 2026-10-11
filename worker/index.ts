@@ -53,8 +53,8 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
-import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
-import { listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
+import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
+import { countUnpricedWorkshopCompletions, listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
@@ -661,6 +661,11 @@ export default {
       }
 
       // Stage04-D: unresolved costs are reviewed separately, without guessing money.
+      if (url.pathname === '/api/workshop/settlements/unpriced/count' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Стоимость работы доступна только администратору.');
+        if (denied) return denied;
+        return json(await countUnpricedWorkshopCompletions(env.DB));
+      }
       if (url.pathname === '/api/workshop/settlements/unpriced' && request.method === 'GET') {
         const denied = requireAdminUser(authUser, 'Стоимость работы доступна только администратору.');
         if (denied) return denied;
@@ -676,6 +681,11 @@ export default {
       }
 
       // Stage04-C: settlement payments are admin-only; worker remains inert until Stage04 cutover.
+      if (url.pathname === '/api/workshop/settlements/summary' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
+        if (denied) return denied;
+        return json(await readWorkshopSettlementSummary(env.DB));
+      }
       if (url.pathname === '/api/workshop/settlements' && request.method === 'GET') {
         const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
         if (denied) return denied;

@@ -54,7 +54,7 @@ database.exec('UPDATE workshop_settlement_capture_control SET enabled=1 WHERE id
 assert.equal(await assertWorkshopSettlementSchema(db),true)
 await failed(postWorkshopSettlementPayment(db,{requestId:'bad',amount:1000,method:'Наличные'},1),400,'idempotency_required')
 await failed(postWorkshopSettlementPayment(db,{requestId:uuid(1),amount:0,method:'Наличные'},1),400,'invalid_payment_amount')
-await failed(postWorkshopSettlementPayment(db,{requestId:uuid(1),amount:1000,method:''},1),400,'invalid_settlement_input')
+await failed(postWorkshopSettlementPayment(db,{requestId:uuid(1),amount:1000,method:'X'.repeat(81)},1),400,'invalid_settlement_input')
 await failed(postWorkshopSettlementPayment(db,{requestId:uuid(1),amount:120001,method:'Наличные'},1),409,'payment_exceeds_debt')
 let r=await postWorkshopSettlementPayment(db,{requestId:uuid(1),amount:70000,method:'Kaspi Pay',comment:'За готовые изделия'},1)
 assert.equal(r.ok,true)
