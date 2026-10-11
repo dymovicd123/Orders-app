@@ -41,7 +41,7 @@ const compatibleVariant = `
 // Catalog SKU matches all five frozen facts and the linked order-item product.
 // This does not alter order items or inventory identities.
 const resolvedVariantJoin = `
-  JOIN catalog_variants cv ON cv.id = COALESCE(
+  LEFT JOIN catalog_variants cv ON cv.id = COALESCE(
     oi.variant_id,
     wt.variant_id,
     (
