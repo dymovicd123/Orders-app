@@ -43,6 +43,7 @@ import { useOperationalViewModel } from './app/controllers/useOperationalViewMod
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
+import { loadCompleteInventorySnapshot } from './features/inventory/loadCompleteInventorySnapshot'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
@@ -1739,15 +1740,27 @@ function App() {
       return cached
     }
 
-    const params = new URLSearchParams({
-      source,
-      limit: '1000',
-      q: query.trim(),
-      includeMovements: includeMovements ? '1' : '0',
-    })
-    const response = await apiFetch(`/api/inventory?${params.toString()}`)
-    if (!response.ok) return null
-    const data = await readJsonResponse<InventoryResponse>(response, 'Склад')
+    let data: InventoryResponse | null = null
+    try {
+      data = await loadCompleteInventorySnapshot(async (cursor, firstPageWithMovements) => {
+        const params = new URLSearchParams({
+          source,
+          limit: '1000',
+          cursor: String(cursor),
+          q: query.trim(),
+          includeMovements: firstPageWithMovements ? '1' : '0',
+        })
+        const response = await apiFetch(`/api/inventory?${params.toString()}`)
+        if (!response.ok) return null
+        return readJsonResponse<InventoryResponse>(response, 'Склад')
+      }, includeMovements)
+    } catch (error) {
+      console.error('Полные остатки не загружены:', error)
+      return null
+    }
+    if (!data) return null
+    // No interim state update: all downstream stocktake/arrival/catalog editors
+    // must see one complete source snapshot, never only the first 1,000 rows.
     if (!query.trim()) inventorySnapshotLoadedAt.current[source] = Date.now()
     setInventoryData((current) => {
       const previous = current[source]

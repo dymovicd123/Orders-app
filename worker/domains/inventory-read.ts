@@ -12,6 +12,11 @@ export async function listInventory(db: D1Database, url: URL) {
   const q = cleanText(url.searchParams.get('q'));
   const qTokens = q.split(/\s+/).map(token => token.trim()).filter(Boolean).slice(0, 8);
   const limit = Math.min(1000, Math.max(50, toInt(url.searchParams.get('limit'), 300)));
+  // Explicit cursor opts into full inventory paging ordered by stable stock ID.
+  // Historical single-page calls keep their existing alphabetic ordering.
+  const cursorParam = url.searchParams.get('cursor');
+  const paginated = cursorParam !== null;
+  const cursor = paginated ? Math.max(0, toInt(cursorParam, 0)) : 0;
   const includeMovements = !['0', 'false', 'no'].includes(cleanText(url.searchParams.get('includeMovements')).toLowerCase());
 
   // Stage01 R16: inventory_stock is live physical state, so its working label follows
@@ -55,17 +60,19 @@ export async function listInventory(db: D1Database, url: URL) {
          OR (active_variant.is_active = 1 AND active_product.is_active = 1)
          OR COALESCE(s.quantity, 0) <> 0
          OR COALESCE(s.reserved_quantity, 0) <> 0
-       )${searchClauses ? ` AND ${searchClauses}` : ''}
-     ORDER BY working_product_name, COALESCE(working_gender, ''), COALESCE(working_color, ''),
-       COALESCE(working_material, ''), COALESCE(working_length, ''), COALESCE(working_size, '')
+       )${searchClauses ? ` AND ${searchClauses}` : ''}${paginated ? ' AND s.id > ?' : ''}
+     ORDER BY ${paginated ? "s.id ASC" : "working_product_name, COALESCE(working_gender, ''), COALESCE(working_color, ''), COALESCE(working_material, ''), COALESCE(working_length, ''), COALESCE(working_size, ''), s.id"}
      LIMIT ?`;
 
   const inventorySearchBindings = qTokens.flatMap(token => [token, token.toUpperCase(), token.toLowerCase()]);
   const rows = await db.prepare(stockSql)
-    .bind(source, ...inventorySearchBindings, limit)
+    .bind(source, ...inventorySearchBindings, ...(paginated ? [cursor] : []), paginated ? limit + 1 : limit)
     .all<Record<string, unknown>>();
 
-  const items = rows.results || [];
+  const fetchedItems = rows.results || [];
+  const hasMore = paginated && fetchedItems.length > limit;
+  const items = hasMore ? fetchedItems.slice(0, limit) : fetchedItems;
+  const nextCursor = hasMore ? toInt(items[items.length - 1]?.id, 0) : null;
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db);
 
   const movements = includeMovements
@@ -102,6 +109,7 @@ export async function listInventory(db: D1Database, url: URL) {
     source,
     inventoryModelVersion: humanInventoryModelEnabled ? 2 : 1,
     count: items.length,
+    ...(paginated ? { pageInfo: { cursor, hasMore, nextCursor } } : {}),
     total,
     reservedTotal,
     availableTotal,
