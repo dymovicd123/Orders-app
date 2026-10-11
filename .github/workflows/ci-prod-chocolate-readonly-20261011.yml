@@ -1,0 +1,63 @@
+name: One-shot read-only production chocolate arrival audit
+on:
+  push:
+    branches: [ci-prod-chocolate-diagnostic-20261011]
+    paths: ['.github/workflows/ci-prod-chocolate-readonly-20261011.yml']
+permissions:
+  contents: read
+jobs:
+  forensic-read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify isolated CI identity and prepare production READ-only config
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "ci-prod-chocolate-diagnostic-20261011" ]]
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+          cat > audit-prod-only-read.jsonc <<'EOF'
+          {
+            "name": "orders-app",
+            "main": "worker/index.ts",
+            "compatibility_date": "2026-07-06",
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": "orders_db_prod",
+              "database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
+            }]
+          }
+          EOF
+          grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' audit-prod-only-read.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' audit-prod-only-read.jsonc
+      - run: npm ci
+      - name: Read-only isolated evidence from production D1 (no mutations)
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            local title="$1"
+            local sql="$2"
+            [[ "$sql" =~ ^SELECT[[:space:]] ]] || { echo "REJECTED NON SELECT query" >&2; exit 40; }
+            echo "===== $title ====="
+            npx wrangler d1 execute orders_db_prod --remote --config audit-prod-only-read.jsonc --command "$sql" --json |
+              jq -c '.[0].results // []'
+          }
+          query "PRODUCTION IDENTITY" "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_movements') AS movement_table, (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_stock') AS stock_table, (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_variants') AS variants_table, (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_operations') AS operations_table"
+          query "CATALOG ALL COLOR GROUPS (check filtered view)" "SELECT p.id product_id, p.name product, v.color, v.category, v.gender, v.material, v.length, COUNT(DISTINCT v.id) variant_count, SUM(CASE WHEN v.is_active=1 THEN 1 ELSE 0 END) active_variants, COALESCE(SUM(s.quantity),0) physical, COALESCE(SUM(s.reserved_quantity),0) reserved FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id LEFT JOIN inventory_stock s ON s.variant_id=v.id WHERE p.name LIKE '%КӨРПЕШ%' OR p.name LIKE '%КОРПЕШ%' GROUP BY p.id,v.color,v.category,v.gender,v.material,v.length ORDER BY p.id,v.material,v.color,v.category LIMIT 120"
+          query "CHOCOLATE CATALOG VARIANT IDENTITIES WITH CURRENT STOCK" "SELECT p.id product_id,p.name product,p.is_active product_active,v.id variant_id,v.is_active variant_active,v.category,v.gender,v.color,v.material,v.length,v.size_label,v.stock_position_id,s.inventory_source,s.quantity physical,s.reserved_quantity reserved,s.color_snapshot stock_color_snapshot,s.updated_at stock_updated_at,c.keeper_variant_id merged_into FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id LEFT JOIN inventory_stock s ON s.variant_id=v.id LEFT JOIN catalog_variant_consolidations c ON c.source_variant_id=v.id WHERE (p.name LIKE '%КӨРПЕШ%' OR p.name LIKE '%КОРПЕШ%') AND (v.color LIKE '%ШОКОЛАД%' OR v.color LIKE '%ШОКОЛАДНЫЙ%') ORDER BY v.id,s.inventory_source LIMIT 120"
+          query "OCT10-11 CHOCOLATE ARRIVALS AND CORRECTIONS" "SELECT m.id movement_id,m.created_at,m.inventory_source,m.movement_type,m.variant_id,m.product_name_snapshot product,m.color_snapshot color,m.material_snapshot material,m.length_snapshot length,m.size_snapshot size,m.quantity_delta,m.quantity_after,m.reference_type,m.reference_id,v.is_active current_variant_active,v.color current_variant_color,v.size_label current_variant_size,COALESCE(r.original_movement_id,0) reversed_movement_id FROM inventory_movements m LEFT JOIN catalog_variants v ON v.id=m.variant_id LEFT JOIN inventory_movement_reversals r ON r.original_movement_id=m.id WHERE m.created_at>='2026-10-10' AND m.created_at<'2026-10-12' AND (m.product_name_snapshot LIKE '%КӨРПЕШ%' OR m.product_name_snapshot LIKE '%КОРПЕШ%') AND (m.color_snapshot LIKE '%ШОКОЛАД%' OR v.color LIKE '%ШОКОЛАД%') ORDER BY m.created_at,m.id LIMIT 160"
+          query "NEARBY PRODUCT MOVEMENTS (including non-chocolate manual correction)" "SELECT m.id movement_id,m.created_at,m.inventory_source,m.movement_type,m.variant_id,m.color_snapshot color,m.size_snapshot size,m.quantity_delta,m.quantity_after,m.reference_type,m.reference_id FROM inventory_movements m WHERE m.created_at>='2026-10-10T08:00' AND m.created_at<'2026-10-11T16:00' AND (m.product_name_snapshot LIKE '%КӨРПЕШ%' OR m.product_name_snapshot LIKE '%КОРПЕШ%') ORDER BY m.created_at DESC,m.id DESC LIMIT 120"
+          query "OPERATION RECEIPTS LINKED TO CHOCOLATE" "SELECT o.operation_id,o.operation_type,o.source_type,o.status,o.item_count,o.total_quantity,o.created_at,o.completed_at FROM inventory_operations o WHERE o.created_at>='2026-10-10' AND o.created_at<'2026-10-12' AND EXISTS(SELECT 1 FROM inventory_movements m WHERE m.reference_id=o.operation_id AND (m.product_name_snapshot LIKE '%КӨРПЕШ%' OR m.product_name_snapshot LIKE '%КОРПЕШ%') AND (m.color_snapshot LIKE '%ШОКОЛАД%' OR m.movement_type='manual_set')) ORDER BY o.created_at,o.operation_id LIMIT 60"
+          query "POST ARRIVAL MANUAL AND STOCKTAKE CHECKS" "SELECT c.variant_id,c.inventory_source,c.expected_quantity,c.counted_quantity,c.difference_quantity,c.check_type,c.reference_type,c.reference_id,c.created_at FROM inventory_stock_checks c WHERE c.created_at>='2026-10-10' AND c.created_at<'2026-10-12' AND c.variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.name LIKE '%КӨРПЕШ%' OR p.name LIKE '%КОРПЕШ%') ORDER BY c.created_at DESC LIMIT 90"
+          echo "READ-ONLY CHOCOLATE PRODUCTION AUDIT FINISHED — no insert/update/delete/DDL"
