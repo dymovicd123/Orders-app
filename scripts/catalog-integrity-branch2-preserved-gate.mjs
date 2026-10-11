@@ -21,10 +21,10 @@ const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
   'migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql':'dbe3150c5d97ffad90db9dabd42261baed222d7c',
-  'worker/domains/workshop-settlements.ts':'5f978831bbab325cd945b8e17677a412a0c2c6c4',
+  'worker/domains/workshop-settlements.ts':'2b7d7461758c116053b4a62a3576f451180b32fc',
   'worker/domains/workshop-settlement-prices.ts':'8f850b0540041daf688c48daf37642fe66f8c6ab',
-  'src/features/workshop/WorkshopSettlementsPanel.tsx':'cf00e5297363427a281cd952f32572acb0d304e3',
-  'src/styles/stage04-workshop-settlements.css':'d3d91a237c9f7516249dff1d79ca9d91f770edc3',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx':'8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
+  'src/styles/stage04-workshop-settlements.css':'6796899d63de3e2183a95605b9280764c9e64b48',
 }
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
@@ -175,7 +175,7 @@ for(const marker of ['Все рабочие справочники','Прове�
 const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
 check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
 const workshopChunk=fs.readFileSync(path.join(assetsDir,workshopChunks[0]),'utf8')
-for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено','Не определена себестоимость','Указать себестоимость','Разобрать позиции','Выплатили полностью','Выплатили часть','Дополнительно (необязательно)','Начисления']){
+for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено','Не определена себестоимость','Указать себестоимость','Разобрать позиции','Выплатили полностью','Выплатили часть','Дополнительно (необязательно)','Начисления','Операции дня','Возвраты в работу','Изменение долга']){
   check(workshopChunk.includes(marker),'Refusing Stage04-D frontend deploy: missing '+marker)
 }
 console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])
