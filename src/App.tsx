@@ -1132,6 +1132,20 @@ function App() {
     workshopInvoiceMode,
     workshopSortDirection,
   })
+  // A missing Workshop cost never grants editing permission or guesses a SKU.
+  // Exact matches open the corresponding Catalog product; unlinked items open
+  // a name search for administrator review instead.
+  const openWorkshopCatalogPrice = (productId: number | null, productName: string) => {
+    if (!isAdmin) return
+    const exactProductId = Number.isSafeInteger(productId) && Number(productId) > 0 ? Number(productId) : 0
+    setCatalogCategoryFilter('all')
+    setCatalogOnlyWithoutVariants(false)
+    setInventoryQuery(exactProductId ? '' : String(productName || '').trim())
+    setExpandedCatalogProducts(exactProductId ? { [String(exactProductId)]: true } : {})
+    setInventoryPanel('catalog')
+    setActiveSector('inventory')
+    window.location.hash = '#catalog'
+  }
   const openInventoryPanel = (panel: InventoryPanel) => {
     const nextPanel: InventoryPanel = panel === 'audit' ? 'settings' : panel
     if (!isAdmin && (nextPanel === 'catalog' || nextPanel === 'settings')) {
@@ -8408,7 +8422,7 @@ function removeDebtPayment(index: number) {
         </section>
 
         <DeferredSection active={activeSector === 'workshop'} label="Цех">
-        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
+        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, openWorkshopCatalogPrice, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
