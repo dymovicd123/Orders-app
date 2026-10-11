@@ -1,0 +1,92 @@
+name: Stage04-C Branch2 Workshop payment method schema 0107
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/stage04-branch2-migration-0107.yml']
+permissions:
+  contents: read
+jobs:
+  apply:
+    name: Branch2-only immutable Workshop method storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert Branch2 isolated environment and bounded scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production is forbidden.' >&2; exit 21
+          fi
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq 'ALTER TABLE workshop_settlement_events ADD COLUMN payment_method TEXT;' migrations/0107_v72_workshop_settlement_payment_method.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Test Workshop ledger and old settlement safeguards
+        run: |
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          node scripts/test-stage04b2-workshop-catalog-cost.mjs
+          node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
+      - name: Preflight schema, disable capture and snapshot business counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          data="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0) AS disabled,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_no_update') AS immutable,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion') AS completion_trigger,
+              (SELECT COUNT(*) FROM pragma_table_info('workshop_settlement_events') WHERE name='payment_method') AS has_method,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS customer_payment_count,
+              (SELECT COUNT(*) FROM workshop_tasks) AS task_count,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS journal_count
+          " --json)"
+          jq -cS '.[0].results[0]' <<<"$data" > /tmp/stage04c-before.json
+          jq -e '.disabled == 1 and .immutable == 1 and .completion_trigger == 1 and (.has_method == 0 or .has_method == 1)' /tmp/stage04c-before.json
+      - name: Apply 0107 only when column absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(jq -r '.has_method' /tmp/stage04c-before.json)" == "0" ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc \
+              --file migrations/0107_v72_workshop_settlement_payment_method.sql
+          else
+            echo 'Workshop payment method column already present; no schema rewrite.'
+          fi
+      - name: Confirm no settlement, order or customer payment changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          data="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0) AS disabled,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_no_update') AS immutable,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion') AS completion_trigger,
+              (SELECT COUNT(*) FROM pragma_table_info('workshop_settlement_events') WHERE name='payment_method') AS has_method,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_total,
+              (SELECT COUNT(*) FROM payments) AS customer_payment_count,
+              (SELECT COUNT(*) FROM workshop_tasks) AS task_count,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS journal_count
+          " --json)"
+          jq -cS '.[0].results[0]' <<<"$data" > /tmp/stage04c-after.json
+          jq -e '.disabled==1 and .has_method==1' /tmp/stage04c-after.json
+          jq -e 'del(.has_method)' /tmp/stage04c-before.json > /tmp/stage04c-before-business.json
+          jq -e 'del(.has_method)' /tmp/stage04c-after.json > /tmp/stage04c-after-business.json
+          cmp /tmp/stage04c-before-business.json /tmp/stage04c-after-business.json
+          echo 'STAGE04-C BRANCH2 SCHEMA PASSED — new payment method column, history preserved, capture disabled.'
