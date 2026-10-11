@@ -22,7 +22,7 @@ const stage04B2Extensions={
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
   'migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql':'dbe3150c5d97ffad90db9dabd42261baed222d7c',
   'worker/domains/workshop-settlements.ts':'5f978831bbab325cd945b8e17677a412a0c2c6c4',
-  'worker/domains/workshop-settlement-prices.ts':'dda3eb0fa2e3edc92fff13c65367f534d837c359',
+  'worker/domains/workshop-settlement-prices.ts':'8f850b0540041daf688c48daf37642fe66f8c6ab',
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'cf00e5297363427a281cd952f32572acb0d304e3',
   'src/styles/stage04-workshop-settlements.css':'d3d91a237c9f7516249dff1d79ca9d91f770edc3',
 }
@@ -35,7 +35,7 @@ const stage04DWorkshopScreen={
   file:'src/features/sections/WorkshopSection.tsx',
   fixture:'scripts/fixtures/stage04d-workshop-20261011/WorkshopSection.tsx',
   before:'d21020d65f3469997a3a579d9233362a026a5336',
-  after:'907f7c344da250b488831c2176c6b311035da4fc',
+  after:'86a9fcea1a569a6a72f67cf42cea92f75ead5d1d',
 }
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Stage04-D Workshop UI drift')
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))===stage04DWorkshopScreen.before,'Stage04-D baseline fixture drift')
