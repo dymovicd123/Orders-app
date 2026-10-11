@@ -92,6 +92,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
         setUnpriced(result);onUnpricedCountChange(result.total)
       }else{
         const params=new URLSearchParams(period)
+        if(view==='work')params.set('scope','work')
         const result=await api<Ledger>('/api/workshop/settlements?'+params.toString())
         if(generation!==detailGeneration.current)return
         setDetails(result)
@@ -185,6 +186,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     setMoreBusy(true)
     try{
       const params=new URLSearchParams({...period,beforeId:String(details.nextBeforeId)})
+      if(view==='work')params.set('scope','work')
       const page=await api<Ledger>('/api/workshop/settlements?'+params.toString())
       setDetails(current=>current?{...current,events:[...current.events,...page.events],
         hasMore:page.hasMore,nextBeforeId:page.nextBeforeId}:current)
