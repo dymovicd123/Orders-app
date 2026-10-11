@@ -53,7 +53,7 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
-import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
+import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
 import { listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
@@ -676,6 +676,11 @@ export default {
       }
 
       // Stage04-C: settlement payments are admin-only; worker remains inert until Stage04 cutover.
+      if (url.pathname === '/api/workshop/settlements/summary' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
+        if (denied) return denied;
+        return json(await readWorkshopSettlementSummary(env.DB));
+      }
       if (url.pathname === '/api/workshop/settlements' && request.method === 'GET') {
         const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
         if (denied) return denied;
