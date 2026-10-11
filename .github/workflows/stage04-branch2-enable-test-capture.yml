@@ -1,0 +1,118 @@
+name: Stage04 Branch2 TEST workshop auto-accrual activation
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/stage04-branch2-enable-test-capture.yml'
+permissions:
+  contents: read
+concurrency:
+  group: stage04-branch2-test-capture
+  cancel-in-progress: false
+jobs:
+  enable:
+    name: Guarded activation only in isolated Branch2 D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard stop outside Branch2
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_REF_NAME}" == "branch2" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo "PRODUCTION D1/Worker references forbidden" >&2
+            exit 22
+          fi
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Validate current dormant capture + payments + price resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-stage04a-workshop-settlements.mjs
+          node scripts/test-stage04b-workshop-status-capture.mjs
+          node scripts/test-stage04b2-workshop-catalog-cost.mjs
+          node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
+          node --experimental-strip-types scripts/test-stage04d-workshop-settlements.mjs
+      - name: Preflight actual TEST database (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0 AND activated_at IS NULL) AS inactive,
+              (SELECT COUNT(*) FROM workshop_settlement_capture_control) AS control_rows,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS existing_events,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion_reversal') AS reversal_trigger,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_no_update') AS immutable_update,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_no_delete') AS immutable_delete,
+              (SELECT CASE WHEN sql LIKE '%catalog_execution_prices%' THEN 1 ELSE 0 END FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion') AS exact_cost_trigger,
+              (SELECT COUNT(*) FROM pragma_table_info('workshop_settlement_events') WHERE name='payment_method') AS payment_method,
+              (SELECT COUNT(*) FROM workshop_tasks WHERE status='active') AS currently_active_tasks,
+              (SELECT COUNT(*) FROM workshop_tasks WHERE status IN ('done','ready')) AS old_ready_tasks,
+              (SELECT COUNT(*) FROM workshop_tasks t
+                LEFT JOIN order_items oi ON oi.id=t.order_item_id AND oi.order_id=t.order_id
+                LEFT JOIN catalog_variants cv ON cv.id=COALESCE(oi.variant_id,t.variant_id)
+                LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=cv.category
+                WHERE t.status='active' AND (cv.id IS NULL OR ep.cost_price IS NULL)) AS active_without_catalog_cost
+          " --json)"
+          jq -cS '.[0].results[0]' <<<"$preflight" > /tmp/stage04-preflight.json
+          jq -e '.control_rows==1 and .inactive==1 and .existing_events==0 and .reversal_trigger==1 and .immutable_update==1 and .immutable_delete==1 and .exact_cost_trigger==1 and .payment_method==1' /tmp/stage04-preflight.json
+          echo 'BRANCH2 PREFLIGHT:'
+          jq '{currently_active_tasks,old_ready_tasks,active_without_catalog_cost,existing_events,exact_cost_trigger,inactive}' /tmp/stage04-preflight.json
+          echo 'No production database accessed; historical completed tasks will not be backfilled.'
+      - name: Activate only for FUTURE Branch2 ready/done transitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            UPDATE workshop_settlement_capture_control
+            SET enabled=1, activated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id=1 AND enabled=0 AND activated_at IS NULL
+              AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events)
+              AND EXISTS (
+                SELECT 1 FROM sqlite_master
+                WHERE type='trigger' AND name='trg_workshop_settlement_completion'
+                  AND sql LIKE '%catalog_execution_prices%'
+              )
+              AND EXISTS (
+                SELECT 1 FROM sqlite_master
+                WHERE type='trigger' AND name='trg_workshop_settlement_completion_reversal'
+              )
+              AND EXISTS (
+                SELECT 1 FROM pragma_table_info('workshop_settlement_events')
+                WHERE name='payment_method'
+              )
+          " --json > /tmp/stage04-enable-result.json
+          test -s /tmp/stage04-enable-result.json
+      - name: Verify activated capture and immutable cutover timestamp
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1) AS enabled,
+              (SELECT activated_at FROM workshop_settlement_capture_control WHERE id=1) AS activated_at,
+              (SELECT COUNT(*) FROM workshop_settlement_events WHERE event_type='opening_balance') AS opening_entries,
+              (SELECT COUNT(*) FROM workshop_settlement_events) AS event_count,
+              (SELECT COUNT(*) FROM workshop_tasks WHERE status IN ('done','ready')) AS ready_tasks,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion') AS completion_trigger,
+              (SELECT CASE WHEN sql LIKE '%catalog_execution_prices%' THEN 1 ELSE 0 END FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion') AS exact_cost_trigger
+          " --json)"
+          jq -e '.[0].results[0] | .enabled==1 and (.activated_at|type=="string") and .completion_trigger==1 and .exact_cost_trigger==1 and .opening_entries==0' <<<"$result"
+          echo 'STAGE04 BRANCH2 TEST CAPTURE ENABLED:'
+          jq '.[0].results[0]' <<<"$result"
+          echo 'No backfill. No opening debt. main and production D1 were not touched.'
