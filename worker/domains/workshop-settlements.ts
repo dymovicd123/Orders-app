@@ -210,9 +210,15 @@ export async function readWorkshopSettlementSummary(db: D1Database) {
       FROM workshop_settlement_events
     `).first<Record<string,number>>(),
     db.prepare(`
-      SELECT id,event_type,business_date,product_name_snapshot,quantity,unit_cost,
-             amount_delta,payment_method,comment
-      FROM workshop_settlement_events ORDER BY id DESC LIMIT 6
+      SELECT e.id,e.event_type,e.business_date,
+             COALESCE(e.product_name_snapshot,original.product_name_snapshot) AS product_name_snapshot,
+             COALESCE(e.quantity,original.quantity) AS quantity,
+             COALESCE(e.unit_cost,original.unit_cost) AS unit_cost,
+             e.amount_delta,e.payment_method,e.comment,e.related_event_id,
+             original.business_date AS source_business_date
+      FROM workshop_settlement_events e
+      LEFT JOIN workshop_settlement_events original ON original.id=e.related_event_id
+      ORDER BY e.id DESC LIMIT 6
     `).all<Record<string,unknown>>(),
   ])
   const balance=Number(totals?.balance||0)
@@ -281,15 +287,20 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
       GROUP BY business_date ORDER BY business_date DESC
     `).bind(start,end).all<Record<string, unknown>>(),
     db.prepare(`
-      SELECT id,event_type,business_date,occurred_at,workshop_task_id,order_item_id,
-        external_order_id,product_name_snapshot,quantity,unit_cost,amount_delta,
-        payment_method,comment,actor_user_id,related_event_id,
+      SELECT e.id,e.event_type,e.business_date,e.occurred_at,e.workshop_task_id,e.order_item_id,
+        COALESCE(e.external_order_id,original.external_order_id) AS external_order_id,
+        COALESCE(e.product_name_snapshot,original.product_name_snapshot) AS product_name_snapshot,
+        COALESCE(e.quantity,original.quantity) AS quantity,
+        COALESCE(e.unit_cost,original.unit_cost) AS unit_cost,
+        e.amount_delta,e.payment_method,e.comment,e.actor_user_id,e.related_event_id,
+        original.business_date AS source_business_date,
         EXISTS(SELECT 1 FROM workshop_settlement_events r
           WHERE r.event_type='payment_reversal' AND r.related_event_id=e.id) AS isReversed
       FROM workshop_settlement_events e
-      WHERE business_date BETWEEN ? AND ? AND id < ?
-        AND (?='all' OR event_type IN ('completion','completion_reversal','price_adjustment'))
-      ORDER BY id DESC LIMIT 51
+      LEFT JOIN workshop_settlement_events original ON original.id=e.related_event_id
+      WHERE e.business_date BETWEEN ? AND ? AND e.id < ?
+        AND (?='all' OR e.event_type IN ('completion','completion_reversal','price_adjustment'))
+      ORDER BY e.id DESC LIMIT 51
     `).bind(start,end,beforeId,scope).all<Record<string, unknown>>(),
     db.prepare(`
       SELECT COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment')
