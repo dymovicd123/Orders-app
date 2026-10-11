@@ -161,6 +161,6 @@
     "scripts/test-reference-sku-verified-stock-ui.mjs": "cdee8f61a9a188dcb6092601bd43bd9a39455a1e",
     "scripts/test-reference-current-runtime-cross-domain.mjs": "15237313b3efa185d9aba17473dc620f44aab7b0",
     "src/features/inventory/loadCompleteInventorySnapshot.ts": "1d6e52a7f754835e148535be3c9093167fcd9874",
-    "scripts/test-inventory-complete-cursor-pagination.mjs": "027b10144fef2c0cfd114f04410796f6cfa30e47"
+    "scripts/test-inventory-complete-cursor-pagination.mjs": "7e8e369985508751bb3a54cba76abc071d6b9d7d"
   }
 }
