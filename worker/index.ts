@@ -53,6 +53,7 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
+import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
@@ -656,6 +657,29 @@ export default {
 
       if (url.pathname === '/api/activity' && request.method === 'GET') {
         return json(await listActivityLog(env.DB, url));
+      }
+
+      // Stage04-C: settlement payments are admin-only; worker remains inert until Stage04 cutover.
+      if (url.pathname === '/api/workshop/settlements' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
+        if (denied) return denied;
+        return json(await readWorkshopSettlementLedger(env.DB, url));
+      }
+      if (url.pathname === '/api/workshop/settlements/payments' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Выплаты цеху доступны только администратору.');
+        if (denied) return denied;
+        const input = await readJson<{ requestId?: unknown; amount?: unknown; method?: unknown; comment?: unknown }>(request);
+        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key'));
+        return json(await postWorkshopSettlementPayment(env.DB, input, (authUser as AuthUser).id), { status: 201 });
+      }
+      const workshopSettlementReverseMatch = url.pathname.match(/^\/api\/workshop\/settlements\/payments\/(\d+)\/reverse$/);
+      if (workshopSettlementReverseMatch && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Исправление выплат доступно только администратору.');
+        if (denied) return denied;
+        const input = await readJson<{ reason?: unknown }>(request);
+        return json(await reverseWorkshopSettlementPayment(
+          env.DB, Number(workshopSettlementReverseMatch[1]), input, (authUser as AuthUser).id
+        ), { status: 201 });
       }
 
       if (url.pathname === '/api/workshop/counts' && request.method === 'GET') {
