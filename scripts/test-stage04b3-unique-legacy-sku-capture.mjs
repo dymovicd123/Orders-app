@@ -26,7 +26,7 @@ d.exec(fs.readFileSync('migrations/0083_v72_workshop_settlement_foundation.sql',
 d.exec(fs.readFileSync('migrations/0084_v72_workshop_settlement_status_capture.sql','utf8'))
 d.exec(fs.readFileSync('migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql','utf8'))
 d.exec(`
-INSERT INTO catalog_variants VALUES(301,401,'adult','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48',1);
+INSERT INTO catalog_variants VALUES(301,101,401,'adult','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48',1);
 INSERT INTO catalog_execution_prices VALUES(401,'adult',7000);
 INSERT INTO order_items VALUES(21,1,101,NULL);
 INSERT INTO workshop_tasks VALUES(11,1,21,NULL,101,'L-1','ШАПАН',2,'active','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48');
@@ -60,7 +60,7 @@ assert.equal(all().at(-1).amount_delta,-14000)
 add.run(13,'L-3','СИНИЙ')
 done.run(13)
 assert.equal(all().at(-1).amount_delta,16000,'New completed work uses updated cost')
-d.exec(`INSERT INTO catalog_variants VALUES(302,402,'adult',101,'М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48',1);
+d.exec(`INSERT INTO catalog_variants VALUES(302,101,402,'adult','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48',1);
 INSERT INTO catalog_execution_prices VALUES(402,'adult',9000);`)
 add.run(14,'L-4','СИНИЙ')
 done.run(14)
