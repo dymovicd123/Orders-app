@@ -19,6 +19,8 @@ check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-sta
 // Pin this additive SQL and hide it ONLY while invoking that original suite.
 const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
+  'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
+  'worker/domains/workshop-settlements.ts':'14a37c646af27d2a0f47cbf9d8c221677dfbcb99',
 }
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
@@ -46,6 +48,7 @@ const tests=[
   ['scripts/test-branch2-environment.mjs',false],
   ['scripts/test-stage04a-workshop-settlements.mjs',false],
   ['scripts/test-stage04b-workshop-status-capture.mjs',false],
+  ['scripts/test-stage04c-workshop-payments.mjs',true],
   ['scripts/test-catalog-integrity-r1-references.mjs',false],
   ['scripts/test-reference-crud-integrity.mjs',true],
   ['scripts/test-catalog-stock-reconciliation.mjs',true],

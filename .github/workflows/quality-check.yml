@@ -54,5 +54,8 @@ jobs:
       - name: Verify Stage04-B2 Workshop Catalog cost snapshots
         run: node scripts/test-stage04b2-workshop-catalog-cost.mjs
 
+      - name: Verify Stage04-C debt, payment and reversal safety
+        run: node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
+
       - name: Build application
         run: npm run build
