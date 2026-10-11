@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import '../../styles/stage04-workshop-settlements.css'
 
-type LedgerEvent={id:number;event_type:string;business_date:string;external_order_id:string|null;product_name_snapshot:string|null;quantity:number|null;unit_cost:number|null;amount_delta:number|null;payment_method:string|null;comment:string|null;related_event_id:number|null}
+type LedgerEvent={id:number;isReversed:number;event_type:string;business_date:string;external_order_id:string|null;product_name_snapshot:string|null;quantity:number|null;unit_cost:number|null;amount_delta:number|null;payment_method:string|null;comment:string|null;related_event_id:number|null}
 type Day={date:string;completed:number;completionCorrections:number;paid:number;paymentCorrections:number;netChange:number;unpricedNewCount:number}
-type Ledger={ok:boolean;captureEnabled:boolean;balance:number;confirmedDebt:number;correctionCredit:number;unresolvedPrices:number;range:{from:string;to:string;openingBalance:number};days:Day[];events:LedgerEvent[];hasMore:boolean;nextBeforeId:number|null}
+type Ledger={ok:boolean;captureEnabled:boolean;balance:number;confirmedDebt:number;correctionCredit:number;unresolvedPrices:number;today:{completed:number;completionCorrections:number;paid:number;paymentCorrections:number};range:{from:string;to:string;openingBalance:number};days:Day[];events:LedgerEvent[];hasMore:boolean;nextBeforeId:number|null}
 type Unpriced={id:number;taskId:number;orderRef:string;productName:string;quantity:number;completedDate:string;availableUnitCost:number|null}
 type UnpricedResponse={ok:boolean;items:Unpriced[];hasMore:boolean}
 type View='daily'|'history'|'unpriced'
@@ -76,7 +76,7 @@ export function WorkshopSettlementsPanel(){
       return {...day,closing:running}
     }).reverse()
   },[ledger])
-  const todayRow=ledger?.days.find(day=>day.date===today)
+  const todayRow=ledger?.today
   const activated=Boolean(ledger?.captureEnabled)
   const amountValue=Number(paymentAmount)
   const validAmount=Number.isSafeInteger(amountValue)&&amountValue>0&&amountValue<=(ledger?.confirmedDebt||0)
@@ -199,7 +199,7 @@ export function WorkshopSettlementsPanel(){
           <td>{e.business_date}</td><td><strong>{eventNames[e.event_type]||'Операция'}</strong>{e.payment_method&&<small>{e.payment_method}</small>}</td>
           <td>{e.product_name_snapshot||e.comment||'—'}{e.external_order_id&&<small>Заказ {e.external_order_id}</small>}{e.quantity&&e.unit_cost!==null&&<small>{e.quantity} × {money(e.unit_cost)}</small>}</td>
           <td>{e.amount_delta===null?'Цена не указана':money(e.amount_delta)}</td>
-          <td>{e.event_type==='payment'&&!reversedIds.has(e.id)&&activated?<button className="secondary compact" type="button" disabled={busy} onClick={()=>void reversePayment(e)}>Отменить</button>:'—'}</td>
+          <td>{e.event_type==='payment'&&!e.isReversed&&!reversedIds.has(e.id)&&activated?<button className="secondary compact" type="button" disabled={busy} onClick={()=>void reversePayment(e)}>Отменить</button>:'—'}</td>
         </tr>)}{!ledger?.events.length&&<tr><td colSpan={5} className="empty-state">Операций за выбранный период нет.</td></tr>}</tbody>
       </table></div>
       {ledger?.hasMore&&<button type="button" className="secondary compact ws-settlements-more" disabled={moreBusy} onClick={()=>void loadMore()}>{moreBusy?'Загружаю…':'Показать ещё'}</button>}
