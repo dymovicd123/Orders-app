@@ -169,5 +169,11 @@ const chunk=fs.readFileSync(path.join(assetsDir,referencesChunks[0]),'utf8')
 for(const marker of ['Все рабочие справочники','Проверка дублей','Объединить значения','Разобрать прежнее объединение товаров']){
   check(chunk.includes(marker),'Refusing historical frontend deployment: missing '+marker)
 }
+const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
+check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
+const workshopChunk=fs.readFileSync(path.join(assetsDir,workshopChunks[0]),'utf8')
+for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено']){
+  check(workshopChunk.includes(marker),'Refusing Stage04-D frontend deploy: missing '+marker)
+}
 console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])
 console.log('CATALOG PORT AND BRANCH2 HISTORICAL GATES PASSED — Stage04 preserved, new runtime checked, baseline suite unchanged')
