@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "db6f0fd226af33f9f6fcbfb152e38a3fdf44d841",
+      "afterGitBlob": "a1ed7bae212f4fe25cf0cea2649c07738fb58a32",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
