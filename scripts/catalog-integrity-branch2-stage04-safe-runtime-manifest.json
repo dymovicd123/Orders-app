@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
-      "afterGitBlob": "4827ca6722d8728c30cf3dcfc9377db2739288d5",
+      "afterGitBlob": "b25e98e7c414423edd15839d52fd7cd16cf91c2b",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/App.tsx"
     },
     "src/app/constants.ts": {

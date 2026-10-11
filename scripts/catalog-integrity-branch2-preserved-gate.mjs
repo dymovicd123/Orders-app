@@ -21,9 +21,9 @@ const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
   'worker/domains/workshop-settlements.ts':'aee77dfdb6a057d600bc1fb75b363f6cb1c92383',
-  'worker/domains/workshop-settlement-prices.ts':'f18f1f2ca866e3c1ac910ba31ff6aa2028a30cbd',
-  'src/features/workshop/WorkshopSettlementsPanel.tsx':'da76819a9515c8d10cc6959e02548b8b52f4281d',
-  'src/styles/stage04-workshop-settlements.css':'c69192e37cbc63a9743559d0628c0a3a454e84ef',
+  'worker/domains/workshop-settlement-prices.ts':'42fce885d58933e6b95c9ab42c166f6d9f0f2833',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx':'e11498a22e3f350e8a451f5cfc6f134221c788b3',
+  'src/styles/stage04-workshop-settlements.css':'184cb7f4a90ad40fe959aa38bb75621cc886d4d6',
 }
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
@@ -34,7 +34,7 @@ const stage04DWorkshopScreen={
   file:'src/features/sections/WorkshopSection.tsx',
   fixture:'scripts/fixtures/stage04d-workshop-20261011/WorkshopSection.tsx',
   before:'d21020d65f3469997a3a579d9233362a026a5336',
-  after:'38f65b3bca76116a8ae0889c2ebd26f9a4f8867f',
+  after:'907f7c344da250b488831c2176c6b311035da4fc',
 }
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Stage04-D Workshop UI drift')
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))===stage04DWorkshopScreen.before,'Stage04-D baseline fixture drift')
@@ -172,7 +172,7 @@ for(const marker of ['Все рабочие справочники','Прове�
 const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
 check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
 const workshopChunk=fs.readFileSync(path.join(assetsDir,workshopChunks[0]),'utf8')
-for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено']){
+for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено','Не определена себестоимость','Указать себестоимость','Разобрать позиции']){
   check(workshopChunk.includes(marker),'Refusing Stage04-D frontend deploy: missing '+marker)
 }
 console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])
