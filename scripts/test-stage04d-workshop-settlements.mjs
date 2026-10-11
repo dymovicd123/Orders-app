@@ -16,9 +16,9 @@ dbRaw.exec(`
    product_id INTEGER,product_name_snapshot TEXT,quantity INTEGER,status TEXT,
    gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT);
   CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,variant_id INTEGER,product_id INTEGER);
-  CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,stock_position_id INTEGER,category TEXT,product_id INTEGER);
+  CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,stock_position_id INTEGER,category TEXT,product_id INTEGER,gender TEXT,color TEXT,material TEXT,length TEXT,size_label TEXT,is_active INTEGER);
   CREATE TABLE catalog_execution_prices(stock_position_id INTEGER,category TEXT,cost_price INTEGER,PRIMARY KEY(stock_position_id,category));
-  INSERT INTO catalog_variants VALUES(301,401,'adult',101);
+  INSERT INTO catalog_variants VALUES(301,401,'adult',101,'М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48',1);
   INSERT INTO catalog_execution_prices VALUES(401,'adult',NULL);
   INSERT INTO order_items VALUES(21,1,301,101);
   INSERT INTO workshop_tasks VALUES(11,1,21,301,101,'ШАПАН',2,'done','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48');
@@ -77,6 +77,48 @@ assert.equal(queue.items[0].availableUnitCost,null)
 assert.equal(queue.items[0].resolutionState,'needs_match')
 assert.equal(queue.items[0].catalogProductId,null)
 await assert.rejects(confirmUnpricedWorkshopCompletionCost(adapter,3,12),e=>e.code==='unpriced_cost_still_unresolved')
+
+// Legacy direct order-item links may have neither an item.variant_id nor task.variant_id.
+// Exactly one active full-SKU match is safe to price; near matches must remain unresolved.
+dbRaw.exec(`
+  INSERT INTO order_items VALUES(22,1,NULL,101);
+  INSERT INTO workshop_tasks VALUES(13,1,22,NULL,101,'ШАПАН',2,'done','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48');
+`)
+insert.run('legacy-full-match',day,now,13,1,22,'ORDER-3','ШАПАН',details,2)
+queue=await listUnpricedWorkshopCompletions(adapter)
+assert.equal(queue.items.length,1)
+assert.equal(queue.total,1)
+assert.equal(queue.items[0].availableUnitCost,9000)
+assert.equal(queue.items[0].catalogProductId,101)
+assert.equal(queue.items[0].resolutionState,'ready')
+const legacyFixed=await confirmUnpricedWorkshopCompletionCost(adapter,5,12)
+assert.equal(legacyFixed.replayed,false)
+assert.equal(dbRaw.prepare('SELECT amount_delta FROM workshop_settlement_events WHERE id=?').get(legacyFixed.id).amount_delta,18000)
+assert.equal(dbRaw.prepare('SELECT amount_delta FROM workshop_settlement_events WHERE id=5').get().amount_delta,null)
+assert.equal((await confirmUnpricedWorkshopCompletionCost(adapter,5,12)).replayed,true)
+
+// Ambiguity: a duplicate SKU must NOT silently charge either execution.
+dbRaw.exec(`
+  INSERT INTO catalog_variants VALUES(302,402,'adult',101,'М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48',1);
+  INSERT INTO catalog_execution_prices VALUES(402,'adult',9500);
+  INSERT INTO workshop_tasks VALUES(14,1,22,NULL,101,'ШАПАН',1,'done','М','СИНИЙ','ХЛОПОК','КОРОТКИЙ','48');
+`)
+insert.run('legacy-ambiguous',day,now,14,1,22,'ORDER-4','ШАПАН',details,1)
+queue=await listUnpricedWorkshopCompletions(adapter)
+assert.equal(queue.items.length,1)
+assert.equal(queue.items[0].availableUnitCost,null)
+assert.equal(queue.items[0].resolutionState,'needs_match')
+await assert.rejects(confirmUnpricedWorkshopCompletionCost(adapter,7,12),e=>e.code==='unpriced_cost_still_unresolved')
+dbRaw.exec('UPDATE catalog_variants SET is_active=0 WHERE id=302')
+queue=await listUnpricedWorkshopCompletions(adapter)
+assert.equal(queue.items[0].availableUnitCost,9000)
+assert.equal(queue.items[0].resolutionState,'ready')
+
+// Similar color/size but different material/length must never be borrowed.
+dbRaw.exec("UPDATE workshop_tasks SET material_snapshot='ШЁЛК' WHERE id=14")
+queue=await listUnpricedWorkshopCompletions(adapter)
+assert.equal(queue.items[0].resolutionState,'needs_match')
+await assert.rejects(confirmUnpricedWorkshopCompletionCost(adapter,7,12),e=>e.code==='unpriced_cost_still_unresolved')
 
 // Reversed missing-price completions leave the queue.
 dbRaw.exec(`INSERT INTO workshop_settlement_events
