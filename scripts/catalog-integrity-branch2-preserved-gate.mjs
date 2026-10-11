@@ -172,7 +172,7 @@ for(const marker of ['Все рабочие справочники','Прове�
 const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
 check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
 const workshopChunk=fs.readFileSync(path.join(assetsDir,workshopChunks[0]),'utf8')
-for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено']){
+for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено','Не определена себестоимость','Указать себестоимость','Разобрать позиции']){
   check(workshopChunk.includes(marker),'Refusing Stage04-D frontend deploy: missing '+marker)
 }
 console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])
