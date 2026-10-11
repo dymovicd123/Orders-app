@@ -109,7 +109,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
 
   const activated=Boolean(summary?.captureEnabled)
   const debt=Number(summary?.confirmedDebt||0)
-  const amountValue=paymentMode==='full'?debt:Number(amountDraft)
+  const amountValue=Number(amountDraft)
   const validAmount=Number.isSafeInteger(amountValue)&&amountValue>0&&amountValue<=debt
   const maySave=activated&&!busy&&!summaryLoading&&validAmount
   const days=useMemo(()=>{
@@ -210,7 +210,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
         <small>Общий накопленный подтверждённый долг</small>
       </div>
       <div className="ws-fast-day">
-        <div><span>Сегодня выполнено</span><strong>{activated?money(Number(summary?.today.completed||0)+Number(summary?.today.completionCorrections||0)):'—'}</strong></div>
+        <div><span>Сегодня выполнено</span><strong>{activated?money(Number(summary?.today.completed||0)):'—'}</strong></div>
         <div><span>Сегодня выплачено</span><strong>{activated?money(Number(summary?.today.paid||0)-Number(summary?.today.paymentCorrections||0)):'—'}</strong></div>
       </div>
     </div>
@@ -220,10 +220,6 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     {summary&&summary.correctionCredit>0&&<p className="ws-settlements-warning">
       После корректировок сумма выплат превысила начисления на {money(summary.correctionCredit)}. Проверьте операции: это не аванс.
     </p>}
-    {summary&&summary.unresolvedPrices>0&&<button type="button" className="ws-fast-unpriced" onClick={()=>openView('unpriced')}>
-      <span><strong>Без себестоимости: {summary.unresolvedPrices}</strong><small>Не входят в долг — требуется проверка администратора</small></span>
-      <span>Разобрать →</span>
-    </button>}
     {error&&<div className="ws-settlements-error" role="alert">{error}</div>}
     {notice&&<p className="ws-settlements-success" role="status">{notice}</p>}
     {activated&&<div className="ws-fast-pay">
@@ -240,7 +236,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
         <div className="ws-fast-pay-input">
           <label htmlFor="ws-payment-amount">{paymentMode==='full'?'Погашение всего долга':'Сколько выплатили, ₸'}</label>
           {paymentMode==='full'
-            ?<strong>{money(debt)}</strong>
+            ?<strong>{money(amountValue)}</strong>
             :<input id="ws-payment-amount" aria-label="Сумма выплаты, тенге" type="number" min="1" step="1" max={debt}
               placeholder="Введите сумму" required autoFocus value={amountDraft} onChange={e=>setAmountDraft(e.target.value)}/>}
         </div>
@@ -293,7 +289,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
       {view==='days'?<div className="ws-settlements-table-scroll"><table className="data-table">
         <thead><tr><th>Дата</th><th>Готовые изделия</th><th>Уточнено стоимости</th><th>Выплачено</th><th>Остаток долга</th></tr></thead>
         <tbody>{days.map(day=><tr key={day.date}>
-          <td>{day.date}</td><td>{money(Number(day.completed||0)+Number(day.completionCorrections||0))}</td>
+          <td>{day.date}</td><td>{money(Number(day.completed||0))}</td>
           <td>{money(day.costConfirmed||0)}</td><td>{money(Number(day.paid||0)-Number(day.paymentCorrections||0))}</td>
           <td><strong>{money(day.closing)}</strong></td>
         </tr>)}{!detailLoading&&!days.length&&<tr><td colSpan={5}>За выбранный период операций нет.</td></tr>}</tbody>
