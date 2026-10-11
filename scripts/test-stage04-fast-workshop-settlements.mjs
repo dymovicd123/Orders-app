@@ -61,6 +61,14 @@ assert.equal(currentDay.completed,5000)
 assert.equal(currentDay.costConfirmed,2000)
 assert.equal(currentDay.paid,2500)
 assert.equal(ledger.days.find(row=>row.date===yesterday).completed,6000)
+const workOnly=await readWorkshopSettlementLedger(db,new URL(range.toString()+'&scope=work'))
+assert.ok(workOnly.events.length>0)
+assert.ok(workOnly.events.every(x=>['completion','completion_reversal','price_adjustment'].includes(x.event_type)))
+assert.ok(workOnly.events.some(x=>x.event_type==='price_adjustment'))
+assert.ok(workOnly.events.every(x=>x.event_type!=='payment'))
+await assert.rejects(readWorkshopSettlementLedger(db,new URL(range.toString()+'&scope=invalid')),
+  e=>e.code==='invalid_history_scope')
+
 
 const reversed=await reverseWorkshopSettlementPayment(db,payment.id,{reason:'Тестовая ошибка'},1)
 assert.equal(reversed.replayed,false)
