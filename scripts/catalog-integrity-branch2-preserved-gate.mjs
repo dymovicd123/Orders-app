@@ -20,11 +20,25 @@ check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-sta
 const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
-  'worker/domains/workshop-settlements.ts':'14a37c646af27d2a0f47cbf9d8c221677dfbcb99',
+  'worker/domains/workshop-settlements.ts':'aee77dfdb6a057d600bc1fb75b363f6cb1c92383',
+  'worker/domains/workshop-settlement-prices.ts':'f18f1f2ca866e3c1ac910ba31ff6aa2028a30cbd',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx':'da76819a9515c8d10cc6959e02548b8b52f4281d',
+  'src/styles/stage04-workshop-settlements.css':'c69192e37cbc63a9743559d0628c0a3a454e84ef',
 }
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
 }
+// Preserve the exact Workshop screen while running historical source-size baselines.
+// New Stage04-D UI runs its own current-code acceptance before the old suite.
+const stage04DWorkshopScreen={
+  file:'src/features/sections/WorkshopSection.tsx',
+  fixture:'scripts/fixtures/stage04d-workshop-20261011/WorkshopSection.tsx',
+  before:'d21020d65f3469997a3a579d9233362a026a5336',
+  after:'38f65b3bca76116a8ae0889c2ebd26f9a4f8867f',
+}
+check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Stage04-D Workshop UI drift')
+check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))===stage04DWorkshopScreen.before,'Stage04-D baseline fixture drift')
+
 const run=(command,args,context,extraEnv={})=>{
   const x=spawnSync(command,args,{cwd:process.cwd(),stdio:'inherit',shell:false,
     windowsHide:true,env:{...process.env, CATALOG_INTEGRITY_PORT_CHECK:'1',...extraEnv}})
@@ -49,6 +63,7 @@ const tests=[
   ['scripts/test-stage04a-workshop-settlements.mjs',false],
   ['scripts/test-stage04b-workshop-status-capture.mjs',false],
   ['scripts/test-stage04c-workshop-payments.mjs',true],
+  ['scripts/test-stage04d-workshop-settlements.mjs',true],
   ['scripts/test-catalog-integrity-r1-references.mjs',false],
   ['scripts/test-reference-crud-integrity.mjs',true],
   ['scripts/test-catalog-stock-reconciliation.mjs',true],
@@ -117,6 +132,9 @@ try{
     saved.set(full,fs.readFileSync(full,'utf8'))
     fs.writeFileSync(full,fs.readFileSync(delta.baselineFixture,'utf8'))
   }
+  const originalWorkshop=path.resolve(stage04DWorkshopScreen.file)
+  saved.set(originalWorkshop,fs.readFileSync(originalWorkshop,'utf8'))
+  fs.writeFileSync(originalWorkshop,fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
   run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',
@@ -133,6 +151,7 @@ try{
 for(const [relative,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
 }
+check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')
 // The frozen historical suite builds the *old* frontend while baseline files
 // are temporarily staged. Cloudflare Workers Builds uses release:check as its
 // build command and deploys dist/ immediately afterwards. Without a fresh build
@@ -149,6 +168,12 @@ check(referencesChunks.length===1,'Current Branch2 build has missing or multiple
 const chunk=fs.readFileSync(path.join(assetsDir,referencesChunks[0]),'utf8')
 for(const marker of ['Все рабочие справочники','Проверка дублей','Объединить значения','Разобрать прежнее объединение товаров']){
   check(chunk.includes(marker),'Refusing historical frontend deployment: missing '+marker)
+}
+const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
+check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
+const workshopChunk=fs.readFileSync(path.join(assetsDir,workshopChunks[0]),'utf8')
+for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','Сегодня выполнено']){
+  check(workshopChunk.includes(marker),'Refusing Stage04-D frontend deploy: missing '+marker)
 }
 console.log('CURRENT BRANCH2 BUILD VERIFIED — fresh ReferencesSection:',referencesChunks[0])
 console.log('CATALOG PORT AND BRANCH2 HISTORICAL GATES PASSED — Stage04 preserved, new runtime checked, baseline suite unchanged')

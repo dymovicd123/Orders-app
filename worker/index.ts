@@ -54,6 +54,7 @@ import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, Pl
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
 import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
+import { listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
@@ -657,6 +658,21 @@ export default {
 
       if (url.pathname === '/api/activity' && request.method === 'GET') {
         return json(await listActivityLog(env.DB, url));
+      }
+
+      // Stage04-D: unresolved costs are reviewed separately, without guessing money.
+      if (url.pathname === '/api/workshop/settlements/unpriced' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Стоимость работы доступна только администратору.');
+        if (denied) return denied;
+        return json(await listUnpricedWorkshopCompletions(env.DB));
+      }
+      const unpricedConfirmMatch = url.pathname.match(/^\/api\/workshop\/settlements\/unpriced\/(\d+)\/confirm-cost$/);
+      if (unpricedConfirmMatch && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Подтверждение стоимости доступно только администратору.');
+        if (denied) return denied;
+        return json(await confirmUnpricedWorkshopCompletionCost(
+          env.DB, Number(unpricedConfirmMatch[1]), (authUser as AuthUser).id
+        ), { status: 201 });
       }
 
       // Stage04-C: settlement payments are admin-only; worker remains inert until Stage04 cutover.

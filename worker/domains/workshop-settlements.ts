@@ -200,10 +200,10 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
     throw new WorkshopSettlementError('Некорректная страница истории.', 400, 'invalid_cursor')
   }
 
-  const [total, opening, daily, history] = await Promise.all([
+  const [total, opening, daily, history, todaySummary] = await Promise.all([
     db.prepare(`
       SELECT COALESCE(SUM(amount_delta),0) AS balance,
-        COALESCE(SUM(CASE WHEN event_type='completion' THEN amount_delta ELSE 0 END),0) AS charged,
+        COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment') THEN amount_delta ELSE 0 END),0) AS charged,
         COALESCE(SUM(CASE WHEN event_type='payment' THEN -amount_delta ELSE 0 END),0) AS paid,
         COALESCE(SUM(CASE WHEN event_type='payment_reversal' THEN amount_delta ELSE 0 END),0) AS paymentsReversed,
         (SELECT COUNT(*) FROM workshop_settlement_events c
@@ -219,7 +219,7 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
       .bind(start).first<{ balance: number }>(),
     db.prepare(`
       SELECT business_date AS date,
-        COALESCE(SUM(CASE WHEN event_type='completion' THEN amount_delta ELSE 0 END),0) AS completed,
+        COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment') THEN amount_delta ELSE 0 END),0) AS completed,
         COALESCE(SUM(CASE WHEN event_type='completion_reversal' THEN amount_delta ELSE 0 END),0) AS completionCorrections,
         COALESCE(SUM(CASE WHEN event_type='payment' THEN -amount_delta ELSE 0 END),0) AS paid,
         COALESCE(SUM(CASE WHEN event_type='payment_reversal' THEN amount_delta ELSE 0 END),0) AS paymentCorrections,
@@ -231,11 +231,24 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
     db.prepare(`
       SELECT id,event_type,business_date,occurred_at,workshop_task_id,order_item_id,
         external_order_id,product_name_snapshot,quantity,unit_cost,amount_delta,
-        payment_method,comment,actor_user_id,related_event_id
-      FROM workshop_settlement_events
+        payment_method,comment,actor_user_id,related_event_id,
+        EXISTS(SELECT 1 FROM workshop_settlement_events r
+          WHERE r.event_type='payment_reversal' AND r.related_event_id=e.id) AS isReversed
+      FROM workshop_settlement_events e
       WHERE business_date BETWEEN ? AND ? AND id < ?
       ORDER BY id DESC LIMIT 51
     `).bind(start,end,beforeId).all<Record<string, unknown>>(),
+    db.prepare(`
+      SELECT COALESCE(SUM(CASE WHEN event_type IN ('completion','price_adjustment')
+          THEN amount_delta ELSE 0 END),0) AS completed,
+        COALESCE(SUM(CASE WHEN event_type='completion_reversal'
+          THEN amount_delta ELSE 0 END),0) AS completionCorrections,
+        COALESCE(SUM(CASE WHEN event_type='payment'
+          THEN -amount_delta ELSE 0 END),0) AS paid,
+        COALESCE(SUM(CASE WHEN event_type='payment_reversal'
+          THEN amount_delta ELSE 0 END),0) AS paymentCorrections
+      FROM workshop_settlement_events WHERE business_date=date('now','+5 hours')
+    `).first<Record<string,number>>(),
   ])
   const events = history.results || []
   const balance = Number(total?.balance || 0)
@@ -247,6 +260,10 @@ export async function readWorkshopSettlementLedger(db: D1Database, url: URL) {
     paid: Number(total?.paid || 0),
     paymentsReversed: Number(total?.paymentsReversed || 0),
     unresolvedPrices: Number(total?.unresolvedPrices || 0),
+    today: { completed: Number(todaySummary?.completed || 0),
+      completionCorrections: Number(todaySummary?.completionCorrections || 0),
+      paid: Number(todaySummary?.paid || 0),
+      paymentCorrections: Number(todaySummary?.paymentCorrections || 0) },
     range: { from: start, to: end, openingBalance: Number(opening?.balance || 0) },
     days: daily.results || [],
     events: events.slice(0,50),

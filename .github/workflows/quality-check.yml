@@ -57,5 +57,8 @@ jobs:
       - name: Verify Stage04-C debt, payment and reversal safety
         run: node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
 
+      - name: Verify Stage04-D Workshop settlement UI and cost reconciliation
+        run: node --experimental-strip-types scripts/test-stage04d-workshop-settlements.mjs
+
       - name: Build application
         run: npm run build
