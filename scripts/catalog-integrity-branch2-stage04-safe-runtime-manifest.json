@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
-      "afterGitBlob": "5d758d71285dad94d0d90152a3505dee05a1e11a",
+      "afterGitBlob": "4827ca6722d8728c30cf3dcfc9377db2739288d5",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/App.tsx"
     },
     "src/app/constants.ts": {
@@ -14,7 +14,7 @@
     },
     "src/app/types.ts": {
       "beforeGitBlob": "fde6d8d206862a6ae33dea95088bb84ea0d6fc26",
-      "afterGitBlob": "899cbe472f527ffa993411c44b6825b3f8fcc570",
+      "afterGitBlob": "b9d92ada5a950bef814ce4a5247e0d868b65f306",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/app/types.ts"
     },
     "src/app/controllers/useOperationalViewModel.ts": {
@@ -61,6 +61,11 @@
       "beforeGitBlob": "a5e6ffd5d1039d54dee2b35026ef37a9363408fa",
       "afterGitBlob": "78ed3642479e9b961c01f063fb6900a041b9f0b5",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/inventory-movement.ts"
+    },
+    "worker/domains/inventory-read.ts": {
+      "beforeGitBlob": "743e9b4ad2df2e8ad8fd94bdbfa0a825f077e0d3",
+      "afterGitBlob": "9ca720fbc3bbd7fadb709f37344b2032f4851a35",
+      "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/inventory-read.ts"
     }
   },
   "stage04Files": {
@@ -154,6 +159,8 @@
     "scripts/test-reference-exhaustive-duplicates.mjs": "6f7612c7bfc458b1981e3979fceba4ee3550b879",
     "src/features/sections/verifiedSkuStockDecision.ts": "2999d66f8cf3a2911ed939add828b3e8b9a69514",
     "scripts/test-reference-sku-verified-stock-ui.mjs": "cdee8f61a9a188dcb6092601bd43bd9a39455a1e",
-    "scripts/test-reference-current-runtime-cross-domain.mjs": "15237313b3efa185d9aba17473dc620f44aab7b0"
+    "scripts/test-reference-current-runtime-cross-domain.mjs": "15237313b3efa185d9aba17473dc620f44aab7b0",
+    "src/features/inventory/loadCompleteInventorySnapshot.ts": "1d6e52a7f754835e148535be3c9093167fcd9874",
+    "scripts/test-inventory-complete-cursor-pagination.mjs": "027b10144fef2c0cfd114f04410796f6cfa30e47"
   }
 }
