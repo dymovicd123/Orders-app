@@ -4,8 +4,8 @@ import '../../styles/stage04-workshop-settlements.css'
 type LedgerEvent={id:number;isReversed:number;event_type:string;business_date:string;external_order_id:string|null;product_name_snapshot:string|null;quantity:number|null;unit_cost:number|null;amount_delta:number|null;payment_method:string|null;comment:string|null;related_event_id:number|null}
 type Day={date:string;completed:number;completionCorrections:number;paid:number;paymentCorrections:number;netChange:number;unpricedNewCount:number}
 type Ledger={ok:boolean;captureEnabled:boolean;balance:number;confirmedDebt:number;correctionCredit:number;unresolvedPrices:number;today:{completed:number;completionCorrections:number;paid:number;paymentCorrections:number};range:{from:string;to:string;openingBalance:number};days:Day[];events:LedgerEvent[];hasMore:boolean;nextBeforeId:number|null}
-type Unpriced={id:number;taskId:number;orderRef:string;productName:string;quantity:number;completedDate:string;availableUnitCost:number|null}
-type UnpricedResponse={ok:boolean;items:Unpriced[];hasMore:boolean}
+type Unpriced={id:number;taskId:number;orderRef:string;productName:string;quantity:number;completedDate:string;availableUnitCost:number|null;catalogProductId:number|null;resolutionState:'missing_cost'|'needs_match'|'ready'}
+type UnpricedResponse={ok:boolean;items:Unpriced[];total:number;hasMore:boolean}
 type View='daily'|'history'|'unpriced'
 const formatter=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0})
 const money=(n:number|null|undefined)=>n==null?'Не указана':formatter.format(n)+' ₸'
@@ -30,12 +30,13 @@ function paymentIdempotency(body:string){
 }
 const clearPaymentId=()=>{try{sessionStorage.removeItem(draftStorageKey)}catch{ /* optional */ }}
 
-export function WorkshopSettlementsPanel(){
+export function WorkshopSettlementsPanel({ openUnpricedRequest, onUnpricedCountChange, openCatalogPrice }: { openUnpricedRequest:number; onUnpricedCountChange:(count:number)=>void; openCatalogPrice:(productId:number|null, productName:string)=>void }){
   const today=todayKz()
   const [from,setFrom]=useState(backDays(today,29))
   const [to,setTo]=useState(today)
   const [period,setPeriod]=useState({from:backDays(today,29),to:today})
   const [view,setView]=useState<View>('daily')
+  useEffect(() => { if(openUnpricedRequest>0) setView('unpriced') },[openUnpricedRequest])
   const [ledger,setLedger]=useState<Ledger|null>(null)
   const [unpriced,setUnpriced]=useState<UnpricedResponse|null>(null)
   const [loading,setLoading]=useState(true)
@@ -60,13 +61,13 @@ export function WorkshopSettlementsPanel(){
         readApi<UnpricedResponse>('/api/workshop/settlements/unpriced'),
       ])
       if(requestGeneration.current!==generation)return
-      setLedger(next);setUnpriced(unknown)
+      setLedger(next);setUnpriced(unknown);onUnpricedCountChange(unknown.total)
     }catch(e){
       if(requestGeneration.current===generation)setError(e instanceof Error?e.message:'Ошибка обновления расчётов.')
     }finally{
       if(requestGeneration.current===generation)setLoading(false)
     }
-  },[period])
+  },[period,onUnpricedCountChange])
   useEffect(()=>{void refresh();return()=>{requestGeneration.current++}},[refresh])
 
   const daily=useMemo(()=>{
@@ -205,12 +206,22 @@ export function WorkshopSettlementsPanel(){
       {ledger?.hasMore&&<button type="button" className="secondary compact ws-settlements-more" disabled={moreBusy} onClick={()=>void loadMore()}>{moreBusy?'Загружаю…':'Показать ещё'}</button>}
     </section>}
     {view==='unpriced'&&<section aria-label="Позиции без себестоимости">
-      <p className="ws-settlements-footnote">Эти готовые товары не включены в подтверждённый долг. Исправьте себестоимость в каталоге, обновите список и подтвердите цену без изменения старых записей.</p>
+      <p className="ws-settlements-footnote">Позиции без цены не увеличивают подтверждённый долг. Назначать себестоимость может только администратор. После сохранения в каталоге вернитесь сюда, обновите список и подтвердите начисление.</p>
       <div className="ws-settlements-table-scroll"><table className="data-table">
         <thead><tr><th>Готово</th><th>Изделие</th><th>Кол-во</th><th>Себестоимость</th><th>Действие</th></tr></thead>
         <tbody>{(unpriced?.items||[]).map(item=><tr key={item.id}>
-          <td>{item.completedDate}</td><td><strong>{item.productName}</strong>{item.orderRef&&<small>Заказ {item.orderRef}</small>}</td><td>{item.quantity}</td><td>{money(item.availableUnitCost)}</td>
-          <td>{item.availableUnitCost!==null&&activated?<button type="button" className="secondary compact" disabled={busy} onClick={()=>void resolveCost(item)}>Подтвердить</button>:<span className="ws-settlements-muted">Нужна проверка</span>}</td>
+          <td>{item.completedDate}</td><td><strong>{item.productName}</strong>{item.orderRef&&<small>Заказ {item.orderRef}</small>}</td><td>{item.quantity}</td>
+          <td>{item.resolutionState==='needs_match'?'Требуется сверка товара':item.resolutionState==='missing_cost'?'Не назначена':money(item.availableUnitCost)}</td>
+          <td>
+            <div className="ws-unpriced-row-actions">
+              {item.resolutionState==='ready'&&item.availableUnitCost!==null&&activated
+                ? <button type="button" className="secondary compact" disabled={busy} onClick={()=>void resolveCost(item)}>Подтвердить начисление</button>
+                : <button type="button" className="secondary compact" onClick={()=>openCatalogPrice(item.catalogProductId,item.productName)}>
+                  {item.resolutionState==='needs_match'?'Проверить товар':'Указать себестоимость →'}
+                </button>}
+              {item.resolutionState==='needs_match'&&<small>Сначала проверьте, какая позиция каталога соответствует заказу. Цена сама по себе проблему не устранит.</small>}
+            </div>
+          </td>
         </tr>)}{!unpriced?.items.length&&<tr><td colSpan={5} className="empty-state">Неразобранных позиций нет.</td></tr>}</tbody>
       </table></div>
       {unpriced?.hasMore&&<p className="ws-settlements-footnote">Показаны последние 50 позиций. После обработки обновите список.</p>}
