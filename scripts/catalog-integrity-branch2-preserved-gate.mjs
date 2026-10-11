@@ -20,6 +20,7 @@ check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-sta
 const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
+  'migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql':'dbe3150c5d97ffad90db9dabd42261baed222d7c',
   'worker/domains/workshop-settlements.ts':'aee77dfdb6a057d600bc1fb75b363f6cb1c92383',
   'worker/domains/workshop-settlement-prices.ts':'dda3eb0fa2e3edc92fff13c65367f534d837c359',
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'e11498a22e3f350e8a451f5cfc6f134221c788b3',
@@ -64,6 +65,7 @@ const tests=[
   ['scripts/test-stage04b-workshop-status-capture.mjs',false],
   ['scripts/test-stage04c-workshop-payments.mjs',true],
   ['scripts/test-stage04d-workshop-settlements.mjs',true],
+  ['scripts/test-stage04b3-unique-legacy-sku-capture.mjs',false],
   ['scripts/test-catalog-integrity-r1-references.mjs',false],
   ['scripts/test-reference-crud-integrity.mjs',true],
   ['scripts/test-catalog-stock-reconciliation.mjs',true],
