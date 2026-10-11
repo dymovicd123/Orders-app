@@ -21,7 +21,7 @@ const v = sql.prepare('INSERT INTO catalog_variants (id,product_id,category,gend
 const s = sql.prepare('INSERT INTO inventory_stock (id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
 for (let id=1;id<=1022;id++) {
   const chocolate=id>1016
-  v.run(id,chocolate?22:1,'adult','МУЖ',chocolate?'ШОКОЛАД':'БЕЖЕВЫЙ','ЗАМША ВЕЛЮР','СТАНДАРТ',String(chocolate?40+2*(id-1016):id),1)
+  v.run(id,chocolate?22:1,'adult','МУЖ',chocolate?'ШОКОЛАД':'БЕЖЕВЫЙ','ЗАМША ВЕЛЮР','СТАНДАРТ',String(chocolate?40+2*(id-1016):id))
   s.run(id,'warehouse',chocolate?22:1,id,chocolate?'ҚОЗЫ КӨРПЕШ ШАПАН':'АЛЬФА ТОВАР',
     'МУЖ',chocolate?'ШОКОЛАД':'БЕЖЕВЫЙ','ЗАМША ВЕЛЮР','СТАНДАРТ',
     String(chocolate?40+2*(id-1016):id),chocolate?(id===1020?12:id===1021?4:2):1,chocolate&&id===1020?1:0)
