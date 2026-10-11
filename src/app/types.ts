@@ -1206,6 +1206,7 @@ export type InventoryCheckHistoryResponse = { ok: boolean; rows: InventoryCheckH
 export type InventoryResponse = {
   ok: boolean
   source: 'warehouse' | 'boutique'
+  pageInfo?: { cursor: number; hasMore: boolean; nextCursor: number | null }
   count: number
   total: number
   zeroCount: number
