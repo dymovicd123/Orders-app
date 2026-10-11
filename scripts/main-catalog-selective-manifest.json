@@ -11,7 +11,7 @@
     {
       "path": "src/App.tsx",
       "oldSha": "e10688279ebce28469d7b82fc37c8a0a1f9250fd",
-      "newSha": "217c37ce52e8f1c5a57addc6dfa8f38f18b42a3e"
+      "newSha": "79f3e4753dec679b5fd85b1a76e7bbb5cbd54c37"
     },
     {
       "path": "src/app/constants.ts",
@@ -26,7 +26,7 @@
     {
       "path": "src/app/types.ts",
       "oldSha": "fde6d8d206862a6ae33dea95088bb84ea0d6fc26",
-      "newSha": "899cbe472f527ffa993411c44b6825b3f8fcc570"
+      "newSha": "b9d92ada5a950bef814ce4a5247e0d868b65f306"
     },
     {
       "path": "src/features/sections/ReferencesSection.tsx",
@@ -57,6 +57,11 @@
       "path": "worker/index.ts",
       "oldSha": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
       "newSha": "db6f0fd226af33f9f6fcbfb152e38a3fdf44d841"
+    },
+    {
+      "path": "worker/domains/inventory-read.ts",
+      "oldSha": "743e9b4ad2df2e8ad8fd94bdbfa0a825f077e0d3",
+      "newSha": "9ca720fbc3bbd7fadb709f37344b2032f4851a35"
     }
   ],
   "added": [
@@ -335,6 +340,14 @@
     {
       "path": "scripts/main-catalog-selective-gate.mjs",
       "sha": "394194df3402ee61fdd2b5147269f528b5ed69af"
+    },
+    {
+      "path": "src/features/inventory/loadCompleteInventorySnapshot.ts",
+      "sha": "1d6e52a7f754835e148535be3c9093167fcd9874"
+    },
+    {
+      "path": "scripts/test-inventory-complete-cursor-pagination.mjs",
+      "sha": "7e8e369985508751bb3a54cba76abc071d6b9d7d"
     }
   ],
   "currentTests": [
@@ -356,6 +369,7 @@
     "scripts/test-arrival-merged-sku-safety.mjs",
     "scripts/test-catalog-zero-stock-undo.mjs",
     "scripts/test-catalog-positive-stock-undo.mjs",
-    "scripts/test-catalog-reserved-stock-undo.mjs"
+    "scripts/test-catalog-reserved-stock-undo.mjs",
+    "scripts/test-inventory-complete-cursor-pagination.mjs"
   ]
 }
