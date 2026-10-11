@@ -35,6 +35,34 @@ const compatibleVariant = `
   AND cv.id IS NOT NULL AND cv.stock_position_id IS NOT NULL
 `
 
+// Legacy tasks sometimes have no variant_id on either the order item or the
+// Workshop task. The frozen completion still identifies the exact combination.
+// Recover a variant for *financial pricing only* when precisely ONE active
+// Catalog SKU matches all five frozen facts and the linked order-item product.
+// This does not alter order items or inventory identities.
+const resolvedVariantJoin = `
+  JOIN catalog_variants cv ON cv.id = COALESCE(
+    oi.variant_id,
+    wt.variant_id,
+    (
+      SELECT CASE WHEN COUNT(*)=1 THEN MAX(v2.id) ELSE NULL END
+      FROM catalog_variants v2
+      WHERE c.order_item_id IS NOT NULL
+        AND oi.id=c.order_item_id AND oi.order_id=c.order_id
+        AND wt.order_item_id=c.order_item_id
+        AND oi.product_id IS NOT NULL
+        AND oi.variant_id IS NULL AND wt.variant_id IS NULL
+        AND v2.product_id=oi.product_id
+        AND v2.is_active=1 AND v2.stock_position_id IS NOT NULL
+        AND UPPER(TRIM(COALESCE(v2.gender,'')))=UPPER(TRIM(COALESCE(json_extract(c.details_snapshot,'$.gender'),'')))
+        AND UPPER(TRIM(COALESCE(v2.color,'')))=UPPER(TRIM(COALESCE(json_extract(c.details_snapshot,'$.color'),'')))
+        AND UPPER(TRIM(COALESCE(v2.material,'')))=UPPER(TRIM(COALESCE(json_extract(c.details_snapshot,'$.material'),'')))
+        AND UPPER(TRIM(COALESCE(v2.length,'')))=UPPER(TRIM(COALESCE(json_extract(c.details_snapshot,'$.length'),'')))
+        AND UPPER(TRIM(COALESCE(v2.size_label,'')))=UPPER(TRIM(COALESCE(json_extract(c.details_snapshot,'$.size'),'')))
+    )
+  )
+`
+
 export async function listUnpricedWorkshopCompletions(db: D1Database) {
   await assertWorkshopSettlementSchema(db)
   const [rows, total] = await Promise.all([
@@ -49,7 +77,7 @@ export async function listUnpricedWorkshopCompletions(db: D1Database) {
     FROM workshop_settlement_events c
     LEFT JOIN workshop_tasks wt ON wt.id=c.workshop_task_id
     LEFT JOIN order_items oi ON oi.id=c.order_item_id
-    LEFT JOIN catalog_variants cv ON cv.id=COALESCE(oi.variant_id,wt.variant_id)
+    ${resolvedVariantJoin}
     LEFT JOIN catalog_execution_prices ep
       ON ep.stock_position_id=cv.stock_position_id AND ep.category=cv.category
     WHERE ${completionUnpriced}
@@ -102,7 +130,7 @@ export async function confirmUnpricedWorkshopCompletionCost(
     FROM workshop_settlement_events c
     JOIN workshop_tasks wt ON wt.id=c.workshop_task_id
     LEFT JOIN order_items oi ON oi.id=c.order_item_id
-    JOIN catalog_variants cv ON cv.id=COALESCE(oi.variant_id,wt.variant_id)
+    ${resolvedVariantJoin}
     JOIN catalog_execution_prices ep
       ON ep.stock_position_id=cv.stock_position_id AND ep.category=cv.category
     WHERE c.id=? AND ${completionUnpriced}
