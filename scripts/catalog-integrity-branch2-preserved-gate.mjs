@@ -21,7 +21,7 @@ const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
   'migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql':'dbe3150c5d97ffad90db9dabd42261baed222d7c',
-  'worker/domains/workshop-settlements.ts':'ca0e81f86b392c0790100324d9d876227c913a95',
+  'worker/domains/workshop-settlements.ts':'5f978831bbab325cd945b8e17677a412a0c2c6c4',
   'worker/domains/workshop-settlement-prices.ts':'dda3eb0fa2e3edc92fff13c65367f534d837c359',
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'cf00e5297363427a281cd952f32572acb0d304e3',
   'src/styles/stage04-workshop-settlements.css':'d3d91a237c9f7516249dff1d79ca9d91f770edc3',
