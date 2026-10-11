@@ -57,6 +57,9 @@ jobs:
       - name: Verify Stage04-C debt, payment and reversal safety
         run: node --experimental-strip-types scripts/test-stage04c-workshop-payments.mjs
 
+      - name: Verify fast settlement summary, optional payment methods and lazy detail
+        run: node --experimental-strip-types scripts/test-stage04-fast-workshop-settlements.mjs
+
       - name: Verify Stage04-D Workshop settlement UI and cost reconciliation
         run: node --experimental-strip-types scripts/test-stage04d-workshop-settlements.mjs
 
