@@ -110,3 +110,17 @@
  .ws-unpriced-attention button{width:100%}
  .ws-unpriced-tab-count{margin-left:0;margin-top:4px}
 }
+
+
+/* Stage04-F: make debt adjustments comprehensible without crowding everyday payments. */
+.ws-fast-explainer{display:grid;gap:5px;padding:10px 13px;border-radius:10px;
+  border:1px solid #dbeafe;background:#f8fafc;font-size:.81rem;color:#334155;line-height:1.45}
+.ws-fast-explainer strong{font-variant-numeric:tabular-nums}
+.ws-fast-explainer small{font-size:.75rem;color:#64748b}
+.ws-fast-event-context{color:#1d4ed8!important;font-weight:600}
+.ws-fast-day-link{background:transparent;border:0;color:#1d4ed8;font:inherit;
+  font-size:.79rem;font-weight:700;padding:6px 4px;cursor:pointer;white-space:nowrap}
+.ws-fast-day-link:hover{text-decoration:underline;text-underline-offset:3px}
+.ws-fast-day-link:focus-visible{outline:2px solid #2563eb;outline-offset:3px;border-radius:4px}
+.ws-settlements-table-scroll .data-table td{vertical-align:middle}
+.ws-settlements-table-scroll .data-table th{white-space:nowrap}

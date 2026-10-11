@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import '../../styles/stage04-workshop-settlements.css'
 
-type RecentEvent = { id:number; event_type:string; business_date:string; product_name_snapshot:string|null; quantity:number|null; unit_cost:number|null; amount_delta:number|null; payment_method:string|null; comment:string|null }
+type RecentEvent = { id:number; event_type:string; business_date:string; source_business_date?:string|null; related_event_id?:number|null; product_name_snapshot:string|null; quantity:number|null; unit_cost:number|null; amount_delta:number|null; payment_method:string|null; comment:string|null }
 type LedgerEvent = RecentEvent & { isReversed:number; external_order_id:string|null; related_event_id:number|null }
 type Day = { date:string; completed:number; costConfirmed:number; completionCorrections:number; paid:number; paymentCorrections:number; netChange:number }
 type Summary = { ok:boolean; captureEnabled:boolean; confirmedDebt:number; correctionCredit:number; unresolvedPrices:number;
@@ -87,10 +87,12 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     setDetailLoading(true)
     try {
       if(view==='unpriced'){
+        setUnpriced(null)
         const result=await api<UnpricedResponse>('/api/workshop/settlements/unpriced')
         if(generation!==detailGeneration.current)return
         setUnpriced(result);onUnpricedCountChange(result.total)
       }else{
+        setDetails(null)
         const params=new URLSearchParams(period)
         if(view==='work')params.set('scope','work')
         const result=await api<Ledger>('/api/workshop/settlements?'+params.toString())
@@ -182,20 +184,33 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     setPeriod({from:fromDraft,to:toDraft})
   }
   const loadMore=async()=>{
-    if(moreBusy||!details?.nextBeforeId)return
+    if(moreBusy||detailLoading||!details?.nextBeforeId)return
+    const generation=detailGeneration.current
     setMoreBusy(true)
     try{
       const params=new URLSearchParams({...period,beforeId:String(details.nextBeforeId)})
       if(view==='work')params.set('scope','work')
       const page=await api<Ledger>('/api/workshop/settlements?'+params.toString())
+      if(generation!==detailGeneration.current)return
       setDetails(current=>current?{...current,events:[...current.events,...page.events],
         hasMore:page.hasMore,nextBeforeId:page.nextBeforeId}:current)
     }catch(e){setError(e instanceof Error?e.message:'Не удалось загрузить продолжение.')}
     finally{setMoreBusy(false)}
   }
   const isWork=(event:RecentEvent)=>['completion','completion_reversal','price_adjustment'].includes(event.event_type)
-  const eventLabel=(event:RecentEvent)=>event.product_name_snapshot||event.comment||(event.event_type==='payment'?'Выплата цеху':'Операция')
+  const eventLabel=(event:RecentEvent)=>event.product_name_snapshot||(event.event_type==='payment'?'Выплата цеху':event.event_type==='payment_reversal'?'Исправление выплаты':event.comment||'Операция')
   const openView=(next:View)=>{setError('');setView(next)}
+  const openDayHistory=(date:string)=>{
+    setFromDraft(date);setToDraft(date);setPeriod({from:date,to:date})
+    setError('');setView('history')
+  }
+  const causeLabel=(event:RecentEvent)=>event.event_type==='price_adjustment'&&event.source_business_date
+    ?'Работа завершена '+event.source_business_date+'; стоимость подтверждена '+event.business_date
+    :event.event_type==='completion_reversal'&&event.source_business_date
+      ?'Отменено начисление за работу от '+event.source_business_date
+      :event.event_type==='payment_reversal'&&event.related_event_id
+        ?'Отмена выплаты №'+event.related_event_id
+        :null
 
   return <section className="ws-settlements ws-settlements-fast" aria-label="Расчёты с Цехом">
     <div className="ws-fast-top">
@@ -216,9 +231,11 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
         <div><span>Сегодня выплачено</span><strong>{activated?money(Number(summary?.today.paid||0)-Number(summary?.today.paymentCorrections||0)):'—'}</strong></div>
       </div>
     </div>
-    {activated&&Number(summary?.today.costConfirmed||0)>0&&<p className="ws-fast-clarification">
-      Дополнительно сегодня уточнена стоимость ранее готовых изделий: <strong>{money(summary?.today.costConfirmed)}</strong>. Это не новая работа сегодня.
-    </p>}
+    {activated&&(Number(summary?.today.costConfirmed||0)!==0||Number(summary?.today.completionCorrections||0)!==0)&&<div className="ws-fast-explainer" role="note">
+      {Number(summary?.today.costConfirmed||0)!==0&&<span>Подтверждена стоимость ранее готовых изделий: <strong>+{money(summary?.today.costConfirmed)}</strong></span>}
+      {Number(summary?.today.completionCorrections||0)!==0&&<span>Возвращено в работу — уменьшение долга: <strong>{money(summary?.today.completionCorrections)}</strong></span>}
+      <small>Эти операции не считаются новой работой сегодня.</small>
+    </div>}
     {summary&&summary.correctionCredit>0&&<p className="ws-settlements-warning">
       После корректировок сумма выплат превысила начисления на {money(summary.correctionCredit)}. Проверьте операции: это не аванс.
     </p>}
@@ -276,7 +293,10 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     {view==='home'&&<div className="ws-fast-recent">
       <div className="ws-fast-section-title"><strong>Последние операции</strong><button type="button" className="secondary compact" onClick={()=>openView('history')}>Вся история →</button></div>
       {(summary?.recent||[]).map(item=><div className="ws-fast-event" key={item.id}>
-        <div><span>{titles[item.event_type]||'Операция'}</span><small>{item.business_date} · {eventLabel(item)}</small></div>
+        <div><span>{titles[item.event_type]||'Операция'}</span><small>{item.business_date} · {eventLabel(item)}</small>
+          {causeLabel(item)&&<small className="ws-fast-event-context">{causeLabel(item)}</small>}
+          {item.quantity!=null&&item.unit_cost!=null&&<small>{item.quantity} шт. × {money(item.unit_cost)}</small>}
+        </div>
         <strong>{item.amount_delta==null?'Без цены':money(item.amount_delta)}</strong>
       </div>)}
       {!summaryLoading&&!summary?.recent.length&&<p className="ws-settlements-footnote">Начислений и выплат пока нет.</p>}
@@ -289,17 +309,23 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
       </form>
       {detailLoading&&<p className="ws-settlements-footnote">Загружаю подробности…</p>}
       {view==='days'?<div className="ws-settlements-table-scroll"><table className="data-table">
-        <thead><tr><th>Дата</th><th>Готовые изделия</th><th>Уточнено стоимости</th><th>Выплачено</th><th>Остаток долга</th></tr></thead>
+        <thead><tr><th>Дата</th><th>Готово</th><th>Уточнена стоимость</th><th>Возвраты в работу</th><th>Выплаты (с учётом отмен)</th><th>Изменение долга</th><th>Остаток</th><th>Подробности</th></tr></thead>
         <tbody>{days.map(day=><tr key={day.date}>
           <td>{day.date}</td><td>{money(Number(day.completed||0))}</td>
-          <td>{money(day.costConfirmed||0)}</td><td>{money(Number(day.paid||0)-Number(day.paymentCorrections||0))}</td>
+          <td>{money(day.costConfirmed||0)}</td>
+          <td>{money(day.completionCorrections||0)}</td>
+          <td>{money(Number(day.paid||0)-Number(day.paymentCorrections||0))}</td>
+          <td>{money(day.netChange||0)}</td>
           <td><strong>{money(day.closing)}</strong></td>
-        </tr>)}{!detailLoading&&!days.length&&<tr><td colSpan={5}>За выбранный период операций нет.</td></tr>}</tbody>
+          <td><button type="button" className="ws-fast-day-link" onClick={()=>openDayHistory(day.date)}>Операции дня →</button></td>
+        </tr>)}{!detailLoading&&!days.length&&<tr><td colSpan={8}>За выбранный период операций нет.</td></tr>}</tbody>
       </table></div>:<div className="ws-fast-event-list">
         {(details?.events||[]).filter(event=>view==='history'||isWork(event)).map(event=><div className="ws-fast-event" key={event.id}>
           <div><span>{titles[event.event_type]||'Операция'}</span>
             <small>{event.business_date} · {eventLabel(event)}{event.external_order_id?' · Заказ '+event.external_order_id:''}</small>
+            {causeLabel(event)&&<small className="ws-fast-event-context">{causeLabel(event)}</small>}
             {event.quantity!=null&&event.unit_cost!=null&&<small>{event.quantity} шт. × {money(event.unit_cost)}</small>}
+            {event.event_type==='payment_reversal'&&event.comment&&<small>Причина отмены: {event.comment}</small>}
             {event.payment_method&&<small>Способ выплаты: {event.payment_method}</small>}
           </div>
           <div className="ws-fast-event-side"><strong>{event.amount_delta===null?'Цена не указана':money(event.amount_delta)}</strong>
