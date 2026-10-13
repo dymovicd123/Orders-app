@@ -769,14 +769,14 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
         label: physical < 0
           ? 'Остаток нужно уточнить'
           : shortageForOrder > 0
-            ? `Для заказа не хватает ${shortageForOrder} шт.`
+            ? 'Недостаточно свободного остатка'
             : `Хватает для заказа · свободно ${available} шт.`,
         note: physical < 0
-          ? `По учёту в «${sourceTitle}» на месте получилось ${physical} шт. Если товар перед вами, подтвердите реальное количество ниже.`
+          ? `По учёту в «${sourceTitle}» указан отрицательный остаток ${physical} шт. Его нужно проверить отдельно в «Склад → Остатки».`
           : shortageForOrder > 0
-            ? `Для этого заказа нужно ${requiredQuantity} шт., а свободно ${available} шт. Если товар находится перед вами, уточните фактическое количество — это сразу исправит физический остаток перед резервом.`
+            ? `На месте ${physical} шт., уже зарезервировано ${reserved} шт., для этого заказа нужно ${requiredQuantity} шт. Заказ можно сохранить без изменения физического остатка.`
             : `Для заказа нужно ${requiredQuantity} шт. · в «${sourceTitle}» на месте ${physical} шт. · уже в заказах ${reserved} шт. · свободно ${available} шт.`,
-        summaryDetail: physical < 0 ? `По учёту на месте ${physical} шт.` : `Нужно ${requiredQuantity} · свободно ${available}`,
+        summaryDetail: `На месте ${physical} · резерв ${reserved} · нужно ${requiredQuantity}`,
         needsAttention,
         rows: exactSourceRows.slice(0, 4).map((row) => ({
           key: `source-exact-${row.id}`,
@@ -795,8 +795,8 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
         tone: 'warning',
         label: 'Остаток этой комбинации ещё не зафиксирован',
         note: exactCatalogVariants.length
-          ? `Комбинация есть в каталоге, но в «${sourceTitle}» её физический остаток ещё не зафиксирован. Если товар перед вами, можно сверить реальное количество.`
-          : 'Все значения известны системе и новая комбинация создастся автоматически, но её физический остаток ещё не зафиксирован. Если товар перед вами, можно сверить реальное количество.',
+          ? `Комбинация есть в каталоге, но в «${sourceTitle}» её физический остаток ещё не зафиксирован. При необходимости проверьте его отдельно в «Склад → Остатки».`
+          : 'Все значения известны системе, новая комбинация создастся автоматически. Физический остаток для неё пока не зафиксирован; проверить его можно отдельно в «Склад → Остатки».',
         rows: [],
         canObservePhysical: true,
         currentPhysical: 0,
@@ -900,45 +900,34 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       currentReserved: serverShortage.reservedQuantity,
     } : null)
     if (!availability) return null
-    const observationEnabled = Boolean(item.stockObservationEnabled)
-    const observedPhysical = item.observedPhysicalQuantity
-    const shortageAcknowledged = Boolean(item.shortageAcknowledged)
     const needsShortageDecision = Boolean(serverShortage) || Boolean('needsAttention' in availability && availability.needsAttention)
-    const canEditObservation = Boolean(itemIndex !== undefined && (availability.canObservePhysical || serverShortage))
-    const effectiveReserved = serverShortage ? Math.max(0, Number(serverShortage.reservedQuantity || 0)) : Math.max(0, Number(availability.currentReserved || 0))
-    const effectiveRequested = serverShortage ? Math.max(1, Number(serverShortage.requestedQuantity || 1)) : Math.max(1, requiredInOrder)
-    const reservedAfterOrder = effectiveReserved + effectiveRequested
-    const updateMatchingStockDecision = (patch: Partial<EditorItem>) => {
-      if (itemIndex === undefined) return
-      const identity = itemIdentityKey(item)
-      if (mode !== 'create') {
-        setEditorDraft((current) => current ? ({
-          ...current,
-          items: current.items.map((currentItem) => currentItem.sourceType !== 'workshop' && itemIdentityKey(currentItem) === identity
-            ? { ...currentItem, ...patch }
-            : currentItem),
-        }) : current)
-        return
-      }
-      setCreateDraft((current) => ({
-        ...current,
-        items: current.items.map((currentItem) => currentItem.sourceType !== 'workshop' && itemIdentityKey(currentItem) === identity
-          ? { ...currentItem, ...patch }
-          : currentItem),
-      }))
-    }
-    const observedFreeAfter = observedPhysical === null || observedPhysical === undefined
-      ? null
-      : Number(observedPhysical) - reservedAfterOrder
+    const physical = serverShortage ? Number(serverShortage.physicalQuantity || 0) : Number(availability.currentPhysical || 0)
+    const reserved = serverShortage ? Math.max(0, Number(serverShortage.reservedQuantity || 0)) : Math.max(0, Number(availability.currentReserved || 0))
+    const requested = serverShortage ? Math.max(1, Number(serverShortage.requestedQuantity || 1)) : Math.max(1, requiredInOrder)
+    const hasPhysicalCounts = Boolean(serverShortage || availability.canObservePhysical)
+    const free = Math.max(0, physical - reserved)
+    const existingReservationDeficit = Math.max(0, reserved - Math.max(0, physical))
     return (
-      <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsShortageDecision ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={observationEnabled || needsShortageDecision || undefined}>
+      <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsShortageDecision ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={needsShortageDecision || undefined}>
         <summary>
           <span className="order-source-availability-dot" aria-hidden="true" />
-          <span>{serverShortage ? `По свежим данным не хватает ${serverShortage.shortage} шт.` : availability.label}</span>
-          <small>{serverShortage ? `Нужно ${serverShortage.requestedQuantity} · на месте ${serverShortage.physicalQuantity} · в заказах ${serverShortage.reservedQuantity}` : ('summaryDetail' in availability && availability.summaryDetail ? String(availability.summaryDetail) : 'Проверить')}</small>
+          <span>{serverShortage ? 'Недостаточно свободного остатка' : availability.label}</span>
+          <small>{hasPhysicalCounts
+            ? `На месте ${physical} · резерв ${reserved} · нужно ${requested}`
+            : ('summaryDetail' in availability && availability.summaryDetail ? String(availability.summaryDetail) : 'Подробности')}</small>
         </summary>
         <div className="order-source-availability-body">
-          <p>{serverShortage ? `Сервер перечитал актуальный остаток перед сохранением: на месте ${serverShortage.physicalQuantity} шт., уже зарезервировано ${serverShortage.reservedQuantity} шт., этому заказу нужно ${serverShortage.requestedQuantity} шт.` : availability.note}</p>
+          {hasPhysicalCounts ? (
+            <>
+              <p>По учёту: на месте <strong>{physical} шт.</strong>, зарезервировано <strong>{reserved} шт.</strong>, свободно <strong>{free} шт.</strong>; для этого заказа нужно <strong>{requested} шт.</strong></p>
+              {existingReservationDeficit > 0 ? (
+                <p className="field-hint">Существующие резервы уже превышают учтённый физический остаток на {existingReservationDeficit} шт.</p>
+              ) : null}
+            </>
+          ) : <p>{availability.note}</p>}
+          {needsShortageDecision ? (
+            <p className="field-hint">Заказ можно сохранить. Физический остаток автоматически не изменится. Если учёт неверный, количество исправляют отдельно в «Склад → Остатки».</p>
+          ) : null}
           {availability.rows.length ? (
             <div className="order-source-availability-list">
               {availability.rows.map((row) => (
@@ -947,123 +936,6 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
                   {row.quantity === null ? <small>каталог</small> : <strong>{row.quantity} шт.</strong>}
                 </div>
               ))}
-            </div>
-          ) : null}
-          {canEditObservation ? (
-            <div className={`order-stock-observation${observationEnabled ? ' is-open' : ''}${shortageAcknowledged ? ' is-deferred' : ''}`}>
-              {needsShortageDecision && !observationEnabled && !shortageAcknowledged ? (
-                <div className="order-stock-shortage-choice">
-                  <strong>Что вы знаете прямо сейчас?</strong>
-                  <span>Если товар перед вами — посчитайте всё физическое количество. Если проверить сейчас нельзя, заказ всё равно можно сохранить.</span>
-                  <div>
-                    <button
-                      type="button"
-                      className="primary compact"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        updateMatchingStockDecision({ stockObservationEnabled: true, observedPhysicalQuantity: null, shortageAcknowledged: false })
-                      }}
-                    >
-                      Посчитать сейчас
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary compact"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        updateMatchingStockDecision({ stockObservationEnabled: false, observedPhysicalQuantity: null, shortageAcknowledged: true })
-                      }}
-                    >
-                      Сейчас проверить не могу
-                    </button>
-                  </div>
-                </div>
-              ) : shortageAcknowledged && !observationEnabled ? (
-                <div className="order-stock-shortage-deferred">
-                  <div>
-                    <strong>Проверку отложили</strong>
-                    <span>Заказ сохранится. Нехватка останется видна в разделе «Склад → Внимание», пока кто-нибудь не сверит фактическое количество или ситуация не изменится.</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary compact"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      updateMatchingStockDecision({ stockObservationEnabled: true, observedPhysicalQuantity: null, shortageAcknowledged: false })
-                    }}
-                  >
-                    Посчитать сейчас
-                  </button>
-                </div>
-              ) : !observationEnabled ? (
-                <button
-                  type="button"
-                  className="secondary compact"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    updateMatchingStockDecision({ stockObservationEnabled: true, observedPhysicalQuantity: null, shortageAcknowledged: false })
-                  }}
-                >
-                  Сверить количество
-                </button>
-              ) : (
-                <>
-                  <div className="order-stock-observation-head">
-                    <div>
-                      <strong>Сколько сейчас физически на месте?</strong>
-                      <span>Считайте всё в этой точке, включая уже отложенные заказы. Существующие резервы система не переписывает.</span>
-                    </div>
-                    {needsShortageDecision ? (
-                      <button
-                        type="button"
-                        className="ghost compact"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          updateMatchingStockDecision({ stockObservationEnabled: false, observedPhysicalQuantity: null, shortageAcknowledged: true })
-                        }}
-                      >
-                        Сейчас проверить не могу
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="ghost compact"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          updateMatchingStockDecision({ stockObservationEnabled: false, observedPhysicalQuantity: null, shortageAcknowledged: false })
-                        }}
-                      >
-                        Отмена
-                      </button>
-                    )}
-                  </div>
-                  <div className="order-stock-observation-row">
-                    <label>
-                      <span>На месте сейчас</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        inputMode="numeric"
-                        value={observedPhysical ?? ''}
-                        onChange={(event) => {
-                          const raw = event.target.value
-                          updateMatchingStockDecision({ observedPhysicalQuantity: raw === '' ? null : Math.max(0, Math.trunc(Number(raw) || 0)), shortageAcknowledged: false })
-                        }}
-                        placeholder="Например: 5"
-                      />
-                    </label>
-                    <div className="order-stock-observation-result">
-                      <span>Сейчас в заказах: <strong>{effectiveReserved}</strong></span>
-                      <span>После этого заказа: <strong>{reservedAfterOrder}</strong></span>
-                      {observedFreeAfter === null ? <span>Введите число, которое видите физически.</span> : observedFreeAfter < 0 ? <strong className="is-shortage">После резерва не хватит {Math.abs(observedFreeAfter)} шт.</strong> : <strong>После резерва свободно {observedFreeAfter} шт.</strong>}
-                    </div>
-                  </div>
-                </>
-              )}
             </div>
           ) : null}
         </div>
