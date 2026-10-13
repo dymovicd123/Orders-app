@@ -10,7 +10,7 @@ assert.ok(start>0&&end>start,'Expected current product-level warehouse selection
 const selection=source.slice(start,end)
 assert.match(selection,/if \(!matchingRows.length\) continue/)
 assert.match(selection,/simpleStockPhysical\(row\) !== 0 \|\| simpleStockReserved\(row\) !== 0/)
-const body=selection.replace('if (!matchingRows.length) continue','if (!matchingRows.length) return null')
+const body=selection.replace('if (!matchingRows.length) continue','if (!matchingRows.length) return null').replaceAll('(row: any)', '(row)')
 const select=new Function('allRows','simpleStockAvailabilityFilter','hasExplicitStockSearch','simpleStockQuantity','simpleStockReserved','simpleStockPhysical',body+'return visibleRows')
 const row=(size,physical,reserved)=>({size,physical,reserved})
 const example=[
