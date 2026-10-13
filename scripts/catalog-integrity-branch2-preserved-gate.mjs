@@ -61,14 +61,55 @@ for(const screen of stockVisibilityScreens){
   check(gitBlob(fs.readFileSync(screen.fixture,'utf8'))===screen.before,'Frozen main warehouse baseline unexpected change: '+screen.fixture)
 }
 
+// The exchange lifecycle now uses bounded per-operation possession evidence,
+// not an absolute count. Preserve *old* exchange modules for historical baseline
+// checks without disabling or editing their invariants. Current code is tested first.
+const priorExchangeModules=[
+  {
+    "file": "src/features/sections/OrderExchangeSmartSection.tsx",
+    "before": "efafcca08869eeacff17e38eb693035a870dacd9",
+    "after": "32eec1cabf6f51644ce6c999f19898596bf371e2",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSmartSection.tsx"
+  },
+  {
+    "file": "src/features/sections/OrderExchangeSection.tsx",
+    "before": "b854378c08389a29293a1a1e3e5e603d1e62d721",
+    "after": "91885b5690d5c37719888e83ef9b3b1ebbc7eaa9",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSection.tsx"
+  },
+  {
+    "file": "worker/domains/exchange-batch.ts",
+    "before": "725515005ad9e64d30e6eb2605f974c7947358e3",
+    "after": "0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/exchange-batch.ts"
+  },
+  {
+    "file": "worker/domains/returns-exchanges.ts",
+    "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
+    "after": "14327c966fceb9f42f49c1fc39148e8081c4a19f",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
+  },
+  {
+    "file": "worker/domains/lifecycle.ts",
+    "before": "25f08471020220883107de8ee02b26bc774eb29a",
+    "after": "039b84adc58aadefc6ded14b6dd9fa73a6aeb847",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/lifecycle.ts"
+  }
+];
+for(const file of priorExchangeModules){
+  check(gitBlob(fs.readFileSync(file.file,'utf8'))===file.after,'Current Exchange module changed unexpectedly: '+file.file)
+  check(gitBlob(fs.readFileSync(file.fixture,'utf8'))===file.before,'Historical Exchange fixture drifted: '+file.fixture)
+}
+
 // A normal order is not a stocktake. Historical tests must still see the exact
 // approved pre-fix reservation module; the new module is checked independently.
 const orderReservationTruthFix={
   file:'worker/domains/order-reservations.ts',
   before:'b27726ebea9546120d1b75a6862bd77b9154714e',
-  after:'bb71d744865c45f8d1cb09be4d792bc9a082d898',
+  after:'dd85dcf15df53705d1ad3c61f918fae92c2316ff',
   historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
-  currentLines:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
+  currentLines:"  // No reservation, including an exchange, may ever act as a physical stocktake.\n  // Outbound possession is confirmed against the *operation*, not a whole-SKU count.\n  const observedPhysical: null = null;",
+  approvedIntermediate:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
 }
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Order reservation stock-truth fix unexpected drift')
@@ -94,6 +135,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
+  ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
   ['scripts/test-inventory-stock-visible-reservations.mjs',false],
@@ -180,13 +222,20 @@ try{
     saved.set(full,fs.readFileSync(full,'utf8'))
     fs.writeFileSync(full,fs.readFileSync(screen.fixture,'utf8'))
   }
+  for(const entry of priorExchangeModules){
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,'Cannot stage historical Exchange source: '+entry.file)
+  }
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
   saved.set(orderReservationPath,orderReservationCurrent)
   check(orderReservationCurrent.includes(orderReservationTruthFix.currentLines),
     'Current order reservation no longer contains reviewed stock-truth guard')
   const orderReservationHistorical=orderReservationCurrent.replace(
-    orderReservationTruthFix.currentLines,orderReservationTruthFix.historicalLine)
+    orderReservationTruthFix.currentLines,orderReservationTruthFix.approvedIntermediate).replace(
+    orderReservationTruthFix.approvedIntermediate,orderReservationTruthFix.historicalLine)
   check(gitBlob(orderReservationHistorical)===orderReservationTruthFix.before,
     'Order reservation historical baseline does not match accepted Branch2')
   fs.writeFileSync(orderReservationPath,orderReservationHistorical)

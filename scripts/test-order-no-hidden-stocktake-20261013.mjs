@@ -21,8 +21,8 @@ assert.ok(!app.includes('Укажите фактическое количест�
 // Defense in depth: even stale clients sending 1 cannot edit physical truth.
 assert.match(orders, /normalizeOrderItems\(items, sourceType\)\.map\(item => \([\s\S]*?observedPhysicalQuantity: null, shortageAcknowledged: true/)
 assert.match(orders, /if \(rewriteItems\) \{[\s\S]*?item\.observedPhysicalQuantity = null;[\s\S]*?item\.shortageAcknowledged = true;/)
-assert.match(reservation, /const observedPhysical = referenceType === 'exchange_new' && item\.observedPhysicalQuantity != null[\s\S]*?: null;/,
-  'Only the explicitly separate legacy exchange workflow may still observe Physical')
+assert.match(reservation, /const observedPhysical: null = null;/,
+  'No reservation, even an exchange, may declare the absolute physical SKU count')
 assert.match(reservation, /SET quantity = CASE WHEN \? IS NULL THEN quantity ELSE \? END/,
   'Stock reservation update must leave Physical unchanged when there is no full count')
 assert.match(reservation, /reserved_quantity = MAX\(0, COALESCE\(reserved_quantity, 0\) \+ \?\)/,
@@ -41,6 +41,6 @@ assert.match(movementPanel, /<details className="inventory-operation-more-action
 assert.match(movementPanel, /\['manual_set','Исправить количество'\]/,
   'The deliberate count-correction action disappeared')
 
-// The separate exchange workflow is deliberately NOT redesigned by this patch.
-assert.match(reservation, /referenceType === 'exchange_new'/)
+// An exchange is no longer exempt from the no-stocktake guarantee.
+assert.ok(!reservation.includes("referenceType === 'exchange_new' && item.observedPhysicalQuantity"))
 console.log('ORDER NO HIDDEN STOCKTAKE PASSED: ordinary orders preserve Physical; warehouse correction is a deliberate, separate action')

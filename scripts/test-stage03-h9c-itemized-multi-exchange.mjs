@@ -35,7 +35,10 @@ check(saveExchange.includes('completeCriticalRequest(batchKey, critical.requestI
 check(ui.includes('Добавить ещё позицию'), 'H9C multi-pair control missing')
 check(!ui.includes('if (itemizedExchange || !currentPairReady) return'), 'H9C queue still silently rejects itemized orders')
 check(ui.includes('exchangeBatchRequired') && ui.includes('queuedSameNewQuantity'), 'H9C same-SKU aggregate stock requirement missing')
-check(ui.includes('queuedObservedPhysical') && ui.includes('exchangeConfirmedPhysical'), 'H9C queued physical observation is not reused safely')
+check(ui.includes('exchangeBatchRequired') && ui.includes('queuedSameNewQuantity')
+  && ((ui.includes('exchangeIssueConfirmed') && ui.includes('Подтверждаю: для этого обмена физически есть'))
+    || (ui.includes('queuedObservedPhysical') && ui.includes('exchangeConfirmedPhysical'))),
+  'H9C repeated SKU demand must share an explicit (or historical) confirmation')
 check(ui.includes('nextRequestedByOldItem') && ui.includes('nextOldItem'), 'H9C queue does not advance to a remaining old item')
 check(ui.includes("priceOrigin: nextOldItem") && ui.includes('unitPrice: nextOldItem'), 'H9C next itemized row does not seed its own historical sold price')
 
@@ -57,7 +60,9 @@ check(batch.includes('right.delta - left.delta'), 'H9C safe positive-before-nega
 check(batch.includes("financialAction === 'refund' && position === 0"), 'H9C refund is not placed early enough to keep intermediate states valid')
 check(batch.includes("financialAction === 'extra_payment' && position === orderedPairs.length - 1"), 'H9C extra payment is not placed on the final child')
 check(batch.includes('stockGroups') && batch.includes('group.requestedQuantity'), 'H9C repeated-SKU physical preflight missing')
-check(batch.includes('observedAssigned') && batch.includes('observedPhysicalQuantity = null'), 'H9C physical observation is not deduplicated across repeated SKU children')
+check((batch.includes('group.allConfirmed') && batch.includes('nextNewItem as any).issuePossessionConfirmed = pair.physicalIssueConfirmed') && batch.includes('observedPhysicalQuantity = null'))
+  || (batch.includes('observedAssigned') && batch.includes('observedPhysicalQuantity = null')),
+  'H9C repeated SKU issue evidence / historical count de-duplication is missing')
 check(batch.includes('const childRequestId =') && batch.includes('criticalOperation.requestId') && batch.includes(':p'), 'H9C deterministic child idempotency key missing')
 check(batch.includes('await createExchange(db, {') && batchWorker.includes("from './returns-exchanges.ts'"), 'H9C batch does not reuse the proven single-exchange mutation path')
 check(batchWorker.includes('createItemizedExchangeBatchFromRequest') && batchWorker.includes("readJson<ItemizedExchangeBatchInput>(request)"), 'H9C request adapter must stay outside Worker composition root')
@@ -72,4 +77,4 @@ for (const marker of [
   'Production/main must not receive H9C until that acceptance is complete',
 ]) check(doc.includes(marker), 'H9C continuation contract missing: ' + marker)
 
-console.log('STAGE03-H9C ITEMIZED MULTI-EXCHANGE PASSED — Branch2 queues multiple itemized replacement pairs, validates final commercial/money truth before mutation, executes a resumable idempotent child plan, and deduplicates repeated-SKU physical observations')
+console.log('STAGE03-H9C ITEMIZED MULTI-EXCHANGE PASSED — Branch2 queues multiple itemized replacement pairs, validates final commercial/money truth before mutation, executes a resumable idempotent child plan, and retains per-child possession confirmations without touching whole-SKU stock truth')
