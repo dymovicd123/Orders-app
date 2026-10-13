@@ -35,7 +35,10 @@ check(saveExchange.includes('completeCriticalRequest(batchKey, critical.requestI
 check(ui.includes('Добавить ещё позицию'), 'H9C multi-pair control missing')
 check(!ui.includes('if (itemizedExchange || !currentPairReady) return'), 'H9C queue still silently rejects itemized orders')
 check(ui.includes('exchangeBatchRequired') && ui.includes('queuedSameNewQuantity'), 'H9C same-SKU aggregate stock requirement missing')
-check(ui.includes('exchangeIssueConfirmed') && ui.includes('exchangeBatchRequired') && ui.includes('queuedSameNewQuantity'), 'H9C queued same-SKU exchange issue confirmation must cover aggregated quantity')
+check(ui.includes('exchangeBatchRequired') && ui.includes('queuedSameNewQuantity')
+  && ((ui.includes('exchangeIssueConfirmed') && ui.includes('Подтверждаю: для этого обмена физически есть'))
+    || (ui.includes('queuedObservedPhysical') && ui.includes('exchangeConfirmedPhysical'))),
+  'H9C repeated SKU demand must share an explicit (or historical) confirmation')
 check(ui.includes('nextRequestedByOldItem') && ui.includes('nextOldItem'), 'H9C queue does not advance to a remaining old item')
 check(ui.includes("priceOrigin: nextOldItem") && ui.includes('unitPrice: nextOldItem'), 'H9C next itemized row does not seed its own historical sold price')
 
