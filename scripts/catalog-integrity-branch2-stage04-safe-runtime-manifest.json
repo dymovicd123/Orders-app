@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
-      "afterGitBlob": "b25e98e7c414423edd15839d52fd7cd16cf91c2b",
+      "afterGitBlob": "1077916f4926668c1edd4960b6335edd758436ca",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/App.tsx"
     },
     "src/app/constants.ts": {
@@ -54,7 +54,7 @@
     },
     "worker/domains/orders-write.ts": {
       "beforeGitBlob": "6f470e1023d5479671bf279a802cbc60c616cb6f",
-      "afterGitBlob": "25c787d32f5789ad39a128e554890acc0a9bca4e",
+      "afterGitBlob": "844f0e607143bf97c9c80b8817b9f947789747aa",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/orders-write.ts"
     },
     "worker/domains/inventory-movement.ts": {
