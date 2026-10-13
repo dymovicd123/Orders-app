@@ -393,6 +393,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
   variantId: number,
   timestamp: string,
   resolutionComment = '',
+  options: { outboundPossessionConfirmed?: boolean } = {},
 ) {
   let event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складское событие не найдено.');
@@ -402,11 +403,19 @@ export async function applyCanonicalInventoryLifecycleEvent(
   const canonical = await loadCanonicalVariantSnapshot(db, variantId, { activeOnly: true });
   const source = normalizeSourceType(event.inventory_source);
   const qty = Math.max(1, toInt(event.quantity, 1));
-  const delta = cleanText(event.direction) === 'in' ? qty : -qty;
   const stock = await ensureHumanInventoryStockRow(db, source, canonical, timestamp);
   const reference = inventoryLifecycleMovementReference(event);
   const action = inventoryLifecycleActionText(event);
   const isOutgoingExchange = cleanText(event.event_type) === 'exchange_new_out';
+  const trackedPhysical = Math.max(0, toInt(stock.quantity, 0));
+  const missingPhysical = isOutgoingExchange && trackedPhysical < qty;
+  if (missingPhysical && options.outboundPossessionConfirmed !== true) {
+    throw new Error(`Для выдачи обмена по учёту на месте ${trackedPhysical} шт., требуется ${qty}. Подтвердите наличие именно выдаваемых вещей, а не общий остаток товара.`);
+  }
+  // Outbound evidence is not a stocktake: book only the quantity tracked.
+  const delta = cleanText(event.direction) === 'in'
+    ? qty
+    : isOutgoingExchange ? (trackedPhysical === 0 ? 0 : -Math.min(trackedPhysical, qty)) : -qty;
 
   const reservation = isOutgoingExchange && toInt(event.order_item_id, 0)
     ? await db.prepare(`SELECT id, status, quantity, inventory_source, variant_id FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`).bind(toInt(event.order_item_id, 0)).first<Record<string, unknown>>()
@@ -418,9 +427,6 @@ export async function applyCanonicalInventoryLifecycleEvent(
   if (isOutgoingExchange && reservationQuantity !== qty) {
     throw new Error(`Количество резерва новой позиции обмена (${reservationQuantity}) не совпадает с физическим движением (${qty}). Списание остановлено, чтобы не разойтись с заказом.`);
   }
-  if (isOutgoingExchange && toInt(stock.quantity, 0) < qty) {
-    throw new Error(`Недостаточно товара на месте для выдачи обмена: по учёту ${Math.max(0, toInt(stock.quantity, 0))} шт., требуется ${qty}. Если товар физически есть, сначала уточните фактический остаток.`);
-  }
   const activeReservationQuantity = cleanText(reservation?.status) === 'active' ? reservationQuantity : 0;
   const activeReservationVariantId = activeReservationQuantity ? toInt(reservation?.variant_id, 0) : 0;
   const activeReservationSource = activeReservationQuantity ? normalizeSourceType(reservation?.inventory_source) : source;
@@ -431,7 +437,16 @@ export async function applyCanonicalInventoryLifecycleEvent(
   );
   const decrementReserved = reservationMatchesTarget ? activeReservationQuantity : 0;
 
-  const statements: D1PreparedStatement[] = [
+  const statements: D1PreparedStatement[] = [];
+  if (isOutgoingExchange) {
+    // Cancel the entire atomic batch if physical changed since the read.
+    statements.push(db.prepare(
+      `INSERT INTO inventory_model_meta (key, value, updated_at)
+       SELECT 'human_inventory_v2', '__exchange_outbound_stock_conflict__', ?
+       WHERE EXISTS (SELECT 1 FROM inventory_stock WHERE id = ? AND quantity <> ?)`
+    ).bind(timestamp, stock.id, toInt(stock.quantity, 0)));
+  }
+  statements.push(
     db.prepare(
       `UPDATE inventory_stock
        SET quantity = quantity + ?,
@@ -482,12 +497,14 @@ export async function applyCanonicalInventoryLifecycleEvent(
       delta,
       reference.type,
       reference.id,
-      resolutionComment || action,
+      missingPhysical
+        ? `Физически подтверждена выдача ${qty} шт.; в учёте списано ${-delta} шт., нехватка ${qty + delta} шт. Общий остаток не изменялся на основании подтверждения.`
+        : resolutionComment || action,
       timestamp,
       stock.id,
       event.id,
     ),
-  ];
+  );
 
   if (isOutgoingExchange && activeReservationQuantity && activeReservationVariantId && !reservationMatchesTarget) {
     // Defensive legacy/race guard: if an active reservation still points at a different SKU,
@@ -741,8 +758,21 @@ export async function cancelInventoryLifecycleEvent(
   const source = normalizeSourceType(event.inventory_source);
   const qty = Math.max(1, toInt(event.quantity, 1));
   const originalDelta = cleanText(event.direction) === 'in' ? qty : -qty;
-  const reversalDelta = -originalDelta;
+  // A confirmed outbound exchange can have a partial or zero *booked* delta.
+  // Reverse the actual movement, never the nominal quantity given to the client.
+  const originalMovement = isOutgoingExchange && toInt(event.movement_id, 0)
+    ? await db.prepare(`SELECT quantity_delta FROM inventory_movements
+       WHERE id = ? AND variant_id = ? AND inventory_source = ? LIMIT 1`)
+      .bind(toInt(event.movement_id, 0), variantId, source).first<{ quantity_delta: number }>()
+    : null;
+  const reversalDelta = isOutgoingExchange
+    ? Math.max(0, -Math.min(0, toInt(originalMovement?.quantity_delta, 0)))
+    : -originalDelta;
   const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
+  if (isOutgoingExchange && !originalMovement) {
+    // A missing/legacy movement reference cannot authorize inventing stock.
+    physicalDisposition.reversePhysical = false;
+  }
   if (!physicalDisposition.reversePhysical) {
     const reasonText = physicalDisposition.reason === 'retired_identity'
       ? 'Физический остаток не откатывался: старая SKU уже выведена из рабочего каталога и не может снова получать рабочий остаток.'
