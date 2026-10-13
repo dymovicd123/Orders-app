@@ -415,7 +415,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
   // Outbound evidence is not a stocktake: book only the quantity tracked.
   const delta = cleanText(event.direction) === 'in'
     ? qty
-    : isOutgoingExchange ? -Math.min(trackedPhysical, qty) : -qty;
+    : isOutgoingExchange ? (trackedPhysical === 0 ? 0 : -Math.min(trackedPhysical, qty)) : -qty;
 
   const reservation = isOutgoingExchange && toInt(event.order_item_id, 0)
     ? await db.prepare(`SELECT id, status, quantity, inventory_source, variant_id FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`).bind(toInt(event.order_item_id, 0)).first<Record<string, unknown>>()
