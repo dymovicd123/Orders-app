@@ -17,6 +17,23 @@ const run=(name,args,what)=>{
  const p=spawnSync(name,args,{stdio:'inherit',env:{...process.env,MAIN_CATALOG_PORT_GATE:'1'},timeout:600000})
  check(!p.error && p.status===0,what+' failed with exit '+p.status)
 }
+// Verify the new Production stock UI, then restore byte-exact legacy files
+// only during the unchanged historical cumulative regression.
+const warehouseUiScreens=[
+ {file:'src/features/sections/InventorySection.tsx',
+  fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
+  before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
+  after:'7b9a66b14d6087468916be2944fb417008b9d3e2'},
+ {file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
+  fixture:'scripts/fixtures/stock-visibility-20261013/renderInventoryOverviewPanel.tsx',
+  before:'9b7738d3589f0091e120dec7f1f3a056abc4cc0d',
+  after:'0e624c9109157fe9bbd9512d57ce062cfc0a5b2f'},
+]
+for(const screen of warehouseUiScreens){
+ check(blob(screen.file)===screen.after,'Unreviewed production warehouse screen: '+screen.file)
+ check(blob(screen.fixture)===screen.before,'Warehouse historical fixture drift: '+screen.fixture)
+}
+run(process.execPath,['scripts/test-inventory-stock-visible-reservations.mjs'],'Current production reserved and shortage warehouse regression')
 check(manifest.version===1,'Invalid selective release manifest')
 const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
 check(wrangler.includes('"name": "orders-app"')&&wrangler.includes('"database_name": "orders_db_prod"')
@@ -57,6 +74,11 @@ try{
   saved.push({path:f.path,current:old,sha:f.newSha})
   fs.writeFileSync(f.path,fs.readFileSync('scripts/fixtures/main-catalog-preport-20261010/'+f.path))
  }
+ for(const screen of warehouseUiScreens){
+  const current=fs.readFileSync(screen.file)
+  saved.push({path:screen.file,current,sha:screen.after})
+  fs.writeFileSync(screen.file,fs.readFileSync(screen.fixture))
+ }
  console.log('Checking original, unmodified Production release:check against byte-exact Production baseline')
  run(process.platform==='win32'?'npm.cmd':'npm',['run','release:check'],'Original full Production cumulative regression')
 }finally{
@@ -75,6 +97,12 @@ fs.rmSync('dist',{recursive:true,force:true})
 run(process.platform==='win32'?'npm.cmd':'npm',['run','build'],'Current selective Catalog/Reference build')
 const dir='dist/client/assets'
 check(fs.existsSync(dir),'Compiled frontend assets missing')
+const inventoryChunks=fs.readdirSync(dir).filter(s=>/^InventorySection-[A-Za-z0-9_-]+\.js$/.test(s))
+check(inventoryChunks.length===1,'Expected current Production InventorySection chunk')
+const inventoryChunk=fs.readFileSync(path.join(dir,inventoryChunks[0]),'utf8')
+for(const phrase of ['Фильтр выбирает товары, но внутри каждого товара видны все размеры','Резерв под заказы превышает физический остаток']){
+ check(inventoryChunk.includes(phrase),'Current production warehouse UI missing: '+phrase)
+}
 const chunks=fs.readdirSync(dir).filter(s=>/^ReferencesSection-[A-Za-z0-9_-]+\.js$/.test(s))
 check(chunks.length===1,'Expected one ReferencesSection chunk')
 const chunk=fs.readFileSync(path.join(dir,chunks[0]),'utf8')
