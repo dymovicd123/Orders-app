@@ -4482,9 +4482,9 @@ function App() {
         invalidateFinanceReadCaches()
         invalidateInventoryStockCaches(true)
         if (concurrentShortages.length) {
-          setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание». Обновляю список заказов.')
+          setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки». Обновляю список заказов.')
         } else if (postSaveShortages.length) {
-          setMessage('Заказ сохранён с нехваткой свободного остатка. Физический учёт не изменён; проверьте «Склад → Внимание». Обновляю список заказов.')
+          setMessage('Заказ сохранён с нехваткой свободного остатка. Физический учёт не изменён; проверьте «Склад → Остатки». Обновляю список заказов.')
         } else {
           setMessage('Заказ сохранён. Обновляю список заказов.')
         }
@@ -4562,9 +4562,9 @@ function App() {
       // that would later make Warehouse or the next availability hint show the pre-order number.
       invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
-        setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
+        setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
-        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Внимание».`)
+        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
       } else {
         setMessage(`Заказ ${createdOrder.external_id} создан, сумма ${formatMoney(createdOrder.total_amount)} тенге.`)
       }
@@ -6344,9 +6344,9 @@ function removeDebtPayment(index: number) {
       // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
       if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
-        setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
+        setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
-        setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Внимание».`)
+        setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
       } else {
         setMessage(isItemizedEdit
           ? `Заказ ${order.external_id} обновлён.`
@@ -7113,6 +7113,7 @@ function removeDebtPayment(index: number) {
         addedValue += quantity * unitPrice
         newPayload.push({
           ...item,
+          observedPhysicalQuantity: null,
           quantity,
           unitPrice,
           catalogPriceSnapshot: catalogSnapshot,
@@ -7315,18 +7316,8 @@ function removeDebtPayment(index: number) {
         : getOrderSourceAvailability(effectiveNewItem, exchangeRequiredQuantity)
       const needsPhysicalConfirmation = Boolean(exchangeAvailability?.canObservePhysical && Number(exchangeAvailability.currentPhysical || 0) < exchangeRequiredQuantity)
       if (needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
-        if (index === pairDrafts.length - 1 && currentPair) {
-          setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, stockObservationEnabled: true, observedPhysicalQuantity: null } }))
-        }
-        setError(`Позиция обмена ${index + 1}: по учёту новой позиции недостаточно. ${index < queuedPairs.length ? 'Уберите её из списка, добавьте заново и укажите фактическое количество.' : 'Укажите фактическое количество на месте.'}`)
+        setError(`Позиция обмена ${index + 1}: по учёту товара недостаточно. Подтвердите только наличие конкретных вещей для выдачи — общий остаток изменять не нужно.`)
         return
-      }
-      if (effectiveNewItem.stockObservationEnabled) {
-        const observedPhysical = effectiveNewItem.observedPhysicalQuantity
-        if (observedPhysical === null || observedPhysical === undefined || !Number.isInteger(Number(observedPhysical)) || Number(observedPhysical) < exchangeRequiredQuantity) {
-          setError(`Позиция обмена ${index + 1}: укажите целое фактическое количество не меньше ${exchangeRequiredQuantity} шт.`)
-          return
-        }
       }
 
       unsavedPairs.push({
@@ -7337,7 +7328,7 @@ function removeDebtPayment(index: number) {
         oldQuantity,
         oldReturnSource: pair.oldPhysicalState === 'warehouse' || pair.oldPhysicalState === 'boutique' ? pair.oldPhysicalState : 'none',
         oldPhysicalState: pair.oldPhysicalState,
-        effectiveNewItem,
+        effectiveNewItem: { ...effectiveNewItem, observedPhysicalQuantity: null },
         newSourceWasManuallyChanged: Boolean(pair.newSourceWasManuallyChanged),
       })
     }
