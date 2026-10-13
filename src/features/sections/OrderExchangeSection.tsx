@@ -578,7 +578,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                         onChange={(event) => setExchangeDraft((current) => ({
                                           ...current, newItem: { ...current.newItem, stockObservationEnabled: event.target.checked, observedPhysicalQuantity: null },
                                         }))} />
-                                      <span>Подтверждаю, что для этого обмена у нас физически есть {exchangeBatchRequired} шт. новых вещей и их можно выдать клиенту.</span>
+                                      <span>Подтверждаю: для этого обмена физически есть {exchangeBatchRequired} шт. новых вещей и их можно выдать клиенту.</span>
                                     </label>
                                     <small>Подтверждение относится только к выдаче. Полный остаток склада не пересчитывается.</small>
                                   </div>
