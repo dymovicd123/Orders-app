@@ -1,0 +1,26 @@
+import fs from 'node:fs'
+import assert from 'node:assert/strict'
+
+const app = fs.readFileSync('src/App.tsx','utf8')
+const orders = fs.readFileSync('worker/domains/orders-write.ts','utf8')
+const reservations = fs.readFileSync('worker/domains/order-reservations.ts','utf8')
+const routing = fs.readFileSync('worker/index.ts','utf8')
+const ui = fs.readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx','utf8')
+const overview = fs.readFileSync('src/features/sections/InventorySection.tsx','utf8')
+
+assert.ok(!app.includes("observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled"), 'Ordinary order still sends a fake total physical count')
+assert.ok(!app.includes('Укажите фактическое количество для «${missingObservation.productName'), 'Ordinary save still forces a fake physical count')
+assert.match(orders, /normalizeOrderItems\(items, sourceType\)\.map\(item => \([\s\S]*?observedPhysicalQuantity: null, shortageAcknowledged: true/)
+assert.match(orders, /if \(rewriteItems\) \{[\s\S]*?item\.observedPhysicalQuantity = null;[\s\S]*?item\.shortageAcknowledged = true;/)
+assert.match(reservations, /const observedPhysical = referenceType === 'exchange_new' && item\.observedPhysicalQuantity != null[\s\S]*?: null;/)
+assert.match(reservations, /SET quantity = CASE WHEN \? IS NULL THEN quantity ELSE \? END/)
+assert.match(reservations, /reserved_quantity = MAX\(0, COALESCE\(reserved_quantity, 0\) \+ \?\)/)
+assert.match(app, /postSaveShortages\.length\)[\s\S]*?Физический остаток не менялся/)
+assert.match(routing, /routineExistingStockOperation = movementType === 'writeoff'/)
+assert.match(ui, /\.\.\.\(isAdmin \? \[\['arrival', 'Приход'\], \['manual_set', 'Исправить количество'\]\] : \[\]\)/)
+assert.match(ui, /\['writeoff', 'Списание'\]/, 'Manager writeoff must remain visible')
+assert.match(overview, /simpleStockSnapshotReady \? renderInventoryOverviewPanel\(\{/)
+assert.match(overview, /row\.source === simpleStockSource && row\.data\?\.ok === true/)
+assert.match(overview, /Отсутствие ответа сервера не означает, что на складе ноль вещей/)
+assert.match(overview, /loadInventoryData\(simpleStockSource, true, '', false\)/)
+console.log('PRODUCTION WAREHOUSE TRUTH SAFETY: NO ORDER-PSEUDO-COUNTS / ADMIN CORRECTION / SNAPSHOT GATE PASSED')
