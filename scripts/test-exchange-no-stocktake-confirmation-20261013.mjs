@@ -25,7 +25,7 @@ assert.match(app, /issuePossessionConfirmed: effectiveNewItem\.stockObservationE
 assert.match(lifecycle, /if \(missingPhysical && options\.outboundPossessionConfirmed !== true\)/)
 assert.match(lifecycle, /isOutgoingExchange \? \(trackedPhysical === 0 \? 0 : -Math\.min\(trackedPhysical, qty\)\) : -qty/)
 assert.match(lifecycle, /__exchange_outbound_stock_conflict__/)
-assert.match(lifecycle, /reversalDelta = isOutgoingExchange[\s\S]*?-Math\.min\(0, toInt\(originalMovement\?\.quantity_delta, 0\)\)/)
+assert.match(lifecycle, /reversalDelta = isOutgoingExchange[\s\S]*?Math\.max\(0, -Math\.min\(0, toInt\(originalMovement\?\.quantity_delta, 0\)\)\)/)
 assert.match(lifecycle, /if \(isOutgoingExchange && !originalMovement\) \{[\s\S]*?reversePhysical = false;/)
 assert.match(classic, /type="checkbox" checked=\{exchangeIssueConfirmed\}/)
 assert.match(smart, /type="checkbox" checked=\{groupConfirmed\}/)
