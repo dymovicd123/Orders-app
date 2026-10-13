@@ -445,7 +445,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                                   onChange={(event) => setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)} />
                                 <span>Подтверждаю, что для этого обмена физически есть {batchRequired} шт. новых вещей и их можно выдать клиенту.</span>
                               </label>
-                            ) : <small>Подтверждение наличия одинаковых вещей — у первой позиции.</small>}
+                            ) : <small>Подтверждение выдачи одинаковых позиций — у первой строки.</small>}
                             <small>Подтверждение относится только к выдаче. Полный остаток склада не пересчитывается.</small>
                           </div>
                         ) : null}
