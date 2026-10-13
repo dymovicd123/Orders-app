@@ -107,8 +107,8 @@ try{
   // Reintroduce the original role binding only for the old, immutable test suite.
   // The current production UI intentionally has no admin-gated Operations menu.
   if(entry.file==='src/features/inventory/views/renderInventoryMovementPanel.tsx'){
-   const from='    inventoryPanelStyle,\\n    movementSourceLoadError,'
-   const to='    inventoryPanelStyle,\\n    isAdmin,\\n    movementSourceLoadError,'
+   const from='    inventoryPanelStyle,\n    movementSourceLoadError,'
+   const to='    inventoryPanelStyle,\n    isAdmin,\n    movementSourceLoadError,'
    check(historical.includes(from),'Movement historic role binding marker changed')
    historical=historical.replace(from,to)
   }
