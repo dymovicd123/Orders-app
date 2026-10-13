@@ -66,5 +66,8 @@ jobs:
       - name: Validate unique frozen legacy Workshop SKU cost capture
         run: node scripts/test-stage04b3-unique-legacy-sku-capture.mjs
 
+      - name: Verify warehouse stock shows reserved and short sizes without misleading totals
+        run: node scripts/test-inventory-stock-visible-reservations.mjs
+
       - name: Build application
         run: npm run build
