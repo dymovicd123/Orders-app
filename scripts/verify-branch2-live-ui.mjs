@@ -40,7 +40,7 @@ async function verifyPass(pass) {
   for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','История операций','Не определена себестоимость','Разобрать позиции','Указать себестоимость','Выплатили полностью','Выплатили часть','Дополнительно (необязательно)','Операции дня','Возвраты в работу','Изменение долга']){
     if(!workshop.includes(marker))throw new Error('PUBLIC BRANCH2 IS MISSING STAGE04-D WORKSHOP UI: '+marker)
   }
-  const inventoryChunk=entrySource.match(/InventorySection-[A-Za-z0-9_-]+\\.js/)
+  const inventoryChunk=entrySource.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
   if(!inventoryChunk)throw new Error('Public index.js does not link InventorySection')
   const inventory=await get(base+'/assets/'+inventoryChunk[0])
   for(const marker of ['Фильтр выбирает товары, но внутри каждого товара видны все размеры','Резерв под заказы превышает физический остаток','Все с остатком']){
