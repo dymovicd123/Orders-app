@@ -66,9 +66,10 @@ for(const screen of stockVisibilityScreens){
 const orderReservationTruthFix={
   file:'worker/domains/order-reservations.ts',
   before:'b27726ebea9546120d1b75a6862bd77b9154714e',
-  after:'bb71d744865c45f8d1cb09be4d792bc9a082d898',
+  after:'dd85dcf15df53705d1ad3c61f918fae92c2316ff',
   historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
-  currentLines:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
+  currentLines:"  // No reservation, including an exchange, may ever act as a physical stocktake.\n  // Outbound possession is confirmed against the *operation*, not a whole-SKU count.\n  const observedPhysical: null = null;",
+  approvedIntermediate:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
 }
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Order reservation stock-truth fix unexpected drift')
@@ -94,6 +95,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
+  ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
   ['scripts/test-inventory-stock-visible-reservations.mjs',false],
@@ -186,7 +188,8 @@ try{
   check(orderReservationCurrent.includes(orderReservationTruthFix.currentLines),
     'Current order reservation no longer contains reviewed stock-truth guard')
   const orderReservationHistorical=orderReservationCurrent.replace(
-    orderReservationTruthFix.currentLines,orderReservationTruthFix.historicalLine)
+    orderReservationTruthFix.currentLines,orderReservationTruthFix.approvedIntermediate).replace(
+    orderReservationTruthFix.approvedIntermediate,orderReservationTruthFix.historicalLine)
   check(gitBlob(orderReservationHistorical)===orderReservationTruthFix.before,
     'Order reservation historical baseline does not match accepted Branch2')
   fs.writeFileSync(orderReservationPath,orderReservationHistorical)
