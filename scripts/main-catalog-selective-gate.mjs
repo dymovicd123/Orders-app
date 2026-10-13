@@ -23,7 +23,7 @@ const warehouseUiScreens=[
  {file:'src/features/sections/InventorySection.tsx',
   fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
   before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
-  after:'7b9a66b14d6087468916be2944fb417008b9d3e2'},
+  after:'ce26fba6aa88087e523bba503f59b8fa226184c9'},
  {file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
   fixture:'scripts/fixtures/stock-visibility-20261013/renderInventoryOverviewPanel.tsx',
   before:'9b7738d3589f0091e120dec7f1f3a056abc4cc0d',
@@ -32,6 +32,27 @@ const warehouseUiScreens=[
 for(const screen of warehouseUiScreens){
  check(blob(screen.file)===screen.after,'Unreviewed production warehouse screen: '+screen.file)
  check(blob(screen.fixture)===screen.before,'Warehouse historical fixture drift: '+screen.fixture)
+}
+// These reviewed stock-truth changes are independently tested on live candidate
+// code, while historical regression sees byte-exact Production before this patch.
+const stockTruthSnapshots = [
+  {
+    "file": "worker/domains/order-reservations.ts",
+    "before": "b27726ebea9546120d1b75a6862bd77b9154714e",
+    "after": "bb71d744865c45f8d1cb09be4d792bc9a082d898",
+    "oldText": "  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
+    "newText": "  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;"
+  },
+  {
+    "file": "src/features/inventory/views/renderInventoryMovementPanel.tsx",
+    "before": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
+    "after": "6cf2db04bbe1ea63d603252f997665954b3b7bed",
+    "oldText": "                            ...(isAdmin ? [['arrival', 'Приход']] : []),\n                            ['writeoff', 'Списание'],\n                            ['manual_set', 'Исправить количество'],",
+    "newText": "                            ...(isAdmin ? [['arrival', 'Приход'], ['manual_set', 'Исправить количество']] : []),\n                            ['writeoff', 'Списание'],"
+  }
+]
+for(const entry of stockTruthSnapshots){
+ check(blob(entry.file)===entry.after,'Unreviewed stock-truth change: '+entry.file)
 }
 run(process.execPath,['scripts/test-inventory-stock-visible-reservations.mjs'],'Current production reserved and shortage warehouse regression')
 check(manifest.version===1,'Invalid selective release manifest')
@@ -78,6 +99,14 @@ try{
   const current=fs.readFileSync(screen.file)
   saved.push({path:screen.file,current,sha:screen.after})
   fs.writeFileSync(screen.file,fs.readFileSync(screen.fixture))
+ }
+ for(const entry of stockTruthSnapshots){
+  const current=fs.readFileSync(entry.file,'utf8')
+  check(current.includes(entry.newText),'Stock-truth runtime changed unexpectedly: '+entry.file)
+  const historical=current.replace(entry.newText,entry.oldText)
+  saved.push({path:entry.file,current:Buffer.from(current),sha:entry.after})
+  fs.writeFileSync(entry.file,historical)
+  check(blob(entry.file)===entry.before,'Cannot reconstruct exact pre-fix historical runtime: '+entry.file)
  }
  console.log('Checking original, unmodified Production release:check against byte-exact Production baseline')
  run(process.platform==='win32'?'npm.cmd':'npm',['run','release:check'],'Original full Production cumulative regression')
