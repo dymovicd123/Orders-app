@@ -47,7 +47,7 @@ const stockVisibilityScreens=[
     file:'src/features/sections/InventorySection.tsx',
     fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
     before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
-    after:'2dbdff39c20b3222ab3b57a7c9db7a1498c77953',
+    after:'4f5a41900e56fc7f5e76032428596d21413e25d8',
   },
   {
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
@@ -94,6 +94,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
+  ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
   ['scripts/test-inventory-stock-visible-reservations.mjs',false],
   ['scripts/test-branch2-environment.mjs',false],
