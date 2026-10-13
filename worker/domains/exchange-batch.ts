@@ -274,7 +274,7 @@ export async function createItemizedExchangeBatch(
           if ((effectiveNewItem as any).observedPhysicalQuantity != null) {
             throw new Error('Обмен больше не принимает полный фактический остаток. Обновите форму и подтвердите только выдаваемые вещи.');
           }
-          physicalIssueConfirmed = (effectiveNewItem as any).stockObservationEnabled === true;
+          physicalIssueConfirmed = (effectiveNewItem as any).issuePossessionConfirmed === true;
           if (resolvedVariantId) {
             stockKey = `${inventorySource}:${resolvedVariantId}`;
             const group = stockGroups.get(stockKey) || {
@@ -373,7 +373,7 @@ export async function createItemizedExchangeBatch(
         const nextNewItem = { ...pair.newItem } as NonNullable<OrderInput['items']>[number];
         // Every child has its own issue evidence; never attach a whole-SKU count.
         (nextNewItem as any).observedPhysicalQuantity = null;
-        (nextNewItem as any).stockObservationEnabled = pair.physicalIssueConfirmed;
+        (nextNewItem as any).issuePossessionConfirmed = pair.physicalIssueConfirmed;
 
         const childFinancialAction: 'none' | 'extra_payment' | 'refund' =
           financialAction === 'refund' && position === 0
