@@ -193,20 +193,20 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
   const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
   const visibleVariantCount = simpleStockGroups.reduce((sum: number, group: any) => sum + Number((group.rows || []).length), 0)
   const availabilityScopeLabel = simpleStockAvailabilityFilter === 'free'
-    ? 'есть свободный остаток'
+    ? 'товары со свободными остатками'
     : simpleStockAvailabilityFilter === 'reserved'
-      ? 'есть в заказах'
+      ? 'товары с резервами'
       : simpleStockAvailabilityFilter === 'attention'
-        ? 'требуют внимания'
+        ? 'товары с нехваткой'
         : hasExplicitStockSearch ? 'все найденные позиции' : 'все позиции с остатком'
   const resultScopeLabel = hasExplicitStockSearch
     ? `Поиск: «${inventoryQuery.trim()}» · ${availabilityScopeLabel}`
     : simpleStockAvailabilityFilter === 'free'
-      ? 'Только позиции со свободным остатком'
+      ? 'Товары со свободным остатком · внутри все размеры с наличием или резервом'
       : simpleStockAvailabilityFilter === 'reserved'
-        ? 'Только позиции в заказах'
+        ? 'Товары с резервами · внутри все размеры с наличием или резервом'
         : simpleStockAvailabilityFilter === 'attention'
-          ? 'Только позиции, требующие сверки'
+          ? 'Товары с нехваткой · внутри все размеры с наличием или резервом'
           : 'Все позиции с остатком'
   const summaryScopeLabel = hasExplicitStockSearch
     ? 'Итог по найденным позициям'
@@ -260,9 +260,9 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
 
                     <div className="inventory-calm-filters">
                       {[
-                        { value: 'free', label: `Есть свободные (${simpleStockStats.freeVariants})` },
-                        { value: 'reserved', label: `В заказах (${simpleStockStats.reservedVariants})` },
-                        { value: 'attention', label: `Требуют внимания (${simpleStockStats.attentionVariants})` },
+                        { value: 'free', label: `Есть свободные (${simpleStockStats.freeVariants} поз.)` },
+                        { value: 'reserved', label: `В заказах (${simpleStockStats.reservedVariants} поз.)` },
+                        { value: 'attention', label: `Нехватка (${simpleStockStats.attentionVariants} поз.)` },
                         { value: 'all', label: 'Все с остатком' },
                       ].map((entry) => (
                         <button key={entry.value} type="button" className={simpleStockAvailabilityFilter === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockAvailabilityFilter(entry.value as any)}>{entry.label}</button>
@@ -280,7 +280,9 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         </div>
                       </details>
                     </div>
-                    {simpleStockAvailabilityFilter === 'all' && !inventoryQuery.trim() ? <p className="inventory-calm-note">Позиции без остатка можно найти через поиск по товару.</p> : null}
+                    {simpleStockAvailabilityFilter === 'all' && !inventoryQuery.trim() ? <p className="inventory-calm-note">Показаны все размеры, у которых есть физический остаток или резерв. Позиции с нулём можно найти через поиск.</p> : null}
+                    {simpleStockAvailabilityFilter !== 'all' ? <p className="inventory-calm-note" role="status">Фильтр выбирает товары, но внутри каждого товара видны все размеры с наличием или резервом — включая полностью зарезервированные и дефицитные.</p> : null}
+                    {simpleStockStats.attentionVariants > 0 ? <p className="inventory-calm-note" role="status"><strong>Есть нехватка по {simpleStockStats.attentionVariants} позициям.</strong> Резерв под заказы превышает физический остаток. Проверьте фильтр «Нехватка».</p> : null}
     
 
                     <div className="inventory-stock-result-meta" aria-live="polite">

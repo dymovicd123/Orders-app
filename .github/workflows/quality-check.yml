@@ -51,5 +51,8 @@ jobs:
       - name: Run cumulative regression gate
         run: npm run release:check
 
+      - name: Verify physical stock and reserved sizes are visible
+        run: node scripts/test-inventory-stock-visible-reservations.mjs
+
       - name: Build application
         run: npm run build
