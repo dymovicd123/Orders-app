@@ -443,7 +443,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                                 <input type="checkbox" checked={groupConfirmed} style={{ flexShrink: 0, marginTop: '3px' }}
                                   onChange={(event) => setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)} />
-                                <span>Подтверждаю, что для этого обмена физически есть {batchRequired} шт. новых вещей и их можно выдать клиенту.</span>
+                                <span>Подтверждаю: для этого обмена физически есть {batchRequired} шт. новых вещей и их можно выдать клиенту.</span>
                               </label>
                             ) : <small>Подтверждение выдачи одинаковых позиций — у первой строки.</small>}
                             <small>Подтверждение относится только к выдаче. Полный остаток склада не пересчитывается.</small>
