@@ -81,6 +81,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-inventory-stock-visible-reservations.mjs',false],
   ['scripts/test-branch2-environment.mjs',false],
   ['scripts/test-stage04a-workshop-settlements.mjs',false],
