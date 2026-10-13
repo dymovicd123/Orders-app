@@ -850,7 +850,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         } else if (input.orderTotal !== undefined && input.orderTotal !== null && cleanText(input.orderTotal) !== '') {
           throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
         }
-        let normalizedItems = normalizeOrderItems(items, sourceType);
+        // Only a deliberate whole-SKU count can establish physical stock truth.
+        // Orders reserve goods; stale clients' stock observations must not rewrite Physical.
+        let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
+          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
+        ));
         const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
@@ -1727,6 +1731,15 @@ export async function updateOrderCritical(
         }
       }
       const nextItems = requestedItems || existingItemsForEdit;
+      if (rewriteItems) {
+        // Order edits may change promises, but never the absolute shelf count.
+        for (const item of nextItems) {
+          if (!item.isWorkshop) {
+            item.observedPhysicalQuantity = null;
+            item.shortageAcknowledged = true;
+          }
+        }
+      }
       const nextPayments = deletingOrder ? existingPaymentsForEdit : (requestedPayments || existingPaymentsForEdit);
       if (itemContentReplacementRequested) {
         const operations = await completedOrderOperationCounts(db, id);

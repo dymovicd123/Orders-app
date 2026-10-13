@@ -132,9 +132,8 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         <summary>Другие действия</summary>
                         <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
                           {[
-                            ...(isAdmin ? [['arrival', 'Приход']] : []),
+                            ...(isAdmin ? [['arrival', 'Приход'], ['manual_set', 'Исправить количество']] : []),
                             ['writeoff', 'Списание'],
-                            ['manual_set', 'Исправить количество'],
                           ].map(([mode, title]) => (
                             <button
                               key={mode}
