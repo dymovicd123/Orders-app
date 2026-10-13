@@ -1034,9 +1034,10 @@ export default {
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
-        // Absolute stock corrections are privileged; ordinary users only record real movements.
-        const routineExistingStockOperation = movementType === 'writeoff';
-        if (!routineExistingStockOperation) {
+        // Temporary warehouse access for authenticated managers. Only these named
+        // operations are opened; system-only movement types remain admin-only.
+        const managerWarehouseOperation = ['arrival', 'manual_set', 'writeoff'].includes(movementType);
+        if (!managerWarehouseOperation) {
           const denied = requireAdminAccess(request);
           if (denied) return denied;
         }

@@ -32,12 +32,15 @@ assert.match(inventory, /if \(movementType === 'manual_set'\)/,
 assert.match(app, /postSaveShortages\.length\)[\s\S]*?Физический остаток не менялся/,
   'The UI must disclose shortages rather than quietly turning 1 into stock truth')
 
-// Only administrators may write an absolute quantity through manual_set.
-assert.match(inventoryRoute, /routineExistingStockOperation = movementType === 'writeoff'/,
-  'The API still grants manual_set corrections to non-admins')
-assert.match(movementPanel, /\{isAdmin \? \(\s*<details className="inventory-operation-more-actions">/,
-  'Manager must not see the stock correction action')
+// Temporary warehouse access is intentionally EXPLICIT, never a side-effect of
+// creating/editing an order. Only an independent warehouse action writes Physical.
+assert.match(inventoryRoute, /managerWarehouseOperation = \['arrival', 'manual_set', 'writeoff'\]\.includes\(movementType\)/,
+  'Unexpectedly broad warehouse mutation permission')
+assert.match(movementPanel, /<details className="inventory-operation-more-actions">/,
+  'Managers must see the deliberate arrival/correction actions under Warehouse')
+assert.match(movementPanel, /\['manual_set','Исправить количество'\]/,
+  'The deliberate count-correction action disappeared')
 
 // The separate exchange workflow is deliberately NOT redesigned by this patch.
 assert.match(reservation, /referenceType === 'exchange_new'/)
-console.log('ORDER NO HIDDEN STOCKTAKE PASSED: orders preserve Physical, reserve shortages, and leave real counting independent')
+console.log('ORDER NO HIDDEN STOCKTAKE PASSED: ordinary orders preserve Physical; warehouse correction is a deliberate, separate action')

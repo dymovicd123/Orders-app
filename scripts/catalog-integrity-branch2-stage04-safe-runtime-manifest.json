@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
-      "afterGitBlob": "1077916f4926668c1edd4960b6335edd758436ca",
+      "afterGitBlob": "749389d8272505550e53583f60a2a6a56b5aa60c",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/App.tsx"
     },
     "src/app/constants.ts": {
@@ -24,7 +24,7 @@
     },
     "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
       "beforeGitBlob": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
-      "afterGitBlob": "6f18a61b57c8640997b0eb6f8a2e9b33e45d4990",
+      "afterGitBlob": "817caf27f28b95bbcb3bd19fa5d422c444cf38e1",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/inventory/views/renderInventoryMovementPanel.tsx"
     },
     "src/features/sections/ReferencesSection.tsx": {
@@ -34,7 +34,7 @@
     },
     "worker/index.ts": {
       "beforeGitBlob": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "afterGitBlob": "9d404e8b3ac02a6062d5b47049879eb9defdd959",
+      "afterGitBlob": "2ac956f8c0f458e6d034f699200c685fe3fc6675",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/index.ts"
     },
     "worker/domains/catalog.ts": {
