@@ -441,7 +441,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                           <div className="exchange-stock-confirm">
                             {observationOwner ? (
                               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                                <input type="checkbox" style={{ flexShrink: 0, marginTop: '3px' }} checked={groupConfirmed}
+                                <input type="checkbox" checked={groupConfirmed} style={{ flexShrink: 0, marginTop: '3px' }}
                                   onChange={(event) => setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)} />
                                 <span>Подтверждаю, что для этого обмена физически есть {batchRequired} шт. новых вещей и их можно выдать клиенту.</span>
                               </label>
