@@ -73,7 +73,6 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     inventoryOperationRowSecondary,
     inventoryOperationSearch,
     inventoryPanelStyle,
-    isAdmin,
     movementSourceLoadError,
     movementSourceLoading,
     operationDraftItem,
