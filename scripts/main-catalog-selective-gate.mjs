@@ -17,9 +17,11 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   const {createHash} = await import('node:crypto')
   const baseline='0b9989dac80a213f88417843a6becac3f7bbb1f6'
   const stockFiles=[
+    // Replay only the immutable pre-UX hint source for legacy production tests.
+    ['src/app/controllers/useWorkspaceViewModel.tsx','74e13c339069c7a63b4df578af51a675777fe371','e9d875f036beb0a43222d035391efdba57dc4116'],
     ['src/App.tsx','c757fcd87fbf555f049a33463f1820337c615db3','5e20ea10ffec71511cecd000ba22358d5240b6d4'],
-    ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','91885b5690d5c37719888e83ef9b3b1ebbc7eaa9'],
-    ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','32eec1cabf6f51644ce6c999f19898596bf371e2'],
+    ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','f71c7705d7433de51333255969c01967e96186f5'],
+    ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac'],
     ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','dd85dcf15df53705d1ad3c61f918fae92c2316ff'],
     ['worker/domains/lifecycle.ts','25f08471020220883107de8ee02b26bc774eb29a','039b84adc58aadefc6ded14b6dd9fa73a6aeb847'],
     ['worker/domains/returns-exchanges.ts','af53527b060ec388bbe9058b80df16a564b8af4c','14327c966fceb9f42f49c1fc39148e8081c4a19f'],
@@ -40,8 +42,13 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     assert(hash(current)===after,'Exchange production candidate differs from reviewed file: '+relative)
     saved.push({relative,current,before})
   }
-  const test=spawnSync(process.execPath,['scripts/test-main-exchange-no-recount-20261013.mjs'],{stdio:'inherit',timeout:90000})
-  assert(!test.error&&test.status===0,'Current explicit exchange issue regression failed')
+  for (const [file,why] of [
+    ['scripts/test-main-exchange-no-recount-20261013.mjs','Current explicit exchange issue regression'],
+    ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs','Current order/exchange shortage UX regression'],
+  ]) {
+    const test=spawnSync(process.execPath,[file],{stdio:'inherit',timeout:90000})
+    assert(!test.error&&test.status===0,why+' failed')
+  }
   if(git(['cat-file','-e',baseline+':src/App.tsx'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',baseline])
   let historicalTestFailed=false
   try{
