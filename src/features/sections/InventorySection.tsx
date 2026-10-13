@@ -1864,7 +1864,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   const selectInventoryOperationMode = (mode: any) => {
-    if (mode === 'arrival' && !isAdmin) return
     resetInventoryOperationSelection()
     setInventoryDraft((current: any) => ({
       ...current,
