@@ -21,7 +21,7 @@ assert.match(exchange, /group\.allConfirmed = group\.allConfirmed && physicalIss
 assert.match(exchange, /outboundPossessionConfirmed: plan\.physicalIssueConfirmed/)
 assert.match(exchange, /outboundPossessionConfirmed: physicalIssueConfirmed/)
 assert.match(app, /issuePossessionConfirmed: item\.stockObservationEnabled === true/)
-assert.match(app, /issuePossessionConfirmed: effectiveNewItem\.stockObservationEnabled === true/)
+assert.match(app, /issuePossessionConfirmed: pair\.effectiveNewItem\.stockObservationEnabled === true/)
 assert.match(lifecycle, /if \(missingPhysical && options\.outboundPossessionConfirmed !== true\)/)
 assert.match(lifecycle, /isOutgoingExchange \? \(trackedPhysical === 0 \? 0 : -Math\.min\(trackedPhysical, qty\)\) : -qty/)
 assert.match(lifecycle, /__exchange_outbound_stock_conflict__/)
