@@ -4319,11 +4319,6 @@ function App() {
       if (!Number(createDraft.managerId || 0)) {
         throw new Error('Выберите менеджера перед сохранением заказа.')
       }
-      const missingObservation = createDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
-      if (missingObservation) {
-        throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
-      }
-
       const orderPaymentMethod = String(createDraft.orderPaymentMethod || '').trim()
         || String(createDraft.payments.find((payment) => String(payment.method || '').trim())?.method || '').trim()
       const isKaspiCreate = normalizeSuggestion(orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
@@ -4374,7 +4369,6 @@ function App() {
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
           workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-          observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
         payments: isKaspiCreate ? [] : createDraft.payments.map((payment, index) => ({
@@ -4489,6 +4483,8 @@ function App() {
         invalidateInventoryStockCaches(true)
         if (concurrentShortages.length) {
           setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание». Обновляю список заказов.')
+        } else if (postSaveShortages.length) {
+          setMessage('Заказ сохранён с нехваткой свободного остатка. Физический учёт не изменён; проверьте «Склад → Внимание». Обновляю список заказов.')
         } else {
           setMessage('Заказ сохранён. Обновляю список заказов.')
         }
@@ -4567,6 +4563,8 @@ function App() {
       invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
         setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
+      } else if (postSaveShortages.length) {
+        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Внимание».`)
       } else {
         setMessage(`Заказ ${createdOrder.external_id} создан, сумма ${formatMoney(createdOrder.total_amount)} тенге.`)
       }
@@ -6081,13 +6079,6 @@ function removeDebtPayment(index: number) {
     setMessage(null)
 
     try {
-      const missingObservation = isItemizedEdit && !isItemizedContentRewrite
-        ? null
-        : nextDraft.items.find((item) => item.sourceType !== 'workshop' && item.stockObservationEnabled && (item.observedPhysicalQuantity === null || item.observedPhysicalQuantity === undefined))
-      if (missingObservation) {
-        throw new Error(`Укажите фактическое количество для «${missingObservation.productName || 'позиции'}» или выберите «Сейчас проверить не могу».`)
-      }
-
       const itemPriceCorrections: Array<{
         orderItemId: number
         unitPrice: number
@@ -6223,7 +6214,6 @@ function removeDebtPayment(index: number) {
             workshopUrgent: Boolean(item.workshopUrgent),
             workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
             workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
-            observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
             shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
           })),
         }
@@ -6282,7 +6272,6 @@ function removeDebtPayment(index: number) {
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
           workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-          observedPhysicalQuantity: item.sourceType !== 'workshop' && item.stockObservationEnabled ? item.observedPhysicalQuantity : undefined,
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
         paymentCorrections,
@@ -6360,6 +6349,8 @@ function removeDebtPayment(index: number) {
       if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
       if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Внимание».`)
+      } else if (postSaveShortages.length) {
+        setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Внимание».`)
       } else {
         setMessage(isItemizedEdit
           ? `Заказ ${order.external_id} обновлён.`
