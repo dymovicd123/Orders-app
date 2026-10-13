@@ -68,13 +68,13 @@ const priorExchangeModules=[
   {
     "file": "src/features/sections/OrderExchangeSmartSection.tsx",
     "before": "efafcca08869eeacff17e38eb693035a870dacd9",
-    "after": "a3a36fd7a639acb97185a65453100b24eb4ec135",
+    "after": "4e9ab698d669725eea50f645a7b74a5d7d0f532a",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSmartSection.tsx"
   },
   {
     "file": "src/features/sections/OrderExchangeSection.tsx",
     "before": "b854378c08389a29293a1a1e3e5e603d1e62d721",
-    "after": "f84b73bc19404844e57499884567db3420cbd429",
+    "after": "890ba7869ae87d795b2d1fe0cd551a7a873035df",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSection.tsx"
   },
   {
