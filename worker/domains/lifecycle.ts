@@ -766,7 +766,7 @@ export async function cancelInventoryLifecycleEvent(
       .bind(toInt(event.movement_id, 0), variantId, source).first<{ quantity_delta: number }>()
     : null;
   const reversalDelta = isOutgoingExchange
-    ? -Math.min(0, toInt(originalMovement?.quantity_delta, 0))
+    ? Math.max(0, -Math.min(0, toInt(originalMovement?.quantity_delta, 0)))
     : -originalDelta;
   const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
   if (isOutgoingExchange && !originalMovement) {
