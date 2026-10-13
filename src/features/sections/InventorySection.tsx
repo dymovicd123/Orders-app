@@ -268,7 +268,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
 
   const [simpleStockSource, setSimpleStockSource] = useState<'warehouse' | 'boutique'>('warehouse')
   const [simpleStockCategory, setSimpleStockCategory] = useState<'all' | 'adult' | 'child'>('all')
-  const [simpleStockAvailabilityFilter, setSimpleStockAvailabilityFilter] = useState<'free' | 'reserved' | 'attention' | 'all'>('free')
+  const [simpleStockAvailabilityFilter, setSimpleStockAvailabilityFilter] = useState<'free' | 'reserved' | 'attention' | 'all'>('all')
   const [simpleStockDetail, setSimpleStockDetail] = useState<SimpleStockDetail | null>(null)
   const [simpleStockReservations, setSimpleStockReservations] = useState<InventoryReservation[]>([])
   const [simpleStockReservationsBusy, setSimpleStockReservationsBusy] = useState(false)
@@ -1486,16 +1486,23 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       const allRows = simpleStockCategory === 'all'
         ? productRows
         : productRows.filter((row: any) => (row.category || 'adult') === simpleStockCategory)
-      const visibleRows = allRows.filter((row: any) => {
+      // The availability switch selects PRODUCTS, not which sizes are
+      // visible inside a selected product. Filtering individual SKU rows made
+      // reserved/short sizes disappear and falsely labelled a partial sum
+      // ("На месте 5" while physical warehouse quantity was actually 11).
+      const matchingRows = allRows.filter((row: any) => {
         const free = simpleStockQuantity(row)
         const reserved = simpleStockReserved(row)
         const physical = simpleStockPhysical(row)
-        if (simpleStockAvailabilityFilter === 'all') return hasExplicitStockSearch ? true : physical !== 0 || reserved !== 0
+        if (simpleStockAvailabilityFilter === 'all') return hasExplicitStockSearch || physical !== 0 || reserved !== 0
         if (simpleStockAvailabilityFilter === 'free') return free > 0
         if (simpleStockAvailabilityFilter === 'reserved') return reserved > 0
         return free < 0 || physical < 0
       })
-      if (!visibleRows.length) continue
+      if (!matchingRows.length) continue
+      const visibleRows = allRows.filter((row: any) =>
+        hasExplicitStockSearch || simpleStockPhysical(row) !== 0 || simpleStockReserved(row) !== 0
+      )
       result.push({
         ...product,
         rows: visibleRows,
