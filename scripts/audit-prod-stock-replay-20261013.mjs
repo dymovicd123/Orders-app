@@ -125,3 +125,59 @@ for(const [key,rows] of Object.entries(outcome)){
 }
 console.log('SUMMARY '+JSON.stringify(Object.fromEntries(Object.entries(outcome).map(([k,v])=>[k,v.length]))))
 console.log('AUDIT COMPLETE. ZERO WRITES PERFORMED.')
+
+
+const journalMismatches=select('journal_current_mismatches',`
+ WITH last_move AS (
+  SELECT m.inventory_source AS source,m.variant_id,MAX(m.id) AS latest_id
+  FROM inventory_movements m
+  WHERE m.variant_id IS NOT NULL
+  GROUP BY m.inventory_source,m.variant_id
+ )
+ SELECT s.id AS stock_id,s.inventory_source AS source,s.variant_id,s.quantity AS current,
+ s.reserved_quantity AS reserved,s.last_action,s.last_source_ref,s.updated_at,
+ m.id AS last_movement_id,m.quantity_after AS journal_after,m.movement_type AS journal_type,
+ m.reference_type AS journal_reference_type,m.created_at AS journal_at,
+ p.name AS product,v.color,v.size_label AS size
+ FROM inventory_stock s
+ LEFT JOIN last_move lm ON lm.source=s.inventory_source AND lm.variant_id=s.variant_id
+ LEFT JOIN inventory_movements m ON m.id=lm.latest_id
+ LEFT JOIN catalog_variants v ON v.id=s.variant_id
+ LEFT JOIN catalog_products p ON p.id=v.product_id
+ WHERE s.variant_id IS NOT NULL AND m.id IS NOT NULL AND s.quantity <> m.quantity_after
+ ORDER BY ABS(s.quantity-m.quantity_after) DESC,s.id LIMIT 350`)
+console.log('JOURNAL_MISMATCHES '+JSON.stringify(journalMismatches))
+const untrackedStock=select('positive_stock_without_movement',`
+ WITH last_move AS (
+  SELECT m.inventory_source AS source,m.variant_id,MAX(m.id) AS latest_id
+  FROM inventory_movements m WHERE m.variant_id IS NOT NULL GROUP BY m.inventory_source,m.variant_id
+ )
+ SELECT s.id AS stock_id,s.inventory_source AS source,s.variant_id,s.quantity AS current,s.reserved_quantity AS reserved,
+ s.last_action,s.last_source_ref,s.updated_at,p.name AS product,v.color,v.size_label AS size
+ FROM inventory_stock s
+ LEFT JOIN last_move lm ON lm.source=s.inventory_source AND lm.variant_id=s.variant_id
+ LEFT JOIN catalog_variants v ON v.id=s.variant_id LEFT JOIN catalog_products p ON p.id=v.product_id
+ WHERE s.variant_id IS NOT NULL AND lm.latest_id IS NULL AND (s.quantity <> 0 OR s.reserved_quantity<>0)
+ ORDER BY ABS(s.quantity) DESC LIMIT 150`)
+console.log('UNTRACKED '+JSON.stringify(untrackedStock))
+const reserveMismatches=select('reservation_cache_mismatches',`
+ WITH actual AS (
+ SELECT inventory_source AS source,variant_id,SUM(quantity) AS amount FROM inventory_reservations WHERE status='active'
+ GROUP BY inventory_source,variant_id
+ )
+ SELECT s.id AS stock_id,s.inventory_source AS source,s.variant_id,s.quantity AS physical,
+ s.reserved_quantity AS cached_reserved,COALESCE(a.amount,0) AS active_reserved,
+ p.name AS product,v.color,v.size_label AS size,s.last_source_ref
+ FROM inventory_stock s LEFT JOIN actual a ON a.source=s.inventory_source AND a.variant_id=s.variant_id
+ LEFT JOIN catalog_variants v ON v.id=s.variant_id LEFT JOIN catalog_products p ON p.id=v.product_id
+ WHERE s.variant_id IS NOT NULL AND COALESCE(s.reserved_quantity,0)<>COALESCE(a.amount,0)
+ ORDER BY ABS(s.reserved_quantity-COALESCE(a.amount,0)) DESC,s.id LIMIT 150`)
+console.log('RESERVATION_CACHE_MISMATCHES '+JSON.stringify(reserveMismatches))
+const duplicateStock=select('duplicate_stock_variants',`
+ SELECT inventory_source AS source,variant_id,COUNT(*) AS n,SUM(quantity) AS physical,SUM(reserved_quantity) AS reserved
+ FROM inventory_stock WHERE variant_id IS NOT NULL GROUP BY inventory_source,variant_id
+ HAVING COUNT(*)>1 ORDER BY n DESC LIMIT 150`)
+console.log('DUPLICATE_STOCK '+JSON.stringify(duplicateStock))
+const novelTypes=stats.filter(s=>s.reference_type==='order_handover_correction'||s.reference_type==='transfer_stocktake'||s.reference_type==='shipping_observation'||s.reference_type==='manual_observation')
+console.log('OTHER_POTENTIALLY_UNTRUSTED_TYPES '+JSON.stringify(novelTypes))
+console.log('AUDIT SECOND PASS COMPLETE. ZERO WRITES PERFORMED.')
