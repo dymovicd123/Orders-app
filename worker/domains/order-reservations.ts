@@ -856,10 +856,9 @@ export async function reserveOrderItemV2(
   const reservedBefore = Math.max(0, toInt(stock.reserved_quantity, 0));
   // Resolver/manual callers may construct a normalized order item without this optional field.
   // Treat both null and undefined as ‘no physical count supplied’; never bind undefined into D1.
-  // An order reservation must never be interpreted as an absolute physical stocktake.
-  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.
-  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null
-    ? item.observedPhysicalQuantity : null;
+  // No reservation, including an exchange, may ever act as a physical stocktake.
+  // Outbound possession is confirmed against the *operation*, not a whole-SKU count.
+  const observedPhysical: null = null;
   const physicalForReservation = observedPhysical === null ? physicalBefore : observedPhysical;
   const stockAction = observedPhysical === null ? 'Резерв заказа' : 'Сверено менеджером при заказе';
   const statements: D1PreparedStatement[] = [
