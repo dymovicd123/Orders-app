@@ -38,7 +38,7 @@ assert.ok(!app.includes('Склад → Внимание'), 'Save feedback still
 function issue(tracked, qty, confirmed) {
   if (tracked < qty && !confirmed) return {blocked:true}
   const posted = tracked === 0 ? 0 : -Math.min(tracked,qty)
-  return {before:tracked,after:tracked+posted,posted,unrecorded:qty+posted,reversal:-posted}
+  return {before:tracked,after:tracked+posted,posted,unrecorded:qty+posted,reversal:Math.max(0,-posted)}
 }
 for(const [tracked,qty,confirmed,expected] of [
   [0,1,false,{blocked:true}],
