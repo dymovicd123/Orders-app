@@ -100,13 +100,13 @@ jobs:
               db='orders_db_prod'; config='wrangler.diagnostic-prod.jsonc'
             fi
             echo "====== $env: history movement ↔ current linked stock ======"
-            npx wrangler d1 execute "$db" --remote --config "$config" --file=/tmp/kebek-history.sql --json |
+            npx wrangler d1 execute "$db" --remote --config "$config" --command "$(cat /tmp/kebek-history.sql)" --json |
               jq -c '.[0].results'
             echo "====== $env: current warehouse stock rows ↔ catalog variants ======"
-            npx wrangler d1 execute "$db" --remote --config "$config" --file=/tmp/kebek-stock.sql --json |
+            npx wrangler d1 execute "$db" --remote --config "$config" --command "$(cat /tmp/kebek-stock.sql)" --json |
               jq -c '.[0].results'
             echo "====== $env: active/archived catalog variants with current stock ======"
-            npx wrangler d1 execute "$db" --remote --config "$config" --file=/tmp/kebek-catalog.sql --json |
+            npx wrangler d1 execute "$db" --remote --config "$config" --command "$(cat /tmp/kebek-catalog.sql)" --json |
               jq -c '.[0].results'
           done
           echo 'READ-ONLY KEBEK INVENTORY DIAGNOSIS COMPLETED — no data modification'
