@@ -267,6 +267,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   const [simpleStockSource, setSimpleStockSource] = useState<'warehouse' | 'boutique'>('warehouse')
+  const [stockOverviewRetryBusy, setStockOverviewRetryBusy] = useState(false)
   const [simpleStockCategory, setSimpleStockCategory] = useState<'all' | 'adult' | 'child'>('all')
   const [simpleStockAvailabilityFilter, setSimpleStockAvailabilityFilter] = useState<'free' | 'reserved' | 'attention' | 'all'>('all')
   const [simpleStockDetail, setSimpleStockDetail] = useState<SimpleStockDetail | null>(null)
@@ -2154,6 +2155,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     </div>
   )
 
+  // Missing pending/failed inventory cannot be represented by zeros from catalog variants.
+  const simpleStockSnapshotReady = (inventorySourceRows || []).some(
+    (row: any) => row.source === simpleStockSource && row.data?.ok === true
+  )
+
   return (
     <section className="card wide sector-inventory unified-inventory" id="inventory" style={inventoryModuleVisible ? undefined : { display: 'none' }}>
               <div className="inventory-compact-title">
@@ -2291,7 +2297,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         setInventoryStatusFilter
       })}
     
-              {renderInventoryOverviewPanel({
+              {simpleStockSnapshotReady ? renderInventoryOverviewPanel({
         SmartPickerInput,
         applyQuickStocktake,
         cycleCountBusy,
@@ -2339,7 +2345,22 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         simpleStockStats,
         sourceLabel,
         submitRoutineCycleCount
-      })}
+      }) : (
+        <div className="inventory-overview-panel inventory-calm-stock" style={inventoryPanelStyle('overview')}>
+          <div className="mini-panel" role="status">
+            <h3>Остатки пока не загружены</h3>
+            <p>Нет подтверждённых данных для точки «{sourceLabel(simpleStockSource)}». Отсутствие ответа сервера не означает, что на складе ноль вещей.</p>
+            <div className="inventory-calm-source" aria-label="Точка остатков">
+              <button type="button" className={simpleStockSource === 'warehouse' ? 'is-active' : ''} onClick={() => setSimpleStockSource('warehouse')}>Склад</button>
+              <button type="button" className={simpleStockSource === 'boutique' ? 'is-active' : ''} onClick={() => setSimpleStockSource('boutique')}>Бутик</button>
+            </div>
+            <button className="secondary compact" type="button" disabled={stockOverviewRetryBusy} onClick={() => {
+              setStockOverviewRetryBusy(true)
+              void loadInventoryData(simpleStockSource, true, '', false).finally(() => setStockOverviewRetryBusy(false))
+            }}>{stockOverviewRetryBusy ? 'Загружаю…' : 'Повторить загрузку остатков'}</button>
+          </div>
+        </div>
+      )}
 
               {renderInventoryStocktakePanel({
         addStocktakeNewCombination,
