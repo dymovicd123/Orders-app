@@ -6,6 +6,8 @@ const app = read('src/App.tsx')
 const orders = read('worker/domains/orders-write.ts')
 const reservation = read('worker/domains/order-reservations.ts')
 const inventory = read('worker/domains/inventory-movement.ts')
+const inventoryRoute = read('worker/index.ts')
+const movementPanel = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
 
 // Normal order create/edit must never send a total stock-count claim.
 assert.equal(
@@ -29,6 +31,12 @@ assert.match(inventory, /if \(movementType === 'manual_set'\)/,
   'Administrator-initiated absolute correction must remain available')
 assert.match(app, /postSaveShortages\.length\)[\s\S]*?Физический остаток не менялся/,
   'The UI must disclose shortages rather than quietly turning 1 into stock truth')
+
+// Only administrators may write an absolute quantity through manual_set.
+assert.match(inventoryRoute, /routineExistingStockOperation = movementType === 'writeoff'/,
+  'The API still grants manual_set corrections to non-admins')
+assert.match(movementPanel, /\{isAdmin \? \(\s*<details className="inventory-operation-more-actions">/,
+  'Manager must not see the stock correction action')
 
 // The separate exchange workflow is deliberately NOT redesigned by this patch.
 assert.match(reservation, /referenceType === 'exchange_new'/)
