@@ -171,14 +171,14 @@ export async function createItemizedExchangeBatch(
         stockKey: string | null;
         resolvedVariantId: number | null;
         inventorySource: SourceType | null;
-        observedPhysicalQuantity: number | null;
+        physicalIssueConfirmed: boolean;
       }> = [];
       const stockGroups = new Map<string, {
         inventorySource: SourceType;
         variantId: number;
         productName: string;
         requestedQuantity: number;
-        observedPhysicalQuantity: number | null;
+        allConfirmed: boolean;
       }>();
 
       for (let inputIndex = 0; inputIndex < rawPairs.length; inputIndex += 1) {
@@ -265,17 +265,16 @@ export async function createItemizedExchangeBatch(
         let stockKey: string | null = null;
         let resolvedVariantId: number | null = null;
         let inventorySource: SourceType | null = null;
-        let observedPhysicalQuantity: number | null = null;
+        let physicalIssueConfirmed = false;
         if (effectiveSource !== 'workshop') {
           const normalizedEffective = normalizeOrderItems([effectiveNewItem], normalizeSourceType((existing as any).source_type))[0];
           const resolved = await resolveCatalogProductAndVariantV2(db, normalizedEffective);
           resolvedVariantId = toInt(resolved.variantId, 0) || null;
           inventorySource = effectiveSource === 'boutique' ? 'boutique' : 'warehouse';
-          const observedRaw = (effectiveNewItem as any).observedPhysicalQuantity;
-          observedPhysicalQuantity = observedRaw === null || observedRaw === undefined ? null : Number(observedRaw);
-          if (observedPhysicalQuantity !== null && (!Number.isInteger(observedPhysicalQuantity) || observedPhysicalQuantity < 0)) {
-            throw new Error(`Позиция обмена ${inputIndex + 1}: фактический остаток должен быть целым числом от 0.`);
+          if ((effectiveNewItem as any).observedPhysicalQuantity != null) {
+            throw new Error('Обмен больше не принимает полный фактический остаток. Обновите форму и подтвердите только выдаваемые вещи.');
           }
+          physicalIssueConfirmed = (effectiveNewItem as any).issuePossessionConfirmed === true;
           if (resolvedVariantId) {
             stockKey = `${inventorySource}:${resolvedVariantId}`;
             const group = stockGroups.get(stockKey) || {
@@ -283,15 +282,10 @@ export async function createItemizedExchangeBatch(
               variantId: resolvedVariantId,
               productName: cleanText((effectiveNewItem as any).productName),
               requestedQuantity: 0,
-              observedPhysicalQuantity: null,
+              allConfirmed: true,
             };
             group.requestedQuantity += Math.max(1, toInt((effectiveNewItem as any).quantity, 1));
-            if (observedPhysicalQuantity !== null) {
-              if (group.observedPhysicalQuantity !== null && group.observedPhysicalQuantity !== observedPhysicalQuantity) {
-                throw new Error(`Для одной новой позиции указаны разные фактические остатки (${group.observedPhysicalQuantity} и ${observedPhysicalQuantity}). Оставьте одно подтверждённое значение.`);
-              }
-              group.observedPhysicalQuantity = observedPhysicalQuantity;
-            }
+            group.allConfirmed = group.allConfirmed && physicalIssueConfirmed;
             stockGroups.set(stockKey, group);
           }
         }
@@ -311,7 +305,7 @@ export async function createItemizedExchangeBatch(
           stockKey,
           resolvedVariantId,
           inventorySource,
-          observedPhysicalQuantity,
+          physicalIssueConfirmed,
         });
       }
 
@@ -353,12 +347,8 @@ export async function createItemizedExchangeBatch(
           'SELECT quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1'
         ).bind(group.inventorySource, group.variantId).first<{ quantity: number }>();
         const physical = Math.max(0, toInt(stock?.quantity, 0));
-        const physicalForBatch = group.observedPhysicalQuantity === null ? physical : group.observedPhysicalQuantity;
-        if (physicalForBatch < group.requestedQuantity) {
-          const missing = group.requestedQuantity - physicalForBatch;
-          throw new Error(group.observedPhysicalQuantity === null
-            ? `Для «${group.productName}» в этом обмене суммарно нужно ${group.requestedQuantity} шт., а по учёту физически есть ${physical} шт. Уточните фактический остаток в форме и повторите.`
-            : `Для «${group.productName}» в этом обмене суммарно нужно ${group.requestedQuantity} шт., но подтверждено физически только ${group.observedPhysicalQuantity} шт. Не хватает ${missing} шт.`);
+        if (physical < group.requestedQuantity && !group.allConfirmed) {
+          throw new Error(`Для «${group.productName}» нужно ${group.requestedQuantity} шт., по учёту на месте ${physical}. Подтвердите выдачу конкретных вещей, не полный остаток.`);
         }
       }
 
@@ -369,7 +359,6 @@ export async function createItemizedExchangeBatch(
       ));
       const remainingOldQuantity = new Map<number, number>();
       for (const [id, row] of rowById.entries()) remainingOldQuantity.set(id, Number(row.quantity));
-      const observedAssigned = new Set<string>();
       let runningTotal = ledger.totalAmount;
       const executionPairs: ItemizedExchangeBatchExecutionPair[] = [];
 
@@ -382,15 +371,9 @@ export async function createItemizedExchangeBatch(
         }
 
         const nextNewItem = { ...pair.newItem } as NonNullable<OrderInput['items']>[number];
-        if (pair.stockKey) {
-          const groupObservation = stockGroups.get(pair.stockKey)?.observedPhysicalQuantity ?? null;
-          if (groupObservation !== null && !observedAssigned.has(pair.stockKey)) {
-            (nextNewItem as any).observedPhysicalQuantity = groupObservation;
-            observedAssigned.add(pair.stockKey);
-          } else {
-            (nextNewItem as any).observedPhysicalQuantity = null;
-          }
-        }
+        // Every child has its own issue evidence; never attach a whole-SKU count.
+        (nextNewItem as any).observedPhysicalQuantity = null;
+        (nextNewItem as any).issuePossessionConfirmed = pair.physicalIssueConfirmed;
 
         const childFinancialAction: 'none' | 'extra_payment' | 'refund' =
           financialAction === 'refund' && position === 0
