@@ -140,23 +140,21 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         <span><strong>Списать товар</strong><small>Повреждение, потеря или другая причина</small></span>
                         <b>Открыть</b>
                       </button>
-                      {isAdmin ? (
-                        <details className="inventory-operation-more-actions">
-                          <summary>Другие действия</summary>
-                          <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
-                            {[
-                              ['arrival','Приход'],
-                              ['manual_set','Исправить количество'],
-                            ].map(([mode,title])=>(
-                              <button key={mode} type="button"
-                                className={inventoryDraft.movementType===mode?'is-active':''}
-                                disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode(mode)}>
-                                {title}
-                              </button>
-                            ))}
-                          </div>
-                        </details>
-                      ) : null}
+                      <details className="inventory-operation-more-actions">
+                        <summary>Другие действия</summary>
+                        <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
+                          {[
+                            ['arrival','Приход'],
+                            ['manual_set','Исправить количество'],
+                          ].map(([mode,title])=>(
+                            <button key={mode} type="button"
+                              className={inventoryDraft.movementType===mode?'is-active':''}
+                              disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode(mode)}>
+                              {title}
+                            </button>
+                          ))}
+                        </div>
+                      </details>
                     </div>
 
                     {inventoryDraft.movementType === 'writeoff' ? (
