@@ -81,4 +81,6 @@ jobs:
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.bayan-prod.jsonc --command "$(cat /tmp/bayan-reservations.sql)" --json | jq -c '.[0].results'
           echo '======== ORDER (order: production READ ONLY) ========'
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.bayan-prod.jsonc --command "$(cat /tmp/bayan-order.sql)" --json | jq -c '.[0].results'
+          echo '======= BRANCH2 SCOPED COMPARISON: NEVER MIX WITH PRODUCTION ======='
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT p.name AS product,v.id AS variant_id,v.color,v.size_label,v.material,v.length,s.inventory_source,s.quantity,s.reserved_quantity FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id LEFT JOIN inventory_stock s ON s.variant_id=v.id WHERE (p.name LIKE '%БАЯН%' OR p.name LIKE '%Баян%') AND v.color IN ('СВЕТЛО-БЕЖЕВЫЙ','ОРАНЖЕВЫЙ') AND v.size_label IN ('48','56') AND v.material='ЗАМША ВЕЛЮР' AND v.length='СТАНДАРТ' LIMIT 60" --json | jq -c '.[0].results'
           echo 'READ-ONLY BAYAN MAIN INVENTORY DIAGNOSTICS COMPLETE — no D1 writes'
