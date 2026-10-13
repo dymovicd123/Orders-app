@@ -423,18 +423,30 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                       </>
                     ) : <div className="exchange-new-hint">Сначала выберите товар — после этого появятся его характеристики и цена.</div>}
                     {availability ? (
-                      <div className={`exchange-stock-note is-${availability.tone}`}>
-                        <strong>{availability.label}</strong><span>{availability.note}</span>
+                      <div className={`exchange-stock-note is-${physicalShortage ? 'danger' : availability.tone}`}>
+                        {availability.canObservePhysical ? (
+                          <>
+                            <strong>{physicalShortage ? 'По учёту недостаточно вещей для выдачи' : 'Наличие новых вещей для выдачи учтено'}</strong>
+                            <span>На месте {Number(availability.currentPhysical || 0)} шт. · в резерве {Math.max(0, Number(availability.currentReserved || 0))} шт. · для обмена нужно {batchRequired} шт.</span>
+                            {physicalShortage ? (
+                              <small>По учёту для выдачи не хватает {Math.max(0, batchRequired - Number(availability.currentPhysical || 0))} шт. Подтвердите наличие только выдаваемых вещей.</small>
+                            ) : Number(availability.currentPhysical || 0) - Number(availability.currentReserved || 0) - batchRequired < 0 ? (
+                              <small>Часть товара уже зарезервирована под другие заказы. После выдачи может остаться нехватка свободного остатка; прежние резервы не меняются.</small>
+                            ) : null}
+                          </>
+                        ) : (
+                          <><strong>{availability.label}</strong><span>{availability.note}</span></>
+                        )}
                         {physicalShortage ? (
                           <div className="exchange-stock-confirm">
-                            <span>По учёту не хватает вещей для выдачи. Общий остаток не пересчитывается.</span>
                             {observationOwner ? (
-                              <label>
-                                <input type="checkbox" checked={groupConfirmed}
+                              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                <input type="checkbox" style={{ flexShrink: 0, marginTop: '3px' }} checked={groupConfirmed}
                                   onChange={(event) => setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)} />
-                                <span>Подтверждаю: для выдачи этого обмена физически есть {batchRequired} шт.</span>
+                                <span>Подтверждаю, что для этого обмена физически есть {batchRequired} шт. новых вещей и их можно выдать клиенту.</span>
                               </label>
-                            ) : <small>Подтверждение выдачи одинаковых позиций — у первой строки.</small>}
+                            ) : <small>Подтверждение наличия одинаковых вещей — у первой позиции.</small>}
+                            <small>Подтверждение относится только к выдаче. Полный остаток склада не пересчитывается.</small>
                           </div>
                         ) : null}
                       </div>
