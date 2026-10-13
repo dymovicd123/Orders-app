@@ -163,8 +163,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const exchangeAvailability = exchangeDraft.newItem.sourceType === 'workshop'
     ? null
     : getOrderSourceAvailability(exchangeDraft.newItem, Math.max(1, Number(exchangeDraft.newItem.quantity || 1)))
-  const exchangeObservationEnabled = Boolean(exchangeDraft.newItem.stockObservationEnabled)
-  const exchangeObservedPhysical = exchangeDraft.newItem.observedPhysicalQuantity
+  const exchangeIssueConfirmed = Boolean(exchangeDraft.newItem.stockObservationEnabled)
   const exchangeRequired = Math.max(1, Number(exchangeDraft.newItem.quantity || 1))
   const exchangeNewItemKey = (item: any) => [
     item?.sourceType || 'warehouse',
@@ -183,12 +182,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     ? queuedPairs.filter((pair: any) => !pair.saved && exchangeNewItemKey(pair.newItem) === currentExchangeNewItemKey)
     : []
   const queuedSameNewQuantity = queuedSameNewItems.reduce((sum: number, pair: any) => sum + Math.max(1, Number(pair.newItem?.quantity || 1)), 0)
-  const queuedObservedPhysical = queuedSameNewItems
-    .map((pair: any) => pair.newItem?.observedPhysicalQuantity)
-    .find((value: any) => value !== null && value !== undefined)
   const exchangeBatchRequired = exchangeRequired + queuedSameNewQuantity
-  const exchangeConfirmedPhysical = exchangeObservedPhysical ?? queuedObservedPhysical ?? null
-  const exchangeHasPhysicalConfirmation = exchangeObservationEnabled || queuedObservedPhysical !== undefined
   const exchangePhysical = Number(exchangeAvailability?.currentPhysical || 0)
   const exchangeReserved = Math.max(0, Number(exchangeAvailability?.currentReserved || 0))
   const exchangePhysicalShortage = Boolean(exchangeAvailability?.canObservePhysical && exchangePhysical < exchangeBatchRequired)
@@ -204,8 +198,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
   const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim() && itemizedPriceReady)
   const queueCurrentExchangePair = () => {
     if (!currentPairReady) return
-    if (exchangePhysicalShortage && !exchangeHasPhysicalConfirmation) return
-    if (exchangeHasPhysicalConfirmation && (exchangeConfirmedPhysical === null || !Number.isInteger(Number(exchangeConfirmedPhysical)) || Number(exchangeConfirmedPhysical) < exchangeBatchRequired)) return
+    if (exchangePhysicalShortage && !exchangeIssueConfirmed) return
     const fresh = createExchangeDraft(exchangeSelectedOrder)
     const pair = {
       draftKey: exchangeDraft.currentPairKey || fresh.currentPairKey,
@@ -213,11 +206,15 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
       oldQuantity: Math.min(effectiveOldAvailableQuantity, Math.max(1, Number(exchangeDraft.oldQuantity || 1))),
       oldReturnSource: exchangeDraft.oldPhysicalState === 'warehouse' || exchangeDraft.oldPhysicalState === 'boutique' ? exchangeDraft.oldPhysicalState : 'none',
       oldPhysicalState: exchangeDraft.oldPhysicalState,
-      newItem: { ...exchangeDraft.newItem },
+      newItem: { ...exchangeDraft.newItem, observedPhysicalQuantity: null },
       newSourceWasManuallyChanged: Boolean(exchangeDraft.newSourceWasManuallyChanged),
       saved: false,
     }
-    const nextQueued = [...queuedPairs, pair]
+    const nextQueued = [...queuedPairs.map((queued: any) => (
+      exchangePhysicalShortage && exchangeIssueConfirmed && exchangeNewItemKey(queued.newItem) === currentExchangeNewItemKey
+        ? { ...queued, newItem: { ...queued.newItem, stockObservationEnabled: true, observedPhysicalQuantity: null } }
+        : queued
+    )), pair]
     const nextRequestedByOldItem = new Map<number, number>()
     for (const queued of nextQueued) {
       if (queued.saved) continue
@@ -564,7 +561,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                     <p><strong>{exchangePhysicalShortage ? `По учёту физически не хватает ${exchangeBatchRequired - exchangePhysical} шт.` : `На месте ${exchangePhysical} шт.`}</strong></p>
                                     <p className="field-hint">
                                       {exchangePhysicalShortage
-                                        ? `Для всех одинаковых новых позиций в этом обмене нужно ${exchangeBatchRequired} шт. Если товар перед вами, не нужно отменять обмен — просто подтвердите фактическое количество ниже.`
+                                        ? `Для всех одинаковых новых позиций в этом обмене нужно ${exchangeBatchRequired} шт. Если вещи для выдачи физически у вас, подтвердите именно выдачу ниже. Полный остаток не меняется.`
                                         : exchangeFreeAfterIssue < 0
                                           ? `Физически товар есть. Уже в заказах ${exchangeReserved} шт.; после этой выдачи свободный запас станет отрицательным на ${Math.abs(exchangeFreeAfterIssue)} шт. Обмен не блокируется, но система сохранит нехватку для существующих резервов.`
                                           : `Уже в заказах ${exchangeReserved} шт. После всех одинаковых позиций этого обмена свободно останется ${exchangeFreeAfterIssue} шт.`}
@@ -573,53 +570,14 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 ) : (
                                   <p><strong>{exchangeAvailability.label}</strong> · {exchangeAvailability.note}</p>
                                 )}
-                                {exchangeAvailability.canObservePhysical ? (
-                                  <div className={`order-stock-observation${exchangeObservationEnabled ? ' is-open' : ''}`}>
-                                    {!exchangeObservationEnabled ? (
-                                      <button
-                                        type="button"
-                                        className={exchangePhysicalShortage ? 'primary compact' : 'secondary compact'}
-                                        onClick={() => setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, stockObservationEnabled: true, observedPhysicalQuantity: null } }))}
-                                      >
-                                        {exchangePhysicalShortage ? 'Товар есть — уточнить фактический остаток' : 'Уточнить фактическое количество'}
-                                      </button>
-                                    ) : (
-                                      <>
-                                        <div className="order-stock-observation-head">
-                                          <div>
-                                            <strong>Сколько сейчас физически на месте?</strong>
-                                            <span>Считайте всё в выбранной точке. Это исправит «На месте» перед резервом и выдачей обмена; старые резервы не переписываются.</span>
-                                          </div>
-                                          <button type="button" className="ghost compact" onClick={() => setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, stockObservationEnabled: false, observedPhysicalQuantity: null } }))}>Не уточнять</button>
-                                        </div>
-                                        <div className="order-stock-observation-row">
-                                          <label>
-                                            <span>На месте сейчас</span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="1"
-                                              inputMode="numeric"
-                                              value={exchangeObservedPhysical ?? ''}
-                                              onChange={(event) => {
-                                                const raw = event.target.value
-                                                setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, observedPhysicalQuantity: raw === '' ? null : Math.max(0, Math.trunc(Number(raw) || 0)) } }))
-                                              }}
-                                              placeholder="Например: 3"
-                                            />
-                                          </label>
-                                          <div className="order-stock-observation-result">
-                                            <span>Для всех одинаковых позиций этого обмена нужно: <strong>{exchangeBatchRequired}</strong></span>
-                                            {exchangeObservedPhysical === null || exchangeObservedPhysical === undefined
-                                              ? <span>Введите количество, которое видите физически.</span>
-                                              : Number(exchangeObservedPhysical) < exchangeBatchRequired
-                                                ? <strong className="is-shortage">Для выдачи не хватает {exchangeBatchRequired - Number(exchangeObservedPhysical)} шт.</strong>
-                                                : <strong>После выдачи физически останется минимум {Number(exchangeObservedPhysical) - exchangeBatchRequired} шт.</strong>}
-                                          </div>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
+                                {exchangePhysicalShortage ? (
+                                  <label className="order-stock-observation is-open">
+                                    <input type="checkbox" checked={exchangeIssueConfirmed}
+                                      onChange={(event) => setExchangeDraft((current) => ({
+                                        ...current, newItem: { ...current.newItem, stockObservationEnabled: event.target.checked, observedPhysicalQuantity: null },
+                                      }))} />
+                                    <span>Подтверждаю: для этого обмена физически есть {exchangeBatchRequired} шт. новых вещей. Общий остаток склада не пересчитывается.</span>
+                                  </label>
                                 ) : null}
                               </div>
                             </div>

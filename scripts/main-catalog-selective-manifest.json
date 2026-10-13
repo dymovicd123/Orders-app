@@ -339,7 +339,7 @@
     },
     {
       "path": "scripts/main-catalog-selective-gate.mjs",
-      "sha": "ec434ec99b9f864536ef0faabed87c661d202a4a"
+      "sha": "aff90ae839acd3df0ff354032f1cfee8fa027855"
     },
     {
       "path": "src/features/inventory/loadCompleteInventorySnapshot.ts",
@@ -352,6 +352,10 @@
     {
       "path": "scripts/test-main-warehouse-stock-truth-20261013.mjs",
       "sha": "733353e43f06e7ce849e325ca9b46a490ba87a0d"
+    },
+    {
+      "path": "scripts/test-main-exchange-no-recount-20261013.mjs",
+      "sha": "39084f362dbfe2353959b0b9194f1eea4cb21ce8"
     }
   ],
   "currentTests": [

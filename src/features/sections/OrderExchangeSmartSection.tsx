@@ -198,13 +198,13 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     item?.size,
   ].map((value) => String(value || '').trim().toUpperCase()).join('¦')
 
-  const setObservedPhysicalForGroup = (indexes: number[], value: number | null, enabled = true) => {
+  const setExchangeIssueConfirmedForGroup = (indexes: number[], confirmed: boolean) => {
     const selectedIndexes = new Set(indexes)
     setExchangeDraft((current: any) => ({
       ...current,
       newItems: (current.newItems || []).map((entry: any, itemIndex: number) =>
         selectedIndexes.has(itemIndex)
-          ? { ...entry, item: { ...entry.item, stockObservationEnabled: enabled, observedPhysicalQuantity: value } }
+          ? { ...entry, item: { ...entry.item, stockObservationEnabled: confirmed, observedPhysicalQuantity: null } }
           : entry
       ),
     }))
@@ -386,9 +386,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                       .filter((candidateIndex: number) => candidateIndex >= 0)
                 const batchRequired = matchingIndexes.reduce((sum: number, candidateIndex: number) =>
                   sum + Math.max(1, Number(exchangeDraft.newItems[candidateIndex]?.item?.quantity || 1)), 0)
-                const groupObserved = matchingIndexes
-                  .map((candidateIndex: number) => exchangeDraft.newItems[candidateIndex]?.item?.observedPhysicalQuantity)
-                  .find((value: unknown) => value !== null && value !== undefined)
+                const groupConfirmed = matchingIndexes.every((candidateIndex: number) =>
+                  exchangeDraft.newItems[candidateIndex]?.item?.stockObservationEnabled === true)
                 const availability = item.sourceType === 'workshop' ? null : getOrderSourceAvailability(item, batchRequired)
                 const physicalShortage = Boolean(availability?.canObservePhysical && Number(availability.currentPhysical || 0) < batchRequired)
                 const observationOwner = matchingIndexes[0] === index
@@ -428,21 +427,14 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                         <strong>{availability.label}</strong><span>{availability.note}</span>
                         {physicalShortage ? (
                           <div className="exchange-stock-confirm">
-                            <span>{matchingIndexes.length > 1 ? `Для этих одинаковых позиций нужно ${batchRequired} шт. ` : ''}В системе товара не хватает. Если он действительно есть у вас, укажите количество на месте.</span>
+                            <span>По учёту не хватает вещей для выдачи. Общий остаток не пересчитывается.</span>
                             {observationOwner ? (
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={groupObserved ?? ''}
-                                placeholder="На месте"
-                                onChange={(event) => setObservedPhysicalForGroup(
-                                  matchingIndexes,
-                                  event.target.value === '' ? null : Math.max(0, Math.trunc(Number(event.target.value) || 0)),
-                                  true,
-                                )}
-                              />
-                            ) : <small>Фактическое количество задаётся один раз у первой одинаковой позиции.</small>}
+                              <label>
+                                <input type="checkbox" checked={groupConfirmed}
+                                  onChange={(event) => setExchangeIssueConfirmedForGroup(matchingIndexes, event.target.checked)} />
+                                <span>Подтверждаю: для выдачи этого обмена физически есть {batchRequired} шт.</span>
+                              </label>
+                            ) : <small>Подтверждение выдачи одинаковых позиций — у первой строки.</small>}
                           </div>
                         ) : null}
                       </div>
