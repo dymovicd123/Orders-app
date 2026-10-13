@@ -68,13 +68,13 @@ const priorExchangeModules=[
   {
     "file": "src/features/sections/OrderExchangeSmartSection.tsx",
     "before": "efafcca08869eeacff17e38eb693035a870dacd9",
-    "after": "32eec1cabf6f51644ce6c999f19898596bf371e2",
+    "after": "00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSmartSection.tsx"
   },
   {
     "file": "src/features/sections/OrderExchangeSection.tsx",
     "before": "b854378c08389a29293a1a1e3e5e603d1e62d721",
-    "after": "91885b5690d5c37719888e83ef9b3b1ebbc7eaa9",
+    "after": "f71c7705d7433de51333255969c01967e96186f5",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSection.tsx"
   },
   {
@@ -100,6 +100,18 @@ for(const file of priorExchangeModules){
   check(gitBlob(fs.readFileSync(file.file,'utf8'))===file.after,'Current Exchange module changed unexpectedly: '+file.file)
   check(gitBlob(fs.readFileSync(file.fixture,'utf8'))===file.before,'Historical Exchange fixture drifted: '+file.fixture)
 }
+
+// The old Branch2 main-sync regression compares the shared order hint module
+// byte-for-byte. Run it against its frozen fixture, while separately testing
+// and building the corrected UI from the actual current source.
+const orderStockHintUi={
+  file:'src/app/controllers/useWorkspaceViewModel.tsx',
+  fixture:'scripts/fixtures/stock-shortage-ui-20261013/useWorkspaceViewModel.tsx',
+  before:'74e13c339069c7a63b4df578af51a675777fe371',
+  after:'e9d875f036beb0a43222d035391efdba57dc4116',
+}
+check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.after,'Current order shortage UI drift')
+check(gitBlob(fs.readFileSync(orderStockHintUi.fixture,'utf8'))===orderStockHintUi.before,'Historical order shortage UI fixture drift')
 
 // A normal order is not a stocktake. Historical tests must still see the exact
 // approved pre-fix reservation module; the new module is checked independently.
@@ -135,6 +147,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
+  ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
@@ -222,6 +235,11 @@ try{
     saved.set(full,fs.readFileSync(full,'utf8'))
     fs.writeFileSync(full,fs.readFileSync(screen.fixture,'utf8'))
   }
+  const stockHintPath=path.resolve(orderStockHintUi.file)
+  saved.set(stockHintPath,fs.readFileSync(stockHintPath,'utf8'))
+  fs.writeFileSync(stockHintPath,fs.readFileSync(orderStockHintUi.fixture,'utf8'))
+  check(gitBlob(fs.readFileSync(stockHintPath,'utf8'))===orderStockHintUi.before,
+    'Historical shared stock availability UI could not be staged')
   for(const entry of priorExchangeModules){
     const full=path.resolve(entry.file)
     saved.set(full,fs.readFileSync(full,'utf8'))
@@ -256,6 +274,8 @@ try{
 for(const [relative,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
 }
+check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.after,
+  'Failed to restore current order shortage UI after historical tests')
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')

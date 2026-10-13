@@ -554,30 +554,34 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                             </>
                           ) : null}
                           {exchangeAvailability ? (
-                            <div className={`wide-field order-source-availability is-${exchangeAvailability.tone}${'needsAttention' in exchangeAvailability && exchangeAvailability.needsAttention ? ' needs-attention' : ''}`}>
+                            <div className={`wide-field order-source-availability is-${exchangePhysicalShortage ? 'danger' : exchangeAvailability.tone}`}>
                               <div className="order-source-availability-body">
                                 {exchangeAvailability.canObservePhysical ? (
                                   <>
-                                    <p><strong>{exchangePhysicalShortage ? `По учёту физически не хватает ${exchangeBatchRequired - exchangePhysical} шт.` : `На месте ${exchangePhysical} шт.`}</strong></p>
-                                    <p className="field-hint">
-                                      {exchangePhysicalShortage
-                                        ? `Для всех одинаковых новых позиций в этом обмене нужно ${exchangeBatchRequired} шт. Если вещи для выдачи физически у вас, подтвердите именно выдачу ниже. Полный остаток не меняется.`
-                                        : exchangeFreeAfterIssue < 0
-                                          ? `Физически товар есть. Уже в заказах ${exchangeReserved} шт.; после этой выдачи свободный запас станет отрицательным на ${Math.abs(exchangeFreeAfterIssue)} шт. Обмен не блокируется, но система сохранит нехватку для существующих резервов.`
-                                          : `Уже в заказах ${exchangeReserved} шт. После всех одинаковых позиций этого обмена свободно останется ${exchangeFreeAfterIssue} шт.`}
-                                    </p>
+                                    <p><strong>{exchangePhysicalShortage ? 'По учёту недостаточно вещей для выдачи' : 'Наличие новых вещей для выдачи учтено'}</strong></p>
+                                    <p>На месте <strong>{exchangePhysical} шт.</strong> · в резерве <strong>{exchangeReserved} шт.</strong> · для этого обмена нужно <strong>{exchangeBatchRequired} шт.</strong></p>
+                                    {exchangePhysicalShortage ? (
+                                      <p className="field-hint">Для выдачи по учёту не хватает {Math.max(0, exchangeBatchRequired - exchangePhysical)} шт. Если нужные вещи действительно перед вами, подтвердите их наличие ниже. Это не изменит общий остаток на складе.</p>
+                                    ) : exchangeFreeAfterIssue < 0 ? (
+                                      <p className="field-hint">После выдачи свободный остаток будет ниже нуля: часть товара уже зарезервирована под другие заказы. Их резервы не переписываются.</p>
+                                    ) : (
+                                      <p className="field-hint">После этой выдачи останется свободно {exchangeFreeAfterIssue} шт.</p>
+                                    )}
                                   </>
                                 ) : (
                                   <p><strong>{exchangeAvailability.label}</strong> · {exchangeAvailability.note}</p>
                                 )}
                                 {exchangePhysicalShortage ? (
-                                  <label className="order-stock-observation is-open">
-                                    <input type="checkbox" checked={exchangeIssueConfirmed}
-                                      onChange={(event) => setExchangeDraft((current) => ({
-                                        ...current, newItem: { ...current.newItem, stockObservationEnabled: event.target.checked, observedPhysicalQuantity: null },
-                                      }))} />
-                                    <span>Подтверждаю: для этого обмена физически есть {exchangeBatchRequired} шт. новых вещей. Общий остаток склада не пересчитывается.</span>
-                                  </label>
+                                  <div className="exchange-stock-confirm">
+                                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                                      <input type="checkbox" checked={exchangeIssueConfirmed} style={{ flexShrink: 0, marginTop: '3px' }}
+                                        onChange={(event) => setExchangeDraft((current) => ({
+                                          ...current, newItem: { ...current.newItem, stockObservationEnabled: event.target.checked, observedPhysicalQuantity: null },
+                                        }))} />
+                                      <span>Подтверждаю: для этого обмена физически есть {exchangeBatchRequired} шт. новых вещей и их можно выдать клиенту.</span>
+                                    </label>
+                                    <small>Подтверждение относится только к выдаче. Полный остаток склада не пересчитывается.</small>
+                                  </div>
                                 ) : null}
                               </div>
                             </div>
