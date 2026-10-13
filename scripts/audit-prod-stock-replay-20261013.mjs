@@ -238,3 +238,40 @@ for(const c of candidates){
 console.log('BOUNDED_REPLAY_TOTAL '+boundedReplay.length)
 for(const row of boundedReplay)console.log('BOUNDED '+JSON.stringify(row))
 console.log('END READ ONLY: NO PHYSICAL OR RESERVED QUANTITIES MODIFIED')
+
+
+const serviceCorrections=select('service_generated_corrections',`
+ WITH revision AS (
+ SELECT inventory_source AS source,variant_id,MAX(id) AS last_revision_id
+ FROM inventory_movements WHERE reference_type='stocktake' AND movement_type='manual_set' AND variant_id IS NOT NULL
+ GROUP BY inventory_source,variant_id
+ )
+ SELECT m.id,m.inventory_source AS source,m.variant_id,m.movement_type AS type,m.reference_type AS ref,
+ m.reference_id,m.quantity_delta AS delta,m.quantity_after AS after,m.created_at,
+ p.name AS product,v.color,v.size_label AS size,
+ rev.last_revision_id,s.quantity AS current,s.reserved_quantity AS reserved,
+ (SELECT COUNT(*) FROM inventory_movements x WHERE x.inventory_source=m.inventory_source AND x.variant_id=m.variant_id
+ AND x.id>m.id AND x.movement_type='manual_set' AND x.reference_type IN ('manual','stocktake')) AS later_human_corrections,
+ (SELECT COUNT(*) FROM inventory_movements x WHERE x.inventory_source=m.inventory_source AND x.variant_id=m.variant_id
+ AND x.id>m.id AND x.movement_type IN ('sale','writeoff')) AS later_outbound
+ FROM inventory_movements m
+ LEFT JOIN revision rev ON rev.source=m.inventory_source AND rev.variant_id=m.variant_id
+ LEFT JOIN inventory_stock s ON s.inventory_source=m.inventory_source AND s.variant_id=m.variant_id
+ LEFT JOIN catalog_variants v ON v.id=m.variant_id LEFT JOIN catalog_products p ON p.id=v.product_id
+ WHERE m.reference_type IN ('order_handover_correction','workshop_integrity_repair','exchange_workshop_restore','order_edit')
+ ORDER BY m.id DESC LIMIT 95`)
+console.log('SERVICE_CORRECTIONS '+JSON.stringify(serviceCorrections))
+const currentTwo=select('two_unverified_active_units',`
+ SELECT s.id AS stock_id,s.inventory_source AS source,s.variant_id,s.quantity,s.reserved_quantity,
+ s.updated_at,s.last_action,s.last_source_ref,
+ p.name AS product,v.color,v.size_label AS size,v.material,v.length,
+ r.id AS reservation_id,r.order_id,o.external_id,o.order_date,o.shipping_status,o.order_status,r.quantity AS promised_quantity,
+ r.created_at AS reserved_at
+ FROM inventory_stock s
+ JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id
+ LEFT JOIN inventory_reservations r ON r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id AND r.status='active'
+ LEFT JOIN orders o ON o.id=r.order_id
+ WHERE s.inventory_source='warehouse' AND s.variant_id IN (111,178)
+ ORDER BY s.variant_id,r.created_at`)
+console.log('TWO_UNVERIFIED_ACTIVE_UNITS '+JSON.stringify(currentTwo))
+console.log('FORENSIC RUN FULLY READ ONLY. NOTHING REPAIRED YET.')
