@@ -1208,7 +1208,7 @@ export async function createExchange(
   if (input.newItem?.observedPhysicalQuantity != null) {
     throw new Error('Обмен больше не принимает полный остаток товара. Обновите форму и подтвердите только выдаваемые вещи.');
   }
-  const physicalIssueConfirmed = input.newItem?.stockObservationEnabled === true;
+  const physicalIssueConfirmed = (input.newItem as any)?.issuePossessionConfirmed === true;
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
 
@@ -3498,7 +3498,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         if ((requested as any).observedPhysicalQuantity != null) {
           throw new CriticalOperationConflictError('Обмен больше не принимает полный остаток. Обновите форму и подтвердите конкретную выдачу.')
         }
-        const physicalIssueConfirmed = (requested as any).stockObservationEnabled === true
+        const physicalIssueConfirmed = (requested as any).issuePossessionConfirmed === true
         let stockKey: string | null = null
         if (variantId) {
           stockKey = `${inventorySource}:${variantId}`
