@@ -758,8 +758,21 @@ export async function cancelInventoryLifecycleEvent(
   const source = normalizeSourceType(event.inventory_source);
   const qty = Math.max(1, toInt(event.quantity, 1));
   const originalDelta = cleanText(event.direction) === 'in' ? qty : -qty;
-  const reversalDelta = -originalDelta;
+  // A confirmed outbound exchange can have a partial or zero *booked* delta.
+  // Reverse the actual movement, never the nominal quantity given to the client.
+  const originalMovement = isOutgoingExchange && toInt(event.movement_id, 0)
+    ? await db.prepare(`SELECT quantity_delta FROM inventory_movements
+       WHERE id = ? AND variant_id = ? AND inventory_source = ? LIMIT 1`)
+      .bind(toInt(event.movement_id, 0), variantId, source).first<{ quantity_delta: number }>()
+    : null;
+  const reversalDelta = isOutgoingExchange
+    ? -Math.min(0, toInt(originalMovement?.quantity_delta, 0))
+    : -originalDelta;
   const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
+  if (isOutgoingExchange && !originalMovement) {
+    // A missing/legacy movement reference cannot authorize inventing stock.
+    physicalDisposition.reversePhysical = false;
+  }
   if (!physicalDisposition.reversePhysical) {
     const reasonText = physicalDisposition.reason === 'retired_identity'
       ? 'Физический остаток не откатывался: старая SKU уже выведена из рабочего каталога и не может снова получать рабочий остаток.'
