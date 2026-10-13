@@ -339,7 +339,7 @@
     },
     {
       "path": "scripts/main-catalog-selective-gate.mjs",
-      "sha": "394194df3402ee61fdd2b5147269f528b5ed69af"
+      "sha": "4b9a7c641225bf06d312ca0bc4d4e718a86d6cb7"
     },
     {
       "path": "src/features/inventory/loadCompleteInventorySnapshot.ts",
