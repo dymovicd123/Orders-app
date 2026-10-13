@@ -72,7 +72,6 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     inventoryOperationRowSecondary,
     inventoryOperationSearch,
     inventoryPanelStyle,
-    isAdmin,
     movementSourceLoadError,
     movementSourceLoading,
     operationDraftItem,
@@ -132,7 +131,8 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         <summary>Другие действия</summary>
                         <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
                           {[
-                            ...(isAdmin ? [['arrival', 'Приход'], ['manual_set', 'Исправить количество']] : []),
+                            ['arrival', 'Приход'],
+                            ['manual_set', 'Исправить количество'],
                             ['writeoff', 'Списание'],
                           ].map(([mode, title]) => (
                             <button

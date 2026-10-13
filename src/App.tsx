@@ -5288,10 +5288,6 @@ function App() {
         throw new Error('Выберите хотя бы один товар/вариант.')
       }
 
-      if (!isAdmin && inventoryDraft.movementType === 'arrival') {
-        throw new Error('Приход товара доступен только администратору.')
-      }
-
       if ((inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'manual_set') && !inventoryDraft.comment.trim()) {
         throw new Error(inventoryDraft.movementType === 'writeoff' ? 'Укажите причину списания.' : 'Укажите причину корректировки.')
       }

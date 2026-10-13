@@ -23,7 +23,7 @@ const warehouseUiScreens=[
  {file:'src/features/sections/InventorySection.tsx',
   fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
   before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
-  after:'ce26fba6aa88087e523bba503f59b8fa226184c9'},
+  after:'cf69e21e4fda04ee6d3b0e9bffd08c9f724ab62a'},
  {file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
   fixture:'scripts/fixtures/stock-visibility-20261013/renderInventoryOverviewPanel.tsx',
   before:'9b7738d3589f0091e120dec7f1f3a056abc4cc0d',
@@ -46,9 +46,9 @@ const stockTruthSnapshots = [
   {
     "file": "src/features/inventory/views/renderInventoryMovementPanel.tsx",
     "before": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
-    "after": "6cf2db04bbe1ea63d603252f997665954b3b7bed",
+    "after": "5e869edf3eb353d0d5368b31f4f19548833ddd03",
     "oldText": "                            ...(isAdmin ? [['arrival', 'Приход']] : []),\n                            ['writeoff', 'Списание'],\n                            ['manual_set', 'Исправить количество'],",
-    "newText": "                            ...(isAdmin ? [['arrival', 'Приход'], ['manual_set', 'Исправить количество']] : []),\n                            ['writeoff', 'Списание'],"
+    "newText": "                            ['arrival', 'Приход'],\n                            ['manual_set', 'Исправить количество'],\n                            ['writeoff', 'Списание'],"
   }
 ]
 for(const entry of stockTruthSnapshots){
@@ -103,7 +103,15 @@ try{
  for(const entry of stockTruthSnapshots){
   const current=fs.readFileSync(entry.file,'utf8')
   check(current.includes(entry.newText),'Stock-truth runtime changed unexpectedly: '+entry.file)
-  const historical=current.replace(entry.newText,entry.oldText)
+  let historical=current.replace(entry.newText,entry.oldText)
+  // Reintroduce the original role binding only for the old, immutable test suite.
+  // The current production UI intentionally has no admin-gated Operations menu.
+  if(entry.file==='src/features/inventory/views/renderInventoryMovementPanel.tsx'){
+   const from='    inventoryPanelStyle,\n    movementSourceLoadError,'
+   const to='    inventoryPanelStyle,\n    isAdmin,\n    movementSourceLoadError,'
+   check(historical.includes(from),'Movement historic role binding marker changed')
+   historical=historical.replace(from,to)
+  }
   saved.push({path:entry.file,current:Buffer.from(current),sha:entry.after})
   fs.writeFileSync(entry.file,historical)
   check(blob(entry.file)===entry.before,'Cannot reconstruct exact pre-fix historical runtime: '+entry.file)
