@@ -24,7 +24,7 @@
     },
     "src/features/inventory/views/renderInventoryMovementPanel.tsx": {
       "beforeGitBlob": "dc89847d2bac17d53320c3e4097ce4fbfd35e27b",
-      "afterGitBlob": "73259e8fbde1dc37edcad57aa9cd86cd681a5f70",
+      "afterGitBlob": "817caf27f28b95bbcb3bd19fa5d422c444cf38e1",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/features/inventory/views/renderInventoryMovementPanel.tsx"
     },
     "src/features/sections/ReferencesSection.tsx": {
