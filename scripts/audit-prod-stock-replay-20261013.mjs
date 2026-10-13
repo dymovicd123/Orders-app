@@ -181,3 +181,60 @@ console.log('DUPLICATE_STOCK '+JSON.stringify(duplicateStock))
 const novelTypes=stats.filter(s=>s.reference_type==='order_handover_correction'||s.reference_type==='transfer_stocktake'||s.reference_type==='shipping_observation'||s.reference_type==='manual_observation')
 console.log('OTHER_POTENTIALLY_UNTRUSTED_TYPES '+JSON.stringify(novelTypes))
 console.log('AUDIT SECOND PASS COMPLETE. ZERO WRITES PERFORMED.')
+
+
+const zeroFulfillments=select('zero_delta_shipments',`
+ WITH lastrev AS (
+ SELECT inventory_source AS source,variant_id,MAX(id) AS lastrev FROM inventory_movements
+ WHERE reference_type='stocktake' AND movement_type='manual_set' AND variant_id IS NOT NULL
+ GROUP BY inventory_source,variant_id
+ ), exposed AS (
+ SELECT DISTINCT m.inventory_source AS source,m.variant_id
+ FROM inventory_movements m JOIN lastrev rev ON m.inventory_source=rev.source AND m.variant_id=rev.variant_id AND m.id>rev.lastrev
+ WHERE m.reference_type='order_observation'
+ )
+ SELECT m.id AS move_id,m.inventory_source AS source,m.variant_id,m.reference_id,m.reference_type,
+ m.quantity_after,m.quantity_delta,
+ (SELECT SUM(r.quantity) FROM inventory_reservations r JOIN orders o ON o.id=r.order_id
+ WHERE o.external_id=m.reference_id AND r.inventory_source=m.inventory_source AND r.variant_id=m.variant_id AND r.status='fulfilled') AS reserved_fulfilled_qty,
+ (SELECT COUNT(*) FROM inventory_reservations r JOIN orders o ON o.id=r.order_id
+ WHERE o.external_id=m.reference_id AND r.inventory_source=m.inventory_source AND r.variant_id=m.variant_id AND r.status='fulfilled') AS matching_fulfilled_rows
+ FROM inventory_movements m JOIN exposed e ON e.source=m.inventory_source AND e.variant_id=m.variant_id
+ WHERE m.movement_type='sale' AND m.quantity_delta=0
+ ORDER BY m.inventory_source,m.variant_id,m.id LIMIT 200`)
+const zeroMap=new Map(zeroFulfillments.map(z=>[z.move_id,z]))
+console.log('ZERO_DELTA_SHIPMENT_EVIDENCE '+JSON.stringify(zeroFulfillments))
+const boundedReplay=[]
+for(const c of candidates){
+ const ev=events.get(c.source+':'+c.variant_id)||[]
+ const revIndex=ev.findIndex(e=>e.id===c.revision_id)
+ const after=revIndex>=0?ev.slice(revIndex+1):[]
+ const explicit=after.filter(e=>(e.type==='manual_set'&&['manual','stocktake'].includes(e.ref_type))||(e.type==='revision'&&['quick_stocktake','transfer_stocktake'].includes(e.ref_type)))
+ const last=explicit.at(-1)
+ let v=last?last.after:c.revision_quantity,uncertain=[],suppressed=[],afterSuspects=0
+ const segment=after.filter(e=>!last||e.id>last.id)
+ for(const e of segment){
+   if(suspicious.has(e.ref_type)){if(e.delta!==0)suppressed.push([e.id,e.delta]); continue}
+   if(e.type==='sale'||e.type==='writeoff'||(e.type==='revision'&&e.delta<0)){
+     let amount=-Math.min(0,e.delta)
+     if(e.type==='sale'&&e.delta===0){
+       const z=zeroMap.get(e.id)
+       if(z?.matching_fulfilled_rows===1 && z.reserved_fulfilled_qty>0){amount=z.reserved_fulfilled_qty}
+       else uncertain.push({id:e.id,reason:'zero sale with no unique fulfilled reserve'})
+     }
+     v=Math.max(0,v-amount)
+   }else if(['arrival','return','manual_set','revision'].includes(e.type)){
+      v+=e.delta
+      if(v<0)uncertain.push({id:e.id,reason:'negative stock in additive event'})
+   } else uncertain.push({id:e.id,reason:'unknown movement: '+e.type})
+ }
+ if(suppressed.length||c.current!==v)boundedReplay.push({
+   source:c.source,variantId:c.variant_id,stockId:c.stock_id,product:c.product,color:c.color,size:c.size,
+   revisionId:c.revision_id,revisionPhysical:c.revision_quantity,latestExplicitId:last?.id||null,
+   current:c.current,reserved:c.reserved,estimatedPhysical:v,estimatedDelta:v-c.current,
+   suppressed,uncertain,steps:segment.map(e=>[e.id,e.type,e.ref_type,e.delta,e.after]).slice(-10)
+ })
+}
+console.log('BOUNDED_REPLAY_TOTAL '+boundedReplay.length)
+for(const row of boundedReplay)console.log('BOUNDED '+JSON.stringify(row))
+console.log('END READ ONLY: NO PHYSICAL OR RESERVED QUANTITIES MODIFIED')
