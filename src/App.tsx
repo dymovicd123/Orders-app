@@ -7330,10 +7330,7 @@ function removeDebtPayment(index: number) {
         oldQuantity,
         oldReturnSource: pair.oldPhysicalState === 'warehouse' || pair.oldPhysicalState === 'boutique' ? pair.oldPhysicalState : 'none',
         oldPhysicalState: pair.oldPhysicalState,
-        effectiveNewItem: {
-          ...effectiveNewItem, observedPhysicalQuantity: null,
-          issuePossessionConfirmed: effectiveNewItem.stockObservationEnabled === true,
-        },
+        effectiveNewItem: { ...effectiveNewItem, observedPhysicalQuantity: null },
         newSourceWasManuallyChanged: Boolean(pair.newSourceWasManuallyChanged),
       })
     }
@@ -7365,6 +7362,7 @@ function removeDebtPayment(index: number) {
             oldPhysicalState: pair.oldPhysicalState,
             newItem: {
               ...pair.effectiveNewItem,
+              issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true,
               unitPrice: Number(pair.effectiveNewItem.unitPrice),
               catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
             },
@@ -7435,9 +7433,10 @@ function removeDebtPayment(index: number) {
           oldPhysicalState: pair.oldPhysicalState,
           newItem: itemizedExchange ? {
             ...pair.effectiveNewItem,
+            issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true,
             unitPrice: Number(pair.effectiveNewItem.unitPrice),
             catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-          } : pair.effectiveNewItem,
+          } : { ...pair.effectiveNewItem, issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true },
           newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
           ...(itemizedExchange ? {
             expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
