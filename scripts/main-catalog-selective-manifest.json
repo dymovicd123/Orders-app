@@ -11,7 +11,7 @@
     {
       "path": "src/App.tsx",
       "oldSha": "e10688279ebce28469d7b82fc37c8a0a1f9250fd",
-      "newSha": "91a50dca05b9de0b486279262289347d87cddd52"
+      "newSha": "c757fcd87fbf555f049a33463f1820337c615db3"
     },
     {
       "path": "src/app/constants.ts",
@@ -56,7 +56,7 @@
     {
       "path": "worker/index.ts",
       "oldSha": "ab8f1ebbdddd5d06fc259262e06483b624997b83",
-      "newSha": "83f9c02ab0ff6392bb91bad23a9152329c3d8cf9"
+      "newSha": "18eaed28fed6f72111e6d6ef6bc8128903b8e091"
     },
     {
       "path": "worker/domains/inventory-read.ts",
@@ -339,7 +339,7 @@
     },
     {
       "path": "scripts/main-catalog-selective-gate.mjs",
-      "sha": "a77e66c5a71d4ee521a4a8d37c04e8461d30079d"
+      "sha": "ec434ec99b9f864536ef0faabed87c661d202a4a"
     },
     {
       "path": "src/features/inventory/loadCompleteInventorySnapshot.ts",
@@ -351,7 +351,7 @@
     },
     {
       "path": "scripts/test-main-warehouse-stock-truth-20261013.mjs",
-      "sha": "329102b5b98f6e89078982225d014e5569a86c0c"
+      "sha": "733353e43f06e7ce849e325ca9b46a490ba87a0d"
     }
   ],
   "currentTests": [
