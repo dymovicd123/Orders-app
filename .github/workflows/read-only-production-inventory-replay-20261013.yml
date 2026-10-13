@@ -1,0 +1,27 @@
+name: Read-only production inventory replay audit 20261013
+on:
+  push:
+    branches:
+      - audit/production-stock-replay-20261013
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readonly-stock-replay:
+    name: Analyze production movements after last revision (NO WRITES)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Verify audited database identity and run SELECTs
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'audit/production-stock-replay-20261013'
+          node scripts/audit-prod-stock-replay-20261013.mjs
