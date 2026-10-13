@@ -25,7 +25,7 @@ for (const [label, code] of [['classic', classic], ['smart', smart]]) {
   assert.ok(code.includes('По учёту недостаточно вещей для выдачи'), label + ' exchange lacks its own shortage wording')
   assert.ok(code.includes('в резерве'), label + ' exchange hides existing reservations')
   assert.ok(code.includes('Подтверждение относится только к выдаче'), label + ' exchange does not explain the scope of possession evidence')
-  assert.ok(code.includes('Подтверждаю, что для этого обмена'), label + ' exchange is missing an explicit possession assertion')
+  assert.ok(code.includes('Подтверждаю: для этого обмена физически есть'), label + ' exchange is missing an explicit possession assertion')
   assert.ok(!code.includes('Посчитать сейчас'), label + ' exchange still asks for stocktake')
 }
 assert.match(classic, /type="checkbox" checked=\{exchangeIssueConfirmed\} style=\{\{[^\n]*\}\}/)
