@@ -7155,7 +7155,9 @@ function removeDebtPayment(index: number) {
           exchangeDate: exchangeDraft.exchangeDate,
           expectedOrderTotal: Number(exchangeSelectedOrder.total_amount || 0),
           oldItems: oldPayload,
-          newItems: newPayload,
+          newItems: newPayload.map((item) => ({
+            ...item, observedPhysicalQuantity: null, issuePossessionConfirmed: item.stockObservationEnabled === true,
+          })),
           paymentAmount,
           paymentMethod: exchangeDraft.paymentMethod,
           refundMethod: exchangeDraft.refundMethod,
@@ -7328,7 +7330,10 @@ function removeDebtPayment(index: number) {
         oldQuantity,
         oldReturnSource: pair.oldPhysicalState === 'warehouse' || pair.oldPhysicalState === 'boutique' ? pair.oldPhysicalState : 'none',
         oldPhysicalState: pair.oldPhysicalState,
-        effectiveNewItem: { ...effectiveNewItem, observedPhysicalQuantity: null },
+        effectiveNewItem: {
+          ...effectiveNewItem, observedPhysicalQuantity: null,
+          issuePossessionConfirmed: effectiveNewItem.stockObservationEnabled === true,
+        },
         newSourceWasManuallyChanged: Boolean(pair.newSourceWasManuallyChanged),
       })
     }
