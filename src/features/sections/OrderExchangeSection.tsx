@@ -574,7 +574,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 {exchangePhysicalShortage ? (
                                   <div className="exchange-stock-confirm">
                                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                                      <input type="checkbox" style={{ flexShrink: 0, marginTop: '3px' }} checked={exchangeIssueConfirmed}
+                                      <input type="checkbox" checked={exchangeIssueConfirmed} style={{ flexShrink: 0, marginTop: '3px' }}
                                         onChange={(event) => setExchangeDraft((current) => ({
                                           ...current, newItem: { ...current.newItem, stockObservationEnabled: event.target.checked, observedPhysicalQuantity: null },
                                         }))} />
