@@ -984,7 +984,8 @@ export default {
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
-        const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';
+        // Manual absolute correction is an admin action, unlike ordinary writeoff.
+        const routineExistingStockOperation = movementType === 'writeoff';
         if (!routineExistingStockOperation) {
           const denied = requireAdminAccess(request);
           if (denied) return denied;
