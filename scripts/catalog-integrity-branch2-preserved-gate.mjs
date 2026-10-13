@@ -68,13 +68,13 @@ const priorExchangeModules=[
   {
     "file": "src/features/sections/OrderExchangeSmartSection.tsx",
     "before": "efafcca08869eeacff17e38eb693035a870dacd9",
-    "after": "32eec1cabf6f51644ce6c999f19898596bf371e2",
+    "after": "a3a36fd7a639acb97185a65453100b24eb4ec135",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSmartSection.tsx"
   },
   {
     "file": "src/features/sections/OrderExchangeSection.tsx",
     "before": "b854378c08389a29293a1a1e3e5e603d1e62d721",
-    "after": "91885b5690d5c37719888e83ef9b3b1ebbc7eaa9",
+    "after": "f84b73bc19404844e57499884567db3420cbd429",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSection.tsx"
   },
   {
@@ -135,6 +135,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
+  ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
