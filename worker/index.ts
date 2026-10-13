@@ -984,9 +984,10 @@ export default {
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
-        // Manual absolute correction is an admin action, unlike ordinary writeoff.
-        const routineExistingStockOperation = movementType === 'writeoff';
-        if (!routineExistingStockOperation) {
+        // Temporary manager Warehouse access: explicit operations only, never implicit order counts.
+        // System-only movement types retain the administrator permission boundary.
+        const managerWarehouseOperation = ['arrival', 'manual_set', 'writeoff'].includes(movementType);
+        if (!managerWarehouseOperation) {
           const denied = requireAdminAccess(request);
           if (denied) return denied;
         }
