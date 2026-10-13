@@ -50,6 +50,16 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     assert(!test.error&&test.status===0,why+' failed')
   }
   if(git(['cat-file','-e',baseline+':src/App.tsx'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',baseline])
+  // The legacy catalog release manifest intentionally pins this gate's original
+  // contents. Replay those exact bytes for the old suite, not weakened assertions.
+  // The current candidate and its new UI tests already ran above.
+  const gatePath='scripts/main-catalog-selective-gate.mjs'
+  const currentGate=fs.readFileSync(gatePath)
+  const historicalGate=fs.readFileSync('scripts/fixtures/stock-shortage-ui-20261013/main-catalog-selective-gate.mjs')
+  assert(hash(historicalGate)==='aff90ae839acd3df0ff354032f1cfee8fa027855',
+    'Frozen production historical release gate drifted')
+  assert(currentGate.includes(Buffer.from('test-stock-shortage-ui-no-inline-recount-20261013.mjs')),
+    'Production candidate missing new shortage UI acceptance')
   let historicalTestFailed=false
   try{
     for(const entry of saved){
@@ -57,12 +67,16 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
       assert(hash(blob)===entry.before,'Pre-fix Production baseline changed: '+entry.relative)
       fs.writeFileSync(entry.relative,blob)
     }
+    fs.writeFileSync(gatePath,historicalGate)
     const oldRun=spawnSync(process.execPath,['scripts/main-catalog-selective-gate.mjs'],{
       stdio:'inherit',timeout:900000,
       env:{...process.env,MAIN_EXCHANGE_LEGACY_REPLAY:'1'}
     })
     if(oldRun.error||oldRun.status!==0)historicalTestFailed=true
   }finally{
+    fs.writeFileSync(gatePath,currentGate)
+    assert(hash(fs.readFileSync(gatePath))===hash(currentGate),
+      'Could not restore reviewed Production gate after legacy suite')
     for(const entry of saved.reverse()){
       fs.writeFileSync(entry.relative,entry.current)
       assert(hash(fs.readFileSync(entry.relative))===hash(entry.current),'Could not restore current exchange source: '+entry.relative)
