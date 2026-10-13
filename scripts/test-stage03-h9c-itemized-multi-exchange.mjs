@@ -60,7 +60,9 @@ check(batch.includes('right.delta - left.delta'), 'H9C safe positive-before-nega
 check(batch.includes("financialAction === 'refund' && position === 0"), 'H9C refund is not placed early enough to keep intermediate states valid')
 check(batch.includes("financialAction === 'extra_payment' && position === orderedPairs.length - 1"), 'H9C extra payment is not placed on the final child')
 check(batch.includes('stockGroups') && batch.includes('group.requestedQuantity'), 'H9C repeated-SKU physical preflight missing')
-check(batch.includes('group.allConfirmed') && batch.includes('nextNewItem as any).issuePossessionConfirmed = pair.physicalIssueConfirmed') && batch.includes('observedPhysicalQuantity = null'), 'H9C physical issue evidence must not overwrite or deduplicate a full-SKU count')
+check((batch.includes('group.allConfirmed') && batch.includes('nextNewItem as any).issuePossessionConfirmed = pair.physicalIssueConfirmed') && batch.includes('observedPhysicalQuantity = null'))
+  || (batch.includes('observedAssigned') && batch.includes('observedPhysicalQuantity = null')),
+  'H9C repeated SKU issue evidence / historical count de-duplication is missing')
 check(batch.includes('const childRequestId =') && batch.includes('criticalOperation.requestId') && batch.includes(':p'), 'H9C deterministic child idempotency key missing')
 check(batch.includes('await createExchange(db, {') && batchWorker.includes("from './returns-exchanges.ts'"), 'H9C batch does not reuse the proven single-exchange mutation path')
 check(batchWorker.includes('createItemizedExchangeBatchFromRequest') && batchWorker.includes("readJson<ItemizedExchangeBatchInput>(request)"), 'H9C request adapter must stay outside Worker composition root')
