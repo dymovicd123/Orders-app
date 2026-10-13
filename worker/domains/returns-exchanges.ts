@@ -1205,6 +1205,10 @@ export async function createExchange(
     ).first<Record<string, unknown>>()
     : null;
 
+  if (input.newItem?.observedPhysicalQuantity != null) {
+    throw new Error('Обмен больше не принимает полный остаток товара. Обновите форму и подтвердите только выдаваемые вещи.');
+  }
+  const physicalIssueConfirmed = (input.newItem as any)?.issuePossessionConfirmed === true;
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
 
@@ -1355,6 +1359,8 @@ export async function createExchange(
     isWorkshop: effectiveReplacementSource === 'workshop',
     unitPrice: isItemizedExchange ? itemizedExchangePricingPlan!.newUnitPrice : 0,
     lineTotal: isItemizedExchange ? itemizedExchangePricingPlan!.newLineTotal : 0,
+    observedPhysicalQuantity: null,
+    shortageAcknowledged: true,
   };
 
   // Resolve/check a canonical outgoing replacement before the exchange mutates the old item.
@@ -1368,15 +1374,8 @@ export async function createExchange(
         `SELECT quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
       ).bind(newItem.inventorySource, resolved.variantId).first<{ quantity: number }>();
       const physical = Math.max(0, toInt(stock?.quantity, 0));
-      const observedPhysical = newItem.observedPhysicalQuantity;
-      if (observedPhysical !== null && (!Number.isInteger(observedPhysical) || observedPhysical < 0)) {
-        throw new Error('Фактический остаток новой позиции обмена должен быть целым числом не меньше нуля.');
-      }
-      if (observedPhysical !== null && observedPhysical < newItem.quantity) {
-        throw new Error(`Для обмена требуется ${newItem.quantity} шт., но менеджер подтвердил физически только ${observedPhysical} шт.`);
-      }
-      if (physical < newItem.quantity && observedPhysical === null) {
-        throw new Error(`По учёту новой позиции обмена на месте ${physical} шт., требуется ${newItem.quantity}. Если товар физически перед вами, укажите фактическое количество прямо в форме обмена — система исправит остаток и продолжит операцию.`);
+      if (physical < newItem.quantity && !physicalIssueConfirmed) {
+        throw new Error(`По учёту новой позиции обмена на месте ${physical} шт., требуется ${newItem.quantity}. Подтвердите, что именно эти вещи физически у вас для выдачи. Общий остаток не будет пересчитан.`);
       }
     }
   }
@@ -1592,6 +1591,7 @@ export async function createExchange(
         resolvedNew.variantId,
         timestamp,
         `Физическое списание новой позиции обмена #${exchangeId}`,
+        { outboundPossessionConfirmed: physicalIssueConfirmed },
       );
     } else {
       pendingInventory.push({ eventId: newEvent.id, eventType: newEvent.event_type, productName: cleanText(insertedNewOrderItem.product_name_snapshot), source: newItem.inventorySource });
@@ -2948,7 +2948,7 @@ type ExchangeSetNewPlan = {
   variantId: number | null
   inventorySource: SourceType | null
   stockKey: string | null
-  observedPhysicalQuantity: number | null
+  physicalIssueConfirmed: boolean
 }
 
 type ExchangeSetExecutionPlan = {
@@ -3453,7 +3453,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         catalogPriceSnapshot: Object.prototype.hasOwnProperty.call(item, 'catalogPriceSnapshot') ? item.catalogPriceSnapshot ?? null : undefined,
       })), [])
       const newPlans: ExchangeSetNewPlan[] = []
-      const stockGroups = new Map<string, { source: SourceType; variantId: number; productName: string; quantity: number; observed: number | null }>()
+      const stockGroups = new Map<string, { source: SourceType; variantId: number; productName: string; quantity: number; allConfirmed: boolean }>()
       let addedValue = 0
       let workshopCount = 0
 
@@ -3486,7 +3486,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             variantId: null,
             inventorySource: null,
             stockKey: null,
-            observedPhysicalQuantity: null,
+            physicalIssueConfirmed: false,
           })
           continue
         }
@@ -3495,11 +3495,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
         const inventorySource: SourceType = effectiveItem.sourceType === 'boutique' ? 'boutique' : 'warehouse'
-        const observedRaw = (requested as any).observedPhysicalQuantity
-        const observed = observedRaw === null || observedRaw === undefined || observedRaw === '' ? null : Number(observedRaw)
-        if (observed !== null && (!Number.isInteger(observed) || observed < 0)) {
-          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: фактический остаток должен быть целым числом от 0.`)
+        if ((requested as any).observedPhysicalQuantity != null) {
+          throw new CriticalOperationConflictError('Обмен больше не принимает полный остаток. Обновите форму и подтвердите конкретную выдачу.')
         }
+        const physicalIssueConfirmed = (requested as any).issuePossessionConfirmed === true
         let stockKey: string | null = null
         if (variantId) {
           stockKey = `${inventorySource}:${variantId}`
@@ -3508,18 +3507,13 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             variantId,
             productName: cleanText(effectiveItem.productName),
             quantity: 0,
-            observed: null,
+            allConfirmed: true,
           }
           group.quantity += Math.max(1, toInt(effectiveItem.quantity, 1))
-          if (observed !== null) {
-            if (group.observed !== null && group.observed !== observed) {
-              throw new CriticalOperationConflictError(`Для «${group.productName}» указаны разные фактические остатки.`)
-            }
-            group.observed = observed
-          }
+          group.allConfirmed = group.allConfirmed && physicalIssueConfirmed
           stockGroups.set(stockKey, group)
         }
-        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, observedPhysicalQuantity: observed })
+        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed })
       }
 
       for (const group of stockGroups.values()) {
@@ -3527,11 +3521,8 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           `SELECT quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
         ).bind(group.source, group.variantId).first<{ quantity: number }>()
         const physical = Math.max(0, toInt(stock?.quantity, 0))
-        const effectivePhysical = group.observed === null ? physical : group.observed
-        if (effectivePhysical < group.quantity) {
-          throw new CriticalOperationConflictError(group.observed === null
-            ? `Для «${group.productName}» нужно ${group.quantity} шт., а по учёту физически есть ${physical}. Подтвердите фактическое количество, если товар перед вами.`
-            : `Для «${group.productName}» нужно ${group.quantity} шт., подтверждено только ${group.observed}.`)
+        if (physical < group.quantity && !group.allConfirmed) {
+          throw new CriticalOperationConflictError(`Для «${group.productName}» нужно ${group.quantity} шт., по учёту на месте ${physical}. Подтвердите наличие выдаваемых вещей; общий остаток не пересчитывается.`)
         }
       }
 
@@ -3824,6 +3815,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             resolved.variantId,
             timestamp,
             `Физическое списание новой позиции обмена #${exchangeId}`,
+            { outboundPossessionConfirmed: plan.physicalIssueConfirmed },
           )
         } else {
           pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(inserted.product_name_snapshot), source: plan.inventorySource })
