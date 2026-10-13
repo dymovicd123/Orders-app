@@ -28,8 +28,8 @@ for (const [label, code] of [['classic', classic], ['smart', smart]]) {
   assert.ok(code.includes('Подтверждаю, что для этого обмена'), label + ' exchange is missing an explicit possession assertion')
   assert.ok(!code.includes('Посчитать сейчас'), label + ' exchange still asks for stocktake')
 }
-assert.match(classic, /type="checkbox" style=\{\{[^\n]*\}\} checked=\{exchangeIssueConfirmed\}/)
-assert.match(smart, /type="checkbox" style=\{\{[^\n]*\}\} checked=\{groupConfirmed\}/)
+assert.match(classic, /type="checkbox" checked=\{exchangeIssueConfirmed\} style=\{\{[^\n]*\}\}/)
+assert.match(smart, /type="checkbox" checked=\{groupConfirmed\} style=\{\{[^\n]*\}\}/)
 assert.match(orders, /observedPhysicalQuantity: null, shortageAcknowledged: true/)
 assert.match(reservations, /const observedPhysical: null = null;/)
 assert.match(lifecycle, /outboundPossessionConfirmed !== true/)
