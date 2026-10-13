@@ -110,3 +110,49 @@ jobs:
               jq -c '.[0].results'
           done
           echo 'READ-ONLY KEBEK INVENTORY DIAGNOSIS COMPLETED — no data modification'
+      - name: Run only immutable inventory SELECTs (never modify D1)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/bayan-catalog.sql <<'SQL'
+          SELECT v.id AS variant_id,v.product_id,p.name AS product,v.is_active AS active,v.category,v.gender,v.color,v.size_label,v.material,v.length,v.stock_position_id,s.id AS stock_id,s.inventory_source AS source,s.quantity AS physical,s.reserved_quantity AS reserved,s.last_action,s.last_source_ref,s.updated_at FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id LEFT JOIN inventory_stock s ON s.variant_id=v.id WHERE (p.name LIKE '%БАЯН%' OR p.name LIKE '%Баян%') ORDER BY v.id,s.inventory_source LIMIT 220;
+          SQL
+          cat > /tmp/bayan-orphan.sql <<'SQL'
+          SELECT s.id AS stock_id,s.variant_id,s.inventory_source,s.product_name_snapshot,s.color_snapshot,s.size_snapshot,s.material_snapshot,s.length_snapshot,s.gender_snapshot,s.quantity,s.reserved_quantity,s.last_action,s.last_source_ref,s.updated_at,v.id AS linked_variant,v.is_active AS variant_active FROM inventory_stock s LEFT JOIN catalog_variants v ON v.id=s.variant_id WHERE s.product_name_snapshot LIKE '%БАЯН%' OR s.product_name_snapshot LIKE '%Баян%' ORDER BY s.id LIMIT 220;
+          SQL
+          cat > /tmp/bayan-movements.sql <<'SQL'
+          SELECT m.id,m.created_at,m.inventory_source,m.movement_type,m.variant_id,m.quantity_delta,m.quantity_after,m.reference_type,m.reference_id,m.color_snapshot,m.size_snapshot,m.material_snapshot,m.length_snapshot,m.gender_snapshot,m.comment,r.reversed_at FROM inventory_movements m LEFT JOIN inventory_movement_reversals r ON r.original_movement_id=m.id WHERE (m.product_name_snapshot LIKE '%БАЯН%' OR m.product_name_snapshot LIKE '%Баян%') AND m.created_at >= '2026-10-13' ORDER BY m.id DESC LIMIT 250;
+          SQL
+          cat > /tmp/bayan-target-history.sql <<'SQL'
+          SELECT m.id,m.created_at,m.inventory_source,m.movement_type,m.variant_id,m.quantity_delta,m.quantity_after,m.reference_type,m.reference_id,m.color_snapshot,m.size_snapshot,m.material_snapshot,m.length_snapshot,m.comment FROM inventory_movements m WHERE (m.product_name_snapshot LIKE '%БАЯН%' OR m.product_name_snapshot LIKE '%Баян%') AND ((m.color_snapshot LIKE '%БЕЖ%' AND m.size_snapshot='48') OR (m.color_snapshot LIKE '%ОРАНЖ%' AND m.size_snapshot='56')) ORDER BY m.id DESC LIMIT 150;
+          SQL
+          cat > /tmp/bayan-checks.sql <<'SQL'
+          SELECT c.id,c.checked_at,c.inventory_source,c.variant_id,c.expected_quantity,c.counted_quantity,c.difference_quantity,c.reserved_quantity,c.check_type,c.reference_type,c.reference_id FROM inventory_stock_checks c WHERE c.checked_at >= '2026-10-13' AND c.variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.name LIKE '%БАЯН%' OR p.name LIKE '%Баян%') ORDER BY c.id DESC LIMIT 180;
+          SQL
+          cat > /tmp/bayan-reservations.sql <<'SQL'
+          SELECT r.inventory_source,r.variant_id,r.status,COUNT(*) AS reservations,SUM(r.quantity) AS total_quantity,MIN(r.created_at) AS first_created,MAX(r.created_at) AS last_created FROM inventory_reservations r WHERE r.variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.name LIKE '%БАЯН%' OR p.name LIKE '%Баян%') GROUP BY r.inventory_source,r.variant_id,r.status ORDER BY r.variant_id,r.inventory_source,r.status LIMIT 220;
+          SQL
+          cat > /tmp/bayan-order.sql <<'SQL'
+          SELECT o.external_id,o.order_date,o.created_at,o.shipping_status,o.order_status,oi.id AS item_id,oi.variant_id,oi.quantity,oi.product_name_snapshot,oi.color_snapshot,oi.material_snapshot,oi.size_snapshot,oi.stock_writeoff_status,r.status AS reservation_status,r.quantity AS reservation_quantity,r.inventory_source AS reservation_source FROM orders o JOIN order_items oi ON oi.order_id=o.id LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id WHERE o.external_id='ORD-20261013131915-4181A125' LIMIT 30;
+          SQL
+          for f in /tmp/bayan-*.sql; do
+            grep -Eq '^SELECT ' "$f"
+            if grep -Eiq '\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|PRAGMA|VACUUM)\b' "$f"; then
+              echo "Unsafe SQL diagnostic rejected" >&2; exit 47
+            fi
+          done
+          echo '======== CATALOG (catalog: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-catalog.sql)" --json | jq -c '.[0].results'
+          echo '======== ORPHAN (orphan: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-orphan.sql)" --json | jq -c '.[0].results'
+          echo '======== MOVEMENTS (movements: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-movements.sql)" --json | jq -c '.[0].results'
+          echo '======== TARGET-HISTORY (target-history: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-target-history.sql)" --json | jq -c '.[0].results'
+          echo '======== CHECKS (checks: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-checks.sql)" --json | jq -c '.[0].results'
+          echo '======== RESERVATIONS (reservations: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-reservations.sql)" --json | jq -c '.[0].results'
+          echo '======== ORDER (order: production READ ONLY) ========'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.diagnostic-prod.jsonc --command "$(cat /tmp/bayan-order.sql)" --json | jq -c '.[0].results'
+          echo 'READ-ONLY BAYAN MAIN INVENTORY DIAGNOSTICS COMPLETE — no D1 writes'
