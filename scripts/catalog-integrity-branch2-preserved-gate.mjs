@@ -61,6 +61,46 @@ for(const screen of stockVisibilityScreens){
   check(gitBlob(fs.readFileSync(screen.fixture,'utf8'))===screen.before,'Frozen main warehouse baseline unexpected change: '+screen.fixture)
 }
 
+// The exchange lifecycle now uses bounded per-operation possession evidence,
+// not an absolute count. Preserve *old* exchange modules for historical baseline
+// checks without disabling or editing their invariants. Current code is tested first.
+const priorExchangeModules=[
+  {
+    "file": "src/features/sections/OrderExchangeSmartSection.tsx",
+    "before": "efafcca08869eeacff17e38eb693035a870dacd9",
+    "after": "32eec1cabf6f51644ce6c999f19898596bf371e2",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSmartSection.tsx"
+  },
+  {
+    "file": "src/features/sections/OrderExchangeSection.tsx",
+    "before": "b854378c08389a29293a1a1e3e5e603d1e62d721",
+    "after": "91885b5690d5c37719888e83ef9b3b1ebbc7eaa9",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSection.tsx"
+  },
+  {
+    "file": "worker/domains/exchange-batch.ts",
+    "before": "725515005ad9e64d30e6eb2605f974c7947358e3",
+    "after": "0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/exchange-batch.ts"
+  },
+  {
+    "file": "worker/domains/returns-exchanges.ts",
+    "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
+    "after": "14327c966fceb9f42f49c1fc39148e8081c4a19f",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
+  },
+  {
+    "file": "worker/domains/lifecycle.ts",
+    "before": "25f08471020220883107de8ee02b26bc774eb29a",
+    "after": "039b84adc58aadefc6ded14b6dd9fa73a6aeb847",
+    "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/lifecycle.ts"
+  }
+];
+for(const file of priorExchangeModules){
+  check(gitBlob(fs.readFileSync(file.file,'utf8'))===file.after,'Current Exchange module changed unexpectedly: '+file.file)
+  check(gitBlob(fs.readFileSync(file.fixture,'utf8'))===file.before,'Historical Exchange fixture drifted: '+file.fixture)
+}
+
 // A normal order is not a stocktake. Historical tests must still see the exact
 // approved pre-fix reservation module; the new module is checked independently.
 const orderReservationTruthFix={
@@ -181,6 +221,12 @@ try{
     const full=path.resolve(screen.file)
     saved.set(full,fs.readFileSync(full,'utf8'))
     fs.writeFileSync(full,fs.readFileSync(screen.fixture,'utf8'))
+  }
+  for(const entry of priorExchangeModules){
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,'Cannot stage historical Exchange source: '+entry.file)
   }
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
