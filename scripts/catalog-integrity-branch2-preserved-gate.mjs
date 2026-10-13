@@ -61,6 +61,18 @@ for(const screen of stockVisibilityScreens){
   check(gitBlob(fs.readFileSync(screen.fixture,'utf8'))===screen.before,'Frozen main warehouse baseline unexpected change: '+screen.fixture)
 }
 
+// A normal order is not a stocktake. Historical tests must still see the exact
+// approved pre-fix reservation module; the new module is checked independently.
+const orderReservationTruthFix={
+  file:'worker/domains/order-reservations.ts',
+  before:'b27726ebea9546120d1b75a6862bd77b9154714e',
+  after:'bb71d744865c45f8d1cb09be4d792bc9a082d898',
+  historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
+  currentLines:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
+}
+check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
+  'Order reservation stock-truth fix unexpected drift')
+
 const run=(command,args,context,extraEnv={})=>{
   const x=spawnSync(command,args,{cwd:process.cwd(),stdio:'inherit',shell:false,
     windowsHide:true,env:{...process.env, CATALOG_INTEGRITY_PORT_CHECK:'1',...extraEnv}})
@@ -81,6 +93,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-inventory-stock-visible-reservations.mjs',false],
   ['scripts/test-branch2-environment.mjs',false],
   ['scripts/test-stage04a-workshop-settlements.mjs',false],
@@ -165,6 +178,17 @@ try{
     saved.set(full,fs.readFileSync(full,'utf8'))
     fs.writeFileSync(full,fs.readFileSync(screen.fixture,'utf8'))
   }
+  const orderReservationPath=path.resolve(orderReservationTruthFix.file)
+  const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
+  saved.set(orderReservationPath,orderReservationCurrent)
+  check(orderReservationCurrent.includes(orderReservationTruthFix.currentLines),
+    'Current order reservation no longer contains reviewed stock-truth guard')
+  const orderReservationHistorical=orderReservationCurrent.replace(
+    orderReservationTruthFix.currentLines,orderReservationTruthFix.historicalLine)
+  check(gitBlob(orderReservationHistorical)===orderReservationTruthFix.before,
+    'Order reservation historical baseline does not match accepted Branch2')
+  fs.writeFileSync(orderReservationPath,orderReservationHistorical)
+
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
   run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',
@@ -181,6 +205,8 @@ try{
 for(const [relative,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
 }
+check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
+  'Failed to restore corrected order reservation code after historical tests')
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')
 for(const screen of stockVisibilityScreens){
   check(gitBlob(fs.readFileSync(screen.file,'utf8'))===screen.after,'Failed to restore current warehouse inventory UI: '+screen.file)

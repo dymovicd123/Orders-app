@@ -1034,7 +1034,8 @@ export default {
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
-        const routineExistingStockOperation = movementType === 'manual_set' || movementType === 'writeoff';
+        // Absolute stock corrections are privileged; ordinary users only record real movements.
+        const routineExistingStockOperation = movementType === 'writeoff';
         if (!routineExistingStockOperation) {
           const denied = requireAdminAccess(request);
           if (denied) return denied;
