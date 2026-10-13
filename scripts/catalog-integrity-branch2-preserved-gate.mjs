@@ -40,6 +40,27 @@ const stage04DWorkshopScreen={
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Stage04-D Workshop UI drift')
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))===stage04DWorkshopScreen.before,'Stage04-D baseline fixture drift')
 
+// Warehouse visibility fix only: current UI is reviewed independently while the
+// historical main-parity regression sees its exact immutable main screen fixtures.
+const stockVisibilityScreens=[
+  {
+    file:'src/features/sections/InventorySection.tsx',
+    fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
+    before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
+    after:'7b9a66b14d6087468916be2944fb417008b9d3e2',
+  },
+  {
+    file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
+    fixture:'scripts/fixtures/stock-visibility-20261013/renderInventoryOverviewPanel.tsx',
+    before:'9b7738d3589f0091e120dec7f1f3a056abc4cc0d',
+    after:'0e624c9109157fe9bbd9512d57ce062cfc0a5b2f',
+  },
+]
+for(const screen of stockVisibilityScreens){
+  check(gitBlob(fs.readFileSync(screen.file,'utf8'))===screen.after,'Warehouse stock UI unexpected change: '+screen.file)
+  check(gitBlob(fs.readFileSync(screen.fixture,'utf8'))===screen.before,'Frozen main warehouse baseline unexpected change: '+screen.fixture)
+}
+
 const run=(command,args,context,extraEnv={})=>{
   const x=spawnSync(command,args,{cwd:process.cwd(),stdio:'inherit',shell:false,
     windowsHide:true,env:{...process.env, CATALOG_INTEGRITY_PORT_CHECK:'1',...extraEnv}})
@@ -60,6 +81,7 @@ for(const [file,delta] of Object.entries(manifest.files)){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-inventory-stock-visible-reservations.mjs',false],
   ['scripts/test-branch2-environment.mjs',false],
   ['scripts/test-stage04a-workshop-settlements.mjs',false],
   ['scripts/test-stage04b-workshop-status-capture.mjs',false],
@@ -138,6 +160,11 @@ try{
   const originalWorkshop=path.resolve(stage04DWorkshopScreen.file)
   saved.set(originalWorkshop,fs.readFileSync(originalWorkshop,'utf8'))
   fs.writeFileSync(originalWorkshop,fs.readFileSync(stage04DWorkshopScreen.fixture,'utf8'))
+  for(const screen of stockVisibilityScreens){
+    const full=path.resolve(screen.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(screen.fixture,'utf8'))
+  }
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
   run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',
@@ -155,6 +182,9 @@ for(const [relative,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
 }
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')
+for(const screen of stockVisibilityScreens){
+  check(gitBlob(fs.readFileSync(screen.file,'utf8'))===screen.after,'Failed to restore current warehouse inventory UI: '+screen.file)
+}
 // The frozen historical suite builds the *old* frontend while baseline files
 // are temporarily staged. Cloudflare Workers Builds uses release:check as its
 // build command and deploys dist/ immediately afterwards. Without a fresh build
@@ -171,6 +201,12 @@ check(referencesChunks.length===1,'Current Branch2 build has missing or multiple
 const chunk=fs.readFileSync(path.join(assetsDir,referencesChunks[0]),'utf8')
 for(const marker of ['Все рабочие справочники','Проверка дублей','Объединить значения','Разобрать прежнее объединение товаров']){
   check(chunk.includes(marker),'Refusing historical frontend deployment: missing '+marker)
+}
+const inventoryChunks=fs.readdirSync(assetsDir).filter(name=>/^InventorySection-[A-Za-z0-9_-]+\.js$/.test(name))
+check(inventoryChunks.length===1,'Current Branch2 build is missing InventorySection chunk')
+const inventoryChunk=fs.readFileSync(path.join(assetsDir,inventoryChunks[0]),'utf8')
+for(const marker of ['Фильтр выбирает товары, но внутри каждого товара видны все размеры','Резерв под заказы превышает физический остаток']){
+  check(inventoryChunk.includes(marker),'Refusing historical inventory frontend deploy: missing '+marker)
 }
 const workshopChunks=fs.readdirSync(assetsDir).filter(name=>/^WorkshopSection-[A-Za-z0-9_-]+\.js$/.test(name))
 check(workshopChunks.length===1,'Current Branch2 build is missing WorkshopSection chunk')
