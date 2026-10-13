@@ -37,7 +37,7 @@ assert.ok(!app.includes('Склад → Внимание'), 'Save feedback still
 // Pure deterministic bounded-stock and cancellation invariants:
 function issue(tracked, qty, confirmed) {
   if (tracked < qty && !confirmed) return {blocked:true}
-  const posted = -Math.min(tracked,qty)
+  const posted = tracked === 0 ? 0 : -Math.min(tracked,qty)
   return {before:tracked,after:tracked+posted,posted,unrecorded:qty+posted,reversal:-posted}
 }
 for(const [tracked,qty,confirmed,expected] of [
