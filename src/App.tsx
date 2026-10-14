@@ -5429,13 +5429,22 @@ function App() {
         // The mutation is already committed once the POST returned 2xx. Follow-up reads are
         // best-effort so a refresh failure cannot invite the employee to submit the operation again.
         const refreshResults = await Promise.allSettled(refreshes)
-        const refreshedStock = refreshResults[0]?.status === 'fulfilled' && Boolean(refreshResults[0].value)
+        const refreshedInventory = refreshResults[0]?.status === 'fulfilled'
+          ? refreshResults[0].value as InventoryResponse | null
+          : null
+        const refreshedStock = Boolean(refreshedInventory?.ok)
         const arrivalReceipt = result.arrivalReceipt
+        const verifiedInStockList = Boolean(arrivalReceipt?.verified && refreshedStock
+          && arrivalReceipt.items.every((receiptItem) =>
+            (refreshedInventory?.items || []).some((stockRow) =>
+              Number(stockRow.variantId) === receiptItem.variantId
+              && stockRow.inventorySource === arrivalReceipt.source
+            )))
         const arrivalLabel = arrivalReceipt?.items?.length
           ? [...new Set(arrivalReceipt.items.map((item) => item.productName).filter(Boolean))].join(', ')
           : ''
         const arrivalVerificationWarning = inventoryDraft.movementType === 'arrival'
-          && (!refreshedStock || !arrivalReceipt?.verified)
+          && !verifiedInStockList
           ? ' Внимание: операция записана, но отображение актуального остатка не подтверждено. Не оформляйте приход повторно — проверьте историю операции и нажмите «Обновить».'
           : ''
         const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
