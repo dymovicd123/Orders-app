@@ -47,7 +47,7 @@ const stockVisibilityScreens=[
     file:'src/features/sections/InventorySection.tsx',
     fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
     before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
-    after:'4f5a41900e56fc7f5e76032428596d21413e25d8',
+    after:'41108dc1c0245b340416ca3e2c1373faef83e227',
   },
   {
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
@@ -118,7 +118,7 @@ check(gitBlob(fs.readFileSync(orderStockHintUi.fixture,'utf8'))===orderStockHint
 const orderReservationTruthFix={
   file:'worker/domains/order-reservations.ts',
   before:'b27726ebea9546120d1b75a6862bd77b9154714e',
-  after:'dd85dcf15df53705d1ad3c61f918fae92c2316ff',
+  after:'10c00c135801bcbadbb7f23a93481c9e94e978ce',
   historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
   currentLines:"  // No reservation, including an exchange, may ever act as a physical stocktake.\n  // Outbound possession is confirmed against the *operation*, not a whole-SKU count.\n  const observedPhysical: null = null;",
   approvedIntermediate:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
@@ -148,6 +148,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
+  ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
@@ -251,7 +252,14 @@ try{
   saved.set(orderReservationPath,orderReservationCurrent)
   check(orderReservationCurrent.includes(orderReservationTruthFix.currentLines),
     'Current order reservation no longer contains reviewed stock-truth guard')
-  const orderReservationHistorical=orderReservationCurrent.replace(
+  const handoverGuardBegin=orderReservationCurrent.indexOf("  if (stockConfirmationOperation === 'handover') {",orderReservationCurrent.indexOf("  const statements: D1PreparedStatement[] = [];",orderReservationCurrent.indexOf('export async function fulfillOrderReservationsV2(')))
+  const handoverGuardEnd=orderReservationCurrent.indexOf("  for (const payloadChunk of chunksOf(stockPayloads, 70)) {",handoverGuardBegin)
+  check(handoverGuardBegin>0 && handoverGuardEnd>handoverGuardBegin,
+    'Current early-handover atomic reservation guard is missing')
+  const previouslyApprovedReservation=orderReservationCurrent.slice(0,handoverGuardBegin)+orderReservationCurrent.slice(handoverGuardEnd)
+  check(gitBlob(previouslyApprovedReservation)==='dd85dcf15df53705d1ad3c61f918fae92c2316ff',
+    'New reservation safety change alters unrelated historical behavior')
+  const orderReservationHistorical=previouslyApprovedReservation.replace(
     orderReservationTruthFix.currentLines,orderReservationTruthFix.approvedIntermediate).replace(
     orderReservationTruthFix.approvedIntermediate,orderReservationTruthFix.historicalLine)
   check(gitBlob(orderReservationHistorical)===orderReservationTruthFix.before,
