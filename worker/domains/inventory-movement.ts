@@ -247,14 +247,21 @@ export async function resolveInventoryCreatableItemsBulk(
   let lookup = buildProductLookup(products);
   const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
     const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-    if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
     if (!identityKey) return null;
+    // The form can retain a once-valid active productId while Catalog aliases
+    // are changed (e.g. ОРДА -> ОРДА ШАПАН). Never let that stale ID override
+    // the product identity actually named in this Arrival.
     const alias = lookup.byAlias.get(identityKey);
-    if (alias && toInt(alias.is_active, 0) === 1) return alias;
+    if (alias && toInt(alias.is_active, 0) === 1 && (!explicit || toInt(alias.id, 0) !== toInt(explicit.id, 0))) return alias;
     const exact = lookup.byExact.get(upperText(item.productName));
+    if (exact && (!explicit || toInt(exact.id, 0) !== toInt(explicit.id, 0))) return exact;
+    const matchedIdentity = lookup.byIdentity.get(identityKey) || null;
+    if (matchedIdentity && (!explicit || toInt(matchedIdentity.id, 0) !== toInt(explicit.id, 0))) return matchedIdentity;
+    if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
+    if (alias && toInt(alias.is_active, 0) === 1) return alias;
     if (exact) return exact;
-    return lookup.byIdentity.get(identityKey) || null;
+    return matchedIdentity;
   };
 
   const resolveGenderForProduct = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
@@ -789,6 +796,9 @@ export async function applyInventoryMovement(
       const canonical = canonicalById.get(raw.variantId);
       if (canonical) {
         const item: InventoryResolvedItem = { ...canonical, quantity: raw.quantity, expectedQuantity: raw.expectedQuantity };
+        if (movementType === 'arrival' && raw.productId > 0 && raw.productId !== toInt(item.productId, 0)) {
+          throw new Error(`Приход «${raw.productName}»: выбранный размер относится к другому товару. Обновите форму и повторите. Склад не изменён.`);
+        }
         if (strictOperationName) {
           const mismatch = (
             (raw.productId > 0 && raw.productId !== item.productId)
