@@ -87,7 +87,7 @@ const stockVisibilityScreens=[
     before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
     // Reviewed follow-up: source switching now fetches selected point before showing totals.
     // Previous accepted Branch2 stock screen blob: b1a6ea3f32a478cc333b3f3774fb69206b746143
-    after:'b43256b627cfac225d7aa9bdac31f031f3124575',
+    after:'7416f48f0ad2bb3fd0468a128084f4c449b0c94f',
   },
   {
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
