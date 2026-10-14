@@ -12,10 +12,12 @@ const between = (start, end) => {
   return section.slice(a, b)
 }
 
-const switchBody = between("function setSimpleStockSource(source: 'warehouse' | 'boutique')", '  const [catalogAdminMode')
+const switchBody = between("function setSimpleStockSource(sourceOrUpdater: any)", '  const [catalogAdminMode')
 const loadBody = between("async function waitForSimpleStockSnapshot(source:", "  function setSimpleStockSource(")
 const readiness = between('  const simpleStockSnapshotReady =', '  return (\n    <section className="card wide sector-inventory')
 
+assert.match(switchBody, /candidate !== 'warehouse' && candidate !== 'boutique'/,
+  'Source setter must ignore malformed updater values')
 assert.match(switchBody, /setSimpleStockSourceState\(source\)/, 'Selected location must change in UI')
 assert.match(switchBody, /loadInventoryData\(source, true, '', false\)/,
   'Switch must fetch selected source from server with force=true')
