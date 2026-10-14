@@ -166,12 +166,41 @@ for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.fixture,'utf8'))===entry.before,'Historical warehouse fixture drift: '+entry.fixture)
 }
 
+// New operational safety corrections are validated on the current code first.
+// Replay approved immutable pre-change bytes only for old hash-locked tests.
+const safeRetirementFixtures=[
+  {
+    "file": "worker/domains/catalog-retirement.ts",
+    "fixture": "scripts/fixtures/warehouse-safe-retirement-20261014/worker/domains/catalog-retirement.ts",
+    "before": "0a12b6a8f0437085b708417911954ac26b50f993",
+    "after": "de3975b33c7255762942a9779b1ec0858a69d184"
+  },
+  {
+    "file": "src/features/inventory/views/CatalogRetirementAction.tsx",
+    "fixture": "scripts/fixtures/warehouse-safe-retirement-20261014/src/features/inventory/views/CatalogRetirementAction.tsx",
+    "before": "5f62b20b5fb2a176bfbe1d3371cbdb0a86818fe2",
+    "after": "1a6cbcd39e7f4fe39f695e5846ac6f041c8ebcdd"
+  },
+  {
+    "file": "src/features/inventory/routineCycleCount.ts",
+    "fixture": "scripts/fixtures/warehouse-safe-retirement-20261014/src/features/inventory/routineCycleCount.ts",
+    "before": "da54c159e49d4006763c2931ad30ac5434a76637",
+    "after": "b06f6bcd4b341ac9a9532c7698966c552ad7b88a"
+  }
+]
+for(const entry of safeRetirementFixtures){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
+    'Current safe-retirement candidate drifted: '+entry.file)
+  check(gitBlob(fs.readFileSync(entry.fixture,'utf8'))===entry.before,
+    'Historical safe-retirement fixture drifted: '+entry.fixture)
+}
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
   ['scripts/test-inventory-snapshot-freshness-20261014.mjs',false],
+  ['scripts/test-warehouse-safe-retirement-and-count-20261014.mjs',false],
   ['scripts/test-stocktake-functional-acceptance.mjs',true],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
@@ -271,6 +300,13 @@ try{
     fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,'Cannot stage historical Exchange source: '+entry.file)
   }
+  for(const entry of safeRetirementFixtures){
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
+      'Could not stage historical safe-retirement source: '+entry.file)
+  }
   for(const entry of inventorySafetyFixtures){
     const full=path.resolve(entry.file)
     saved.set(full,fs.readFileSync(full,'utf8'))
@@ -320,6 +356,10 @@ check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderRese
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
     'Failed to restore current warehouse safety code after historical tests: '+entry.file)
+}
+for(const entry of safeRetirementFixtures){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
+    'Failed to restore reviewed safe-retirement source: '+entry.file)
 }
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')
 for(const screen of stockVisibilityScreens){
