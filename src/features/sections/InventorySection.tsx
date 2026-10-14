@@ -166,6 +166,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     inventoryQuickFilters,
     inventorySortMode,
     inventorySourceRows,
+    inventorySnapshotLoadErrors,
     inventoryStats,
     inventoryStocktakeAllGroups,
     inventoryStocktakeGroups,
@@ -2365,6 +2366,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
           <div className="mini-panel" role="status">
             <h3>Остатки пока не загружены</h3>
             <p>Нет подтверждённых данных для точки «{sourceLabel(simpleStockSource)}». Отсутствие ответа сервера не означает, что на складе ноль вещей.</p>
+            {inventorySnapshotLoadErrors?.[simpleStockSource] ? (
+              <p role="alert"><strong>Не удалось подтвердить актуальные остатки:</strong> {inventorySnapshotLoadErrors[simpleStockSource]}</p>
+            ) : null}
             <div className="inventory-calm-source" aria-label="Точка остатков">
               <button type="button" className={simpleStockSource === 'warehouse' ? 'is-active' : ''} onClick={() => setSimpleStockSource('warehouse')}>Склад</button>
               <button type="button" className={simpleStockSource === 'boutique' ? 'is-active' : ''} onClick={() => setSimpleStockSource('boutique')}>Бутик</button>
