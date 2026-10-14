@@ -36,8 +36,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'setSimpleStockDetail'
   | 'setSimpleStockOpenProductKey'
   | 'setSimpleStockSource'
-  | 'simpleStockCatalogLoading'
-  | 'simpleStockCatalogError'
   | 'simpleStockAvailabilityFilter'
   | 'simpleStockCategory'
   | 'simpleStockDetail'
@@ -52,7 +50,10 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'simpleStockStats'
   | 'sourceLabel'
   | 'submitRoutineCycleCount'
->
+> & {
+  simpleStockCatalogLoading?: boolean
+  simpleStockCatalogError?: string
+}
 
 const w8Text = (value: unknown) => String(value || '').trim()
 const w8Key = (value: unknown) => w8Text(value).toLocaleUpperCase('ru-RU') || 'СТАНДАРТ'
