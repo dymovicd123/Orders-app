@@ -320,23 +320,33 @@ export async function saveInventoryStocktakeCount(
     };
   }
 
-  if (currentQuantity !== previousBaseline) {
+  // A conflicting physical movement must never erase the employee's earlier
+  // saved count or its timestamp. Keep both until a human explicitly records a
+  // fresh count. A recount is accepted only against the exact quantity shown
+  // in the previous conflict; another intervening movement reopens the conflict.
+  const previouslyFlagged = persistedStatus === 'recount_required';
+  const conflictMovedAgain = previouslyFlagged && (
+    item.conflict_quantity === null || item.conflict_quantity === undefined
+    || currentQuantity !== toInt(item.conflict_quantity, 0)
+  );
+  if ((currentQuantity !== previousBaseline && !previouslyFlagged) || conflictMovedAgain) {
     await db.batch([
       db.prepare(
         `UPDATE inventory_stocktake_items
-         SET stock_id = COALESCE(stock_id, ?), baseline_quantity = ?, counted_quantity = NULL, counted_at = NULL,
+         SET stock_id = COALESCE(stock_id, ?),
              status = 'recount_required', conflict_quantity = ?, updated_at = ?
          WHERE id = ? AND session_id = ?`
-      ).bind(toInt(stock?.id, 0) || null, currentQuantity, currentQuantity, now, itemId, sessionId),
+      ).bind(toInt(stock?.id, 0) || null, currentQuantity, now, itemId, sessionId),
       db.prepare(`UPDATE inventory_stocktake_sessions SET updated_at = ? WHERE id = ?`).bind(now, sessionId),
     ]);
     return {
       ok: false,
       code: 'recount_required',
-      message: 'Эта позиция изменилась во время ревизии. Система обновила контрольную точку — пересчитайте её ещё раз.',
+      message: 'По учёту количество изменилось. Ваш предыдущий подсчёт сохранён с датой; для применения нужен новый подсчёт этой позиции.',
       item: {
         id: itemId, stockId: toInt(stock?.id, 0) || toInt(item.stock_id, 0) || null,
-        baselineQuantity: currentQuantity, countedQuantity: null, countedAt: null, status: 'recount_required',
+        baselineQuantity: previousBaseline, countedQuantity: persistedCount,
+        countedAt: cleanText(item.counted_at) || null, status: 'recount_required',
         conflictQuantity: currentQuantity, currentQuantity,
       },
     };
@@ -1180,19 +1190,7 @@ export async function markInventoryStocktakeConflicts(db: D1Database, sessionId:
     db.prepare(
       `UPDATE inventory_stocktake_items
        SET status = 'recount_required',
-           counted_quantity = NULL,
-           counted_at = NULL,
            conflict_quantity = COALESCE((
-             SELECT s.quantity
-             FROM inventory_stock s
-             WHERE s.inventory_source = inventory_stocktake_items.inventory_source
-               AND (
-                 (inventory_stocktake_items.stock_id IS NOT NULL AND s.id = inventory_stocktake_items.stock_id)
-                 OR (inventory_stocktake_items.stock_id IS NULL AND inventory_stocktake_items.variant_id IS NOT NULL AND s.variant_id = inventory_stocktake_items.variant_id)
-               )
-             LIMIT 1
-           ), 0),
-           baseline_quantity = COALESCE((
              SELECT s.quantity
              FROM inventory_stock s
              WHERE s.inventory_source = inventory_stocktake_items.inventory_source
