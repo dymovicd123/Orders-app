@@ -789,6 +789,7 @@ export async function applyInventoryMovement(
   // An existing variant ID from an older browser tab can be mismatched with
   // the visible product name. Legitimate aliases are verified, not guessed.
   const validArrivalAliasPairs = new Set<string>();
+  const canonicalArrivalAliasTarget = new Map<string, number>();
   if (movementType === 'arrival' && canonicalById.size) {
     const arrivalAliases = Array.from(new Set(items
       .map(row => normalizeCatalogProductIdentityKey(row.productName))
@@ -799,7 +800,10 @@ export async function applyInventoryMovement(
          WHERE alias_key IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
       ).bind(JSON.stringify(arrivalAliases)).all<{alias_key:string;product_id:number}>().catch(() => ({ results: [] }));
       for (const row of matchingAliases.results || []) {
-        validArrivalAliasPairs.add(`${cleanText(row.alias_key)}:${toInt(row.product_id, 0)}`);
+        const aliasKey = cleanText(row.alias_key);
+        const targetId = toInt(row.product_id, 0);
+        validArrivalAliasPairs.add(`${aliasKey}:${targetId}`);
+        if (aliasKey && targetId) canonicalArrivalAliasTarget.set(aliasKey, targetId);
       }
     }
   }
@@ -816,6 +820,10 @@ export async function applyInventoryMovement(
           }
           const enteredProductKey = normalizeCatalogProductIdentityKey(raw.productName);
           const canonicalProductKey = normalizeCatalogProductIdentityKey(item.productName);
+          const aliasTargetId = canonicalArrivalAliasTarget.get(enteredProductKey) || 0;
+          if (aliasTargetId && aliasTargetId !== toInt(item.productId, 0)) {
+            throw new Error(`Приход «${raw.productName}»: выбран старый вариант из другой карточки. Канонический товар #${aliasTargetId}; выберите его вариант заново. Склад не изменён.`);
+          }
           if (enteredProductKey && enteredProductKey !== canonicalProductKey
               && !validArrivalAliasPairs.has(`${enteredProductKey}:${toInt(item.productId, 0)}`)) {
             throw new Error(`Приход «${raw.productName}»: выбранный размер относится к «${item.productName}». Выберите правильный вариант заново. Склад не изменён.`);
