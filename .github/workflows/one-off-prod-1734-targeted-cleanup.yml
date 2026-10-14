@@ -1,0 +1,103 @@
+name: One-off exact production duplicate 1734 cleanup
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/one-off-prod-1734-targeted-cleanup.yml'
+      - 'scripts/ops/one-off-duplicate-1734-20261015.sql'
+      - 'scripts/ops/test-one-off-duplicate-1734-20261015.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-off-prod-1734-targeted-cleanup.yml'
+permissions:
+  contents: read
+concurrency:
+  group: oneoff-production-order-1734-cleanup
+  cancel-in-progress: false
+jobs:
+  local-proof:
+    name: Test one-off SQL on in-memory SQLite, NO production access
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify immutable reviewed SQL and dry-run test
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git hash-object scripts/ops/one-off-duplicate-1734-20261015.sql)" == "3c757d379a1150b6c9c9ec143eb6362518108fc7" ]]
+          [[ "$(git hash-object scripts/ops/test-one-off-duplicate-1734-20261015.mjs)" == "19dc66a9f906c91438399e34053d568674bed2f9" ]]
+          node scripts/ops/test-one-off-duplicate-1734-20261015.mjs
+
+  production-once:
+    name: Apply to exact Production D1 only if immutable preflight is true
+    needs: local-proof
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hard-stop on environment and required authorizations
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          [[ "$(git hash-object scripts/ops/one-off-duplicate-1734-20261015.sql)" == "3c757d379a1150b6c9c9ec143eb6362518108fc7" ]]
+          [[ "$(git hash-object scripts/ops/test-one-off-duplicate-1734-20261015.mjs)" == "19dc66a9f906c91438399e34053d568674bed2f9" ]]
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Repeat live production preflight before attempting ANY write
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="$(awk '/^SELECT CASE WHEN/{copying=1} copying{print} /END AS preflight_ok;/{exit}' scripts/ops/one-off-duplicate-1734-20261015.sql)"
+          [[ -n "$SQL" && "$SQL" == *"AS preflight_ok;"* ]]
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json)"
+          jq -e '.[0].results[0].preflight_ok == 1' <<<"$result" >/dev/null
+          echo "LIVE PREFLIGHT PASSED: exact 1734/1974 orders, payments, financial history, active reservations, 13 Oct stocktake protection."
+      - name: One bounded guarded SQL batch ONLY (no general delete, no stock physical adjustment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="$(cat scripts/ops/one-off-duplicate-1734-20261015.sql)"
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json)"
+          jq -e '[.[].results[]? | select(.postcondition_ok == 1)] | length == 1' <<<"$result" >/dev/null
+          echo "ONE-OFF 1734 ACTION APPLIED: postcondition succeeded, 1974 preserved."
+      - name: Verify independently from production D1 after write
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+          SELECT
+            (SELECT COUNT(*) FROM orders WHERE id=1734 AND order_status='deleted') AS dup_deleted,
+            (SELECT COUNT(*) FROM orders WHERE id=1974 AND order_status='active' AND total_amount=65000 AND received_amount=65000) AS good_untouched,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE order_id=1734 AND status='active') AS duplicate_active,
+            (SELECT COUNT(*) FROM inventory_reservations WHERE order_id=1974 AND status='active') AS good_active,
+            (SELECT SUM(reserved_quantity) FROM inventory_stock WHERE id IN(1106,1285)) AS duplicate_reserved,
+            (SELECT SUM(quantity) FROM inventory_stock WHERE id IN(1106,1285,1377,1822,168,275)) AS physical_unchanged,
+            (SELECT COALESCE(SUM(amount_delta),0) FROM financial_events WHERE order_id=1734) AS duplicate_money_net,
+            (SELECT COALESCE(SUM(amount_delta),0) FROM financial_events WHERE order_id=1974) AS good_money_net,
+            (SELECT COUNT(*) FROM financial_events WHERE event_key='ops:20261015:duplicate-order:1734:payment:1989:reversal') AS duplicate_payment_reversal,
+            (SELECT COUNT(*) FROM inventory_movements WHERE id=4873 AND variant_id=231 AND quantity_delta=-1) AS physical_exchange_evidence;
+          " --json)"
+          echo "$result" | jq -ce '.[0].results[0]'
+          jq -e '.[0].results[0] |
+            .dup_deleted==1 and .good_untouched==1 and .duplicate_active==0 and .good_active==2 and
+            .duplicate_reserved==0 and .physical_unchanged==3 and
+            .duplicate_money_net==0 and .good_money_net==65000 and
+            .duplicate_payment_reversal==1 and .physical_exchange_evidence==1' <<<"$result" >/dev/null
+          echo "VERIFIED: only duplicate order #1734 excluded, correct order #1974 and 65,000 kept, physical stock unchanged."
