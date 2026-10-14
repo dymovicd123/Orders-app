@@ -11,6 +11,7 @@ try {
   const worker = read('worker/index.ts')
   const deletion = read('worker/domains/order-delete.ts')
   const ordersWrite = read('worker/domains/orders-write.ts')
+  const critical = read('worker/domains/critical.ts')
 
   check(!app.includes("setError('Удаление заказа доступно только администратору.')"), 'frontend still blocks manager deletion')
   check(app.includes("apiFetch(`/api/orders/${order.id}/delete`"), 'frontend does not use scoped delete endpoint')
@@ -53,7 +54,26 @@ try {
   check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')
   check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')
 
-  console.log('ORDER DELETE MOBILITY PASSED — ordinary staff get one safe delete action, deterministic return/exchange blockers auto-cancel, recorded handover asks one physical fact, false shipment reverses only when no newer physical truth supersedes it, retries are idempotent')
+  // Regression: a "not sent" order may still have recorded per-item fulfilments.
+  // Operators must see real product/source/quantity evidence, not a false "sent" claim.
+  check(deletion.includes('oi.product_name_snapshot, oi.color_snapshot, oi.material_snapshot, oi.size_snapshot'), 'delete blocker lacks exact issued SKU description')
+  check(deletion.includes('confirmationRequired.details = {'), 'delete blocker lacks structured evidence')
+  check(deletion.includes('issuedItemsTotal: fulfilledReservations.length'), 'delete blocker lacks total issued positions')
+  check(deletion.includes('activeExchangeCount:'), 'delete blocker omits exchange cancellation impact')
+  check(deletion.includes('activeReturnCount:'), 'delete blocker omits return cancellation impact')
+  check(deletion.indexOf('confirmationRequired.details = {') < deletion.indexOf('const activeExchangeRows ='), 'confirmation must occur before downstream mutations')
+  check(critical.includes("error.code === 'order_delete_physical_confirmation_required' ? error.details"), 'delete conflict evidence is not transmitted')
+  const confirmationStart = app.indexOf("if (!attempt.response.ok && attempt.result.code === 'order_delete_physical_confirmation_required')")
+  const confirmationEnd = app.indexOf("attempt = await sendDelete('not_issued')", confirmationStart)
+  check(confirmationStart >= 0 && confirmationEnd > confirmationStart, 'human physical confirmation block missing')
+  const confirmation = app.slice(confirmationStart, confirmationEnd)
+  check(confirmation.includes("details?.shippingStatus === 'not_sent'"), 'not-sent-with-issued-items nuance missing')
+  check(confirmation.includes('item.productName') && confirmation.includes('item.quantity') && confirmation.includes('item.source'), 'issued SKU/source/quantity not shown')
+  check(confirmation.includes('Проведённых обменов:') && confirmation.includes('Проведённых возвратов:'), 'downstream operation impact not shown')
+  check(confirmation.includes('if (!notIssued) {') && confirmation.includes('setMessage(') && confirmation.includes('return'), 'user cancellation must be normal, non-error exit')
+  check(!confirmation.includes("throw new Error('Удаление остановлено"), 'cancelled confirmation still treated as a red failure')
+
+  console.log('ORDER DELETE MOBILITY PASSED — includes exact issued-item guidance, cancellation details and non-error decline')
 } catch (error) {
   console.error(`ORDER DELETE MOBILITY FAILED: ${error?.message || error}`)
   process.exit(1)
