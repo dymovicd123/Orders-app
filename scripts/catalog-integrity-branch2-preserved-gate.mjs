@@ -47,7 +47,7 @@ const stockVisibilityScreens=[
     file:'src/features/sections/InventorySection.tsx',
     fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
     before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
-    after:'4f5a41900e56fc7f5e76032428596d21413e25d8',
+    after:'41108dc1c0245b340416ca3e2c1373faef83e227',
   },
   {
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
@@ -118,7 +118,7 @@ check(gitBlob(fs.readFileSync(orderStockHintUi.fixture,'utf8'))===orderStockHint
 const orderReservationTruthFix={
   file:'worker/domains/order-reservations.ts',
   before:'b27726ebea9546120d1b75a6862bd77b9154714e',
-  after:'dd85dcf15df53705d1ad3c61f918fae92c2316ff',
+  after:'10c00c135801bcbadbb7f23a93481c9e94e978ce',
   historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
   currentLines:"  // No reservation, including an exchange, may ever act as a physical stocktake.\n  // Outbound possession is confirmed against the *operation*, not a whole-SKU count.\n  const observedPhysical: null = null;",
   approvedIntermediate:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
@@ -144,10 +144,34 @@ for(const [file,delta] of Object.entries(manifest.files)){
     'Unreviewed legacy Branch2 fixture drift: '+file)
 }
 
+// Preserve the accepted old SQL lifecycle and its old assertions ONLY for
+// byte-for-byte historical manifests; current runtime is tested before and
+// after this temporary baseline staging.
+const inventorySafetyFixtures=[
+  {
+    "file": "worker/domains/inventory-stocktake.ts",
+    "before": "c40f2c4bbd5075aab4412a08e77df8ad76dae0e9",
+    "after": "7df026a8e0de46062e73b1248a7ada063a45710b",
+    "fixture": "scripts/fixtures/inventory-safety-20261014/worker/domains/inventory-stocktake.ts"
+  },
+  {
+    "file": "scripts/test-stocktake-functional-acceptance.mjs",
+    "before": "3ca20472b6a89f81d188c59f23a483d1df93aadb",
+    "after": "23d73702c78798a08c9a370ea23aa0eebad2bcb8",
+    "fixture": "scripts/fixtures/inventory-safety-20261014/scripts/test-stocktake-functional-acceptance.mjs"
+  }
+]
+for(const entry of inventorySafetyFixtures){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current warehouse safety file drift: '+entry.file)
+  check(gitBlob(fs.readFileSync(entry.fixture,'utf8'))===entry.before,'Historical warehouse fixture drift: '+entry.fixture)
+}
+
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
+  ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
+  ['scripts/test-stocktake-functional-acceptance.mjs',true],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
@@ -246,12 +270,26 @@ try{
     fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,'Cannot stage historical Exchange source: '+entry.file)
   }
+  for(const entry of inventorySafetyFixtures){
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
+      'Cannot stage accepted old warehouse safety file: '+entry.file)
+  }
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
   saved.set(orderReservationPath,orderReservationCurrent)
   check(orderReservationCurrent.includes(orderReservationTruthFix.currentLines),
     'Current order reservation no longer contains reviewed stock-truth guard')
-  const orderReservationHistorical=orderReservationCurrent.replace(
+  const handoverGuardBegin=orderReservationCurrent.indexOf("  if (stockConfirmationOperation === 'handover') {",orderReservationCurrent.indexOf("  const statements: D1PreparedStatement[] = [];",orderReservationCurrent.indexOf('export async function fulfillOrderReservationsV2(')))
+  const handoverGuardEnd=orderReservationCurrent.indexOf("  for (const payloadChunk of chunksOf(stockPayloads, 70)) {",handoverGuardBegin)
+  check(handoverGuardBegin>0 && handoverGuardEnd>handoverGuardBegin,
+    'Current early-handover atomic reservation guard is missing')
+  const previouslyApprovedReservation=orderReservationCurrent.slice(0,handoverGuardBegin)+orderReservationCurrent.slice(handoverGuardEnd)
+  check(gitBlob(previouslyApprovedReservation)==='dd85dcf15df53705d1ad3c61f918fae92c2316ff',
+    'New reservation safety change alters unrelated historical behavior')
+  const orderReservationHistorical=previouslyApprovedReservation.replace(
     orderReservationTruthFix.currentLines,orderReservationTruthFix.approvedIntermediate).replace(
     orderReservationTruthFix.approvedIntermediate,orderReservationTruthFix.historicalLine)
   check(gitBlob(orderReservationHistorical)===orderReservationTruthFix.before,
@@ -278,6 +316,10 @@ check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.
   'Failed to restore current order shortage UI after historical tests')
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
+for(const entry of inventorySafetyFixtures){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
+    'Failed to restore current warehouse safety code after historical tests: '+entry.file)
+}
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')
 for(const screen of stockVisibilityScreens){
   check(gitBlob(fs.readFileSync(screen.file,'utf8'))===screen.after,'Failed to restore current warehouse inventory UI: '+screen.file)
