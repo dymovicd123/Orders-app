@@ -2316,6 +2316,24 @@ export async function fulfillOrderReservationsV2(
   // serialization means only the transaction that still sees the order as unsent may change stock.
   const orderStillUnsentSql = "EXISTS (SELECT 1 FROM orders shipping_order WHERE shipping_order.id = ? AND COALESCE(shipping_order.shipping_status, 'not_sent') <> 'sent')";
   const statements: D1PreparedStatement[] = [];
+  if (stockConfirmationOperation === 'handover') {
+    // An item may be handed over while the order stays "not_sent". The full-order
+    // shipping status guard cannot protect this path against overlapping requests.
+    // Validate the exact reservation status *inside* the physical-write D1 batch:
+    // a second request that read "active" before the first committed must roll
+    // back before writing another movement or decrementing reservations.
+    const expectedReservationIds = reservations.map((row) => toInt(row.id, 0));
+    statements.push(db.prepare(
+      `INSERT INTO inventory_model_meta (key, value, updated_at)
+       SELECT 'human_inventory_v2', '__handover_reservation_conflict__', ?
+       WHERE (
+         SELECT COUNT(*)
+         FROM inventory_reservations r
+         WHERE r.order_id = ? AND r.order_item_id = ? AND r.status = 'active'
+           AND r.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+       ) <> ?`
+    ).bind(timestamp, orderId, handoverOrderItemId, JSON.stringify(expectedReservationIds), expectedReservationIds.length));
+  }
   for (const payloadChunk of chunksOf(stockPayloads, 70)) {
     const valuesSql = payloadChunk.map(() => '(?)').join(', ');
     const cte = `input(payload) AS (VALUES ${valuesSql}),
