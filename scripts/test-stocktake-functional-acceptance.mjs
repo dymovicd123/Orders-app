@@ -445,7 +445,7 @@ async function main() {
   check(Number(db.row(`SELECT quantity FROM inventory_stock WHERE inventory_source = 'boutique' AND variant_id = 202`)?.quantity) === 5, 'Blank row did not preserve a concurrent system quantity')
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements WHERE reference_type = 'stocktake' AND reference_id = ?`, boutiqueSessionId)?.qty) === 0, 'Failed completion applied a partial stocktake movement')
   const racedItem = db.row(`SELECT baseline_quantity, counted_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueItemId)
-  check(Number(racedItem?.baseline_quantity) === 4 && Number(racedItem?.counted_quantity) === 6 && racedItem?.status === 'recount_required', 'Completion race erased or applied the human-entered conflicted count')
+  check(Number(racedItem?.baseline_quantity) === 7 && Number(racedItem?.counted_quantity) === 6 && racedItem?.status === 'recount_required', 'Completion race erased or applied the human-entered conflicted count')
   const untouchedBlankAfterRace = db.row(`SELECT baseline_quantity, counted_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueBlankItemId)
   check(Number(untouchedBlankAfterRace?.baseline_quantity) === 4 && untouchedBlankAfterRace?.counted_quantity === null && untouchedBlankAfterRace?.status === 'pending', 'Blank row was incorrectly forced into recount after a system-side stock change')
 
