@@ -543,7 +543,11 @@ const summary = useMemo(() => {
 
     const appendOrphanStockRow = (row: InventoryStockRecord, source: InventorySourceKey) => {
       const variantId = Number(row.variantId || 0)
-      if (variantId > 0 && rows.has(`variant:${variantId}`)) return
+      // A confirmed inventory API row is the source of truth for stock counts.
+      // Even when the catalogue already created the same variant key, overlay
+      // its physical and reserved quantities from the actual source snapshot.
+      // Skipping matching variant IDs here allowed catalogue-derived zeroes to
+      // survive if the intermediate lookup ever missed the incoming row.
       const key = variantId > 0
         ? `variant:${variantId}`
         : `snapshot:${normalizeSuggestion(row.productName)}:${normalizeSuggestion(row.gender)}:${normalizeSuggestion(row.color)}:${normalizeSuggestion(row.material)}:${normalizeSuggestion(row.length)}:${normalizeSuggestion(row.size)}`
