@@ -789,6 +789,23 @@ export async function applyInventoryMovement(
 
   try {
     const strictOperationName = movementType === 'manual_set' ? 'Корректировка' : (movementType === 'writeoff' || movementType === 'delete') ? 'Списание' : '';
+  // An existing variant ID from an older browser tab can be mismatched with
+  // the visible product name. Legitimate aliases are verified, not guessed.
+  const validArrivalAliasPairs = new Set<string>();
+  if (movementType === 'arrival' && canonicalById.size) {
+    const arrivalAliases = Array.from(new Set(items
+      .map(row => normalizeCatalogProductIdentityKey(row.productName))
+      .filter(Boolean)));
+    if (arrivalAliases.length) {
+      const matchingAliases = await db.prepare(
+        `SELECT alias_key, product_id FROM catalog_product_aliases
+         WHERE alias_key IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
+      ).bind(JSON.stringify(arrivalAliases)).all<{alias_key:string;product_id:number}>().catch(() => ({ results: [] }));
+      for (const row of matchingAliases.results || []) {
+        validArrivalAliasPairs.add(`${cleanText(row.alias_key)}:${toInt(row.product_id, 0)}`);
+      }
+    }
+  }
   const creatableIndexes: number[] = [];
   const legacyManualIndexes: number[] = [];
   items.forEach((raw, index) => {
@@ -796,8 +813,16 @@ export async function applyInventoryMovement(
       const canonical = canonicalById.get(raw.variantId);
       if (canonical) {
         const item: InventoryResolvedItem = { ...canonical, quantity: raw.quantity, expectedQuantity: raw.expectedQuantity };
-        if (movementType === 'arrival' && raw.productId > 0 && raw.productId !== toInt(item.productId, 0)) {
-          throw new Error(`Приход «${raw.productName}»: выбранный размер относится к другому товару. Обновите форму и повторите. Склад не изменён.`);
+        if (movementType === 'arrival') {
+          if (raw.productId > 0 && raw.productId !== toInt(item.productId, 0)) {
+            throw new Error(`Приход «${raw.productName}»: выбранный размер относится к другому товару. Обновите форму и повторите. Склад не изменён.`);
+          }
+          const enteredProductKey = normalizeCatalogProductIdentityKey(raw.productName);
+          const canonicalProductKey = normalizeCatalogProductIdentityKey(item.productName);
+          if (enteredProductKey && enteredProductKey !== canonicalProductKey
+              && !validArrivalAliasPairs.has(`${enteredProductKey}:${toInt(item.productId, 0)}`)) {
+            throw new Error(`Приход «${raw.productName}»: выбранный размер относится к «${item.productName}». Выберите правильный вариант заново. Склад не изменён.`);
+          }
         }
         if (strictOperationName) {
           const mismatch = (
