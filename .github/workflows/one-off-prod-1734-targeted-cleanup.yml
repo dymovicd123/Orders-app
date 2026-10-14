@@ -73,8 +73,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SQL="$(cat scripts/ops/one-off-duplicate-1734-20261015.sql)"
-          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json)"
+          # Wrangler CLI must not see a leading SQL '--' comment as a flag.
+          # Drop comment-only lines; reviewed SQL's executable statements are identical.
+          SQL="$(sed '/^[[:space:]]*--/d' scripts/ops/one-off-duplicate-1734-20261015.sql)"
+          [[ "$SQL" == SELECT* ]]
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command="$SQL" --json)"
           jq -e '[.[].results[]? | select(.postcondition_ok == 1)] | length == 1' <<<"$result" >/dev/null
           echo "ONE-OFF 1734 ACTION APPLIED: postcondition succeeded, 1974 preserved."
       - name: Verify independently from production D1 after write
