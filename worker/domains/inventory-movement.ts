@@ -1356,7 +1356,56 @@ export async function applyInventoryMovement(
     throw new Error('Остатки изменились во время сохранения операции. Ничего не применено. Обновите данные и повторите.');
   }
 
-    const response = { ok: true, duplicate: false, source: inventorySource, applied: prepared.length, operationId: requestId };
+    // Post-commit receipt: prove which canonical SKUs and which location
+    // received this Arrival. This is READ ONLY: failure to read must never
+    // misreport a committed stock movement as failed or invite a duplicate.
+    let arrivalReceipt: {
+      verified: boolean;
+      source: SourceType;
+      items: Array<{ variantId: number; productName: string; color: string | null; size: string | null; received: number; currentQuantity: number | null }>;
+    } | null = null;
+    if (movementType === 'arrival') {
+      const receivedVariantIds = [...new Set(prepared.map(row => toInt(row.item.variantId, 0)).filter(Boolean))];
+      const receiptItems = prepared.map(row => ({
+        variantId: toInt(row.item.variantId, 0),
+        productName: row.item.productName,
+        color: row.item.color,
+        size: row.item.size,
+        received: Math.max(0, toInt(row.item.quantity, 0)),
+        currentQuantity: null as number | null,
+      }));
+      try {
+        const latest = receivedVariantIds.length
+          ? await db.prepare(
+              `SELECT s.variant_id, s.quantity, p.name AS product_name, v.is_active AS variant_active, p.is_active AS product_active
+               FROM inventory_stock s
+               JOIN catalog_variants v ON v.id = s.variant_id
+               JOIN catalog_products p ON p.id = v.product_id
+               WHERE s.inventory_source = ? AND s.variant_id IN
+                 (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+            ).bind(inventorySource, JSON.stringify(receivedVariantIds)).all<Record<string, unknown>>()
+          : { results: [] as Record<string, unknown>[] };
+        const mapped = new Map((latest.results || []).map(row => [toInt(row.variant_id, 0), row]));
+        arrivalReceipt = {
+          verified: receiptItems.length > 0 && receiptItems.every(row => {
+            const live = mapped.get(row.variantId);
+            return row.variantId > 0 && live
+              && toInt(live.variant_active, 0) === 1 && toInt(live.product_active, 0) === 1;
+          }),
+          source: inventorySource,
+          items: receiptItems.map(row => ({
+            ...row,
+            productName: cleanText(mapped.get(row.variantId)?.product_name) || row.productName,
+            currentQuantity: mapped.has(row.variantId) ? toInt(mapped.get(row.variantId)?.quantity, 0) : null,
+          })),
+        };
+      } catch (receiptError) {
+        console.error(JSON.stringify({ event: 'arrival_receipt_read_failed', operationId: requestId,
+          source: inventorySource, message: cleanText(receiptError instanceof Error ? receiptError.message : receiptError).slice(0, 300) }));
+        arrivalReceipt = { verified: false, source: inventorySource, items: receiptItems };
+      }
+    }
+    const response = { ok: true, duplicate: false, source: inventorySource, applied: prepared.length, operationId: requestId, ...(arrivalReceipt ? { arrivalReceipt } : {}) };
     if (!returnInventory) return response;
     return { ...response, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
   } catch (error) {
