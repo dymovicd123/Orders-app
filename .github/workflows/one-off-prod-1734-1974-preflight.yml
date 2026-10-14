@@ -63,3 +63,33 @@ jobs:
           # original two payment references and original fulfillment evidence.
           jq -e '.orders|length==2' /tmp/targeted-production-audit.json >/dev/null
           echo "DONE: production duplicate preflight (SELECT only). NO DATA MODIFIED."
+
+      - name: Confirm live reservation totals and post-handover physical checks (SELECT only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="$(cat <<'SQL_END'
+          SELECT
+            (SELECT json_group_array(json_object(
+              'id',s.id,'source',s.inventory_source,'variant',s.variant_id,
+              'physical',s.quantity,'reserved',s.reserved_quantity,
+              'active_reservation_total',(SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+                WHERE r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id AND r.status='active'),
+              'duplicate_active',(SELECT COALESCE(SUM(r.quantity),0) FROM inventory_reservations r
+                WHERE r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id AND r.order_id=1734 AND r.status='active'),
+              'updated',s.updated_at))
+              FROM inventory_stock s
+              WHERE (s.inventory_source='boutique' AND s.variant_id IN (1293,1345,1660,1466))
+                 OR (s.inventory_source='warehouse' AND s.variant_id IN (231,305))) AS stock,
+            (SELECT json_group_array(json_object('source',inventory_source,'variant',variant_id,'counted_at',checked_at))
+               FROM inventory_stock_checks WHERE checked_at >= '2026-10-13' AND variant_id IN (1293,1345,1660,1466,231,305)) AS recent_checks,
+            (SELECT json_group_array(json_object('event',event_type,'status',status,'operation',operation_id,'variant',variant_id))
+               FROM inventory_lifecycle_events WHERE operation_type='exchange' AND operation_id IN (78,80)) AS lifecycle,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'status',status,'source',inventory_source,'variant',variant_id,'qty',quantity))
+               FROM inventory_reservations WHERE order_id IN (1734,1974) AND status='active') AS live_reservations
+          ;
+          SQL_END
+          )"
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json)"
+          jq -ce '.[0].results[0] | with_entries(.value |= fromjson)' <<<"$result"
+          echo 'DONE: stock/reservation preflight was SELECT-only.'
