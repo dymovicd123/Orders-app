@@ -246,12 +246,16 @@ export async function resolveInventoryCreatableItemsBulk(
 
   let lookup = buildProductLookup(products);
   const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
-    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
-    if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
     if (!identityKey) return null;
+    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+    // Named identity and canonical aliases, not a stale picker ID, decide
+    // where physical Arrival units are registered. ORDA may alias ORDA SHAPAN.
     const alias = lookup.byAlias.get(identityKey);
     if (alias && toInt(alias.is_active, 0) === 1) return alias;
+    if (explicit && normalizeCatalogProductIdentityKey(explicit.name) === identityKey) {
+      if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
+    }
     const exact = lookup.byExact.get(upperText(item.productName));
     if (exact) return exact;
     return lookup.byIdentity.get(identityKey) || null;
@@ -782,6 +786,23 @@ export async function applyInventoryMovement(
 
   try {
     const strictOperationName = movementType === 'manual_set' ? 'Корректировка' : (movementType === 'writeoff' || movementType === 'delete') ? 'Списание' : '';
+  // An existing variant ID from an older browser tab can be mismatched with
+  // the visible product name. Legitimate aliases are verified, not guessed.
+  const validArrivalAliasPairs = new Set<string>();
+  if (movementType === 'arrival' && canonicalById.size) {
+    const arrivalAliases = Array.from(new Set(items
+      .map(row => normalizeCatalogProductIdentityKey(row.productName))
+      .filter(Boolean)));
+    if (arrivalAliases.length) {
+      const matchingAliases = await db.prepare(
+        `SELECT alias_key, product_id FROM catalog_product_aliases
+         WHERE alias_key IN (SELECT CAST(value AS TEXT) FROM json_each(?))`
+      ).bind(JSON.stringify(arrivalAliases)).all<{alias_key:string;product_id:number}>().catch(() => ({ results: [] }));
+      for (const row of matchingAliases.results || []) {
+        validArrivalAliasPairs.add(`${cleanText(row.alias_key)}:${toInt(row.product_id, 0)}`);
+      }
+    }
+  }
   const creatableIndexes: number[] = [];
   const legacyManualIndexes: number[] = [];
   items.forEach((raw, index) => {
@@ -789,6 +810,17 @@ export async function applyInventoryMovement(
       const canonical = canonicalById.get(raw.variantId);
       if (canonical) {
         const item: InventoryResolvedItem = { ...canonical, quantity: raw.quantity, expectedQuantity: raw.expectedQuantity };
+        if (movementType === 'arrival') {
+          if (raw.productId > 0 && raw.productId !== toInt(item.productId, 0)) {
+            throw new Error(`Приход «${raw.productName}»: выбранный размер относится к другому товару. Обновите форму и повторите. Склад не изменён.`);
+          }
+          const enteredProductKey = normalizeCatalogProductIdentityKey(raw.productName);
+          const canonicalProductKey = normalizeCatalogProductIdentityKey(item.productName);
+          if (enteredProductKey && enteredProductKey !== canonicalProductKey
+              && !validArrivalAliasPairs.has(`${enteredProductKey}:${toInt(item.productId, 0)}`)) {
+            throw new Error(`Приход «${raw.productName}»: выбранный размер относится к «${item.productName}». Выберите правильный вариант заново. Склад не изменён.`);
+          }
+        }
         if (strictOperationName) {
           const mismatch = (
             (raw.productId > 0 && raw.productId !== item.productId)
@@ -1321,7 +1353,56 @@ export async function applyInventoryMovement(
     throw new Error('Остатки изменились во время сохранения операции. Ничего не применено. Обновите данные и повторите.');
   }
 
-    const response = { ok: true, duplicate: false, source: inventorySource, applied: prepared.length, operationId: requestId };
+    // Post-commit receipt: prove which canonical SKUs and which location
+    // received this Arrival. This is READ ONLY: failure to read must never
+    // misreport a committed stock movement as failed or invite a duplicate.
+    let arrivalReceipt: {
+      verified: boolean;
+      source: SourceType;
+      items: Array<{ variantId: number; productName: string; color: string | null; size: string | null; received: number; currentQuantity: number | null }>;
+    } | null = null;
+    if (movementType === 'arrival') {
+      const receivedVariantIds = [...new Set(prepared.map(row => toInt(row.item.variantId, 0)).filter(Boolean))];
+      const receiptItems = prepared.map(row => ({
+        variantId: toInt(row.item.variantId, 0),
+        productName: row.item.productName,
+        color: row.item.color,
+        size: row.item.size,
+        received: Math.max(0, toInt(row.item.quantity, 0)),
+        currentQuantity: null as number | null,
+      }));
+      try {
+        const latest = receivedVariantIds.length
+          ? await db.prepare(
+              `SELECT s.variant_id, s.quantity, p.name AS product_name, v.is_active AS variant_active, p.is_active AS product_active
+               FROM inventory_stock s
+               JOIN catalog_variants v ON v.id = s.variant_id
+               JOIN catalog_products p ON p.id = v.product_id
+               WHERE s.inventory_source = ? AND s.variant_id IN
+                 (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+            ).bind(inventorySource, JSON.stringify(receivedVariantIds)).all<Record<string, unknown>>()
+          : { results: [] as Record<string, unknown>[] };
+        const mapped = new Map((latest.results || []).map(row => [toInt(row.variant_id, 0), row]));
+        arrivalReceipt = {
+          verified: receiptItems.length > 0 && receiptItems.every(row => {
+            const live = mapped.get(row.variantId);
+            return row.variantId > 0 && live
+              && toInt(live.variant_active, 0) === 1 && toInt(live.product_active, 0) === 1;
+          }),
+          source: inventorySource,
+          items: receiptItems.map(row => ({
+            ...row,
+            productName: cleanText(mapped.get(row.variantId)?.product_name) || row.productName,
+            currentQuantity: mapped.has(row.variantId) ? toInt(mapped.get(row.variantId)?.quantity, 0) : null,
+          })),
+        };
+      } catch (receiptError) {
+        console.error(JSON.stringify({ event: 'arrival_receipt_read_failed', operationId: requestId,
+          source: inventorySource, message: cleanText(receiptError instanceof Error ? receiptError.message : receiptError).slice(0, 300) }));
+        arrivalReceipt = { verified: false, source: inventorySource, items: receiptItems };
+      }
+    }
+    const response = { ok: true, duplicate: false, source: inventorySource, applied: prepared.length, operationId: requestId, ...(arrivalReceipt ? { arrivalReceipt } : {}) };
     if (!returnInventory) return response;
     return { ...response, inventory: await listInventory(db, new URL(`https://dummy.local/api/inventory?source=${inventorySource}`)) };
   } catch (error) {
