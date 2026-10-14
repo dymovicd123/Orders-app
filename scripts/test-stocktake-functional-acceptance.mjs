@@ -372,7 +372,7 @@ async function main() {
   const staleSave = await saveInventoryStocktakeCount(db, warehouseSessionId, warehouseItemId, { countedQuantity: 4 })
   check(staleSave.ok === false && staleSave.code === 'recount_required', 'Stock change after a saved fact did not force a recount')
   const staleItem = db.row(`SELECT baseline_quantity, counted_quantity, counted_at, status FROM inventory_stocktake_items WHERE id = ?`, warehouseItemId)
-  check(Number(staleItem?.baseline_quantity) === 6 && staleItem?.counted_quantity === null && staleItem?.counted_at === null && staleItem?.status === 'recount_required', 'Recount reset did not preserve the new physical baseline cleanly')
+  check(Number(staleItem?.baseline_quantity) === 5 && Number(staleItem?.counted_quantity) === 4 && staleItem?.counted_at === evidenceTime && staleItem?.status === 'recount_required', 'A concurrent stock movement erased the employee\'s original counted fact or timestamp')
 
   const recounted = await saveInventoryStocktakeCount(db, warehouseSessionId, warehouseItemId, { countedQuantity: 3 })
   check(recounted.ok && recounted.item?.baselineQuantity === 6 && recounted.item?.countedQuantity === 3, 'Recount after a conflict was not accepted against the new baseline')
@@ -445,7 +445,7 @@ async function main() {
   check(Number(db.row(`SELECT quantity FROM inventory_stock WHERE inventory_source = 'boutique' AND variant_id = 202`)?.quantity) === 5, 'Blank row did not preserve a concurrent system quantity')
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements WHERE reference_type = 'stocktake' AND reference_id = ?`, boutiqueSessionId)?.qty) === 0, 'Failed completion applied a partial stocktake movement')
   const racedItem = db.row(`SELECT baseline_quantity, counted_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueItemId)
-  check(Number(racedItem?.baseline_quantity) === 8 && racedItem?.counted_quantity === null && racedItem?.status === 'recount_required', 'Completion race did not move the human-entered conflicted row to a fresh recount baseline')
+  check(Number(racedItem?.baseline_quantity) === 7 && Number(racedItem?.counted_quantity) === 6 && racedItem?.status === 'recount_required', 'Completion race erased or applied the human-entered conflicted count')
   const untouchedBlankAfterRace = db.row(`SELECT baseline_quantity, counted_quantity, status FROM inventory_stocktake_items WHERE id = ?`, boutiqueBlankItemId)
   check(Number(untouchedBlankAfterRace?.baseline_quantity) === 4 && untouchedBlankAfterRace?.counted_quantity === null && untouchedBlankAfterRace?.status === 'pending', 'Blank row was incorrectly forced into recount after a system-side stock change')
 
