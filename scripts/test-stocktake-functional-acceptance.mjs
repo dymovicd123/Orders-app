@@ -372,7 +372,7 @@ async function main() {
   const staleSave = await saveInventoryStocktakeCount(db, warehouseSessionId, warehouseItemId, { countedQuantity: 4 })
   check(staleSave.ok === false && staleSave.code === 'recount_required', 'Stock change after a saved fact did not force a recount')
   const staleItem = db.row(`SELECT baseline_quantity, counted_quantity, counted_at, status FROM inventory_stocktake_items WHERE id = ?`, warehouseItemId)
-  check(Number(staleItem?.baseline_quantity) === 6 && staleItem?.counted_quantity === null && staleItem?.counted_at === null && staleItem?.status === 'recount_required', 'Recount reset did not preserve the new physical baseline cleanly')
+  check(Number(staleItem?.baseline_quantity) === 5 && Number(staleItem?.counted_quantity) === 4 && staleItem?.counted_at === evidenceTime && staleItem?.status === 'recount_required', 'A concurrent stock movement erased the employee\'s original counted fact or timestamp')
 
   const recounted = await saveInventoryStocktakeCount(db, warehouseSessionId, warehouseItemId, { countedQuantity: 3 })
   check(recounted.ok && recounted.item?.baselineQuantity === 6 && recounted.item?.countedQuantity === 3, 'Recount after a conflict was not accepted against the new baseline')
