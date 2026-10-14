@@ -97,8 +97,6 @@ export interface InventoryRenderContext {
   setSimpleStockDetail: LooseSetter
   setSimpleStockOpenProductKey: LooseSetter
   setSimpleStockSource: LooseSetter
-  simpleStockCatalogLoading?: boolean
-  simpleStockCatalogError?: string
   setInventoryCategoryFilter: LooseSetter
   setInventoryQuickFilters: LooseSetter
   setInventorySortMode: LooseSetter
