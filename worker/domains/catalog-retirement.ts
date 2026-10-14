@@ -762,6 +762,14 @@ export async function retireCatalogEntity(
   if (preview.pendingLifecycle) {
     throw new Error('По этой позиции есть незавершённая приёмка/возврат. Сначала завершите её и повторите удаление.');
   }
+  // Retiring a catalog identity is not a stock adjustment. Staff must resolve
+  // real items and outstanding commitments in their proper operational flows.
+  if (preview.physicalQuantity !== 0 || preview.stockReservedQuantity !== 0 || preview.activeReservationQuantity !== 0) {
+    throw new Error('Нельзя удалить товар с остатком или резервом. Проверьте обе точки в «Склад → Остатки», завершите реальные операции и повторите удаление. Склад автоматически не обнуляется.');
+  }
+  if (preview.openOrderItemCount > 0) {
+    throw new Error('Нельзя удалить товар, пока он присутствует в активных неотправленных заказах. Завершите или исправьте связанные заказы.');
+  }
 
   const now = new Date().toISOString();
   const reason = cleanText(input.reason) || 'Удалено администратором из рабочего каталога';
@@ -787,6 +795,34 @@ export async function retireCatalogEntity(
            SELECT 1 FROM catalog_stock_positions repair_sp
            WHERE repair_sp.product_id = p.id AND repair_sp.is_active = 1
          )
+       )`;
+
+  // Do not trust the earlier preview on a busy shop floor. These predicates
+  // run inside the same atomic D1 batch as retirement and reject concurrent
+  // stock/reservation/order changes before any retirement operation is staged.
+  const workingVariantCondition = entityType === 'execution'
+    ? 'live_v.stock_position_id = sp.id'
+    : 'live_v.product_id = p.id';
+  const zeroWorkingStateGuard = `
+       AND NOT EXISTS (
+         SELECT 1 FROM catalog_variants live_v
+         JOIN inventory_stock current_stock ON current_stock.variant_id = live_v.id
+         WHERE ${workingVariantCondition} AND live_v.is_active = 1
+           AND (COALESCE(current_stock.quantity,0) <> 0 OR COALESCE(current_stock.reserved_quantity,0) <> 0)
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM catalog_variants live_v
+         JOIN inventory_reservations live_res ON live_res.variant_id = live_v.id
+         WHERE ${workingVariantCondition} AND live_v.is_active = 1 AND live_res.status = 'active'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM catalog_variants live_v
+         JOIN order_items live_item ON live_item.variant_id = live_v.id
+         JOIN orders live_order ON live_order.id = live_item.order_id
+         WHERE ${workingVariantCondition} AND live_v.is_active = 1
+           AND COALESCE(live_order.order_status,'active') = 'active'
+           AND COALESCE(live_order.shipping_status,'not_sent') <> 'sent'
+           AND COALESCE(live_item.quantity,0) > 0
        )`;
 
   const insertOperation = entityType === 'execution'
@@ -830,7 +866,8 @@ export async function retireCatalogEntity(
                )
              )
          )
-         AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)`
+         AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)
+         ${zeroWorkingStateGuard}`
     ).bind(requestId, reason, actor, now, entityId, requestId)
     : db.prepare(
       `INSERT INTO catalog_retirement_operations (
@@ -871,7 +908,8 @@ export async function retireCatalogEntity(
                )
              )
          )
-         AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)`
+         AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)
+         ${zeroWorkingStateGuard}`
     ).bind(requestId, reason, actor, now, entityId, requestId);
 
   const statements: D1PreparedStatement[] = [insertOperation];
