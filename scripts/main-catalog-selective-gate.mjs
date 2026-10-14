@@ -17,16 +17,18 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   const {createHash} = await import('node:crypto')
   const baseline='0b9989dac80a213f88417843a6becac3f7bbb1f6'
   const warehouseBaseline='3813d5346aed821f42fbbc24f12e65430acba689'
+  const arrivalBaseline='cdbe0fd2e13217325f319f2975a96c9d19413c1b'
   const stockFiles=[
     // Replay only the immutable pre-UX hint source for legacy production tests.
     ['src/app/controllers/useWorkspaceViewModel.tsx','74e13c339069c7a63b4df578af51a675777fe371','e9d875f036beb0a43222d035391efdba57dc4116'],
-    ['src/App.tsx','c757fcd87fbf555f049a33463f1820337c615db3','97083388088fac83dd920ed7b2e440f2fd4520b8'],
+    ['src/App.tsx','c757fcd87fbf555f049a33463f1820337c615db3','2bedda3ac1bf8b5bef9ffbd407ddbd5258ae4b53'],
     ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','f71c7705d7433de51333255969c01967e96186f5'],
     ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac'],
     ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','10c00c135801bcbadbb7f23a93481c9e94e978ce'],
     ['worker/domains/lifecycle.ts','25f08471020220883107de8ee02b26bc774eb29a','039b84adc58aadefc6ded14b6dd9fa73a6aeb847'],
     ['worker/domains/returns-exchanges.ts','af53527b060ec388bbe9058b80df16a564b8af4c','14327c966fceb9f42f49c1fc39148e8081c4a19f'],
     ['worker/domains/exchange-batch.ts','725515005ad9e64d30e6eb2605f974c7947358e3','0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45'],
+    ['worker/domains/inventory-movement.ts','78ed3642479e9b961c01f063fb6900a041b9f0b5','1280fef092f03e0ae8043a4f0deff076af96bc59',arrivalBaseline],
     // These three files are replayed from the exact pre-safety production commit.
     // The new stocktake SQL lifecycle and UI have independent live tests above.
     ['src/features/sections/InventorySection.tsx','cf69e21e4fda04ee6d3b0e9bffd08c9f724ab62a','76b4a9a2452c6d5fbfd3e10a89e93f74a18b9a59',warehouseBaseline],
@@ -54,12 +56,14 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['scripts/test-inventory-integrity-safety-20261014.mjs','Atomic handover and measured-count retention'],
     ['scripts/test-stocktake-functional-acceptance.mjs','Live SQL stocktake safety'],
     ['scripts/test-inventory-snapshot-freshness-20261014.mjs','Current warehouse full-snapshot reliability'],
+    ['scripts/test-arrival-orda-boutique-identity-20261014.mjs','ORDA canonical product and boutique stock receipt regression'],
   ]) {
     const test=spawnSync(process.execPath,[file],{stdio:'inherit',timeout:90000})
     assert(!test.error&&test.status===0,why+' failed')
   }
   if(git(['cat-file','-e',baseline+':src/App.tsx'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',baseline])
   if(git(['cat-file','-e',warehouseBaseline+':src/App.tsx'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',warehouseBaseline])
+  if(git(['cat-file','-e',arrivalBaseline+':worker/domains/inventory-movement.ts'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',arrivalBaseline])
   // The legacy catalog release manifest intentionally pins this gate's original
   // contents. Replay those exact bytes for the old suite, not weakened assertions.
   // The current candidate and its new UI tests already ran above.
