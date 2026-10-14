@@ -96,8 +96,14 @@ export function CatalogRetirementAction({
     }
   }
 
+  const blockedByWorkingStock = Boolean(preview && (
+    Number(preview.physicalQuantity || 0) !== 0 ||
+    Number(preview.stockReservedQuantity || 0) !== 0 ||
+    Number(preview.activeReservationQuantity || 0) !== 0 ||
+    Number(preview.openOrderItemCount || 0) > 0
+  ))
   const confirm = async () => {
-    if (!preview || deleting) return
+    if (!preview || deleting || blockedByWorkingStock) return
     setDeleting(true)
     setError('')
     try {
@@ -173,13 +179,13 @@ export function CatalogRetirementAction({
             <div className="catalog-retirement-explanation">
               <strong>Что произойдёт</strong>
               <p>
-                {physical > 0 || reserved > 0
-                  ? 'Текущие остатки и резервы этой позиции будут сняты с рабочего склада.'
-                  : 'Рабочих остатков и резервов по этой позиции сейчас нет.'}
+                {blockedByWorkingStock
+                  ? 'Удаление заблокировано: у товара есть физический остаток, резерв или активный заказ. Система не будет автоматически обнулять склад. Проверьте обе точки в «Склад → Остатки» и завершите связанные операции.'
+                  : 'Рабочих остатков, резервов и активных неотправленных заказов по этой позиции сейчас нет.'}
               </p>
               <p>
                 Старые заказы и движения сохранятся в истории.
-                {openOrders > 0 ? ` В открытых заказах останется ${openOrders} ${countText(openOrders, 'позиция', 'позиции', 'позиций')}, но склад они больше менять не будут.` : ''}
+                {openOrders > 0 ? ` В открытых заказах есть ${openOrders} ${countText(openOrders, 'позиция', 'позиции', 'позиций')} — сначала завершите или исправьте их.` : ''}
               </p>
               {history > 0 ? <p>Связано с историей заказов: {history} {countText(history, 'позиция', 'позиции', 'позиций')}.</p> : null}
               <p>{kind === 'execution'
@@ -190,7 +196,7 @@ export function CatalogRetirementAction({
             {error ? <div className="catalog-retirement-modal-error" role="alert">{error}</div> : null}
 
             <div className="modal-actions">
-              <button className="danger" type="button" disabled={deleting} onClick={() => void confirm()}>
+              <button className="danger" type="button" disabled={deleting || blockedByWorkingStock} onClick={() => void confirm()}>
                 {deleting ? 'Удаляю…' : buttonLabel}
               </button>
               <button className="secondary" type="button" disabled={deleting} onClick={() => { setPreview(null); setError('') }}>
