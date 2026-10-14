@@ -50,7 +50,10 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'simpleStockStats'
   | 'sourceLabel'
   | 'submitRoutineCycleCount'
->
+> & {
+  simpleStockCatalogLoading?: boolean
+  simpleStockCatalogError?: string
+}
 
 const w8Text = (value: unknown) => String(value || '').trim()
 const w8Key = (value: unknown) => w8Text(value).toLocaleUpperCase('ru-RU') || 'СТАНДАРТ'
@@ -165,6 +168,8 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     setSimpleStockDetail,
     setSimpleStockOpenProductKey,
     setSimpleStockSource,
+    simpleStockCatalogLoading,
+    simpleStockCatalogError,
     simpleStockAvailabilityFilter,
     simpleStockCategory,
     simpleStockDetail,
@@ -191,7 +196,8 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
   })
 
   const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
-  const visibleVariantCount = simpleStockGroups.reduce((sum: number, group: any) => sum + Number((group.rows || []).length), 0)
+  const visibleVariantCount = simpleStockGroups.reduce((sum: number, group: any) =>
+    sum + Number(((simpleStockOpenProductKey === group.key ? group.allRows : group.rows) || []).length), 0)
   const availabilityScopeLabel = simpleStockAvailabilityFilter === 'free'
     ? 'товары со свободными остатками'
     : simpleStockAvailabilityFilter === 'reserved'
@@ -304,7 +310,9 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         const single = productRows.length === 1
                         const singleRow = single ? productRows[0] : null
                         const hiddenByAvailability = Math.max(0, productRows.length - rows.length)
-                        const hierarchy = single ? [] : buildStockBrowseHierarchy(rows, (row: any) => row.category || 'adult')
+                        // The filter picks matching products. Once opened, show ALL
+                        // known variants, including 0/0 sizes (search must not be required).
+                        const hierarchy = single ? [] : buildStockBrowseHierarchy(productRows, (row: any) => row.category || 'adult')
                         const needsAttention = free < 0 || physical < 0
                         const singlePrimary = singleRow ? [singleRow.color, singleRow.size].filter(Boolean).join(' · ') || 'Стандартный вариант' : ''
                         const singleSecondary = singleRow ? [productCategoryLabel(singleRow.category), singleRow.gender, singleRow.material && singleRow.material !== 'СТАНДАРТ' ? singleRow.material : '', singleRow.length && singleRow.length !== 'СТАНДАРТ' ? singleRow.length : ''].filter(Boolean).join(' · ') : ''
@@ -313,7 +321,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                             <div className="inventory-calm-product-main">
                               <div className="inventory-calm-product-name">
                                 <strong>{group.productName}</strong>
-                                {single ? <span>{[singlePrimary, singleSecondary].filter(Boolean).join(' · ')}</span> : <span>{productRows.length} {w8Plural(productRows.length, 'позиция', 'позиции', 'позиций')}{hiddenByAvailability ? ` · показано ${rows.length}` : ''}</span>}
+                                {single ? <span>{[singlePrimary, singleSecondary].filter(Boolean).join(' · ')}</span> : <span>{productRows.length} {w8Plural(productRows.length, 'позиция', 'позиции', 'позиций')}{hiddenByAvailability && !isOpen ? ` · показано ${rows.length}` : ''}</span>}
                               </div>
                               <div className="inventory-calm-product-free">
                                 {physical < 0 ? <><strong>Нужна сверка</strong><span>учёт ниже нуля</span></> : free < 0 ? <><strong>Не хватает {formatMoney(Math.abs(free))}</strong><span>для принятых заказов</span></> : <><strong>{formatMoney(free)}</strong><span>свободно</span></>}
@@ -327,12 +335,14 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                               {single ? (
                                 <button className="secondary compact inventory-calm-detail-button warehouse-w3-micro-check-entry" type="button" onClick={() => openConcreteStockDetail(singleRow, singlePrimary)}>Открыть позицию</button>
                               ) : (
-                                <button className="secondary compact inventory-calm-detail-button" type="button" aria-expanded={isOpen} onClick={() => setSimpleStockOpenProductKey((current) => current === group.key ? '' : group.key)}>{isOpen ? 'Скрыть позиции' : `Показать позиции (${rows.length}${hiddenByAvailability ? ` из ${productRows.length}` : ''})`}</button>
+                                <button className="secondary compact inventory-calm-detail-button" type="button" aria-expanded={isOpen} onClick={() => setSimpleStockOpenProductKey((current) => current === group.key ? '' : group.key)}>{isOpen ? 'Скрыть позиции' : `Показать позиции (${productRows.length})`}</button>
                               )}
                             </div>
     
                             {!single && isOpen ? (
                               <div className="inventory-stock-hierarchy" data-w8-stock-hierarchy="execution-color-size">
+                                {simpleStockCatalogLoading ? <p className="inventory-calm-note" role="status">Загружаем все варианты товара из каталога…</p> : null}
+                                {simpleStockCatalogError ? <p className="inventory-calm-note" role="alert">{simpleStockCatalogError}</p> : null}
                                 {hierarchy.map((execution: any) => {
                                   const executionFree = execution.rows.reduce((sum: number, row: any) => sum + simpleStockQuantity(row), 0)
                                   const executionPhysical = execution.rows.reduce((sum: number, row: any) => sum + simpleStockPhysical(row), 0)

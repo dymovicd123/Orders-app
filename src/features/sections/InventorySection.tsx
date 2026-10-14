@@ -292,6 +292,31 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const historyRequestRef = useRef(0)
   const simpleStockReservationsRequestRef = useRef(0)
   const [simpleStockOpenProductKey, setSimpleStockOpenProductKey] = useState('')
+  const [simpleStockCatalogLoading, setSimpleStockCatalogLoading] = useState(false)
+  const [simpleStockCatalogError, setSimpleStockCatalogError] = useState('')
+  const simpleStockCatalogRequestRef = useRef(false)
+
+  function openSimpleStockProduct(updater: string | ((current: string) => string)) {
+    const nextKey = typeof updater === 'function' ? updater(simpleStockOpenProductKey) : updater
+    if (typeof nextKey !== 'string') return
+    setSimpleStockOpenProductKey(nextKey)
+    // Inventory is lightweight by default. Fetch catalog variants only when
+    // someone explicitly expands a product, without modifying stock counts.
+    if (!nextKey || catalogData || simpleStockCatalogRequestRef.current) return
+    simpleStockCatalogRequestRef.current = true
+    setSimpleStockCatalogLoading(true)
+    setSimpleStockCatalogError('')
+    void Promise.resolve(loadCatalogData()).then((response: any) => {
+      if (!response || !Array.isArray(response.variants)) {
+        setSimpleStockCatalogError('Все варианты не загрузились. Показаны только позиции из складского учёта.')
+      }
+    }).catch(() => {
+      setSimpleStockCatalogError('Не удалось загрузить остальные варианты. Закройте и повторно откройте товар.')
+    }).finally(() => {
+      simpleStockCatalogRequestRef.current = false
+      setSimpleStockCatalogLoading(false)
+    })
+  }
   // Switching the physical location is a fresh server read, never just a toggle
   // between possibly old cached location snapshots. Hide old counts until confirmed.
   async function waitForSimpleStockSnapshot(source: 'warehouse' | 'boutique', request: Promise<any>) {
@@ -2379,8 +2404,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         setSimpleStockAvailabilityFilter,
         setSimpleStockCategory,
         setSimpleStockDetail,
-        setSimpleStockOpenProductKey,
+        setSimpleStockOpenProductKey: openSimpleStockProduct,
         setSimpleStockSource,
+        simpleStockCatalogLoading,
+        simpleStockCatalogError,
         simpleStockAvailabilityFilter,
         simpleStockCategory,
         simpleStockDetail,
