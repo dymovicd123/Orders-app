@@ -30,8 +30,19 @@ check(manifest.files['src/App.tsx'].afterGitBlob === reviewedDeleteGuidance.orig
 for (const [file, expected] of Object.entries(reviewedDeleteGuidance.files)) {
   check(gitBlob(fs.readFileSync(file, 'utf8')) === expected, 'Unreviewed deletion guidance drift: '+file)
 }
+// Read-only catalogue/stock merge correction: source rows override catalogue
+// projections even if the projection already created a matching SKU key.
+// The existing frozen baseline is still used for historical tests.
+const reviewedStockProjection = {
+  file: 'src/app/controllers/useOperationalViewModel.ts',
+  before: '3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95',
+  after: '94f600e958c07944274a43f6182e09f1ef02e8b8',
+}
+check(manifest.files[reviewedStockProjection.file].afterGitBlob === reviewedStockProjection.before,
+  'Unexpected stock projection baseline')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedDeleteGuidance.currentApp : delta.afterGitBlob
+  ? reviewedDeleteGuidance.currentApp
+  : file === reviewedStockProjection.file ? reviewedStockProjection.after : delta.afterGitBlob
 const historicalDeleteWorker = [
   {
     file: 'worker/domains/critical.ts',
@@ -214,6 +225,7 @@ const tests=[
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
   ['scripts/test-inventory-snapshot-freshness-20261014.mjs',false],
   ['scripts/test-stock-source-switch-freshness-20261014.mjs',false],
+  ['scripts/test-stock-snapshot-authority-20261014.mjs',false],
   ['scripts/test-expanded-stock-all-variants-20261014.mjs',false],
   ['scripts/test-arrival-orda-boutique-identity-20261014.mjs',false],
   ['scripts/test-stocktake-functional-acceptance.mjs',true],
