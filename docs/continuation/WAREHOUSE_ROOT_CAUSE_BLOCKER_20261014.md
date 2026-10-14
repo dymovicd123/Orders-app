@@ -34,3 +34,18 @@
 
 ## Current progress and next
 Main read paths and one write path checked; two product labels appear different in screenshots and remain unverified in production. Root cause NOT YET ESTABLISHED. Next: read-only targeted SQL for 17:37 movement + current IDs and history, broader cross-operation audit; only then implement fix and rerun tests.
+
+
+## Source-code audit progress (main, Oct 14)
+- **Confirmed destructive mechanism** `worker/domains/catalog-retirement.ts` lines ~922-970: catalog retirement records `inventory_movements` delete deltas, marks active reservations released, then unconditionally sets `inventory_stock.quantity=0,reserved_quantity=0` for retired variants; deactivates the linked variants and product. This CAN account for disappearing stock after delete/retire operations. Not yet proven as cause of 17:37 incident.
+- `worker/domains/catalog.ts::updateCatalogVariant` gender-correction merge path around ~1350-1460 reassigns existing `inventory_movements.variant_id` and `order_items.variant_id`, merges `inventory_stock` quantities; source of rewritten identity / operational history risk, needs fixture tests.
+- `worker/domains/inventory-movement.ts::applyInventoryMovement` for `arrival` with already-supplied `variantId` checks product identity/alias but (unlike `manual_set` and `writeoff`) does NOT strictly compare submitted size/color/material/length/gender to loaded canonical SKU; incorrect/stale form variant selection might be silently accepted. Distinct potential vulnerability, not yet proof for screenshot.
+- `src/App.tsx::saveInventoryMovement` post-commit receipt verification only checks arrival `variantId` exists in refreshed stock list at correct source, NOT exact final inventory quantity or characteristics. Can give false confidence about visible intended size.
+- `src/features/inventory/buildInventoryStockGroups.ts` groups warehouse stock by canonicalized *product name* (not underlying product ID), potentially concealing separate duplicate catalog product IDs. `worker/domains/inventory-read.ts::listInventory` resolves live catalog text and filters zeroed inactive SKUs.
+- Other direct mutators inspected/located: transfers + reversal `inventory-movement.ts`, quick/full stocktake `inventory-stocktake.ts`, reservation and handover `order-reservations.ts`, lifecycle `lifecycle.ts`, returns/exchanges `returns-exchanges.ts`, SKU merges `catalog-variant-consolidation.ts`. No evidence yet that all preserve ledger equality.
+
+## Prepared read-only scripts (investigation branch only)
+- `scripts/audits/inventory-incident-arrival-20261014.sql`: all boutique arrivals around 17:37 local, exact movement SKU and live stock, subsequent movements, reversal.
+- `scripts/audits/inventory-incident-product-ids-20261014.sql`: both distinct product labels and all related catalog SKU+source stock.
+- `scripts/audits/inventory-global-movement-state-review-20261014.sql`: heuristic list of mismatched latest movement after-quantity vs current inventory, missing/duplicate links, inactive nonzero stock. Differences are NOT automatically missing goods; code paths may legitimately mutate inventory without identical movement semantics. No write statements.
+- **PRODUCTION D1 HAS NOT BEEN QUERIED BY ASSISTANT; user must execute read-only SQL in Cloudflare D1 Console and share outputs for definitive cause.**
