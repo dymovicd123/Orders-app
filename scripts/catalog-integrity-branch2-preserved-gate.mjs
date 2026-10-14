@@ -32,6 +32,25 @@ for (const [file, expected] of Object.entries(reviewedDeleteGuidance.files)) {
 }
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedDeleteGuidance.currentApp : delta.afterGitBlob
+const historicalDeleteWorker = [
+  {
+    file: 'worker/domains/critical.ts',
+    before: 'b8f9a38e6f6090d7cd5d0878a0d9a58c6786e9f2',
+    after: reviewedDeleteGuidance.files['worker/domains/critical.ts'],
+    fixture: 'scripts/fixtures/order-delete-guidance-before-20261014/worker/domains/critical.ts',
+  },
+  {
+    file: 'worker/domains/order-delete.ts',
+    before: '37358a13990119814a6cf7edccc3b4ad66b4343a',
+    after: reviewedDeleteGuidance.files['worker/domains/order-delete.ts'],
+    fixture: 'scripts/fixtures/order-delete-guidance-before-20261014/worker/domains/order-delete.ts',
+  },
+]
+for (const entry of historicalDeleteWorker) {
+  check(gitBlob(fs.readFileSync(entry.fixture,'utf8')) === entry.before,
+    'Order delete historical Worker fixture drift: ' + entry.file)
+}
+
 
 // Stage04-B2 is independently tested on current runtime; the exact old
 // migration-count regression must still run against its frozen historical tree.
@@ -299,6 +318,15 @@ try{
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
       'Cannot stage accepted old warehouse safety file: '+entry.file)
   }
+  // Old worker declaration/structure tests must see byte-for-byte accepted old
+  // Worker modules; current guidance is checked above and restored below.
+  for (const entry of historicalDeleteWorker) {
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
+      'Cannot stage historical order-delete Worker: '+entry.file)
+  }
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
   saved.set(orderReservationPath,orderReservationCurrent)
@@ -336,6 +364,11 @@ for(const [relative,delta] of Object.entries(manifest.files)){
 }
 check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.after,
   'Failed to restore current order shortage UI after historical tests')
+for (const entry of historicalDeleteWorker) {
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
+    'Failed to restore reviewed order-delete Worker after historical tests: '+entry.file)
+}
+
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
 for(const entry of inventorySafetyFixtures){
