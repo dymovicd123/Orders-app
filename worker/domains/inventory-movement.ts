@@ -258,7 +258,9 @@ export async function resolveInventoryCreatableItemsBulk(
     if (exact && (!explicit || toInt(exact.id, 0) !== toInt(explicit.id, 0))) return exact;
     const matchedIdentity = lookup.byIdentity.get(identityKey) || null;
     if (matchedIdentity && (!explicit || toInt(matchedIdentity.id, 0) !== toInt(explicit.id, 0))) return matchedIdentity;
-    if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
+    if (explicit && normalizeCatalogProductIdentityKey(explicit.name) === identityKey) {
+      if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
+    }
     if (alias && toInt(alias.is_active, 0) === 1) return alias;
     if (exact) return exact;
     return matchedIdentity;
