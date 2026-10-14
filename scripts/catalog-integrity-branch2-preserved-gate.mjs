@@ -47,7 +47,7 @@ const stockVisibilityScreens=[
     file:'src/features/sections/InventorySection.tsx',
     fixture:'scripts/fixtures/stock-visibility-20261013/InventorySection.tsx',
     before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
-    after:'41108dc1c0245b340416ca3e2c1373faef83e227',
+    after:'b1a6ea3f32a478cc333b3f3774fb69206b746143',
   },
   {
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
@@ -171,6 +171,7 @@ const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
+  ['scripts/test-inventory-snapshot-freshness-20261014.mjs',false],
   ['scripts/test-stocktake-functional-acceptance.mjs',true],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
