@@ -1217,7 +1217,7 @@ function App() {
     }))
     openInventoryPanel('overview')
     window.location.hash = '#inventory'
-    void loadInventoryData(item.source, true, query, false)
+    void loadInventoryData(item.source, true, '', false)
   }
 
   const openDashboardWorkshopItem = (item: DashboardWorkshopWarning) => {
@@ -1757,8 +1757,10 @@ function App() {
       return cached
     }
 
-    const requestSeq = ++inventorySnapshotRequestSeq.current[source]
     const fullSnapshot = !query.trim()
+    const requestSeq = fullSnapshot
+      ? ++inventorySnapshotRequestSeq.current[source]
+      : inventorySnapshotRequestSeq.current[source]
     const rejectSnapshot = (message: string) => {
       // Never present a previously loaded count as though a newer full
       // refresh succeeded. Earlier failed requests must not erase a later
@@ -1793,6 +1795,9 @@ function App() {
       return rejectSnapshot(error instanceof Error ? error.message : 'Не удалось получить достоверные остатки.')
     }
     if (!data) return rejectSnapshot('Сервер не отдал полный список остатков. Данные не обновлены.')
+    // A filtered query is only a search result. It must never replace the
+    // authoritative all-items snapshot used by the entire Warehouse screen.
+    if (!fullSnapshot) return data
     if (inventorySnapshotRequestSeq.current[source] !== requestSeq) return null
     // No interim state update: all downstream stocktake/arrival/catalog editors
     // must see one complete, LIVE source snapshot, never partial/stale pages.
