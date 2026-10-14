@@ -59,7 +59,7 @@
     },
     "worker/domains/inventory-movement.ts": {
       "beforeGitBlob": "a5e6ffd5d1039d54dee2b35026ef37a9363408fa",
-      "afterGitBlob": "1280fef092f03e0ae8043a4f0deff076af96bc59",
+      "afterGitBlob": "f7dc7e9c8634dfc2378632254cb582797d7c0f62",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/inventory-movement.ts"
     },
     "worker/domains/inventory-read.ts": {
