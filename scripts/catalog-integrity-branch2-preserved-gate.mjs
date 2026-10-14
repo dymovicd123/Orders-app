@@ -144,11 +144,34 @@ for(const [file,delta] of Object.entries(manifest.files)){
     'Unreviewed legacy Branch2 fixture drift: '+file)
 }
 
+// Preserve the accepted old SQL lifecycle and its old assertions ONLY for
+// byte-for-byte historical manifests; current runtime is tested before and
+// after this temporary baseline staging.
+const inventorySafetyFixtures=[
+  {
+    "file": "worker/domains/inventory-stocktake.ts",
+    "before": "c40f2c4bbd5075aab4412a08e77df8ad76dae0e9",
+    "after": "7df026a8e0de46062e73b1248a7ada063a45710b",
+    "fixture": "scripts/fixtures/inventory-safety-20261014/worker/domains/inventory-stocktake.ts"
+  },
+  {
+    "file": "scripts/test-stocktake-functional-acceptance.mjs",
+    "before": "3ca20472b6a89f81d188c59f23a483d1df93aadb",
+    "after": "23d73702c78798a08c9a370ea23aa0eebad2bcb8",
+    "fixture": "scripts/fixtures/inventory-safety-20261014/scripts/test-stocktake-functional-acceptance.mjs"
+  }
+]
+for(const entry of inventorySafetyFixtures){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current warehouse safety file drift: '+entry.file)
+  check(gitBlob(fs.readFileSync(entry.fixture,'utf8'))===entry.before,'Historical warehouse fixture drift: '+entry.fixture)
+}
+
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
+  ['scripts/test-stocktake-functional-acceptance.mjs',true],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
   ['scripts/test-stock-snapshot-no-false-zeros-20261013.mjs',false],
@@ -247,6 +270,13 @@ try{
     fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,'Cannot stage historical Exchange source: '+entry.file)
   }
+  for(const entry of inventorySafetyFixtures){
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
+      'Cannot stage accepted old warehouse safety file: '+entry.file)
+  }
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
   saved.set(orderReservationPath,orderReservationCurrent)
@@ -286,6 +316,10 @@ check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.
   'Failed to restore current order shortage UI after historical tests')
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
+for(const entry of inventorySafetyFixtures){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
+    'Failed to restore current warehouse safety code after historical tests: '+entry.file)
+}
 check(gitBlob(fs.readFileSync(stage04DWorkshopScreen.file,'utf8'))===stage04DWorkshopScreen.after,'Failed to restore Stage04-D Workshop UI')
 for(const screen of stockVisibilityScreens){
   check(gitBlob(fs.readFileSync(screen.file,'utf8'))===screen.after,'Failed to restore current warehouse inventory UI: '+screen.file)
