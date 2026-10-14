@@ -309,7 +309,12 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     }
   }
 
-  function setSimpleStockSource(source: 'warehouse' | 'boutique') {
+  function setSimpleStockSource(sourceOrUpdater: any) {
+    // Match the presentational LooseSetter contract (value OR React updater).
+    const candidate: unknown = typeof sourceOrUpdater === 'function'
+      ? sourceOrUpdater(simpleStockSource) : sourceOrUpdater
+    if (candidate !== 'warehouse' && candidate !== 'boutique') return
+    const source = candidate
     setSimpleStockSourceState(source)
     setSimpleStockDetail(null)
     setSimpleStockOpenProductKey('')
