@@ -41,6 +41,9 @@ assert.ok(worker.includes('validArrivalAliasPairs') && worker.includes('enteredP
   'Existing variant IDs from outdated pickers can still misroute arrivals by name')
 assert.ok(worker.includes('raw.productId !== toInt(item.productId, 0)'),
   'Existing variant IDs from outdated pickers can still cross product IDs')
+assert.ok(worker.includes('canonicalArrivalAliasTarget.get(enteredProductKey)')
+  && worker.includes('aliasTargetId !== toInt(item.productId, 0)'),
+  'A selected old ORDA SKU can still bypass the ORDA -> ORDA SHAPAN alias even with matching visible name')
 assert.ok(worker.includes('arrivalReceipt') && worker.includes("event: 'arrival_receipt_read_failed'"),
   'Post-commit Arrival cannot report canonical product and source')
 assert.ok(app.includes('arrivalReceipt?.verified') && app.includes('result.operationId'),
