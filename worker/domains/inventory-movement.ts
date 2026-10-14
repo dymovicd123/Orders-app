@@ -246,24 +246,19 @@ export async function resolveInventoryCreatableItemsBulk(
 
   let lookup = buildProductLookup(products);
   const resolveProduct = (item: ReturnType<typeof normalizeInventoryItem>) => {
-    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
     const identityKey = normalizeCatalogProductIdentityKey(item.productName);
     if (!identityKey) return null;
-    // The form can retain a once-valid active productId while Catalog aliases
-    // are changed (e.g. ОРДА -> ОРДА ШАПАН). Never let that stale ID override
-    // the product identity actually named in this Arrival.
+    const explicit = item.productId > 0 ? lookup.byId.get(item.productId) : null;
+    // Named identity and canonical aliases, not a stale picker ID, decide
+    // where physical Arrival units are registered. ORDA may alias ORDA SHAPAN.
     const alias = lookup.byAlias.get(identityKey);
-    if (alias && toInt(alias.is_active, 0) === 1 && (!explicit || toInt(alias.id, 0) !== toInt(explicit.id, 0))) return alias;
-    const exact = lookup.byExact.get(upperText(item.productName));
-    if (exact && (!explicit || toInt(exact.id, 0) !== toInt(explicit.id, 0))) return exact;
-    const matchedIdentity = lookup.byIdentity.get(identityKey) || null;
-    if (matchedIdentity && (!explicit || toInt(matchedIdentity.id, 0) !== toInt(explicit.id, 0))) return matchedIdentity;
+    if (alias && toInt(alias.is_active, 0) === 1) return alias;
     if (explicit && normalizeCatalogProductIdentityKey(explicit.name) === identityKey) {
       if (explicit && toInt(explicit.is_active, 0) === 1) return explicit;
     }
-    if (alias && toInt(alias.is_active, 0) === 1) return alias;
+    const exact = lookup.byExact.get(upperText(item.productName));
     if (exact) return exact;
-    return matchedIdentity;
+    return lookup.byIdentity.get(identityKey) || null;
   };
 
   const resolveGenderForProduct = (product: ProductRow | null | undefined, item: ReturnType<typeof normalizeInventoryItem>) => {
