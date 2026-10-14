@@ -45,6 +45,8 @@ assert.ok(worker.includes('arrivalReceipt') && worker.includes("event: 'arrival_
   'Post-commit Arrival cannot report canonical product and source')
 assert.ok(app.includes('arrivalReceipt?.verified') && app.includes('result.operationId'),
   'User receives silent success without verified stock and operation reference')
+assert.ok(app.includes('verifiedInStockList') && app.includes('arrivalReceipt.items.every('),
+  'Arrival is reported as visible without verifying its exact variant is in the complete stock list')
 assert.ok(app.includes('const refreshResults = await Promise.allSettled(refreshes)'),
   'Successful POST must not be reported failed just because stock refresh is unavailable')
 
