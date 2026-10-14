@@ -25,7 +25,8 @@ export async function deleteOrderSafely(
   const fulfilledRows = humanInventoryModelEnabled
     ? await db.prepare(
       `SELECT r.id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.fulfilled_at,
-              oi.stock_quantity_before, oi.stock_quantity_after
+              oi.stock_quantity_before, oi.stock_quantity_after,
+              oi.product_name_snapshot, oi.color_snapshot, oi.material_snapshot, oi.size_snapshot
        FROM inventory_reservations r
        JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
        WHERE r.order_id = ? AND r.status = 'fulfilled'
@@ -37,10 +38,31 @@ export async function deleteOrderSafely(
   const physicalOutcome = cleanText(input.physicalOutcome).toLowerCase()
   const hasPhysicalHandoverMarker = humanInventoryModelEnabled && (shippingWasSent || fulfilledReservations.length > 0)
   if (hasPhysicalHandoverMarker && physicalOutcome !== 'not_issued') {
+    // An order can be "not sent" while individual items already have fulfilled handovers.
+    // Return exact read-only facts instead of suggesting that the overall status is wrong.
     const confirmationRequired = new CriticalOperationConflictError(
-      'Заказ отмечен как выданный / отправленный. Если это ошибочная отметка и товар фактически НЕ передавался клиенту, подтвердите это — система сама отменит ложную выдачу и продолжит удаление. Если товар реально передавался, удаление остановлено: сначала нужно отразить фактический возврат товара.'
+      shippingWasSent
+        ? 'Заказ отмечен как отправленный. Перед удалением нужно подтвердить, передавался ли товар клиенту на самом деле.'
+        : 'Заказ в целом не отправлен, но по отдельным позициям записана выдача товара. Сначала проверьте конкретные позиции и факт передачи клиенту.'
     )
     confirmationRequired.code = 'order_delete_physical_confirmation_required'
+    confirmationRequired.details = {
+      shippingStatus: shippingWasSent ? 'sent' : 'not_sent',
+      issuedItemsTotal: fulfilledReservations.length,
+      issuedItems: fulfilledReservations.slice(0, 20).map((row) => ({
+        orderItemId: toInt(row.order_item_id, 0),
+        variantId: toInt(row.variant_id, 0),
+        productName: cleanText(row.product_name_snapshot) || 'Товар без названия',
+        color: cleanText(row.color_snapshot),
+        material: cleanText(row.material_snapshot),
+        size: cleanText(row.size_snapshot),
+        quantity: Math.max(0, toInt(row.quantity, 0)),
+        source: cleanText(row.inventory_source),
+        fulfilledAt: cleanText(row.fulfilled_at),
+      })),
+      activeExchangeCount: Math.max(0, toInt((order as any).committed_exchange_count, 0)),
+      activeReturnCount: Math.max(0, toInt((order as any).committed_return_count, 0)),
+    }
     throw confirmationRequired
   }
 

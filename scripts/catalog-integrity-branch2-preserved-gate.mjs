@@ -14,6 +14,44 @@ const gitBlob = (value) => {
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
 const manifest=JSON.parse(fs.readFileSync('scripts/catalog-integrity-branch2-stage04-safe-runtime-manifest.json','utf8'))
 check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-stage04-safe-20261009','Invalid integration manifest')
+// Explicit narrowly reviewed order-delete UX extension. The frozen Catalog
+// manifest and its historical baseline remain immutable. No gate is disabled.
+const reviewedDeleteGuidance = {
+  originalApp: '562a41973ad154496a81c8d5c151aff5119a46bf',
+  currentApp: '505ae6ee1e691db95c78c97aba445cd3aa066d7e',
+  files: {
+    'worker/domains/order-delete.ts': '2a6b3ecb5afbd0256b9d880ca9bcb038707fe1f4',
+    'worker/domains/critical.ts': '4d45032c6e75fd6a62f213242def01b5f47b81db',
+    'scripts/test-order-delete-physical-guidance-r1.mjs': '5a28da06b7da7c82e65e94f5d475c58aaa6b27d7',
+  },
+}
+check(manifest.files['src/App.tsx'].afterGitBlob === reviewedDeleteGuidance.originalApp,
+  'Unexpected pre-guidance Catalog App baseline')
+for (const [file, expected] of Object.entries(reviewedDeleteGuidance.files)) {
+  check(gitBlob(fs.readFileSync(file, 'utf8')) === expected, 'Unreviewed deletion guidance drift: '+file)
+}
+const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
+  ? reviewedDeleteGuidance.currentApp : delta.afterGitBlob
+const historicalDeleteWorker = [
+  {
+    file: 'worker/domains/critical.ts',
+    before: 'b8f9a38e6f6090d7cd5d0878a0d9a58c6786e9f2',
+    after: reviewedDeleteGuidance.files['worker/domains/critical.ts'],
+    fixture: 'scripts/fixtures/order-delete-guidance-before-20261014/worker/domains/critical.ts',
+  },
+  {
+    file: 'worker/domains/order-delete.ts',
+    before: '37358a13990119814a6cf7edccc3b4ad66b4343a',
+    after: reviewedDeleteGuidance.files['worker/domains/order-delete.ts'],
+    fixture: 'scripts/fixtures/order-delete-guidance-before-20261014/worker/domains/order-delete.ts',
+  },
+]
+for (const entry of historicalDeleteWorker) {
+  check(gitBlob(fs.readFileSync(entry.fixture,'utf8')) === entry.before,
+    'Order delete historical Worker fixture drift: ' + entry.file)
+}
+
+
 // Stage04-B2 is independently tested on current runtime; the exact old
 // migration-count regression must still run against its frozen historical tree.
 // Pin this additive SQL and hide it ONLY while invoking that original suite.
@@ -139,7 +177,7 @@ for(const [file,expected] of Object.entries(manifest.addedFiles || {})){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Catalog port new file drifted: '+file)
 }
 for(const [file,delta] of Object.entries(manifest.files)){
-  check(gitBlob(fs.readFileSync(file,'utf8'))===delta.afterGitBlob,'Unreviewed Catalog runtime drift: '+file)
+  check(gitBlob(fs.readFileSync(file,'utf8'))===reviewedAfterGitBlob(file,delta),'Unreviewed Catalog runtime drift: '+file)
   check(gitBlob(fs.readFileSync(delta.baselineFixture,'utf8'))===delta.beforeGitBlob,
     'Unreviewed legacy Branch2 fixture drift: '+file)
 }
@@ -168,6 +206,7 @@ for(const entry of inventorySafetyFixtures){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-order-delete-physical-guidance-r1.mjs',false],
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
@@ -279,6 +318,15 @@ try{
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
       'Cannot stage accepted old warehouse safety file: '+entry.file)
   }
+  // Old worker declaration/structure tests must see byte-for-byte accepted old
+  // Worker modules; current guidance is checked above and restored below.
+  for (const entry of historicalDeleteWorker) {
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
+      'Cannot stage historical order-delete Worker: '+entry.file)
+  }
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
   saved.set(orderReservationPath,orderReservationCurrent)
@@ -312,10 +360,15 @@ try{
   fs.rmSync(staged,{recursive:true,force:true})
 }
 for(const [relative,delta] of Object.entries(manifest.files)){
-  check(gitBlob(fs.readFileSync(relative,'utf8'))===delta.afterGitBlob,'Failed to restore new runtime: '+relative)
+  check(gitBlob(fs.readFileSync(relative,'utf8'))===reviewedAfterGitBlob(relative,delta),'Failed to restore new runtime: '+relative)
 }
 check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.after,
   'Failed to restore current order shortage UI after historical tests')
+for (const entry of historicalDeleteWorker) {
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
+    'Failed to restore reviewed order-delete Worker after historical tests: '+entry.file)
+}
+
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
 for(const entry of inventorySafetyFixtures){

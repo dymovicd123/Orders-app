@@ -6863,17 +6863,52 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ ok?: boolean; code?: string; message?: string; order?: OrderRecord }>(response, 'Удаление заказа')
+        const result = await readJsonResponse<{
+          ok?: boolean; code?: string; message?: string; order?: OrderRecord;
+          details?: {
+            shippingStatus: 'sent' | 'not_sent';
+            issuedItemsTotal: number;
+            issuedItems: Array<{
+              orderItemId: number; variantId: number; productName: string;
+              color: string; material: string; size: string;
+              quantity: number; source: string; fulfilledAt: string;
+            }>;
+            activeExchangeCount: number;
+            activeReturnCount: number;
+          };
+        }>(response, 'Удаление заказа')
         return { response, result, critical }
       }
 
       let attempt = await sendDelete()
       if (!attempt.response.ok && attempt.result.code === 'order_delete_physical_confirmation_required') {
-        const notIssued = window.confirm(
-          `Заказ ${order.external_id} отмечен как выданный или отправленный.\n\nПодтвердите только если товар ФАКТИЧЕСКИ НЕ передавался клиенту и отметка выдачи ошибочная. Тогда система сама отменит ложное складское списание и продолжит удаление.\n\nЕсли товар реально передавался — нажмите «Отмена»: удаление остановится без изменений.`
-        )
+        const details = attempt.result.details
+        const issuedItems = Array.isArray(details?.issuedItems) ? details.issuedItems : []
+        const issuedLines = issuedItems.slice(0, 8).map((item) => {
+          const attributes = [item.color, item.material, item.size].filter(Boolean).join(' · ')
+          const point = item.source === 'boutique' ? 'Бутик' : item.source === 'warehouse' ? 'Склад' : item.source
+          return `• ${item.productName}${attributes ? ` (${attributes})` : ''} — ${item.quantity} шт., ${point || 'точка не указана'}`
+        })
+        if (Number(details?.issuedItemsTotal || 0) > issuedLines.length) {
+          issuedLines.push(`…и ещё ${Number(details?.issuedItemsTotal || 0) - issuedLines.length} поз. — проверьте выдачу всего заказа.`)
+        }
+        const exchangeCount = Math.max(0, Number(details?.activeExchangeCount || 0))
+        const returnCount = Math.max(0, Number(details?.activeReturnCount || 0))
+        const notIssued = window.confirm([
+          `Заказ ${order.external_id} · ${formatMoney(Number(order.total_amount || 0))} ₸`,
+          details?.shippingStatus === 'not_sent'
+            ? 'Общий статус: «Не отправлен». Но в складском учёте есть проведённые выдачи ОТДЕЛЬНЫХ позиций:'
+            : 'Общий статус: «Отправлен». Проверьте зафиксированные выдачи товара:',
+          issuedLines.length ? issuedLines.join('\n') : 'Список выдач недоступен. Откройте историю заказа и проверьте фактическое движение.',
+          exchangeCount ? `Проведённых обменов: ${exchangeCount}. Удаление также отменит связанные обмены.` : '',
+          returnCount ? `Проведённых возвратов: ${returnCount}. Удаление также отменит связанные возвраты.` : '',
+          'Нажмите «ОК» ТОЛЬКО если НИ ОДНА из указанных вещей фактически не передавалась клиенту. Система попытается отменить ошибочные выдачи и удалить заказ.',
+          'Если товар передавался или вы не уверены — нажмите «Отмена». Сначала откройте историю, проверьте обмены и оформите фактический возврат товара; не исправляйте остатки наугад.',
+        ].filter(Boolean).join('\n\n'))
         if (!notIssued) {
-          throw new Error('Удаление остановлено. Заказ с реальной выдачей нужно сначала привести к фактическому состоянию через возврат товара.')
+          // The user has declined a risky operation, which is not an application error.
+          setMessage(`Удаление заказа ${order.external_id} не выполнялось. Если товар передавался клиенту, проверьте проведённый обмен и фактический возврат товара перед новой попыткой.`)
+          return
         }
         attempt = await sendDelete('not_issued')
       }
