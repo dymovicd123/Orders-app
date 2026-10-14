@@ -93,7 +93,7 @@ const stockVisibilityScreens=[
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
     fixture:'scripts/fixtures/stock-visibility-20261013/renderInventoryOverviewPanel.tsx',
     before:'9b7738d3589f0091e120dec7f1f3a056abc4cc0d',
-    after:'2f32be09145e2576bf534e3d50408c2fe894f91f',
+    after:'bdcbdb5a005323232b6016e2da308094f8906997',
   },
 ]
 for(const screen of stockVisibilityScreens){
