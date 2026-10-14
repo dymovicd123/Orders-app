@@ -267,7 +267,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     visibleCatalogProducts,
   } = ctx
 
-  const [simpleStockSource, setSimpleStockSource] = useState<'warehouse' | 'boutique'>('warehouse')
+  const [simpleStockSource, setSimpleStockSourceState] = useState<'warehouse' | 'boutique'>('warehouse')
+  const [simpleStockSourceRefresh, setSimpleStockSourceRefresh] = useState<{
+    source: 'warehouse' | 'boutique'; status: 'loading' | 'ready' | 'error'
+  } | null>(null)
+  const simpleStockSourceRequestRef = useRef(0)
   const [stockOverviewRetryBusy, setStockOverviewRetryBusy] = useState(false)
   const [simpleStockCategory, setSimpleStockCategory] = useState<'all' | 'adult' | 'child'>('all')
   const [simpleStockAvailabilityFilter, setSimpleStockAvailabilityFilter] = useState<'free' | 'reserved' | 'attention' | 'all'>('all')
@@ -288,6 +292,36 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const historyRequestRef = useRef(0)
   const simpleStockReservationsRequestRef = useRef(0)
   const [simpleStockOpenProductKey, setSimpleStockOpenProductKey] = useState('')
+  // Switching the physical location is a fresh server read, never just a toggle
+  // between possibly old cached location snapshots. Hide old counts until confirmed.
+  async function waitForSimpleStockSnapshot(source: 'warehouse' | 'boutique', request: Promise<any>) {
+    const requestId = ++simpleStockSourceRequestRef.current
+    setSimpleStockSourceRefresh({ source, status: 'loading' })
+    try {
+      const result = await request
+      if (simpleStockSourceRequestRef.current === requestId) {
+        setSimpleStockSourceRefresh({ source, status: result?.ok === true ? 'ready' : 'error' })
+      }
+    } catch {
+      if (simpleStockSourceRequestRef.current === requestId) {
+        setSimpleStockSourceRefresh({ source, status: 'error' })
+      }
+    }
+  }
+
+  function setSimpleStockSource(sourceOrUpdater: any) {
+    // Match the presentational LooseSetter contract (value OR React updater).
+    const candidate: unknown = typeof sourceOrUpdater === 'function'
+      ? sourceOrUpdater(simpleStockSource) : sourceOrUpdater
+    if (candidate !== 'warehouse' && candidate !== 'boutique') return
+    const source = candidate
+    setSimpleStockSourceState(source)
+    setSimpleStockDetail(null)
+    setSimpleStockOpenProductKey('')
+    simpleStockReservationsRequestRef.current += 1
+    setSimpleStockReservations([])
+    void waitForSimpleStockSnapshot(source, loadInventoryData(source, true, '', false))
+  }
   const [catalogAdminMode, setCatalogAdminMode] = useState<'catalog' | 'review' | 'lifecycle' | 'attributes'>('catalog')
   const [catalogReviewTaskIndex, setCatalogReviewTaskIndex] = useState(0)
   const [catalogReviewProductId, setCatalogReviewProductId] = useState(0)
@@ -2174,7 +2208,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   // The catalog can be loaded while the physical/reservation fetch has failed.
   const simpleStockSnapshotReady = (inventorySourceRows || []).some(
     (row: any) => row.source === simpleStockSource && row.data?.ok === true
-  )
+  ) && (simpleStockSourceRefresh?.source !== simpleStockSource || simpleStockSourceRefresh.status === 'ready')
 
   return (
     <section className="card wide sector-inventory unified-inventory" id="inventory" style={inventoryModuleVisible ? undefined : { display: 'none' }}>
@@ -2364,7 +2398,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       }) : (
         <div className="inventory-overview-panel inventory-calm-stock" style={inventoryPanelStyle('overview')}>
           <div className="mini-panel" role="status">
-            <h3>Остатки пока не загружены</h3>
+            <h3>{simpleStockSourceRefresh?.source === simpleStockSource && simpleStockSourceRefresh.status === 'loading'
+              ? 'Обновляем остатки выбранной точки…' : 'Остатки пока не загружены'}</h3>
             <p>Нет подтверждённых данных для точки «{sourceLabel(simpleStockSource)}». Отсутствие ответа сервера не означает, что на складе ноль вещей.</p>
             {inventorySnapshotLoadErrors?.[simpleStockSource] ? (
               <p role="alert"><strong>Не удалось подтвердить актуальные остатки:</strong> {inventorySnapshotLoadErrors[simpleStockSource]}</p>
@@ -2375,7 +2410,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
             </div>
             <button className="secondary compact" type="button" disabled={stockOverviewRetryBusy} onClick={() => {
               setStockOverviewRetryBusy(true)
-              void loadInventoryData(simpleStockSource, true, '', false).finally(() => setStockOverviewRetryBusy(false))
+              void waitForSimpleStockSnapshot(
+                simpleStockSource,
+                loadInventoryData(simpleStockSource, true, '', false),
+              ).finally(() => setStockOverviewRetryBusy(false))
             }}>{stockOverviewRetryBusy ? 'Загружаю…' : 'Повторить загрузку остатков'}</button>
           </div>
         </div>
