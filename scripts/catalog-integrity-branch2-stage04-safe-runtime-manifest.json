@@ -4,7 +4,7 @@
   "files": {
     "src/App.tsx": {
       "beforeGitBlob": "ab28a9a1d22063f4d972200b3fc88f4c5569841b",
-      "afterGitBlob": "8cc4dedbff3dbad6e508bf089cf8f48384567d3d",
+      "afterGitBlob": "5e37b5b95f27a3904808a4ce9f68037d80f418fd",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/src/App.tsx"
     },
     "src/app/constants.ts": {
@@ -59,7 +59,7 @@
     },
     "worker/domains/inventory-movement.ts": {
       "beforeGitBlob": "a5e6ffd5d1039d54dee2b35026ef37a9363408fa",
-      "afterGitBlob": "78ed3642479e9b961c01f063fb6900a041b9f0b5",
+      "afterGitBlob": "1280fef092f03e0ae8043a4f0deff076af96bc59",
       "baselineFixture": "scripts/fixtures/catalog-integrity-branch2-stage04-safe-20261009/worker/domains/inventory-movement.ts"
     },
     "worker/domains/inventory-read.ts": {
