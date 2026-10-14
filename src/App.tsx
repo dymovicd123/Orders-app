@@ -5367,6 +5367,12 @@ function App() {
       type InventoryMovementSaveResponse = {
         ok?: boolean
         message?: string
+        operationId?: string
+        arrivalReceipt?: {
+          verified: boolean
+          source: InventorySourceKey
+          items: Array<{ variantId: number; productName: string; color: string | null; size: string | null; received: number; currentQuantity: number | null }>
+        }
         externalId?: string
         warnings?: Array<{ shortageAfter?: number }>
         code?: string
@@ -5422,12 +5428,30 @@ function App() {
               ]
         // The mutation is already committed once the POST returned 2xx. Follow-up reads are
         // best-effort so a refresh failure cannot invite the employee to submit the operation again.
-        await Promise.allSettled(refreshes)
+        const refreshResults = await Promise.allSettled(refreshes)
+        const refreshedInventory = refreshResults[0]?.status === 'fulfilled'
+          ? refreshResults[0].value as InventoryResponse | null
+          : null
+        const refreshedStock = Boolean(refreshedInventory?.ok)
+        const arrivalReceipt = result.arrivalReceipt
+        const verifiedInStockList = Boolean(arrivalReceipt?.verified && refreshedStock
+          && arrivalReceipt.items.every((receiptItem) =>
+            (refreshedInventory?.items || []).some((stockRow) =>
+              Number(stockRow.variantId) === receiptItem.variantId
+              && stockRow.inventorySource === arrivalReceipt.source
+            )))
+        const arrivalLabel = arrivalReceipt?.items?.length
+          ? [...new Set(arrivalReceipt.items.map((item) => item.productName).filter(Boolean))].join(', ')
+          : ''
+        const arrivalVerificationWarning = inventoryDraft.movementType === 'arrival'
+          && !verifiedInStockList
+          ? ' Внимание: операция записана, но отображение актуального остатка не подтверждено. Не оформляйте приход повторно — проверьте историю операции и нажмите «Обновить».'
+          : ''
         const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
         setMessage(isTransfer
           ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
           : inventoryDraft.movementType === 'arrival'
-            ? `Приход на ${sourceLabel(inventoryDraft.source)} сохранён.`
+            ? `Приход на ${sourceLabel(inventoryDraft.source)} сохранён${result.operationId ? ` · операция ${result.operationId}` : ''}.${arrivalLabel ? ` Учтённый товар: ${arrivalLabel}.` : ''}${arrivalVerificationWarning}`
             : `${sourceLabel(inventoryDraft.source)} обновлён.`)
         if (isTransfer) setInventoryTransferRequestId(makeCashRequestId('inventory-transfer'))
         else setInventoryManualRequestId(makeCashRequestId('inventory-manual'))
