@@ -638,10 +638,21 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     setStocktakeSession(session)
     setStocktakeSource(session.source)
     const persistedFacts = Object.fromEntries((session.items || []).map((item: any) => [String(item.id), item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)]))
-    setStocktakeFacts(persistedFacts)
+    // Server refresh must not erase counts typed or still being saved in this tab.
+    // Only switching to a different session is allowed to reset local drafts.
+    const dirtyIds = sameSession ? new Set(stocktakeTouchedIds.current) : new Set<number>()
+    setStocktakeFacts((current) => sameSession
+      ? { ...persistedFacts, ...Object.fromEntries(
+          [...dirtyIds].filter((id) => String(id) in persistedFacts).map((id) => [String(id), current[String(id)] ?? ''])
+        ), ...Object.fromEntries(
+          [...stocktakePendingValues.current].filter(([id]) => String(id) in persistedFacts).map(([id, value]) => [String(id), value])
+        ) }
+      : persistedFacts)
     stocktakeLastPersistedValues.current = new Map((session.items || []).map((item: any) => [Number(item.id), item.countedQuantity === null || item.countedQuantity === undefined ? '' : String(item.countedQuantity)]))
-    stocktakePendingValues.current.clear()
-    stocktakeTouchedIds.current.clear()
+    if (!sameSession) {
+      stocktakePendingValues.current.clear()
+      stocktakeTouchedIds.current.clear()
+    }
     setStocktakeProductIndexState(nextProductIndex)
     stocktakeProductKeyRef.current = nextProductKeys[nextProductIndex] || ''
     stocktakeSessionIdRef.current = session.id
@@ -831,9 +842,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       if (!result?.ok) {
         setCycleCountNotice(result?.message || 'Сверку пока нельзя применить.')
         if (result?.code === 'changed') {
-          setCycleCountValues({})
-          await refreshInventoryModule(true)
-          await refreshCycleCountSuggestions(stocktakeSource, true)
+          // Keep manually entered counts available for review and re-entry; a
+          // stale snapshot must not silently discard everyone's count sheet.
+          await Promise.allSettled([
+            refreshInventoryModule(true),
+            refreshCycleCountSuggestions(stocktakeSource, true),
+          ])
+          setCycleCountNotice((result?.message || 'Учёт изменился.') + ' Введённые вами числа сохранены на экране; сравните их со свежими остатками перед повтором.')
         }
         return
       }
@@ -1200,9 +1215,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         else failedIds.push(Number(row.id))
       }
       if (failedIds.length) {
-        for (const id of failedIds) stocktakeTouchedIds.current.delete(id)
-        setStocktakeFacts((current) => ({ ...current, ...Object.fromEntries(failedIds.map((id) => [String(id), ''])) }))
-        setStocktakeNotice(`Сохранено ${saved} из ${rows.length}. Не удалось сохранить ${failedIds.length} — эти поля снова оставлены пустыми. Нажмите «Остальные = 0» ещё раз.`)
+        // Do not erase physical facts just because the network or a concurrent
+        // movement prevented saving. Staff can retry the same measured zeros.
+        setStocktakeNotice(`Сохранено ${saved} из ${rows.length}. Не удалось сохранить ${failedIds.length} — введённые нули оставлены для повторной попытки.`)
       } else {
         setStocktakeNotice(`Для ${rows.length} позиций товара «${currentStocktakeGroup.productName}» сохранён факт 0.`)
       }
