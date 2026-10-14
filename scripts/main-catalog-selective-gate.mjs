@@ -31,7 +31,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['worker/domains/inventory-movement.ts','78ed3642479e9b961c01f063fb6900a041b9f0b5','f7dc7e9c8634dfc2378632254cb582797d7c0f62',arrivalBaseline],
     // These three files are replayed from the exact pre-safety production commit.
     // The new stocktake SQL lifecycle and UI have independent live tests above.
-    ['src/features/sections/InventorySection.tsx','cf69e21e4fda04ee6d3b0e9bffd08c9f724ab62a','76b4a9a2452c6d5fbfd3e10a89e93f74a18b9a59',warehouseBaseline],
+    ['src/features/sections/InventorySection.tsx','cf69e21e4fda04ee6d3b0e9bffd08c9f724ab62a','430998dabe195e090087e56d092bbd5f400da2ad',warehouseBaseline],
     ['worker/domains/inventory-stocktake.ts','c40f2c4bbd5075aab4412a08e77df8ad76dae0e9','7df026a8e0de46062e73b1248a7ada063a45710b',warehouseBaseline],
     ['scripts/test-stocktake-functional-acceptance.mjs','3ca20472b6a89f81d188c59f23a483d1df93aadb','23d73702c78798a08c9a370ea23aa0eebad2bcb8',warehouseBaseline],
   ]
@@ -56,6 +56,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['scripts/test-inventory-integrity-safety-20261014.mjs','Atomic handover and measured-count retention'],
     ['scripts/test-stocktake-functional-acceptance.mjs','Live SQL stocktake safety'],
     ['scripts/test-inventory-snapshot-freshness-20261014.mjs','Current warehouse full-snapshot reliability'],
+    ['scripts/test-stock-source-switch-freshness-20261014.mjs','Force exact selected stock location on source switch'],
     ['scripts/test-arrival-orda-boutique-identity-20261014.mjs','ORDA canonical product and boutique stock receipt regression'],
   ]) {
     const test=spawnSync(process.execPath,[file],{stdio:'inherit',timeout:90000})
