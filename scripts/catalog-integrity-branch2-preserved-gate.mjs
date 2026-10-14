@@ -87,13 +87,13 @@ const stockVisibilityScreens=[
     before:'c3ba07c011ef9b68b5fa3cb0a52471851877eed8',
     // Reviewed follow-up: source switching now fetches selected point before showing totals.
     // Previous accepted Branch2 stock screen blob: b1a6ea3f32a478cc333b3f3774fb69206b746143
-    after:'7416f48f0ad2bb3fd0468a128084f4c449b0c94f',
+    after:'60f3de63272102f9baced3c770bbb0cbe427e5be',
   },
   {
     file:'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
     fixture:'scripts/fixtures/stock-visibility-20261013/renderInventoryOverviewPanel.tsx',
     before:'9b7738d3589f0091e120dec7f1f3a056abc4cc0d',
-    after:'0e624c9109157fe9bbd9512d57ce062cfc0a5b2f',
+    after:'2f32be09145e2576bf534e3d50408c2fe894f91f',
   },
 ]
 for(const screen of stockVisibilityScreens){
@@ -214,6 +214,7 @@ const tests=[
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
   ['scripts/test-inventory-snapshot-freshness-20261014.mjs',false],
   ['scripts/test-stock-source-switch-freshness-20261014.mjs',false],
+  ['scripts/test-expanded-stock-all-variants-20261014.mjs',false],
   ['scripts/test-arrival-orda-boutique-identity-20261014.mjs',false],
   ['scripts/test-stocktake-functional-acceptance.mjs',true],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
