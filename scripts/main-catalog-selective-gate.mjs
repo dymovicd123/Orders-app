@@ -28,7 +28,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['worker/domains/lifecycle.ts','25f08471020220883107de8ee02b26bc774eb29a','039b84adc58aadefc6ded14b6dd9fa73a6aeb847'],
     ['worker/domains/returns-exchanges.ts','af53527b060ec388bbe9058b80df16a564b8af4c','14327c966fceb9f42f49c1fc39148e8081c4a19f'],
     ['worker/domains/exchange-batch.ts','725515005ad9e64d30e6eb2605f974c7947358e3','0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45'],
-    ['worker/domains/inventory-movement.ts','78ed3642479e9b961c01f063fb6900a041b9f0b5','1280fef092f03e0ae8043a4f0deff076af96bc59',arrivalBaseline],
+    ['worker/domains/inventory-movement.ts','78ed3642479e9b961c01f063fb6900a041b9f0b5','f7dc7e9c8634dfc2378632254cb582797d7c0f62',arrivalBaseline],
     // These three files are replayed from the exact pre-safety production commit.
     // The new stocktake SQL lifecycle and UI have independent live tests above.
     ['src/features/sections/InventorySection.tsx','cf69e21e4fda04ee6d3b0e9bffd08c9f724ab62a','76b4a9a2452c6d5fbfd3e10a89e93f74a18b9a59',warehouseBaseline],
