@@ -28,14 +28,18 @@ export async function runRoutineCycleCount(args: RoutineCycleCountArgs) {
       const failureNotice = result?.message || 'Остаток изменился. Обновите данные и пересчитайте позицию.'
       setNotice(failureNotice)
       if (result?.code === 'changed') {
-        setValues((current: any) => ({ ...current, [String(row.variantId)]: '' }))
+        // A conflict invalidates the system baseline, not the employee's
+        // physical measurement. Keep their entered count available for review.
         const refreshes = await Promise.allSettled([
           refreshInventoryModule(true),
           refreshSuggestions(source, true, 5),
         ])
         if (refreshes.some((entry) => entry.status === 'rejected')) {
-          setNotice(`${failureNotice} Свежие данные не удалось загрузить автоматически; обновите остатки перед повторным подсчётом.`)
+          setNotice(`${failureNotice} Введённое количество сохранено на экране. Свежие данные не удалось загрузить автоматически; обновите остатки перед повторным подсчётом.`)
         }
+      }
+      if (result?.code === 'changed') {
+        setNotice(`${failureNotice} Введённое количество сохранено на экране; сравните его с новым остатком и подтвердите заново.`)
       }
       return
     }
