@@ -1,0 +1,26 @@
+import fs from 'node:fs'
+import assert from 'node:assert/strict'
+
+const app=fs.readFileSync('src/App.tsx','utf8')
+const ui=fs.readFileSync('src/features/sections/InventorySection.tsx','utf8')
+const client=fs.readFileSync('src/app/controllers/useApiClient.ts','utf8')
+const loader=fs.readFileSync('src/features/inventory/loadCompleteInventorySnapshot.ts','utf8')
+const start=app.indexOf('  async function loadInventoryData(')
+const end=app.indexOf('  function invalidateInventoryStockCaches(',start)
+assert.ok(start>0&&end>start,'Warehouse loader missing')
+const load=app.slice(start,end)
+
+assert.ok(client.includes("cachedHeaders.set('X-Orders-App-Stale', '1')"),'Stale API response must advertise its age')
+assert.ok(load.includes("response.headers.get('X-Orders-App-Stale') === '1'"),'Stale cached inventory page can be treated as a fresh snapshot')
+assert.ok(load.includes("throw new Error('Свежие остатки недоступны."),'Stale response must fail closed')
+assert.ok(load.includes('if (!data) return rejectSnapshot('),'Partial/missing pages can be treated as complete')
+assert.ok(load.includes('inventorySnapshotLoadedAt.current[source] = 0'),'Failed complete refresh retains a misleading fresh timestamp')
+assert.ok(load.includes('setInventoryData((current) => ({ ...current, [source]: null }))'),'Failed complete refresh keeps presenting older values as current')
+assert.ok(load.includes('if (inventorySnapshotRequestSeq.current[source] !== requestSeq) return null'),'Overlapping loads can apply stale results out of order')
+assert.ok(load.includes('inventorySnapshotRequestSeq.current[source] === requestSeq'),'Older failures can wipe newer warehouse data')
+assert.ok(app.includes('inventorySnapshotRequestSeq.current = { warehouse: inventorySnapshotRequestSeq.current.warehouse + 1'),'Inventory mutation does not invalidate in-flight snapshots')
+assert.ok(app.includes('inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats,'),'Error state is not supplied to Warehouse panel')
+assert.ok(ui.includes('inventorySnapshotLoadErrors?.[simpleStockSource]'),'Warehouse missing reliable per-location load-error feedback')
+assert.ok(ui.includes('<strong>Не удалось подтвердить актуальные остатки:</strong>'),'Warehouse must tell staff not to rely on old figures')
+assert.ok(loader.includes('Never publish a partial page.'),'Cursor completion contract must stay in force')
+console.log('INVENTORY SNAPSHOT FRESHNESS PASSED — stale cached pages fail closed; partial loads cannot masquerade as current warehouse stock; errors are visible')
