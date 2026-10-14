@@ -1,0 +1,65 @@
+name: Read-only production duplicate 1734/1974 preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-off-prod-1734-1974-preflight.yml'
+permissions:
+  contents: read
+concurrency:
+  group: one-off-prod-1734-1974-readonly
+  cancel-in-progress: false
+jobs:
+  inspect:
+    name: Inspect targeted production records (NO writes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact target / fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "main" ]]
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          echo "Read-only Production D1 identity verified; zero database writes."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Read only order/payment/exchange and inventory audit rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only fixed IDs; deliberately omit customer names, contact details,
+          # business free-text notes, phone, login and secrets from public CI logs.
+          SQL="$(cat <<'SQL_END'
+          SELECT
+            (SELECT json_group_array(json_object('id',id,'status',order_status,'shipping',shipping_status,'date',order_date,'amount',total_amount,'paid',received_amount,'debt',debt_amount,'updated',updated_at)) FROM orders WHERE id IN (1734,1974)) orders,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'variant',variant_id,'qty',quantity,'source',source_type,'stock_status',stock_writeoff_status)) FROM order_items WHERE order_id IN (1734,1974) OR id=4262) items,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'amount',amount,'date',payment_date,'kind',payment_kind,'method',method)) FROM payments WHERE order_id IN (1734,1974)) payments,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'status',status,'old_item',old_order_item_id,'new_item',new_order_item_id,'old_qty',old_quantity,'old_source',old_return_source,'new_source',new_source_type,'finance_action',financial_action,'finance_amount',financial_amount,'payment_id',payment_id,'refund_id',refund_return_id)) FROM exchanges WHERE order_id IN (1734,1974) OR id IN (78,80)) exchanges,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'status',status,'amount',amount)) FROM returns WHERE order_id IN (1734,1974)) returns,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'item',order_item_id,'variant',variant_id,'source',inventory_source,'status',status,'qty',quantity,'fulfilled',fulfilled_at)) FROM inventory_reservations WHERE order_id IN (1734,1974) OR id=1674) reservations,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'type',event_type,'delta',amount_delta,'source',source_type,'source_id',source_id,'reason',reason,'date',event_date,'key',event_key)) FROM financial_events WHERE order_id IN (1734,1974)) finance,
+            (SELECT json_group_array(json_object('id',id,'order',order_id,'direction',direction,'amount',amount,'type',entry_type,'key',source_key)) FROM cash_register_entries WHERE order_id IN (1734,1974)) cash,
+            (SELECT json_group_array(json_object('id',id,'type',operation_type,'operation',operation_id,'event',event_type,'variant',variant_id,'status',status)) FROM inventory_lifecycle_events WHERE operation_type='exchange' AND operation_id IN (78,80)) lifecycle,
+            (SELECT json_group_array(json_object('id',id,'variant',variant_id,'source',inventory_source,'delta',quantity_delta,'type',movement_type,'ref_type',reference_type,'ref_id',reference_id,'date',created_at)) FROM inventory_movements WHERE id=4873) movement,
+            (SELECT json_group_array(json_object('id',id,'source',inventory_source,'status',status,'completed',completed_at)) FROM (SELECT id,inventory_source,status,completed_at FROM inventory_stocktake_sessions WHERE status='completed' ORDER BY completed_at DESC LIMIT 6)) recent_stocktakes
+          ;
+          SQL_END
+          )"
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json)"
+          jq -ce '.[0].results[0] | with_entries(.value |= fromjson)' <<<"$result" | tee /tmp/targeted-production-audit.json
+          # Require both target orders, exactly one exchange under each,
+          # original two payment references and original fulfillment evidence.
+          jq -e '.orders|length==2' /tmp/targeted-production-audit.json >/dev/null
+          echo "DONE: production duplicate preflight (SELECT only). NO DATA MODIFIED."
