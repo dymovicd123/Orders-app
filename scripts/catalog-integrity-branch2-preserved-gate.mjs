@@ -172,6 +172,7 @@ const tests=[
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
   ['scripts/test-inventory-integrity-safety-20261014.mjs',false],
   ['scripts/test-inventory-snapshot-freshness-20261014.mjs',false],
+  ['scripts/test-arrival-orda-boutique-identity-20261014.mjs',false],
   ['scripts/test-stocktake-functional-acceptance.mjs',true],
   ['scripts/test-exchange-no-stocktake-confirmation-20261013.mjs',false],
   ['scripts/test-temporary-manager-warehouse-operations-20261013.mjs',false],
