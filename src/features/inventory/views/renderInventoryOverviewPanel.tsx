@@ -167,6 +167,8 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     setSimpleStockDetail,
     setSimpleStockOpenProductKey,
     setSimpleStockSource,
+    simpleStockCatalogLoading,
+    simpleStockCatalogError,
     simpleStockAvailabilityFilter,
     simpleStockCategory,
     simpleStockDetail,
