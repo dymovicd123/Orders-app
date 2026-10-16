@@ -1059,17 +1059,29 @@ const summary = useMemo(() => {
     const productGenderScope = String(match.genderScope || 'unisex')
     const automaticGender = productGenderScope === 'female' ? 'ЖЕН' : productGenderScope === 'male' ? 'МУЖ' : ''
     const activeVariants = variants.filter((variant) => variant.isActive)
-    const first = (automaticGender
-      ? activeVariants.find((variant) => normalizeSuggestion(variant.gender) === automaticGender)
-      : null) || activeVariants[0] || null
+    const genderMatches = automaticGender
+      ? activeVariants.filter((variant) => normalizeSuggestion(variant.gender) === automaticGender)
+      : activeVariants
+    const matchingVariants = genderMatches.length ? genderMatches : activeVariants
+    const first = matchingVariants[0] || null
+    // A product can have multiple executions (e.g. ДРАП and ШЕРСТЬ).
+    // Never silently copy the first variant's material/length into a new arrival.
+    const materialOptions = new Map(matchingVariants.map((variant) => [
+      normalizeSuggestion(variant.material || 'СТАНДАРТ'),
+      variant.material || 'СТАНДАРТ',
+    ]))
+    const lengthOptions = new Map(matchingVariants.map((variant) => [
+      normalizeSuggestion(variant.length || 'СТАНДАРТ'),
+      variant.length || 'СТАНДАРТ',
+    ]))
     setInventoryArrivalPositions((current) => current.map((position) => position.id === id ? {
       ...position,
       productId: String(match.id),
       productName: match.name,
       category: first ? getCatalogVariantCategory(first) : (match.category === 'child' ? 'child' : 'adult'),
       gender: automaticGender || first?.gender || position.gender,
-      material: first?.material || position.material || 'СТАНДАРТ',
-      length: first?.length || position.length || 'СТАНДАРТ',
+      material: materialOptions.size > 1 ? '' : (first?.material || position.material || 'СТАНДАРТ'),
+      length: lengthOptions.size > 1 ? '' : (first?.length || position.length || 'СТАНДАРТ'),
     } : position))
   }
 
@@ -1138,6 +1150,13 @@ const summary = useMemo(() => {
     for (const position of inventoryArrivalPositions) {
       const productName = position.productId ? position.productName.trim() : position.productName.trim().toUpperCase()
       if (!productName) continue
+      const hasReceivingRows = position.sizes.some((line) => Number(line.quantity || 0) > 0)
+      if (hasReceivingRows && !position.material.trim()) {
+        throw new Error(`Укажите материал для «${productName}» перед оформлением прихода (например, ДРАП или ШЕРСТЬ).`)
+      }
+      if (hasReceivingRows && !position.length.trim()) {
+        throw new Error(`Укажите длину для «${productName}» перед оформлением прихода.`)
+      }
       const mergedSizes = new Map<string, { size: string; color: string; quantity: number }>()
       for (const line of position.sizes) {
         const quantity = Math.max(0, Math.trunc(Number(line.quantity || 0)))

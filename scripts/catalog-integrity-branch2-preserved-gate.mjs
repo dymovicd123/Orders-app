@@ -40,9 +40,18 @@ const reviewedStockProjection = {
 }
 check(manifest.files[reviewedStockProjection.file].afterGitBlob === reviewedStockProjection.before,
   'Unexpected stock projection baseline')
+// Narrowly approved arrival autofill safety patch. The prior projection release stays
+// explicitly preserved; historical staged fixtures and Stage04 remain unchanged.
+const reviewedArrivalMaterialChoice = {
+  file: reviewedStockProjection.file,
+  before: reviewedStockProjection.after,
+  after: 'b34991dae36234e70ee3a3014bf2c09cd731ee92',
+}
+check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
+  'Arrival material safety patch does not start from the accepted stock projection version')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedDeleteGuidance.currentApp
-  : file === reviewedStockProjection.file ? reviewedStockProjection.after : delta.afterGitBlob
+  : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : delta.afterGitBlob
 const historicalDeleteWorker = [
   {
     file: 'worker/domains/critical.ts',
