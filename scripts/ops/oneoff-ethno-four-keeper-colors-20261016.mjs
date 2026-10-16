@@ -155,7 +155,7 @@ if(!apply){
   t.exec("CREATE TABLE inventory_reservations(id INTEGER,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,status TEXT)")
   const add=t.prepare("INSERT INTO catalog_variants VALUES (?,?,?,?,?,?,?,?,?)")
   for(const x of related){
-   const v=byId.get(x.id)||x
+   const v=byId.get(x.id)||oldById.get(x.id)||x
    add.run(x.id,x.product_id,x.stock_position_id,x.is_active,x.color,String(v.updated_at??''),x.category,x.gender,x.size_label)
   }
   const pr=t.prepare("INSERT INTO reference_values VALUES (?,?,?,?)")
@@ -174,7 +174,22 @@ if(!apply){
  const out=good.prepare(sql).all()
  assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 4 keepers')
  assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,4)
+ for(const pair of archivedPairs){
+  const historic=good.prepare('SELECT color,is_active FROM catalog_variants WHERE id=?').get(pair.source)
+  assert.deepEqual(historic,{color:'СВЕТЛО-СЕРЫЙ',is_active:0},'Retired source changed in local replay')
+ }
+ for(const k of protectedBefore){
+  assert.equal(good.prepare('SELECT color FROM catalog_variants WHERE id=?').get(k.id).color,k.color,'Size 52/54 affected')
+ }
  good.close()
+ const badHistory=fixture()
+ badHistory.prepare("UPDATE catalog_semantic_variant_corrections SET status='cancelled' WHERE source_variant_id=?").run(1277)
+ assert.equal(badHistory.prepare(sql).all().length,0,'Changed correction ledger must abort all four')
+ badHistory.close()
+ const badRetired=fixture()
+ badRetired.prepare("UPDATE catalog_variants SET is_active=1 WHERE id=1277").run()
+ assert.equal(badRetired.prepare(sql).all().length,0,'Reactivated historical SKU must abort all four')
+ badRetired.close()
  const badReserve=fixture()
  if(reservesBefore.length){badReserve.prepare('UPDATE inventory_reservations SET quantity=quantity+1 WHERE id=?').run(reservesBefore[0].id);assert.equal(badReserve.prepare(sql).all().length,0,'Reserve drift must fail closed')}
  badReserve.close()
