@@ -81,6 +81,16 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     'Frozen production historical release gate drifted')
   assert(currentGate.includes(Buffer.from('test-stock-shortage-ui-no-inline-recount-20261013.mjs')),
     'Production candidate missing new shortage UI acceptance')
+  // Additive 0109 is reviewed on the CURRENT production candidate. The frozen
+  // pre-0109 history suite counts migrations exactly; temporarily hide ONLY this
+  // schema while replaying it, then restore it even after a failed test.
+  const newSchema='migrations/0109_v72_catalog_manual_movement_finalization.sql'
+  const schemaBytes=fs.readFileSync(newSchema)
+  assert(hash(schemaBytes)==='06314e11b70918ae5a133b076f397fbbb27d0511',
+    'Unreviewed production schema 0109 drift')
+  const hiddenSchemaDir=fs.mkdtempSync(path.join(os.tmpdir(),'main-ethno-0109-historical-'))
+  const hiddenSchema=path.join(hiddenSchemaDir,'0109.sql')
+  fs.renameSync(newSchema,hiddenSchema)
   let historicalTestFailed=false
   try{
     for(const entry of saved){
@@ -95,6 +105,9 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     })
     if(oldRun.error||oldRun.status!==0)historicalTestFailed=true
   }finally{
+    fs.renameSync(hiddenSchema,newSchema)
+    assert(hash(fs.readFileSync(newSchema))===hash(schemaBytes),'0109 schema not restored after historical replay')
+    fs.rmSync(hiddenSchemaDir,{recursive:true,force:true})
     fs.writeFileSync(gatePath,currentGate)
     assert(hash(fs.readFileSync(gatePath))===hash(currentGate),
       'Could not restore reviewed Production gate after legacy suite')
