@@ -8067,7 +8067,7 @@ function removeDebtPayment(index: number) {
                   {stockHandoverData?.orderDate ? <span>Заказ от {handoverCheckpointDateLabel(stockHandoverData.orderDate)}</span> : null}
                   {stockHandoverData?.orderCreatedAt ? <span>Внесён в систему {handoverDateTimeLabel(stockHandoverData.orderCreatedAt)}</span> : null}
                 </div>
-                <p>Здесь фиксируется, где товар находится физически. Если товар уже был у клиента, система не спишет его второй раз.</p>
+                <p>Для старых заказов после ревизии сначала уточните, где была вещь в день пересчёта. Это не новая ревизия: ответ касается только выбранного заказа. Остатки других товаров не меняются.</p>
               </div>
               <button className="secondary compact" type="button" onClick={closeOrderStockHandover} disabled={stockHandoverActionItemId !== null}>Закрыть</button>
             </div>
@@ -8117,10 +8117,10 @@ function removeDebtPayment(index: number) {
                         ) : item.state === 'handover_review' ? (
                           <div className="order-stock-handover-legacy-choice">
                             <div className="order-stock-handover-question">
-                              <strong>К моменту {checkpointWord} {checkpointDate} клиент уже получил этот товар?</strong>
-                              <span>{item.reviewReason === 'late_entry' ? 'Позиция появилась в системе после физической проверки.' : 'Это смешанный заказ, и после резерва складской позиции была физическая проверка.'}</span>
+                              <strong>К моменту {checkpointWord} {checkpointDate} товар уже был у клиента?</strong>
+                              <span>{item.reviewReason === 'late_entry' ? 'Заказ внесли в систему после проверки за более раннюю дату.' : 'После оформления заказа была физическая проверка. Уточните, где находилась вещь в тот день.'}</span>
                               {item.itemCreatedAt ? <span>Позиция в учёте с {handoverDateTimeLabel(item.itemCreatedAt)}.</span> : null}
-                              <span>Если уже получил — физический остаток не изменится и повторного списания не будет. Если товар ещё был здесь — резерв останется до обычной выдачи.</span>
+                              <span>Выбирайте по факту, а не по статусу в программе. Если вещь выдали до проверки, резерв закроется без повторного списания. Если на момент проверки вещь ещё была на месте, резерв сохранится до подтверждения отправки.</span>
                             </div>
                             <div className="order-stock-handover-choice-grid">
                               <button
@@ -8129,8 +8129,8 @@ function removeDebtPayment(index: number) {
                                 disabled={stockHandoverActionItemId !== null}
                                 onClick={() => void runOrderStockHandoverAction(item, 'issued_before_checkpoint')}
                               >
-                                <strong>Да, уже получил</strong>
-                                <span>Не списывать этот товар повторно</span>
+                                <strong>Да, выдали до проверки</strong>
+                                <span>Закрыть резерв, не уменьшать остаток повторно</span>
                               </button>
                               <button
                                 className="secondary order-stock-handover-choice is-here"
@@ -8138,8 +8138,8 @@ function removeDebtPayment(index: number) {
                                 disabled={stockHandoverActionItemId !== null}
                                 onClick={() => void runOrderStockHandoverAction(item, 'still_here')}
                               >
-                                <strong>Нет, товар ещё был здесь</strong>
-                                <span>Оставить товар в остатке до фактической выдачи клиенту</span>
+                                <strong>Нет, во время проверки был на месте</strong>
+                                <span>Сохранить резерв, затем оформить фактическую отправку</span>
                               </button>
                             </div>
                           </div>
