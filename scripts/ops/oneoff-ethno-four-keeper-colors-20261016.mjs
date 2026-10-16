@@ -1,44 +1,27 @@
-// Exact 26 active variant color spelling fixes. Six collisions excluded.
-// PR: SELECT-only live check and local atomic SQL; main push: one guarded UPDATE RETURNING.
+// EXACT 4 active Ethno Drape keepers from fully completed 27 September archived-source corrections.
+// PR mode: production SELECT and local atomic SQL rehearsal; main push: guarded catalog color-only UPDATE.
 // Explicitly never updates inventory_stock/reservations/order_items/stocktake/finance.
 import {execFileSync} from 'node:child_process'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 const config=process.env.PROD_CANARY_CONFIG
 assert(config&&fs.readFileSync(config,'utf8').includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'))
-const apply=process.env.APPLY_REMAINING26_COLORS==='yes'
+const apply=process.env.APPLY_ETHNO_FOUR_COLOR==='yes'
 if(apply) {
  assert.equal(process.env.GITHUB_EVENT_NAME,'push')
  assert.equal(process.env.GITHUB_REF,'refs/heads/main')
 }
-const specs=[
- {id:1423,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
- {id:1431,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
- {id:1503,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
- {id:1514,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
- {id:1515,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
- {id:1718,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
- {id:1586,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1665,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1666,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1739,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1740,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1741,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1742,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1743,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1744,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1768,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1774,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1806,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1807,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1484,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1498,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1500,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1794,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1797,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1680,from:'ТЕМНО КОРИЧНЕВЫЙ',to:'ТЕМНО-КОРИЧНЕВЫЙ'},
- {id:1681,from:'ТЕМНО КОРИЧНЕВЫЙ',to:'ТЕМНО-КОРИЧНЕВЫЙ'},
+const archivedPairs=[
+ {source:1277,keeper:1438,size:'46'},
+ {source:1278,keeper:1436,size:'48'},
+ {source:1279,keeper:1441,size:'50'},
+ {source:1303,keeper:1473,size:'56'},
 ]
+const archivedIds=archivedPairs.map(x=>x.source)
+const archivedList=archivedIds.join(',')
+const specs=archivedPairs.map(x=>({id:x.keeper,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'}))
+const protectedLiveIds=[1280,1281,1532,1533]
+const otherActiveSql='SELECT * FROM catalog_variants WHERE id IN ('+protectedLiveIds.join(',')+') ORDER BY id'
 const ids=specs.map(x=>x.id), list=ids.join(',')
 const quote=x=>String(x).replaceAll("'","''")
 function call(q,write=false) {
@@ -50,15 +33,23 @@ function call(q,write=false) {
  return v[0]
 }
 const read=q=>call(q).results
-const canonical=[
- {id:50419,value:'СВЕТЛО-СЕРЫЙ'},
- {id:576,value:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:580,value:'ТЕМНО-СИНИЙ'},
- {id:50415,value:'ТЕМНО-КОРИЧНЕВЫЙ'},
-]
-const refRows=read('SELECT id,kind,value,is_active FROM reference_values WHERE id IN (50419,576,580,50415) ORDER BY id')
-assert.equal(refRows.length,4)
-for(const c of canonical)assert(refRows.some(x=>x.id===c.id&&x.kind==='color'&&x.is_active===1&&x.value===c.value),'Canonical reference changed')
+const refRows=read('SELECT id,kind,value,is_active FROM reference_values WHERE id IN (50418,50419) ORDER BY id')
+assert.equal(refRows.length,2,'Both original and canonical references required')
+assert(refRows.some(x=>x.id===50418&&x.kind==='color'&&x.value==='СВЕТЛО СЕРЫЙ'&&x.is_active===1),'Source color reference missing')
+assert(refRows.some(x=>x.id===50419&&x.kind==='color'&&x.value==='СВЕТЛО-СЕРЫЙ'&&x.is_active===1),'Canonical color reference missing')
+const oldVariants=read('SELECT * FROM catalog_variants WHERE id IN ('+archivedList+') ORDER BY id')
+assert.equal(oldVariants.length,4,'Missing historic retired variants')
+const oldById=new Map(oldVariants.map(x=>[x.id,x]))
+for(const pair of archivedPairs){
+ const x=oldById.get(pair.source)
+ assert(x&&x.is_active===0&&x.color==='СВЕТЛО-СЕРЫЙ'&&x.size_label===pair.size,'Archived source changed: '+pair.source)
+}
+const correctionSql='SELECT source_variant_id,keeper_variant_id,status,completed_at FROM catalog_semantic_variant_corrections WHERE source_variant_id IN ('+archivedList+') ORDER BY source_variant_id'
+const correctionBefore=read(correctionSql)
+assert.equal(correctionBefore.length,4,'September correction records incomplete')
+for(const pair of archivedPairs)assert(correctionBefore.some(x=>x.source_variant_id===pair.source&&x.keeper_variant_id===pair.keeper&&x.status==='completed'&&x.completed_at),'Correction lineage changed '+pair.source)
+const protectedBefore=read(otherActiveSql)
+assert.deepEqual(protectedBefore.map(x=>x.id),protectedLiveIds,'Size 52/54 SKU mapping changed')
 const variants=read('SELECT * FROM catalog_variants WHERE id IN ('+list+') ORDER BY id')
 assert.equal(variants.length,specs.length)
 const byId=new Map(variants.map(x=>[x.id,x]))
@@ -72,10 +63,14 @@ for(const plan of specs){
  assert.equal(v.is_active,1)
  assert(Number.isSafeInteger(v.stock_position_id)&&v.stock_position_id>0)
  assert(v.updated_at,'Missing updated_at')
- assert(!related.some(x=>x.id!==v.id&&x.product_id===v.product_id&&x.stock_position_id===v.stock_position_id
+ const pair=archivedPairs.find(x=>x.keeper===v.id)
+ assert.equal(v.product_id,75,'Wrong Ethno product')
+ assert.equal(v.stock_position_id,146,'Wrong Drape execution')
+ assert.equal(v.size_label,pair.size,'Expected size changed')
+ assert(!related.some(x=>x.id!==v.id&&x.id!==pair.source&&x.product_id===v.product_id&&x.stock_position_id===v.stock_position_id
    &&(x.category||'adult')===(v.category||'adult')&&(x.gender||'')===(v.gender||'')
    &&(x.size_label||'')===(v.size_label||'')&&norm(x.color)===norm(plan.to)),
-   'Another active or archived SKU matches '+plan.id)
+   'Additional active or historic SKU conflicts with '+plan.id)
 }
 const stockSql='SELECT * FROM inventory_stock WHERE variant_id IN ('+list+') ORDER BY id'
 const stockBefore=read(stockSql)
@@ -102,9 +97,9 @@ const ordersBefore=read(orderSql)
 const ftsSql='SELECT rowid,order_id,search_text FROM order_search_items_fts WHERE rowid IN (SELECT id FROM order_items WHERE variant_id IN ('+list+')) ORDER BY rowid'
 const ftsBefore=read(ftsSql)
 assert.equal(ordersBefore.length,ftsBefore.length,'Existing search rows incomplete')
-console.log('REMAINING26_READONLY_PREFLIGHT='+JSON.stringify({ids,physical:stockBefore.reduce((n,x)=>n+x.quantity,0),reserved:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),stockRows:stockBefore.length,activeReservationRows:reservesBefore.length,orderItems:ordersBefore.length,collisions:0}))
+console.log('ETHNO_FOUR_READONLY_PREFLIGHT='+JSON.stringify({ids,archivedIds,confirmedSeptemberCorrections:correctionBefore.length,physical:stockBefore.reduce((n,x)=>n+x.quantity,0),reserved:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),stockRows:stockBefore.length,activeReservationRows:reservesBefore.length,historicalOrderItems:ordersBefore.length,additionalConflicts:0}))
 // PR mode will dry-run the fully generated SQL against local ephemeral SQLite.
-// All 26 source variants must match simultaneously. Gate is MATERIALIZED
+// All 4 active keepers must match simultaneously; exactly four allowed inactive historical sources. Gate is MATERIALIZED
 // before any target row update; if any reference/stock/reservation changed,
 // SQLite returns zero rows and touches no target variant.
 const variantWhere=specs.map(x=>{
