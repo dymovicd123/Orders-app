@@ -1333,7 +1333,7 @@ export async function fetchOrderStockHandoverRows(
                    WHERE c.inventory_source = si.inventory_source
                      AND c.variant_id = si.variant_id
                      AND (
-                       (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date))
+                       (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date) AND date(si.order_date) < date(si.origin_at, '+5 hours'))
                        OR (date(c.checked_at, '+5 hours') >= date(si.order_date) AND datetime(c.checked_at) > datetime(si.origin_at))
                      )
                    ORDER BY datetime(c.checked_at) DESC, c.id DESC
@@ -1344,7 +1344,7 @@ export async function fetchOrderStockHandoverRows(
                      AND s.status = 'completed'
                      AND s.completed_at IS NOT NULL
                      AND s.id NOT LIKE 'REV-%-P-%'
-                     AND (datetime(s.started_at) <= datetime(si.origin_at) OR datetime(s.completed_at) > datetime(si.origin_at))
+                     AND ((datetime(s.started_at) <= datetime(si.origin_at) AND date(si.order_date) < date(si.origin_at, '+5 hours')) OR datetime(s.completed_at) > datetime(si.origin_at))
                      AND date(s.completed_at, '+5 hours') >= date(si.order_date)
                      AND NOT EXISTS (
                        SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1517,7 +1517,7 @@ export async function fetchOrderStockHandoverRows(
            AND c2.variant_id = r.variant_id
            AND (
              (datetime(c2.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
-              AND date(c2.checked_at, '+5 hours') >= date(o.order_date))
+              AND date(c2.checked_at, '+5 hours') >= date(o.order_date) AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours')))
              OR
              (date(c2.checked_at, '+5 hours') >= date(o.order_date)
               AND datetime(c2.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
@@ -1532,7 +1532,8 @@ export async function fetchOrderStockHandoverRows(
            AND s2.status = 'completed'
            AND s2.completed_at IS NOT NULL
            AND s2.id NOT LIKE 'REV-%-P-%'
-           AND (datetime(s2.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+           AND ((datetime(s2.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
              OR datetime(s2.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s2.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
