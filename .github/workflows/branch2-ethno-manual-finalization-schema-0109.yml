@@ -1,0 +1,115 @@
+name: Branch2 Ethno manual-history finalization empty schema 0109
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'migrations/0109_v72_catalog_manual_movement_finalization.sql'
+      - '.github/workflows/branch2-ethno-manual-finalization-schema-0109.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-ethno-manual-finalization-schema-0109.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-ethno-0109-schema
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Fail closed outside isolated branch2 database
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_BASE_REF:-branch2}" == 'branch2' ]]
+          [[ "${GITHUB_EVENT_NAME}" == 'pull_request' || "${GITHUB_REF}" == 'refs/heads/branch2' ]]
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          [[ "$(git hash-object migrations/0109_v72_catalog_manual_movement_finalization.sql)" == '06314e11b70918ae5a133b076f397fbbb27d0511' ]]
+          ! grep -Eiq '^[[:space:]]*(UPDATE|DELETE|REPLACE|DROP|TRUNCATE|ALTER)[[:space:]]' migrations/0109_v72_catalog_manual_movement_finalization.sql
+      - run: npm ci
+      - name: Validate additive SQL on empty local SQLite before any remote change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs=require('node:fs')
+          const {DatabaseSync}=require('node:sqlite')
+          const db=new DatabaseSync(':memory:')
+          db.exec('PRAGMA foreign_keys=ON;CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY);CREATE TABLE inventory_stock_checks(id INTEGER PRIMARY KEY);CREATE TABLE inventory_movement_reversals(original_movement_id INTEGER, reversal_movement_id INTEGER);')
+          const sql=fs.readFileSync('migrations/0109_v72_catalog_manual_movement_finalization.sql','utf8')
+          db.exec(sql)
+          if(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('catalog_manual_movement_finalizations','catalog_manual_finalization_validations','catalog_manual_finalization_reversal_guard')").get().n!==3)throw Error('Schema incomplete')
+          db.close()
+          JS
+      - name: Capture read-only branch2 baseline and detect partial schema
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+            (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+            (SELECT COUNT(*) FROM inventory_stock_checks) AS physical_check_rows,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reserve_rows,
+            (SELECT COUNT(*) FROM payments) AS payments,
+            (SELECT COUNT(*) FROM financial_events) AS finance_rows,
+            (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_rows
+          " --json | jq -cSe '.[0].results[0]' > /tmp/0109-before.json
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT COUNT(*) AS n FROM sqlite_master WHERE name IN (
+          'catalog_manual_movement_finalizations','catalog_manual_finalization_validations','catalog_manual_finalization_reversal_guard')
+          " --json | jq -r '.[0].results[0].n' > /tmp/0109-schema-state
+          [[ "$(cat /tmp/0109-schema-state)" == 0 || "$(cat /tmp/0109-schema-state)" == 3 ]]
+      - name: Install inert schema on branch2 only, never on production
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(cat /tmp/0109-schema-state)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0109_v72_catalog_manual_movement_finalization.sql
+          else
+            echo 'Exact schema already present; no writes'
+          fi
+      - name: Verify exactly empty new tables and zero business-data drift
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS order_items_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+            (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+            (SELECT COUNT(*) FROM inventory_stock_checks) AS physical_check_rows,
+            (SELECT COUNT(*) FROM inventory_reservations) AS reserve_rows,
+            (SELECT COUNT(*) FROM payments) AS payments,
+            (SELECT COUNT(*) FROM financial_events) AS finance_rows,
+            (SELECT COUNT(*) FROM workshop_settlement_events) AS stage04_rows
+          " --json | jq -cSe '.[0].results[0]' > /tmp/0109-after.json
+          cmp /tmp/0109-before.json /tmp/0109-after.json
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT (SELECT COUNT(*) FROM sqlite_master WHERE name IN (
+          'catalog_manual_movement_finalizations','catalog_manual_finalization_validations','catalog_manual_finalization_reversal_guard')) AS schema_count,
+          (SELECT COUNT(*) FROM catalog_manual_movement_finalizations) AS finalizations,
+          (SELECT COUNT(*) FROM catalog_manual_finalization_validations) AS validations
+          " --json | jq -e '.[0].results[0] | .schema_count==3 and .finalizations==0 and .validations==0'
+          echo 'EMPTY BRANCH2 0109 SCHEMA VERIFIED: no history, stock, finance or Stage04 mutations'
