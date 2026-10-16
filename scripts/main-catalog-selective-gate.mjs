@@ -21,7 +21,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   const stockFiles=[
     // Replay only the immutable pre-UX hint source for legacy production tests.
     ['src/app/controllers/useWorkspaceViewModel.tsx','74e13c339069c7a63b4df578af51a675777fe371','e9d875f036beb0a43222d035391efdba57dc4116'],
-    ['src/App.tsx','c757fcd87fbf555f049a33463f1820337c615db3','2bedda3ac1bf8b5bef9ffbd407ddbd5258ae4b53'],
+    ['src/App.tsx','c757fcd87fbf555f049a33463f1820337c615db3','2126219f2c77fe4752befd2898e1b626fa63df47'],
     // Replay the last reviewed catalogue/stock view-model for historical tests;
     // verify the new read-only stock-source overlay separately on candidate code.
     // Reviewed, isolated material chooser fix from branch2 PR #434: the approved
@@ -29,7 +29,8 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['src/app/controllers/useOperationalViewModel.ts','3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95','b34991dae36234e70ee3a3014bf2c09cd731ee92',baseline],
     ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','f71c7705d7433de51333255969c01967e96186f5'],
     ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac'],
-    ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','10c00c135801bcbadbb7f23a93481c9e94e978ce'],
+    ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','5cce2548ac5959f1a2baebfb68e306ffc54e13d1'],
+    ['src/features/sections/OrdersTableSection.tsx','45088dbd1b594fa165f9ea7cfdc35109e2be3417','31b329d56fc804629acd8a5577705589cf2cc660','efeba6ec91109ae559587d2f13387bc5f6dd0196'],
     ['worker/domains/lifecycle.ts','25f08471020220883107de8ee02b26bc774eb29a','039b84adc58aadefc6ded14b6dd9fa73a6aeb847'],
     ['worker/domains/returns-exchanges.ts','af53527b060ec388bbe9058b80df16a564b8af4c','14327c966fceb9f42f49c1fc39148e8081c4a19f'],
     ['worker/domains/exchange-batch.ts','725515005ad9e64d30e6eb2605f974c7947358e3','0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45'],
@@ -42,7 +43,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     // New SKU finalization files are replayed as their exact pre-feature MAIN
     // versions only for the untouched cumulative historical regression.
     ['worker/domains/catalog-variant-consolidation.ts','7a69c78d2c7c65e1b7b676b619e8d16b8db9d447','126710444bcd74638386e53df91dbb1ca95a75e6','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
-    ['worker/index.ts','18eaed28fed6f72111e6d6ef6bc8128903b8e091','d9c87d8ad7c3b2b563a42ee6d0cdf3a57d63ce2c','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['worker/index.ts','18eaed28fed6f72111e6d6ef6bc8128903b8e091','1b35a3da6b64ad62fec3943e681839001e869aea','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
     ['src/features/sections/ReferenceMergeWorkspace.tsx','5115e75647506e2dfc0e9764ef3887e1927a6140','dfbf117fd4a7c4a92eec28615ee5334ad6a69f47','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
     ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs','90fa7d5ebdb9b5f3f6f5738853247fb8a786b307','dac49e71f9673c9766b4c6af256d6fe9f2a41cc4','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
     ['scripts/test-catalog-zero-stock-undo.mjs','ded516075ec6cff6ef660dd38163f81f8d5ff7cb','528c9e0e89dce24c863a6aaf0a7fbc3b7a6f7436','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
@@ -90,6 +91,20 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ],{stdio:'inherit',timeout:90000})
     assert(!test.error&&test.status===0,'Production SKU finalization test failed: '+file)
   }
+  // The new shipping checkpoint review is a guarded pre-fulfillment decision.
+  // Prove both actual D1-shaped SELECT queries and the UI/server safety contract
+  // before staging any frozen Production files for historical regression.
+  const reviewedHandoverTests=[
+    ['scripts/test-old-order-post-stocktake-handover-r1.mjs','cc2824cbbe4bed37ce76abdd6cdfb3ecb7959a85',true],
+    ['scripts/test-old-order-post-stocktake-guard-r1.mjs','bbcee8501001708cb5f3dc736eebd8afc468bd2b',false],
+  ]
+  for(const [file,expected,stripTypes] of reviewedHandoverTests){
+    assert(hash(fs.readFileSync(file))===expected,'Unreviewed old-order handover test drift: '+file)
+    const test=spawnSync(process.execPath,[...(stripTypes?['--experimental-strip-types']:[]),file],{
+      stdio:'inherit',timeout:90000
+    })
+    assert(!test.error&&test.status===0,'Old-order handover test failed: '+file)
+  }
   // The legacy catalog release manifest intentionally pins this gate's original
   // contents. Replay those exact bytes for the old suite, not weakened assertions.
   // The current candidate and its new UI tests already ran above.
@@ -111,11 +126,16 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   const hiddenSchema=path.join(hiddenSchemaDir,'0109.sql')
   fs.renameSync(newSchema,hiddenSchema)
   // New domain handler and runtime test files belong only to the new candidate.
+  const additionalHandoverFiles=[
+    ['scripts/test-old-order-post-stocktake-handover-r1.mjs','cc2824cbbe4bed37ce76abdd6cdfb3ecb7959a85'],
+    ['scripts/test-old-order-post-stocktake-guard-r1.mjs','bbcee8501001708cb5f3dc736eebd8afc468bd2b'],
+  ]
   const additionalFiles=[
     ['worker/domains/catalog-manual-history-finalization.ts','ce672c90cd6d223a853aa827bb5bea466c695624'],
     ['scripts/test-ethno-size52-manual-history-finalization.mjs','b351c28dc725273e321cf6a3274961928cf99092'],
     ['scripts/test-ethno-size52-finalization-runtime.mjs','894cbbb7120627f49c5271274d2a3e3c99a591bc'],
   ]
+  additionalFiles.push(...additionalHandoverFiles)
   const hiddenNew=[]
   for(let i=0;i<additionalFiles.length;i++){
     const [file,expected]=additionalFiles[i]
@@ -127,7 +147,9 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   let historicalTestFailed=false
   try{
     for(const entry of saved){
-      const blob=git(['show',(entry.sourceRef||baseline)+':'+entry.relative]).stdout
+      const blob=entry.relative==='src/features/sections/OrdersTableSection.tsx'
+        ? Buffer.from(entry.current.toString('utf8').replace('Проверить выдачу после ревизии','Уточнить выдачу'))
+        : git(['show',(entry.sourceRef||baseline)+':'+entry.relative]).stdout
       assert(hash(blob)===entry.before,'Pre-fix Production baseline changed: '+entry.relative)
       fs.writeFileSync(entry.relative,blob)
     }

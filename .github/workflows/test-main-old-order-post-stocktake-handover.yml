@@ -1,0 +1,30 @@
+name: Production candidate old-order post-stocktake handover safety
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-old-order-post-stocktake-handover-r1.mjs'
+      - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - '.github/workflows/test-main-old-order-post-stocktake-handover.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Real SQLite compact and detailed checkpoint regression
+        run: node --experimental-strip-types scripts/test-old-order-post-stocktake-handover-r1.mjs
+      - name: Ensure shipping does not bypass revision and no physical rewrite on old case
+        run: node scripts/test-old-order-post-stocktake-guard-r1.mjs
+      - name: Build production frontend and Worker
+        run: npm run build
