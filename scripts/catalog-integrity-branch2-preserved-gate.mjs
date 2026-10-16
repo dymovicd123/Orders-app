@@ -49,9 +49,20 @@ const reviewedArrivalMaterialChoice = {
 }
 check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
   'Arrival material safety patch does not start from the accepted stock projection version')
+// Branch2-only audited history finalization from issue #413; exact current blobs
+// are pinned, and historical manifest source is still staged unmodified.
+const reviewedEthnoManualHistory = {
+  'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
+  'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
+  'worker/index.ts':'e42baf9a3898e04d191dcfe4729ebb0542b737df',
+  'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
+}
+for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed Ethno finalization runtime drift: '+file)
+const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedDeleteGuidance.currentApp
-  : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : delta.afterGitBlob
+  : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
     file: 'worker/domains/critical.ts',
@@ -196,7 +207,7 @@ for(const [file,expected] of Object.entries(manifest.stage04Files)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Stage04 migration changed: '+file)
 }
 for(const [file,expected] of Object.entries(manifest.addedFiles || {})){
-  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Catalog port new file drifted: '+file)
+  check(gitBlob(fs.readFileSync(file,'utf8'))===reviewedCatalogAdded(file,expected),'Catalog port new file drifted: '+file)
 }
 for(const [file,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===reviewedAfterGitBlob(file,delta),'Unreviewed Catalog runtime drift: '+file)
@@ -306,11 +317,11 @@ try{
     ...Object.entries(stage04B2Extensions),
   ]){
     const from=path.resolve(relative)
-    check(gitBlob(fs.readFileSync(from,'utf8'))===expected,'New module drifted: '+relative)
+    check(gitBlob(fs.readFileSync(from,'utf8'))===reviewedCatalogAdded(relative,expected),'New module drifted: '+relative)
     const to=path.join(staged,relative)
     fs.mkdirSync(path.dirname(to),{recursive:true})
     fs.renameSync(from,to)
-    hidden.push({relative,from,to,expected})
+    hidden.push({relative,from,to,expected:reviewedCatalogAdded(relative,expected)})
   }
   for(const [relative,delta] of Object.entries(manifest.files)){
     const full=path.resolve(relative)
