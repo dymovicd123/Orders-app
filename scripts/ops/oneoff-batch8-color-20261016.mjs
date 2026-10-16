@@ -76,7 +76,7 @@ const ftsSql='SELECT rowid,order_id,search_text FROM order_search_items_fts WHER
 const ftsBefore=read(ftsSql)
 assert.equal(ordersBefore.length,ftsBefore.length,'Existing search rows incomplete')
 console.log('BATCH8_READONLY_PREFLIGHT='+JSON.stringify({ids,physical:stockBefore.reduce((n,x)=>n+x.quantity,0),reserved:0,stockRows:stockBefore.length,orderItems:ordersBefore.length,collisions:0}))
-if(!apply){console.log('BATCH8_PREVIEW_ONLY_NO_MUTATION');process.exit(0)}
+// PR mode will dry-run the fully generated SQL against local ephemeral SQLite.
 // All eight source variants must match simultaneously. Gate is MATERIALIZED
 // before any target row update; if any reference/stock/reservation changed,
 // SQLite returns zero rows and touches no target variant.
@@ -100,6 +100,40 @@ const sql="WITH preflight(ok) AS MATERIALIZED (SELECT CASE WHEN "+
 "THEN 1 ELSE 0 END) "+
 "UPDATE catalog_variants SET color=CASE id "+specs.map(x=>"WHEN "+x.id+" THEN '"+quote(x.to)+"'").join(' ')+" END, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "+
 "WHERE id IN ("+list+") AND (SELECT ok FROM preflight)=1 RETURNING id,color"
+if(!apply){
+ const {DatabaseSync}=await import('node:sqlite')
+ function fixture(){
+  const t=new DatabaseSync(':memory:')
+  t.exec("CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,stock_position_id INTEGER,is_active INTEGER,color TEXT,updated_at TEXT,category TEXT,gender TEXT,size_label TEXT)")
+  t.exec("CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,is_active INTEGER,value TEXT)")
+  t.exec("CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER,updated_at TEXT)")
+  t.exec("CREATE TABLE inventory_reservations(variant_id INTEGER,status TEXT)")
+  const add=t.prepare("INSERT INTO catalog_variants VALUES (?,?,?,?,?,?,?,?,?)")
+  for(const x of related){
+   const v=byId.get(x.id)||x
+   add.run(x.id,x.product_id,x.stock_position_id,x.is_active,x.color,String(v.updated_at??''),x.category,x.gender,x.size_label)
+  }
+  const pr=t.prepare("INSERT INTO reference_values VALUES (?,?,?,?)")
+  for(const x of refRows)pr.run(x.id,x.kind,x.is_active,x.value)
+  const st=t.prepare("INSERT INTO inventory_stock VALUES (?,?,?,?,?)")
+  for(const x of stockBefore)st.run(x.id,x.variant_id,x.quantity,x.reserved_quantity,x.updated_at)
+  return t
+ }
+ // Positive in-memory replay must update all 8. Negative replay must update none.
+ const good=fixture()
+ const out=good.prepare(sql).all()
+ assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 8 SKU')
+ assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,8)
+ good.close()
+ const bad=fixture()
+ bad.prepare('UPDATE inventory_stock SET quantity=quantity+9 WHERE id=?').run(stockBefore[0].id)
+ assert.equal(bad.prepare(sql).all().length,0,'Concurrent stock change must fail closed for all 8')
+ assert.equal(bad.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,0)
+ bad.close()
+ console.log('BATCH8_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
+ console.log('BATCH8_PREVIEW_ONLY_NO_MUTATION')
+ process.exit(0)
+}
 const applied=call(sql,true).results
 assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly eight expected updated SKU IDs')
 for(const a of applied)assert.equal(a.color,specs.find(x=>x.id===a.id).to)
