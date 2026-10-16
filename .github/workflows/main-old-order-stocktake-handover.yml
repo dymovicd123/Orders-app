@@ -1,0 +1,30 @@
+name: Production old-order stocktake handover isolated tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-old-order-post-stocktake-handover-r1.mjs'
+      - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - '.github/workflows/main-old-order-stocktake-handover.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Old ordinary stock-only order and later revision SQLite proof
+        run: node --experimental-strip-types scripts/test-old-order-post-stocktake-handover-r1.mjs
+      - name: Prevent shipment bypass and show employee-friendly review
+        run: node scripts/test-old-order-post-stocktake-guard-r1.mjs
+      - name: Production source build
+        run: npm run build
