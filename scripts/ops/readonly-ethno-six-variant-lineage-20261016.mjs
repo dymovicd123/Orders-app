@@ -79,4 +79,61 @@ const pairsSummary=pairs.map(([oldId,newId])=>({
 }))
 const integrity=read("SELECT (SELECT COUNT(*) FROM inventory_stock st LEFT JOIN catalog_variants v ON v.id=st.variant_id WHERE st.variant_id IS NOT NULL AND v.id IS NULL) AS orphanStock,(SELECT COUNT(*) FROM inventory_stock s WHERE s.reserved_quantity<>COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=s.variant_id AND r.inventory_source=s.inventory_source AND r.status='active'),0)) AS reserveMismatch")
 console.log('ETHNO_SIX_PAIRS_PROD_HISTORY_JSON='+JSON.stringify({timeScope:'current production read-only',pairs:pairsSummary,relatedTableNames:allTables.map(x=>x.name),associations,integrity:integrity[0],noWrites:true}))
+
+// Second independent check: existing September lineage, current blockers and
+// SQLite UNIQUE-constraint rehearsal for the FOUR active historical keepers.
+// The following SQL UPDATE is ONLY sent to a local in-memory DB, never D1.
+const retiredPairs=[[1277,1438],[1278,1436],[1279,1441],[1303,1473]]
+const originalCorrections=associations.catalog_semantic_variant_corrections?.rows||[]
+for(const [oldId,keeperId] of retiredPairs)assert(originalCorrections.some(x=>x.source_variant_id===oldId&&x.keeper_variant_id===keeperId&&x.status==='completed'),'Missing confirmed September lineage '+oldId)
+const guardGroups=read("SELECT id,product_id,stock_position_id,category,gender,color,size_label,is_active FROM catalog_variants WHERE product_id=75 AND stock_position_id=146 ORDER BY id")
+const ddl=read("SELECT sql FROM sqlite_master WHERE type='table' AND name='catalog_variants'")[0]?.sql
+const uniqueIdx=read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='catalog_variants' AND sql IS NOT NULL AND sql LIKE '%UNIQUE%'")
+assert(ddl?.startsWith('CREATE TABLE catalog_variants')&&uniqueIdx.length>0,'Missing real production SKU uniqueness proof')
+const {DatabaseSync}=await import('node:sqlite')
+const local=new DatabaseSync(':memory:')
+local.exec('PRAGMA foreign_keys=OFF')
+local.exec(ddl)
+const vals=read('SELECT * FROM catalog_variants WHERE product_id=75 ORDER BY id')
+const keys=Object.keys(vals[0])
+assert(keys.every(k=>/^[a-z_]+$/.test(k)))
+const put=local.prepare('INSERT INTO catalog_variants('+keys.join(',')+') VALUES ('+keys.map(()=>'?').join(',')+')')
+for(const v of vals)put.run(...keys.map(k=>v[k]))
+for(const idx of uniqueIdx)local.exec(idx.sql)
+const original=local.prepare('SELECT id,color,is_active FROM catalog_variants WHERE id IN (1277,1278,1279,1303,1436,1438,1441,1473,1280,1281,1532,1533) ORDER BY id').all()
+local.exec('BEGIN')
+try {
+ const q=local.prepare("UPDATE catalog_variants SET color='СВЕТЛО-СЕРЫЙ' WHERE id IN (1436,1438,1441,1473) AND color='СВЕТЛО СЕРЫЙ' AND is_active=1 RETURNING id")
+ const result=q.all()
+ assert.deepEqual(result.map(x=>x.id).sort((a,b)=>a-b),[1436,1438,1441,1473],'Local four SKU rename failed')
+ const all=local.prepare('SELECT id,color,is_active FROM catalog_variants WHERE id IN (1277,1278,1279,1303,1436,1438,1441,1473,1280,1281,1532,1533) ORDER BY id').all()
+ for(const [oldId,keeperId] of retiredPairs){
+  assert(all.some(x=>x.id===oldId&&x.is_active===0&&x.color==='СВЕТЛО-СЕРЫЙ'))
+  assert(all.some(x=>x.id===keeperId&&x.is_active===1&&x.color==='СВЕТЛО-СЕРЫЙ'))
+ }
+ for(const id of [1280,1281,1532,1533]){
+  const before=original.find(x=>x.id===id),after=all.find(x=>x.id===id)
+  assert.deepEqual(after,before,'Active size 52/54 changed in dry-run')
+ }
+}finally{local.exec('ROLLBACK')}
+assert.deepEqual(local.prepare('SELECT id,color,is_active FROM catalog_variants WHERE id IN (1277,1278,1279,1303,1436,1438,1441,1473,1280,1281,1532,1533) ORDER BY id').all(),original)
+local.close()
+const activeStocktake=read("SELECT i.variant_id,s.status AS sessionStatus,i.status AS itemStatus,COUNT(*) AS n FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id WHERE i.variant_id IN ("+list+") GROUP BY i.variant_id,s.status,i.status ORDER BY i.variant_id,s.status")
+const reverted=read("SELECT m.variant_id,COUNT(*) AS reversible FROM inventory_movements m WHERE m.variant_id IN ("+list+") AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out') AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id) GROUP BY m.variant_id ORDER BY m.variant_id")
+const lifecycles=read("SELECT variant_id,status,event_type,COUNT(*) AS n FROM inventory_lifecycle_events WHERE variant_id IN ("+list+") GROUP BY variant_id,status,event_type ORDER BY variant_id")
+const transferred=read("SELECT ti.variant_id,td.status,COUNT(*) AS n FROM inventory_transfer_items ti JOIN inventory_transfer_documents td ON td.id=ti.transfer_id WHERE ti.variant_id IN ("+list+") GROUP BY ti.variant_id,td.status ORDER BY ti.variant_id")
+const exchangeRefs=read("SELECT oi.variant_id,COUNT(*) AS linkedItems FROM order_items oi WHERE oi.variant_id IN ("+list+") AND (EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id) OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id) OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)) GROUP BY oi.variant_id")
+const sourceImpact=[1280,1281,1532,1533].map(id=>({
+ id,
+ stock:stock.filter(x=>x.variant_id===id).map(x=>({loc:x.inventory_source,physical:x.quantity,reserved:x.reserved_quantity})),
+ activeReservationCount:reserves.filter(x=>x.variant_id===id).length,
+ historicalOrderItems:linkedOrderStatus.find(x=>x.variant_id===id)?.itemCount||0,
+ reversibleMovementCount:reverted.find(x=>x.variant_id===id)?.reversible||0,
+ lifecycle:lifecycles.filter(x=>x.variant_id===id),
+ stocktakeSessions:activeStocktake.filter(x=>x.variant_id===id),
+ transfers:transferred.filter(x=>x.variant_id===id),
+ linkedReturnsOrExchanges:exchangeRefs.find(x=>x.variant_id===id)?.linkedItems||0,
+}))
+console.log('ETHNO_SIX_SAFE_FIX_PREFLIGHT='+JSON.stringify({historicalFourRetirementsConfirmed:true,localExactFourRenameUniqueIndexPass:true,localRollbackVerified:true,zeroProductionWrites:true,sourceImpact,activeStocktake,transferred,reversibleByVariant:reverted,exchangeRefs,allHistoricalLinkedIds:[...new Set(guardGroups.map(x=>x.id))].length}))
+
 console.log('ETHNO_SIX_PAIRS_READONLY_SUCCESS')
