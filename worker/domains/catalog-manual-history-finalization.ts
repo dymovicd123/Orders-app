@@ -59,7 +59,6 @@ export async function finalizeEthnoSize52History(
  assert(preview.canFinalize,'Finalization blocked: '+preview.blockers.join('; '))
  assert(expectedToken&&expectedToken===preview.stateToken,'The audited stock state changed; refresh preview')
  const time=new Date().toISOString()
- const proof=JSON.stringify({source:SOURCE,keeper:KEEPER,checkId:PHYSICAL_CHECK,movements:MOVEMENTS,token:expectedToken})
  // Single D1 transaction. All predicates are re-checked at INSERT time.
  const rows=await db.batch([
    db.prepare(`INSERT INTO catalog_manual_movement_finalizations
