@@ -9,6 +9,7 @@ on:
       - 'src/features/sections/OrdersTableSection.tsx'
       - 'scripts/test-old-order-post-stocktake-handover-r1.mjs'
       - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - 'scripts/test-handover-cas-after-revision-r2.mjs'
       - '.github/workflows/test-old-order-post-stocktake-handover.yml'
 permissions:
   contents: read
@@ -24,6 +25,8 @@ jobs:
       - run: npm ci
       - name: Actual SQLite compact/detail checkpoint regression, September order
         run: node --experimental-strip-types scripts/test-old-order-post-stocktake-handover-r1.mjs
+      - name: Actual SQLite handover CAS and no-double-stock reconciliation
+        run: node --experimental-strip-types scripts/test-handover-cas-after-revision-r2.mjs
       - name: Verify shipment guard and plain-language review UI
         run: node scripts/test-old-order-post-stocktake-guard-r1.mjs
       - name: TypeScript production build
