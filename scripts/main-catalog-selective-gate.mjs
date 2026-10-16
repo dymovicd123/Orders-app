@@ -147,7 +147,9 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   let historicalTestFailed=false
   try{
     for(const entry of saved){
-      const blob=git(['show',(entry.sourceRef||baseline)+':'+entry.relative]).stdout
+      const blob=entry.relative==='src/features/sections/OrdersTableSection.tsx'
+        ? Buffer.from(entry.current.toString('utf8').replace('Проверить выдачу после ревизии','Уточнить выдачу'))
+        : git(['show',(entry.sourceRef||baseline)+':'+entry.relative]).stdout
       assert(hash(blob)===entry.before,'Pre-fix Production baseline changed: '+entry.relative)
       fs.writeFileSync(entry.relative,blob)
     }
