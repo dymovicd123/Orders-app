@@ -85,4 +85,43 @@ const current=read("SELECT s.variant_id,s.inventory_source,s.quantity,s.reserved
 const arrival=read("SELECT m.id,m.variant_id,m.quantity_delta,m.quantity_after,m.created_at,rv.reversal_movement_id,rv.reversed_at FROM inventory_movements m LEFT JOIN inventory_movement_reversals rv ON rv.original_movement_id=m.id WHERE m.id=4876");
 const postArrival=read("SELECT m.id,m.variant_id,m.inventory_source,m.quantity_delta,m.reference_type,m.created_at FROM inventory_movements m WHERE m.variant_id IN (1280,1532) AND m.created_at > '2026-10-13T10:34:52.190Z' ORDER BY m.created_at,m.id LIMIT 50");
 console.log('ETHNO_SIZE52_FRESH_STATUS='+JSON.stringify({current,arrival,postArrival,activeSourceReserves:reservations.filter(r=>r.variant_id===1532).length,readOnly:true}));
+
+// User-confirmed physical count=0: independent post-adjustment live verification.
+// Checks official 'manual_set' with linked stock check; original arrival stays historical.
+const pairStockNow=read("SELECT id,variant_id,inventory_source,quantity,reserved_quantity FROM inventory_stock WHERE variant_id IN (1280,1532) ORDER BY variant_id,inventory_source");
+const currentSource=pairStockNow.find(x=>x.variant_id===1532&&x.inventory_source==='warehouse');
+const currentKeeper=pairStockNow.filter(x=>x.variant_id===1280);
+const recentSourceMovements=read("SELECT id,variant_id,inventory_source,movement_type,quantity_delta,quantity_after,reference_type,reference_id,created_at,CASE WHEN comment IS NOT NULL AND TRIM(comment)<>'' THEN 1 ELSE 0 END AS has_comment FROM inventory_movements WHERE variant_id=1532 AND created_at >= '2026-10-13T10:34:52' ORDER BY created_at,id");
+const manualSets=recentSourceMovements.filter(x=>x.movement_type==='manual_set'&&x.reference_type==='manual');
+const correction=manualSets.at(-1);
+const associatedChecks=correction ? read("SELECT id,variant_id,inventory_source,expected_quantity,counted_quantity,difference_quantity,check_type,reference_type,reference_id,checked_at FROM inventory_stock_checks WHERE variant_id=1532 AND reference_type='manual' AND reference_id='"+correction.reference_id+"' ORDER BY id") : [];
+const initialArrival=read("SELECT m.id,m.variant_id,m.quantity_delta,m.quantity_after,m.reference_type,m.created_at,rev.reversal_movement_id FROM inventory_movements m LEFT JOIN inventory_movement_reversals rev ON rev.original_movement_id=m.id WHERE m.id=4876");
+const protectedVariants=read("SELECT id,color,is_active FROM catalog_variants WHERE id IN (1280,1532,1281,1533) ORDER BY id");
+const mergerReceipts=read("SELECT id,source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id IN (1532,1533) ORDER BY id");
+const outstandingReserves=read("SELECT id,variant_id,quantity FROM inventory_reservations WHERE status='active' AND variant_id IN (1280,1532)");
+const orphaned=read("SELECT COUNT(*) AS n FROM inventory_stock s LEFT JOIN catalog_variants v ON v.id=s.variant_id WHERE s.variant_id IS NOT NULL AND v.id IS NULL")[0].n;
+const reserveDrift=read("SELECT COUNT(*) AS n FROM inventory_stock s WHERE s.reserved_quantity<>COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=s.variant_id AND r.inventory_source=s.inventory_source AND r.status='active'),0)")[0].n;
+const verified={
+ stock:pairStockNow,
+ correction:correction||null,
+ stockChecks:associatedChecks,
+ arrival:initialArrival,
+ protectedVariants,mergerReceipts,
+ activeReserves:outstandingReserves.length,
+ orphaned,reserveDrift,
+ noWrites:true
+};
+console.log('ETHNO_SIZE52_POST_CORRECTION_JSON='+JSON.stringify(verified));
+assert(currentSource&&currentSource.id===1411&&currentSource.quantity===0&&currentSource.reserved_quantity===0,'Source 1532 warehouse must be 0 after correction');
+assert(currentKeeper.length===2&&currentKeeper.every(x=>x.quantity===0&&x.reserved_quantity===0),'Keeper 1280 stock not preserved');
+assert.equal(manualSets.length,1,'Expected one official manual correction on source since Oct13');
+assert(correction&&correction.quantity_delta===-1&&correction.quantity_after===0&&correction.inventory_source==='warehouse'&&correction.has_comment===1,'Correction movement not as expected');
+assert(associatedChecks.length===1&&associatedChecks[0].check_type==='manual_set'&&associatedChecks[0].expected_quantity===1&&associatedChecks[0].counted_quantity===0&&associatedChecks[0].difference_quantity===-1,'Stock check receipt missing or wrong');
+assert(initialArrival.length===1&&initialArrival[0].variant_id===1532&&initialArrival[0].quantity_delta===1&&initialArrival[0].reversal_movement_id==null,'Original arrival 4876 changed or was reversed');
+assert(protectedVariants.find(x=>x.id===1532)?.is_active===1&&protectedVariants.find(x=>x.id===1280)?.is_active===1,'Size 52 was unexpectedly merged');
+assert(mergerReceipts.some(x=>x.source_variant_id===1533&&x.target_variant_id===1281),'Previous size54 merge missing');
+assert(!mergerReceipts.some(x=>x.source_variant_id===1532),'Size52 should not be merged without separate preview');
+assert(outstandingReserves.length===0&&orphaned===0&&reserveDrift===0,'Stock/reservation consistency check failed');
+console.log('ETHNO_SIZE52_CORRECTION_VERIFIED_SUCCESS');
+
 console.log('ETHNO_SIZE52_READ_ONLY_SUCCESS');
