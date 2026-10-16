@@ -1,4 +1,4 @@
-name: Stage: proof-only production-color SKU rehearsal
+name: 'Stage: proof-only production-color SKU rehearsal'
 on:
   pull_request:
     branches: [branch2]
