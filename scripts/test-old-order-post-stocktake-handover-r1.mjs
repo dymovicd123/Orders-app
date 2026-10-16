@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { fetchOrderStockHandoverRows, getOrderStockHandoverState } from '../worker/domains/order-reservations.ts'
 
 const sql = new DatabaseSync(':memory:')
-sql.exec(\`
+sql.exec(`
 CREATE TABLE orders(id INTEGER PRIMARY KEY, external_id TEXT, order_date TEXT, created_at TEXT,order_status TEXT DEFAULT 'active',archived_at TEXT,shipping_status TEXT DEFAULT 'not_sent',workshop_status TEXT,customer_id INTEGER);
 CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER, quantity INTEGER DEFAULT 1,is_workshop INTEGER DEFAULT 0,created_at TEXT,inventory_obligation_key TEXT,inventory_obligation_origin_at TEXT,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,source_type TEXT,stock_writeoff_status TEXT,product_id INTEGER,variant_id INTEGER);
 CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,status TEXT,created_at TEXT);
@@ -18,7 +18,7 @@ CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INT
 INSERT INTO catalog_products VALUES(99,'ЕҢЛІК ШАПАН');
 INSERT INTO catalog_variants VALUES(240,99,'ЖЕН','ОРАНЖЕВЫЙ','ЗАМША ВЕЛЮР','СТАНДАРТ','46');
 INSERT INTO inventory_stock VALUES(169,'warehouse',240,4,3);
-\`)
+`)
 const db={
  prepare(query){
    let args=[]
@@ -32,8 +32,8 @@ const db={
 function makeOrder(id,date,created,{workshop=false,sku=240}={}){
  sql.prepare('INSERT INTO orders(id,external_id,order_date,created_at) VALUES(?,?,?,?)').run(id,'ORD-'+id,date,created)
  const item=id*10
- sql.prepare(\`INSERT INTO order_items(id,order_id,quantity,is_workshop,created_at,inventory_obligation_origin_at,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,source_type,product_id,variant_id)
- VALUES(?,?,1,0,? ,?,'ЕҢЛІК ШАПАН','ЖЕН','ОРАНЖЕВЫЙ','ЗАМША ВЕЛЮР','СТАНДАРТ','46','warehouse',99,?)\`).run(item,id,created,created,sku)
+ sql.prepare(`INSERT INTO order_items(id,order_id,quantity,is_workshop,created_at,inventory_obligation_origin_at,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,source_type,product_id,variant_id)
+ VALUES(?,?,1,0,? ,?,'ЕҢЛІК ШАПАН','ЖЕН','ОРАНЖЕВЫЙ','ЗАМША ВЕЛЮР','СТАНДАРТ','46','warehouse',99,?)`).run(item,id,created,created,sku)
  sql.prepare('INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,variant_id,quantity,status,created_at) VALUES(?,?,?,?,?,1,?,?)').run(item,id,item,'warehouse',sku,'active',created)
  if(workshop){
   sql.prepare('INSERT INTO order_items(id,order_id,quantity,is_workshop,created_at,source_type) VALUES(?,?,1,1,?,?)').run(item+1,id,created,'workshop')
@@ -45,12 +45,12 @@ const sameDayNew=makeOrder(1887,'2026-10-10','2026-10-10T11:27:50Z')
 const mixed=makeOrder(1900,'2026-10-04','2026-10-04T08:00:00Z',{workshop:true})
 const backdated=makeOrder(1901,'2026-09-30','2026-10-10T11:27:50Z')
 const noRelevant=makeOrder(1902,'2026-10-17','2026-10-17T08:00:00Z')
-sql.exec(\`
+sql.exec(`
 INSERT INTO inventory_stock_checks(id,inventory_source,variant_id,checked_at,check_type,reference_type,reference_id) VALUES
 (2557,'warehouse',240,'2026-10-06T10:30:51Z','selective_stocktake','stocktake','REV-W-P-01'),
 (3143,'warehouse',240,'2026-10-10T10:31:58Z','manual_set','manual','manual-1'),
 (3230,'warehouse',240,'2026-10-16T12:32:44Z','manual_set','manual','manual-2');
-\`)
+`)
 async function assertReview(id,expected){
  const compact=(await fetchOrderStockHandoverRows(db,[id],{listFlagsOnly:true}))
  const detailed=(await getOrderStockHandoverState(db,id))
