@@ -134,12 +134,28 @@ const sql="WITH preflight(ok) AS MATERIALIZED (SELECT CASE WHEN "+
 "THEN 1 ELSE 0 END) "+
 "UPDATE catalog_variants SET color=CASE id "+specs.map(x=>"WHEN "+x.id+" THEN '"+quote(x.to)+"'").join(' ')+" END, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "+
 "WHERE id IN ("+list+") AND (SELECT ok FROM preflight)=1 RETURNING id,color"
+if(apply) {
+ if(matchingRefs.length===0){
+   const inserted=call(refInsertSql,true).results
+   assert.deepEqual(inserted.map(x=>x.value).sort(),[...desired].sort(),'Exactly two new reference values must be created')
+   assert(inserted.every(x=>x.kind==='color'&&Number.isSafeInteger(x.id)),'Invalid inserted reference rows')
+   console.log('NEW_COLOR23_REFERENCE_INSERTED='+JSON.stringify({ids:inserted.map(x=>x.id),values:inserted.map(x=>x.value)}))
+ }else{
+   console.log('NEW_COLOR23_REFERENCE_ALREADY_PRESENT='+JSON.stringify({ids:matchingRefs.map(x=>x.id),values:matchingRefs.map(x=>x.value)}))
+ }
+ const current=read("SELECT id,kind,value,is_active,sort_order,created_at,updated_at FROM reference_values WHERE kind='color' ORDER BY id")
+ assert.equal(current.length,originalReferences.length+(matchingRefs.length===0?2:0),'Unexpected reference count change')
+ for(const old of originalReferences)assert.deepEqual(current.find(x=>x.id===old.id),old,'Existing reference unexpectedly modified '+old.id)
+ for(const name of desired)assert.equal(current.filter(x=>x.value===name&&x.kind==='color'&&x.is_active===1).length,1,'New canonical reference missing: '+name)
+ assert.deepEqual(current.find(x=>x.id===582),asphaltBefore,'Distinct wet asphalt color changed')
+}
 if(!apply){
  const {DatabaseSync}=await import('node:sqlite')
  function fixture(){
   const t=new DatabaseSync(':memory:')
   t.exec("CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,stock_position_id INTEGER,is_active INTEGER,color TEXT,updated_at TEXT,category TEXT,gender TEXT,size_label TEXT)")
-  t.exec("CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,is_active INTEGER,value TEXT)")
+  t.exec("CREATE TABLE reference_values(id INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL,value TEXT NOT NULL,is_active INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL DEFAULT (datetime('now')),updated_at TEXT NOT NULL DEFAULT (datetime('now')))")
+  t.exec("CREATE UNIQUE INDEX idx_reference_values_kind_value ON reference_values(kind,value)")
   t.exec("CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER,updated_at TEXT)")
   t.exec("CREATE TABLE inventory_reservations(id INTEGER,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,status TEXT)")
   const add=t.prepare("INSERT INTO catalog_variants VALUES (?,?,?,?,?,?,?,?,?)")
@@ -147,37 +163,57 @@ if(!apply){
    const v=byId.get(x.id)||x
    add.run(x.id,x.product_id,x.stock_position_id,x.is_active,x.color,String(v.updated_at??''),x.category,x.gender,x.size_label)
   }
-  const pr=t.prepare("INSERT INTO reference_values VALUES (?,?,?,?)")
-  for(const x of refRows)pr.run(x.id,x.kind,x.is_active,x.value)
+  const pr=t.prepare("INSERT INTO reference_values(id,kind,value,is_active,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?,?)")
+  for(const x of originalReferences)pr.run(x.id,x.kind,x.value,x.is_active,x.sort_order,x.created_at,x.updated_at)
   const st=t.prepare("INSERT INTO inventory_stock VALUES (?,?,?,?,?)")
   for(const x of stockBefore)st.run(x.id,x.variant_id,x.quantity,x.reserved_quantity,x.updated_at)
   const ins=t.prepare('INSERT INTO inventory_reservations VALUES (?,?,?,?,?)')
   for(const res of reservesBefore)ins.run(res.id,res.variant_id,res.inventory_source,res.quantity,res.status)
   return t
  }
- // Positive replay must update 26, any stock or reservation drift must abort all.
+ // PR mode exercises reference INSERT + exact UPDATE on ephemeral SQLite only.
+ // A concurrent ref collision or stock/reserve change must reject the operation.
+ const seedRefs=db=>{
+   if(matchingRefs.length===0){
+     const inserted=db.prepare(refInsertSql).all()
+     assert.deepEqual(inserted.map(x=>x.value).sort(),[...desired].sort(),'Local reference insert failed')
+   }
+   assert.equal(db.prepare("SELECT COUNT(*) n FROM reference_values WHERE kind='color' AND value IN ('ТЕМНО-СЕРЫЙ','ТЕМНО-БОРДОВЫЙ') AND is_active=1").get().n,2)
+ }
  const good=fixture()
+ const oldStock=good.prepare("SELECT * FROM inventory_stock ORDER BY id").all()
+ seedRefs(good)
  const out=good.prepare(sql).all()
- assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 26 SKU')
- assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,26)
+ assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 23 SKU')
+ assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,23)
+ assert.deepEqual(good.prepare("SELECT * FROM inventory_stock ORDER BY id").all(),oldStock,'Local rename changed physical stock')
  good.close()
+ const badRef=fixture()
+ if(matchingRefs.length===0) {
+   badRef.prepare("INSERT INTO reference_values(kind,value) VALUES ('color','ТЕМНО-СЕРЫЙ')").run()
+   assert.equal(badRef.prepare(refInsertSql).all().length,0,'Partial reference duplicate must stop both inserts')
+   assert.equal(badRef.prepare("SELECT COUNT(*) n FROM reference_values WHERE value='ТЕМНО-БОРДОВЫЙ'").get().n,0)
+ }
+ badRef.close()
  const badReserve=fixture()
+ seedRefs(badReserve)
  if(reservesBefore.length){badReserve.prepare('UPDATE inventory_reservations SET quantity=quantity+1 WHERE id=?').run(reservesBefore[0].id);assert.equal(badReserve.prepare(sql).all().length,0,'Reserve drift must fail closed')}
  badReserve.close()
  const bad=fixture()
+ seedRefs(bad)
  bad.prepare('UPDATE inventory_stock SET quantity=quantity+9 WHERE id=?').run(stockBefore[0].id)
- assert.equal(bad.prepare(sql).all().length,0,'Concurrent stock change must fail closed for all 8')
+ assert.equal(bad.prepare(sql).all().length,0,'Concurrent stock change must fail closed for all 23')
  assert.equal(bad.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,0)
  bad.close()
- console.log('REMAINING26_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
- console.log('REMAINING26_PREVIEW_ONLY_NO_MUTATION')
+ console.log('NEW_COLOR23_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
+ console.log('NEW_COLOR23_PREVIEW_ONLY_NO_MUTATION')
  process.exit(0)
 }
 const applied=call(sql,true).results
-assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly 26 expected updated SKU IDs')
+assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly 23 expected updated SKU IDs')
 for(const a of applied)assert.equal(a.color,specs.find(x=>x.id===a.id).to)
 const after=read('SELECT * FROM catalog_variants WHERE id IN ('+list+') ORDER BY id')
-assert.equal(after.length,26)
+assert.equal(after.length,23)
 for(const v of after){
  const orig=byId.get(v.id),plan=specs.find(x=>x.id===v.id)
  assert.equal(v.color,plan.to)
@@ -194,4 +230,4 @@ for(let i=0;i<ordersBefore.length;i++){
  assert.equal(f.order_id,oi.order_id)
  assert(f.search_text.includes(plan.to),'FTS text not updated '+oi.variant_id)
 }
-console.log('REMAINING26_PRODUCTION_VERIFIED='+JSON.stringify({ids,stockRowsUnchanged:stockBefore.length,activeReserves:reservesBefore.length,reservedUnits:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),historicalOrderItemsKept:ordersBefore.length,ftsRows:ftsAfter.length,variantIdsAndOtherFieldsUntouched:true}))
+console.log('NEW_COLOR23_PRODUCTION_VERIFIED='+JSON.stringify({ids,stockRowsUnchanged:stockBefore.length,activeReserves:reservesBefore.length,reservedUnits:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),historicalOrderItemsKept:ordersBefore.length,ftsRows:ftsAfter.length,variantIdsAndOtherFieldsUntouched:true,twoNewReferenceColors:true,wetAsphaltUnchanged:true}))
