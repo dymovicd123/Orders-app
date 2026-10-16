@@ -45,6 +45,10 @@ assert(catalogDDL?.startsWith('CREATE TABLE'),'Missing actual production DDL')
 const indexes=read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='catalog_variants' AND sql IS NOT NULL")
   .map(x=>x.sql).filter(x=>/CREATE UNIQUE INDEX/i.test(x))
 const fixture=new DatabaseSync(':memory:')
+// Parent rows are deliberately not imported: no customer/order data and no cross-DB merge.
+// The operation never changes foreign-key columns, so the replica enforces real
+// production UNIQUE indexes while omitting unrelated FK parent tables.
+fixture.exec('PRAGMA foreign_keys=OFF')
 fixture.exec(catalogDDL)
 const keys=Object.keys(all[0])
 assert(keys.every(k=>/^[a-z_]+$/i.test(k)),'Unexpected identifier in snapshot')
