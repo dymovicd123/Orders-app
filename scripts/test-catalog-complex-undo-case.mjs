@@ -32,6 +32,7 @@ sqlite.exec(`
  quantity_delta INTEGER,quantity_after INTEGER,reference_type TEXT,
  reference_id TEXT,comment TEXT,created_at TEXT);
  CREATE TABLE inventory_movement_reversals(original_movement_id INTEGER PRIMARY KEY);
+ CREATE TABLE catalog_manual_movement_finalizations(movement_id INTEGER PRIMARY KEY,source_variant_id INTEGER,keeper_variant_id INTEGER);
  CREATE TABLE inventory_stock_checks(
   id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,
   counted_quantity INTEGER,checked_at TEXT,check_type TEXT,checked_by TEXT
