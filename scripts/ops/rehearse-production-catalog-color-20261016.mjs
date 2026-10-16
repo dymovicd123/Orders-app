@@ -43,8 +43,10 @@ assert(refs.some(x=>x.id===580&&x.value==='ТЕМНО-СИНИЙ'))
 const catalogDDL=read("SELECT sql FROM sqlite_master WHERE type='table' AND name='catalog_variants'")[0]?.sql
 assert(catalogDDL?.startsWith('CREATE TABLE'),'Missing actual production DDL')
 const triggers=read("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='catalog_variants' ORDER BY name")
-console.log('CATALOG_VARIANTS_TRIGGER_DEFINITIONS='+JSON.stringify(triggers))
-assert.equal(triggers.length,0,'Production has catalog_variants UPDATE triggers not yet reproduced in rehearsal; STOP')
+assert.deepEqual(triggers.map(t=>t.name),['trg_order_search_catalog_variants_au'],
+ 'Unexpected catalog UPDATE trigger; unsafe to rehearse without replication')
+assert(/AFTER UPDATE OF gender, color, material, length, size_label ON catalog_variants/i.test(triggers[0].sql),
+ 'Expected order FTS refresh trigger changed; stop')
 const indexes=read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='catalog_variants' AND sql IS NOT NULL")
   .map(x=>x.sql).filter(x=>/CREATE UNIQUE INDEX/i.test(x))
 const fixture=new DatabaseSync(':memory:')
@@ -58,6 +60,26 @@ assert(keys.every(k=>/^[a-z_]+$/i.test(k)),'Unexpected identifier in snapshot')
 const add=fixture.prepare('INSERT INTO catalog_variants ('+keys.join(',')+') VALUES ('+keys.map(()=>'?').join(',')+')')
 for(const row of all)add.run(...keys.map(k=>row[k]))
 for(const sql of indexes)fixture.exec(sql) // reproduce real production UNIQUE constraints
+
+// Real production UPDATE trigger updates order-search FTS; reproduce it with
+// restricted, non-customer, linked order-item metadata on this local replica.
+fixture.exec('CREATE TABLE catalog_products (id INTEGER PRIMARY KEY,name TEXT)')
+const products=read('SELECT id,name FROM catalog_products WHERE id IN ('+[...new Set(candidates.map(v=>v.product_id))].join(',')+')')
+const putProduct=fixture.prepare('INSERT INTO catalog_products(id,name) VALUES (?,?)')
+for(const p of products)putProduct.run(p.id,p.name)
+fixture.exec('CREATE TABLE order_items (id INTEGER PRIMARY KEY,order_id INTEGER,product_id INTEGER,variant_id INTEGER,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT)')
+const orderItems=read('SELECT id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot FROM order_items WHERE variant_id IN ('+candidates.map(v=>v.id).join(',')+') ORDER BY id')
+const putItem=fixture.prepare('INSERT INTO order_items VALUES (?,?,?,?,?,?,?,?,?,?)')
+for(const oi of orderItems)putItem.run(oi.id,oi.order_id,oi.product_id,oi.variant_id,oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot)
+const ftsDDL=read("SELECT sql FROM sqlite_master WHERE type='table' AND name='order_search_items_fts'")[0]?.sql
+assert(ftsDDL&&/CREATE VIRTUAL TABLE.*fts5/i.test(ftsDDL),'Missing genuine production FTS5 schema')
+fixture.exec(ftsDDL)
+const insertFts=fixture.prepare("INSERT INTO order_search_items_fts(rowid,order_id,search_text) VALUES (?,?,?)")
+for(const oi of orderItems)insertFts.run(oi.id,oi.order_id,'STALE BEFORE RENAME')
+fixture.exec(triggers[0].sql)
+const initialSearchRows=fixture.prepare('SELECT COUNT(*) n FROM order_search_items_fts').get().n
+assert.equal(initialSearchRows,orderItems.length,'FTS setup incomplete')
+
 const ids=candidates.map(v=>v.id)
 const stock=read('SELECT id,variant_id,inventory_source,quantity,reserved_quantity,color_snapshot,updated_at FROM inventory_stock WHERE variant_id IN ('+ids.join(',')+') ORDER BY id')
 const reservations=read("SELECT variant_id,inventory_source,COALESCE(SUM(quantity),0) AS qty FROM inventory_reservations WHERE status='active' AND variant_id IN ("+ids.join(',')+") GROUP BY variant_id,inventory_source")
@@ -77,6 +99,7 @@ for(const v of candidates){
  safe.push(v)
 }
 assert(collisions.some(x=>x.id===1532)&&collisions.some(x=>x.id===1533),'Missing known DRAP duplicate isolation')
+const originalOrderItems=fixture.prepare('SELECT * FROM order_items ORDER BY id').all()
 const beforeStock=fixture.prepare('SELECT * FROM inventory_stock ORDER BY id').all()
 const beforeColor=fixture.prepare('SELECT COUNT(*) n FROM catalog_variants WHERE is_active=1 AND color IN (\'СВЕТЛО СЕРЫЙ\',\'ТЕМНО СИНИЙ\')').get().n
 let predictedReserved=0,measuredReserved=0,stockQty=0
@@ -97,6 +120,20 @@ try{
  // Simulate actual inventory read API: active catalog SKU provides current working label,
  // inventory_stock provides exact physical quantity and reservation and remains untouched.
  const afterStock=fixture.prepare('SELECT * FROM inventory_stock ORDER BY id').all()
+ const afterOrders=fixture.prepare('SELECT * FROM order_items ORDER BY id').all()
+ assert.deepEqual(afterOrders,originalOrderItems,'Historical order-item snapshots and IDs changed')
+ assert.equal(fixture.prepare('SELECT COUNT(*) n FROM order_search_items_fts').get().n,orderItems.length,
+  'Order-search FTS row count changed during label-only renames')
+ for(const v of safe){
+   const itemIds=orderItems.filter(oi=>oi.variant_id===v.id)
+   for(const oi of itemIds){
+     const indexed=fixture.prepare('SELECT rowid,order_id,search_text FROM order_search_items_fts WHERE rowid=?').get(oi.id)
+     assert.equal(indexed.rowid,oi.id,'FTS row identity was lost')
+     assert.equal(Number(indexed.order_id),oi.order_id)
+     assert(indexed.search_text.includes(targetNames.get(v.color)), 'Updated SKU not searchable by canonical color')
+   }
+ }
+
  assert.deepEqual(afterStock,beforeStock,'Inventory stock itself MUST remain byte-for-byte identical')
  for(const v of safe){
    const newV=fixture.prepare('SELECT * FROM catalog_variants WHERE id=?').get(v.id)
@@ -122,6 +159,6 @@ try{
   stockRowsCovered:stock.length,stockQuantityForSafeCandidates:stockQty,
   reservedForSafeCandidates:measuredReserved,activeReservationUnitsForSafeCandidates:predictedReserved,
   inventoryUnchanged:true,idsAndOtherSkuFieldsUnchanged:true,
-  workingLabelsUpdated:true, beforeStockHash:snapHash(beforeStock),afterStockHash:snapHash(afterStock),
+  workingLabelsUpdated:true,orderSearchTriggerReplayed:true,orderItemsPreserved:orderItems.length, beforeStockHash:snapHash(beforeStock),afterStockHash:snapHash(afterStock),
  }))
 }finally{fixture.close()}
