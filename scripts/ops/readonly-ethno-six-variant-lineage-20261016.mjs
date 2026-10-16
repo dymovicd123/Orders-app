@@ -136,4 +136,48 @@ const sourceImpact=[1280,1281,1532,1533].map(id=>({
 }))
 console.log('ETHNO_SIX_SAFE_FIX_PREFLIGHT='+JSON.stringify({historicalFourRetirementsConfirmed:true,localExactFourRenameUniqueIndexPass:true,localRollbackVerified:true,zeroProductionWrites:true,sourceImpact,activeStocktake,transferred,reversibleByVariant:reverted,exchangeRefs,allHistoricalLinkedIds:[...new Set(guardGroups.map(x=>x.id))].length}))
 
+
+// Exact read-only reconstruction of the shipped consolidation preview requirements
+// for zero-stock source #1533 -> canonical keeper #1281. No merge DML.
+const source54=variants.find(v=>v.id===1533),keeper54=variants.find(v=>v.id===1281)
+assert(source54&&keeper54&&source54.is_active===1&&keeper54.is_active===1)
+assert(source54.product_id===75&&keeper54.product_id===75)
+assert(source54.stock_position_id===146&&keeper54.stock_position_id===146)
+assert(source54.gender===keeper54.gender&&source54.category===keeper54.category&&source54.size_label==='54'&&keeper54.size_label==='54')
+assert(source54.material===keeper54.material&&source54.length===keeper54.length)
+const fold=x=>String(x??'').trim().toUpperCase().replace(/[‐‑‒–—-]+/g,' ').replace(/\s+/g,' ')
+assert.equal(fold(source54.color),fold(keeper54.color),'Unexpected color identity mismatch')
+const duplicateRoot=read('SELECT id,source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=1533')
+assert.equal(duplicateRoot.length,0,'Source 1533 already consolidated')
+const source54Stock=stock.filter(x=>x.variant_id===1533),keeper54Stock=stock.filter(x=>x.variant_id===1281)
+assert(source54Stock.length>0&&keeper54Stock.length>0)
+assert([...source54Stock,...keeper54Stock].every(x=>x.quantity===0&&x.reserved_quantity===0),'Size 54 not zero-stock and zero-reserved')
+const source54ItemCount=linkedOrderStatus.find(x=>x.variant_id===1533)?.itemCount||0
+const source54Reservations=reserves.filter(x=>x.variant_id===1533)
+const source54ActiveStocktake=activeStocktake.filter(x=>x.variant_id===1533&&x.sessionStatus==='active')
+const source54Reversible=reverted.find(x=>x.variant_id===1533)?.reversible||0
+const source54Lifecycle=lifecycles.filter(x=>x.variant_id===1533&&['pending','applied'].includes(x.status))
+const source54Transfer=transferred.filter(x=>x.variant_id===1533&&x.status==='applied')
+const source54Exchange=exchangeRefs.find(x=>x.variant_id===1533)?.linkedItems||0
+const source54Workshop=read("SELECT COUNT(*) n FROM workshop_tasks WHERE variant_id=1533 AND status='active'")[0].n
+const blockers=[]
+if(source54ItemCount!==0)blockers.push('order_items on source')
+if(source54Reservations.length)blockers.push('active source reservations')
+if(source54ActiveStocktake.length||activeStocktake.some(x=>x.variant_id===1281&&x.sessionStatus==='active'))blockers.push('active stocktake')
+if(source54Reversible)blockers.push('reversible movements on source')
+if(source54Lifecycle.length)blockers.push('pending/applied source lifecycle')
+if(source54Transfer.length)blockers.push('applied source transfers')
+if(source54Exchange)blockers.push('exchange/return source links')
+if(source54Workshop)blockers.push('active source workshop')
+if(duplicateRoot.length)blockers.push('existing consolidation receipt')
+assert.deepEqual(blockers,[],'Current consolidation-preview blockers: '+blockers.join(','))
+console.log('ETHNO_SIZE54_SHIPPED_PREVIEW_GATES='+JSON.stringify({
+ sourceId:1533,keeperId:1281,sameBusinessIdentity:true,physicalSource:0,physicalKeeper:0,
+ reservedSource:0,reservedKeeper:0,activeSourceOrders:0,sourceStocktakeHistory:activeStocktake.filter(x=>x.variant_id===1533),
+ sourceReversible:0,sourceTransferCount:0,sourceLifecycleCount:0,
+ keeperReversible:reverted.find(x=>x.variant_id===1281)?.reversible||0,
+ isWriterExecuted:false,knownBlockers:[],preliminaryCanConsolidate:true,
+ limitation:'This is a SELECT-based reconstruction; only admin API preview can issue a live expectedToken for the guarded writer.'
+}))
+
 console.log('ETHNO_SIX_PAIRS_READONLY_SUCCESS')
