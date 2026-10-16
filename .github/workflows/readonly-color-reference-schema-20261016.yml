@@ -1,0 +1,43 @@
+name: 'Inspect production color reference schema (read-only)'
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ops/readonly-color-reference-schema-20261016.mjs'
+      - '.github/workflows/readonly-color-reference-schema-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Pinned production SELECT-only config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/ops/readonly-color-reference-schema-20261016.mjs
+          [[ "$GITHUB_BASE_REF" == 'main' ]]
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          cat > "$RUNNER_TEMP/readonly-color-schema.jsonc" <<'CFG'
+          {
+            "name": "orders-app-color-reference-inspection",
+            "compatibility_date": "2026-07-06",
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": "orders_db_prod",
+              "database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
+            }]
+          }
+          CFG
+          echo "PROD_READONLY_CONFIG=$RUNNER_TEMP/readonly-color-schema.jsonc" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: node scripts/ops/readonly-color-reference-schema-20261016.mjs
