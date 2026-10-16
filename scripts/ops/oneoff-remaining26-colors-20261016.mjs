@@ -117,12 +117,17 @@ const variantWhere=specs.map(x=>{
 }).join(' OR ')
 const stockWhere=stockBefore.map(s=>'('+['id','variant_id','quantity','reserved_quantity'].map(k=>'st.'+k+'='+Number(s[k])).join(' AND ')
   +' AND st.updated_at '+(s.updated_at==null?'IS NULL':'=\''+quote(s.updated_at)+'\'')+')').join(' OR ')
+const reserveWhere=reservesBefore.map(res=>'('+['id','variant_id','quantity'].map(k=>'r.'+k+'='+Number(res[k])).join(' AND ')
+ + ' AND r.inventory_source '+(res.inventory_source==null?'IS NULL':"='"+quote(res.inventory_source)+"'")
+ + " AND r.status='active')").join(' OR ')||'0'
+const refGate="((id=50419 AND value='СВЕТЛО-СЕРЫЙ') OR (id=576 AND value='СВЕТЛО-БЕЖЕВЫЙ') OR (id=580 AND value='ТЕМНО-СИНИЙ') OR (id=50415 AND value='ТЕМНО-КОРИЧНЕВЫЙ'))"
 const sql="WITH preflight(ok) AS MATERIALIZED (SELECT CASE WHEN "+
-"(SELECT COUNT(*) FROM catalog_variants v WHERE v.id IN ("+list+") AND ("+variantWhere+"))=8 "+
+"(SELECT COUNT(*) FROM catalog_variants v WHERE v.id IN ("+list+") AND ("+variantWhere+"))="+specs.length+" "+
 "AND (SELECT COUNT(*) FROM inventory_stock WHERE variant_id IN ("+list+"))="+stockBefore.length+" "+
 "AND NOT EXISTS(SELECT 1 FROM inventory_stock st WHERE st.variant_id IN ("+list+") AND NOT ("+stockWhere+")) "+
-"AND (SELECT COUNT(*) FROM inventory_reservations WHERE variant_id IN ("+list+") AND status='active')=0 "+
-"AND (SELECT COUNT(*) FROM reference_values WHERE kind='color' AND is_active=1 AND ((id=576 AND value='СВЕТЛО-БЕЖЕВЫЙ') OR (id=580 AND value='ТЕМНО-СИНИЙ') OR (id=50415 AND value='ТЕМНО-КОРИЧНЕВЫЙ')))=3 "+
+"AND (SELECT COUNT(*) FROM inventory_reservations WHERE variant_id IN ("+list+") AND status='active')="+reservesBefore.length+" "+
+"AND NOT EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.variant_id IN ("+list+") AND r.status='active' AND NOT ("+reserveWhere+")) "+
+"AND (SELECT COUNT(*) FROM reference_values WHERE kind='color' AND is_active=1 AND "+refGate+")=4 "+
 "AND NOT EXISTS(SELECT 1 FROM catalog_variants v JOIN catalog_variants other ON other.id<>v.id AND other.product_id=v.product_id AND other.stock_position_id=v.stock_position_id AND COALESCE(other.category,'adult')=COALESCE(v.category,'adult') AND COALESCE(other.gender,'')=COALESCE(v.gender,'') AND COALESCE(other.size_label,'')=COALESCE(v.size_label,'') WHERE v.id IN ("+list+") AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(other.color,'')),'‐',' '),'-',' '))=UPPER(REPLACE(REPLACE(TRIM(v.color),'‐',' '),'-',' '))) "+
 "THEN 1 ELSE 0 END) "+
 "UPDATE catalog_variants SET color=CASE id "+specs.map(x=>"WHEN "+x.id+" THEN '"+quote(x.to)+"'").join(' ')+" END, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "+
@@ -134,7 +139,7 @@ if(!apply){
   t.exec("CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,stock_position_id INTEGER,is_active INTEGER,color TEXT,updated_at TEXT,category TEXT,gender TEXT,size_label TEXT)")
   t.exec("CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,is_active INTEGER,value TEXT)")
   t.exec("CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER,updated_at TEXT)")
-  t.exec("CREATE TABLE inventory_reservations(variant_id INTEGER,status TEXT)")
+  t.exec("CREATE TABLE inventory_reservations(id INTEGER,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,status TEXT)")
   const add=t.prepare("INSERT INTO catalog_variants VALUES (?,?,?,?,?,?,?,?,?)")
   for(const x of related){
    const v=byId.get(x.id)||x
@@ -144,28 +149,33 @@ if(!apply){
   for(const x of refRows)pr.run(x.id,x.kind,x.is_active,x.value)
   const st=t.prepare("INSERT INTO inventory_stock VALUES (?,?,?,?,?)")
   for(const x of stockBefore)st.run(x.id,x.variant_id,x.quantity,x.reserved_quantity,x.updated_at)
+  const ins=t.prepare('INSERT INTO inventory_reservations VALUES (?,?,?,?,?)')
+  for(const res of reservesBefore)ins.run(res.id,res.variant_id,res.inventory_source,res.quantity,res.status)
   return t
  }
- // Positive in-memory replay must update all 8. Negative replay must update none.
+ // Positive replay must update 26, any stock or reservation drift must abort all.
  const good=fixture()
  const out=good.prepare(sql).all()
- assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 8 SKU')
- assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,8)
+ assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 26 SKU')
+ assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,26)
  good.close()
+ const badReserve=fixture()
+ if(reservesBefore.length){badReserve.prepare('UPDATE inventory_reservations SET quantity=quantity+1 WHERE id=?').run(reservesBefore[0].id);assert.equal(badReserve.prepare(sql).all().length,0,'Reserve drift must fail closed')}
+ badReserve.close()
  const bad=fixture()
  bad.prepare('UPDATE inventory_stock SET quantity=quantity+9 WHERE id=?').run(stockBefore[0].id)
  assert.equal(bad.prepare(sql).all().length,0,'Concurrent stock change must fail closed for all 8')
  assert.equal(bad.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,0)
  bad.close()
- console.log('BATCH8_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
- console.log('BATCH8_PREVIEW_ONLY_NO_MUTATION')
+ console.log('REMAINING26_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
+ console.log('REMAINING26_PREVIEW_ONLY_NO_MUTATION')
  process.exit(0)
 }
 const applied=call(sql,true).results
-assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly eight expected updated SKU IDs')
+assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly 26 expected updated SKU IDs')
 for(const a of applied)assert.equal(a.color,specs.find(x=>x.id===a.id).to)
 const after=read('SELECT * FROM catalog_variants WHERE id IN ('+list+') ORDER BY id')
-assert.equal(after.length,8)
+assert.equal(after.length,26)
 for(const v of after){
  const orig=byId.get(v.id),plan=specs.find(x=>x.id===v.id)
  assert.equal(v.color,plan.to)
@@ -182,4 +192,4 @@ for(let i=0;i<ordersBefore.length;i++){
  assert.equal(f.order_id,oi.order_id)
  assert(f.search_text.includes(plan.to),'FTS text not updated '+oi.variant_id)
 }
-console.log('BATCH8_PRODUCTION_VERIFIED='+JSON.stringify({ids,stockRowsUnchanged:stockBefore.length,activeReserves:0,historicalOrderItemsKept:ordersBefore.length,ftsRows:ftsAfter.length,variantIdsAndOtherFieldsUntouched:true}))
+console.log('REMAINING26_PRODUCTION_VERIFIED='+JSON.stringify({ids,stockRowsUnchanged:stockBefore.length,activeReserves:reservesBefore.length,reservedUnits:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),historicalOrderItemsKept:ordersBefore.length,ftsRows:ftsAfter.length,variantIdsAndOtherFieldsUntouched:true}))
