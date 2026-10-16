@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'e42baf9a3898e04d191dcfe4729ebb0542b737df',
+  'worker/index.ts':'70bfc88ee2d0ad042bbed0a64527c54187ca05d6',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -67,8 +67,16 @@ const reviewedEthnoManualHistory = {
 for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
   check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed Ethno finalization runtime drift: '+file)
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
+const reviewedHandoverUx = {
+  appBefore: reviewedDeleteGuidance.currentApp,
+  appAfter: '4dc09ef0662a3a611681af7df4596c5512e43cab',
+  tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
+  tableAfter: '31b329d56fc804629acd8a5577705589cf2cc660',
+}
+check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedDeleteGuidance.currentApp
+  ? reviewedHandoverUx.appAfter
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -202,13 +210,17 @@ check(gitBlob(fs.readFileSync(orderStockHintUi.fixture,'utf8'))===orderStockHint
 const orderReservationTruthFix={
   file:'worker/domains/order-reservations.ts',
   before:'b27726ebea9546120d1b75a6862bd77b9154714e',
-  after:'10c00c135801bcbadbb7f23a93481c9e94e978ce',
+  after:'5cce2548ac5959f1a2baebfb68e306ffc54e13d1',
+  postStocktakeBefore:'10c00c135801bcbadbb7f23a93481c9e94e978ce',
+  postStocktakeFixture:'scripts/fixtures/old-order-stocktake-20261016/order-reservations-before.ts',
   historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
   currentLines:"  // No reservation, including an exchange, may ever act as a physical stocktake.\n  // Outbound possession is confirmed against the *operation*, not a whole-SKU count.\n  const observedPhysical: null = null;",
   approvedIntermediate:"  // An order reservation must never be interpreted as an absolute physical stocktake.\n  // Preserve the legacy exchange path until its separate outbound-possession flow is migrated.\n  const observedPhysical = referenceType === 'exchange_new' && item.observedPhysicalQuantity != null\n    ? item.observedPhysicalQuantity : null;",
 }
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Order reservation stock-truth fix unexpected drift')
+check(gitBlob(fs.readFileSync(orderReservationTruthFix.postStocktakeFixture,'utf8'))===orderReservationTruthFix.postStocktakeBefore,
+  'Immutable pre-October checkpoint SQL fixture changed')
 
 const run=(command,args,context,extraEnv={})=>{
   const x=spawnSync(command,args,{cwd:process.cwd(),stdio:'inherit',shell:false,
@@ -377,16 +389,26 @@ try{
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
       'Cannot stage historical order-delete Worker: '+entry.file)
   }
+  const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
+  const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
+  check(gitBlob(orderTableCurrent)===reviewedHandoverUx.tableAfter,'Current order list handover UI changed')
+  const orderTableHistorical=orderTableCurrent.replace('Проверить выдачу после ревизии','Уточнить выдачу')
+  check(gitBlob(orderTableHistorical)===reviewedHandoverUx.tableBefore,'Order list historical layout cannot be restored')
+  saved.set(orderTablePath,orderTableCurrent)
+  fs.writeFileSync(orderTablePath,orderTableHistorical)
   const orderReservationPath=path.resolve(orderReservationTruthFix.file)
   const orderReservationCurrent=fs.readFileSync(orderReservationPath,'utf8')
   saved.set(orderReservationPath,orderReservationCurrent)
-  check(orderReservationCurrent.includes(orderReservationTruthFix.currentLines),
+  const orderReservationPrior=fs.readFileSync(orderReservationTruthFix.postStocktakeFixture,'utf8')
+  check(gitBlob(orderReservationPrior)===orderReservationTruthFix.postStocktakeBefore,
+    'Prior reservation checkpoint baseline changed')
+  check(orderReservationPrior.includes(orderReservationTruthFix.currentLines),
     'Current order reservation no longer contains reviewed stock-truth guard')
-  const handoverGuardBegin=orderReservationCurrent.indexOf("  if (stockConfirmationOperation === 'handover') {",orderReservationCurrent.indexOf("  const statements: D1PreparedStatement[] = [];",orderReservationCurrent.indexOf('export async function fulfillOrderReservationsV2(')))
-  const handoverGuardEnd=orderReservationCurrent.indexOf("  for (const payloadChunk of chunksOf(stockPayloads, 70)) {",handoverGuardBegin)
+  const handoverGuardBegin=orderReservationPrior.indexOf("  if (stockConfirmationOperation === 'handover') {",orderReservationCurrent.indexOf("  const statements: D1PreparedStatement[] = [];",orderReservationPrior.indexOf('export async function fulfillOrderReservationsV2(')))
+  const handoverGuardEnd=orderReservationPrior.indexOf("  for (const payloadChunk of chunksOf(stockPayloads, 70)) {",handoverGuardBegin)
   check(handoverGuardBegin>0 && handoverGuardEnd>handoverGuardBegin,
     'Current early-handover atomic reservation guard is missing')
-  const previouslyApprovedReservation=orderReservationCurrent.slice(0,handoverGuardBegin)+orderReservationCurrent.slice(handoverGuardEnd)
+  const previouslyApprovedReservation=orderReservationPrior.slice(0,handoverGuardBegin)+orderReservationPrior.slice(handoverGuardEnd)
   check(gitBlob(previouslyApprovedReservation)==='dd85dcf15df53705d1ad3c61f918fae92c2316ff',
     'New reservation safety change alters unrelated historical behavior')
   const orderReservationHistorical=previouslyApprovedReservation.replace(
@@ -421,6 +443,8 @@ for (const entry of historicalDeleteWorker) {
 
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,
+  'Failed to restore reviewed order list handover UI after historical tests')
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
     'Failed to restore current warehouse safety code after historical tests: '+entry.file)
