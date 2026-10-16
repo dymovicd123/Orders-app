@@ -18,8 +18,8 @@ const ids=orders.map(x=>x.id).filter(Number.isSafeInteger)
 assert(ids.length>=1,'No screenshot orders')
 const items=read("SELECT oi.id item_id,oi.order_id,oi.variant_id,oi.is_workshop,oi.quantity,oi.created_at,oi.inventory_obligation_origin_at,oi.stock_writeoff_status,oi.product_name_snapshot,oi.color_snapshot,oi.size_snapshot,r.id reservation_id,r.status reservation_status,r.inventory_source,r.variant_id reserved_variant,r.quantity reserved_quantity,r.created_at reservation_created_at FROM order_items oi LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id WHERE oi.order_id IN ("+ids.join(",")+") AND oi.quantity>0 ORDER BY oi.order_id,oi.id")
 const targetItems=items.filter(x=>String(x.product_name_snapshot||'').toUpperCase().includes('ЕНЛ') && String(x.color_snapshot||'').toUpperCase().includes('ОРАНЖ') && String(x.size_snapshot||'')==='46')
-assert(targetItems.length>=1,'No Enlik target item')
-const variants=[...new Set(targetItems.map(x=>x.reserved_variant).filter(Number.isSafeInteger))]
+console.log('ENLIK_TARGET_CHECK='+JSON.stringify({orders,orderItems:items.map(x=>({itemId:x.item_id,orderId:x.order_id,product:x.product_name_snapshot,color:x.color_snapshot,size:x.size_snapshot,reserveVariant:x.reserved_variant,reserveStatus:x.reservation_status}))}))
+const variants=[...new Set((targetItems.length?targetItems:items).map(x=>x.reserved_variant).filter(Number.isSafeInteger))]
 const current=read('SELECT id,variant_id,inventory_source,quantity,reserved_quantity FROM inventory_stock WHERE variant_id IN ('+variants.join(',')+') ORDER BY id')
 const events=read("SELECT id,variant_id,inventory_source,checked_at,check_type,reference_type,reference_id,counted_quantity,expected_quantity FROM inventory_stock_checks WHERE variant_id IN ("+variants.join(",")+") AND checked_at>='2026-09-20' ORDER BY checked_at DESC,id DESC LIMIT 80")
 const sessions=read("SELECT id,inventory_source,status,started_at,completed_at FROM inventory_stocktake_sessions WHERE status='completed' AND completed_at>='2026-09-20' ORDER BY completed_at DESC LIMIT 25")
