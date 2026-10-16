@@ -54,6 +54,7 @@ INSERT INTO inventory_stock_checks(id,inventory_source,variant_id,checked_at,che
 async function assertReview(id,expected){
  const compact=(await fetchOrderStockHandoverRows(db,[id],{listFlagsOnly:true}))
  const detailed=(await getOrderStockHandoverState(db,id))
+ if(id===1658) console.log('SEPTEMBER_COMPACT_DIAGNOSTIC='+JSON.stringify({compact,detail:detailed.items.map(x=>({review:x.reviewNeeded,checkpoint:x.checkpointId,at:x.checkpointAt,reason:x.reviewReason}))}))
  assert.equal(compact.length,1,'one active inventory reservation needed')
  assert.equal(detailed.items.length,1,'one stock item per order')
  assert.equal(Number(compact[0].review_needed),expected?1:0,'compact discrepancy for '+id)
