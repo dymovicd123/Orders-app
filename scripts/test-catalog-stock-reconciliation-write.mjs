@@ -32,6 +32,8 @@ sqlite.exec(`
  reference_type TEXT,reference_id TEXT,comment TEXT,created_at TEXT
  );
  CREATE TABLE inventory_movement_reversals(original_movement_id INTEGER PRIMARY KEY);
+ -- New schema is intentionally empty for unrelated historical consolidation test cases.
+ CREATE TABLE catalog_manual_movement_finalizations (movement_id INTEGER PRIMARY KEY, source_variant_id INTEGER, keeper_variant_id INTEGER);
  CREATE TABLE inventory_stock_checks(
  id INTEGER PRIMARY KEY,check_key TEXT UNIQUE,inventory_source TEXT,product_id INTEGER,
  variant_id INTEGER,expected_quantity INTEGER,counted_quantity INTEGER,
