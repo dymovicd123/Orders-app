@@ -176,7 +176,8 @@ if(!apply){
  assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,4)
  for(const pair of archivedPairs){
   const historic=good.prepare('SELECT color,is_active FROM catalog_variants WHERE id=?').get(pair.source)
-  assert.deepEqual(historic,{color:'СВЕТЛО-СЕРЫЙ',is_active:0},'Retired source changed in local replay')
+  assert.equal(historic.color,'СВЕТЛО-СЕРЫЙ','Retired source color changed')
+  assert.equal(historic.is_active,0,'Retired source became active')
  }
  for(const k of protectedBefore){
   assert.equal(good.prepare('SELECT color FROM catalog_variants WHERE id=?').get(k.id).color,k.color,'Size 52/54 affected')
