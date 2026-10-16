@@ -113,6 +113,7 @@ for(const v of safe){
    predictedReserved+=reservations.find(r=>r.variant_id===v.id&&r.inventory_source===s.inventory_source)?.qty||0
  }
 }
+assert.equal(predictedReserved,measuredReserved,'Active reservation count differs from inventory_stock reserve; no rename allowed')
 fixture.exec('BEGIN')
 try{
  const update=fixture.prepare('UPDATE catalog_variants SET color=?, updated_at=? WHERE id=? AND is_active=1 AND color=?')
@@ -152,7 +153,7 @@ try{
      assert.equal(joined.working_color,targetNames.get(v.color))
    }
  }
- const remaining=fixture.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE is_active=1 AND color IN ('СВЕТЛО СЕРЫЙ','ТЕМНО СИНИЙ')").get().n
+ const remaining=fixture.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE is_active=1 AND color IN ('СВЕТЛО СЕРЫЙ','ТЕМНО СИНИЙ','СВЕТЛО БЕЖЕВЫЙ','ТЕМНО КОРИЧНЕВЫЙ')").get().n
  assert.equal(remaining,beforeColor-safe.length)
  fixture.exec('ROLLBACK') // This is a REHEARSAL ONLY, even on the replica.
  const snapHash=rows=>createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0,16)
