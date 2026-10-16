@@ -1719,11 +1719,11 @@ export function handoverReviewCasGuardStatement(
            WHERE c.id = ? AND c.checked_at = ?
              AND c.inventory_source = r.inventory_source AND c.variant_id = r.variant_id
              AND (
-               (datetime(c.checked_at) < datetime(oi.created_at) AND date(c.checked_at, '+5 hours') >= date(o.order_date))
-               OR (
-                 EXISTS (SELECT 1 FROM order_items wi WHERE wi.order_id = r.order_id AND COALESCE(wi.is_workshop, 0) = 1 AND wi.quantity > 0)
-                 AND datetime(c.checked_at) > datetime(r.created_at)
-               )
+               (datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+                 AND date(c.checked_at, '+5 hours') >= date(o.order_date)
+                 AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+               OR (date(c.checked_at, '+5 hours') >= date(o.order_date)
+                 AND datetime(c.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
              )
          )
          OR EXISTS (
@@ -1738,11 +1738,11 @@ export function handoverReviewCasGuardStatement(
                OR (datetime(c.checked_at) = datetime(?) AND c.id > ?)
              )
              AND (
-               (datetime(c.checked_at) < datetime(oi.created_at) AND date(c.checked_at, '+5 hours') >= date(o.order_date))
-               OR (
-                 EXISTS (SELECT 1 FROM order_items wi WHERE wi.order_id = r.order_id AND COALESCE(wi.is_workshop, 0) = 1 AND wi.quantity > 0)
-                 AND datetime(c.checked_at) > datetime(r.created_at)
-               )
+               (datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+                 AND date(c.checked_at, '+5 hours') >= date(o.order_date)
+                 AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+               OR (date(c.checked_at, '+5 hours') >= date(o.order_date)
+                 AND datetime(c.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
              )
          )
          OR EXISTS (
@@ -1756,7 +1756,9 @@ export function handoverReviewCasGuardStatement(
              AND s.completed_at IS NOT NULL
              AND s.id NOT LIKE 'REV-%-P-%'
              AND datetime(s.completed_at) > datetime(?)
-             AND datetime(s.started_at) <= datetime(oi.created_at)
+             AND ((datetime(s.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+             OR datetime(s.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
              AND date(s.completed_at, '+5 hours') >= date(o.order_date)
              AND NOT EXISTS (
                SELECT 1 FROM inventory_stock_checks selected_check
@@ -1795,7 +1797,9 @@ export function handoverReviewCasGuardStatement(
            AND s.completed_at = ?
            AND s.completed_at IS NOT NULL
            AND s.id NOT LIKE 'REV-%-P-%'
-           AND datetime(s.started_at) <= datetime(oi.created_at)
+           AND ((datetime(s.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+             OR datetime(s.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
              SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1814,11 +1818,11 @@ export function handoverReviewCasGuardStatement(
          WHERE c.inventory_source = r.inventory_source AND c.variant_id = r.variant_id
            AND datetime(c.checked_at) >= datetime(?)
            AND (
-             (datetime(c.checked_at) < datetime(oi.created_at) AND date(c.checked_at, '+5 hours') >= date(o.order_date))
-             OR (
-               EXISTS (SELECT 1 FROM order_items wi WHERE wi.order_id = r.order_id AND COALESCE(wi.is_workshop, 0) = 1 AND wi.quantity > 0)
-               AND datetime(c.checked_at) > datetime(r.created_at)
-             )
+             (datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+                 AND date(c.checked_at, '+5 hours') >= date(o.order_date)
+                 AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+               OR (date(c.checked_at, '+5 hours') >= date(o.order_date)
+                 AND datetime(c.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            )
        )
        OR EXISTS (
@@ -1835,7 +1839,9 @@ export function handoverReviewCasGuardStatement(
              datetime(s.completed_at) > datetime(?)
              OR (datetime(s.completed_at) = datetime(?) AND s.rowid > ?)
            )
-           AND datetime(s.started_at) <= datetime(oi.created_at)
+           AND ((datetime(s.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+             OR datetime(s.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
              SELECT 1 FROM inventory_stock_checks exact_sku
