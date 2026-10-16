@@ -140,5 +140,13 @@ const paymentGuards=read(`SELECT
  (SELECT COUNT(*) FROM reference_values WHERE id=534 AND kind='payment_method' AND is_active=1 AND value='KASPI PAY') AS keeperLive`)
 console.log('REF_IMPACT_JSON='+JSON.stringify({skuImpact,skuStocks,colorUsage,paymentImpact,paymentGuards}))
 
+// Restore the full 14 Oct report: inactive/active characteristics and their real SKU identities.
+const canonical = new Map([['СВЕТЛО СЕРЫЙ','СВЕТЛО-СЕРЫЙ'],['ТЕМНО СИНИЙ','ТЕМНО-СИНИЙ']])
+const candidates = variants.filter(v => v.is_active===1 && canonical.has(upper(v.color)))
+const skuIdentity = v => [v.product_id, v.stock_position_id??('legacy:'+key(v.material)+'/'+key(v.length)), upper(v.category||'adult'), upper(v.gender), key(v.color), upper(v.size_label)].join('|')
+const candidatesWithCollisions = candidates.map(v => ({id:v.id,productId:v.product_id,product:v.product_name,color:v.color,canonical:canonical.get(upper(v.color)),size:v.size_label,material:v.material,length:v.length,stockPositionId:v.stock_position_id,physical:v.physical,reserved:v.reserved,otherSameIdentity:variants.filter(t=>t.is_active===1 && t.id!==v.id && skuIdentity(t)===skuIdentity(v)).map(t=>({id:t.id,color:t.color,physical:t.physical,reserved:t.reserved}))}))
+const colorCounts = [...new Set(variants.filter(v=>v.is_active===1).map(v=>v.color))].map(color=>({color,variants:variants.filter(v=>v.is_active===1&&v.color===color).length})).sort((a,b)=>a.color.localeCompare(b.color))
+const special1718 = variants.find(v=>v.id===1718)||null
+console.log('CHARACTERISTIC_REPORT_JSON='+JSON.stringify({candidates:candidatesWithCollisions,colorCounts,special1718,summary:{count:candidatesWithCollisions.length,physical:candidatesWithCollisions.reduce((a,v)=>a+Number(v.physical||0),0),reserved:candidatesWithCollisions.reduce((a,v)=>a+Number(v.reserved||0),0),collisions:candidatesWithCollisions.filter(v=>v.otherSameIdentity.length>0).length}}))
 console.log('REF_AUDIT_JSON='+JSON.stringify(summary))
 console.log('READ ONLY. No updates, deletions, merges or catalog changes.')
