@@ -81,4 +81,8 @@ const proof={
  productionWrites:0
 };
 console.log('ETHNO_SIZE52_FORENSIC_JSON='+JSON.stringify(proof));
+const current=read("SELECT s.variant_id,s.inventory_source,s.quantity,s.reserved_quantity,s.updated_at FROM inventory_stock s WHERE s.variant_id IN (1280,1532) ORDER BY s.variant_id,s.inventory_source");
+const arrival=read("SELECT m.id,m.variant_id,m.quantity_delta,m.quantity_after,m.created_at,rv.reversal_movement_id,rv.reversed_at FROM inventory_movements m LEFT JOIN inventory_movement_reversals rv ON rv.original_movement_id=m.id WHERE m.id=4876");
+const postArrival=read("SELECT m.id,m.variant_id,m.inventory_source,m.quantity_delta,m.reference_type,m.created_at FROM inventory_movements m WHERE m.variant_id IN (1280,1532) AND m.created_at > '2026-10-13T10:34:52.190Z' ORDER BY m.created_at,m.id LIMIT 50");
+console.log('ETHNO_SIZE52_FRESH_STATUS='+JSON.stringify({current,arrival,postArrival,activeSourceReserves:reservations.filter(r=>r.variant_id===1532).length,readOnly:true}));
 console.log('ETHNO_SIZE52_READ_ONLY_SUCCESS');
