@@ -42,6 +42,8 @@ assert(refs.some(x=>x.id===50419&&x.value==='СВЕТЛО-СЕРЫЙ'))
 assert(refs.some(x=>x.id===580&&x.value==='ТЕМНО-СИНИЙ'))
 const catalogDDL=read("SELECT sql FROM sqlite_master WHERE type='table' AND name='catalog_variants'")[0]?.sql
 assert(catalogDDL?.startsWith('CREATE TABLE'),'Missing actual production DDL')
+const triggers=read("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='catalog_variants' ORDER BY name")
+assert.equal(triggers.length,0,'Production has catalog_variants UPDATE triggers not yet reproduced in rehearsal; STOP')
 const indexes=read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='catalog_variants' AND sql IS NOT NULL")
   .map(x=>x.sql).filter(x=>/CREATE UNIQUE INDEX/i.test(x))
 const fixture=new DatabaseSync(':memory:')
