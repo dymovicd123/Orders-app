@@ -25,6 +25,7 @@ for(const row of stock){
 }
 const movements=read('SELECT m.id,m.variant_id,m.inventory_source,m.movement_type,m.quantity_delta,m.quantity_after,m.reference_type,m.created_at,CASE WHEN rv.original_movement_id IS NULL THEN 0 ELSE 1 END AS is_reversed FROM inventory_movements m LEFT JOIN inventory_movement_reversals rv ON rv.original_movement_id=m.id WHERE m.variant_id IN ('+list+') ORDER BY m.created_at,m.id');
 const eligible=movements.filter(x=>['manual','transfer_in','transfer_out'].includes(String(x.reference_type||'').trim().toLowerCase())&&x.is_reversed===0);
+const arrivalOperation4876=read('SELECT m.id,m.variant_id,m.quantity_delta,m.inventory_source,m.reference_type,m.created_at FROM inventory_movements m WHERE m.reference_id=(SELECT reference_id FROM inventory_movements WHERE id=4876) AND m.created_at=(SELECT created_at FROM inventory_movements WHERE id=4876) ORDER BY m.id');
 const checks=read('SELECT id,variant_id,inventory_source,check_type,reference_type,expected_quantity,counted_quantity,difference_quantity,created_at FROM inventory_stock_checks WHERE variant_id IN ('+list+') ORDER BY created_at,id');
 const stocktake=read('SELECT i.id,i.variant_id,i.inventory_source,i.status AS item_status,i.stock_id,s.status AS session_status,s.id AS session_id,s.started_at,s.completed_at,s.cancelled_at FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id WHERE i.variant_id IN ('+list+') ORDER BY i.created_at,i.id');
 const transfers=read('SELECT i.id,i.variant_id,i.quantity,d.id AS transfer_id,d.status,d.created_at FROM inventory_transfer_items i JOIN inventory_transfer_documents d ON d.id=i.transfer_id WHERE i.variant_id IN ('+list+') ORDER BY i.id');
@@ -70,7 +71,7 @@ const inverseFlags={
 };
 const proof={
  targetProduct:'ЭТНО КАРДИГАН/ДРАП/ЖЕН/52',
- currentCatalog:catalog,source1532:source,keeper1280:keeper,
+ currentCatalog:catalog,source1532:source,keeper1280:keeper,arrivalOperation4876,
  targetPairCurrentReasons:sourceFlags,reverseDirectionReasons:inverseFlags,
  reconciliation:stock.map(s=>({id:s.id,variantId:s.variant_id,location:s.inventory_source,qty:s.quantity,reserved:s.reserved_quantity,updatedAt:s.updated_at})),
  stockIssues,otherSize52Variants:related,consolidations:mergeReceipts,semanticCorrections:retired,
