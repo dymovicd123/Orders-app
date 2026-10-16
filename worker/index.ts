@@ -3,6 +3,7 @@ import { json, measuredJsonRead, measuredResponseRead, publicApiError, readJson 
 import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from './core/text.ts'
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
+import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
 import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
@@ -415,6 +416,22 @@ export default {
           code:'stock_reconciliation_requires_atomic_finalization',
           message:'Отдельная корректировка перед объединением отключена. Обновите предпросмотр и подтвердите сверку вместе с объединением варианта.',
         }, { status:409 });
+      }
+
+      // Exact single-case admin-only manual history close, NEVER stock correction.
+      if (url.pathname === '/api/catalog/variants/manual-history-finalization-preview' && request.method === 'GET') {
+        const denied=requireAdminUser(authUser,'Закрытие исторических операций доступно только администратору.');
+        if(denied)return denied;
+        return json(await previewEthnoSize52HistoryFinalization(env.DB));
+      }
+      if (url.pathname === '/api/catalog/variants/manual-history-finalize' && request.method === 'POST') {
+        const denied=requireAdminUser(authUser,'Закрытие исторических операций доступно только администратору.');
+        if(denied)return denied;
+        const data=await readJson<{sourceId?:number;targetId?:number;expectedToken?:string;reason?:string}>(request);
+        if(data.sourceId!==1532||data.targetId!==1280) {
+          return json({ok:false,message:'Эта процедура предназначена только для подтверждённой пары SKU 1532 → 1280.'},{status:400});
+        }
+        return json(await finalizeEthnoSize52History(env.DB,authUser?.login||'',cleanText(data.reason),cleanText(data.expectedToken)));
       }
 
       if (url.pathname === '/api/catalog/variants/consolidation-preview' && request.method === 'GET') {
