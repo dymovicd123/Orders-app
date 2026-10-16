@@ -49,7 +49,13 @@ const correctionBefore=read(correctionSql)
 assert.equal(correctionBefore.length,4,'September correction records incomplete')
 for(const pair of archivedPairs)assert(correctionBefore.some(x=>x.source_variant_id===pair.source&&x.keeper_variant_id===pair.keeper&&x.status==='completed'&&x.completed_at),'Correction lineage changed '+pair.source)
 const protectedBefore=read(otherActiveSql)
-assert.deepEqual(protectedBefore.map(x=>x.id),protectedLiveIds,'Size 52/54 SKU mapping changed')
+assert.deepEqual(protectedBefore.map(x=>x.id),[1280,1281,1532,1533],'Size 52/54 SKU mapping changed')
+const archivedStockSql='SELECT * FROM inventory_stock WHERE variant_id IN ('+archivedList+') ORDER BY id'
+const archivedStockBefore=read(archivedStockSql)
+assert(archivedStockBefore.every(s=>s.quantity===0&&s.reserved_quantity===0),'Retired September source still carries physical or reserved stock')
+const archivedResSql="SELECT id,variant_id,inventory_source,quantity,status FROM inventory_reservations WHERE variant_id IN ("+archivedList+") AND status='active' ORDER BY id"
+const archivedResBefore=read(archivedResSql)
+assert.equal(archivedResBefore.length,0,'Unexpected active reservation on archived September source')
 const variants=read('SELECT * FROM catalog_variants WHERE id IN ('+list+') ORDER BY id')
 assert.equal(variants.length,specs.length)
 const byId=new Map(variants.map(x=>[x.id,x]))
@@ -115,15 +121,27 @@ const stockWhere=stockBefore.map(s=>'('+['id','variant_id','quantity','reserved_
 const reserveWhere=reservesBefore.map(res=>'('+['id','variant_id','quantity'].map(k=>'r.'+k+'='+Number(res[k])).join(' AND ')
  + ' AND r.inventory_source '+(res.inventory_source==null?'IS NULL':"='"+quote(res.inventory_source)+"'")
  + " AND r.status='active')").join(' OR ')||'0'
-const refGate="((id=50419 AND value='СВЕТЛО-СЕРЫЙ') OR (id=576 AND value='СВЕТЛО-БЕЖЕВЫЙ') OR (id=580 AND value='ТЕМНО-СИНИЙ') OR (id=50415 AND value='ТЕМНО-КОРИЧНЕВЫЙ'))"
+const refGate="((id=50418 AND value='СВЕТЛО СЕРЫЙ') OR (id=50419 AND value='СВЕТЛО-СЕРЫЙ'))"
+const archivedWhere=archivedPairs.map(pair=>{
+ const a=oldById.get(pair.source)
+ return '(a.id='+pair.source+' AND a.is_active=0 AND a.color=\''+quote(a.color)+'\' AND a.updated_at=\''+quote(a.updated_at)+'\''
+  +' AND a.product_id='+a.product_id+' AND a.stock_position_id='+a.stock_position_id
+  +' AND a.size_label=\''+quote(pair.size)+'\')'
+}).join(' OR ')
+const verifiedPairs=archivedPairs.map(pair=>' (c.source_variant_id='+pair.source+' AND c.keeper_variant_id='+pair.keeper+' AND c.status=\'completed\')').join(' OR ')
+const exceptions=archivedPairs.map(pair=>'(v.id='+pair.keeper+' AND other.id='+pair.source+' AND other.is_active=0 AND other.color=\'СВЕТЛО-СЕРЫЙ\')').join(' OR ')
 const sql="WITH preflight(ok) AS MATERIALIZED (SELECT CASE WHEN "+
 "(SELECT COUNT(*) FROM catalog_variants v WHERE v.id IN ("+list+") AND ("+variantWhere+"))="+specs.length+" "+
 "AND (SELECT COUNT(*) FROM inventory_stock WHERE variant_id IN ("+list+"))="+stockBefore.length+" "+
 "AND NOT EXISTS(SELECT 1 FROM inventory_stock st WHERE st.variant_id IN ("+list+") AND NOT ("+stockWhere+")) "+
 "AND (SELECT COUNT(*) FROM inventory_reservations WHERE variant_id IN ("+list+") AND status='active')="+reservesBefore.length+" "+
 "AND NOT EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.variant_id IN ("+list+") AND r.status='active' AND NOT ("+reserveWhere+")) "+
-"AND (SELECT COUNT(*) FROM reference_values WHERE kind='color' AND is_active=1 AND "+refGate+")=4 "+
-"AND NOT EXISTS(SELECT 1 FROM catalog_variants v JOIN catalog_variants other ON other.id<>v.id AND other.product_id=v.product_id AND other.stock_position_id=v.stock_position_id AND COALESCE(other.category,'adult')=COALESCE(v.category,'adult') AND COALESCE(other.gender,'')=COALESCE(v.gender,'') AND COALESCE(other.size_label,'')=COALESCE(v.size_label,'') WHERE v.id IN ("+list+") AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(other.color,'')),'‐',' '),'-',' '))=UPPER(REPLACE(REPLACE(TRIM(v.color),'‐',' '),'-',' '))) "+
+"AND (SELECT COUNT(*) FROM reference_values WHERE kind='color' AND is_active=1 AND "+refGate+")=2 "+
+"AND (SELECT COUNT(*) FROM catalog_variants a WHERE a.id IN ("+archivedList+") AND ("+archivedWhere+"))=4 "+
+"AND (SELECT COUNT(*) FROM catalog_semantic_variant_corrections c WHERE ("+verifiedPairs+"))=4 "+
+"AND (SELECT COUNT(*) FROM inventory_stock WHERE variant_id IN ("+archivedList+") AND (quantity<>0 OR reserved_quantity<>0))=0 "+
+"AND (SELECT COUNT(*) FROM inventory_reservations WHERE variant_id IN ("+archivedList+") AND status='active')=0 "+
+"AND NOT EXISTS(SELECT 1 FROM catalog_variants v JOIN catalog_variants other ON other.id<>v.id AND other.product_id=v.product_id AND other.stock_position_id=v.stock_position_id AND COALESCE(other.category,'adult')=COALESCE(v.category,'adult') AND COALESCE(other.gender,'')=COALESCE(v.gender,'') AND COALESCE(other.size_label,'')=COALESCE(v.size_label,'') WHERE v.id IN ("+list+") AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(other.color,'')),'‐',' '),'-',' '))=UPPER(REPLACE(REPLACE(TRIM(v.color),'‐',' '),'-',' ')) AND NOT ("+exceptions+")) "+
 "THEN 1 ELSE 0 END) "+
 "UPDATE catalog_variants SET color=CASE id "+specs.map(x=>"WHEN "+x.id+" THEN '"+quote(x.to)+"'").join(' ')+" END, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "+
 "WHERE id IN ("+list+") AND (SELECT ok FROM preflight)=1 RETURNING id,color"
@@ -142,41 +160,49 @@ if(!apply){
   }
   const pr=t.prepare("INSERT INTO reference_values VALUES (?,?,?,?)")
   for(const x of refRows)pr.run(x.id,x.kind,x.is_active,x.value)
+  t.exec("CREATE TABLE catalog_semantic_variant_corrections(source_variant_id INTEGER,keeper_variant_id INTEGER,status TEXT)")
+  const ci=t.prepare("INSERT INTO catalog_semantic_variant_corrections VALUES (?,?,?)")
+  for(const x of correctionBefore)ci.run(x.source_variant_id,x.keeper_variant_id,x.status)
   const st=t.prepare("INSERT INTO inventory_stock VALUES (?,?,?,?,?)")
-  for(const x of stockBefore)st.run(x.id,x.variant_id,x.quantity,x.reserved_quantity,x.updated_at)
+  for(const x of [...stockBefore,...archivedStockBefore])st.run(x.id,x.variant_id,x.quantity,x.reserved_quantity,x.updated_at)
   const ins=t.prepare('INSERT INTO inventory_reservations VALUES (?,?,?,?,?)')
   for(const res of reservesBefore)ins.run(res.id,res.variant_id,res.inventory_source,res.quantity,res.status)
   return t
  }
- // Positive replay must update 26, any stock or reservation drift must abort all.
+ // Four-keeper atomic replay; archived lineage and all active size 52/54 variants stay unchanged.
  const good=fixture()
  const out=good.prepare(sql).all()
- assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 26 SKU')
- assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,26)
+ assert.deepEqual(out.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Atomic local SQL update did not return exact 4 keepers')
+ assert.equal(good.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,4)
  good.close()
  const badReserve=fixture()
  if(reservesBefore.length){badReserve.prepare('UPDATE inventory_reservations SET quantity=quantity+1 WHERE id=?').run(reservesBefore[0].id);assert.equal(badReserve.prepare(sql).all().length,0,'Reserve drift must fail closed')}
  badReserve.close()
  const bad=fixture()
  bad.prepare('UPDATE inventory_stock SET quantity=quantity+9 WHERE id=?').run(stockBefore[0].id)
- assert.equal(bad.prepare(sql).all().length,0,'Concurrent stock change must fail closed for all 8')
+ assert.equal(bad.prepare(sql).all().length,0,'Concurrent stock change must fail closed for all four')
  assert.equal(bad.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE color LIKE '%-%' AND id IN ("+list+")").get().n,0)
  bad.close()
- console.log('REMAINING26_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
- console.log('REMAINING26_PREVIEW_ONLY_NO_MUTATION')
+ console.log('ETHNO_FOUR_SQL_ATOMIC_LOCAL_VERIFIED='+JSON.stringify({count:ids.length,stockDriftAbort:true}))
+ console.log('ETHNO_FOUR_PREVIEW_ONLY_NO_MUTATION')
  process.exit(0)
 }
 const applied=call(sql,true).results
-assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly 26 expected updated SKU IDs')
+assert.deepEqual(applied.map(x=>x.id).sort((a,b)=>a-b),[...ids].sort((a,b)=>a-b),'Not exactly four expected updated keeper IDs')
 for(const a of applied)assert.equal(a.color,specs.find(x=>x.id===a.id).to)
 const after=read('SELECT * FROM catalog_variants WHERE id IN ('+list+') ORDER BY id')
-assert.equal(after.length,26)
+assert.equal(after.length,4)
 for(const v of after){
  const orig=byId.get(v.id),plan=specs.find(x=>x.id===v.id)
  assert.equal(v.color,plan.to)
  for(const k of Object.keys(orig).filter(k=>k!=='color'&&k!=='updated_at'))assert.deepEqual(v[k],orig[k],'Variant unexpected change '+v.id+' '+k)
 }
 assert.deepEqual(read(stockSql),stockBefore,'Stock mutated')
+assert.deepEqual(read(archivedStockSql),archivedStockBefore,'Archived stock mutated')
+assert.deepEqual(read(archivedResSql),archivedResBefore,'Archived reservations changed')
+assert.deepEqual(read(correctionSql),correctionBefore,'Historical correction receipts changed')
+assert.deepEqual(read('SELECT * FROM catalog_variants WHERE id IN ('+archivedList+') ORDER BY id'),oldVariants,'Archived variants changed')
+assert.deepEqual(read(otherActiveSql),protectedBefore,'Active size 52/54 changed')
 assert.deepEqual(read(reserveSql),reservesBefore,'Reservation mutated')
 assert.deepEqual(read(orderSql),ordersBefore,'Order item mutated')
 const ftsAfter=read(ftsSql)
@@ -187,4 +213,4 @@ for(let i=0;i<ordersBefore.length;i++){
  assert.equal(f.order_id,oi.order_id)
  assert(f.search_text.includes(plan.to),'FTS text not updated '+oi.variant_id)
 }
-console.log('REMAINING26_PRODUCTION_VERIFIED='+JSON.stringify({ids,stockRowsUnchanged:stockBefore.length,activeReserves:reservesBefore.length,reservedUnits:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),historicalOrderItemsKept:ordersBefore.length,ftsRows:ftsAfter.length,variantIdsAndOtherFieldsUntouched:true}))
+console.log('ETHNO_FOUR_PRODUCTION_VERIFIED='+JSON.stringify({ids,stockRowsUnchanged:stockBefore.length,activeReserves:reservesBefore.length,reservedUnits:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),historicalOrderItemsKept:ordersBefore.length,ftsRows:ftsAfter.length,variantIdsAndOtherFieldsUntouched:true}))
