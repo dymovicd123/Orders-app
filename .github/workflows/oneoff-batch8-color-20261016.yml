@@ -50,7 +50,7 @@ jobs:
             }]
           }
           CFG
-          echo "PROD_CANARY_CONFIG=$RUNNER_TEMP/production-color-two-sku.jsonc" >> "$GITHUB_ENV"
+          echo "PROD_CANARY_CONFIG=$RUNNER_TEMP/production-color-batch8.jsonc" >> "$GITHUB_ENV"
       - run: npm ci
       - name: Compare all identity links, stock and FTS, then apply only on main push
         run: node scripts/ops/oneoff-batch8-color-20261016.mjs
