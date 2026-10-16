@@ -24,7 +24,9 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['src/App.tsx','c757fcd87fbf555f049a33463f1820337c615db3','2bedda3ac1bf8b5bef9ffbd407ddbd5258ae4b53'],
     // Replay the last reviewed catalogue/stock view-model for historical tests;
     // verify the new read-only stock-source overlay separately on candidate code.
-    ['src/app/controllers/useOperationalViewModel.ts','3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95','94f600e958c07944274a43f6182e09f1ef02e8b8',baseline],
+    // Reviewed, isolated material chooser fix from branch2 PR #434: the approved
+    // predecessor is 94f600..., and only this controller receives new bytes.
+    ['src/app/controllers/useOperationalViewModel.ts','3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95','b34991dae36234e70ee3a3014bf2c09cd731ee92',baseline],
     ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','f71c7705d7433de51333255969c01967e96186f5'],
     ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac'],
     ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','10c00c135801bcbadbb7f23a93481c9e94e978ce'],
