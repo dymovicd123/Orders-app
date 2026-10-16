@@ -145,13 +145,14 @@ async function readImpact(db: D1Database, id: number): Promise<SkuImpact> {
       (SELECT COUNT(*) FROM inventory_movements m
         WHERE m.variant_id=? AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
           AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id)
+          AND NOT EXISTS (SELECT 1 FROM catalog_manual_movement_finalizations fin WHERE fin.movement_id=m.id AND fin.source_variant_id=? AND fin.keeper_variant_id=1280)
       ) AS reversibleMovements,
       (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=? AND (
          EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
          OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
          OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id)
        )) AS returnExchangeLinks`
-  ).bind(id,id,id,id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
+  ).bind(id,id,id,id,id,id,id,id,id,id,id,id,id,id).first<Omit<SkuImpact,'id'>>()
   return {
     id, physical: toInt(row?.physical,0), reserved: toInt(row?.reserved,0), nonzeroStockRows: toInt(row?.nonzeroStockRows,0),
     activeReservations: toInt(row?.activeReservations,0),
@@ -480,7 +481,8 @@ export async function consolidateUnusedCatalogVariant(
           AND NOT EXISTS (SELECT 1 FROM inventory_movements m
             WHERE m.variant_id IN (v.id,t.id)
               AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
-              AND NOT EXISTS(SELECT 1 FROM inventory_movement_reversals r WHERE r.original_movement_id=m.id))
+              AND NOT EXISTS(SELECT 1 FROM inventory_movement_reversals r WHERE r.original_movement_id=m.id)
+              AND NOT EXISTS(SELECT 1 FROM catalog_manual_movement_finalizations f WHERE f.movement_id=m.id AND f.source_variant_id=v.id AND f.keeper_variant_id=t.id))
           AND NOT EXISTS (SELECT 1 FROM order_items oi
             WHERE oi.variant_id IN (v.id,t.id) AND (
               EXISTS (SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
@@ -498,7 +500,8 @@ export async function consolidateUnusedCatalogVariant(
         AND NOT EXISTS (SELECT 1 FROM inventory_movements m
           WHERE m.variant_id=v.id
             AND LOWER(TRIM(COALESCE(m.reference_type,''))) IN ('manual','transfer_in','transfer_out')
-            AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id))
+            AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=m.id)
+            AND NOT EXISTS (SELECT 1 FROM catalog_manual_movement_finalizations f WHERE f.movement_id=m.id AND f.source_variant_id=v.id AND f.keeper_variant_id=t.id))
         AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.variant_id=v.id AND (
           EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
           OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
