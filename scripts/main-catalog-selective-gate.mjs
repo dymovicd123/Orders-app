@@ -33,12 +33,21 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['worker/domains/lifecycle.ts','25f08471020220883107de8ee02b26bc774eb29a','039b84adc58aadefc6ded14b6dd9fa73a6aeb847'],
     ['worker/domains/returns-exchanges.ts','af53527b060ec388bbe9058b80df16a564b8af4c','14327c966fceb9f42f49c1fc39148e8081c4a19f'],
     ['worker/domains/exchange-batch.ts','725515005ad9e64d30e6eb2605f974c7947358e3','0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45'],
-    ['worker/domains/inventory-movement.ts','78ed3642479e9b961c01f063fb6900a041b9f0b5','f7dc7e9c8634dfc2378632254cb582797d7c0f62',arrivalBaseline],
+    ['worker/domains/inventory-movement.ts','78ed3642479e9b961c01f063fb6900a041b9f0b5','5403949b89141ee3c0ccbf41e0ac42228d921443',arrivalBaseline],
     // These three files are replayed from the exact pre-safety production commit.
     // The new stocktake SQL lifecycle and UI have independent live tests above.
     ['src/features/sections/InventorySection.tsx','cf69e21e4fda04ee6d3b0e9bffd08c9f724ab62a','430998dabe195e090087e56d092bbd5f400da2ad',warehouseBaseline],
     ['worker/domains/inventory-stocktake.ts','c40f2c4bbd5075aab4412a08e77df8ad76dae0e9','7df026a8e0de46062e73b1248a7ada063a45710b',warehouseBaseline],
     ['scripts/test-stocktake-functional-acceptance.mjs','3ca20472b6a89f81d188c59f23a483d1df93aadb','23d73702c78798a08c9a370ea23aa0eebad2bcb8',warehouseBaseline],
+    // New SKU finalization files are replayed as their exact pre-feature MAIN
+    // versions only for the untouched cumulative historical regression.
+    ['worker/domains/catalog-variant-consolidation.ts','7a69c78d2c7c65e1b7b676b619e8d16b8db9d447','126710444bcd74638386e53df91dbb1ca95a75e6','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['worker/index.ts','18eaed28fed6f72111e6d6ef6bc8128903b8e091','d9c87d8ad7c3b2b563a42ee6d0cdf3a57d63ce2c','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['src/features/sections/ReferenceMergeWorkspace.tsx','5115e75647506e2dfc0e9764ef3887e1927a6140','dfbf117fd4a7c4a92eec28615ee5334ad6a69f47','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['scripts/test-catalog-integrity-r2-sku-consolidation.mjs','90fa7d5ebdb9b5f3f6f5738853247fb8a786b307','dac49e71f9673c9766b4c6af256d6fe9f2a41cc4','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['scripts/test-catalog-zero-stock-undo.mjs','ded516075ec6cff6ef660dd38163f81f8d5ff7cb','528c9e0e89dce24c863a6aaf0a7fbc3b7a6f7436','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['scripts/test-catalog-positive-stock-undo.mjs','73ee8e895601be2dd39b04d2fce0bf4ca620c6fa','dae163ccc12b570fd0bde1cf066d60ab77360864','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
+    ['scripts/test-catalog-reserved-stock-undo.mjs','8fc119f3405d74584f7e1bfc5c866a97016a9e4d','d95f289dc965307ee49c3b19f981238c072bd12b','01f344c11a45ed0ea5811702e3825d0329ce8bd6'],
   ]
   const hash=data=>createHash('sha1').update('blob '+data.length+'\0').update(data).digest('hex')
   const git=(args,allowFailure=false)=>{
@@ -71,6 +80,16 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   if(git(['cat-file','-e',baseline+':src/App.tsx'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',baseline])
   if(git(['cat-file','-e',warehouseBaseline+':src/App.tsx'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',warehouseBaseline])
   if(git(['cat-file','-e',arrivalBaseline+':worker/domains/inventory-movement.ts'],true).status!==0)git(['fetch','--no-tags','--depth=1','origin',arrivalBaseline])
+  const preFinalizationBaseline='01f344c11a45ed0ea5811702e3825d0329ce8bd6'
+  if(git(['cat-file','-e',preFinalizationBaseline+':worker/index.ts'],true).status!==0)
+    git(['fetch','--no-tags','--depth=1','origin',preFinalizationBaseline])
+  // Live candidate finalization tests: run BEFORE touching frozen historical data.
+  for(const file of ['scripts/test-ethno-size52-manual-history-finalization.mjs','scripts/test-ethno-size52-finalization-runtime.mjs']){
+    const test=spawnSync(process.execPath,[
+      ...(file.includes('finalization-runtime')?['--experimental-strip-types']:[]),file
+    ],{stdio:'inherit',timeout:90000})
+    assert(!test.error&&test.status===0,'Production SKU finalization test failed: '+file)
+  }
   // The legacy catalog release manifest intentionally pins this gate's original
   // contents. Replay those exact bytes for the old suite, not weakened assertions.
   // The current candidate and its new UI tests already ran above.
@@ -91,6 +110,20 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   const hiddenSchemaDir=fs.mkdtempSync(path.join(os.tmpdir(),'main-ethno-0109-historical-'))
   const hiddenSchema=path.join(hiddenSchemaDir,'0109.sql')
   fs.renameSync(newSchema,hiddenSchema)
+  // New domain handler and runtime test files belong only to the new candidate.
+  const additionalFiles=[
+    ['worker/domains/catalog-manual-history-finalization.ts','ce672c90cd6d223a853aa827bb5bea466c695624'],
+    ['scripts/test-ethno-size52-manual-history-finalization.mjs','b351c28dc725273e321cf6a3274961928cf99092'],
+    ['scripts/test-ethno-size52-finalization-runtime.mjs','894cbbb7120627f49c5271274d2a3e3c99a591bc'],
+  ]
+  const hiddenNew=[]
+  for(let i=0;i<additionalFiles.length;i++){
+    const [file,expected]=additionalFiles[i]
+    assert(hash(fs.readFileSync(file))===expected,'Unexpected candidate finalization module: '+file)
+    const staged=path.join(hiddenSchemaDir,'candidate-'+i)
+    fs.renameSync(file,staged)
+    hiddenNew.push({file,expected,staged})
+  }
   let historicalTestFailed=false
   try{
     for(const entry of saved){
@@ -107,6 +140,10 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   }finally{
     fs.renameSync(hiddenSchema,newSchema)
     assert(hash(fs.readFileSync(newSchema))===hash(schemaBytes),'0109 schema not restored after historical replay')
+    for(const item of hiddenNew.reverse()){
+      fs.renameSync(item.staged,item.file)
+      assert(hash(fs.readFileSync(item.file))===item.expected,'Finalization source restoration failure: '+item.file)
+    }
     fs.rmSync(hiddenSchemaDir,{recursive:true,force:true})
     fs.writeFileSync(gatePath,currentGate)
     assert(hash(fs.readFileSync(gatePath))===hash(currentGate),
