@@ -1,0 +1,32 @@
+name: 'Ethno52 history finalization isolated SQLite safety'
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/catalog-manual-history-finalization.ts'
+      - 'worker/domains/catalog-variant-consolidation.ts'
+      - 'worker/domains/inventory-movement.ts'
+      - 'worker/index.ts'
+      - 'migrations/0109_v72_catalog_manual_movement_finalization.sql'
+      - 'scripts/test-ethno-size52-manual-history-finalization.mjs'
+      - 'scripts/test-ethno-size52-finalization-runtime.mjs'
+      - '.github/workflows/test-ethno-size52-manual-history-finalization.yml'
+permissions:
+  contents: read
+jobs:
+  local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check exact movement history lockdown with real SQLite FK, trigger, negative tests
+        run: node scripts/test-ethno-size52-manual-history-finalization.mjs
+      - name: Exercise real finalizer module on SQLite D1 adapter; stale tokens and negative states
+        run: node --experimental-strip-types scripts/test-ethno-size52-finalization-runtime.mjs
+      - name: Type-check Worker and frontend, without production mutations
+        run: |
+          npm ci
+          npm run typecheck
