@@ -71,7 +71,7 @@ const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
   appAfter: '4dc09ef0662a3a611681af7df4596c5512e43cab',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: '31b329d56fc804629acd8a5577705589cf2cc660',
+  tableAfter: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
@@ -210,7 +210,7 @@ check(gitBlob(fs.readFileSync(orderStockHintUi.fixture,'utf8'))===orderStockHint
 const orderReservationTruthFix={
   file:'worker/domains/order-reservations.ts',
   before:'b27726ebea9546120d1b75a6862bd77b9154714e',
-  after:'5cce2548ac5959f1a2baebfb68e306ffc54e13d1',
+  after:'d96b55cc499dc54c9c5301197f0f0c759d17ba1f',
   postStocktakeBefore:'10c00c135801bcbadbb7f23a93481c9e94e978ce',
   postStocktakeFixture:'scripts/fixtures/old-order-stocktake-20261016/order-reservations-before.ts',
   historicalLine:"  const observedPhysical = item.observedPhysicalQuantity == null ? null : item.observedPhysicalQuantity;",
@@ -264,6 +264,9 @@ for(const entry of inventorySafetyFixtures){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
+  ['scripts/test-handover-cas-after-revision-r2.mjs',true],
+  ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
   ['scripts/test-order-delete-physical-guidance-r1.mjs',false],
   ['scripts/test-order-no-hidden-stocktake-20261013.mjs',false],
   ['scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs',false],
@@ -392,7 +395,14 @@ try{
   const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
   const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
   check(gitBlob(orderTableCurrent)===reviewedHandoverUx.tableAfter,'Current order list handover UI changed')
-  const orderTableHistorical=orderTableCurrent.replace('Проверить выдачу после ревизии','Уточнить выдачу')
+  // Reconstruct only the previously accepted UI for its immutable historical tests.
+  // Independently test and retain the new review-first shipping action in current code.
+  const reviewFirstHelp='                            {projection.canShip && order.stock_handover_review_needed ? (\n                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>\n                            ) : null}\n'
+  check(orderTableCurrent.includes(reviewFirstHelp),'Current review-first shipping helper disappeared')
+  const orderTableHistorical=orderTableCurrent
+    .replace(reviewFirstHelp,'')
+    .replace('{projection.canShip && !order.stock_handover_review_needed ? (','{projection.canShip ? (')
+    .replace('Проверить выдачу после ревизии','Уточнить выдачу')
   check(gitBlob(orderTableHistorical)===reviewedHandoverUx.tableBefore,'Order list historical layout cannot be restored')
   saved.set(orderTablePath,orderTableCurrent)
   fs.writeFileSync(orderTablePath,orderTableHistorical)
