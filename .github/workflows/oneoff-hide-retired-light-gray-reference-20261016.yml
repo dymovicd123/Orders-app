@@ -1,0 +1,55 @@
+name: One-off guarded hide retired СВЕТЛО СЕРЫЙ color
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ops/oneoff-hide-retired-light-gray-reference-20261016.mjs'
+      - '.github/workflows/oneoff-hide-retired-light-gray-reference-20261016.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-hide-retired-light-gray-reference-20261016.yml'
+permissions:
+  contents: read
+concurrency:
+  group: oneoff-hide-retired-light-gray-reference-20261016
+  cancel-in-progress: false
+jobs:
+  guarded-reference-retirement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Restrict actions to expected repo/main and pinned production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/ops/oneoff-hide-retired-light-gray-reference-20261016.mjs
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            [[ "$GITHUB_BASE_REF" == "main" ]]
+          else
+            [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]
+          fi
+          cat > "$RUNNER_TEMP/only-prod-exact-light-gray.jsonc" <<'CFG'
+          {
+            "name":"orders-app-light-gray-exact-ref-retirement",
+            "compatibility_date":"2026-07-06",
+            "d1_databases":[{
+              "binding":"DB",
+              "database_name": "orders_db_prod",
+              "database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
+            }]
+          }
+          CFG
+          echo "TARGET_D1_CONFIG=$RUNNER_TEMP/only-prod-exact-light-gray.jsonc" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: SELECT-only PR audit or guarded exact one-row inactive update on main
+        run: node scripts/ops/oneoff-hide-retired-light-gray-reference-20261016.mjs
