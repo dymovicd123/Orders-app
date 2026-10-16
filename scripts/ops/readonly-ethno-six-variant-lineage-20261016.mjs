@@ -101,6 +101,9 @@ const put=local.prepare('INSERT INTO catalog_variants('+keys.join(',')+') VALUES
 for(const v of vals)put.run(...keys.map(k=>v[k]))
 for(const idx of uniqueIdx)local.exec(idx.sql)
 const original=local.prepare('SELECT id,color,is_active FROM catalog_variants WHERE id IN (1277,1278,1279,1303,1436,1438,1441,1473,1280,1281,1532,1533) ORDER BY id').all()
+const fourCurrent=original.filter(x=>[1438,1436,1441,1473].includes(x.id))
+const alreadyCanonical=fourCurrent.length===4&&fourCurrent.every(x=>x.color==='СВЕТЛО-СЕРЫЙ')
+if(!alreadyCanonical){
 local.exec('BEGIN')
 try {
  const q=local.prepare("UPDATE catalog_variants SET color='СВЕТЛО-СЕРЫЙ' WHERE id IN (1436,1438,1441,1473) AND color='СВЕТЛО СЕРЫЙ' AND is_active=1 RETURNING id")
@@ -115,7 +118,11 @@ try {
   const before=original.find(x=>x.id===id),after=all.find(x=>x.id===id)
   assert.deepEqual(after,before,'Active size 52/54 changed in dry-run')
  }
-}finally{local.exec('ROLLBACK')}
+ }finally{local.exec('ROLLBACK')}
+} else {
+ assert.equal(fourCurrent.length,4)
+ for(const x of fourCurrent)assert.equal(x.color,'СВЕТЛО-СЕРЫЙ','Stage1 already canonical')
+}
 assert.deepEqual(local.prepare('SELECT id,color,is_active FROM catalog_variants WHERE id IN (1277,1278,1279,1303,1436,1438,1441,1473,1280,1281,1532,1533) ORDER BY id').all(),original)
 local.close()
 const activeStocktake=read("SELECT i.variant_id,s.status AS sessionStatus,i.status AS itemStatus,COUNT(*) AS n FROM inventory_stocktake_items i JOIN inventory_stocktake_sessions s ON s.id=i.session_id WHERE i.variant_id IN ("+list+") GROUP BY i.variant_id,s.status,i.status ORDER BY i.variant_id,s.status")
