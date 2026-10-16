@@ -9,6 +9,7 @@ on:
       - 'worker/index.ts'
       - 'migrations/0109_v72_catalog_manual_movement_finalization.sql'
       - 'scripts/test-ethno-size52-manual-history-finalization.mjs'
+      - 'scripts/test-ethno-size52-finalization-runtime.mjs'
       - '.github/workflows/test-ethno-size52-manual-history-finalization.yml'
 permissions:
   contents: read
@@ -23,6 +24,8 @@ jobs:
           node-version: '24'
       - name: Check exact movement history lockdown with real SQLite FK, trigger, negative tests
         run: node scripts/test-ethno-size52-manual-history-finalization.mjs
+      - name: Exercise real finalizer module on SQLite D1 adapter; stale tokens and negative states
+        run: node --experimental-strip-types scripts/test-ethno-size52-finalization-runtime.mjs
       - name: Type-check Worker and frontend, without production mutations
         run: |
           npm ci
