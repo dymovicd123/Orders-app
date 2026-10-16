@@ -1195,7 +1195,7 @@ export type OrderStockHandoverItem = {
   checkpointType: string | null;
   checkpointKind: 'revision' | 'check' | null;
   reviewNeeded: boolean;
-  reviewReason: 'late_entry' | 'mixed_order_after_check' | null;
+  reviewReason: 'late_entry' | 'checkpoint_after_order' | null;
   reviewDecision: string | null;
   reviewedCheckpointId: number | null;
   reviewedCheckpointAt: string | null;
@@ -1333,8 +1333,8 @@ export async function fetchOrderStockHandoverRows(
                    WHERE c.inventory_source = si.inventory_source
                      AND c.variant_id = si.variant_id
                      AND (
-                       (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date))
-                       OR (si.has_workshop = 1 AND datetime(c.checked_at) > datetime(si.origin_at))
+                       (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date) AND date(si.order_date) < date(si.origin_at, '+5 hours'))
+                       OR (date(c.checked_at, '+5 hours') >= date(si.order_date) AND datetime(c.checked_at) > datetime(si.origin_at))
                      )
                    ORDER BY datetime(c.checked_at) DESC, c.id DESC
                    LIMIT 1) AS check_point,
@@ -1344,7 +1344,7 @@ export async function fetchOrderStockHandoverRows(
                      AND s.status = 'completed'
                      AND s.completed_at IS NOT NULL
                      AND s.id NOT LIKE 'REV-%-P-%'
-                     AND datetime(s.started_at) <= datetime(si.origin_at)
+                     AND ((datetime(s.started_at) <= datetime(si.origin_at) AND date(si.order_date) < date(si.origin_at, '+5 hours')) OR datetime(s.completed_at) > datetime(si.origin_at))
                      AND date(s.completed_at, '+5 hours') >= date(si.order_date)
                      AND NOT EXISTS (
                        SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1489,7 +1489,7 @@ export async function fetchOrderStockHandoverRows(
            WHEN c.id IS NULL THEN NULL
            WHEN datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
                 AND date(c.checked_at, '+5 hours') >= date(o.order_date) THEN 'late_entry'
-           ELSE 'mixed_order_after_check'
+           ELSE 'checkpoint_after_order'
          END AS checkpoint_reason
        FROM order_items oi
        JOIN orders o ON o.id = oi.order_id
@@ -1517,12 +1517,9 @@ export async function fetchOrderStockHandoverRows(
            AND c2.variant_id = r.variant_id
            AND (
              (datetime(c2.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
-              AND date(c2.checked_at, '+5 hours') >= date(o.order_date))
+              AND date(c2.checked_at, '+5 hours') >= date(o.order_date) AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
              OR
-             (EXISTS (
-                SELECT 1 FROM order_items wi
-                WHERE wi.order_id = oi.order_id AND COALESCE(wi.is_workshop, 0) = 1 AND wi.quantity > 0
-              )
+             (date(c2.checked_at, '+5 hours') >= date(o.order_date)
               AND datetime(c2.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            )
          ORDER BY datetime(c2.checked_at) DESC, c2.id DESC
@@ -1535,7 +1532,9 @@ export async function fetchOrderStockHandoverRows(
            AND s2.status = 'completed'
            AND s2.completed_at IS NOT NULL
            AND s2.id NOT LIKE 'REV-%-P-%'
-           AND datetime(s2.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+           AND ((datetime(s2.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
+             OR datetime(s2.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s2.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
              SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1591,7 +1590,10 @@ export function stockHandoverItemFromRow(row: Record<string, unknown>): OrderSto
     ? 'already_issued'
     : reviewNeeded ? 'handover_review'
       : reservationStatus === 'active' && reservationId ? 'ready_to_issue' : 'needs_attention';
-  const rawReason = useFullStocktakeCheckpoint ? 'late_entry' : cleanText(row.checkpoint_reason);
+  const originMillis = normalizedUtcMillis(row.inventory_obligation_origin_at || row.item_created_at)
+  const rawReason = useFullStocktakeCheckpoint
+    ? (fullStocktakeMillis > originMillis ? 'checkpoint_after_order' : 'late_entry')
+    : cleanText(row.checkpoint_reason);
   const details = [row.working_gender, row.working_color, row.working_material, row.working_length, row.working_size]
     .map((value) => cleanText(value)).filter(Boolean).join(' · ');
   return {
@@ -1610,7 +1612,7 @@ export function stockHandoverItemFromRow(row: Record<string, unknown>): OrderSto
     checkpointType,
     checkpointKind: handoverCheckpointKind(checkpointType),
     reviewNeeded,
-    reviewReason: rawReason === 'late_entry' ? 'late_entry' : (rawReason === 'mixed_order_after_check' ? 'mixed_order_after_check' : null),
+    reviewReason: rawReason === 'late_entry' ? 'late_entry' : (rawReason === 'checkpoint_after_order' ? 'checkpoint_after_order' : null),
     reviewDecision: cleanText(row.review_decision) || null,
     reviewedCheckpointId,
     reviewedCheckpointAt,
