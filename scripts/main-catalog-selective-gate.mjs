@@ -29,8 +29,8 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     ['src/app/controllers/useOperationalViewModel.ts','3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95','b34991dae36234e70ee3a3014bf2c09cd731ee92',baseline],
     ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','f71c7705d7433de51333255969c01967e96186f5'],
     ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac'],
-    ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','5cce2548ac5959f1a2baebfb68e306ffc54e13d1'],
-    ['src/features/sections/OrdersTableSection.tsx','45088dbd1b594fa165f9ea7cfdc35109e2be3417','31b329d56fc804629acd8a5577705589cf2cc660'],
+    ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','d96b55cc499dc54c9c5301197f0f0c759d17ba1f'],
+    ['src/features/sections/OrdersTableSection.tsx','45088dbd1b594fa165f9ea7cfdc35109e2be3417','02dd262da588cb22d9aa71b0cf3a9e374d667282'],
     ['worker/domains/lifecycle.ts','25f08471020220883107de8ee02b26bc774eb29a','039b84adc58aadefc6ded14b6dd9fa73a6aeb847'],
     ['worker/domains/returns-exchanges.ts','af53527b060ec388bbe9058b80df16a564b8af4c','14327c966fceb9f42f49c1fc39148e8081c4a19f'],
     ['worker/domains/exchange-batch.ts','725515005ad9e64d30e6eb2605f974c7947358e3','0c7d1c0b8eb3b013a8f7c0a8f1986d6ecfc55a45'],
@@ -82,6 +82,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
   // before-shipping guard BEFORE replaying the exact frozen production baseline.
   for(const [testFile,needsStrip] of [
     ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
+    ['scripts/test-handover-cas-after-revision-r2.mjs',true],
     ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
   ]){
     const result=spawnSync(process.execPath,[
