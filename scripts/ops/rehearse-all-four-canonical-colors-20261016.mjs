@@ -104,7 +104,8 @@ assert.deepEqual(collisions.map(x=>x.id).sort((a,b)=>a-b),[1436,1438,1441,1473,1
 assert.equal(safe.length,34,'Unexpected safe rename group; halt production planning')
 const originalOrderItems=fixture.prepare('SELECT * FROM order_items ORDER BY id').all()
 const beforeStock=fixture.prepare('SELECT * FROM inventory_stock ORDER BY id').all()
-const beforeColor=fixture.prepare('SELECT COUNT(*) n FROM catalog_variants WHERE is_active=1 AND color IN (\'СВЕТЛО СЕРЫЙ\',\'ТЕМНО СИНИЙ\')').get().n
+const countOldLabels=()=>fixture.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE is_active=1 AND color IN ('СВЕТЛО СЕРЫЙ','ТЕМНО СИНИЙ','СВЕТЛО БЕЖЕВЫЙ','ТЕМНО КОРИЧНЕВЫЙ')").get().n
+const beforeColor=countOldLabels()
 let predictedReserved=0,measuredReserved=0,stockQty=0
 for(const v of safe){
  for(const s of stock.filter(x=>x.variant_id===v.id)){
@@ -153,7 +154,7 @@ try{
      assert.equal(joined.working_color,targetNames.get(v.color))
    }
  }
- const remaining=fixture.prepare("SELECT COUNT(*) n FROM catalog_variants WHERE is_active=1 AND color IN ('СВЕТЛО СЕРЫЙ','ТЕМНО СИНИЙ','СВЕТЛО БЕЖЕВЫЙ','ТЕМНО КОРИЧНЕВЫЙ')").get().n
+ const remaining=countOldLabels()
  assert.equal(remaining,beforeColor-safe.length)
  fixture.exec('ROLLBACK') // This is a REHEARSAL ONLY, even on the replica.
  const snapHash=rows=>createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0,16)
