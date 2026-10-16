@@ -1,0 +1,44 @@
+name: 'Read-only independent verification of color pair 1469 1584'
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ops/verify-oneoff-color-pair-1469-1584-20261016.mjs'
+      - '.github/workflows/verify-oneoff-color-1469-1584.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Validate read-only SQL script and production config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/ops/verify-oneoff-color-pair-1469-1584-20261016.mjs
+          [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          cat > "$RUNNER_TEMP/production-color-verify-readonly.jsonc" <<'CFG'
+          {
+            "name": "orders-app-color-readonly-audit",
+            "compatibility_date": "2026-07-06",
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": "orders_db_prod",
+              "database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
+            }]
+          }
+          CFG
+          echo "PROD_READONLY_CONFIG=$RUNNER_TEMP/production-color-verify-readonly.jsonc" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: Verify exact production SKU IDs, stock, reserves, order FTS after attempted two-SKU rename
+        run: node scripts/ops/verify-oneoff-color-pair-1469-1584-20261016.mjs
