@@ -21,7 +21,7 @@ import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileK
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
-import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
+import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderHandoverReviewBlockers, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
@@ -1612,6 +1612,17 @@ export default {
         const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(env.DB);
         const normalizedStockConfirmations = humanInventoryModelEnabled ? normalizeShipmentStockConfirmations(input.stockConfirmations) : [];
         if (humanInventoryModelEnabled) {
+          // Old stock-only orders may have been physically counted after reservation.
+          // Require an explicit before/after-revision decision before any writeoff.
+          const unreviewedHandoverItems = await orderHandoverReviewBlockers(env.DB, id);
+          if (unreviewedHandoverItems.length) {
+            return json({
+              ok: false,
+              code: 'stock_handover_review_required',
+              reviewOrderId: id,
+              message: 'После оформления заказа была ревизия или сверка склада. Уточните, получил ли клиент указанные товары до проверки, чтобы не списать их повторно. Откроется окно проверки выдачи.',
+            }, { status: 409 });
+          }
           let blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
           let unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           if (unresolvedBlockers.length) {
