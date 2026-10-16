@@ -315,7 +315,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   void openOrderStockHandover(order)
                                 }}
                               >
-                                {order.stock_handover_review_needed ? 'Уточнить выдачу' : 'Выдать готовые товары'}
+                                {order.stock_handover_review_needed ? 'Проверить выдачу после ревизии' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
                             {projection.canShip ? (
