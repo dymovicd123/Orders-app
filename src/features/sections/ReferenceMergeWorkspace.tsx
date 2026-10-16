@@ -84,6 +84,7 @@ export function ReferenceMergeWorkspace({
   const [history,setHistory]=useState<MergeHistoryItem[]|null>(null)
   const [historyBusy,setHistoryBusy]=useState(false)
   const [pairReview,setPairReview]=useState<PairReview|null>(null)
+  const [historicalFinalization,setHistoricalFinalization]=useState<{ok:boolean;canFinalize:boolean;blockers:string[];stateToken:string;originalMovements:readonly number[];physicalTotal:number}|null>(null)
   const [pairBusy,setPairBusy]=useState(false)
   const [cleanup,setCleanup]=useState<{safeToHideSource:boolean;explanation:string}|null>(null)
   const [historyError,setHistoryError]=useState('')
@@ -103,8 +104,8 @@ export function ReferenceMergeWorkspace({
     return ()=>{valid=false}
   },[kind,isAdmin,apiFetch])
 
-  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setPairReview(null);setCleanup(null);setError('');setNotice('')}
-  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setPairReview(null);setCleanup(null);setError('');setNotice('')}
+  const chooseSource=(id:number)=>{setSourceId(id);setImpact(null);setPairReview(null);setHistoricalFinalization(null);setCleanup(null);setError('');setNotice('')}
+  const chooseTarget=(id:number)=>{setTargetId(id);setImpact(null);setPairReview(null);setHistoricalFinalization(null);setCleanup(null);setError('');setNotice('')}
   const canInspect=sourceId>0&&targetId>0&&sourceId!==targetId&&!loading&&!checking
   const source=values.find(v=>v.id===sourceId)
   const target=values.find(v=>v.id===targetId)
@@ -124,7 +125,7 @@ export function ReferenceMergeWorkspace({
 
   async function inspectSkuPair(sourceVariantId:number,targetVariantId:number) {
     if (pairBusy || saving) return
-    setPairBusy(true);setPairReview(null);setError('')
+    setPairBusy(true);setPairReview(null);setHistoricalFinalization(null);setError('')
     try {
       const query=new URLSearchParams({sourceId:String(sourceVariantId),targetId:String(targetVariantId)})
       const response=await apiFetch('/api/catalog/variants/consolidation-preview?'+query.toString())
@@ -133,6 +134,38 @@ export function ReferenceMergeWorkspace({
       setPairReview({sourceVariantId,targetVariantId,preview:body})
     } catch(e) { setError(e instanceof Error?e.message:'Не удалось проверить варианты.') }
     finally {setPairBusy(false)}
+  }
+
+  async function inspectHistoricalFinalization(){
+    if(!pairReview||pairReview.sourceVariantId!==1532||pairReview.targetVariantId!==1280||pairBusy||saving)return
+    setPairBusy(true);setError('');setHistoricalFinalization(null)
+    try{
+      const response=await apiFetch('/api/catalog/variants/manual-history-finalization-preview')
+      const body=await response.json() as {ok:boolean;canFinalize:boolean;blockers:string[];stateToken:string;originalMovements:readonly number[];physicalTotal:number;message?:string}
+      if(!response.ok||!body.ok)throw new Error(body.message||'Не удалось проверить исторические операции.')
+      setHistoricalFinalization(body)
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось проверить историю.')}
+    finally{setPairBusy(false)}
+  }
+
+  async function finalizeHistoricalPair(){
+    if(!historicalFinalization?.canFinalize||!pairReview||pairBusy||saving)return
+    if(pairReview.sourceVariantId!==1532||pairReview.targetVariantId!==1280)return
+    if(!window.confirm('Закрыть для индивидуальной отмены ТОЛЬКО движения #4876 и #5400? Исходные операции и сверка останутся в истории; остаток не изменится. После этого потребуется отдельно подтвердить объединение вариантов.'))return
+    setPairBusy(true);setError('')
+    try {
+      const response=await apiFetch('/api/catalog/variants/manual-history-finalize',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sourceId:1532,targetId:1280,expectedToken:historicalFinalization.stateToken,
+          reason:'Фактически 0 шт. по сверке #3250. Причина расхождения не установлена. Старые движения сохранены.'}),
+      })
+      const body=await response.json() as {ok?:boolean;message?:string}
+      if(!response.ok||!body.ok)throw new Error(body.message||'Финализация исторических операций не прошла.')
+      setHistoricalFinalization(null)
+      setNotice('Операции #4876 и #5400 сохранены и закрыты для индивидуальной отмены. Остатки не изменились. Теперь повторно проверьте пару SKU 1532 → 1280 и только затем подтвердите объединение.')
+      await inspectSkuPair(1532,1280)
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось завершить финализацию.')}
+    finally{setPairBusy(false)}
   }
 
   async function applySkuPair() {
@@ -446,6 +479,30 @@ export function ReferenceMergeWorkspace({
                           <div className="reference-merge-notice" role="status">
                             <strong>Объединение пока невозможно:</strong>
                             <ul>{pairReview.preview.blockers.map((reason,i)=><li key={i}>{reason}</li>)}</ul>
+                          </div>
+                        ):null}
+                        {pairReview.sourceVariantId===1532 && pairReview.targetVariantId===1280
+                         && !pairReview.preview.canConsolidate ? (
+                          <div className="reference-merge-sku-guidance">
+                            <p><strong>Исторические операции ДРАП 52.</strong> После фактической сверки (0 шт.) можно отдельно проверить закрытие двух старых движений без их удаления, отмены или изменения остатков. Для других товаров эта процедура недоступна.</p>
+                            <button type="button" className="secondary compact" disabled={pairBusy||saving}
+                              onClick={()=>void inspectHistoricalFinalization()}>
+                              Проверить финализацию движений #4876 и #5400
+                            </button>
+                            {historicalFinalization ? (
+                              <div className="reference-merge-sku-review">
+                                <p>Остаток: {historicalFinalization.physicalTotal} шт. Движения: {historicalFinalization.originalMovements.join(', ')}.</p>
+                                {historicalFinalization.blockers.length ? (
+                                  <ul>{historicalFinalization.blockers.map((x,i)=><li key={i}>{x}</li>)}</ul>
+                                ) : <p>Проверка пройдена. Исторические движения останутся в журнале, но обычная отмена будет запрещена.</p>}
+                                {historicalFinalization.canFinalize ? (
+                                  <button type="button" className="primary compact" disabled={pairBusy||saving}
+                                    onClick={()=>void finalizeHistoricalPair()}>
+                                    Подтвердить финализацию двух движений
+                                  </button>
+                                ):null}
+                              </div>
+                            ):null}
                           </div>
                         ):null}
                         {pairReview.preview.canConsolidate ? (

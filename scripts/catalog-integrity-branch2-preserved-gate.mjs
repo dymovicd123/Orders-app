@@ -49,9 +49,27 @@ const reviewedArrivalMaterialChoice = {
 }
 check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
   'Arrival material safety patch does not start from the accepted stock projection version')
+// Branch2-only audited history finalization from issue #413; exact current blobs
+// are pinned, and historical manifest source is still staged unmodified.
+const reviewedEthnoManualHistory = {
+  'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
+  'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
+  'worker/index.ts':'e42baf9a3898e04d191dcfe4729ebb0542b737df',
+  'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
+  'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
+  'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
+  'scripts/test-catalog-zero-stock-undo.mjs':'528c9e0e89dce24c863a6aaf0a7fbc3b7a6f7436',
+  'scripts/test-catalog-reserved-stock-undo.mjs':'d95f289dc965307ee49c3b19f981238c072bd12b',
+  'scripts/test-catalog-counted-stock-undo.mjs':'f58e5ce2acd4f8f152df8006f5caa8349598f6b1',
+  'scripts/test-catalog-positive-stock-undo.mjs':'dae163ccc12b570fd0bde1cf066d60ab77360864',
+  'scripts/test-catalog-complex-undo-case.mjs':'b9ab573b89337241e7636e8e9f275d711e4624a6',
+}
+for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed Ethno finalization runtime drift: '+file)
+const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedDeleteGuidance.currentApp
-  : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : delta.afterGitBlob
+  : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
     file: 'worker/domains/critical.ts',
@@ -79,13 +97,17 @@ const stage04B2Extensions={
   'migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql':'b468a734520cfae24341ee6864daae34f0860547',
   'migrations/0107_v72_workshop_settlement_payment_method.sql':'137b974665c7b35464250e87bc2e57baae147142',
   'migrations/0108_v72_workshop_unique_legacy_sku_pricing.sql':'dbe3150c5d97ffad90db9dabd42261baed222d7c',
-  // Schema-only 0109 is hidden only while replaying the frozen migration count test.
-  'migrations/0109_v72_catalog_manual_movement_finalization.sql':'06314e11b70918ae5a133b076f397fbbb27d0511',
   'worker/domains/workshop-settlements.ts':'2b7d7461758c116053b4a62a3576f451180b32fc',
   'worker/domains/workshop-settlement-prices.ts':'8f850b0540041daf688c48daf37642fe66f8c6ab',
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
   'src/styles/stage04-workshop-settlements.css':'6796899d63de3e2183a95605b9280764c9e64b48',
 }
+const reviewedEthnoNewFiles={
+  'migrations/0109_v72_catalog_manual_movement_finalization.sql':'06314e11b70918ae5a133b076f397fbbb27d0511',
+  'worker/domains/catalog-manual-history-finalization.ts':'ce672c90cd6d223a853aa827bb5bea466c695624',
+}
+for(const [file,expected] of Object.entries(reviewedEthnoNewFiles))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Finalization new file unexpected drift: '+file)
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
 }
@@ -198,7 +220,7 @@ for(const [file,expected] of Object.entries(manifest.stage04Files)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Stage04 migration changed: '+file)
 }
 for(const [file,expected] of Object.entries(manifest.addedFiles || {})){
-  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Catalog port new file drifted: '+file)
+  check(gitBlob(fs.readFileSync(file,'utf8'))===reviewedCatalogAdded(file,expected),'Catalog port new file drifted: '+file)
 }
 for(const [file,delta] of Object.entries(manifest.files)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===reviewedAfterGitBlob(file,delta),'Unreviewed Catalog runtime drift: '+file)
@@ -306,13 +328,14 @@ try{
   for(const [relative,expected] of [
     ...Object.entries(manifest.addedFiles || {}),
     ...Object.entries(stage04B2Extensions),
+    ...Object.entries(reviewedEthnoNewFiles),
   ]){
     const from=path.resolve(relative)
-    check(gitBlob(fs.readFileSync(from,'utf8'))===expected,'New module drifted: '+relative)
+    check(gitBlob(fs.readFileSync(from,'utf8'))===reviewedCatalogAdded(relative,expected),'New module drifted: '+relative)
     const to=path.join(staged,relative)
     fs.mkdirSync(path.dirname(to),{recursive:true})
     fs.renameSync(from,to)
-    hidden.push({relative,from,to,expected})
+    hidden.push({relative,from,to,expected:reviewedCatalogAdded(relative,expected)})
   }
   for(const [relative,delta] of Object.entries(manifest.files)){
     const full=path.resolve(relative)
