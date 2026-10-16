@@ -1,25 +1,43 @@
-// One-off protected batch of 8 low-exposure catalog COLOR spelling corrections.
-// PR: only SELECT. Main push after approval: one SQLite atomic UPDATE RETURNING.
+// Exact 26 active variant color spelling fixes. Six collisions excluded.
+// PR: SELECT-only live check and local atomic SQL; main push: one guarded UPDATE RETURNING.
 // Explicitly never updates inventory_stock/reservations/order_items/stocktake/finance.
 import {execFileSync} from 'node:child_process'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 const config=process.env.PROD_CANARY_CONFIG
 assert(config&&fs.readFileSync(config,'utf8').includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'))
-const apply=process.env.APPLY_COLOR_BATCH==='yes'
+const apply=process.env.APPLY_REMAINING26_COLORS==='yes'
 if(apply) {
  assert.equal(process.env.GITHUB_EVENT_NAME,'push')
  assert.equal(process.env.GITHUB_REF,'refs/heads/main')
 }
 const specs=[
- {id:1481,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1589,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1788,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
- {id:1492,from:'ТЕМНО КОРИЧНЕВЫЙ',to:'ТЕМНО-КОРИЧНЕВЫЙ'},
- {id:1527,from:'ТЕМНО КОРИЧНЕВЫЙ',to:'ТЕМНО-КОРИЧНЕВЫЙ'},
- {id:1499,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1617,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
- {id:1703,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
+ {id:1423,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
+ {id:1431,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
+ {id:1503,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
+ {id:1514,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
+ {id:1515,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
+ {id:1718,from:'СВЕТЛО СЕРЫЙ',to:'СВЕТЛО-СЕРЫЙ'},
+ {id:1586,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1665,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1666,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1739,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1740,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1741,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1742,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1743,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1744,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1768,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1774,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1806,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1807,from:'ТЕМНО СИНИЙ',to:'ТЕМНО-СИНИЙ'},
+ {id:1484,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
+ {id:1498,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
+ {id:1500,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
+ {id:1794,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
+ {id:1797,from:'СВЕТЛО БЕЖЕВЫЙ',to:'СВЕТЛО-БЕЖЕВЫЙ'},
+ {id:1680,from:'ТЕМНО КОРИЧНЕВЫЙ',to:'ТЕМНО-КОРИЧНЕВЫЙ'},
+ {id:1681,from:'ТЕМНО КОРИЧНЕВЫЙ',to:'ТЕМНО-КОРИЧНЕВЫЙ'},
 ]
 const ids=specs.map(x=>x.id), list=ids.join(',')
 const quote=x=>String(x).replaceAll("'","''")
@@ -33,12 +51,13 @@ function call(q,write=false) {
 }
 const read=q=>call(q).results
 const canonical=[
+ {id:50419,value:'СВЕТЛО-СЕРЫЙ'},
  {id:576,value:'СВЕТЛО-БЕЖЕВЫЙ'},
  {id:580,value:'ТЕМНО-СИНИЙ'},
  {id:50415,value:'ТЕМНО-КОРИЧНЕВЫЙ'},
 ]
-const refRows=read('SELECT id,kind,value,is_active FROM reference_values WHERE id IN (576,580,50415) ORDER BY id')
-assert.equal(refRows.length,3)
+const refRows=read('SELECT id,kind,value,is_active FROM reference_values WHERE id IN (50419,576,580,50415) ORDER BY id')
+assert.equal(refRows.length,4)
 for(const c of canonical)assert(refRows.some(x=>x.id===c.id&&x.kind==='color'&&x.is_active===1&&x.value===c.value),'Canonical reference changed')
 const variants=read('SELECT * FROM catalog_variants WHERE id IN ('+list+') ORDER BY id')
 assert.equal(variants.length,specs.length)
@@ -63,21 +82,29 @@ const stockBefore=read(stockSql)
 const byStock=new Map()
 for(const s of stockBefore){
  assert(ids.includes(s.variant_id),'Unexpected stock source')
- assert(s.quantity>=0&&s.quantity<=1&&s.reserved_quantity===0,'Stock exposure changed; abort')
+ assert(Number.isSafeInteger(s.quantity)&&Number.isSafeInteger(s.reserved_quantity)&&s.quantity>=0&&s.reserved_quantity>=0,'Invalid stock')
  const n=byStock.get(s.variant_id)||0;byStock.set(s.variant_id,n+1)
 }
-assert(specs.every(x=>(byStock.get(x.id)||0)>=1),'Expected stock row absent')
+assert(stockBefore.length>0,'No stock snapshot')
 const reserveSql='SELECT id,variant_id,inventory_source,quantity,status FROM inventory_reservations WHERE variant_id IN ('+list+') AND status=\'active\' ORDER BY id'
 const reservesBefore=read(reserveSql)
-assert.equal(reservesBefore.length,0,'Cannot touch SKUs with reservations')
+const key=(id,source)=>id+'|'+source
+const reserveTotals=new Map()
+for(const res of reservesBefore){
+ assert(ids.includes(res.variant_id)&&Number.isSafeInteger(res.quantity)&&res.quantity>0,'Invalid active reserve')
+ const k=key(res.variant_id,res.inventory_source)
+ reserveTotals.set(k,(reserveTotals.get(k)||0)+res.quantity)
+}
+for(const stock of stockBefore)assert.equal(stock.reserved_quantity,reserveTotals.get(key(stock.variant_id,stock.inventory_source))||0,'Stock/reserve mismatch '+stock.id)
+assert.equal([...reserveTotals.values()].reduce((x,y)=>x+y,0),stockBefore.reduce((x,y)=>x+y.reserved_quantity,0),'Total reserve mismatch')
 const orderSql='SELECT id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot FROM order_items WHERE variant_id IN ('+list+') ORDER BY id'
 const ordersBefore=read(orderSql)
 const ftsSql='SELECT rowid,order_id,search_text FROM order_search_items_fts WHERE rowid IN (SELECT id FROM order_items WHERE variant_id IN ('+list+')) ORDER BY rowid'
 const ftsBefore=read(ftsSql)
 assert.equal(ordersBefore.length,ftsBefore.length,'Existing search rows incomplete')
-console.log('BATCH8_READONLY_PREFLIGHT='+JSON.stringify({ids,physical:stockBefore.reduce((n,x)=>n+x.quantity,0),reserved:0,stockRows:stockBefore.length,orderItems:ordersBefore.length,collisions:0}))
+console.log('REMAINING26_READONLY_PREFLIGHT='+JSON.stringify({ids,physical:stockBefore.reduce((n,x)=>n+x.quantity,0),reserved:stockBefore.reduce((n,x)=>n+x.reserved_quantity,0),stockRows:stockBefore.length,activeReservationRows:reservesBefore.length,orderItems:ordersBefore.length,collisions:0}))
 // PR mode will dry-run the fully generated SQL against local ephemeral SQLite.
-// All eight source variants must match simultaneously. Gate is MATERIALIZED
+// All 26 source variants must match simultaneously. Gate is MATERIALIZED
 // before any target row update; if any reference/stock/reservation changed,
 // SQLite returns zero rows and touches no target variant.
 const variantWhere=specs.map(x=>{
