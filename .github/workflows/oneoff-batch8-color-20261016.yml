@@ -1,0 +1,56 @@
+name: 'One-off guarded eight low-stock catalog color labels'
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ops/oneoff-batch8-color-20261016.mjs'
+      - '.github/workflows/oneoff-batch8-color-20261016.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-batch8-color-20261016.yml'
+permissions:
+  contents: read
+concurrency:
+  group: oneoff-eight-low-exposure-color-20261016
+  cancel-in-progress: false
+jobs:
+  inspect-or-apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify pinned production D1 and event mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/ops/oneoff-batch8-color-20261016.mjs
+          [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]
+          if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then
+            [[ "$GITHUB_REF" == 'refs/heads/main' ]]
+            echo 'APPLY_COLOR_BATCH=yes' >> "$GITHUB_ENV"
+          else
+            echo 'APPLY_COLOR_BATCH=no' >> "$GITHUB_ENV"
+          fi
+          cat > "$RUNNER_TEMP/production-color-batch8.jsonc" <<'CFG'
+          {
+            "name": "orders-app-color-only-d1-check",
+            "compatibility_date": "2026-07-06",
+            "d1_databases": [{
+              "binding": "DB",
+              "database_name": "orders_db_prod",
+              "database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
+            }]
+          }
+          CFG
+          echo "PROD_CANARY_CONFIG=$RUNNER_TEMP/production-color-two-sku.jsonc" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: Compare all identity links, stock and FTS, then apply only on main push
+        run: node scripts/ops/oneoff-batch8-color-20261016.mjs
