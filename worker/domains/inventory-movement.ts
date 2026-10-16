@@ -2261,6 +2261,15 @@ export async function reverseInventoryMovementOperation(
   ).bind(movementId).first<Record<string, unknown>>();
 
   if (!original) throw new Error('Складское движение не найдено.');
+  // A confirmed physical zero count can close individual historic movements
+  // without pretending they were reversed. The SQL trigger also rejects a race
+  // between this read and the atomic reversal batch.
+  const historicallyFinalized = await db.prepare(
+    'SELECT movement_id FROM catalog_manual_movement_finalizations WHERE movement_id=? LIMIT 1'
+  ).bind(movementId).first<{movement_id:number}>()
+  if (historicallyFinalized) {
+    throw new Error('Эта историческая операция закрыта подтверждённой сверкой. Отменять её отдельно нельзя; новое изменение проведите отдельной корректировкой.')
+  }
   if (cleanText(original.reversed_at)) throw new Error('Эта операция уже отменена.');
   if (toInt(original.is_reversal, 0) === 1 || cleanText(original.reference_type) === 'movement_reversal') {
     throw new Error('Движение отмены нельзя отменять повторно.');
