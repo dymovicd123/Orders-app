@@ -81,7 +81,7 @@ jobs:
           SELECT id,variant_id,inventory_source,quantity,reserved_quantity FROM inventory_stock WHERE variant_id IN (1280,1532) ORDER BY id;
           SELECT id,variant_id,quantity_delta,quantity_after,reference_type FROM inventory_movements WHERE id IN (4876,5400) ORDER BY id;
           SELECT id,source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=1532;
-          " --json > /tmp/main0109-pair-before.json
+          " --json | jq -cS '[.[] | .results]' > /tmp/main0109-pair-before.json
       - name: Apply inert schema only on exact production main database
         if: github.event_name == 'push'
         shell: bash
@@ -116,7 +116,7 @@ jobs:
           SELECT id,variant_id,inventory_source,quantity,reserved_quantity FROM inventory_stock WHERE variant_id IN (1280,1532) ORDER BY id;
           SELECT id,variant_id,quantity_delta,quantity_after,reference_type FROM inventory_movements WHERE id IN (4876,5400) ORDER BY id;
           SELECT id,source_variant_id,target_variant_id FROM catalog_variant_consolidations WHERE source_variant_id=1532;
-          " --json > /tmp/main0109-pair-after.json
+          " --json | jq -cS '[.[] | .results]' > /tmp/main0109-pair-after.json
           cmp /tmp/main0109-pair-before.json /tmp/main0109-pair-after.json
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
           SELECT (SELECT COUNT(*) FROM sqlite_master WHERE name IN (
