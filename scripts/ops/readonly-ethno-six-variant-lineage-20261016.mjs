@@ -38,8 +38,11 @@ const possible=[
  'return_items','exchanges','exchange_items','workshop_tasks',
 ]
 const tables=possible.filter(x=>tableLookup.has(x))
-const columnsQuery=tables.map(t=>"SELECT '"+t+"' AS tbl,name FROM pragma_table_info('"+t+"')").join(' UNION ALL ')
-const columns=columnsQuery?read(columnsQuery):[]
+const columns=[]
+for(let i=0;i<tables.length;i+=3){
+ const parts=tables.slice(i,i+3).map(t=>"SELECT '"+t+"' AS tbl,name FROM pragma_table_info('"+t+"')")
+ columns.push(...read(parts.join(' UNION ALL ')))
+}
 const byTable=new Map()
 for(const t of tables)byTable.set(t,columns.filter(c=>c.tbl===t).map(c=>c.name))
 const safeFields=new Set([
@@ -59,7 +62,7 @@ for(const t of tables){
  const relevant=cols.filter(c=>safeFields.has(c))
  const where=linkColumns.map(c=>c+' IN ('+list+')').join(' OR ')
  const n=read('SELECT COUNT(*) AS n FROM '+t+' WHERE '+where)[0].n
- const rows=n<=300?read('SELECT '+relevant.join(',')+' FROM '+t+' WHERE '+where+' ORDER BY '+(cols.includes('id')?'id':'rowid')+' LIMIT 301'):[]
+ const rows=n<=300?read('SELECT '+relevant.join(',')+' FROM '+t+' WHERE '+where+' ORDER BY '+(cols.includes('id')?'id':linkColumns[0])+' LIMIT 301'):[]
  assert(n>300||rows.length===n,'Incomplete linkage evidence '+t)
  const groups={}
  for(const x of rows){const k=linkColumns.filter(c=>ids.includes(x[c])).map(c=>c+':'+x[c]).join('|');groups[k]=(groups[k]||0)+1}
