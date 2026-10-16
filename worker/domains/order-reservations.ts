@@ -1517,7 +1517,7 @@ export async function fetchOrderStockHandoverRows(
            AND c2.variant_id = r.variant_id
            AND (
              (datetime(c2.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
-              AND date(c2.checked_at, '+5 hours') >= date(o.order_date) AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours')))
+              AND date(c2.checked_at, '+5 hours') >= date(o.order_date) AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
              OR
              (date(c2.checked_at, '+5 hours') >= date(o.order_date)
               AND datetime(c2.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
