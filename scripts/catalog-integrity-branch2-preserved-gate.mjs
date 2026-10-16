@@ -404,7 +404,7 @@ try{
     'Prior reservation checkpoint baseline changed')
   check(orderReservationPrior.includes(orderReservationTruthFix.currentLines),
     'Current order reservation no longer contains reviewed stock-truth guard')
-  const handoverGuardBegin=orderReservationPrior.indexOf("  if (stockConfirmationOperation === 'handover') {",orderReservationCurrent.indexOf("  const statements: D1PreparedStatement[] = [];",orderReservationPrior.indexOf('export async function fulfillOrderReservationsV2(')))
+  const handoverGuardBegin=orderReservationPrior.indexOf("  if (stockConfirmationOperation === 'handover') {",orderReservationPrior.indexOf("  const statements: D1PreparedStatement[] = [];",orderReservationPrior.indexOf('export async function fulfillOrderReservationsV2(')))
   const handoverGuardEnd=orderReservationPrior.indexOf("  for (const payloadChunk of chunksOf(stockPayloads, 70)) {",handoverGuardBegin)
   check(handoverGuardBegin>0 && handoverGuardEnd>handoverGuardBegin,
     'Current early-handover atomic reservation guard is missing')
