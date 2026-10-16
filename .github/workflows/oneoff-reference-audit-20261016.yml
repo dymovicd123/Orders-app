@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/oneoff-reference-audit-20261016.yml'
+      - 'scripts/ops/readonly-reference-audit-20261016.mjs'
 permissions:
   contents: read
 concurrency:

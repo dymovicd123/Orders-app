@@ -82,5 +82,63 @@ const summary={
  activeValues:values,
  incomplete:false
 }
+// Second-stage targeted **read-only** preflight: only those exact duplicate IDs.
+const skuImpact=read(`SELECT v.id,v.product_id,v.stock_position_id,v.color,v.size_label,v.is_active,v.updated_at,
+ (SELECT COALESCE(SUM(st.quantity),0) FROM inventory_stock st WHERE st.variant_id=v.id) AS physical,
+ (SELECT COALESCE(SUM(st.reserved_quantity),0) FROM inventory_stock st WHERE st.variant_id=v.id) AS reserved,
+ (SELECT COUNT(*) FROM inventory_reservations ir WHERE ir.variant_id=v.id AND ir.status='active') AS activeReservations,
+ (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+  WHERE oi.variant_id=v.id AND o.order_status='active' AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0) AS openOrders,
+ (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id) AS historicOrderItems,
+ (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.variant_id=v.id AND oi.quantity>0
+   AND o.order_status='active' AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+   AND (o.order_date<'2026-10-01' OR o.order_date>='2026-11-01')) AS outsideMonthActiveOrders,
+ (SELECT COUNT(*) FROM inventory_lifecycle_events le WHERE le.variant_id=v.id AND le.status IN ('applied','pending')) AS pendingOrAppliedLifecycle,
+ (SELECT COUNT(*) FROM inventory_transfer_items ti JOIN inventory_transfer_documents td ON td.id=ti.transfer_id WHERE ti.variant_id=v.id AND td.status='applied') AS appliedTransfers,
+ (SELECT COUNT(*) FROM inventory_movements im WHERE im.variant_id=v.id AND LOWER(TRIM(COALESCE(im.reference_type,''))) IN ('manual','transfer_in','transfer_out')
+   AND NOT EXISTS (SELECT 1 FROM inventory_movement_reversals rev WHERE rev.original_movement_id=im.id)) AS reversibleMovements,
+ (SELECT COUNT(*) FROM order_items oi WHERE oi.variant_id=v.id AND
+  (EXISTS(SELECT 1 FROM return_items ri WHERE ri.order_item_id=oi.id)
+  OR EXISTS(SELECT 1 FROM exchanges e WHERE e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id)
+  OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.order_item_id=oi.id))) AS linkedReturnsOrExchanges,
+ (SELECT COUNT(*) FROM workshop_tasks wt WHERE wt.variant_id=v.id AND wt.status='active') AS activeWorkshop
+ FROM catalog_variants v WHERE v.id IN (1280,1281,1532,1533) ORDER BY v.id`)
+const skuStocks=read("SELECT id,variant_id,inventory_source,quantity,reserved_quantity,updated_at FROM inventory_stock WHERE variant_id IN (1280,1281,1532,1533) ORDER BY variant_id,inventory_source")
+const colorUsage=read(`SELECT v.color,COUNT(*) AS activeVariants,
+ (SELECT COUNT(*) FROM inventory_stock st JOIN catalog_variants cv ON cv.id=st.variant_id WHERE cv.color=v.color AND (st.quantity<>0 OR st.reserved_quantity<>0)) AS nonzeroStockPositions
+ FROM catalog_variants v WHERE v.is_active=1 AND (v.color='СВЕТЛО СЕРЫЙ' OR v.color='СВЕТЛО-СЕРЫЙ') GROUP BY v.color`)
+const paymentImpact=read(`SELECT 'orders' AS kind,COUNT(*) AS count,0 AS amount,
+  0 AS outside_month_financial FROM orders o
+  WHERE o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'
+    AND o.order_status<>'deleted' AND o.order_payment_method='ТЕРМИНАЛ'
+ UNION ALL SELECT 'payments',COUNT(*),COALESCE(SUM(p.amount),0),
+   COALESCE(SUM(CASE WHEN p.payment_date<'2026-10-01' OR p.payment_date IS NULL THEN 1 ELSE 0 END),0)
+ FROM payments p JOIN orders o ON o.id=p.order_id
+ WHERE o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'
+   AND o.order_status<>'deleted' AND p.method='ТЕРМИНАЛ'
+ UNION ALL SELECT 'financial_events',COUNT(*),COALESCE(SUM(fe.amount_delta),0),
+   COALESCE(SUM(CASE WHEN fe.event_date<'2026-10-01' OR fe.event_date IS NULL THEN 1 ELSE 0 END),0)
+ FROM financial_events fe JOIN orders o ON o.id=fe.order_id
+ WHERE o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'
+   AND o.order_status<>'deleted' AND fe.payment_method='ТЕРМИНАЛ'
+ UNION ALL SELECT 'returns',COUNT(*),COALESCE(SUM(rt.amount),0),
+   COALESCE(SUM(CASE WHEN rt.return_date<'2026-10-01' OR rt.return_date IS NULL THEN 1 ELSE 0 END),0)
+ FROM returns rt JOIN orders o ON o.id=rt.order_id
+ WHERE o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'
+   AND o.order_status<>'deleted' AND rt.payment_method='ТЕРМИНАЛ'
+ UNION ALL SELECT 'exchanges',COUNT(*),COALESCE(SUM(ex.financial_amount),0),
+   COALESCE(SUM(CASE WHEN ex.exchange_date<'2026-10-01' OR ex.exchange_date IS NULL THEN 1 ELSE 0 END),0)
+ FROM exchanges ex JOIN orders o ON o.id=ex.order_id
+ WHERE o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'
+   AND o.order_status<>'deleted' AND ex.payment_method='ТЕРМИНАЛ'`)
+const paymentGuards=read(`SELECT
+ (SELECT COUNT(*) FROM cash_register_entries c JOIN orders o ON o.id=c.order_id
+ WHERE o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'
+ AND o.order_status<>'deleted' AND c.payment_method='ТЕРМИНАЛ') AS cashClassifications,
+ (SELECT COUNT(*) FROM reference_payment_method_merges WHERE source_reference_id=532) AS priorMerges,
+ (SELECT COUNT(*) FROM reference_values WHERE id=532 AND kind='payment_method' AND is_active=1 AND value='ТЕРМИНАЛ') AS sourceLive,
+ (SELECT COUNT(*) FROM reference_values WHERE id=534 AND kind='payment_method' AND is_active=1 AND value='KASPI PAY') AS keeperLive`)
+console.log('REF_IMPACT_JSON='+JSON.stringify({skuImpact,skuStocks,colorUsage,paymentImpact,paymentGuards}))
+
 console.log('REF_AUDIT_JSON='+JSON.stringify(summary))
 console.log('READ ONLY. No updates, deletions, merges or catalog changes.')
