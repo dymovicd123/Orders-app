@@ -56,6 +56,13 @@ const reviewedEthnoManualHistory = {
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
   'worker/index.ts':'e42baf9a3898e04d191dcfe4729ebb0542b737df',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
+  'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
+  'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
+  'scripts/test-catalog-zero-stock-undo.mjs':'528c9e0e89dce24c863a6aaf0a7fbc3b7a6f7436',
+  'scripts/test-catalog-reserved-stock-undo.mjs':'d95f289dc965307ee49c3b19f981238c072bd12b',
+  'scripts/test-catalog-counted-stock-undo.mjs':'f58e5ce2acd4f8f152df8006f5caa8349598f6b1',
+  'scripts/test-catalog-positive-stock-undo.mjs':'dae163ccc12b570fd0bde1cf066d60ab77360864',
+  'scripts/test-catalog-complex-undo-case.mjs':'b9ab573b89337241e7636e8e9f275d711e4624a6',
 }
 for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
   check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed Ethno finalization runtime drift: '+file)
@@ -95,6 +102,12 @@ const stage04B2Extensions={
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
   'src/styles/stage04-workshop-settlements.css':'6796899d63de3e2183a95605b9280764c9e64b48',
 }
+const reviewedEthnoNewFiles={
+  'migrations/0109_v72_catalog_manual_movement_finalization.sql':'06314e11b70918ae5a133b076f397fbbb27d0511',
+  'worker/domains/catalog-manual-history-finalization.ts':'ce672c90cd6d223a853aa827bb5bea466c695624',
+}
+for(const [file,expected] of Object.entries(reviewedEthnoNewFiles))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Finalization new file unexpected drift: '+file)
 for(const [file,expected] of Object.entries(stage04B2Extensions)){
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unexpected Stage04-B2 SQL drift: '+file)
 }
@@ -315,6 +328,7 @@ try{
   for(const [relative,expected] of [
     ...Object.entries(manifest.addedFiles || {}),
     ...Object.entries(stage04B2Extensions),
+    ...Object.entries(reviewedEthnoNewFiles),
   ]){
     const from=path.resolve(relative)
     check(gitBlob(fs.readFileSync(from,'utf8'))===reviewedCatalogAdded(relative,expected),'New module drifted: '+relative)
