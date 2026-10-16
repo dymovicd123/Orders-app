@@ -49,7 +49,7 @@ function call(q,write=false) {
 const read=q=>call(q).results
 const desired=['ТЕМНО-СЕРЫЙ','ТЕМНО-БОРДОВЫЙ']
 const originalReferences=read("SELECT id,kind,value,is_active,sort_order,created_at,updated_at FROM reference_values WHERE kind='color' ORDER BY id")
-const normRef=x=>String(x??'').normalize('NFKC').trim().toLocaleUpperCase('ru-RU').replace(/Ё/g,'Е').replace(/[‐‑‒–—−-]+/g,' ').replace(/\\s+/g,' ').trim()
+const normRef=x=>String(x??'').normalize('NFKC').trim().toLocaleUpperCase('ru-RU').replace(/Ё/g,'Е').replace(/[‐‑‒–—−-]+/g,' ').replace(/\s+/g,' ').trim()
 const matchingRefs=originalReferences.filter(x=>desired.some(w=>normRef(x.value)===normRef(w)))
 assert(matchingRefs.length===0 || (matchingRefs.length===2&&desired.every(w=>matchingRefs.some(x=>x.value===w&&x.is_active===1))),'Unexpected matching reference; stop')
 const asphaltBefore=originalReferences.find(x=>x.id===582)
@@ -115,14 +115,21 @@ const stockWhere=stockBefore.map(s=>'('+['id','variant_id','quantity','reserved_
 const reserveWhere=reservesBefore.map(res=>'('+['id','variant_id','quantity'].map(k=>'r.'+k+'='+Number(res[k])).join(' AND ')
  + ' AND r.inventory_source '+(res.inventory_source==null?'IS NULL':"='"+quote(res.inventory_source)+"'")
  + " AND r.status='active')").join(' OR ')||'0'
-const refGate="((id=50419 AND value='СВЕТЛО-СЕРЫЙ') OR (id=576 AND value='СВЕТЛО-БЕЖЕВЫЙ') OR (id=580 AND value='ТЕМНО-СИНИЙ') OR (id=50415 AND value='ТЕМНО-КОРИЧНЕВЫЙ'))"
+const refInsertSql="WITH preflight(ok) AS MATERIALIZED (SELECT CASE WHEN "+
+"(SELECT COUNT(*) FROM reference_values WHERE kind='color' AND UPPER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(value),'-',' '),'‐',' '),'‑',' '),'–',' ')) IN ('ТЕМНО СЕРЫЙ','ТЕМНО БОРДОВЫЙ'))=0 "+
+"AND (SELECT COUNT(*) FROM catalog_variants WHERE is_active=1 AND color IN ('ТЕМНО СЕРЫЙ','ТЕМНО БОРДОВЫЙ'))=23 "+
+"THEN 1 ELSE 0 END) "+
+"INSERT INTO reference_values (kind,value,is_active,sort_order) "+
+"SELECT 'color',src.value,1,0 FROM (SELECT 'ТЕМНО-СЕРЫЙ' AS value UNION ALL SELECT 'ТЕМНО-БОРДОВЫЙ') src WHERE (SELECT ok FROM preflight)=1 "+
+"RETURNING id,kind,value"
+const refGate="((value='ТЕМНО-СЕРЫЙ') OR (value='ТЕМНО-БОРДОВЫЙ'))"
 const sql="WITH preflight(ok) AS MATERIALIZED (SELECT CASE WHEN "+
 "(SELECT COUNT(*) FROM catalog_variants v WHERE v.id IN ("+list+") AND ("+variantWhere+"))="+specs.length+" "+
 "AND (SELECT COUNT(*) FROM inventory_stock WHERE variant_id IN ("+list+"))="+stockBefore.length+" "+
 "AND NOT EXISTS(SELECT 1 FROM inventory_stock st WHERE st.variant_id IN ("+list+") AND NOT ("+stockWhere+")) "+
 "AND (SELECT COUNT(*) FROM inventory_reservations WHERE variant_id IN ("+list+") AND status='active')="+reservesBefore.length+" "+
 "AND NOT EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.variant_id IN ("+list+") AND r.status='active' AND NOT ("+reserveWhere+")) "+
-"AND (SELECT COUNT(*) FROM reference_values WHERE kind='color' AND is_active=1 AND "+refGate+")=4 "+
+"AND (SELECT COUNT(*) FROM reference_values WHERE kind='color' AND is_active=1 AND "+refGate+")=2 "+
 "AND NOT EXISTS(SELECT 1 FROM catalog_variants v JOIN catalog_variants other ON other.id<>v.id AND other.product_id=v.product_id AND other.stock_position_id=v.stock_position_id AND COALESCE(other.category,'adult')=COALESCE(v.category,'adult') AND COALESCE(other.gender,'')=COALESCE(v.gender,'') AND COALESCE(other.size_label,'')=COALESCE(v.size_label,'') WHERE v.id IN ("+list+") AND UPPER(REPLACE(REPLACE(TRIM(COALESCE(other.color,'')),'‐',' '),'-',' '))=UPPER(REPLACE(REPLACE(TRIM(v.color),'‐',' '),'-',' '))) "+
 "THEN 1 ELSE 0 END) "+
 "UPDATE catalog_variants SET color=CASE id "+specs.map(x=>"WHEN "+x.id+" THEN '"+quote(x.to)+"'").join(' ')+" END, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "+
