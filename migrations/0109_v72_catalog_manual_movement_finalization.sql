@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS catalog_manual_movement_finalizations (
 CREATE INDEX IF NOT EXISTS idx_catalog_manual_finalization_source
 ON catalog_manual_movement_finalizations(source_variant_id,keeper_variant_id);
 
+CREATE TABLE IF NOT EXISTS catalog_manual_finalization_validations (
+ source_variant_id INTEGER PRIMARY KEY REFERENCES catalog_variants(id),
+ passed INTEGER NOT NULL CHECK(passed=1),
+ checked_at TEXT NOT NULL
+);
+
 -- Stop every reversal pathway, including requests that started before finalization.
 -- D1 db.batch() rolls back any earlier stock movement on a raised constraint error.
 CREATE TRIGGER IF NOT EXISTS catalog_manual_finalization_reversal_guard
