@@ -578,7 +578,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   if(event.target===event.currentTarget&&!adminDeleteDraft.submitting)setAdminDeleteDraft(null)
                 }}>
                   <div className="modal-card" role="dialog" aria-modal="true"
-                    aria-label="Проверка последствий удаления заказа" style={{maxWidth:620}}>
+                    aria-label="Проверка последствий удаления заказа" style={{maxWidth:620,maxHeight:"min(86vh,740px)",overflowY:"auto"}}>
                     <div className="modal-head">
                       <div>
                         <div className="card-label">Только администратор</div>
@@ -591,64 +591,89 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     {adminDeleteDraft.error ? <p role="alert" className="error">{adminDeleteDraft.error}</p> : null}
                     {adminDeleteDraft.preview ? (
                       <>
-                        <p><strong>{adminDeleteDraft.preview.canAttemptDelete ?
-                          'Проверка пройдена: удаление можно запросить.' :
-                          'Удаление заблокировано до исправления связанных операций.'}</strong></p>
-                        <p>Обменов: {adminDeleteDraft.preview.activeExchanges.length} · Возвратов: {adminDeleteDraft.preview.activeReturns.length} ·
-                          Оплат: {adminDeleteDraft.preview.paymentCount} ({formatMoney(adminDeleteDraft.preview.registeredPayments)} ₸) ·
-                          Возвращено по активным возвратам: {formatMoney(adminDeleteDraft.preview.recordedRefunds)} ₸</p>
-                        {adminDeleteDraft.preview.issuedItemCount ? (
-                          <p>Отмечена выдача {adminDeleteDraft.preview.issuedQuantity} шт. по
-                            {adminDeleteDraft.preview.issuedItemCount} складским записям.</p>
+                        <div role="status" style={{padding:'12px 14px',margin:'12px 0',
+                          borderRadius:12,border:'1px solid var(--border, #dce1e8)'}}>
+                          <strong>{adminDeleteDraft.preview.canAttemptDelete
+                            ?'Заказ можно удалить':'Сейчас удалить заказ нельзя'}</strong>
+                          <p className="muted" style={{margin:'6px 0 0'}}>
+                            {adminDeleteDraft.preview.canAttemptDelete
+                              ?'Подтвердите удаление: действие изменит учётную историю.'
+                              :'Сначала проверьте связанные операции. Никакие данные пока не изменены.'}
+                          </p>
+                        </div>
+                        <p className="muted" style={{margin:'8px 0'}}>
+                          Обменов: {adminDeleteDraft.preview.activeExchanges.length} ·
+                          Возвратов: {adminDeleteDraft.preview.activeReturns.length} ·
+                          Оплат: {formatMoney(adminDeleteDraft.preview.registeredPayments)} ₸
+                        </p>
+                        {!adminDeleteDraft.preview.canAttemptDelete && deleteReasons.length ? (
+                          <div>
+                            <strong>Что мешает:</strong>
+                            <ul>{deleteReasons.slice(0,3).map((reason:string,i:number)=>(
+                              <li key={i}>{reason}</li>
+                            ))}</ul>
+                            {deleteReasons.length>3 ? (
+                              <p className="muted">Ещё причин: {deleteReasons.length-3}. Они показаны в подробностях.</p>
+                            ) : null}
+                          </div>
                         ) : null}
-                        {adminDeleteDraft.preview.activeExchanges.length ? (
-                          <p>Связанные обмены: #{adminDeleteDraft.preview.activeExchanges.join(', #')}</p>
+                        {(adminDeleteDraft.preview.chainPlan?.steps?.length||
+                          deleteReasons.length>3||adminDeleteDraft.preview.explanations?.length) ? (
+                          <details style={{margin:'14px 0'}}>
+                            <summary style={{cursor:'pointer',fontWeight:600}}>
+                              Подробности проверки и порядок действий
+                            </summary>
+                            <div style={{marginTop:10}}>
+                              {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
+                                <>
+                                  <p><strong>Порядок разбора:</strong></p>
+                                  <ol>{adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>(
+                                    <li key={step.type+':'+step.id}>
+                                      {step.type==='return'?'Возврат':'Обмен'} #{step.id}
+                                      {step.requiresManualReview?' — нужна ручная проверка':''}
+                                    </li>
+                                  ))}</ol>
+                                </>
+                              ) : null}
+                              {deleteReasons.length>3 ? (
+                                <ul>{deleteReasons.slice(3).map((reason:string,i:number)=>(
+                                  <li key={i}>{reason}</li>
+                                ))}</ul>
+                              ) : null}
+                              {adminDeleteDraft.preview.issuedItemCount ? (
+                                <p>Выдано: {adminDeleteDraft.preview.issuedQuantity} шт.</p>
+                              ) : null}
+                              {adminDeleteDraft.preview.recordedRefunds>0 ? (
+                                <p>Отражено возвратов денег: {formatMoney(adminDeleteDraft.preview.recordedRefunds)} ₸</p>
+                              ) : null}
+                              <p className="muted">План отображается только для проверки.
+                                Из этого окна обмены и возвраты не отменяются автоматически.</p>
+                            </div>
+                          </details>
                         ) : null}
-                        {adminDeleteDraft.preview.activeReturns.length ? (
-                          <p>Связанные возвраты: #{adminDeleteDraft.preview.activeReturns.join(', #')}</p>
-                        ) : null}
-                        {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
-                          <>
-                            <p><strong>Порядок, в котором нужно разбирать связанные операции:</strong></p>
-                            <ol>{adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>(
-                              <li key={step.type+':'+step.id}>
-                                {step.type==='return'?'Возврат':'Обмен'} #{step.id}
-                                {' — '}{step.reason}{step.requiresManualReview?' (требуется ручная проверка)':''}
-                              </li>
-                            ))}</ol>
-                            <p className="muted">Это план проверки, а не автоматическая отмена.
-                              Финансовые и складские операции не запускаются из этого окна.</p>
-                          </>
-                        ) : null}
-                        {adminDeleteDraft.preview.reasons.length ? (
-                          <ul>{adminDeleteDraft.preview.reasons.map((reason:string,i:number)=>
-                            <li key={i}>{reason}</li>
-                          )}</ul>
-                        ) : null}
-                        {adminDeleteDraft.preview.explanations.length ? (
-                          <ul>{adminDeleteDraft.preview.explanations.map((reason:string,i:number)=>
-                            <li key={i}>{reason}</li>
-                          )}</ul>
-                        ) : null}
-                        <p className="muted">Удаление меняет учётную историю, но не возвращает деньги физически.
-                          Если покупатель уже получил товар или деньги, сначала оформите фактическое движение.
-                          При выдаче товара система отдельно потребует подтвердить физический факт.</p>
+                        <p className="muted" style={{fontSize:13}}>
+                          Удаление записи не возвращает деньги или товар покупателю.
+                          Реальное движение денег и товара нужно проверить отдельно.</p>
                       </>
                     ) : null}
                     <div className="toolbar-actions">
                       <button className="secondary" type="button" disabled={adminDeleteDraft.submitting}
-                        onClick={()=>setAdminDeleteDraft(null)}>Отмена</button>
-                      <button className="ghost danger" type="button"
-                        disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder||(!adminDeleteDraft.preview?.canAttemptDelete||!adminDeleteDraft.preview?.chainPlan?.snapshotFingerprint)}
-                        onClick={()=>{void(async()=>{
-                          setAdminDeleteDraft((d)=>d?{...d,submitting:true,error:''}:d)
-                          const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true,adminDeleteDraft.preview.chainPlan.snapshotFingerprint)
-                          if(ok)setAdminDeleteDraft(null)
-                          else setAdminDeleteDraft((d)=>d?{...d,submitting:false,
-                            error:'Удаление не выполнено. Проверьте сообщение об ошибке и обновите проверку.'}:d)
-                        })()}}>
-                        {adminDeleteDraft.submitting?'Удаляю…':'Подтвердить удаление'}
-                      </button>
+                        onClick={()=>setAdminDeleteDraft(null)}>Закрыть</button>
+                      {adminDeleteDraft.preview?.canAttemptDelete &&
+                        adminDeleteDraft.preview?.chainPlan?.snapshotFingerprint ? (
+                        <button className="ghost danger" type="button"
+                          disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder}
+                          onClick={()=>{void(async()=>{
+                            setAdminDeleteDraft((d)=>d?{...d,submitting:true,error:''}:d)
+                            const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true,
+                              adminDeleteDraft.preview.chainPlan.snapshotFingerprint)
+                            if(ok)setAdminDeleteDraft(null)
+                            else setAdminDeleteDraft((d)=>d?{...d,submitting:false,
+                              error:'Удаление не выполнено. Проверьте сообщение об ошибке и обновите проверку.'}:d)
+                          })()}}>
+                          {adminDeleteDraft.submitting?'Удаляю…':'Подтвердить удаление'}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
