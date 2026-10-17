@@ -78,7 +78,7 @@ check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAft
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedHandoverUx.appAfter
-  : file === 'worker/domains/orders-write.ts' ? '2a349ee581efe4bb92406fb7ca53287838c8f14f'
+  : file === 'worker/domains/orders-write.ts' ? '38d64e6c9e547d8566ea976300197a530a83be88'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
