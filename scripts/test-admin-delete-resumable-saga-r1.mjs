@@ -31,7 +31,7 @@ const ex=(id,oldId,newId)=>{
 }
 ex(100,1,10);ex(200,10,20);ex(300,20,30)
 sqlite.exec("INSERT INTO returns VALUES(400,42,'completed',0)")
-sqlite.exec("INSERT INTO return_items VALUES(400,30)")
+sqlite.exec("INSERT INTO return_items(return_id,order_item_id) VALUES(400,30)")
 sqlite.exec("INSERT INTO inventory_reservations VALUES(1,42,'active',1)")
 sqlite.exec("INSERT INTO inventory_stock VALUES(1,240,4,2)")
 const db={
