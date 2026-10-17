@@ -33,7 +33,7 @@ export async function reviewAdminDeleteAppliedStock(
   let rows:Record<string,unknown>[]=[]
   try {
     const result=await db.prepare(
-      \`SELECT le.id,le.order_item_id,le.operation_id,le.operation_type,le.event_type,
+      `SELECT le.id,le.order_item_id,le.operation_id,le.operation_type,le.event_type,
           le.direction,le.status,le.quantity,le.variant_id,le.inventory_source,
           le.movement_id,le.applied_at,le.created_at,
           ex.status AS exchange_status,
@@ -73,7 +73,7 @@ export async function reviewAdminDeleteAppliedStock(
           AND r.order_id=le.order_id
         LEFT JOIN inventory_movements m ON m.id=le.movement_id
         WHERE le.order_id=? AND le.status='applied'
-        ORDER BY le.id LIMIT 101\`
+        ORDER BY le.id LIMIT 101`
     ).bind(orderId).all<Record<string,unknown>>()
     rows=result.results||[]
   } catch {
