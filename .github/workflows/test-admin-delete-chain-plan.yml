@@ -1,0 +1,41 @@
+name: Admin deletion full chain snapshot and fault safety
+on:
+  pull_request:
+    branches:
+      - feat/branch2-admin-order-delete-safe-preview-20261017
+      - branch2
+    paths:
+      - 'worker/domains/order-delete-chain-plan.ts'
+      - 'worker/domains/order-delete-preview.ts'
+      - 'worker/domains/order-delete.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-admin-delete-chain-plan-r1.mjs'
+      - 'scripts/test-admin-order-delete-safe-preview-r1.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+      - '.github/workflows/test-admin-delete-chain-plan.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Read-only global dependency plan and stale financial/stock snapshots
+        run: node --experimental-strip-types scripts/test-admin-delete-chain-plan-r1.mjs
+      - name: Existing admin impact and server-side no-partial-deletion guards
+        run: |
+          node --experimental-strip-types scripts/test-admin-order-delete-safe-preview-r1.mjs
+          node scripts/test-order-delete-mobility.mjs
+          node scripts/test-order-delete-physical-guidance-r1.mjs
+      - name: Frozen Stage04/catalog/inventory and historic order regressions
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: Build Worker and frontend
+        run: npm run build
