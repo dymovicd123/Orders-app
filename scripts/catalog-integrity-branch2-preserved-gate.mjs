@@ -417,7 +417,7 @@ try{
   // during that archived suite, and restore both in finally. They are
   // independently exercised by current Worker+D1 tests and TS build.
   for(const [relative,expected] of [
-    ['worker/domains/admin-delete-finalize.ts','51b7f14c8bc3fa29fcf287a32172627229581085'],
+    ['worker/domains/admin-delete-finalize.ts','95107cab38dfda9b837331399cebe5cb4d5476ab'],
     ['worker/domains/admin-delete-final-driver.ts','60c3fe406d6e52dfff4ef20cd54230cf06923968'],
   ]){
     const from=path.resolve(relative)
