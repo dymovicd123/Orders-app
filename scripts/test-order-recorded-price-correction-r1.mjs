@@ -37,7 +37,7 @@ db.exec([
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT)',
 'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER)',
 ].join(';')+';')
-const check=(item)=>db.prepare(m[1]).get(42,item,item,item,42,item)
+const check=(item)=>({...db.prepare(m[1]).get(42,item,item,item,42,item)})
 db.exec("INSERT INTO exchanges VALUES(100,42,'completed',10,11)")
 db.exec("INSERT INTO exchange_items VALUES(200,100,12,'new')")
 db.exec("INSERT INTO returns VALUES(300,42,'completed')")
