@@ -14,14 +14,14 @@ try {
 
   check(!app.includes("setError('Удаление заказа доступно только администратору.')"), 'frontend still blocks manager deletion')
   check(app.includes("apiFetch(`/api/orders/${order.id}/delete`"), 'frontend does not use scoped delete endpoint')
-  check(table.includes('{!retainedOnly && !archived ? ('), 'delete action is not visible to ordinary staff')
+  check(table.includes('{isAdmin && !retainedOnly && !archived ? ('), 'delete action must be admin-only')
 
   const routeStart = worker.indexOf('const orderDeleteMatch =')
   const routeEnd = worker.indexOf('const orderMatch =', routeStart)
   const route = worker.slice(routeStart, routeEnd)
   check(routeStart >= 0 && routeEnd > routeStart, 'delete route block missing')
   check(route.includes("request.method === 'POST'"), 'delete route is not POST')
-  check(!route.includes('requireAdminAccess') && !route.includes('requireAdminUser'), 'delete route still requires admin')
+  check(route.includes('const denied = requireAdminUser(authUser)'), 'delete route must enforce authenticated admin role')
 
   check(deletion.includes('ORDER BY e.id DESC'), 'active exchanges are not cancelled newest-first')
   check(deletion.includes('await cancelExchange(db, exchangeId'), 'exchange auto-cancel missing')
@@ -53,7 +53,7 @@ try {
   check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')
   check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')
 
-  console.log('ORDER DELETE MOBILITY PASSED — ordinary staff get one safe delete action, deterministic return/exchange blockers auto-cancel, recorded handover asks one physical fact, false shipment reverses only when no newer physical truth supersedes it, retries are idempotent')
+  console.log('ORDER DELETE MOBILITY PASSED — authenticated admin only, no manager access, deterministic return/exchange blockers, stocktake freshness and idempotent recovery retained')
 } catch (error) {
   console.error(`ORDER DELETE MOBILITY FAILED: ${error?.message || error}`)
   process.exit(1)

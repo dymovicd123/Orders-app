@@ -6044,6 +6044,52 @@ function removeDebtPayment(index: number) {
     setEditorReturnSector('orders')
   }
 
+  // A recorded-price typo is NOT a new sale, cash refund, stock edit, or exchange cancellation.
+  // Send the minimal correction payload, never the whole editor draft.
+  async function correctRecordedOrderItemPrice(order: OrderRecord, item: OrderRecord['items'][number], nextUnitPrice: number): Promise<boolean> {
+    if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0 || !item.id) {
+      setError('Укажите корректную цену и выберите существующую позицию заказа.')
+      return false
+    }
+    if (nextUnitPrice === Number(item.unitPrice || 0)) return true
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = {
+        itemPriceCorrections: [{
+          orderItemId: Number(item.id),
+          unitPrice: nextUnitPrice,
+          expectedUnitPrice: Number(item.unitPrice || 0),
+          expectedQuantity: Number(item.quantity || 0),
+          expectedLineTotal: Number(item.lineTotal || 0),
+          expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+        }],
+      }
+      const criticalKey = `recorded-price-correction:${order.id}:${item.id}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; refreshRequired?: boolean }>(
+        response, 'Исправление записанной цены',
+      )
+      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось исправить цену.')
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (data.order) upsertOrderInState(data.order)
+      setMessage(`Цена позиции в заказе ${order.external_id} исправлена. Склад, обмены, возвраты и оплаты не затронуты.`)
+      void loadDashboard()
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось исправить записанную цену.')
+      return false
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
@@ -8517,7 +8563,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi-заказы">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctRecordedOrderItemPrice, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
@@ -8529,7 +8575,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctRecordedOrderItemPrice, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
