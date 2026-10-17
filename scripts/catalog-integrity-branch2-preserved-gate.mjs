@@ -87,7 +87,7 @@ check(reviewedBatchPriceUx.previousApp==='cc2be798b049f4063848449c3fec4460a380ac
 const reviewedMetadataUx={
   priorApp:reviewedBatchPriceUx.currentApp,priorTable:reviewedBatchPriceUx.currentTable,
   priorWrite:'edfcd173c02adb7a448ba759935a0348d144b95d',
-  app:'acbeef642ddd9dea3968c43b91ebff0bf01bc373',table:'75d40b03cf1d4beb99b24d0ed380c3200b378324',write:'5dda7e77d13a50c8923e831ea12cba288826a812',
+  app:'a8c7f7b4b38bbe213fb54e1df4b1dc99586450e7',table:'75d40b03cf1d4beb99b24d0ed380c3200b378324',write:'9f327389c1e27763a2a343fd00afb2bb2b170ab1',
 }
 check(reviewedMetadataUx.priorApp==='b1928fcc44a23260087adb4a4df294bd11444a84'
   &&reviewedMetadataUx.priorTable==='413b5cfd086c2f24037f00492bc2684eb24c3fe6',
