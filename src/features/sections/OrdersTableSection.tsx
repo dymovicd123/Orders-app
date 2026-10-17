@@ -913,7 +913,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         orderDate:string;customerPhone:string;customerName:string;
                         city:string;deliveryType:string;comment:string;
                       }
-                      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(next.orderDate)){
+                      if(!/^\d{4}-\d{2}-\d{2}$/.test(next.orderDate)){
                         setMetadataDraft((d)=>d?{...d,error:'Укажите дату в формате ГГГГ-ММ-ДД.'}:d)
                         return
                       }
