@@ -2,7 +2,7 @@ name: One-time read-only production stock truth audit
 on:
   push:
     branches: [audit/production-stock-truth-readonly-20261018]
-    paths: [.github/workflows/stock-truth-readonly-20261018.yml]
+    paths: [.github/workflows/stock-truth-readonly-20261018.yml, scripts/ops/stock-truth-readonly-20261018.mjs]
 permissions:
   contents: read
 jobs:
