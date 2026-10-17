@@ -168,7 +168,7 @@ const priorExchangeModules=[
   {
     "file": "src/features/sections/OrderExchangeSection.tsx",
     "before": "b854378c08389a29293a1a1e3e5e603d1e62d721",
-    "after": "f71c7705d7433de51333255969c01967e96186f5",
+    "after": "5cbbdf4635c3c646f282ffca3d2b4c88028896b2",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/src/features/sections/OrderExchangeSection.tsx"
   },
   {
