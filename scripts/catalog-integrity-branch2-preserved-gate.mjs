@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'74bad586c252c457794c515e796cb2e93f186f92',
+  'worker/index.ts':'144ea23b95dc558228d5c5ffff903f13dbcbcc00',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -69,9 +69,9 @@ for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
-  appAfter: '6c32381001b5a679d1f3d762a522568916d8c978',
+  appAfter: '3e7d76ab15735015698f164fe9f3bf7c8ebf7ac0',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: '16bfc7f075dd3aec7c3101b8d5fd3d752f1dfe7c',
+  tableAfter: 'e3d410b70e78f7f363c05184cc295b1e4d3afc3b',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
@@ -115,6 +115,7 @@ const stage04B2Extensions={
 const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
+  'worker/domains/exchange-cancel-chain.ts':'fa70921d2e8c3539dcb781ba43ede072359fdb44',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -300,6 +301,7 @@ const tests=[
   ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
   ['scripts/test-v2-old-retired-price-correction-r1.mjs',true],
   ['scripts/test-v2-partial-old-price-correction-r1.mjs',true],
+  ['scripts/test-exchange-cancel-chain-preview-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
