@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
+import { readFileSync } from 'node:fs'
 import { createRealAdminDeleteCancellationDriver } from '../worker/domains/admin-delete-real-driver.ts'
 
 // Runs the ACTUAL V2 Exchange cancellation handler, critical-operation
@@ -23,6 +24,7 @@ function fixture(failurePoint) {
     "CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,category TEXT,gender TEXT,color TEXT,material TEXT,length TEXT,size_label TEXT,is_active INTEGER)",
     "CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,request_fingerprint TEXT,status TEXT,step TEXT,context_json TEXT,lease_token TEXT,lease_until_ms INTEGER,created_at TEXT,updated_at TEXT,response_json TEXT,completed_at TEXT,last_error TEXT,target_type TEXT,target_id INTEGER,target_ref TEXT)"
   ].join(';')+';')
+  sql.exec(readFileSync('migrations/0110_v72_exchange_order_item_price_correction_audit.sql','utf8'))
   const executionPlan={
     orderId:42,externalOrderId:'ISOLATED_EXCHANGE_42',
     exchangeDate:'2026-10-17',comment:'Isolated test',
