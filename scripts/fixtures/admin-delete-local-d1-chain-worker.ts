@@ -36,6 +36,10 @@ export default {
         await env.DB.prepare("UPDATE inventory_lifecycle_events SET status='pending' WHERE id=901 AND order_id=42").run()
         return Response.json({ok:true})
       }
+      if(route==='/set-cancelled'){
+        await env.DB.prepare("UPDATE inventory_lifecycle_events SET status='cancelled' WHERE id=901 AND order_id=42").run()
+        return Response.json({ok:true})
+      }
       if(route==='/set-money'){
         await env.DB.prepare("INSERT INTO payments(id,order_id,amount) VALUES(9,42,500)").run()
         return Response.json({ok:true})
