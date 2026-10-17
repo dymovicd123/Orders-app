@@ -35,12 +35,12 @@ const mkStatement=(query,params=[])=>({
   async all(){return {results:sql.prepare(query).all(...params)}},
   _run(){
     if(failBeforeCriticalComplete
-      && /UPDATE critical_operations\\s+SET status = 'completed'/.test(query)){
+      && /UPDATE critical_operations\s+SET status = 'completed'/.test(query)){
       failBeforeCriticalComplete=false
       throw new Error('SIMULATED_WORKER_CRASH_BEFORE_CRITICAL_CHECKPOINT')
     }
     const result=sql.prepare(query).run(...params)
-    if(/UPDATE returns\\s+SET status = 'cancelled'/.test(query) && result.changes===1)
+    if(/UPDATE returns\s+SET status = 'cancelled'/.test(query) && result.changes===1)
       actualReturnTransitions++
     return {success:true,meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}}
   },
