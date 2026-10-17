@@ -48,6 +48,9 @@ jobs:
       - name: Audit high-risk development dependencies
         run: npm audit --audit-level=high
 
+      - name: Reproduce old-order Exchange product pick and shortage confirmation
+        run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 

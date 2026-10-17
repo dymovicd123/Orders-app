@@ -27,7 +27,7 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     // Reviewed, isolated material chooser fix from branch2 PR #434: the approved
     // predecessor is 94f600..., and only this controller receives new bytes.
     ['src/app/controllers/useOperationalViewModel.ts','3b0ebdc1b92213e5cab73a5bf493c7d34cfd6b95','b34991dae36234e70ee3a3014bf2c09cd731ee92',baseline],
-    ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','f71c7705d7433de51333255969c01967e96186f5'],
+    ['src/features/sections/OrderExchangeSection.tsx','b854378c08389a29293a1a1e3e5e603d1e62d721','5cbbdf4635c3c646f282ffca3d2b4c88028896b2'],
     ['src/features/sections/OrderExchangeSmartSection.tsx','efafcca08869eeacff17e38eb693035a870dacd9','00a9da8d8bdfad7a89e8b2df85ffa18e2fa0ebac'],
     ['worker/domains/order-reservations.ts','bb71d744865c45f8d1cb09be4d792bc9a082d898','d96b55cc499dc54c9c5301197f0f0c759d17ba1f'],
     ['src/features/sections/OrdersTableSection.tsx','45088dbd1b594fa165f9ea7cfdc35109e2be3417','02dd262da588cb22d9aa71b0cf3a9e374d667282'],
