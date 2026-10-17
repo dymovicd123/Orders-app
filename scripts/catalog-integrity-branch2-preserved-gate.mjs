@@ -178,7 +178,7 @@ const reviewedExchangePriceFiles={
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
   'worker/domains/admin-delete-saga.ts':'35d9d2b07c47eb203e19c071888c49ee77e9729a',
   'worker/domains/admin-delete-real-driver.ts':'ba2905fee50cea2cc0c88398deff33531b6cae1d',
-  'worker/domains/admin-delete-impact.ts':'b84f613959f57423cacd4432e4519e94d6e2b4f5',
+  'worker/domains/admin-delete-impact.ts':'eb5461a761519e21c700c65cabe2d97e3cf96988',
   'scripts/test-admin-delete-exchange-details-20261017.mjs':'b30f28e597ed21ff9b069388415d2aa3bed4672c',
   'worker/domains/admin-delete-execute.ts':'356701d33688e9bba08fa7855f56b9319b862d5f',
 }
