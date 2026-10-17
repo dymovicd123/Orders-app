@@ -11,7 +11,8 @@ CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_id INTEGER,
   operation_id INTEGER,operation_type TEXT,event_type TEXT,direction TEXT,status TEXT,
   quantity INTEGER,variant_id INTEGER,inventory_source TEXT,movement_id INTEGER,
   applied_at TEXT,created_at TEXT,operation_item_id INTEGER);
-CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity_delta INTEGER);
+CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity_delta INTEGER,quantity_after INTEGER,movement_type TEXT,reference_type TEXT,reference_id TEXT,created_at TEXT);
+CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT);
 CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,stock_writeoff_status TEXT);
 CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,
   quantity INTEGER,variant_id INTEGER,inventory_source TEXT,status TEXT,fulfilled_at TEXT);
@@ -24,6 +25,7 @@ CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,is_active INTEGER);
 CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,is_active INTEGER);
 CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,
   quantity INTEGER,reserved_quantity INTEGER);
+INSERT INTO orders VALUES(9,'ORDER_TEST_9');
 INSERT INTO catalog_products VALUES(1,1);
 INSERT INTO catalog_variants VALUES(1465,1,1);
 INSERT INTO exchanges VALUES(2,9,'completed');
@@ -31,7 +33,8 @@ INSERT INTO exchange_items VALUES(8,2,'new','АБАЙ ШАПАН',1,0,NULL);
 INSERT INTO order_items VALUES(15,9,1,'reserved');
 INSERT INTO inventory_reservations VALUES(13,9,15,1,1465,'warehouse','active',NULL);
 INSERT INTO inventory_stock VALUES(10,'warehouse',1465,60,1);
-INSERT INTO inventory_movements VALUES(12,1465,'warehouse',-1);
+INSERT INTO inventory_movements VALUES(12,1465,'warehouse',-1,59,'sale','exchange_new','2','2026-10-14T14:46:43.892Z');
+INSERT INTO inventory_movements VALUES(13,1465,'warehouse',1,60,'revision','order_handover_correction','ORDER_TEST_9','2026-10-14T14:47:13.361Z');
 INSERT INTO inventory_lifecycle_events
   (id,order_id,order_item_id,operation_id,operation_type,event_type,
    direction,status,quantity,variant_id,inventory_source,movement_id,
@@ -53,7 +56,8 @@ const orig=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock W
 const expected={
   eventId:7,exchangeId:2,orderItemId:15,name:'АБАЙ ШАПАН',
   source:'warehouse',variantId:1465,quantity:1,
-  recordedOutbound:-1,physicalRestore:1,reserveRelease:1,
+  recordedOutbound:-1,physicalRestore:0,reserveRelease:1,
+  alreadyCompensated:true,correctionMovementId:13,
 }
 async function pass(){
   const review=await reviewAdminDeleteAppliedStock(db,9)
@@ -72,6 +76,23 @@ async function reject(sqlChange,sqlRestore,tag){
   await pass()
 }
 await pass()
+// When the original debit has never been offset, exactly one genuine
+// reversal is permitted; never duplicate an already corrected stock count.
+sql.exec("DELETE FROM inventory_movements WHERE id=13; UPDATE inventory_stock SET quantity=59 WHERE id=10")
+const uncorrected=await reviewAdminDeleteAppliedStock(db,9)
+assert.equal(uncorrected.allowed,true)
+assert.deepEqual(uncorrected.reversals,[{...expected,physicalRestore:1,alreadyCompensated:false,correctionMovementId:null}])
+sql.exec("UPDATE inventory_stock SET quantity=60 WHERE id=10")
+sql.exec("INSERT INTO inventory_movements VALUES(13,1465,'warehouse',1,60,'revision','order_handover_correction','ORDER_TEST_9','2026-10-14T14:47:13.361Z')")
+await pass()
+await reject("UPDATE inventory_movements SET reference_id='OTHER_ORDER' WHERE id=13",
+  "UPDATE inventory_movements SET reference_id='ORDER_TEST_9' WHERE id=13",'unrelated correction')
+await reject("UPDATE inventory_movements SET quantity_delta=2 WHERE id=13",
+  "UPDATE inventory_movements SET quantity_delta=1 WHERE id=13",'wrong correction amount')
+await reject("UPDATE inventory_movements SET quantity_after=61 WHERE id=13",
+  "UPDATE inventory_movements SET quantity_after=60 WHERE id=13",'correction/current truth drift')
+await reject("INSERT INTO inventory_movements VALUES(14,1465,'warehouse',1,61,'arrival','arrival','UNRELATED','2026-10-14T14:49:00Z')",
+  "DELETE FROM inventory_movements WHERE id=14",'later independent movement')
 await reject("UPDATE inventory_reservations SET status='fulfilled' WHERE id=13",
   "UPDATE inventory_reservations SET status='active' WHERE id=13",'fulfilled handover')
 await reject("UPDATE inventory_reservations SET variant_id=1466 WHERE id=13",
