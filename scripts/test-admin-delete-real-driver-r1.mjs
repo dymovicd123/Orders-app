@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { createRealAdminDeleteCancellationDriver } from '../worker/domains/admin-delete-real-driver.ts'
+import { criticalOperationFingerprint } from '../worker/domains/critical.ts'
 
 const sql=new DatabaseSync(':memory:')
 sql.exec([
@@ -12,7 +13,8 @@ sql.exec([
  "CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER)",
  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,inventory_source TEXT,variant_id INTEGER)",
  "CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER)",
- "CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,status TEXT,response_json TEXT,target_type TEXT,target_id INTEGER)",
+ "CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,status TEXT,response_json TEXT,target_type TEXT,target_id INTEGER,request_fingerprint TEXT)",
+ "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,operation_type TEXT,operation_id INTEGER,status TEXT)",
 ].join(';')+';')
 sql.exec([
  "INSERT INTO orders VALUES(42,'active','not_sent','itemized_v1',20000,0,0,20000)",
@@ -23,7 +25,7 @@ sql.exec([
  "INSERT INTO returns VALUES(401,42,'completed',0)",
  "INSERT INTO inventory_reservations VALUES(1,42,'active','shop',10)",
  "INSERT INTO inventory_stock VALUES(1,'shop',10,5,2)",
- "INSERT INTO critical_operations VALUES('creation-200','exchange_set_create','completed','{}','exchange',200)",
+ "INSERT INTO critical_operations(request_id,operation_type,status,response_json,target_type,target_id) VALUES('creation-200','exchange_set_create','completed','{}','exchange',200)",
 ].join(';')+';')
 const db={prepare(query){let args=[];return{
  bind(...x){args=x;return this},
@@ -33,13 +35,19 @@ const db={prepare(query){let args=[];return{
 }}}
 const recorded=[]
 const actualCounts=new Map()
-const mockFinish=(table,stepKey,opType,id)=>{
+const mockFinish=async (table,stepKey,opType,id)=>{
  const before=sql.prepare("SELECT status FROM "+table+" WHERE id=?").get(id).status
  if(before!=='cancelled'){
   sql.prepare("UPDATE "+table+" SET status='cancelled' WHERE id=?").run(id)
   actualCounts.set(stepKey,(actualCounts.get(stepKey)||0)+1)
  }
- sql.prepare("INSERT OR IGNORE INTO critical_operations(request_id,operation_type,status,response_json) VALUES(?,?,'completed','{}')").run(stepKey,opType)
+ const comment='Автоматическая отмена зависимой операции перед административным удалением'
+ const payload=table==='returns'
+   ? {returnId:id,requestId:stepKey,comment}
+   : {exchangeId:id,requestId:stepKey,comment}
+ const fingerprint=await criticalOperationFingerprint(opType,payload)
+ sql.prepare("INSERT OR IGNORE INTO critical_operations(request_id,operation_type,status,response_json,target_type,target_id,request_fingerprint) VALUES(?,?,'completed','{}',?,?,?)")
+   .run(stepKey,opType,table==='returns'?'return':'exchange',id,fingerprint)
  return {ok:true}
 }
 const driver=createRealAdminDeleteCancellationDriver(db,{
@@ -63,6 +71,21 @@ await driver.cancel(ex)
 assert.equal(actualCounts.get(ex.cancelRequestId),1,'Exactly-once V2 physical status effect')
 assert.deepEqual(recorded,[['return',ret.cancelRequestId],['return',ret.cancelRequestId],['exchange',ex.cancelRequestId],['exchange',ex.cancelRequestId]])
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM payments').get().n,0)
+
+// Matching request ID and operation type are insufficient for replay ownership.
+sql.prepare("UPDATE critical_operations SET request_fingerprint='spoofed' WHERE request_id=?").run(ret.cancelRequestId)
+await assert.rejects(()=>driver.preflight(ret),/Ключ отмены связан с другим запросом/)
+await assert.rejects(()=>driver.verifyReconciled(ret),/Ключ отмены связан с другим запросом/)
+sql.prepare("UPDATE critical_operations SET request_fingerprint=? WHERE request_id=?").run(
+ await criticalOperationFingerprint('return_cancel',{
+   returnId:ret.id,requestId:ret.cancelRequestId,
+   comment:'Автоматическая отмена зависимой операции перед административным удалением',
+ }),ret.cancelRequestId)
+sql.prepare("UPDATE critical_operations SET target_id=999 WHERE request_id=?").run(ex.cancelRequestId)
+await assert.rejects(()=>driver.preflight(ex),/Ключ отмены связан с другим запросом/)
+await assert.rejects(()=>driver.verifyReconciled(ex),/Ключ отмены связан с другим запросом/)
+sql.prepare("UPDATE critical_operations SET target_id=? WHERE request_id=?").run(ex.id,ex.cancelRequestId)
+assert.equal(await driver.verifyReconciled(ex),true)
 assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()},
  {quantity:5,reserved_quantity:2})
 
@@ -110,6 +133,23 @@ sql.exec("UPDATE inventory_stock SET reserved_quantity=2 WHERE id=1")
 sql.exec("UPDATE orders SET debt_amount=1 WHERE id=42")
 await assert.rejects(()=>driver.verifyReconciled(ex),/Финансовый баланс/)
 sql.exec("UPDATE orders SET debt_amount=20000 WHERE id=42")
+assert.equal(await driver.verifyReconciled(ex),true)
+
+// Positive order totals can mask internally inconsistent order item prices.
+// Equal and opposite line errors must not pass reconciliation.
+sql.exec("INSERT INTO order_items VALUES(2,42,1,5000,5000)")
+sql.exec("UPDATE orders SET total_amount=25000,debt_amount=25000 WHERE id=42")
+sql.exec("UPDATE order_items SET line_total=21000 WHERE id=1")
+sql.exec("UPDATE order_items SET line_total=4000 WHERE id=2")
+await assert.rejects(()=>driver.verifyReconciled(ex),/Суммы/)
+sql.exec("UPDATE order_items SET line_total=20000 WHERE id=1")
+sql.exec("UPDATE order_items SET line_total=5000 WHERE id=2")
+assert.equal(await driver.verifyReconciled(ex),true)
+
+// An inventory event still applied after handler completion is NOT safe.
+sql.exec("INSERT INTO inventory_lifecycle_events VALUES(10,'exchange',200,'applied')")
+await assert.rejects(()=>driver.verifyReconciled(ex),/применённые складские движения/)
+sql.exec("UPDATE inventory_lifecycle_events SET status='cancelled' WHERE id=10")
 assert.equal(await driver.verifyReconciled(ex),true)
 
 // Source-level assertion ensures only the genuine production handlers are
