@@ -1,0 +1,38 @@
+name: Partial old V2 exchange recorded-price safety
+on:
+  pull_request:
+    branches:
+      - feat/branch2-v2-old-price-historical-correction-20261017
+      - branch2
+    paths:
+      - 'worker/domains/orders-write.ts'
+      - 'worker/domains/exchange-price-history.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'scripts/test-v2-partial-old-price-correction-r1.mjs'
+      - 'scripts/test-order-standalone-return-price-correction-r2.mjs'
+      - '.github/workflows/test-v2-partial-old-price-correction.yml'
+permissions:
+  contents: read
+jobs:
+  regression_and_build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Actual D1 SQL partial V2 old-line correction transaction
+        run: node --experimental-strip-types scripts/test-v2-partial-old-price-correction-r1.mjs
+      - name: Existing Retired V2 old-line correction test
+        run: node --experimental-strip-types scripts/test-v2-old-retired-price-correction-r1.mjs
+      - name: Existing new V2 price lineage test
+        run: node --experimental-strip-types scripts/test-v2-exchange-price-audit-r1.mjs
+      - name: Existing independent Return price correction
+        run: node scripts/test-order-standalone-return-price-correction-r2.mjs
+      - name: Cumulative historical regression with immutable Stage04 baseline
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: TypeScript and frontend build
+        run: npm run build
