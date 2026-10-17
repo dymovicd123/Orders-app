@@ -40,7 +40,8 @@ try {
   check(deletion.includes("SET status = 'released', released_at = ?, updated_at = ?"), 'fulfilled reservation is not retired after false-shipment reversal')
   check(deletion.includes("SET shipping_status = 'not_sent', shipping_date = NULL"), 'false shipping marker is not normalized before deletion')
   check(app.includes("attempt.result.code === 'order_delete_physical_confirmation_required'"), 'frontend does not handle narrow physical confirmation')
-  check(app.includes("sendDelete('not_issued')"), 'frontend does not send explicit not-issued fact')
+  check(app.includes('sendDelete(physicalOutcome)') && table.includes("physicalAnswer:'not_issued'"),
+    'frontend must forward an explicit no-handover answer selected in the deletion dialogue')
   check(deletion.includes('await restoreArchivedOrder'), 'safe archived-order recovery missing')
   check(app.includes('previewAcknowledged = false'), 'admin deletion must require explicit preview approval')
   check(app.includes('/delete-preview'), 'read-only admin deletion preview API missing')

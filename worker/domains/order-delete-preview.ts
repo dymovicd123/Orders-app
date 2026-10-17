@@ -4,15 +4,16 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { previewAdminOrderDeleteChain, type AdminDeleteChainPlan } from './order-delete-chain-plan.ts'
 import { previewAdminDeleteImpact, type AdminDeleteImpact } from './admin-delete-impact.ts'
+import { reviewAdminDeleteAppliedStock, type AdminDeleteAppliedStockReview } from './admin-delete-physical.ts'
 
 export type AdminOrderDeletePreview = {
   orderId:number;externalId:string;orderStatus:string;shippingStatus:string;
-  canAttemptDelete:boolean;canStartChain:boolean;requiresPhysicalFact:boolean;
+  canAttemptDelete:boolean;canStartChain:boolean;canPreparePhysicalCorrection:boolean;requiresPhysicalFact:boolean;
   activeExchanges:number[];activeReturns:number[];
   receivedAmount:number;returnAmount:number;paymentCount:number;
   registeredPayments:number;recordedRefunds:number;
   issuedItemCount:number;issuedQuantity:number;
-  reasons:string[];explanations:string[];impact:AdminDeleteImpact;
+  reasons:string[];explanations:string[];impact:AdminDeleteImpact;appliedStockReview:AdminDeleteAppliedStockReview;
   chainPlan:AdminDeleteChainPlan;
 }
 
@@ -49,7 +50,9 @@ export async function previewAdminOrderDeletion(
   const activeReturns=(returns.results||[]).map(x=>toInt(x.id,0)).filter(Boolean)
   const chainPlan=await previewAdminOrderDeleteChain(db,orderId)
   const impact=await previewAdminDeleteImpact(db,orderId,Math.max(0,toInt(order.total_amount,0)),new Set(activeReturns))
+  const appliedStockReview=await reviewAdminDeleteAppliedStock(db,orderId)
   const reasons:string[]=[]
+  if(!appliedStockReview.allowed)reasons.push(...appliedStockReview.blockers)
   if(activeExchanges.length>200||activeReturns.length>200)
     reasons.push('Слишком много связанных операций. Требуется отдельная проверка истории.')
   const hasChain=Boolean(activeExchanges.length||activeReturns.length)
@@ -76,15 +79,20 @@ export async function previewAdminOrderDeletion(
     registeredPayments?`Записанные оплаты на ${registeredPayments} ₸ будут аннулированы в учёте. Это не физическая выдача денег клиенту.`:'',
     recordedRefunds?`Зарегистрированные возвраты на ${recordedRefunds} ₸ будут компенсированы учётным сторно.`:'',
     requiresPhysicalFact?'Есть признак выдачи товара. Система отдельно запросит факт физической передачи и проверит более поздние ревизии.':'',
+    appliedStockReview.reversals.length?`Обнаружено ${appliedStockReview.reversals.length} подтверждённых учётных списаний без выдачи: при отмене обмена учтутся уже проведённые компенсации, а повторное прибавление к остатку будет запрещено. Активные резервы освободятся.`:'',
   ].filter(Boolean)
   if(hasChain&&requiresPhysicalFact)
     reasons.push('Для цепочки с зафиксированной выдачей товара сначала нужна проверка фактической передачи и более поздних ревизий.')
+  const canPreparePhysicalCorrection=hasChain&&requiresPhysicalFact
+    && reasons.every(x=>x.startsWith('Для цепочки с зафиксированной выдачей товара'))
+    && chainPlan.allOperationsAccountedFor&&!chainPlan.manualReviewRequired
+    && chainPlan.steps.length>0
   const canStartChain=hasChain && reasons.length===0
     && !requiresPhysicalFact && chainPlan.allOperationsAccountedFor
     && !chainPlan.manualReviewRequired && chainPlan.steps.length>0
   return {
     orderId,externalId:cleanText(order.external_id),orderStatus:status,shippingStatus:shipping,
-    canAttemptDelete:!hasChain&&reasons.length===0,canStartChain,requiresPhysicalFact,
+    canAttemptDelete:!hasChain&&reasons.length===0,canStartChain,canPreparePhysicalCorrection,requiresPhysicalFact,
     activeExchanges,activeReturns,
     receivedAmount:Math.max(0,toInt(order.received_amount,0)),
     returnAmount:Math.max(0,toInt(order.return_amount,0)),
@@ -92,6 +100,6 @@ export async function previewAdminOrderDeletion(
     registeredPayments,recordedRefunds,
     issuedItemCount:Math.max(0,toInt(fulfilled?.issued_count,0)),
     issuedQuantity:Math.max(0,toInt(fulfilled?.issued_quantity,0)),
-    reasons,explanations,chainPlan,impact,
+    reasons,explanations,chainPlan,impact,appliedStockReview,
   }
 }

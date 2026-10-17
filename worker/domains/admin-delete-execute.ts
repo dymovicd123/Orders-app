@@ -22,7 +22,7 @@ export async function readActiveAdminDeleteChain(db:D1Database,orderId:number){
 }
 export async function executeAdminDeleteChainStep(
   db:D1Database,orderIdRaw:number,
-  input:{requestId?:unknown;expectedSnapshot?:unknown},actor:AuthUser,
+  input:{requestId?:unknown;expectedSnapshot?:unknown;physicalOutcome?:unknown},actor:AuthUser,
 ){
   if(actor.role!=='admin')throw new CriticalOperationConflictError('Удаление заказа доступно только администратору.')
   const orderId=toInt(orderIdRaw,0)
@@ -39,7 +39,7 @@ export async function executeAdminDeleteChainStep(
     throw new CriticalOperationConflictError('Ключ удаления уже принадлежит другому заказу.')
   let progress=original
     ?await getAdminDeleteSagaProgress(db,requestId)
-    :await planAdminDeleteSaga(db,orderId,requestId,expected)
+:await planAdminDeleteSaga(db,orderId,requestId,expected,input.physicalOutcome)
   if(progress.status==='completed')return {ok:true,progress,refreshRequired:true}
   if(progress.status==='planned'||progress.status==='running'){
     progress=await advanceAdminDeleteSagaOneStep(db,requestId,

@@ -3,6 +3,7 @@
 import type { CatalogReferenceOptions, CatalogResolutionContext, CatalogResolutionResponse } from '../../shared/api-contracts.ts'
 import { canonicalStockPositionValue, cleanText, normalizeAudienceCategory, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { ReferenceKind } from '../core/types.ts'
+import { findExchangeFalseHandoverCompensation } from './admin-delete-physical.ts'
 import { assertCatalogProductAliasTargetAvailable, catalogGenderForProductScope, catalogReferenceDbValueExists, createCatalogCombinationV3, createCatalogProduct, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, getCatalogProductGenderScope, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, normalizeCatalogProductGenderScope, rememberCatalogProductAlias, rememberCatalogValueAlias, resolveCatalogValueAlias } from './catalog.ts'
 import type { CatalogReviewFactsInput } from './catalog-review.ts'
 import { catalogReviewRowToOrderItem } from './catalog-review.ts'
@@ -607,7 +608,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
 
 type InventoryLifecycleCancellationDisposition = {
   reversePhysical: boolean;
-  reason: 'safe' | 'retired_identity' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical';
+  reason: 'safe' | 'retired_identity' | 'active_stocktake' | 'later_physical_check' | 'unknown_event_time' | 'insufficient_current_physical' | 'already_compensated_handover';
   eventAt?: string;
   activeStocktakeId?: string;
   laterCheckId?: number;
@@ -769,12 +770,28 @@ export async function cancelInventoryLifecycleEvent(
     ? Math.max(0, -Math.min(0, toInt(originalMovement?.quantity_delta, 0)))
     : -originalDelta;
   const physicalDisposition = await inventoryLifecycleCancellationDisposition(db, event);
+  if(isOutgoingExchange && originalMovement && toInt(originalMovement.quantity_delta,0)<0){
+    const compensation=await findExchangeFalseHandoverCompensation(db,{
+      orderId:toInt(event.order_id,0),
+      source,variantId,movementId:toInt(event.movement_id,0),
+      outboundQuantity:-toInt(originalMovement.quantity_delta,0),
+      eventAt:cleanText(event.applied_at)||cleanText(event.created_at),
+    })
+    // A false-handover correction already returned the unit. Cancelling the
+    // same Exchange cannot return it AGAIN. Preserve both original movements.
+    if(compensation.state==='compensated' && physicalDisposition.reversePhysical){
+      physicalDisposition.reversePhysical=false;
+      physicalDisposition.reason='already_compensated_handover';
+    }
+  }
   if (isOutgoingExchange && !originalMovement) {
     // A missing/legacy movement reference cannot authorize inventing stock.
     physicalDisposition.reversePhysical = false;
   }
   if (!physicalDisposition.reversePhysical) {
-    const reasonText = physicalDisposition.reason === 'retired_identity'
+    const reasonText = physicalDisposition.reason === 'already_compensated_handover'
+      ? 'Физический остаток не изменён: прежнее списание уже компенсировано корректировкой ошибочной выдачи. Повторное прибавление запрещено.'
+      : physicalDisposition.reason === 'retired_identity'
       ? 'Физический остаток не откатывался: старая SKU уже выведена из рабочего каталога и не может снова получать рабочий остаток.'
       : physicalDisposition.reason === 'active_stocktake'
         ? 'Физический остаток не откатывался: на точке идёт ревизия, которая является текущей физической истиной.'

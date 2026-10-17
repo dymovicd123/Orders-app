@@ -14,6 +14,7 @@ dbsqlite.exec([
  "CREATE TABLE critical_operations(id INTEGER PRIMARY KEY,operation_type TEXT,target_type TEXT,target_id INTEGER)",
  "CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER)",
  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,quantity INTEGER)",
+ "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT)",
 ].join(';')+';')
 let writes=0
 const db={prepare(query) {
@@ -96,6 +97,6 @@ assert(app.includes('/delete-preview'))
 const table=readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 assert(table.includes('adminDeleteDraft.preview?.canAttemptDelete'))
 assert(table.includes('loadAdminOrderDeletePreview(order)'))
-assert(table.includes('await deleteOrderAsAdmin(draft.order,true,draft.preview.chainPlan.snapshotFingerprint)'))
+assert(table.includes('await deleteOrderAsAdmin(draft.order,true,preview.chainPlan.snapshotFingerprint,answer)'), 'Direct deletion must include approved snapshot and physical answer')
 assert(table.includes('{isAdmin && !retainedOnly && !archived ? ('))
 console.log('ADMIN_ORDER_DELETE_READ_ONLY_PREVIEW_AND_NO_PARTIAL_LINKED_OPERATIONS_PASSED')

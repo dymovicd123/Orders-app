@@ -15,6 +15,7 @@ import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
 import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
+import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
@@ -1779,6 +1780,22 @@ export default {
         }
       }
 
+      const adminDeletePhysicalMatch=url.pathname.match(/^\/api\/orders\/(\d+)\/delete-physical-confirm$/);
+      if(adminDeletePhysicalMatch && request.method==='POST'){
+        const denied=requireAdminUser(authUser);
+        if(denied)return denied;
+        const id=toInt(adminDeletePhysicalMatch[1],0);
+        const input=await readJson<{expectedSnapshot?:string;physicalOutcome?:string}>(request);
+        try{
+          return json(await correctPhysicalBeforeAdminDelete(env.DB,id,input,authUser!));
+        }catch(error){
+          const critical=criticalOperationErrorResponse(error);
+          if(critical)return critical;
+          const safe=publicApiError(error);
+          return json({ok:false,message:safe.message},{status:safe.status});
+        }
+      }
+
       const adminChainMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete-chain$/);
       if(adminChainMatch && (request.method==='GET'||request.method==='POST')){
         const denied=requireAdminUser(authUser);
@@ -1787,7 +1804,7 @@ export default {
         try{
           if(request.method==='GET')
             return json({ok:true,progress:await readActiveAdminDeleteChain(env.DB,id)});
-          const input=await readJson<{requestId?:string;expectedSnapshot?:string}>(request);
+          const input=await readJson<{requestId?:string;expectedSnapshot?:string;physicalOutcome?:string}>(request);
           return json(await executeAdminDeleteChainStep(env.DB,id,input,authUser!));
         }catch(error){
           const critical=criticalOperationErrorResponse(error);

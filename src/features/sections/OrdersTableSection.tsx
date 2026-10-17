@@ -22,6 +22,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   } | null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
     order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
+    physicalAnswer?:'undecided'|'not_issued'|'issued';
   } | null>(null)
   const {
     correctMistakenOrderShipping,
@@ -34,6 +35,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     loadAdminOrderDeletePreview,
     deleteOrderAsAdmin,
     executeAdminDeleteChain,
+    confirmAdminDeletePhysicalBeforeChain,
     expandedOrderItemCounts,
     filters,
     formatDateShort,
@@ -89,8 +91,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     const value = priceDraft?.prices[Number(item.id)] ?? ''
     return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
   })
+  // Ask about the real handover for EVERY erroneous-order deletion, including
+  // orders where bookkeeping wrongly says "not sent".
+  const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
+    &&!adminDeleteDraft.preview.activeSaga)
   const deleteReasons = adminDeleteDraft?.preview
-    ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])] : []
+    ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
+      !(adminDeleteDraft.preview?.canPreparePhysicalCorrection
+        && reason.startsWith('Для цепочки с зафиксированной выдачей товара'))) : []
 
   const kaspiAverageCheck = summary.count > 0 ? Math.round(summary.total / summary.count) : 0
 
@@ -547,13 +555,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  setAdminDeleteDraft({order,preview:null,error:'',loading:true,submitting:false})
+                                  setAdminDeleteDraft({order,preview:null,error:'',loading:true,submitting:false,physicalAnswer:'undecided'})
                                   void (async()=>{
                                     try {
                                       const preview=await loadAdminOrderDeletePreview(order)
-                                      setAdminDeleteDraft({order,preview,error:'',loading:false,submitting:false})
+                                      setAdminDeleteDraft({order,preview,error:'',loading:false,submitting:false,physicalAnswer:'undecided'})
                                     } catch(error) {
-                                      setAdminDeleteDraft({order,preview:null,loading:false,submitting:false,
+                                      setAdminDeleteDraft({order,preview:null,loading:false,submitting:false,physicalAnswer:'undecided',
                                         error:error instanceof Error?error.message:'Не удалось проверить заказ.'})
                                     }
                                   })()
@@ -628,6 +636,50 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 : 'Нужно уточнение перед удалением'}</strong>
                           {adminDeleteDraft.progress ? <p role="status">Выполнено: {adminDeleteDraft.progress}</p> : null}
                         </div>
+                        {physicalQuestionRequired ? (
+                          <section style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:14,marginTop:16}}>
+                            <h4>Товар действительно передавался клиенту?</h4>
+                            <p className="muted">
+                              {adminDeleteDraft.preview?.requiresPhysicalFact
+                                ||adminDeleteDraft.preview?.appliedStockReview?.appliedCount>0
+                                ?'В учёте есть движения товара или отметки выдачи.'
+                                :'В учёте нет подтверждённой выдачи.'}
+                              {' '}Перед удалением подтвердите, что произошло на самом деле.
+                            </p>
+                            <div style={{display:'grid',gap:10}}>
+                              <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
+                                <input type="radio" name="admin-delete-physical-answer"
+                                  checked={adminDeleteDraft.physicalAnswer==='not_issued'}
+                                  disabled={adminDeleteDraft.submitting}
+                                  onChange={()=>setAdminDeleteDraft(d=>d?{...d,physicalAnswer:'not_issued',error:''}:d)}/>
+                                <span><strong>Нет, товар не передавался</strong>
+                                  <span className="muted" style={{display:'block'}}>
+                                    Проверить и аннулировать ошибочные складские движения, не дублируя уже выполненные корректировки.
+                                  </span></span>
+                              </label>
+                              <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
+                                <input type="radio" name="admin-delete-physical-answer"
+                                  checked={adminDeleteDraft.physicalAnswer==='issued'}
+                                  disabled={adminDeleteDraft.submitting}
+                                  onChange={()=>setAdminDeleteDraft(d=>d?{...d,physicalAnswer:'issued',error:''}:d)}/>
+                                <span><strong>Да, товар был передан клиенту</strong></span>
+                              </label>
+                            </div>
+                            {adminDeleteDraft.physicalAnswer==='issued'?(
+                              <div role="status" style={{marginTop:12}}>
+                                Если клиент действительно получил товар, обычно удалять заказ не нужно.
+                                Исправьте ошибочные реквизиты или цену через редактирование заказа.
+                                При фактическом возврате товара используйте операцию возврата.
+                                <div style={{marginTop:10}}>
+                                  <button type="button" className="secondary compact"
+                                    onClick={()=>{const order=adminDeleteDraft.order;setAdminDeleteDraft(null);handleEditOrder(order)}}>
+                                    Перейти к редактированию заказа
+                                  </button>
+                                </div>
+                              </div>
+                            ):null}
+                          </section>
+                        ):null}
                         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,225px),1fr))',gap:14}}>
                           <section>
                             <h4>Финансы</h4>
@@ -647,7 +699,31 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 .filter((x:any)=>x.action==='release_reserve')
                                 .reduce((sum:number,x:any)=>sum+x.quantity,0)} шт.</strong></p>
                             <p>Зафиксировано выдач: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
-                            <p className="muted">Снятие резерва само по себе не прибавляет товар к физическому остатку. После ревизии остаток нельзя менять задним числом.</p>
+                            {(adminDeleteDraft.preview.appliedStockReview?.reversals||[]).length ? (
+                              <div style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:10,marginTop:10}}>
+                                <strong>Сторно прежних складских списаний</strong>
+                                <p className="muted">Товар числится невыданным, но обмен уже списал его со склада.
+                                  Отмена восстановит только это проведённое списание. Снятие резерва учитывается отдельно.</p>
+                                <ul style={{paddingLeft:18}}>
+                                  {adminDeleteDraft.preview.appliedStockReview.reversals.map((effect:any)=>(
+                                    <li key={effect.eventId}>
+                                      <strong>{effect.name}</strong> ·
+                                      {' '}{effect.source==='warehouse'?'Склад':
+                                        effect.source==='boutique'?'Бутик':effect.source} ·
+                                      {effect.alreadyCompensated
+                                        ?<> · списание уже компенсировано корректировкой выдачи
+                                            #{effect.correctionMovementId}. <strong>Физический остаток не изменится.</strong></>
+                                        :<> · отмена списания: <strong>+{effect.physicalRestore} шт.</strong> к остатку</>}
+                                      {' '}· освободится резерв: <strong>{effect.reserveRelease} шт.</strong>
+                                      <div className="muted">Обмен #{effect.exchangeId} · складская операция #{effect.eventId}</div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            <p className="muted">Снятие резерва само по себе не прибавляет товар к физическому остатку.
+                              Если по обмену было отдельное физическое списание, его безопасное сторно показано выше.
+                              Более поздняя ревизия не будет перезаписана.</p>
                           </section>
                         </div>
                         <section style={{marginTop:14}}>
@@ -770,23 +846,52 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         onClick={()=>setAdminDeleteDraft(null)}>Закрыть</button>
                       {(adminDeleteDraft.preview?.canAttemptDelete||
                         adminDeleteDraft.preview?.canStartChain||
+                        adminDeleteDraft.preview?.canPreparePhysicalCorrection||
                         adminDeleteDraft.preview?.activeSaga)&&
-                        adminDeleteDraft.preview?.chainPlan?.snapshotFingerprint ? (
+                        adminDeleteDraft.preview?.chainPlan?.snapshotFingerprint
+                        &&(!physicalQuestionRequired||adminDeleteDraft.physicalAnswer!=='issued') ? (
                         <button className="ghost danger" type="button"
-                          disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder}
+                          disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder
+                            ||(physicalQuestionRequired&&adminDeleteDraft.physicalAnswer!=='not_issued')}
                           onClick={()=>{void(async()=>{
                             const draft=adminDeleteDraft
+                            const answer=physicalQuestionRequired ?'not_issued':undefined
                             setAdminDeleteDraft(d=>d?{...d,submitting:true,error:''}:d)
-                            const useChain=Boolean(draft.preview?.activeSaga||draft.preview?.canStartChain)
-                            const ok=useChain
-                              ? await executeAdminDeleteChain(draft.order,draft.preview.chainPlan.snapshotFingerprint,
-                                  (done:number,total:number)=>setAdminDeleteDraft(d=>d?{...d,progress:String(done)+' / '+String(total)}:d))
-                              : await deleteOrderAsAdmin(draft.order,true,draft.preview.chainPlan.snapshotFingerprint)
-                            if(ok)setAdminDeleteDraft(null)
-                            else setAdminDeleteDraft(d=>d?{...d,submitting:false,
-                              error:'Удаление ещё не завершено. Повторное нажатие безопасно продолжит с последнего подтверждённого шага.'}:d)
+                            try{
+                              let preview=draft.preview
+                              if(preview.requiresPhysicalFact
+                                &&preview.chainPlan?.steps?.length>0
+                                &&!preview.activeSaga){
+                                // Repair the recorded false handover in this same dialog,
+                                // then obtain a new financial and inventory snapshot.
+                                preview=await confirmAdminDeletePhysicalBeforeChain(
+                                  draft.order,preview.chainPlan.snapshotFingerprint)
+                                setAdminDeleteDraft(d=>d?{...d,preview}:d)
+                                if(!preview.canStartChain)
+                                  throw new Error('Выдача исправлена, но появились другие препятствия удалению. Проверьте обновлённые последствия.')
+                              }
+                              const useChain=Boolean(preview.activeSaga||preview.canStartChain)
+                              const ok=useChain
+                                ? await executeAdminDeleteChain(draft.order,preview.chainPlan.snapshotFingerprint,
+                                    (done:number,total:number)=>setAdminDeleteDraft(d=>d?{...d,progress:String(done)+' / '+String(total)}:d),
+                                    answer)
+                                : await deleteOrderAsAdmin(draft.order,true,preview.chainPlan.snapshotFingerprint,answer)
+                              if(ok)setAdminDeleteDraft(null)
+                              else setAdminDeleteDraft(d=>d?{...d,submitting:false,
+                                error:'Удаление не завершено. Повторите действие; уже подтверждённые шаги не выполняются повторно.'}:d)
+                            }catch(err){
+                              const message=err instanceof Error?err.message:'Не удалось безопасно завершить удаление.'
+                              // A timeout may follow a committed physical correction:
+                              // refresh the preview rather than replay an old snapshot.
+                              try{
+                                const preview=await loadAdminOrderDeletePreview(draft.order)
+                                setAdminDeleteDraft(d=>d?{...d,submitting:false,preview,error:message}:d)
+                              }catch{
+                                setAdminDeleteDraft(d=>d?{...d,submitting:false,error:message}:d)
+                              }
+                            }
                           })()}}>
-                          {adminDeleteDraft.submitting?'Выполняю…'
+                          {adminDeleteDraft.submitting?'Проверяю и отменяю…'
                             :adminDeleteDraft.preview?.activeSaga?'Продолжить удаление'
                               :'Подтвердить аннулирование'}
                         </button>
