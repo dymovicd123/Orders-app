@@ -1,0 +1,70 @@
+name: Read-only Branch2 exchange #2 physical evidence
+on:
+  push:
+    branches: [investigate/branch2-admin-delete-physical-20261017]
+    paths: [.github/workflows/branch2-exchange2-readonly-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Assert test database only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "investigate/branch2-admin-delete-physical-20261017" ]]
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          [[ -n "$CLOUDFLARE_ACCOUNT_ID" && -n "$CLOUDFLARE_API_TOKEN" ]]
+      - name: Read only exchange #2, linked warehouse events and later checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'ORDER+EXCHANGE'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT e.id exchange_id,e.order_id,e.status exchange_status,e.exchange_date,
+                   e.financial_action,e.financial_amount,
+                   o.order_status,o.shipping_status,o.pricing_mode,
+                   (SELECT COUNT(*) FROM inventory_reservations r
+                    WHERE r.order_id=e.order_id AND r.status='fulfilled') issued_count,
+                   (SELECT COUNT(*) FROM inventory_lifecycle_events l
+                    WHERE l.order_id=e.order_id AND l.status='applied') applied_count
+            FROM exchanges e JOIN orders o ON o.id=e.order_id WHERE e.id=2
+          " | jq -c '.[0].results[] | {exchange_id,order_id,exchange_status,exchange_date,financial_action,financial_amount,order_status,shipping_status,pricing_mode,issued_count,applied_count}'
+          echo 'ALL RELATED EVENTS'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT l.id,l.operation_type,l.operation_id,l.event_type,l.direction,l.status,
+                   l.inventory_source,l.variant_id,l.quantity,l.movement_id,
+                   l.created_at,l.applied_at,
+                   (SELECT COUNT(*) FROM inventory_stock_checks chk
+                    WHERE chk.inventory_source=l.inventory_source AND chk.variant_id=l.variant_id
+                      AND datetime(chk.checked_at)>datetime(COALESCE(l.applied_at,l.created_at))
+                   ) later_check_count,
+                   (SELECT COUNT(*) FROM inventory_stocktake_sessions sess
+                    WHERE sess.inventory_source=l.inventory_source AND sess.status='active'
+                   ) active_stocktake_count,
+                   (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock st
+                    WHERE st.inventory_source=l.inventory_source AND st.variant_id=l.variant_id
+                   ) current_physical
+            FROM inventory_lifecycle_events l
+            WHERE l.order_id=(SELECT order_id FROM exchanges WHERE id=2)
+            ORDER BY l.id
+          " | jq -c '.[0].results[] | {id,operation_type,operation_id,event_type,direction,status,inventory_source,variant_id,quantity,movement_id,created_at,applied_at,later_check_count,active_stocktake_count,current_physical}'
+          echo 'EXCHANGE ITEMS SOURCE/TRACKING (NO PRODUCT NAMES)'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT role,quantity,inventory_source,physical_tracking,physical_received_at
+            FROM exchange_items WHERE exchange_id=2 ORDER BY id
+          " | jq -c '.[0].results[]'
+          echo 'END READ-ONLY'
