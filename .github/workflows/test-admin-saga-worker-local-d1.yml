@@ -5,12 +5,14 @@ on:
       - feat/branch2-admin-delete-local-d1-migrations-20261017
       - feat/branch2-admin-delete-real-worker-local-d1-20261017
       - feat/branch2-admin-delete-worker-chain-d1-20261017
+      - feat/branch2-admin-delete-final-phase-20261017
       - branch2
     paths:
       - 'scripts/test-admin-saga-worker-local-d1-r1.mjs'
       - 'scripts/test-admin-saga-worker-chain-local-d1-r1.mjs'
       - 'scripts/fixtures/admin-delete-local-d1-chain-worker.ts'
       - 'scripts/fixtures/admin-delete-worker-chain-seed.mjs'
+      - 'scripts/fixtures/admin-delete-real-final-d1-schema.mjs'
       - 'worker/domains/admin-delete-finalize.ts'
       - 'worker/domains/admin-delete-final-driver.ts'
       - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
@@ -31,11 +33,15 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Actual deleteOrderSafely in local Worker D1, after chained cancellations and lost reply
+        run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --real
       - name: Real Return handler inside isolated workerd Worker + local D1
         run: node scripts/test-admin-saga-worker-local-d1-r1.mjs
       # Also verifies fail-closed finalization, lost final checkpoint, and identical replay.
       - name: Actual Return plus 2 V2 Exchanges through durable saga on local D1
         run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs
+      - name: Concurrent admin real-delete attempts, compare-and-swap + identical retry
+        run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --race
       - name: 0110/0111 local D1 migration validation
         run: node scripts/test-admin-saga-local-cloudflare-d1-r1.mjs
       - name: Frozen historic regression

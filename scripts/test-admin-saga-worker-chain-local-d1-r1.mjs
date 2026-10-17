@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join,resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { buildLocalChainSeed } from './fixtures/admin-delete-worker-chain-seed.mjs'
+import { localRealFinalSchema } from './fixtures/admin-delete-real-final-d1-schema.mjs'
 
 const temp=mkdtempSync(join(tmpdir(),'orders-chain-real-d1-'))
 const persist=join(temp,'db')
@@ -52,6 +53,11 @@ try{
   writeFileSync(baseline,seed.baseline)
   writeFileSync(journal,seed.journal)
   execute(baseline)
+  if(process.argv.includes('--real')||process.argv.includes('--race')){
+    const schema=join(temp,'real-final-fixture.sql')
+    writeFileSync(schema,localRealFinalSchema())
+    execute(schema)
+  }
   execute('migrations/0110_v72_exchange_order_item_price_correction_audit.sql')
   execute('migrations/0111_v72_admin_order_delete_saga_journal.sql')
   execute(journal)
@@ -172,6 +178,52 @@ try{
   assert.deepEqual(unfinished.data.stock.map(x=>[x.variant_id,x.quantity,x.reserved_quantity]),
     [[10,5,1],[11,3,0],[12,4,0]])
 
+  if(process.argv.includes('--real')||process.argv.includes('--race')){
+    const race=process.argv.includes('--race')
+    if(race){
+      const replies=await Promise.all([
+        probe('/finalize-real'),probe('/finalize-real')
+      ])
+      assert(replies.some(r=>r.status===200&&r.data.status==='completed'),
+        'At least one racing admin should finish: '+JSON.stringify(replies))
+      assert(replies.every(r=>r.status===200||r.status===409),
+        'Concurrent delete must not produce an unexpected failure: '+JSON.stringify(replies))
+    }else{
+      const interrupted=await probe('/finalize-real-interrupted')
+      assert.equal(interrupted.status,409,
+        'Real delete must commit before test-only dropped reply: '+JSON.stringify(interrupted))
+      assert.match(interrupted.data.error,/TEST_ONLY_LOST_REAL_DELETE_RESPONSE_AFTER_CRITICAL_COMPLETE/)
+      assert.equal((await probe('/progress')).data.status,'ready_for_final_delete')
+    }
+    const justDeleted=await probe('/facts')
+    assert.equal(justDeleted.data.order.order_status,'deleted')
+    assert.equal(justDeleted.data.finalOperations.length,1)
+    assert.deepEqual(justDeleted.data.finalOperations[0],{
+      request_id:'REAL_CHAIN_42:final:order',
+      operation_type:'order_edit',status:'completed',target_type:'order',target_id:42
+    })
+    assert.deepEqual(statuses(justDeleted.data.reservations),[
+      [100,'released'],[101,'released'],[102,'released']
+    ])
+    assert.deepEqual(justDeleted.data.stock.map(x=>[
+      x.variant_id,x.quantity,x.reserved_quantity
+    ]),[[10,5,0],[11,3,0],[12,4,0]])
+    assert.deepEqual(justDeleted.data.exchanges,final.data.exchanges)
+    assert.deepEqual(justDeleted.data.events,final.data.events)
+    assert.deepEqual(justDeleted.data.critical,final.data.critical)
+    assert.equal(justDeleted.data.payments.length,0)
+    const firstRetry=await probe('/finalize-real')
+    assert.equal(firstRetry.status,200,'Retry real deletion: '+JSON.stringify(firstRetry))
+    assert.equal(firstRetry.data.status,'completed')
+    assert.equal((await probe('/finalize-real')).data.status,'completed')
+    assert.equal((await probe('/advance')).data.status,'completed')
+    const afterRetry=await probe('/facts')
+    assert.deepEqual(afterRetry.data,justDeleted.data,
+      'Real delete must not double release stock, rewrite money or erase history')
+    console.log(race
+      ?'ACTUAL_DELETE_ORDER_SAFELY_LOCAL_D1_CONCURRENT_ADMIN_REPLAY_PASSED'
+      :'ACTUAL_DELETE_ORDER_SAFELY_LOCAL_D1_LOST_REPLY_REPLAY_PASSED')
+  }else{
   // The test-only order deleter commits a logical deletion & release on D1,
   // but a thrown response simulates losing the journal checkpoint afterward.
   const interrupted=await probe('/finalize-interrupted')
@@ -207,6 +259,7 @@ try{
   assert.deepEqual(finalDeleted.data.critical,final.data.critical)
   assert.equal(finalDeleted.data.payments.length,0)
   console.log('FINAL_DELETE_DORMANT_SAGA_HANDOFF_CRASH_RECOVERY_PASSED')
+  }
   console.log('REAL_WORKER_D1_RETURN_TWO_V2_EXCHANGES_CHECKPOINT_CRASH_REPLAY_PASSED')
 }finally{
   if(child){
