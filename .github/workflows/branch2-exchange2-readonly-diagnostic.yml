@@ -102,4 +102,12 @@ jobs:
             WHERE inventory_source='warehouse' AND datetime(started_at)>datetime('2026-10-14T14:46:43.892Z')
             ORDER BY started_at
           " | jq -c '.[0].results[]'
+          echo 'CORRECTION OWNERSHIP'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT m.id,
+              m.reference_id=(SELECT o.external_id FROM orders o WHERE o.id=(SELECT order_id FROM exchanges WHERE id=2)) AS same_order_reference,
+              (SELECT reversal_movement_id FROM inventory_lifecycle_events WHERE id=7) AS lifecycle_reversal_movement_id,
+              m.quantity_delta
+            FROM inventory_movements m WHERE m.id=13
+          " | jq -c '.[0].results[]'
           echo 'END READ-ONLY'
