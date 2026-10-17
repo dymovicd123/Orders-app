@@ -4,6 +4,7 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { CriticalOperationConflictError, criticalOperationFingerprint } from './critical.ts'
 import { readOrderFinancialLedger } from './money.ts'
+import { reviewAdminDeleteAppliedStock } from './admin-delete-physical.ts'
 import { cancelReturn, cancelExchangeSetV2, isExchangeSetV2 } from './returns-exchanges.ts'
 import type { SagaCancelDriver, SagaCancelStep } from './admin-delete-saga.ts'
 
@@ -57,18 +58,15 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
     fail('Заказ уже закрыт, отправлен или имеет зарегистрированную выдачу. Нужна проверка фактического движения товара.')
   if(cleanText(order.pricing_mode)!=='itemized_v1')
     fail('Старый формат стоимости требует отдельного сценария отмены цепочки.')
-  // The standalone lifecycle handler can preserve current physical truth after
-  // a later stocktake, yet mark an older event cancelled without reversing
-  // physical stock. That behavior is legitimate for manual correction, but it
-  // MUST NOT silently qualify a whole-order delete saga as stock-reconciled.
-  // Block every applied event on this order before ANY handler writes, even if
-  // shipping says "not_sent" and no fulfilled reservation remains.
-  const applied=await db.prepare(
-    `SELECT COUNT(*) AS n FROM inventory_lifecycle_events
-     WHERE order_id=? AND status='applied'`
-  ).bind(step.orderId).first<{n:number}>()
-  if(toInt(applied?.n,0)>0)
-    fail('По заказу есть проведённые физические складские движения. Автоматическая отмена запрещена: необходима проверка последующих ревизий и фактических остатков.')
+  // An applied Exchange movement is not necessarily a confirmed handover.
+  // Accept ONLY a traceable reserved/not-issued replacement with a genuine
+  // negative movement and no later stocktake. The established handler will
+  // reverse precisely that movement and release the reservation.
+  // All other applied movements fail closed.
+  const review=await reviewAdminDeleteAppliedStock(db,step.orderId)
+  if(!review.allowed)
+    fail('По заказу есть проведённые физические складские движения. '+review.blockers.join(' '))
+
 }
 
 async function assertCriticalOwnedBySaga(db:D1Database,step:SagaCancelStep,needsCompleted:boolean){
