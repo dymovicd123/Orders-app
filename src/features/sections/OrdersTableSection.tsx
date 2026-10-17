@@ -6,8 +6,11 @@ type SectionContext = Record<string, any>
 
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
+  const [extraActionsOrderId, setExtraActionsOrderId] = useState<number | null>(null)
+  const [priceDraft, setPriceDraft] = useState<{order: any; itemId: number; price: string; error: string} | null>(null)
   const {
     correctMistakenOrderShipping,
+    correctRecordedOrderItemPrice,
     deleteOrderAsAdmin,
     expandedOrderItemCounts,
     filters,
@@ -418,7 +421,25 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Редактировать
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived ? (
+                            {!retainedOnly && !archived && !projection.deleted && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item) => Number(item.quantity) > 0 && Number(item.id) > 0) ? (
+                              <div className="order-extra-actions">
+                                <button className="secondary compact" type="button" aria-expanded={extraActionsOrderId === order.id}
+                                  onClick={(event) => { event.stopPropagation(); setExtraActionsOrderId((current) => current === order.id ? null : order.id) }}>
+                                  Доп. действия
+                                </button>
+                                {extraActionsOrderId === order.id ? (
+                                  <button className="secondary compact" type="button" onClick={(event) => {
+                                    event.stopPropagation()
+                                    const first = order.items.find((item) => Number(item.quantity) > 0 && Number(item.id) > 0)
+                                    if (!first) return
+                                    setPriceDraft({order, itemId: Number(first.id), price: String(first.unitPrice ?? 0), error: ''})
+                                  }}>
+                                    Исправить записанную цену
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {isAdmin && !retainedOnly && !archived ? (
                               <button
                                 className="ghost danger compact"
                                 type="button"
@@ -466,6 +487,54 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" disabled={busy || !orderPageInfo?.hasMore} onClick={() => void changeOrderPage('next')}>Дальше</button>
                 </div>
               </div>
+              {priceDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={(event) => { if (event.target === event.currentTarget && !savingOrder) setPriceDraft(null) }}>
+                  <form className="modal-card" role="dialog" aria-modal="true" aria-label="Исправить записанную цену" style={{maxWidth: 560}}
+                    onSubmit={(event) => { event.preventDefault(); void (async () => {
+                      const item = priceDraft.order.items.find((entry: any) => Number(entry.id) === priceDraft.itemId)
+                      const next = Number(priceDraft.price)
+                      if (!item || !Number.isSafeInteger(next) || next < 0) {
+                        setPriceDraft((current) => current ? {...current, error: 'Укажите целую цену от 0 ₸.'} : current)
+                        return
+                      }
+                      const done = await correctRecordedOrderItemPrice(priceDraft.order, item, next)
+                      if (done) { setPriceDraft(null); setExtraActionsOrderId(null) }
+                    })() }}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Исправление ошибки записи</div>
+                        <h3>{priceDraft.order.external_id}</h3>
+                      </div>
+                      <button className="ghost compact" type="button" disabled={savingOrder} onClick={() => setPriceDraft(null)}>Закрыть</button>
+                    </div>
+                    <p>Исправляется только цена продажи в заказе. Склад, оплата, обмен и возврат не меняются.</p>
+                    <label className="form-field">
+                      <span>Товар</span>
+                      <select value={priceDraft.itemId} disabled={savingOrder} onChange={(event) => {
+                        const itemId = Number(event.target.value)
+                        const selected = priceDraft.order.items.find((entry: any) => Number(entry.id) === itemId)
+                        setPriceDraft((current) => current ? { ...current, itemId, price: String(selected?.unitPrice ?? 0), error: '' } : current)
+                      }}>
+                        {priceDraft.order.items.filter((item: any) => Number(item.quantity) > 0 && Number(item.id) > 0).map((item: any) => (
+                          <option key={item.id} value={item.id}>{item.productName || 'Товар'} · {item.size || '—'} · {item.color || '—'} · ×{item.quantity}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-field">
+                      <span>Правильная цена за 1 шт. (₸)</span>
+                      <input type="number" min="0" step="1" inputMode="numeric" required value={priceDraft.price}
+                        disabled={savingOrder} onChange={(event) => setPriceDraft((current) => current ? {...current, price: event.target.value, error: ''} : current)} />
+                    </label>
+                    {priceDraft.error ? <p role="alert" className="error">{priceDraft.error}</p> : null}
+                    <p className="muted">Если товар участвовал в обмене или возврате и изменение затрагивает связанную операцию, система остановит исправление и объяснит причину.</p>
+                    <div className="toolbar-actions">
+                      <button className="secondary" type="button" disabled={savingOrder} onClick={() => setPriceDraft(null)}>Отмена</button>
+                      <button className="primary" type="submit" disabled={savingOrder}>{savingOrder ? 'Сохраняю…' : 'Исправить цену'}</button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
             </article>
   )
 }
