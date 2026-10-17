@@ -95,9 +95,9 @@ sql.exec("UPDATE inventory_reservations SET status='active' WHERE id=1")
 
 // The verifier must detect real status/line-total/ledger/stock drift and
 // reject the saga cursor, not silently declare a safe cancellation.
-sql.exec("UPDATE orders SET total_amount=22000 WHERE id=42")
+sql.exec("UPDATE order_items SET line_total=22000 WHERE id=1")
 await assert.rejects(()=>driver.verifyReconciled(ex),/Суммы/)
-sql.exec("UPDATE orders SET total_amount=20000 WHERE id=42")
+sql.exec("UPDATE order_items SET line_total=20000 WHERE id=1")
 sql.exec("UPDATE inventory_stock SET reserved_quantity=-1 WHERE id=1")
 await assert.rejects(()=>driver.verifyReconciled(ex),/ниже нуля/)
 sql.exec("UPDATE inventory_stock SET reserved_quantity=2 WHERE id=1")
