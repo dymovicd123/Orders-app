@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 export function buildLocalChainSeed(){
   const sql=new DatabaseSync(':memory:')
   sql.exec([
-    "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,shipping_status TEXT,pricing_mode TEXT,total_amount INTEGER,received_amount INTEGER,return_amount INTEGER,debt_amount INTEGER,updated_at TEXT)",
+    "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,shipping_status TEXT,pricing_mode TEXT,total_amount INTEGER,received_amount INTEGER,return_amount INTEGER,debt_amount INTEGER,customer_name_override TEXT,updated_at TEXT)",
     "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,product_id INTEGER,variant_id INTEGER,product_name_snapshot TEXT,audience_type TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,quantity INTEGER,unit_price INTEGER,line_total INTEGER,is_workshop INTEGER,source_type TEXT,stock_writeoff_status TEXT,stock_quantity_before INTEGER,stock_quantity_after INTEGER)",
     "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,financial_action TEXT,financial_amount INTEGER,payment_id INTEGER,refund_return_id INTEGER,payment_method TEXT,cancelled_at TEXT,cancellation_comment TEXT,old_item_replacement_reversed_at TEXT)",
     "CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,role TEXT)",
