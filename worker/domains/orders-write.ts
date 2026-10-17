@@ -1880,6 +1880,14 @@ export async function updateOrderCritical(
                      AND COALESCE(e.status, 'completed') <> 'cancelled'
                      AND (e.old_order_item_id = ? OR e.new_order_item_id = ?
                        OR EXISTS (SELECT 1 FROM exchange_items ei WHERE ei.exchange_id = e.id AND ei.order_item_id = ?))
+                   OR EXISTS(
+                     SELECT 1 FROM returns refund
+                     JOIN return_items refund_item ON refund_item.return_id = refund.id
+                     JOIN exchanges linked ON linked.refund_return_id = refund.id
+                     WHERE refund.order_id = ?
+                       AND refund_item.order_item_id = ?
+                       AND COALESCE(linked.status, 'completed') <> 'cancelled'
+                   )
                  ) AS exchange_link,
                  EXISTS(
                    SELECT 1 FROM returns r
@@ -1889,10 +1897,14 @@ export async function updateOrderCritical(
                      AND ri.order_item_id = ?
                  ) AS return_link`
             ).bind(id, correction.orderItemId, correction.orderItemId, correction.orderItemId,
+              id, correction.orderItemId,
               id, correction.orderItemId).first<{ exchange_link: number; return_link: number }>();
-            if (toInt(dependency?.exchange_link, 0) || toInt(dependency?.return_link, 0)) {
-              throw new CriticalOperationConflictError('Эта позиция участвовала в обмене или возврате. Для неё сначала нужна отдельная коррекция связанной операции; отменять обмен или создавать дубль заказа не требуется.');
+            if (toInt(dependency?.exchange_link, 0)) {
+              throw new CriticalOperationConflictError('Позиция связана с действующим обменом. Его отмена сверяет исходные ценовые снимки. Исправление цены выполняется отдельным сценарием с сохранением истории обмена.');
             }
+            // A standalone Return retains the actual refund as its own money
+            // event. Its cancellation never rewrites or compares order_item price.
+            // The current order's full paid/line-total constraints remain mandatory.
           }
         }
         if ((operations.returns > 0 || operations.exchanges > 0) && !recordedPriceOnlyRequest) {
@@ -1922,6 +1934,12 @@ export async function updateOrderCritical(
               itemId: entry.orderItemId,
               from: toInt(entry.expectedUnitPrice, 0),
               to: toInt(entry.unitPrice, 0),
+              expectedQuantity: toInt(entry.expectedQuantity, 0),
+              expectedLineTotal: toInt(entry.expectedLineTotal, 0),
+              expectedCatalogPriceSnapshot: entry.expectedCatalogPriceSnapshot ?? null,
+              expectedOrderTotal: toInt(existingAny.total_amount, 0),
+              expectedReceived: toInt(existingAny.received_amount, 0),
+              expectedReturns: toInt(existingAny.return_amount, 0),
             }))
           : [],
         rewritePayments, deletingOrder, deferShippingCommit,
@@ -1982,7 +2000,47 @@ export async function updateOrderCritical(
       );
       const priceOnlyItemUpdates = Array.isArray(p.priceOnlyItemUpdates) ? p.priceOnlyItemUpdates : [];
       if (priceOnlyItemUpdates.length) {
-        await db.batch([
+        // A price correction must never overwrite an order total computed from
+        // an out-of-date item or from an intervening Return/Exchange.
+        // The failing JSON expression makes D1's single atomic batch roll back.
+        const correctionCas = p.recordedPriceOnlyRequest && Array.isArray(p.priceAudit)
+          ? p.priceAudit.map((audit: Record<string, any>) => db.prepare(
+            `SELECT json('ORDER_RECORDED_PRICE_STALE')
+             WHERE NOT EXISTS(
+               SELECT 1
+               FROM order_items oi JOIN orders o ON o.id = oi.order_id
+               WHERE oi.id = ? AND oi.order_id = ?
+                 AND oi.quantity = ? AND oi.unit_price = ? AND oi.line_total = ?
+                 AND (oi.catalog_price_snapshot = ? OR (oi.catalog_price_snapshot IS NULL AND ? IS NULL))
+                 AND o.total_amount = ? AND o.received_amount = ?
+                 AND COALESCE(o.return_amount, 0) = ?
+                 AND COALESCE(o.order_status, 'active') <> 'deleted'
+                 AND (SELECT COALESCE(SUM(active.line_total),0)
+                      FROM order_items active WHERE active.order_id=o.id AND active.quantity>0) = o.total_amount
+                 AND NOT EXISTS(
+                   SELECT 1 FROM exchanges e
+                   WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
+                     AND (e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id
+                       OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id AND ei.order_item_id=oi.id))
+                 )
+                 AND NOT EXISTS(
+                   SELECT 1 FROM returns refund
+                   JOIN return_items ri ON ri.return_id=refund.id
+                   JOIN exchanges e ON e.refund_return_id=refund.id
+                   WHERE refund.order_id=o.id AND ri.order_item_id=oi.id
+                     AND COALESCE(e.status,'completed')<>'cancelled'
+                 )
+             )`
+          ).bind(
+            toInt(audit.itemId, 0), id, toInt(audit.expectedQuantity, 0),
+            toInt(audit.from, 0), toInt(audit.expectedLineTotal, 0),
+            audit.expectedCatalogPriceSnapshot ?? null, audit.expectedCatalogPriceSnapshot ?? null,
+            toInt(audit.expectedOrderTotal, 0), toInt(audit.expectedReceived, 0),
+            toInt(audit.expectedReturns, 0),
+          )) : [];
+        try {
+          await db.batch([
+          ...correctionCas,
           orderUpdateStatement,
           ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(
             `UPDATE order_items
@@ -1994,7 +2052,13 @@ export async function updateOrderCritical(
             toInt(update.orderItemId, 0),
             id,
           )),
-        ]);
+          ]);
+        } catch (error) {
+          if (p.recordedPriceOnlyRequest && /ORDER_RECORDED_PRICE_STALE|malformed JSON/i.test(String(error))) {
+            throw new CriticalOperationConflictError('Заказ, цена или связанные операции изменились. Обновите заказ и повторите исправление.')
+          }
+          throw error;
+        }
       } else {
         await orderUpdateStatement.run();
       }
