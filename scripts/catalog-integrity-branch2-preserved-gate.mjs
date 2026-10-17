@@ -299,7 +299,7 @@ const recordedPricePolicyTests=[
     file:'scripts/test-order-delete-mobility.mjs',
     fixture:'scripts/fixtures/recorded-price-20261017/test-order-delete-mobility.mjs',
     before:'24f70e68f044b0ac3a63cd750f2324a350d1da74',
-    after:'f0f1c68544a0d49aeaaf6cab942208dd911bacc5',
+    after:'117ddab5a34697d02eac4a6c2c6a952c07497c6b',
   },
 ]
 for(const entry of recordedPricePolicyTests){
