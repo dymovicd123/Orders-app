@@ -128,3 +128,88 @@ export async function findRetiredV2OldItemPriceLink(
   return { exchangeId,orderId:toInt(rows[0].order_id,0),oldItemId,
     originalUnitPrice:original,currentRecordedUnitPrice:current,originalQuantity:old[0].quantity }
 }
+
+
+export async function recordRetiredV2OldPriceCorrection(
+  db:D1Database, input:{
+    exchangeId:number; oldItemId:number; expectedUnitPrice:number; newUnitPrice:number;
+    requestId:string; actorLabel:string;
+  },
+) {
+  const id=toInt(input.exchangeId,0),itemId=toInt(input.oldItemId,0)
+  const expected=Number(input.expectedUnitPrice),next=Number(input.newUnitPrice)
+  const requestId=cleanText(input.requestId),actor=cleanText(input.actorLabel)
+  if(!id||!itemId||!requestId||!actor
+    ||!Number.isSafeInteger(expected)||expected<0
+    ||!Number.isSafeInteger(next)||next<0||expected===next) {
+    throw new CriticalOperationConflictError('Укажите позицию, прежнюю и исправленную цены, причину действия и уникальный номер запроса.')
+  }
+  const existing=await db.prepare(
+    `SELECT order_id,order_item_id,exchange_id,old_unit_price,new_unit_price,role
+     FROM exchange_order_item_price_corrections WHERE request_id=?`
+  ).bind(requestId).first<Record<string,unknown>>()
+  if(existing) {
+    if(toInt(existing.exchange_id,0)===id&&toInt(existing.order_item_id,0)===itemId
+      &&toInt(existing.old_unit_price,-1)===expected&&toInt(existing.new_unit_price,-1)===next
+      &&cleanText(existing.role)==='old')
+      return {ok:true,alreadyApplied:true,exchangeId:id,oldItemId:itemId,newUnitPrice:next}
+    throw new CriticalOperationConflictError('Этот номер запроса уже использован для другой корректировки.')
+  }
+  const current=await findRetiredV2OldItemPriceLink(db,id,itemId)
+  if(current.currentRecordedUnitPrice!==expected)
+    throw new CriticalOperationConflictError('Историческая цена уже исправлена другим сотрудником. Обновите запись.')
+  const timestamp=new Date().toISOString()
+  const atomic= [
+    db.prepare(
+      `SELECT json('V2_OLD_PRICE_STALE')
+       WHERE NOT EXISTS(
+         SELECT 1 FROM exchanges e
+         JOIN exchange_items ei ON ei.exchange_id=e.id
+         JOIN order_items oi ON oi.id=ei.order_item_id AND oi.order_id=e.order_id
+         WHERE e.id=? AND ei.order_item_id=? AND ei.role='old'
+           AND e.order_id=? AND COALESCE(e.status,'completed')<>'cancelled'
+           AND oi.quantity=0 AND oi.unit_price=?
+           AND (SELECT COALESCE(
+             (SELECT new_unit_price FROM exchange_order_item_price_corrections
+              WHERE exchange_id=e.id AND order_item_id=oi.id AND role='old' ORDER BY id DESC LIMIT 1),?
+           ))=?
+           AND NOT EXISTS (
+             SELECT 1 FROM exchanges other
+             JOIN exchange_items other_item ON other_item.exchange_id=other.id
+             WHERE other_item.order_item_id=oi.id AND other.id<>e.id
+               AND COALESCE(other.status,'completed')<>'cancelled'
+           )
+           AND NOT EXISTS(
+             SELECT 1 FROM critical_operations cancel
+             WHERE cancel.operation_type='exchange_set_cancel'
+               AND cancel.target_type='exchange' AND cancel.target_id=e.id
+               AND cancel.status='started'
+           )
+       )`
+    ).bind(id,itemId,current.orderId,current.originalUnitPrice,
+      current.originalUnitPrice,expected),
+    db.prepare(
+      `INSERT INTO exchange_order_item_price_corrections(
+        request_id,order_id,order_item_id,exchange_id,role,original_exchange_unit_price,
+        old_unit_price,new_unit_price,quantity_at_correction,actor_label,corrected_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(requestId,current.orderId,itemId,id,'old',current.originalUnitPrice,
+      expected,next,current.originalQuantity,actor,timestamp),
+  ]
+  try {await db.batch(atomic)} catch(error) {
+    const repeated=await db.prepare(
+      `SELECT exchange_id,order_item_id,role,old_unit_price,new_unit_price
+       FROM exchange_order_item_price_corrections WHERE request_id=?`
+    ).bind(requestId).first<Record<string,unknown>>()
+    if(repeated&&toInt(repeated.exchange_id,0)===id
+      &&toInt(repeated.order_item_id,0)===itemId&&cleanText(repeated.role)==='old'
+      &&toInt(repeated.old_unit_price,-1)===expected&&toInt(repeated.new_unit_price,-1)===next)
+      return {ok:true,alreadyApplied:true,exchangeId:id,oldItemId:itemId,newUnitPrice:next}
+    throw new CriticalOperationConflictError(
+      'Цена, цепочка обменов или статус отмены изменились. Обновите историю и повторите действие.')
+  }
+  // The historic original item remains retired. Its corrected sale price is
+  // applied only when a later V2 cancellation passes its full money/stock preflight.
+  return {ok:true,exchangeId:id,oldItemId:itemId,oldUnitPrice:expected,
+    newUnitPrice:next,physicalStockChanged:false,paymentsChanged:false}
+}
