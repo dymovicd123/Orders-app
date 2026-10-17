@@ -644,7 +644,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                         className="secondary"
                         type="button"
                         onClick={queueCurrentExchangePair}
-                        disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeHasPhysicalConfirmation) || (exchangeHasPhysicalConfirmation && (exchangeConfirmedPhysical === null || Number(exchangeConfirmedPhysical) < exchangeBatchRequired))}
+                        disabled={exchangeBusy || !currentPairReady || (exchangePhysicalShortage && !exchangeIssueConfirmed)}
                       >
                         Добавить ещё позицию
                       </button>
