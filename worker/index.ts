@@ -2018,7 +2018,7 @@ export default {
             expectedUnitPrice:Number(body.expectedUnitPrice),
             newUnitPrice:Number(body.newUnitPrice),
             requestId,
-            actorLabel:cleanText(authUser?.display_name)||cleanText(authUser?.email)
+            actorLabel:cleanText(authUser?.displayName)||cleanText(authUser?.email)
               ||cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
           }));
         } catch(error) {
