@@ -9,6 +9,7 @@ on:
       - 'worker/domains/admin-delete-saga.ts'
       - 'scripts/test-admin-delete-real-driver-r1.mjs'
       - 'scripts/test-admin-delete-resumable-saga-r1.mjs'
+      - 'scripts/test-admin-saga-migrations-schema-r1.mjs'
       - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
       - '.github/workflows/test-admin-delete-real-driver.yml'
 permissions:
@@ -26,6 +27,8 @@ jobs:
       - run: npm ci
       - name: Existing production handler adapter financial/physical SQL safety
         run: node --experimental-strip-types scripts/test-admin-delete-real-driver-r1.mjs
+      - name: Combined 0110/0111 branch2-only schema compatibility
+        run: node scripts/test-admin-saga-migrations-schema-r1.mjs
       - name: Persisted saga retry and lease failure injection
         run: node --experimental-strip-types scripts/test-admin-delete-resumable-saga-r1.mjs
       - name: Frozen full catalog and historic order regression
