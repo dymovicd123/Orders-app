@@ -118,8 +118,8 @@ const reviewedExchangePriceFiles={
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
   'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
   'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
-  'migrations/0111_v72_admin_order_delete_saga_journal.sql':'398a482dd31794da547973af82926aecc061934d',
-  'worker/domains/admin-delete-saga.ts':'68aff3adaef1205690918bb1c39841b266eb41d5',
+  'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
+  'worker/domains/admin-delete-saga.ts':'be55ff1c5d9158754c9699349dfb9a1efe39e3a8',
   'worker/domains/admin-delete-real-driver.ts':'561725d77df44af089e1aee0e5d1cbe23cc16f5a',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
@@ -320,6 +320,8 @@ const tests=[
   ['scripts/test-admin-saga-worker-chain-local-d1-r1.mjs',true],
   ['scripts/fixtures/admin-delete-local-d1-chain-worker.ts',true],
   ['scripts/fixtures/admin-delete-worker-chain-seed.mjs',true],
+  ['worker/domains/admin-delete-finalize.ts',true],
+  ['worker/domains/admin-delete-final-driver.ts',true],
   ['scripts/test-admin-saga-migrations-schema-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
