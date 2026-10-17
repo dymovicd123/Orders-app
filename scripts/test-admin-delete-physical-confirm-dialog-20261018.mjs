@@ -20,7 +20,7 @@ for(const phrase of [
   assert(view.includes(phrase),'Missing delete modal physical confirmation: '+phrase)
 }
 assert(view.includes('&&(!physicalQuestionRequired'), 'Never offer destructive action when answer is yes')
-assert(view.includes("preview.appliedStockReview?.appliedCount>0"),'An applied exchange debit must trigger the question even if status is not sent')
+assert(view.includes('const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview'),'The physical question must be displayed for every order before deletion, including unrecorded handovers')
 assert(!app.includes('const notIssued = window.confirm(['),'Legacy late blocking browser popup must be removed')
 assert(app.includes('delete-physical-confirm')&&app.includes("physicalOutcome:'not_issued'"),
   'Corrections must occur in the same deletion dialog via dedicated endpoint')
