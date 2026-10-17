@@ -108,22 +108,23 @@ await assert.rejects(()=>driver.preflight({...ret,id:401,cancelRequestId:'orphan
 
 // Legacy Exchange must be blocked even though it exists and has no cash.
 await assert.rejects(()=>driver.preflight({...ex,id:201,cancelRequestId:'legacy-201'}),/старого формата/)
-// Payment field on an exchange is a cash movement even if payments is empty.
+// Money operations are allowed only when the actual order ledger agrees.
+// A different legacy Exchange still cannot be executed by this V2 adapter.
 sql.exec("UPDATE exchanges SET financial_action='extra_payment',financial_amount=5000 WHERE id=201")
-await assert.rejects(()=>driver.preflight({...ex,id:201,cancelRequestId:'financial-exchange'}),/старого формата|денежн/)
+await assert.rejects(()=>driver.preflight({...ex,id:201,cancelRequestId:'financial-exchange'}),/старого формата/)
 sql.exec("UPDATE exchanges SET status='cancelled' WHERE id=201")
-await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн|сторно/,
- 'Cancelled Exchange with previous financial action remains blocked')
+await driver.preflight({...ex,id:200})
 sql.exec("UPDATE exchanges SET status='completed',financial_action='none',financial_amount=0 WHERE id=201")
 sql.exec("INSERT INTO returns VALUES(501,42,'completed',1000)")
-await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн/)
+await assert.rejects(()=>driver.preflight({...ex,id:200}),/Финансовая сумма/)
 sql.exec("UPDATE returns SET status='cancelled' WHERE id=501")
-await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн|сторно/,
- 'Historical cancelled money Return must remain a blocker until audited')
-sql.exec("UPDATE returns SET amount=0 WHERE id=501") // revert only the isolated test fixture
+await driver.preflight({...ex,id:200})
 sql.exec("INSERT INTO payments VALUES(1,42,1000)")
-await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн/)
+await assert.rejects(()=>driver.preflight({...ex,id:200}),/Финансовая сумма/)
+sql.exec("UPDATE orders SET received_amount=1000,debt_amount=19000 WHERE id=42")
+await driver.preflight({...ex,id:200})
 sql.exec("DELETE FROM payments")
+sql.exec("UPDATE orders SET received_amount=0,debt_amount=20000 WHERE id=42")
 sql.exec("INSERT INTO exchanges VALUES(203,42,'completed','none',0,NULL,400)")
 sql.exec("INSERT INTO critical_operations(request_id,operation_type,status,response_json,target_type,target_id) VALUES('creation-203','exchange_set_create','completed','{}','exchange',203)")
 await assert.rejects(()=>driver.preflight({...ret,id:400,cancelRequestId:ret.cancelRequestId}),/принадлежит обмену/)
