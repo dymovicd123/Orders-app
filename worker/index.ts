@@ -15,6 +15,7 @@ import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
 import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
+import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
@@ -1775,6 +1776,24 @@ export default {
           const criticalResponse=criticalOperationErrorResponse(error);
           if(criticalResponse)return criticalResponse;
           throw error;
+        }
+      }
+
+      const adminChainMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete-chain$/);
+      if(adminChainMatch && (request.method==='GET'||request.method==='POST')){
+        const denied=requireAdminUser(authUser);
+        if(denied)return denied;
+        const id=toInt(adminChainMatch[1],0);
+        try{
+          if(request.method==='GET')
+            return json({ok:true,progress:await readActiveAdminDeleteChain(env.DB,id)});
+          const input=await readJson<{requestId?:string;expectedSnapshot?:string}>(request);
+          return json(await executeAdminDeleteChainStep(env.DB,id,input,authUser!));
+        }catch(error){
+          const critical=criticalOperationErrorResponse(error);
+          if(critical)return critical;
+          const safe=publicApiError(error);
+          return json({ok:false,message:safe.message}, {status:safe.status});
         }
       }
 
