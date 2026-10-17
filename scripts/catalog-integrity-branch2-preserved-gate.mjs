@@ -187,7 +187,7 @@ const priorExchangeModules=[
   {
     "file": "worker/domains/returns-exchanges.ts",
     "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
-    "after": "338fabb0cad320c5cbdc4a598cda18073cf408d4",
+    "after": "ef978d6c7bef104443e30ec4d6eceb3c73750bff",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
   },
   {
