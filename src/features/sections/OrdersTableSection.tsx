@@ -626,7 +626,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <div style={{marginTop:10}}>
                               {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
                                 <>
-                                  <p><strong>Порядок разбора:</strong></p>
+                                  <p><strong>Порядок, в котором нужно разбирать связанные операции:</strong></p>
                                   <ol>{adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>(
                                     <li key={step.type+':'+step.id}>
                                       {step.type==='return'?'Возврат':'Обмен'} #{step.id}
