@@ -1219,8 +1219,12 @@ export async function updateOrderCritical(
     orderDate:string; customerPhone:string; customerName:string;
     city:string; deliveryType:string; comment:string;
   };
+  type MetadataSnapshot = {
+    totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number;
+    shippingStatus:string;orderStatus:string;
+  };
   const rawMetadata = (input as OrderInput & {
-    metadataCorrection?: {expected:MetadataFields;next:MetadataFields}
+    metadataCorrection?: {expected:MetadataFields;next:MetadataFields;expectedState:MetadataSnapshot}
   }).metadataCorrection;
   const isolatedMetadataRequest = rawMetadata !== undefined
     && Object.keys(input as Record<string,unknown>).every(field =>
@@ -1230,7 +1234,15 @@ export async function updateOrderCritical(
   const metadataFields=['orderDate','customerPhone','customerName','city','deliveryType','comment'] as const;
   if(isolatedMetadataRequest){
     if(!rawMetadata||typeof rawMetadata!=='object'||!rawMetadata.expected||!rawMetadata.next
-      ||Object.keys(rawMetadata).some(field=>field!=='expected'&&field!=='next')
+      ||!rawMetadata.expectedState
+      ||Object.keys(rawMetadata).some(field=>!['expected','next','expectedState'].includes(field))
+      ||Object.keys(rawMetadata.expectedState).some(field=>
+        !['totalAmount','receivedAmount','debtAmount','returnAmount','shippingStatus','orderStatus'].includes(field))
+      ||['totalAmount','receivedAmount','debtAmount','returnAmount'].some(field=>
+        !Number.isSafeInteger(rawMetadata.expectedState[field as keyof MetadataSnapshot])
+        || Number(rawMetadata.expectedState[field as keyof MetadataSnapshot])<0)
+      ||typeof rawMetadata.expectedState.shippingStatus!=='string'
+      ||typeof rawMetadata.expectedState.orderStatus!=='string'
       ||metadataFields.some(field=>typeof rawMetadata.expected[field]!=='string'
         ||typeof rawMetadata.next[field]!=='string')
       ||Object.keys(rawMetadata.expected).some(field=>!metadataFields.includes(field as typeof metadataFields[number]))
@@ -1266,6 +1278,14 @@ export async function updateOrderCritical(
         };
         if(metadataFields.some(field=>current[field]!==cleanText(rawMetadata.expected[field])))
           throw new CriticalOperationConflictError('Реквизиты заказа уже изменились. Обновите заказ и повторите.');
+        const expected=rawMetadata.expectedState;
+        if(toInt(existingAny.total_amount,0)!==expected.totalAmount
+          ||toInt(existingAny.received_amount,0)!==expected.receivedAmount
+          ||toInt(existingAny.debt_amount,0)!==expected.debtAmount
+          ||toInt(existingAny.return_amount,0)!==expected.returnAmount
+          ||cleanText(existingAny.shipping_status)!==cleanText(expected.shippingStatus)
+          ||cleanText(existingAny.order_status)!==cleanText(expected.orderStatus))
+          throw new CriticalOperationConflictError('Оплата, итог или статус заказа изменились после открытия редактора. Обновите заказ.');
         input={...input,...rawMetadata.next};
       }
       const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
@@ -1993,9 +2013,12 @@ export async function updateOrderCritical(
           orderDate:cleanText(existingAny.order_date),customerId:toInt(existingAny.customer_id,0),
           city:cleanText(existingAny.city),deliveryType:cleanText(existingAny.delivery_type),
           comment:cleanText(existingAny.comment),
-          totalAmount:toInt(existingAny.total_amount,0),receivedAmount:toInt(existingAny.received_amount,0),
-          debtAmount:toInt(existingAny.debt_amount,0),returnAmount:toInt(existingAny.return_amount,0),
-          shippingStatus:cleanText(existingAny.shipping_status),orderStatus:cleanText(existingAny.order_status)
+          totalAmount:rawMetadata!.expectedState.totalAmount,
+          receivedAmount:rawMetadata!.expectedState.receivedAmount,
+          debtAmount:rawMetadata!.expectedState.debtAmount,
+          returnAmount:rawMetadata!.expectedState.returnAmount,
+          shippingStatus:cleanText(rawMetadata!.expectedState.shippingStatus),
+          orderStatus:cleanText(rawMetadata!.expectedState.orderStatus)
         } : null,
         priceAudit: recordedPriceOnlyRequest
           ? rawItemPriceCorrections.filter((entry) => priceOnlyItemUpdates.some((item) => item.orderItemId === entry.orderItemId))
