@@ -32,12 +32,11 @@ async function verifyNoMoneyMutation(db:D1Database,step:SagaCancelStep){
   ).bind(step.orderId).first<{n:number}>()
   const returns=await db.prepare(
     `SELECT COUNT(*) AS n FROM returns
-     WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled'
-       AND COALESCE(amount,0)<>0`
+     WHERE order_id=? AND COALESCE(amount,0)<>0`
   ).bind(step.orderId).first<{n:number}>()
   const exchanges=await db.prepare(
     `SELECT COUNT(*) AS n FROM exchanges
-     WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled'
+     WHERE order_id=?
        AND (COALESCE(financial_amount,0)<>0
          OR COALESCE(financial_action,'none') NOT IN ('none','')
          OR payment_id IS NOT NULL)`
@@ -45,7 +44,7 @@ async function verifyNoMoneyMutation(db:D1Database,step:SagaCancelStep){
   if(toInt(payments?.n,0)||toInt(returns?.n,0)||toInt(exchanges?.n,0)
     ||ledger.receivedAmount!==0||ledger.returnAmount!==0
     ||ledger.debtAmount!==Math.max(0,ledger.totalAmount))
-    fail('У заказа появились реальные или невыясненные денежные операции. Отмена цепочки остановлена.')
+    fail('У заказа найдены денежные операции, включая исторически отменённые. Пока их сторно не подтверждено, цепочка остановлена.')
 }
 
 async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
