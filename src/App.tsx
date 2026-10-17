@@ -6065,7 +6065,15 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const payload={metadataCorrection:{expected,next}}
+      const expectedState={
+        totalAmount:Number(order.total_amount||0),
+        receivedAmount:Number(order.received_amount||0),
+        debtAmount:Number(order.debt_amount||0),
+        returnAmount:Number(order.return_amount||0),
+        shippingStatus:String(order.shipping_status||'').trim(),
+        orderStatus:String(order.order_status||'').trim(),
+      }
+      const payload={metadataCorrection:{expected,next,expectedState}}
       const criticalKey=`order-metadata-correction:${order.id}`
       const critical=prepareCriticalRequest(criticalKey,payload)
       const response=await apiFetch(`/api/orders/${order.id}`,{
