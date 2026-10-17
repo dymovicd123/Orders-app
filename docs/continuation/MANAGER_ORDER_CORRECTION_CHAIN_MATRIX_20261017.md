@@ -11,7 +11,7 @@ Correct **recorded information**, not actual money or physical inventory. The UI
 | Line with independent standalone Return | Branch2 PR #453; return remains intact | component CI passed |
 | New V2 Exchange line, active qty > 0 | PR #454 guarded correction provenance | code candidate; DO NOT MERGE until schema and E2E |
 | Old V2 Exchange line, qty 0 (fully retired) | Stacked PR #455: immutable old-role price ledger; no changes to active order, money or stock; cancellation restores confirmed price if financially safe | Candidate; isolated SQLite pass, full-chain E2E pending |
-| Old V2 Exchange line with nonzero remaining qty (partially exchanged) | Its current line total must also be recalculated; do not use retired-only endpoint | NOT IMPLEMENTED |
+| Old V2 Exchange line with nonzero remaining qty (partially exchanged) | Stacked PR #456: price-only manager action updates live remainder quantity × corrected price; role='old' correction ledger and exchange cancellation preflight restore exchanged quantity at approved price | Candidate, isolated SQLite/full historical CI required; no DB migration applied |
 | Multiple sequential V2 Exchanges | Dependents, current values and cancellation order | NOT IMPLEMENTED |
 | Legacy single Exchange old/new | Separate legacy cancel path | NOT IMPLEMENTED |
 | Item returned after Exchange | Return must be unwound before exchange cancellation; preserve money+inventory | NOT IMPLEMENTED |
@@ -34,4 +34,4 @@ PR #454 introduces migration 0110 (immutable exchange-order-line price provenanc
 8. Admin delete preflight must show every dependent exchange/return/payment impact and either execute safely or block before partial mutation.
 9. Independently query **branch2 D1** for actual totals and event chain, and manually check manager UI. Do not use production data for destructive tests.
 
-Current status: PR #454 and stacked PR #455 are separate, **not yet merged or deployed**. Migration 0110 belongs to both. Neither PR has been run against branch2 D1. This document is a coverage plan; passing isolated SQL tests does not prove the final cancellation chain.
+Current status: PR #454, stacked PR #455 and stacked PR #456 are separate, **not yet merged or deployed**. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.

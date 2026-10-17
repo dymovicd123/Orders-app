@@ -2,7 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
-import { findExchangeNewPriceLink } from './exchange-price-history.ts'
+import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
@@ -1861,7 +1861,7 @@ export async function updateOrderCritical(
         };
       }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
-      const linkedExchangePriceCorrections = new Map<number,{exchangeId:number;originalUnitPrice:number}>()
+      const linkedExchangePriceCorrections = new Map<number,{exchangeId:number;originalUnitPrice:number;role:'old'|'new'}>()
       if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
         const operations = await completedOrderOperationCounts(db, id);
         if (recordedPriceOnlyRequest && priceOnlyItemsEdit && (operations.returns > 0 || operations.exchanges > 0)) {
@@ -1908,9 +1908,11 @@ export async function updateOrderCritical(
               }
               const actual=itemizedPricingRows?.find((row)=>toInt(row.id,0)===correction.orderItemId)
               if (!actual) throw new CriticalOperationConflictError('Позиция обмена не найдена для проверки цены.')
-              const link=await findExchangeNewPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const partialOld=await findPartialV2OldPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const newLink=partialOld?null:await findExchangeNewPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const link=partialOld||newLink
               if (!link) throw new CriticalOperationConflictError('Связь позиции с обменом не найдена. Исправление остановлено.')
-              linkedExchangePriceCorrections.set(correction.orderItemId,link)
+              linkedExchangePriceCorrections.set(correction.orderItemId,{...link,role:partialOld?'old':'new'})
             }
             // A standalone Return retains the actual refund as its own money
             // event. Its cancellation never rewrites or compares order_item price.
@@ -1952,6 +1954,7 @@ export async function updateOrderCritical(
               expectedReturns: toInt(existingAny.return_amount, 0),
               exchangeId: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.exchangeId ?? null,
               originalExchangeUnitPrice: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.originalUnitPrice ?? null,
+              exchangeRole: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.role ?? null,
             }))
           : [],
         rewritePayments, deletingOrder, deferShippingCommit,
@@ -2048,8 +2051,20 @@ export async function updateOrderCritical(
                          ON op.operation_type='exchange_set_create' AND op.target_type='exchange'
                          AND op.target_id=e.id
                        WHERE e.id=? AND e.order_id=o.id AND ei.order_item_id=oi.id
-                         AND ei.role='new' AND COALESCE(e.status,'completed')<>'cancelled'
+                         AND ei.role=? AND COALESCE(e.status,'completed')<>'cancelled'
+                         AND NOT EXISTS(
+                           SELECT 1 FROM critical_operations cancel
+                           WHERE cancel.operation_type='exchange_set_cancel'
+                             AND cancel.status IN ('started','completed')
+                             AND (cancel.target_id=e.id
+                               OR CAST(json_extract(cancel.context_json,'$.exchangeId') AS INTEGER)=e.id)
+                         )
                      )
+                     AND (? <> 'old' OR NOT EXISTS(
+                       SELECT 1 FROM returns r JOIN return_items ri ON ri.return_id=r.id
+                       WHERE r.order_id=o.id AND ri.order_item_id=oi.id
+                         AND COALESCE(r.status,'completed')<>'cancelled'
+                     ))
                    )
                  )
                  AND NOT EXISTS(
@@ -2067,17 +2082,18 @@ export async function updateOrderCritical(
             toInt(audit.expectedOrderTotal, 0), toInt(audit.expectedReceived, 0),
             toInt(audit.expectedReturns, 0),
             audit.exchangeId ?? null,audit.exchangeId ?? null,audit.exchangeId ?? null,
+            audit.exchangeRole ?? 'new',audit.exchangeRole ?? 'new',
           )) : [];
         const immutableExchangeAudit = p.recordedPriceOnlyRequest && Array.isArray(p.priceAudit)
           ? p.priceAudit.filter((audit: Record<string, any>)=>toInt(audit.exchangeId,0)>0).map((audit: Record<string, any>)=>db.prepare(
             `INSERT INTO exchange_order_item_price_corrections(
-              request_id,order_id,order_item_id,exchange_id,
+              request_id,order_id,order_item_id,exchange_id,role,
               original_exchange_unit_price,old_unit_price,new_unit_price,
               quantity_at_correction,actor_label,corrected_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)`
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
           ).bind(
-            `${criticalOperation!.requestId}:exchange:new:${audit.itemId}`, id, toInt(audit.itemId,0),
-            toInt(audit.exchangeId,0),toInt(audit.originalExchangeUnitPrice,0),
+            `${criticalOperation!.requestId}:exchange:${audit.exchangeRole || 'new'}:${audit.itemId}`, id, toInt(audit.itemId,0),
+            toInt(audit.exchangeId,0),audit.exchangeRole||'new',toInt(audit.originalExchangeUnitPrice,0),
             toInt(audit.from,0),toInt(audit.to,0),toInt(audit.expectedQuantity,0),
             cleanText(checkedBy)||'Сотрудник',p.timestamp,
           )) : [];
