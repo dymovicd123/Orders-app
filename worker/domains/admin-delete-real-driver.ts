@@ -2,7 +2,7 @@
 // NOT exposed through HTTP. The explicit guard is checked again before EVERY
 // step. Real cancellation retains its own critical-operation idempotency.
 import { cleanText, toInt } from '../core/text.ts'
-import { CriticalOperationConflictError } from './critical.ts'
+import { CriticalOperationConflictError, criticalOperationFingerprint } from './critical.ts'
 import { readOrderFinancialLedger } from './money.ts'
 import { cancelReturn, cancelExchangeSetV2, isExchangeSetV2 } from './returns-exchanges.ts'
 import type { SagaCancelDriver, SagaCancelStep } from './admin-delete-saga.ts'
@@ -15,6 +15,7 @@ type CancelDependencies = {
 const handlers:CancelDependencies={cancelReturn,cancelExchangeSetV2,isExchangeSetV2}
 const fail=(message:string):never=>{throw new CriticalOperationConflictError(message)}
 const opType=(step:SagaCancelStep)=>step.type==='return'?'return_cancel':'exchange_set_cancel'
+const cancelComment='Автоматическая отмена зависимой операции перед административным удалением'
 
 async function readStepTarget(db:D1Database,step:SagaCancelStep){
   const table=step.type==='return'?'returns':'exchanges'
@@ -67,7 +68,8 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
 
 async function assertCriticalOwnedBySaga(db:D1Database,step:SagaCancelStep,needsCompleted:boolean){
   const operation=await db.prepare(
-    `SELECT operation_type,status,request_id,response_json
+    `SELECT operation_type,status,request_id,response_json,
+            request_fingerprint,target_type,target_id
      FROM critical_operations WHERE request_id=?`
   ).bind(step.cancelRequestId).first<Record<string,unknown>>()
   if(!operation){
@@ -77,8 +79,23 @@ async function assertCriticalOwnedBySaga(db:D1Database,step:SagaCancelStep,needs
   if(cleanText(operation.operation_type)!==opType(step)
     ||!['started','completed'].includes(cleanText(operation.status)))
     fail('Ключ отмены уже используется другой критической операцией.')
+  // A matching request ID and operation type alone do not prove ownership.
+  // Cross-check the exact production handler fingerprint and persisted target
+  // before accepting a cached reply or a recovered cancellation.
+  const payload=step.type==='return'
+    ? {returnId:step.id,requestId:step.cancelRequestId,comment:cancelComment}
+    : {exchangeId:step.id,requestId:step.cancelRequestId,comment:cancelComment}
+  const expectedFingerprint=await criticalOperationFingerprint(opType(step),payload)
+  const recordedType=cleanText(operation.target_type)
+  const recordedId=toInt(operation.target_id,0)
+  if(cleanText(operation.request_fingerprint)!==expectedFingerprint
+    ||(recordedType&&recordedType!==step.type)
+    ||(recordedId&&recordedId!==step.id))
+    fail('Ключ отмены связан с другим запросом или другой операцией. Цепочка остановлена.')
   if(needsCompleted&&cleanText(operation.status)!=='completed')
     fail('Обработчик ещё не завершил отмену; переходить к следующей операции рано.')
+  if(needsCompleted&&(recordedType!==step.type||recordedId!==step.id))
+    fail('Завершённая отмена не подтверждена для указанного обмена или возврата.')
   return true
 }
 
@@ -100,7 +117,9 @@ async function verifyOrderAndInventoryFacts(db:D1Database,step:SagaCancelStep){
     fail('Финансовый баланс заказа не сошёлся с журналом оплат и возвратов.')
   const totals=await db.prepare(
     `SELECT COALESCE(SUM(CASE WHEN quantity>0 THEN line_total ELSE 0 END),0) AS total,
-       COUNT(CASE WHEN quantity<0 OR unit_price<0 OR line_total<0 THEN 1 END) AS invalid
+       COUNT(CASE WHEN quantity<0 OR unit_price<0 OR line_total<0
+         OR (quantity>0 AND line_total<>quantity*unit_price)
+         OR (quantity=0 AND line_total<>0) THEN 1 END) AS invalid
      FROM order_items WHERE order_id=?`
   ).bind(step.orderId).first<{total:number;invalid:number}>()
   if(toInt(totals?.invalid,0)
@@ -116,6 +135,14 @@ async function verifyOrderAndInventoryFacts(db:D1Database,step:SagaCancelStep){
        )`
   ).bind(step.orderId).first<{invalid:number}>()
   if(toInt(stock?.invalid,0))fail('Складские остатки или резервы ушли ниже нуля.')
+  // A cancellation cannot be accepted while its own inventory events remain
+  // applied, even if the unrelated stock balance still looks nonnegative.
+  const activeEvents=await db.prepare(
+    `SELECT COUNT(*) AS n FROM inventory_lifecycle_events
+     WHERE operation_type=? AND operation_id=? AND status='applied'`
+  ).bind(step.type,step.id).first<{n:number}>()
+  if(toInt(activeEvents?.n,0))
+    fail('После отмены остались применённые складские движения этой операции.')
 }
 
 export function createRealAdminDeleteCancellationDriver(
@@ -152,7 +179,7 @@ export function createRealAdminDeleteCancellationDriver(
       await verifyNoIssuedItems(db,step)
     },
     async cancel(step) {
-      const comment='Автоматическая отмена зависимой операции перед административным удалением'
+      const comment=cancelComment
       return step.type==='return'
         ? h.cancelReturn(db,step.id,{requestId:step.cancelRequestId,comment})
         : h.cancelExchangeSetV2(db,step.id,{requestId:step.cancelRequestId,comment})
