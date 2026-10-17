@@ -23,7 +23,7 @@ async function finalFacts(db:D1Database,orderId:number){
   const order=await db.prepare(
     'SELECT order_status,shipping_status,pricing_mode,total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=?'
   ).bind(orderId).first<Record<string,unknown>>()
-  if(!order)fail('Заказ исчез. Требуется ручная проверка.')
+  if(!order)throw new CriticalOperationConflictError('Заказ исчез. Требуется ручная проверка.')
   if(txt(order.order_status)==='deleted')return {deleted:true,snapshot:''}
   if(txt(order.order_status)==='archived'||txt(order.shipping_status)!=='not_sent'
     ||txt(order.pricing_mode)!=='itemized_v1')
@@ -74,7 +74,7 @@ export async function finalizeAdminDeleteSaga(
   const saga=await db.prepare(
     'SELECT request_id,order_id,status,next_step,lease_token,lease_until_ms FROM admin_order_delete_sagas WHERE request_id=?'
   ).bind(requestId).first<Record<string,unknown>>()
-  if(!saga)fail('Журнал удаления не найден.')
+  if(!saga)throw new CriticalOperationConflictError('Журнал удаления не найден.')
   const orderId=n(saga.order_id)
   if(txt(saga.status)==='completed'){
     const order=await db.prepare('SELECT order_status FROM orders WHERE id=?')
