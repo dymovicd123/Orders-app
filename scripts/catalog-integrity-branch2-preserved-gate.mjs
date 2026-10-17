@@ -101,15 +101,24 @@ const reviewedReferenceDropdownUx={
 check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc99586450e7'
   &&reviewedReferenceDropdownUx.previousTable==='75d40b03cf1d4beb99b24d0ed380c3200b378324',
   'Previous approved metadata UI changed unexpectedly')
+const reviewedOptionalMetadata={
+  previousTable:reviewedReferenceDropdownUx.table,
+  previousWrite:reviewedMetadataUx.write,
+  table:'9aa1836545f549035a4ba59a523c1beb2c144412',
+  write:'e157deed999da92d7207c9bc88a70f4ea662e562',
+}
+check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
+  &&reviewedOptionalMetadata.previousWrite==='9f327389c1e27763a2a343fd00afb2bb2b170ab1',
+  'Previous reviewed metadata form or Worker changed')
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedReferenceDropdownUx.app,
   'Unreviewed reference dropdown App drift')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedReferenceDropdownUx.table,
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedOptionalMetadata.table,
   'Unreviewed metadata correction UI drift')
-check(gitBlob(fs.readFileSync('worker/domains/orders-write.ts','utf8'))===reviewedMetadataUx.write,
+check(gitBlob(fs.readFileSync('worker/domains/orders-write.ts','utf8'))===reviewedOptionalMetadata.write,
   'Unreviewed metadata correction Worker drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedReferenceDropdownUx.app
-  : file === 'worker/domains/orders-write.ts' ? reviewedMetadataUx.write
+  : file === 'worker/domains/orders-write.ts' ? reviewedOptionalMetadata.write
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -335,6 +344,7 @@ const tests=[
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-safe-order-metadata-edit-20261017.mjs',false],
   ['scripts/test-metadata-reference-dropdown-20261017.mjs',false],
+  ['scripts/test-optional-metadata-fields-20261017.mjs',false],
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
   ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
@@ -512,7 +522,7 @@ try{
   }
   const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
   const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
-  check(gitBlob(orderTableCurrent)===reviewedReferenceDropdownUx.table,'Current order list price UX changed')
+  check(gitBlob(orderTableCurrent)===reviewedOptionalMetadata.table,'Current order list price UX changed')
   // Reconstruct only the previously accepted UI for its immutable historical tests.
   // Independently test and retain the new review-first shipping action in current code.
   const reviewFirstHelp='                            {projection.canShip && order.stock_handover_review_needed ? (\n                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>\n                            ) : null}\n'
@@ -578,7 +588,7 @@ for(const entry of recordedPricePolicyTests)
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order test was not restored: '+entry.file)
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedReferenceDropdownUx.table,
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedOptionalMetadata.table,
   'Failed to restore reviewed order list handover UI after historical tests')
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
