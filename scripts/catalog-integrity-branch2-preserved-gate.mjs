@@ -104,7 +104,7 @@ check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc9
 const reviewedOptionalMetadata={
   previousTable:reviewedReferenceDropdownUx.table,
   previousWrite:reviewedMetadataUx.write,
-  table:'f61ae0e0ea85addd6efb2e612e49ef802861f4ee',
+  table:'0ff0af3f1b6f2c10cbf76d1215660004e60eaded',
   write:'e157deed999da92d7207c9bc88a70f4ea662e562',
 }
 check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
@@ -185,7 +185,7 @@ const reviewedExchangePriceFiles={
   'scripts/test-admin-delete-exchange-details-20261017.mjs':'b30f28e597ed21ff9b069388415d2aa3bed4672c',
   'worker/domains/admin-delete-execute.ts':'ef7e0e64ed4721ff359089454c6e376c23244028',
   'worker/domains/admin-delete-physical-confirm.ts':'d119cc2e5b2b83d46d9a80eee1254d3e7e5a4c65',
-  'scripts/test-admin-delete-physical-confirm-dialog-20261018.mjs':'6a6c4f4efe67202fe82dc8c28433088fb2966f2f',
+  'scripts/test-admin-delete-physical-confirm-dialog-20261018.mjs':'bf30af9e94d06723c5d2f7a1fcb9b0cc83a43147',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
