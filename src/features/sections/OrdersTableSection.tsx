@@ -647,7 +647,31 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 .filter((x:any)=>x.action==='release_reserve')
                                 .reduce((sum:number,x:any)=>sum+x.quantity,0)} шт.</strong></p>
                             <p>Зафиксировано выдач: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
-                            <p className="muted">Снятие резерва само по себе не прибавляет товар к физическому остатку. После ревизии остаток нельзя менять задним числом.</p>
+                            {(adminDeleteDraft.preview.appliedStockReview?.reversals||[]).length ? (
+                              <div style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:10,marginTop:10}}>
+                                <strong>Сторно прежних складских списаний</strong>
+                                <p className="muted">Товар числится невыданным, но обмен уже списал его со склада.
+                                  Отмена восстановит только это проведённое списание. Снятие резерва учитывается отдельно.</p>
+                                <ul style={{paddingLeft:18}}>
+                                  {adminDeleteDraft.preview.appliedStockReview.reversals.map((effect:any)=>(
+                                    <li key={effect.eventId}>
+                                      <strong>{effect.name}</strong> ·
+                                      {' '}{effect.source==='warehouse'?'Склад':
+                                        effect.source==='boutique'?'Бутик':effect.source} ·
+                                      {effect.alreadyCompensated
+                                        ?<> · списание уже компенсировано корректировкой выдачи
+                                            #{effect.correctionMovementId}. <strong>Физический остаток не изменится.</strong></>
+                                        :<> · отмена списания: <strong>+{effect.physicalRestore} шт.</strong> к остатку</>}
+                                      {' '}· освободится резерв: <strong>{effect.reserveRelease} шт.</strong>
+                                      <div className="muted">Обмен #{effect.exchangeId} · складская операция #{effect.eventId}</div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                            <p className="muted">Снятие резерва само по себе не прибавляет товар к физическому остатку.
+                              Если по обмену было отдельное физическое списание, его безопасное сторно показано выше.
+                              Более поздняя ревизия не будет перезаписана.</p>
                           </section>
                         </div>
                         <section style={{marginTop:14}}>
