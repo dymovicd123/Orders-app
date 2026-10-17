@@ -8,7 +8,7 @@ import { reviewAdminDeleteAppliedStock, type AdminDeleteAppliedStockReview } fro
 
 export type AdminOrderDeletePreview = {
   orderId:number;externalId:string;orderStatus:string;shippingStatus:string;
-  canAttemptDelete:boolean;canStartChain:boolean;requiresPhysicalFact:boolean;
+  canAttemptDelete:boolean;canStartChain:boolean;canPreparePhysicalCorrection:boolean;requiresPhysicalFact:boolean;
   activeExchanges:number[];activeReturns:number[];
   receivedAmount:number;returnAmount:number;paymentCount:number;
   registeredPayments:number;recordedRefunds:number;
@@ -83,12 +83,16 @@ export async function previewAdminOrderDeletion(
   ].filter(Boolean)
   if(hasChain&&requiresPhysicalFact)
     reasons.push('Для цепочки с зафиксированной выдачей товара сначала нужна проверка фактической передачи и более поздних ревизий.')
+  const canPreparePhysicalCorrection=hasChain&&requiresPhysicalFact
+    && reasons.every(x=>x.startsWith('Для цепочки с зафиксированной выдачей товара'))
+    && chainPlan.allOperationsAccountedFor&&!chainPlan.manualReviewRequired
+    && chainPlan.steps.length>0
   const canStartChain=hasChain && reasons.length===0
     && !requiresPhysicalFact && chainPlan.allOperationsAccountedFor
     && !chainPlan.manualReviewRequired && chainPlan.steps.length>0
   return {
     orderId,externalId:cleanText(order.external_id),orderStatus:status,shippingStatus:shipping,
-    canAttemptDelete:!hasChain&&reasons.length===0,canStartChain,requiresPhysicalFact,
+    canAttemptDelete:!hasChain&&reasons.length===0,canStartChain,canPreparePhysicalCorrection,requiresPhysicalFact,
     activeExchanges,activeReturns,
     receivedAmount:Math.max(0,toInt(order.received_amount,0)),
     returnAmount:Math.max(0,toInt(order.return_amount,0)),
