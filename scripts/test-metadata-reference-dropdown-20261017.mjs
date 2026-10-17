@@ -40,6 +40,7 @@ assert(modal.includes('onChange={(event)=>setMetadataDraft((d)=>d?{'),
   'Selectors must update only draft metadata')
 assert(server.includes("field==='requestId'||field==='metadataCorrection'"),
   'Backend must still reject mixed money/stock payloads')
-assert(server.includes("SET order_date=?,customer_id=?,city=?,delivery_type=?,comment=?,updated_at=?"),
+assert(server.includes('customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?') &&
+  server.includes('customer_id=CASE WHEN ?') && server.includes('ON CONFLICT(phone_normalized) DO NOTHING'),
   'Backend must still update only allowlisted fields')
 console.log('METADATA_REFERENCE_DROPDOWNS_AND_COLLAPSED_EXTRA_ACTIONS_PASSED')
