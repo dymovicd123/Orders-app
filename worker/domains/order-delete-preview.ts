@@ -62,6 +62,12 @@ export async function previewAdminOrderDeletion(
   for(const blocker of chainPlan.blockers)reasons.push(blocker)
   if(activeExchanges.length!==chainPlan.activeExchangeIds.length||activeReturns.length!==chainPlan.activeReturnIds.length)
     reasons.push('Невозможно сверить полный список связанных операций. Удаление заблокировано.')
+  const cachedPaid=toInt(order.received_amount,0)
+  const cachedReturned=toInt(order.return_amount,0)
+  if(registeredPayments>0)
+    reasons.push('У заказа остаются зарегистрированные оплаты. Сначала проверьте, реальное это поступление или ошибочная запись: удаление не должно подменять возврат денег клиенту.')
+  if(cachedPaid!==registeredPayments||cachedReturned!==recordedRefunds)
+    reasons.push('Финансовые суммы заказа не совпадают с действующими оплатами и возвратами. Перед удалением требуется сверка.')
   const explanations=[
     activeExchanges.length?`Активных обменов: ${activeExchanges.length}. Их учёт и складские события останутся неизменными, пока не будет безопасно подтверждена цепочка отмен.`:'',
     activeReturns.length?`Активных возвратов: ${activeReturns.length}. Их финансы и склад не будут отменены автоматически при текущем ограничении.`:'',
