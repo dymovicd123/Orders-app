@@ -75,10 +75,16 @@ await assert.rejects(()=>driver.preflight({...ex,id:201,cancelRequestId:'legacy-
 // Payment field on an exchange is a cash movement even if payments is empty.
 sql.exec("UPDATE exchanges SET financial_action='extra_payment',financial_amount=5000 WHERE id=201")
 await assert.rejects(()=>driver.preflight({...ex,id:201,cancelRequestId:'financial-exchange'}),/старого формата|денежн/)
-sql.exec("UPDATE exchanges SET financial_action='none',financial_amount=0 WHERE id=201")
+sql.exec("UPDATE exchanges SET status='cancelled' WHERE id=201")
+await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн|сторно/,
+ 'Cancelled Exchange with previous financial action remains blocked')
+sql.exec("UPDATE exchanges SET status='completed',financial_action='none',financial_amount=0 WHERE id=201")
 sql.exec("INSERT INTO returns VALUES(501,42,'completed',1000)")
 await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн/)
 sql.exec("UPDATE returns SET status='cancelled' WHERE id=501")
+await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн|сторно/,
+ 'Historical cancelled money Return must remain a blocker until audited')
+sql.exec("UPDATE returns SET amount=0 WHERE id=501") // revert only the isolated test fixture
 sql.exec("INSERT INTO payments VALUES(1,42,1000)")
 await assert.rejects(()=>driver.preflight({...ex,id:200}),/денежн/)
 sql.exec("DELETE FROM payments")
