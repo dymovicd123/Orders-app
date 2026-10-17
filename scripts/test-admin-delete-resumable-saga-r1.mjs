@@ -10,7 +10,7 @@ const sqlite=new DatabaseSync(':memory:')
 sqlite.exec([
  "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,shipping_status TEXT,received_amount INTEGER,return_amount INTEGER,total_amount INTEGER)",
  "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,unit_price INTEGER,line_total INTEGER)",
- "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,refund_return_id INTEGER,old_order_item_id INTEGER,new_order_item_id INTEGER)",
+ "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,refund_return_id INTEGER,old_order_item_id INTEGER,new_order_item_id INTEGER,financial_action TEXT DEFAULT 'none',financial_amount INTEGER DEFAULT 0,payment_id INTEGER)",
  "CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,role TEXT)",
  "CREATE TABLE critical_operations(id INTEGER PRIMARY KEY,operation_type TEXT,target_type TEXT,target_id INTEGER)",
  "CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,amount INTEGER)",
@@ -24,7 +24,7 @@ sqlite.exec("INSERT INTO orders VALUES(42,'ORD-42','active','not_sent',0,0,30000
 for(const [id,qty,price] of [[1,0,10000],[10,0,20000],[20,0,30000],[30,1,30000]])
   sqlite.prepare("INSERT INTO order_items VALUES(?,42,?,?,?)").run(id,qty,price,qty*price)
 const ex=(id,oldId,newId)=>{
- sqlite.prepare("INSERT INTO exchanges VALUES(?,42,'completed',NULL,?,?)").run(id,oldId,newId)
+ sqlite.prepare("INSERT INTO exchanges(id,order_id,status,refund_return_id,old_order_item_id,new_order_item_id) VALUES(?,42,'completed',NULL,?,?)").run(id,oldId,newId)
  sqlite.prepare("INSERT INTO exchange_items(exchange_id,order_item_id,role) VALUES (?,?,'old')").run(id,oldId)
  sqlite.prepare("INSERT INTO exchange_items(exchange_id,order_item_id,role) VALUES (?,?,'new')").run(id,newId)
  sqlite.prepare("INSERT INTO critical_operations(operation_type,target_type,target_id) VALUES('exchange_set_create','exchange',?)").run(id)
@@ -171,7 +171,7 @@ await assert.rejects(
 sqlite.exec("INSERT INTO orders VALUES(99,'ORD-99','active','not_sent',0,0,8000)")
 sqlite.exec("INSERT INTO order_items VALUES(990,99,0,8000,0)")
 sqlite.exec("INSERT INTO order_items VALUES(991,99,1,8000,8000)")
-sqlite.exec("INSERT INTO exchanges VALUES(900,99,'completed',NULL,990,991)")
+sqlite.exec("INSERT INTO exchanges(id,order_id,status,refund_return_id,old_order_item_id,new_order_item_id) VALUES(900,99,'completed',NULL,990,991)")
 sqlite.exec("INSERT INTO exchange_items(exchange_id,order_item_id,role) VALUES(900,990,'old')")
 sqlite.exec("INSERT INTO exchange_items(exchange_id,order_item_id,role) VALUES(900,991,'new')")
 sqlite.exec("INSERT INTO critical_operations(operation_type,target_type,target_id) VALUES('exchange_set_create','exchange',900)")
