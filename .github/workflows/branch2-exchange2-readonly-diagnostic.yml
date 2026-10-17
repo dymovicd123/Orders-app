@@ -88,4 +88,18 @@ jobs:
             FROM order_items
             WHERE order_id=(SELECT order_id FROM exchanges WHERE id=2) ORDER BY id
           " | jq -c '.[0].results[]'
+          echo 'LATER MOVEMENTS FOR AFFECTED SKU'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT id,movement_type,quantity_delta,quantity_after,reference_type,reference_id,created_at
+            FROM inventory_movements
+            WHERE inventory_source='warehouse' AND variant_id=1465 AND id>12
+            ORDER BY id
+          " | jq -c '.[0].results[]'
+          echo 'ALL STOCKTAKES SINCE EVENT'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT id,status,started_at
+            FROM inventory_stocktake_sessions
+            WHERE inventory_source='warehouse' AND datetime(started_at)>datetime('2026-10-14T14:46:43.892Z')
+            ORDER BY started_at
+          " | jq -c '.[0].results[]'
           echo 'END READ-ONLY'
