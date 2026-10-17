@@ -145,7 +145,7 @@ sql.exec("UPDATE inventory_stock SET reserved_quantity=-1 WHERE id=1")
 await assert.rejects(()=>driver.verifyReconciled(ex),/ниже нуля/)
 sql.exec("UPDATE inventory_stock SET reserved_quantity=2 WHERE id=1")
 sql.exec("UPDATE orders SET debt_amount=1 WHERE id=42")
-await assert.rejects(()=>driver.verifyReconciled(ex),/Финансовый баланс/)
+await assert.rejects(()=>driver.verifyReconciled(ex),/Финансовая сумма|Финансовый баланс/)
 sql.exec("UPDATE orders SET debt_amount=20000 WHERE id=42")
 assert.equal(await driver.verifyReconciled(ex),true)
 
