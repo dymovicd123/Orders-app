@@ -311,6 +311,7 @@ const tests=[
   ['scripts/test-admin-delete-chain-plan-r1.mjs',true],
   ['scripts/test-admin-delete-resumable-saga-r1.mjs',true],
   ['scripts/test-admin-delete-real-driver-r1.mjs',true],
+  ['scripts/test-admin-delete-real-return-handler-r1.mjs',true],
   ['scripts/test-admin-saga-migrations-schema-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
