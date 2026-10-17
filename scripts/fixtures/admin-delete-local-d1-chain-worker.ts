@@ -2,6 +2,8 @@
 // Uses real execution / cancellation functions and disposable local D1.
 import { createRealAdminDeleteCancellationDriver } from '../../worker/domains/admin-delete-real-driver.ts'
 import { finalizeAdminDeleteSaga } from '../../worker/domains/admin-delete-finalize.ts'
+import { createRealAdminOrderDeleteFinalAction } from '../../worker/domains/admin-delete-final-driver.ts'
+import type { AuthUser } from '../../worker/core/types.ts'
 import {
   advanceAdminDeleteSagaOneStep,getAdminDeleteSagaProgress,
 } from '../../worker/domains/admin-delete-saga.ts'
@@ -47,6 +49,20 @@ export default {
       if(route==='/clear-money'){
         await env.DB.prepare("DELETE FROM payments WHERE id=9 AND order_id=42").run()
         return Response.json({ok:true})
+      }
+      if(route==='/finalize-real'||route==='/finalize-real-interrupted'){
+        const real=createRealAdminOrderDeleteFinalAction({
+          role:'admin',displayName:'CI administrator',id:1
+        } as unknown as AuthUser)
+        const action=async(db:D1Database,orderId:number,input:{
+          requestId:string;expectedSnapshot:string;comment:string
+        })=>{
+          const answer=await real(db,orderId,input)
+          if(route==='/finalize-real-interrupted')
+            throw Error('TEST_ONLY_LOST_REAL_DELETE_RESPONSE_AFTER_CRITICAL_COMPLETE')
+          return answer
+        }
+        return Response.json(await finalizeAdminDeleteSaga(env.DB,saga,action))
       }
       if(route==='/finalize'||route==='/finalize-interrupted'){
         // Synthetic final order writer ONLY for testing the dormant saga's
