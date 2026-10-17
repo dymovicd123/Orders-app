@@ -1889,7 +1889,7 @@ export async function updateOrderCritical(
                        AND refund_item.order_item_id = ?
                        AND COALESCE(linked.status, 'completed') <> 'cancelled'
                    )
-                 )) AS exchange_link,
+                 ) AS exchange_link,
                  EXISTS(
                    SELECT 1 FROM returns r
                    JOIN return_items ri ON ri.return_id = r.id
