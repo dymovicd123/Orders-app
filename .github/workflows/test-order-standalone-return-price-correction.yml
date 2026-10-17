@@ -1,0 +1,28 @@
+name: Standalone Return-linked recorded-price safety
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/orders-write.ts'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-order-standalone-return-price-correction-r2.mjs'
+      - '.github/workflows/test-order-standalone-return-price-correction.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Standalone-return price, unchanged money and inventory, atomic stale guards
+        run: node scripts/test-order-standalone-return-price-correction-r2.mjs
+      - name: Existing independent recorded-price correction test
+        run: node scripts/test-order-recorded-price-correction-r1.mjs
+      - name: Build production frontend and Worker
+        run: npm run build
