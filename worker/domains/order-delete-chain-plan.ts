@@ -39,8 +39,21 @@ async function snapshotFingerprint(db:D1Database,orderId:number):Promise<string>
     ['payments',`SELECT * FROM payments WHERE order_id=? ORDER BY id`],
     ['inventory_reservations',`SELECT * FROM inventory_reservations WHERE order_id=? ORDER BY id`],
   ] as const
+  // Also freeze any audit entries that can change the consequences after
+  // admin reviews the preview: warehouse lifecycle, finance journal and cash.
+  // Synthetic pre-migration SQLite fixtures may not contain all of these
+  // tables; production migrations do. Table identifiers are fixed literals.
+  const existingTables=await db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_lifecycle_events','financial_events','cash_register_entries')"
+  ).all<{name:string}>()
+  const known=new Set((existingTables.results||[]).map(x=>x.name))
+  const related:ReadonlyArray<readonly [string,string]>=[
+    ['inventory_lifecycle_events','SELECT * FROM inventory_lifecycle_events WHERE order_id=? ORDER BY id'],
+    ['financial_events','SELECT * FROM financial_events WHERE order_id=? ORDER BY id'],
+    ['cash_register_entries','SELECT * FROM cash_register_entries WHERE order_id=? ORDER BY id'],
+  ]
   const parts=[]
-  for(const [name,sql] of sources) {
+  for(const [name,sql] of [...sources,...related.filter(([table])=>known.has(table))]) {
     const rows=await db.prepare(sql).bind(orderId).all<Record<string,unknown>>()
     if(!rows.success && rows.success!==undefined)
       throw new CriticalOperationConflictError('Не удалось проверить снимок '+name+' перед удалением.')
