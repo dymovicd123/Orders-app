@@ -58,6 +58,7 @@ export async function getAdminDeleteSagaProgress(
 
 export async function planAdminDeleteSaga(
   db:D1Database,orderIdRaw:number,requestIdRaw:string,expectedSnapshotRaw:string,
+  physicalOutcomeRaw:unknown='',
 ):Promise<SagaProgress>{
   const orderId=toInt(orderIdRaw,0),requestId=sagaId(requestIdRaw)
   const expected=cleanText(expectedSnapshotRaw)
@@ -71,6 +72,10 @@ export async function planAdminDeleteSaga(
     return getAdminDeleteSagaProgress(db,requestId)
   }
   const preview=await previewAdminOrderDeletion(db,orderId)
+  const physicalOutcome=cleanText(physicalOutcomeRaw)
+  if((preview.requiresPhysicalFact||preview.appliedStockReview.appliedCount>0)
+    &&physicalOutcome!=='not_issued')
+    throw new CriticalOperationConflictError('Сначала подтвердите непосредственно в окне удаления, что товар не передавался клиенту.')
   const plan=await previewAdminOrderDeleteChain(db,orderId)
   if(plan.snapshotFingerprint!==expected||preview.chainPlan.snapshotFingerprint!==expected)
     throw new CriticalOperationConflictError('Заказ изменился после предварительного просмотра. Обновите и проверьте цепочку.')
@@ -93,7 +98,8 @@ export async function planAdminDeleteSaga(
         request_id,order_id,status,preview_fingerprint,plan_json,next_step,
         created_at,updated_at
       ) VALUES (?,?,'planned',?,?,0,?,?)`
-    ).bind(requestId,orderId,expected,JSON.stringify(steps),timestamp,timestamp),
+    ).bind(requestId,orderId,expected,
+      JSON.stringify(physicalOutcome==='not_issued'?{steps,physicalOutcome}:steps),timestamp,timestamp),
     ...steps.map((step,index)=>db.prepare(
       `INSERT INTO admin_order_delete_saga_steps(
         saga_request_id,step_index,operation_type,operation_id,cancel_request_id
