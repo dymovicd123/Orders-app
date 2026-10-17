@@ -14,7 +14,7 @@ export type AdminDeleteImpact = {
 }
 export async function previewAdminDeleteImpact(db:D1Database,orderId:number,
   saleAmount:number,activeReturns:ReadonlySet<number>):Promise<AdminDeleteImpact>{
-  const [pay,item,returns,exchanges,stock]=await Promise.all([
+  const [pay,item,returns,exchangeQuery,stock]=await Promise.all([
     db.prepare('SELECT * FROM payments WHERE order_id=? ORDER BY id LIMIT 501').bind(orderId).all<Record<string,unknown>>(),
     db.prepare('SELECT * FROM order_items WHERE order_id=? ORDER BY id LIMIT 501').bind(orderId).all<Record<string,unknown>>(),
     db.prepare('SELECT * FROM returns WHERE order_id=? ORDER BY id LIMIT 501').bind(orderId).all<Record<string,unknown>>(),
@@ -22,7 +22,7 @@ export async function previewAdminDeleteImpact(db:D1Database,orderId:number,
     db.prepare('SELECT * FROM inventory_reservations WHERE order_id=? ORDER BY id LIMIT 501').bind(orderId).all<Record<string,unknown>>(),
   ])
   const paymentRows=pay.results||[],itemRows=item.results||[],returnRows=returns.results||[],
-    exchangeRows=exchanges.results||[],reservationRows=stock.results||[]
+    exchangeRows=exchangeQuery.results||[],reservationRows=stock.results||[]
   const byItem=new Map(itemRows.map(row=>[toInt(row.id,0),row]))
   const payments=paymentRows.map(row=>({
     id:toInt(row.id,0),date:cleanText(row.payment_date),method:cleanText(row.method)||'Не указан',
