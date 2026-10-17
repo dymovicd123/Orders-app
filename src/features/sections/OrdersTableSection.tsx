@@ -7,7 +7,7 @@ type SectionContext = Record<string, any>
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
   const [extraActionsOrderId, setExtraActionsOrderId] = useState<number | null>(null)
-  const [priceDraft, setPriceDraft] = useState<{order: any; itemId: number; price: string; error: string} | null>(null)
+  const [priceDraft, setPriceDraft] = useState<{order: any; prices: Record<number,string>; error: string} | null>(null)
   const [oldExchangePriceDraft,setOldExchangePriceDraft] = useState<{
     order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
   } | null>(null)
@@ -20,6 +20,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const {
     correctMistakenOrderShipping,
     correctRecordedOrderItemPrice,
+    correctRecordedOrderItemPrices,
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
     loadExchangeCancellationPreview,
@@ -62,6 +63,25 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     orderPageInfo,
     workspaceSector = 'orders',
   } = ctx
+
+  const priceItems = priceDraft ? (priceDraft.order.items || []).filter(
+    (item:any)=>Number(item.id)>0 && Number(item.quantity)>0,
+  ) : []
+  const priceChanges = priceItems.flatMap((item:any)=>{
+    const nextText = priceDraft?.prices[Number(item.id)] ?? ''
+    const next = Number(nextText)
+    return nextText.trim() !== '' && Number.isSafeInteger(next) && next >= 0
+      && next !== Number(item.unitPrice || 0) ? [{item,unitPrice:next}] : []
+  })
+  const priceDifference = priceChanges.reduce((sum:number,change:any)=>
+    sum + Number(change.item.quantity || 0) *
+      (change.unitPrice - Number(change.item.unitPrice || 0)),0)
+  const priceHasInvalid = priceItems.some((item:any)=>{
+    const value = priceDraft?.prices[Number(item.id)] ?? ''
+    return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
+  })
+  const deleteReasons = adminDeleteDraft?.preview
+    ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])] : []
 
   const kaspiAverageCheck = summary.count > 0 ? Math.round(summary.total / summary.count) : 0
 
@@ -445,7 +465,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     event.stopPropagation()
                                     const first = order.items.find((item) => Number(item.quantity) > 0 && Number(item.id) > 0)
                                     if (!first) return
-                                    setPriceDraft({order, itemId: Number(first.id), price: String(first.unitPrice ?? 0), error: ''})
+                                    setPriceDraft({order,
+                                      prices: Object.fromEntries(order.items
+                                        .filter((item:any)=>Number(item.id)>0 && Number(item.quantity)>0)
+                                        .map((item:any)=>[Number(item.id),String(item.unitPrice ?? 0)])),
+                                      error: '',
+                                    })
                                   }}>
                                     Исправить записанную цену
                                   </button>
@@ -747,49 +772,85 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
               ) : null}
               {priceDraft ? (
                 <div className="modal-backdrop" role="presentation"
-                  onMouseDown={(event) => { if (event.target === event.currentTarget && !savingOrder) setPriceDraft(null) }}>
-                  <form className="modal-card" role="dialog" aria-modal="true" aria-label="Исправить записанную цену" style={{maxWidth: 560}}
-                    onSubmit={(event) => { event.preventDefault(); void (async () => {
-                      const item = priceDraft.order.items.find((entry: any) => Number(entry.id) === priceDraft.itemId)
-                      const next = Number(priceDraft.price)
-                      if (!item || !Number.isSafeInteger(next) || next < 0) {
-                        setPriceDraft((current) => current ? {...current, error: 'Укажите целую цену от 0 ₸.'} : current)
+                  onMouseDown={(event)=>{if(event.target===event.currentTarget&&!savingOrder)setPriceDraft(null)}}>
+                  <form className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Исправить цены в заказе"
+                    style={{maxWidth:680,maxHeight:'min(88vh,760px)',overflowY:'auto'}}
+                    onSubmit={(event)=>{event.preventDefault();void(async()=>{
+                      if(priceHasInvalid||!priceChanges.length){
+                        setPriceDraft((current)=>current?{...current,error:priceHasInvalid
+                          ?'Для каждой позиции укажите целую цену от 0 ₸.':'Измените цену хотя бы одной позиции.'}:current)
                         return
                       }
-                      const done = await correctRecordedOrderItemPrice(priceDraft.order, item, next)
-                      if (done) { setPriceDraft(null); setExtraActionsOrderId(null) }
-                    })() }}>
+                      // A linked V2 line is intentionally NOT bundled with any
+                      // other correction. The server checks this independently.
+                      const done=priceChanges.length===1
+                        ?await correctRecordedOrderItemPrice(priceDraft.order,priceChanges[0].item,priceChanges[0].unitPrice)
+                        :await correctRecordedOrderItemPrices(priceDraft.order,priceChanges)
+                      if(done){setPriceDraft(null);setExtraActionsOrderId(null)}
+                      else setPriceDraft((current)=>current?{...current,
+                        error:'Не удалось сохранить. Проверьте сообщение об ошибке и обновите заказ.'}:current)
+                    })()}}>
                     <div className="modal-head">
                       <div>
-                        <div className="card-label">Исправление ошибки записи</div>
+                        <div className="card-label">Исправление записанных цен</div>
                         <h3>{priceDraft.order.external_id}</h3>
                       </div>
-                      <button className="ghost compact" type="button" disabled={savingOrder} onClick={() => setPriceDraft(null)}>Закрыть</button>
+                      <button className="ghost compact" type="button" disabled={savingOrder}
+                        onClick={()=>setPriceDraft(null)}>Закрыть</button>
                     </div>
-                    <p>Исправляется только цена продажи в заказе. Склад, оплата, обмен и возврат не меняются.</p>
-                    <label className="form-field">
-                      <span>Товар</span>
-                      <select value={priceDraft.itemId} disabled={savingOrder} onChange={(event) => {
-                        const itemId = Number(event.target.value)
-                        const selected = priceDraft.order.items.find((entry: any) => Number(entry.id) === itemId)
-                        setPriceDraft((current) => current ? { ...current, itemId, price: String(selected?.unitPrice ?? 0), error: '' } : current)
-                      }}>
-                        {priceDraft.order.items.filter((item: any) => Number(item.quantity) > 0 && Number(item.id) > 0).map((item: any) => (
-                          <option key={item.id} value={item.id}>{item.productName || 'Товар'} · {item.size || '—'} · {item.color || '—'} · ×{item.quantity}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="form-field">
-                      <span>Правильная цена за 1 шт. (₸)</span>
-                      <input type="number" min="0" step="1" inputMode="numeric" required value={priceDraft.price}
-                        disabled={savingOrder} onChange={(event) => setPriceDraft((current) => current ? {...current, price: event.target.value, error: ''} : current)} />
-                    </label>
+                    <p>Измените нужные цены. Неизменённые позиции останутся как были.</p>
+                    <div style={{display:'grid',gap:12,margin:'14px 0'}}>
+                      {priceItems.map((item:any)=>{
+                        const id=Number(item.id)
+                        const current=Number(item.unitPrice||0)
+                        const changed=priceDraft.prices[id]?.trim()!=='' &&
+                          Number(priceDraft.prices[id])!==current
+                        return (
+                          <div key={id} style={{
+                            display:'flex',flexWrap:'wrap',gap:12,alignItems:'center',
+                            padding:'12px 14px',border:'1px solid var(--border, #dce1e8)',
+                            borderRadius:12,background:changed?'var(--surface-soft, #f2f6ff)':undefined,
+                          }}>
+                            <div style={{flex:'1 1 240px',minWidth:0}}>
+                              <strong style={{overflowWrap:'anywhere'}}>{item.productName||'Товар'}</strong>
+                              <div className="muted" style={{fontSize:13}}>
+                                {[item.size,item.color].filter(Boolean).join(' · ')||'Без характеристик'} · {Number(item.quantity)} шт.
+                              </div>
+                              <div className="muted" style={{fontSize:13}}>Было: {formatMoney(current)} ₸ / шт.</div>
+                            </div>
+                            <label className="form-field" style={{flex:'0 1 170px',minWidth:140,margin:0}}>
+                              <span>Новая цена, ₸ / шт.</span>
+                              <input aria-label={`Новая цена: ${item.productName||'Товар'}`}
+                                type="number" min="0" step="1" inputMode="numeric" required
+                                value={priceDraft.prices[id]??''} disabled={savingOrder}
+                                onChange={(event)=>setPriceDraft((draft)=>draft?{
+                                  ...draft,prices:{...draft.prices,[id]:event.target.value},error:'',
+                                }:draft)} />
+                            </label>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="muted" style={{margin:'4px 0'}}>
+                      Изменено позиций: <strong>{priceChanges.length}</strong>
+                      {priceChanges.length ? ` · Разница по заказу: ${priceDifference>0?'+':''}${formatMoney(priceDifference)} ₸` : ''}
+                    </p>
+                    {Number(priceDraft.order.committed_exchange_count||0)>0 ? (
+                      <p className="muted">Если цена позиции связана с обменом, исправьте её отдельно.
+                        Проверка истории выполняется при сохранении.</p>
+                    ) : null}
                     {priceDraft.error ? <p role="alert" className="error">{priceDraft.error}</p> : null}
-                    <p className="muted">Самостоятельный возврат не нужно отменять. Для товара из обмена V2 исправление разрешается только при однозначной связи и без последующих зависимых операций. Деньги, склад и исходная история обмена не изменяются.</p>
                     <div className="toolbar-actions">
-                      <button className="secondary" type="button" disabled={savingOrder} onClick={() => setPriceDraft(null)}>Отмена</button>
-                      <button className="primary" type="submit" disabled={savingOrder}>{savingOrder ? 'Сохраняю…' : 'Исправить цену'}</button>
+                      <button className="secondary" type="button" disabled={savingOrder}
+                        onClick={()=>setPriceDraft(null)}>Отмена</button>
+                      <button className="primary" type="submit"
+                        disabled={savingOrder||priceHasInvalid||priceChanges.length===0}>
+                        {savingOrder?'Сохраняю…':`Сохранить изменений: ${priceChanges.length}`}
+                      </button>
                     </div>
+                    <p className="muted" style={{fontSize:12}}>
+                      Склад, оплаты и история обменов не меняются. Цены сохраняются только после проверки заказа сервером.</p>
                   </form>
                 </div>
               ) : null}
