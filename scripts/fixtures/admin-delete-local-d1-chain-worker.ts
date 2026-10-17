@@ -144,7 +144,7 @@ export default {
           results(env.DB,'SELECT id,status FROM inventory_lifecycle_events WHERE order_id=42 ORDER BY id'),
           results(env.DB,"SELECT request_id,operation_type,status,target_type,target_id FROM critical_operations WHERE operation_type IN ('return_cancel','exchange_set_cancel') ORDER BY request_id"),
           results(env.DB,"SELECT step_index,operation_type,operation_id,status FROM admin_order_delete_saga_steps WHERE saga_request_id='REAL_CHAIN_42' ORDER BY step_index"),
-          results(env.DB,"SELECT request_id,operation_type,status,target_type,target_id FROM critical_operations WHERE operation_type='order_edit' ORDER BY request_id"),
+          results(env.DB,"SELECT request_id,operation_type,status,target_type,target_id FROM critical_operations WHERE operation_type='order_edit' AND request_id LIKE '%:final:order' ORDER BY request_id"),
           results(env.DB,"SELECT id,amount FROM payments WHERE order_id=42 ORDER BY id"),
         ])
         return Response.json({order,items,exchanges,ret,stock,reservations,events,critical,sagaSteps,finalOperations,payments})
