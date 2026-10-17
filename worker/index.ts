@@ -1763,6 +1763,10 @@ export default {
 
       const orderDeleteMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete$/);
       if (orderDeleteMatch && request.method === 'POST') {
+        // Only the authenticated administrator may delete an order, even if a
+        // non-admin client submits this route directly.
+        const denied = requireAdminUser(authUser);
+        if (denied) return denied;
         const id = toInt(orderDeleteMatch[1], 0);
         const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued' }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
