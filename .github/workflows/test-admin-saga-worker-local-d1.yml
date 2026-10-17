@@ -33,13 +33,13 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Actual deleteOrderSafely in local Worker D1, after chained cancellations and lost reply
+        run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --real
       - name: Real Return handler inside isolated workerd Worker + local D1
         run: node scripts/test-admin-saga-worker-local-d1-r1.mjs
       # Also verifies fail-closed finalization, lost final checkpoint, and identical replay.
       - name: Actual Return plus 2 V2 Exchanges through durable saga on local D1
         run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs
-      - name: Actual deleteOrderSafely in local Worker D1, after chained cancellations and lost reply
-        run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --real
       - name: Concurrent admin real-delete attempts, compare-and-swap + identical retry
         run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --race
       - name: 0110/0111 local D1 migration validation
