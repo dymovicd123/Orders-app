@@ -161,8 +161,14 @@ assert.equal(await driver.verifyReconciled(ex),true)
 
 // An inventory event still applied after handler completion is NOT safe.
 sql.exec("INSERT INTO inventory_lifecycle_events VALUES(10,'exchange',200,42,'applied')")
-await assert.rejects(()=>driver.verifyReconciled(ex),/применённые складские движения/)
+await assert.rejects(()=>driver.verifyReconciled(ex),/проведённые физические складские движения|применённые складские движения/)
 sql.exec("UPDATE inventory_lifecycle_events SET status='cancelled' WHERE id=10")
+assert.equal(await driver.verifyReconciled(ex),true)
+// A sibling operation can turn physical during the same saga step. It must
+// not silently pass an otherwise valid completed Exchange checkpoint.
+sql.exec("INSERT INTO inventory_lifecycle_events VALUES(11,'return',999,42,'applied')")
+await assert.rejects(()=>driver.verifyReconciled(ex),/проведённые физические складские движения/)
+sql.exec("UPDATE inventory_lifecycle_events SET status='cancelled' WHERE id=11")
 assert.equal(await driver.verifyReconciled(ex),true)
 
 // Source-level assertion ensures only the genuine production handlers are

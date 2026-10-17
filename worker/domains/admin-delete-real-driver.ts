@@ -200,6 +200,10 @@ export function createRealAdminDeleteCancellationDriver(
       const row=await readStepTarget(db,step)
       if(cleanText(row.status)!=='cancelled')return false
       await assertCriticalOwnedBySaga(db,step,true)
+      // Recheck physical facts AFTER the handler as well as before it.
+      // A concurrent inbound or confirmed handover on a sibling operation
+      // must stop the saga cursor even if this step itself reconciled.
+      await verifyNoIssuedItems(db,step)
       await verifyNoMoneyMutation(db,step)
       await verifyOrderAndInventoryFacts(db,step)
       return true
