@@ -78,7 +78,7 @@ check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAft
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedHandoverUx.appAfter
-  : file === 'worker/domains/orders-write.ts' ? '38d64e6c9e547d8566ea976300197a530a83be88'
+  : file === 'worker/domains/orders-write.ts' ? '209742e25a24f5fa538c90bdda341152038066ba'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -112,6 +112,13 @@ const stage04B2Extensions={
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
   'src/styles/stage04-workshop-settlements.css':'6796899d63de3e2183a95605b9280764c9e64b48',
 }
+const reviewedExchangePriceFiles={
+  'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'297101d048962c3696e2531575a84733e2253016',
+  'worker/domains/exchange-price-history.ts':'04b102e651db1b081d89e35af5df69b30511f2d5',
+}
+for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
+
 const reviewedEthnoNewFiles={
   'migrations/0109_v72_catalog_manual_movement_finalization.sql':'06314e11b70918ae5a133b076f397fbbb27d0511',
   'worker/domains/catalog-manual-history-finalization.ts':'ce672c90cd6d223a853aa827bb5bea466c695624',
@@ -180,7 +187,7 @@ const priorExchangeModules=[
   {
     "file": "worker/domains/returns-exchanges.ts",
     "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
-    "after": "14327c966fceb9f42f49c1fc39148e8081c4a19f",
+    "after": "9f6443ef335a84f989108fc50135321103956f4a",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
   },
   {
@@ -290,6 +297,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
+  ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
@@ -370,6 +378,7 @@ try{
     ...Object.entries(manifest.addedFiles || {}),
     ...Object.entries(stage04B2Extensions),
     ...Object.entries(reviewedEthnoNewFiles),
+    ...Object.entries(reviewedExchangePriceFiles),
   ]){
     const from=path.resolve(relative)
     check(gitBlob(fs.readFileSync(from,'utf8'))===reviewedCatalogAdded(relative,expected),'New module drifted: '+relative)
