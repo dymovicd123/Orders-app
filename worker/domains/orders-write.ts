@@ -2224,7 +2224,7 @@ export async function updateOrderCritical(
               AND COALESCE(comment,'')=? AND total_amount=? AND received_amount=?
               AND debt_amount=? AND COALESCE(return_amount,0)=?
               AND COALESCE(shipping_status,'')=? AND COALESCE(order_status,'')=?
-            )` ).bind(id,m.orderDate,m.customerId,m.customerName,m.customerPhone,m.city,m.deliveryType,m.comment,
+            )`).bind(id,m.orderDate,m.customerId,m.customerName,m.customerPhone,m.city,m.deliveryType,m.comment,
               m.totalAmount,m.receivedAmount,m.debtAmount,m.returnAmount,
               m.shippingStatus,m.orderStatus),
             // Creating a new phone identity, when needed, is part of the CAS
