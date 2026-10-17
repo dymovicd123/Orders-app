@@ -8,9 +8,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
   const [extraActionsOrderId, setExtraActionsOrderId] = useState<number | null>(null)
   const [priceDraft, setPriceDraft] = useState<{order: any; itemId: number; price: string; error: string} | null>(null)
+  const [oldExchangePriceDraft,setOldExchangePriceDraft] = useState<{
+    order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
+  } | null>(null)
   const {
     correctMistakenOrderShipping,
     correctRecordedOrderItemPrice,
+    loadRetiredExchangePriceOptions,
+    correctRetiredExchangePrice,
     deleteOrderAsAdmin,
     expandedOrderItemCounts,
     filters,
@@ -437,6 +442,29 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     Исправить записанную цену
                                   </button>
                                 ) : null}
+                                {extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
+                                  <button className="secondary compact" type="button" onClick={(event) => {
+                                    event.stopPropagation()
+                                    setOldExchangePriceDraft({order,items:[],itemId:0,price:'',error:'',loading:true})
+                                    void (async()=>{
+                                      try {
+                                        const items=await loadRetiredExchangePriceOptions(order)
+                                        if(!items.length) {
+                                          setOldExchangePriceDraft({order,items:[],itemId:0,price:'',loading:false,
+                                            error:'В этом заказе нет полностью выведенных старых позиций обмена, которые можно исправить без проверки цепочки.'})
+                                          return
+                                        }
+                                        setOldExchangePriceDraft({order,items,itemId:items[0].orderItemId,
+                                          price:String(items[0].currentRecordedUnitPrice),error:'',loading:false})
+                                      } catch(error) {
+                                        setOldExchangePriceDraft({order,items:[],itemId:0,price:'',loading:false,
+                                          error:error instanceof Error?error.message:'Не удалось загрузить историю обмена.'})
+                                      }
+                                    })()
+                                  }}>
+                                    Исправить цену товара до обмена
+                                  </button>
+                                ) : null}
                               </div>
                             ) : null}
                             {isAdmin && !retainedOnly && !archived ? (
@@ -487,6 +515,69 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" disabled={busy || !orderPageInfo?.hasMore} onClick={() => void changeOrderPage('next')}>Дальше</button>
                 </div>
               </div>
+              {oldExchangePriceDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={(event)=>{if(event.target===event.currentTarget&&!savingOrder)setOldExchangePriceDraft(null)}}>
+                  <form className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Исправление цены до обмена" style={{maxWidth:560}}
+                    onSubmit={(event)=>{event.preventDefault();void (async()=>{
+                      if(!oldExchangePriceDraft||oldExchangePriceDraft.loading)return
+                      const item=oldExchangePriceDraft.items.find((x:any)=>x.orderItemId===oldExchangePriceDraft.itemId)
+                      const next=Number(oldExchangePriceDraft.price)
+                      if(!item||!Number.isSafeInteger(next)||next<0){
+                        setOldExchangePriceDraft((d)=>d?{...d,error:'Укажите целую корректную цену.'}:d);return
+                      }
+                      const ok=await correctRetiredExchangePrice(oldExchangePriceDraft.order,item,next)
+                      if(ok){setOldExchangePriceDraft(null);setExtraActionsOrderId(null)}
+                    })()}}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Исправление исторической записи</div>
+                        <h3>{oldExchangePriceDraft.order.external_id}</h3>
+                      </div>
+                      <button type="button" className="ghost compact" disabled={savingOrder}
+                        onClick={()=>setOldExchangePriceDraft(null)}>Закрыть</button>
+                    </div>
+                    {oldExchangePriceDraft.loading?<p>Загружаю связанные позиции обмена…</p>:null}
+                    {oldExchangePriceDraft.error?<p role="alert" className="error">{oldExchangePriceDraft.error}</p>:null}
+                    {oldExchangePriceDraft.items.length>0?(
+                      <>
+                        <label className="form-field">
+                          <span>Старая позиция обмена</span>
+                          <select value={oldExchangePriceDraft.itemId} disabled={savingOrder}
+                            onChange={(event)=>{
+                              const itemId=Number(event.target.value)
+                              const item=oldExchangePriceDraft.items.find((x:any)=>x.orderItemId===itemId)
+                              setOldExchangePriceDraft((d)=>d?{...d,itemId,
+                                price:String(item?.currentRecordedUnitPrice??0),error:''}:d)
+                            }}>
+                            {oldExchangePriceDraft.items.map((item:any)=>
+                              <option key={item.exchangeId+':'+item.orderItemId} value={item.orderItemId}>
+                                {item.productName} · {item.size||'—'} · {item.color||'—'} (обмен #{item.exchangeId})
+                              </option>
+                            )}
+                          </select>
+                        </label>
+                        <p className="muted">Исправленная цена относится к старой позиции обмена, которая сейчас отсутствует в заказе. Деньги, склад и сам обмен не меняются.</p>
+                        <label className="form-field">
+                          <span>Правильная цена за 1 шт. (₸)</span>
+                          <input type="number" min="0" step="1" required
+                            disabled={savingOrder} value={oldExchangePriceDraft.price}
+                            onChange={(event)=>setOldExchangePriceDraft((d)=>d?{...d,price:event.target.value,error:''}:d)}/>
+                        </label>
+                        <p className="muted">При последующей отмене обмена система проверит, допустимо ли восстановить товар по этой цене без несоответствия оплат и возвратов.</p>
+                      </>
+                    ):null}
+                    <div className="toolbar-actions">
+                      <button type="button" className="secondary" disabled={savingOrder}
+                        onClick={()=>setOldExchangePriceDraft(null)}>Отмена</button>
+                      <button className="primary" type="submit" disabled={savingOrder||oldExchangePriceDraft.loading||!oldExchangePriceDraft.items.length}>
+                        {savingOrder?'Сохраняю…':'Сохранить исправление'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
               {priceDraft ? (
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={(event) => { if (event.target === event.currentTarget && !savingOrder) setPriceDraft(null) }}>
