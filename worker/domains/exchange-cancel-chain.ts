@@ -26,13 +26,13 @@ export async function previewExchangeCancellationChain(
   const orderId=toInt(orderIdRaw,0), exchangeId=toInt(exchangeIdRaw,0)
   if(!orderId||!exchangeId)throw new CriticalOperationConflictError('Укажите заказ и обмен для проверки цепочки.')
   const exchangeRows=await db.prepare(
-    \`SELECT e.id,e.refund_return_id,e.old_order_item_id,e.new_order_item_id,
+    `SELECT e.id,e.refund_return_id,e.old_order_item_id,e.new_order_item_id,
       EXISTS(SELECT 1 FROM critical_operations op
         WHERE op.operation_type='exchange_set_create' AND op.target_type='exchange'
           AND op.target_id=e.id) AS is_v2
      FROM exchanges e WHERE e.order_id=?
        AND COALESCE(e.status,'completed')<>'cancelled'
-     ORDER BY e.id ASC LIMIT 201\`
+     ORDER BY e.id ASC LIMIT 201`
   ).bind(orderId).all<Record<string,unknown>>()
   const exchanges=exchangeRows.results||[]
   if(exchanges.length>200)throw new CriticalOperationConflictError('Цепочка обменов слишком большая. Требуется отдельная проверка.')
@@ -49,10 +49,10 @@ export async function previewExchangeCancellationChain(
   if(!nodes.has(root))throw new CriticalOperationConflictError('Обмен не найден в активных обменах этого заказа.')
 
   const itemRows=await db.prepare(
-    \`SELECT ei.exchange_id,ei.order_item_id,ei.role
+    `SELECT ei.exchange_id,ei.order_item_id,ei.role
      FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
      WHERE e.order_id=? AND COALESCE(e.status,'completed')<>'cancelled'
-     ORDER BY e.id ASC,ei.id ASC\`
+     ORDER BY e.id ASC,ei.id ASC`
   ).bind(orderId).all<Record<string,unknown>>()
   const newItemOwners=new Map<number,Set<number>>()
   const oldItemConsumers=new Map<number,Set<number>>()
@@ -66,12 +66,12 @@ export async function previewExchangeCancellationChain(
   }
 
   const returnRows=await db.prepare(
-    \`SELECT r.id,e.id AS generated_by_exchange_id
+    `SELECT r.id,e.id AS generated_by_exchange_id
      FROM returns r LEFT JOIN exchanges e
        ON e.refund_return_id=r.id AND e.order_id=r.order_id
        AND COALESCE(e.status,'completed')<>'cancelled'
      WHERE r.order_id=? AND COALESCE(r.status,'completed')<>'cancelled'
-     ORDER BY r.id ASC LIMIT 201\`
+     ORDER BY r.id ASC LIMIT 201`
   ).bind(orderId).all<Record<string,unknown>>()
   const returns=returnRows.results||[]
   if(returns.length>200)throw new CriticalOperationConflictError('У заказа слишком много возвратов для автоматической проверки.')
@@ -86,10 +86,10 @@ export async function previewExchangeCancellationChain(
     if(!generated)nodes.set('r'+id,{type:'return',id})
   }
   const returnItems=await db.prepare(
-    \`SELECT ri.return_id,ri.order_item_id
+    `SELECT ri.return_id,ri.order_item_id
      FROM return_items ri JOIN returns r ON r.id=ri.return_id
      WHERE r.order_id=? AND COALESCE(r.status,'completed')<>'cancelled'
-     ORDER BY ri.return_id ASC,ri.order_item_id ASC\`
+     ORDER BY ri.return_id ASC,ri.order_item_id ASC`
   ).bind(orderId).all<Record<string,unknown>>()
   const returnsByItem=new Map<number,Set<number>>()
   for(const x of returnItems.results||[]){
