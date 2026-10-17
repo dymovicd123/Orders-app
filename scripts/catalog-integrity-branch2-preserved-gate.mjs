@@ -74,10 +74,22 @@ const reviewedHandoverUx = {
   tableAfter: '52f95261a9f63eaa9c4e7e0a3e634e95896ac730',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
-check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
+// Only the new order-list UI/App price submission is changed. Freeze both
+// accepted previous blobs; do not alter the immutable Stage04 historical suite.
+const reviewedBatchPriceUx={
+  previousApp:reviewedHandoverUx.appAfter,
+  previousTable:reviewedHandoverUx.tableAfter,
+  currentApp:'b1928fcc44a23260087adb4a4df294bd11444a84',
+  currentTable:'a1560c784f266d7ff0ed83a66319ae64a4127ec7',
+}
+check(reviewedBatchPriceUx.previousApp==='cc2be798b049f4063848449c3fec4460a380ac2e' && reviewedBatchPriceUx.previousTable==='52f95261a9f63eaa9c4e7e0a3e634e95896ac730',
+  'Previous accepted orders UI identity changed')
+check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedBatchPriceUx.currentApp,
+  'Unreviewed batch-price frontend drift')
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedBatchPriceUx.currentTable,
+  'Unreviewed delete-preview frontend drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedHandoverUx.appAfter
+  ? reviewedBatchPriceUx.currentApp
   : file === 'worker/domains/orders-write.ts' ? 'edfcd173c02adb7a448ba759935a0348d144b95d'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
@@ -301,6 +313,7 @@ for(const entry of inventorySafetyFixtures){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
   ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
@@ -478,7 +491,7 @@ try{
   }
   const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
   const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
-  check(gitBlob(orderTableCurrent)===reviewedHandoverUx.tableAfter,'Current order list handover UI changed')
+  check(gitBlob(orderTableCurrent)===reviewedBatchPriceUx.currentTable,'Current order list price UX changed')
   // Reconstruct only the previously accepted UI for its immutable historical tests.
   // Independently test and retain the new review-first shipping action in current code.
   const reviewFirstHelp='                            {projection.canShip && order.stock_handover_review_needed ? (\n                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>\n                            ) : null}\n'
@@ -544,7 +557,7 @@ for(const entry of recordedPricePolicyTests)
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order test was not restored: '+entry.file)
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedBatchPriceUx.currentTable,
   'Failed to restore reviewed order list handover UI after historical tests')
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
