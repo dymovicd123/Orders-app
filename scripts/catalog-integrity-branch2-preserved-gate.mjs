@@ -104,7 +104,7 @@ check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc9
 const reviewedOptionalMetadata={
   previousTable:reviewedReferenceDropdownUx.table,
   previousWrite:reviewedMetadataUx.write,
-  table:'ffb79bc905b229397a3174c76583063c4a866e2b',
+  table:'6c326dc5ba4e0e8b227a070506058967c71540ec',
   write:'e157deed999da92d7207c9bc88a70f4ea662e562',
 }
 check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
@@ -172,14 +172,15 @@ const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
-  'worker/domains/order-delete-preview.ts':'03db5cbfb9c8c40f15aa08a9de4c3eb6634e76b6',
+  'worker/domains/order-delete-preview.ts':'663c5d6cbc89242c4224f2e1daa5ae6c20670cb2',
   'worker/domains/order-delete-chain-plan.ts':'410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
   'worker/domains/admin-delete-saga.ts':'35d9d2b07c47eb203e19c071888c49ee77e9729a',
   'worker/domains/admin-delete-real-driver.ts':'9eb58e24e6bd26a512494ab53f345a89bb597c81',
-  'worker/domains/admin-delete-physical.ts':'bec6baeb0d3424719616ceb73e1aaf739b723da4',
-  'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'f8e8c5349f2b5bbc577ede6a52105774583afd44',
+  'worker/domains/admin-delete-physical.ts':'fd97f102d73d463865e2be5cb1f26013daea8d74',
+  'scripts/test-admin-delete-compensated-lifecycle-20261017.mjs':'7e87937176ce7da383dcea8b185e99a4845e72da',
+  'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'af58232a739d1a46330964c61925a386955d0ca2',
   'worker/domains/admin-delete-impact.ts':'eb5461a761519e21c700c65cabe2d97e3cf96988',
   'scripts/test-admin-delete-exchange-details-20261017.mjs':'b30f28e597ed21ff9b069388415d2aa3bed4672c',
   'worker/domains/admin-delete-execute.ts':'356701d33688e9bba08fa7855f56b9319b862d5f',
@@ -261,7 +262,7 @@ const priorExchangeModules=[
   {
     "file": "worker/domains/lifecycle.ts",
     "before": "25f08471020220883107de8ee02b26bc774eb29a",
-    "after": "039b84adc58aadefc6ded14b6dd9fa73a6aeb847",
+    "after": "25230a8f76b0717998c2492084b1a7b34f55fabc",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/lifecycle.ts"
   }
 ];
@@ -366,6 +367,7 @@ const tests=[
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-admin-delete-exchange-details-20261017.mjs',true],
   ['scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs',true],
+  ['scripts/test-admin-delete-compensated-lifecycle-20261017.mjs',true],
   ['scripts/test-safe-order-metadata-edit-20261017.mjs',false],
   ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',false],
   ['scripts/test-metadata-reference-dropdown-20261017.mjs',false],
@@ -488,6 +490,7 @@ try{
   for(const [relative,expected] of [
     ['worker/domains/admin-delete-finalize.ts','54d60e732b09985368d9b47bd097281fa9836c31'],
     ['worker/domains/admin-delete-final-driver.ts','60c3fe406d6e52dfff4ef20cd54230cf06923968'],
+    ['worker/domains/admin-delete-physical.ts','fd97f102d73d463865e2be5cb1f26013daea8d74'],
   ]){
     const from=path.resolve(relative)
     check(gitBlob(fs.readFileSync(from,'utf8'))===expected,
