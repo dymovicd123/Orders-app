@@ -636,6 +636,50 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 : 'Нужно уточнение перед удалением'}</strong>
                           {adminDeleteDraft.progress ? <p role="status">Выполнено: {adminDeleteDraft.progress}</p> : null}
                         </div>
+                        {physicalQuestionRequired ? (
+                          <section style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:14,marginTop:16}}>
+                            <h4>Товар действительно передавался клиенту?</h4>
+                            <p className="muted">
+                              {adminDeleteDraft.preview?.requiresPhysicalFact
+                                ||adminDeleteDraft.preview?.appliedStockReview?.appliedCount>0
+                                ?'В учёте есть движения товара или отметки выдачи.'
+                                :'В учёте нет подтверждённой выдачи.'}
+                              {' '}Перед удалением подтвердите, что произошло на самом деле.
+                            </p>
+                            <div style={{display:'grid',gap:10}}>
+                              <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
+                                <input type="radio" name="admin-delete-physical-answer"
+                                  checked={adminDeleteDraft.physicalAnswer==='not_issued'}
+                                  disabled={adminDeleteDraft.submitting}
+                                  onChange={()=>setAdminDeleteDraft(d=>d?{...d,physicalAnswer:'not_issued',error:''}:d)}/>
+                                <span><strong>Нет, товар не передавался</strong>
+                                  <span className="muted" style={{display:'block'}}>
+                                    Проверить и аннулировать ошибочные складские движения, не дублируя уже выполненные корректировки.
+                                  </span></span>
+                              </label>
+                              <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
+                                <input type="radio" name="admin-delete-physical-answer"
+                                  checked={adminDeleteDraft.physicalAnswer==='issued'}
+                                  disabled={adminDeleteDraft.submitting}
+                                  onChange={()=>setAdminDeleteDraft(d=>d?{...d,physicalAnswer:'issued',error:''}:d)}/>
+                                <span><strong>Да, товар был передан клиенту</strong></span>
+                              </label>
+                            </div>
+                            {adminDeleteDraft.physicalAnswer==='issued'?(
+                              <div role="status" style={{marginTop:12}}>
+                                Если клиент действительно получил товар, обычно удалять заказ не нужно.
+                                Исправьте ошибочные реквизиты или цену через редактирование заказа.
+                                При фактическом возврате товара используйте операцию возврата.
+                                <div style={{marginTop:10}}>
+                                  <button type="button" className="secondary compact"
+                                    onClick={()=>{const order=adminDeleteDraft.order;setAdminDeleteDraft(null);handleEditOrder(order)}}>
+                                    Перейти к редактированию заказа
+                                  </button>
+                                </div>
+                              </div>
+                            ):null}
+                          </section>
+                        ):null}
                         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,225px),1fr))',gap:14}}>
                           <section>
                             <h4>Финансы</h4>
@@ -790,50 +834,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <ul>{deleteReasons.map((reason:string,i:number)=><li key={i}>{reason}</li>)}</ul>
                           </section>
                         ) : null}
-                        {physicalQuestionRequired ? (
-                          <section style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:14,marginTop:16}}>
-                            <h4>Товар действительно передавался клиенту?</h4>
-                            <p className="muted">
-                              {adminDeleteDraft.preview?.requiresPhysicalFact
-                                ||adminDeleteDraft.preview?.appliedStockReview?.appliedCount>0
-                                ?'В учёте есть движения товара или отметки выдачи.'
-                                :'В учёте нет подтверждённой выдачи.'}
-                              {' '}Перед удалением подтвердите, что произошло на самом деле.
-                            </p>
-                            <div style={{display:'grid',gap:10}}>
-                              <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
-                                <input type="radio" name="admin-delete-physical-answer"
-                                  checked={adminDeleteDraft.physicalAnswer==='not_issued'}
-                                  disabled={adminDeleteDraft.submitting}
-                                  onChange={()=>setAdminDeleteDraft(d=>d?{...d,physicalAnswer:'not_issued',error:''}:d)}/>
-                                <span><strong>Нет, товар не передавался</strong>
-                                  <span className="muted" style={{display:'block'}}>
-                                    Проверить и аннулировать ошибочные складские движения, не дублируя уже выполненные корректировки.
-                                  </span></span>
-                              </label>
-                              <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
-                                <input type="radio" name="admin-delete-physical-answer"
-                                  checked={adminDeleteDraft.physicalAnswer==='issued'}
-                                  disabled={adminDeleteDraft.submitting}
-                                  onChange={()=>setAdminDeleteDraft(d=>d?{...d,physicalAnswer:'issued',error:''}:d)}/>
-                                <span><strong>Да, товар был передан клиенту</strong></span>
-                              </label>
-                            </div>
-                            {adminDeleteDraft.physicalAnswer==='issued'?(
-                              <div role="status" style={{marginTop:12}}>
-                                Если клиент действительно получил товар, обычно удалять заказ не нужно.
-                                Исправьте ошибочные реквизиты или цену через редактирование заказа.
-                                При фактическом возврате товара используйте операцию возврата.
-                                <div style={{marginTop:10}}>
-                                  <button type="button" className="secondary compact"
-                                    onClick={()=>{const order=adminDeleteDraft.order;setAdminDeleteDraft(null);handleEditOrder(order)}}>
-                                    Перейти к редактированию заказа
-                                  </button>
-                                </div>
-                              </div>
-                            ):null}
-                          </section>
-                        ):null}
                         <p className="muted" style={{fontSize:13}}>
                           Это аннулирование учётной записи и связанных проводок. Оно не означает
                           автоматическую физическую передачу денег или товара клиенту.
