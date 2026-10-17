@@ -14,7 +14,7 @@ sql.exec([
  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,inventory_source TEXT,variant_id INTEGER)",
  "CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER)",
  "CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,status TEXT,response_json TEXT,target_type TEXT,target_id INTEGER,request_fingerprint TEXT)",
- "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,operation_type TEXT,operation_id INTEGER,status TEXT)",
+ "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,operation_type TEXT,operation_id INTEGER,order_id INTEGER,status TEXT)",
 ].join(';')+';')
 sql.exec([
  "INSERT INTO orders VALUES(42,'active','not_sent','itemized_v1',20000,0,0,20000)",
@@ -56,6 +56,19 @@ const driver=createRealAdminDeleteCancellationDriver(db,{
 })
 const ret={orderId:42,sagaRequestId:'ADMIN_DEL_REQ_42',cancelRequestId:'ADMIN_DEL_REQ_42:return:400',stepIndex:0,type:'return',id:400}
 const ex={orderId:42,sagaRequestId:'ADMIN_DEL_REQ_42',cancelRequestId:'ADMIN_DEL_REQ_42:exchange:200',stepIndex:1,type:'exchange',id:200}
+// A physical movement on a different operation within the SAME order also
+// blocks this saga, even without a shipping/fulfilled marker. The stocktake
+// may already have established a newer physical truth; no handler is invoked.
+sql.exec("INSERT INTO inventory_lifecycle_events VALUES(1,'exchange',999,42,'applied')")
+const originalStock={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()}
+const originalRecorded=recorded.length
+await assert.rejects(()=>driver.preflight(ret),/проведённые физические складские движения/)
+await assert.rejects(()=>driver.preflight(ex),/проведённые физические складские движения/)
+assert.equal(recorded.length,originalRecorded)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()},originalStock)
+assert.equal(sql.prepare("SELECT status FROM returns WHERE id=400").get().status,'completed')
+assert.equal(sql.prepare("SELECT status FROM exchanges WHERE id=200").get().status,'completed')
+sql.exec("DELETE FROM inventory_lifecycle_events WHERE id=1")
 await driver.preflight(ret)
 await driver.cancel(ret)
 assert.equal(await driver.verifyReconciled(ret),true)
@@ -147,7 +160,7 @@ sql.exec("UPDATE order_items SET line_total=5000 WHERE id=2")
 assert.equal(await driver.verifyReconciled(ex),true)
 
 // An inventory event still applied after handler completion is NOT safe.
-sql.exec("INSERT INTO inventory_lifecycle_events VALUES(10,'exchange',200,'applied')")
+sql.exec("INSERT INTO inventory_lifecycle_events VALUES(10,'exchange',200,42,'applied')")
 await assert.rejects(()=>driver.verifyReconciled(ex),/применённые складские движения/)
 sql.exec("UPDATE inventory_lifecycle_events SET status='cancelled' WHERE id=10")
 assert.equal(await driver.verifyReconciled(ex),true)
