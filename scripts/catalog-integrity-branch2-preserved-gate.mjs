@@ -207,6 +207,28 @@ const orderStockHintUi={
 check(gitBlob(fs.readFileSync(orderStockHintUi.file,'utf8'))===orderStockHintUi.after,'Current order shortage UI drift')
 check(gitBlob(fs.readFileSync(orderStockHintUi.fixture,'utf8'))===orderStockHintUi.before,'Historical order shortage UI fixture drift')
 
+// The new policy allows narrow recorded-price corrections for managers and
+// reserves whole-order deletion for admin. Preserve the old test sources only
+// during byte-exact historical replay; the live policies are verified first.
+const recordedPricePolicyTests=[
+  {
+    file:'scripts/test-order-edit-autonomy.mjs',
+    fixture:'scripts/fixtures/recorded-price-20261017/test-order-edit-autonomy.mjs',
+    before:'1377cb468781e765d6b880673fef7cb2659b61d4',
+    after:'80181003288a7a04ecfeaa07d153fd600de52cdc',
+  },
+  {
+    file:'scripts/test-order-delete-mobility.mjs',
+    fixture:'scripts/fixtures/recorded-price-20261017/test-order-delete-mobility.mjs',
+    before:'24f70e68f044b0ac3a63cd750f2324a350d1da74',
+    after:'2e891bf9223cd17995731e877b326bcc26e35cc8',
+  },
+]
+for(const entry of recordedPricePolicyTests){
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order policy test drift: '+entry.file)
+  check(gitBlob(fs.readFileSync(entry.fixture,'utf8'))===entry.before,'Historical order policy fixture drift: '+entry.file)
+}
+
 // A normal order is not a stocktake. Historical tests must still see the exact
 // approved pre-fix reservation module; the new module is checked independently.
 const orderReservationTruthFix={
@@ -395,6 +417,12 @@ try{
     check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,
       'Cannot stage historical order-delete Worker: '+entry.file)
   }
+  for(const entry of recordedPricePolicyTests){
+    const full=path.resolve(entry.file)
+    saved.set(full,fs.readFileSync(full,'utf8'))
+    fs.writeFileSync(full,fs.readFileSync(entry.fixture,'utf8'))
+    check(gitBlob(fs.readFileSync(full,'utf8'))===entry.before,'Cannot stage historical order test: '+entry.file)
+  }
   const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
   const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
   check(gitBlob(orderTableCurrent)===reviewedHandoverUx.tableAfter,'Current order list handover UI changed')
@@ -459,6 +487,8 @@ for (const entry of historicalDeleteWorker) {
     'Failed to restore reviewed order-delete Worker after historical tests: '+entry.file)
 }
 
+for(const entry of recordedPricePolicyTests)
+  check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order test was not restored: '+entry.file)
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,
