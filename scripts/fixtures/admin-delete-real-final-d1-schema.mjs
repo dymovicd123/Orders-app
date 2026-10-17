@@ -21,6 +21,7 @@ export function localRealFinalSchema(){
     ...add('exchanges',{old_order_item_id:'INTEGER',new_order_item_id:'INTEGER',old_return_source:'TEXT'}),
     ...add('returns',{return_date:'TEXT',comment:'TEXT'}),
     ...add('inventory_lifecycle_events',{event_key:'TEXT'}),
+    ...add('workshop_tasks',{updated_at:'TEXT'}),
     ...add('inventory_reservations',{product_id:'INTEGER',fulfilled_at:'TEXT',created_at:'TEXT'}),
     ...add('inventory_stock',{
       product_id:'INTEGER',product_name_snapshot:'TEXT',gender_snapshot:'TEXT',
