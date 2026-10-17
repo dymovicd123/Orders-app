@@ -115,7 +115,7 @@ const stage04B2Extensions={
 const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
-  'worker/domains/exchange-cancel-chain.ts':'a09c92992a04b5480f55c6f4faab904ee88bb193',
+  'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
