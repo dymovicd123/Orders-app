@@ -632,6 +632,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           <section>
                             <h4>Финансы</h4>
                             <p>Стоимость ошибочного заказа: <strong>{formatMoney(adminDeleteDraft.preview.impact?.saleAmount||0)} ₸</strong></p>
+                            <p>Долг по заказу будет аннулирован: <strong>{formatMoney(adminDeleteDraft.preview.impact?.debtAmount||0)} ₸</strong></p>
                             <p>Аннулируются оплаты: <strong>{formatMoney(adminDeleteDraft.preview.impact?.paymentReversal||0)} ₸</strong></p>
                             <p>Аннулируются возвраты: <strong>{formatMoney(adminDeleteDraft.preview.impact?.refundReversal||0)} ₸</strong></p>
                             <p>Итог корректировки поступлений: <strong>
