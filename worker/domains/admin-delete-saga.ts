@@ -77,6 +77,27 @@ export async function planAdminDeleteSaga(
   if(!plan.allOperationsAccountedFor||plan.manualReviewRequired||plan.blockers.length
     ||plan.steps.length===0||plan.steps.length>100||plan.steps.some(x=>x.requiresManualReview))
     throw new CriticalOperationConflictError('Не все обмены и возвраты имеют однозначные связи. Автоматическая отмена не разрешена.')
+  // Exchange financial transfers may be present even if no original order
+  // payment currently exists. Check the SOURCE operation, not just aggregates.
+  // Until an audited money-event reversal policy passes real D1 E2E, stop.
+  const exchangeCash=await db.prepare(
+    `SELECT id,financial_action,financial_amount,payment_id,refund_return_id
+     FROM exchanges WHERE order_id=?
+       AND (COALESCE(financial_amount,0)<>0
+         OR (COALESCE(financial_action,'none') NOT IN ('none',''))
+         OR payment_id IS NOT NULL)`
+  ).bind(orderId).all<Record<string,unknown>>()
+  if((exchangeCash.results||[]).length)
+    throw new CriticalOperationConflictError('В обмене есть доплата, возврат или связанная финансовая запись. Для такого удаления ещё не подтверждено безопасное сторно.')
+  const pastRefund=await db.prepare(
+    `SELECT id FROM returns WHERE order_id=? AND COALESCE(amount,0)<>0 LIMIT 1`
+  ).bind(orderId).first<{id:number}>()
+  if(pastRefund?.id)
+    throw new CriticalOperationConflictError('В истории заказа был денежный возврат, в том числе возможно отменённый. Сначала требуется проверка фактического финансового сторно.')
+
+  if(preview.requiresPhysicalFact)
+    throw new CriticalOperationConflictError('По заказу есть признаки физической выдачи. Автоматическая отмена не разрешена без проверки передачи, последующих ревизий и каждого складского движения.')
+
   // No financial reversal policy has been approved yet. Refuse to prepare an
   // executable saga with ANY registered or reconciled cash movement.
   if(preview.paymentCount!==0||preview.registeredPayments!==0

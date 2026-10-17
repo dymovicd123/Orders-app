@@ -1,0 +1,37 @@
+name: Real V2 Return saga adapter isolated money and stock gates
+on:
+  pull_request:
+    branches:
+      - feat/branch2-admin-delete-resumable-saga-20261017
+      - branch2
+    paths:
+      - 'worker/domains/admin-delete-real-driver.ts'
+      - 'worker/domains/admin-delete-saga.ts'
+      - 'scripts/test-admin-delete-real-driver-r1.mjs'
+      - 'scripts/test-admin-delete-resumable-saga-r1.mjs'
+      - 'scripts/test-admin-saga-migrations-schema-r1.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+      - '.github/workflows/test-admin-delete-real-driver.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Existing production handler adapter financial/physical SQL safety
+        run: node --experimental-strip-types scripts/test-admin-delete-real-driver-r1.mjs
+      - name: Combined 0110/0111 branch2-only schema compatibility
+        run: node scripts/test-admin-saga-migrations-schema-r1.mjs
+      - name: Persisted saga retry and lease failure injection
+        run: node --experimental-strip-types scripts/test-admin-delete-resumable-saga-r1.mjs
+      - name: Frozen full catalog and historic order regression
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: TypeScript and frontend build
+        run: npm run build
