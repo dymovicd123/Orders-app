@@ -151,6 +151,62 @@ try{
   assert.equal(replay.data.nextStep,3)
   assert.deepEqual((await probe('/facts')).data,final.data,
     'Replay must not mutate the historical order, money or stock after completion')
+  // Final order deletion starts only AFTER all real Return/V2 steps completed.
+  // A physical event or money discovered after the completed cancellation
+  // must block the finalizer before the delegated delete callback can run.
+  assert.equal((await probe('/set-applied')).status,200)
+  const physicalBlock=await probe('/finalize')
+  assert.equal(physicalBlock.status,409)
+  assert.match(physicalBlock.data.error,/физические движения|склад|штатный/i)
+  assert.equal((await probe('/progress')).data.status,'ready_for_final_delete')
+  assert.equal((await probe('/set-cancelled')).status,200)
+
+  assert.equal((await probe('/set-money')).status,200)
+  const paymentBlock=await probe('/finalize')
+  assert.equal(paymentBlock.status,409)
+  assert.match(paymentBlock.data.error,/деньги|оплат|финансов/i)
+  assert.equal((await probe('/clear-money')).status,200)
+  let unfinished=await probe('/facts')
+  assert.equal(unfinished.data.order.order_status,'active')
+  assert.equal(unfinished.data.finalOperations.length,0)
+  assert.deepEqual(unfinished.data.stock.map(x=>[x.variant_id,x.quantity,x.reserved_quantity]),
+    [[10,5,1],[11,3,0],[12,4,0]])
+
+  // The test-only order deleter commits a logical deletion & release on D1,
+  // but a thrown response simulates losing the journal checkpoint afterward.
+  const interrupted=await probe('/finalize-interrupted')
+  assert.equal(interrupted.status,409)
+  assert.match(interrupted.data.error,/TEST_ONLY_CRASH_AFTER_FINAL_ORDER_DELETE_BEFORE_SAGA_CHECKPOINT/)
+  progress=await probe('/progress')
+  assert.equal(progress.data.status,'ready_for_final_delete')
+  assert.equal(progress.data.nextStep,3)
+  const deletedUncheckpointed=await probe('/facts')
+  assert.equal(deletedUncheckpointed.data.order.order_status,'deleted')
+  assert.deepEqual(deletedUncheckpointed.data.finalOperations,[{
+    request_id:'REAL_CHAIN_42:final:order',operation_type:'order_edit',
+    status:'completed',target_type:'order',target_id:42
+  }])
+  assert.deepEqual(deletedUncheckpointed.data.stock.map(x=>[
+    x.variant_id,x.quantity,x.reserved_quantity
+  ]),[[10,5,0],[11,3,0],[12,4,0]])
+  assert.deepEqual(statuses(deletedUncheckpointed.data.reservations),
+    [[100,'released'],[101,'released'],[102,'released']])
+
+  // The exact same saga key must finish using the completed order_edit
+  // fingerprint/target record and MUST NOT call the deletion again.
+  const complete=await probe('/finalize')
+  assert.equal(complete.status,200,JSON.stringify(complete.data))
+  assert.equal(complete.data.status,'completed')
+  assert.equal(complete.data.nextStep,3)
+  assert.equal((await probe('/finalize')).data.status,'completed')
+  assert.equal((await probe('/advance')).data.status,'completed')
+  const finalDeleted=await probe('/facts')
+  assert.deepEqual(finalDeleted.data,deletedUncheckpointed.data,
+    'Repeated delete must preserve the same stock, history and money')
+  assert.deepEqual(finalDeleted.data.events,final.data.events)
+  assert.deepEqual(finalDeleted.data.critical,final.data.critical)
+  assert.equal(finalDeleted.data.payments.length,0)
+  console.log('FINAL_DELETE_DORMANT_SAGA_HANDOFF_CRASH_RECOVERY_PASSED')
   console.log('REAL_WORKER_D1_RETURN_TWO_V2_EXCHANGES_CHECKPOINT_CRASH_REPLAY_PASSED')
 }finally{
   if(child){

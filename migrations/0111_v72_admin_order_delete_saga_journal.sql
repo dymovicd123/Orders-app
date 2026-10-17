@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS admin_order_delete_sagas (
   request_id TEXT PRIMARY KEY NOT NULL,
   order_id INTEGER NOT NULL REFERENCES orders(id),
   status TEXT NOT NULL DEFAULT 'planned'
-    CHECK(status IN ('planned','running','review_required','ready_for_final_delete','cancelled')),
+    CHECK(status IN ('planned','running','review_required','ready_for_final_delete','completed','cancelled')),
   preview_fingerprint TEXT NOT NULL CHECK(length(preview_fingerprint)=64),
   plan_json TEXT NOT NULL,
   next_step INTEGER NOT NULL DEFAULT 0 CHECK(next_step>=0),
