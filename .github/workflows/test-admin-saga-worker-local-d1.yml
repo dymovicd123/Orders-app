@@ -3,9 +3,13 @@ on:
   pull_request:
     branches:
       - feat/branch2-admin-delete-local-d1-migrations-20261017
+      - feat/branch2-admin-delete-real-worker-local-d1-20261017
       - branch2
     paths:
       - 'scripts/test-admin-saga-worker-local-d1-r1.mjs'
+      - 'scripts/test-admin-saga-worker-chain-local-d1-r1.mjs'
+      - 'scripts/fixtures/admin-delete-local-d1-chain-worker.ts'
+      - 'scripts/fixtures/admin-delete-worker-chain-seed.mjs'
       - 'scripts/fixtures/admin-delete-local-d1-worker.ts'
       - 'worker/domains/admin-delete-real-driver.ts'
       - '.github/workflows/test-admin-saga-worker-local-d1.yml'
@@ -25,6 +29,8 @@ jobs:
       - run: npm ci
       - name: Real Return handler inside isolated workerd Worker + local D1
         run: node scripts/test-admin-saga-worker-local-d1-r1.mjs
+      - name: Actual Return plus 2 V2 Exchanges through durable saga on local D1
+        run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs
       - name: 0110/0111 local D1 migration validation
         run: node scripts/test-admin-saga-local-cloudflare-d1-r1.mjs
       - name: Frozen historic regression
