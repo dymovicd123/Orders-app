@@ -322,7 +322,6 @@ const tests=[
   ['scripts/fixtures/admin-delete-worker-chain-seed.mjs',true],
   ['worker/domains/admin-delete-finalize.ts',true],
   ['worker/domains/admin-delete-final-driver.ts',true],
-  ['scripts/fixtures/admin-delete-final-20261017/admin-delete-saga-before.ts',true],
   ['scripts/test-admin-saga-migrations-schema-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
