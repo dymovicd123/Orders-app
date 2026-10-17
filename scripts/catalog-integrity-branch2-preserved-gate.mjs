@@ -80,7 +80,7 @@ const reviewedBatchPriceUx={
   previousApp:reviewedHandoverUx.appAfter,
   previousTable:reviewedHandoverUx.tableAfter,
   currentApp:'b1928fcc44a23260087adb4a4df294bd11444a84',
-  currentTable:'a1560c784f266d7ff0ed83a66319ae64a4127ec7',
+  currentTable:'c32ddbb14d641a390adf471e8c24044f0085f212',
 }
 check(reviewedBatchPriceUx.previousApp==='cc2be798b049f4063848449c3fec4460a380ac2e' && reviewedBatchPriceUx.previousTable==='52f95261a9f63eaa9c4e7e0a3e634e95896ac730',
   'Previous accepted orders UI identity changed')
