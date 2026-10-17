@@ -3,6 +3,7 @@
 import { createRealAdminDeleteCancellationDriver } from '../../worker/domains/admin-delete-real-driver.ts'
 import { finalizeAdminDeleteSaga } from '../../worker/domains/admin-delete-finalize.ts'
 import { createRealAdminOrderDeleteFinalAction } from '../../worker/domains/admin-delete-final-driver.ts'
+import { getOrder, updateOrderCritical } from '../../worker/domains/orders-write.ts'
 import type { AuthUser } from '../../worker/core/types.ts'
 import {
   advanceAdminDeleteSagaOneStep,getAdminDeleteSagaProgress,
@@ -28,6 +29,23 @@ export default {
       if(route==='/health')return Response.json({ok:true,fixture:'isolated-chain-d1'})
       if(route==='/preflight'){
         await driver.preflight(step)
+        return Response.json({ok:true})
+      }
+      if(route==='/metadata-order') {
+        return Response.json(await getOrder(env.DB,42))
+      }
+      if(route==='/metadata-edit') {
+        const input=await request.json() as Record<string,unknown>
+        return Response.json(await updateOrderCritical(env.DB,42,input as any,{
+          role:'admin',id:1,displayName:'CI administrator'
+        } as unknown as AuthUser,'CI administrator'))
+      }
+      if(route==='/metadata-money-changed'){
+        await env.DB.prepare("UPDATE orders SET received_amount=100,debt_amount=24900 WHERE id=42").run()
+        return Response.json({ok:true})
+      }
+      if(route==='/metadata-money-restored'){
+        await env.DB.prepare("UPDATE orders SET received_amount=0,debt_amount=25000 WHERE id=42").run()
         return Response.json({ok:true})
       }
       if(route==='/set-applied'){
