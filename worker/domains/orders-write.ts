@@ -1950,8 +1950,8 @@ export async function updateOrderCritical(
               expectedOrderTotal: toInt(existingAny.total_amount, 0),
               expectedReceived: toInt(existingAny.received_amount, 0),
               expectedReturns: toInt(existingAny.return_amount, 0),
-              exchangeId: linkedExchangePriceCorrections.get(entry.orderItemId)?.exchangeId ?? null,
-              originalExchangeUnitPrice: linkedExchangePriceCorrections.get(entry.orderItemId)?.originalUnitPrice ?? null,
+              exchangeId: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.exchangeId ?? null,
+              originalExchangeUnitPrice: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.originalUnitPrice ?? null,
             }))
           : [],
         rewritePayments, deletingOrder, deferShippingCommit,
@@ -2076,7 +2076,7 @@ export async function updateOrderCritical(
               quantity_at_correction,actor_label,corrected_at
             ) VALUES (?,?,?,?,?,?,?,?,?,?)`
           ).bind(
-            `${criticalOperation.requestId}:exchange:new:${audit.itemId}`, id, toInt(audit.itemId,0),
+            `${criticalOperation!.requestId}:exchange:new:${audit.itemId}`, id, toInt(audit.itemId,0),
             toInt(audit.exchangeId,0),toInt(audit.originalExchangeUnitPrice,0),
             toInt(audit.from,0),toInt(audit.to,0),toInt(audit.expectedQuantity,0),
             cleanText(checkedBy)||'Сотрудник',p.timestamp,
