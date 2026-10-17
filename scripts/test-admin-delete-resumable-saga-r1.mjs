@@ -157,7 +157,7 @@ assert.equal(progress.remaining.length,0)
 assert.equal((await advanceAdminDeleteSagaOneStep(db,requestId,driver)).nextStep,4)
 assert.equal(retryKeys.get(requestId+':exchange:100'),1)
 assert.equal([...executed.values()].reduce((a,b)=>a+b,0),4)
-assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM admin_order_delete_saga_steps WHERE status="completed"').get().n,4)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM admin_order_delete_saga_steps WHERE status='completed'").get().n,4)
 assert.equal(sqlite.prepare('SELECT order_status FROM orders WHERE id=42').get().order_status,'active',
   'Saga must NEVER automatically delete the order itself')
 assert.deepEqual({...sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()},
