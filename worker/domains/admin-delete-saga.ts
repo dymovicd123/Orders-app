@@ -86,17 +86,17 @@ export async function planAdminDeleteSaga(
   const steps=plan.steps as DeleteChainPlanStep[]
   const statements:D1PreparedStatement[]=[
     db.prepare(
-      \`INSERT INTO admin_order_delete_sagas(
+      `INSERT INTO admin_order_delete_sagas(
         request_id,order_id,status,preview_fingerprint,plan_json,next_step,
         created_at,updated_at
-      ) VALUES (?,?,'planned',?,?,0,?,?)\`
+      ) VALUES (?,?,'planned',?,?,0,?,?)`
     ).bind(requestId,orderId,expected,JSON.stringify(steps),timestamp,timestamp),
     ...steps.map((step,index)=>db.prepare(
-      \`INSERT INTO admin_order_delete_saga_steps(
+      `INSERT INTO admin_order_delete_saga_steps(
         saga_request_id,step_index,operation_type,operation_id,cancel_request_id
-      ) VALUES(?,?,?,?,?)\`
+      ) VALUES(?,?,?,?,?)`
     ).bind(requestId,index,step.type,step.id,
-      \`\${requestId}:\${step.type}:\${step.id}\`)),
+      `${requestId}:${step.type}:${step.id}`)),
   ]
   try{await db.batch(statements)}catch(error){
     const current=await readSaga(db,requestId)
@@ -129,19 +129,19 @@ export async function advanceAdminDeleteSagaOneStep(
     throw new CriticalOperationConflictError('Состояние цепочки повреждено; дальнейшая отмена остановлена.')
   const lease=crypto.randomUUID(),nowMs=Date.now(),now=new Date().toISOString()
   const claim=await db.prepare(
-    \`UPDATE admin_order_delete_sagas
+    `UPDATE admin_order_delete_sagas
      SET lease_token=?,lease_until_ms=?,status='running',updated_at=?,last_error=NULL
      WHERE request_id=? AND next_step=? AND status IN ('planned','running')
-       AND (lease_token IS NULL OR lease_until_ms<=?)\`
+       AND (lease_token IS NULL OR lease_until_ms<=?)`
   ).bind(lease,nowMs+45000,now,requestId,next,nowMs).run()
   if(toInt(claim.meta?.changes,0)!==1)
     throw new CriticalOperationConflictError('Другая отмена этой цепочки уже выполняется. Повторите позже.')
   try {
     if(next===steps.length){
       await db.prepare(
-        \`UPDATE admin_order_delete_sagas
+        `UPDATE admin_order_delete_sagas
          SET status='ready_for_final_delete',lease_token=NULL,lease_until_ms=0,
-           updated_at=? WHERE request_id=? AND lease_token=? AND next_step=?\`
+           updated_at=? WHERE request_id=? AND lease_token=? AND next_step=?`
       ).bind(new Date().toISOString(),requestId,lease,next).run()
       return getAdminDeleteSagaProgress(db,requestId)
     }
@@ -162,9 +162,9 @@ export async function advanceAdminDeleteSagaOneStep(
     // Mark intent BEFORE calling the existing handler. If the Worker fails
     // between cancel and checkpoint, the SAME cancelRequestId is reused.
     await db.prepare(
-      \`UPDATE admin_order_delete_saga_steps
+      `UPDATE admin_order_delete_saga_steps
        SET status='started',started_at=COALESCE(started_at,?)
-       WHERE saga_request_id=? AND step_index=? AND status IN ('pending','started')\`
+       WHERE saga_request_id=? AND step_index=? AND status IN ('pending','started')`
     ).bind(new Date().toISOString(),requestId,next).run()
     const result=await driver.cancel(step)
     if(!await driver.verifyReconciled(step))
@@ -174,34 +174,34 @@ export async function advanceAdminDeleteSagaOneStep(
     // cursor/lease, so there is no "marked completed but cursor not advanced".
     await db.batch([
       db.prepare(
-        \`SELECT json('ADMIN_DELETE_SAGA_STALE')
+        `SELECT json('ADMIN_DELETE_SAGA_STALE')
          WHERE NOT EXISTS(
            SELECT 1 FROM admin_order_delete_sagas a
            JOIN admin_order_delete_saga_steps s ON s.saga_request_id=a.request_id
            WHERE a.request_id=? AND a.lease_token=? AND a.next_step=?
              AND a.status='running' AND s.step_index=?
              AND s.status='started' AND s.cancel_request_id=?
-         )\`
+         )`
       ).bind(requestId,lease,next,next,step.cancelRequestId),
       db.prepare(
-        \`UPDATE admin_order_delete_saga_steps
+        `UPDATE admin_order_delete_saga_steps
          SET status='completed',completed_at=?,verified_result_json=?
-         WHERE saga_request_id=? AND step_index=? AND status='started'\`
+         WHERE saga_request_id=? AND step_index=? AND status='started'`
       ).bind(doneAt,JSON.stringify(result??null),requestId,next),
       db.prepare(
-        \`UPDATE admin_order_delete_sagas
+        `UPDATE admin_order_delete_sagas
          SET next_step=?,status=?,lease_token=NULL,lease_until_ms=0,
            last_error=NULL,updated_at=?
-         WHERE request_id=? AND lease_token=? AND next_step=?\`
+         WHERE request_id=? AND lease_token=? AND next_step=?`
       ).bind(next+1,next+1===steps.length?'ready_for_final_delete':'running',
         doneAt,requestId,lease,next),
     ])
     return getAdminDeleteSagaProgress(db,requestId)
   } catch(error) {
     await db.prepare(
-      \`UPDATE admin_order_delete_sagas
+      `UPDATE admin_order_delete_sagas
        SET lease_token=NULL,lease_until_ms=0,last_error=?,updated_at=?
-       WHERE request_id=? AND lease_token=?\`
+       WHERE request_id=? AND lease_token=?`
     ).bind(cleanText(error instanceof Error?error.message:error).slice(0,900),
       new Date().toISOString(),requestId,lease).run().catch(()=>null)
     // NEVER advance the cursor when a handler failed or cannot be reconciled.
