@@ -33,6 +33,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Real metadata edit after two V2 Exchanges plus Return, stale CAS and no stock/money changes
+        run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --metadata
       - name: Actual deleteOrderSafely in local Worker D1, after chained cancellations and lost reply
         run: node scripts/test-admin-saga-worker-chain-local-d1-r1.mjs --real
       - name: Real Return handler inside isolated workerd Worker + local D1
