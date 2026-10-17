@@ -78,7 +78,7 @@ check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAft
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedHandoverUx.appAfter
-  : file === 'worker/domains/orders-write.ts' ? '209742e25a24f5fa538c90bdda341152038066ba'
+  : file === 'worker/domains/orders-write.ts' ? 'edfcd173c02adb7a448ba759935a0348d144b95d'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -114,7 +114,7 @@ const stage04B2Extensions={
 }
 const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
-  'worker/domains/exchange-price-history.ts':'e8a10558fa2e3a59fc6ce6a727c5cc8a9cb3b09c',
+  'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -187,7 +187,7 @@ const priorExchangeModules=[
   {
     "file": "worker/domains/returns-exchanges.ts",
     "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
-    "after": "ef978d6c7bef104443e30ec4d6eceb3c73750bff",
+    "after": "c10b1e68928efe742940499e5b4c9b4375ece72e",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
   },
   {
@@ -299,6 +299,7 @@ const tests=[
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
   ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
   ['scripts/test-v2-old-retired-price-correction-r1.mjs',true],
+  ['scripts/test-v2-partial-old-price-correction-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
