@@ -1,0 +1,28 @@
+name: Exchange V2 corrected price lineage safety
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/exchange-price-history.ts'
+      - 'worker/domains/orders-write.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
+      - 'scripts/test-v2-exchange-price-audit-r1.mjs'
+      - '.github/workflows/test-v2-exchange-price-audit.yml'
+permissions:
+  contents: read
+jobs:
+  sqlite_and_build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Immutable corrected-price provenance and cancellation safety
+        run: node --experimental-strip-types scripts/test-v2-exchange-price-audit-r1.mjs
+      - name: Production TypeScript build
+        run: npm run build
