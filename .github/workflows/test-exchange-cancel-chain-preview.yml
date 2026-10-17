@@ -1,0 +1,38 @@
+name: Exchange Return chain cancellation preview safety
+on:
+  pull_request:
+    branches:
+      - feat/branch2-v2-partial-old-price-correction-20261017
+      - branch2
+    paths:
+      - 'worker/domains/exchange-cancel-chain.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-exchange-cancel-chain-preview-r1.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+      - '.github/workflows/test-exchange-cancel-chain-preview.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: SQLite multi-hop cancellation plan and no money or stock movement
+        run: node --experimental-strip-types scripts/test-exchange-cancel-chain-preview-r1.mjs
+      - name: Existing V2 old, partial and new price correction regressions
+        run: |
+          node --experimental-strip-types scripts/test-v2-exchange-price-audit-r1.mjs
+          node --experimental-strip-types scripts/test-v2-old-retired-price-correction-r1.mjs
+          node --experimental-strip-types scripts/test-v2-partial-old-price-correction-r1.mjs
+      - name: Frozen historical Stage04 and orders regression
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: TypeScript and frontend build
+        run: npm run build
