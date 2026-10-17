@@ -2193,7 +2193,14 @@ export async function updateOrderCritical(
             )`).bind(id,m.orderDate,m.customerId,m.city,m.deliveryType,m.comment,
               m.totalAmount,m.receivedAmount,m.debtAmount,m.returnAmount,
               m.shippingStatus,m.orderStatus),
-            orderUpdateStatement
+            // Never execute the broad editor statement in metadata-only mode:
+            // it rewrites statuses, source, payment-method and financial totals.
+            // Only the six allowlisted details (customer through customer_id)
+            // and the technical timestamp can change.
+            db.prepare(`UPDATE orders
+              SET order_date=?,customer_id=?,city=?,delivery_type=?,comment=?,updated_at=?
+              WHERE id=?`).bind(p.nextOrderDate,p.nextCustomerId,p.nextCity||null,
+                p.nextDelivery||null,p.nextComment||null,p.timestamp,id)
           ]);
         }catch(error){
           if(/ORDER_METADATA_STALE|malformed JSON/i.test(String(error)))
