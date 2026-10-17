@@ -182,8 +182,9 @@ export async function recordRetiredV2OldPriceCorrection(
            AND NOT EXISTS(
              SELECT 1 FROM critical_operations cancel
              WHERE cancel.operation_type='exchange_set_cancel'
-               AND cancel.target_type='exchange' AND cancel.target_id=e.id
                AND cancel.status='started'
+               AND (cancel.target_id=e.id
+                 OR CAST(json_extract(cancel.context_json,'$.exchangeId') AS INTEGER)=e.id)
            )
        )`
     ).bind(id,itemId,current.orderId,current.originalUnitPrice,
