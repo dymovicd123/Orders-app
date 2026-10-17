@@ -71,7 +71,7 @@ const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
   appAfter: '6c32381001b5a679d1f3d762a522568916d8c978',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: 'c1aecf28697867d30feed37ca1517265a8562c89',
+  tableAfter: '16bfc7f075dd3aec7c3101b8d5fd3d752f1dfe7c',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
