@@ -118,6 +118,8 @@ const reviewedExchangePriceFiles={
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
   'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
   'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
+  'migrations/0111_v72_admin_order_delete_saga_journal.sql':'398a482dd31794da547973af82926aecc061934d',
+  'worker/domains/admin-delete-saga.ts':'9995da1524dd4d0466dc191990cbf72afc93dbcc',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -306,6 +308,7 @@ const tests=[
   ['scripts/test-exchange-cancel-chain-preview-r1.mjs',true],
   ['scripts/test-admin-order-delete-safe-preview-r1.mjs',true],
   ['scripts/test-admin-delete-chain-plan-r1.mjs',true],
+  ['scripts/test-admin-delete-resumable-saga-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
