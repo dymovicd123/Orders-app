@@ -67,4 +67,25 @@ jobs:
             SELECT role,quantity,inventory_source,physical_tracking,physical_received_at
             FROM exchange_items WHERE exchange_id=2 ORDER BY id
           " | jq -c '.[0].results[]'
+          echo 'MOVEMENT DETAILS'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT id,movement_type,quantity_delta,quantity_after,reference_type,reference_id,created_at
+            FROM inventory_movements WHERE id IN (
+              SELECT movement_id FROM inventory_lifecycle_events
+              WHERE order_id=(SELECT order_id FROM exchanges WHERE id=2)
+                AND movement_id IS NOT NULL
+            )
+          " | jq -c '.[0].results[]'
+          echo 'RESERVATION DETAILS'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT id,order_item_id,status,quantity,variant_id,inventory_source,fulfilled_at,released_at
+            FROM inventory_reservations
+            WHERE order_id=(SELECT order_id FROM exchanges WHERE id=2) ORDER BY id
+          " | jq -c '.[0].results[]'
+          echo 'ORDER ITEM TRACKING'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --json --command "
+            SELECT id,quantity,stock_writeoff_status,is_workshop,source_type
+            FROM order_items
+            WHERE order_id=(SELECT order_id FROM exchanges WHERE id=2) ORDER BY id
+          " | jq -c '.[0].results[]'
           echo 'END READ-ONLY'
