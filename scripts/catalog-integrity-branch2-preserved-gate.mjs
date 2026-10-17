@@ -119,8 +119,8 @@ const reviewedExchangePriceFiles={
   'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
   'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'398a482dd31794da547973af82926aecc061934d',
-  'worker/domains/admin-delete-saga.ts':'fe60329d6612fc5fc3d43470ee4f8532a8354372',
-  'worker/domains/admin-delete-real-driver.ts':'87d420335a09002450a2d5103a97dcef4c5dda49',
+  'worker/domains/admin-delete-saga.ts':'68aff3adaef1205690918bb1c39841b266eb41d5',
+  'worker/domains/admin-delete-real-driver.ts':'8ef1344ad770989210e3dd92623b42a3fc8518f9',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
