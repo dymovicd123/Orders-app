@@ -46,7 +46,7 @@ check(edit.includes('input.orderTotal !== undefined ? input.orderTotal : existin
 // compare-and-swap WHERE predicate that READS the saved catalog snapshot is
 // mandatory for price corrections and must not trigger a false alarm here.
 const orderItemUpdateSets = [...edit.matchAll(/\bUPDATE\s+order_items\s+SET\b([\s\S]*?)\bWHERE\b/gi)].map(match => match[1])
-check(orderItemUpdateSets.every(setClause => !/\bcatalog_price_snapshot\s*=/.test(setClause)), 'H8A: restricted edit path unexpectedly rewrites historical Catalog snapshots in place')
+check(orderItemUpdateSets.length > 0 && orderItemUpdateSets.every(setClause => !/\bcatalog_price_snapshot\s*=/.test(setClause)), 'H8A: restricted edit path unexpectedly rewrites historical Catalog snapshots in place')
 check(edit.includes('AND (oi.catalog_price_snapshot = ? OR (oi.catalog_price_snapshot IS NULL AND ? IS NULL))'), 'H8A: stale price correction must keep the historical Catalog snapshot in its read-only CAS guard')
 
 check(app.includes("const isItemizedEdit = order.pricing_mode === 'itemized_v1'"), 'H8A: H8B frontend no longer selects the restricted itemized path')
