@@ -214,3 +214,64 @@ export async function recordRetiredV2OldPriceCorrection(
   return {ok:true,exchangeId:id,oldItemId:itemId,oldUnitPrice:expected,
     newUnitPrice:next,physicalStockChanged:false,paymentsChanged:false}
 }
+
+/**
+ * Active remainder of a V2 exchanged old line. The exchanged quantity is
+ * frozen in the original plan; editing the recorded price changes ONLY the
+ * live remainder. We preserve a separate old-role lineage so later V2 cancel
+ * restores the exchanged quantity at the corrected unit price.
+ */
+export async function findPartialV2OldPriceLink(
+  db:D1Database, orderId:number, itemId:number, currentUnitPrice:number,
+):Promise<ExchangeNewPriceLink | null>{
+  const links=await db.prepare(
+    `SELECT e.id AS exchange_id,ei.role,oi.quantity,oi.unit_price,oi.line_total
+     FROM exchanges e JOIN exchange_items ei ON ei.exchange_id=e.id
+     JOIN order_items oi ON oi.id=ei.order_item_id AND oi.order_id=e.order_id
+     WHERE e.order_id=? AND ei.order_item_id=?
+       AND COALESCE(e.status,'completed')<>'cancelled'
+     ORDER BY e.id,ei.id`
+  ).bind(orderId,itemId).all<Record<string,unknown>>()
+  const rows=links.results||[]
+  if(!rows.length)return null
+  if(rows.length!==1||cleanText(rows[0].role)!=='old') {
+    throw new CriticalOperationConflictError('Позиция участвует в нескольких обменах. Исправление требует проверки всей цепочки.')
+  }
+  const quantity=toInt(rows[0].quantity,-1)
+  if(quantity<=0 || toInt(rows[0].unit_price,-1)!==currentUnitPrice
+      || Number(rows[0].line_total)!==quantity*currentUnitPrice) {
+    throw new CriticalOperationConflictError('Позиция не является активным остатком частичного обмена или её сумма уже изменилась.')
+  }
+  const exchangeId=toInt(rows[0].exchange_id,0)
+  const dependentReturn=await db.prepare(
+    `SELECT COUNT(*) AS qty FROM returns r JOIN return_items ri ON ri.return_id=r.id
+     WHERE r.order_id=? AND ri.order_item_id=?
+       AND COALESCE(r.status,'completed')<>'cancelled'`
+  ).bind(orderId,itemId).first<{qty:number}>()
+  if(toInt(dependentReturn?.qty,0)>0) {
+    throw new CriticalOperationConflictError('Старая позиция участвует также в возврате. Сначала требуется проверка цепочки операций.')
+  }
+  const snapshot=await db.prepare(
+    `SELECT context_json FROM critical_operations
+     WHERE operation_type='exchange_set_create' AND target_type='exchange'
+       AND target_id=? ORDER BY created_at DESC LIMIT 1`
+  ).bind(exchangeId).first<{context_json:string|null}>()
+  let plan:any
+  try{plan=JSON.parse(snapshot?.context_json||'null')?.executionPlan}catch{plan=null}
+  const old=plan?.oldItems?.filter((item:any)=>toInt(item.orderItemId,0)===itemId)||[]
+  if(old.length!==1 || !Number.isSafeInteger(old[0].unitPrice) || old[0].unitPrice<0
+    || !Number.isSafeInteger(old[0].quantity) || old[0].quantity<=0)
+    throw new CriticalOperationConflictError('Исходный план частичного обмена отсутствует или неоднозначен.')
+  const original=old[0].unitPrice
+  if(!await isApprovedExchangePriceLineage(db,exchangeId,itemId,original,currentUnitPrice,'old'))
+    throw new CriticalOperationConflictError('Текущая цена частичного обмена не подтверждена непрерывной историей исправлений.')
+  const cancel=await db.prepare(
+    `SELECT id FROM critical_operations
+     WHERE operation_type='exchange_set_cancel'
+       AND status IN ('started','completed')
+       AND (target_id=? OR CAST(json_extract(context_json,'$.exchangeId') AS INTEGER)=?)
+     LIMIT 1`
+  ).bind(exchangeId,exchangeId).first<{id:number}>()
+  if(cancel?.id)throw new CriticalOperationConflictError('Отмена этого обмена уже начата. Исправление цены остановлено.')
+  return {exchangeId,originalUnitPrice:original}
+}
