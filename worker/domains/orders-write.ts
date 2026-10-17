@@ -2029,11 +2029,28 @@ export async function updateOrderCritical(
                  AND COALESCE(o.order_status, 'active') <> 'deleted'
                  AND (SELECT COALESCE(SUM(active.line_total),0)
                       FROM order_items active WHERE active.order_id=o.id AND active.quantity>0) = o.total_amount
-                 AND NOT EXISTS(
-                   SELECT 1 FROM exchanges e
-                   WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
-                     AND (e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id
-                       OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id AND ei.order_item_id=oi.id))
+                 AND (
+                   (? IS NULL AND NOT EXISTS(
+                     SELECT 1 FROM exchanges e
+                     WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
+                       AND (e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id
+                         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id AND ei.order_item_id=oi.id))
+                   ))
+                   OR (? IS NOT NULL
+                     AND (SELECT COUNT(*)
+                          FROM exchanges e JOIN exchange_items ei ON ei.exchange_id=e.id
+                          WHERE e.order_id=o.id AND ei.order_item_id=oi.id
+                            AND COALESCE(e.status,'completed')<>'cancelled') = 1
+                     AND EXISTS(
+                       SELECT 1 FROM exchanges e
+                       JOIN exchange_items ei ON ei.exchange_id=e.id
+                       JOIN critical_operations op
+                         ON op.operation_type='exchange_set_create' AND op.target_type='exchange'
+                         AND op.target_id=e.id
+                       WHERE e.id=? AND e.order_id=o.id AND ei.order_item_id=oi.id
+                         AND ei.role='new' AND COALESCE(e.status,'completed')<>'cancelled'
+                     )
+                   )
                  )
                  AND NOT EXISTS(
                    SELECT 1 FROM returns refund
@@ -2049,10 +2066,25 @@ export async function updateOrderCritical(
             audit.expectedCatalogPriceSnapshot ?? null, audit.expectedCatalogPriceSnapshot ?? null,
             toInt(audit.expectedOrderTotal, 0), toInt(audit.expectedReceived, 0),
             toInt(audit.expectedReturns, 0),
+            audit.exchangeId ?? null,audit.exchangeId ?? null,audit.exchangeId ?? null,
+          )) : [];
+        const immutableExchangeAudit = p.recordedPriceOnlyRequest && Array.isArray(p.priceAudit)
+          ? p.priceAudit.filter((audit: Record<string, any>)=>toInt(audit.exchangeId,0)>0).map((audit: Record<string, any>)=>db.prepare(
+            `INSERT INTO exchange_order_item_price_corrections(
+              request_id,order_id,order_item_id,exchange_id,
+              original_exchange_unit_price,old_unit_price,new_unit_price,
+              quantity_at_correction,actor_label,corrected_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)`
+          ).bind(
+            `${criticalOperation.requestId}:exchange:new:${audit.itemId}`, id, toInt(audit.itemId,0),
+            toInt(audit.exchangeId,0),toInt(audit.originalExchangeUnitPrice,0),
+            toInt(audit.from,0),toInt(audit.to,0),toInt(audit.expectedQuantity,0),
+            cleanText(checkedBy)||'Сотрудник',p.timestamp,
           )) : [];
         try {
           await db.batch([
           ...correctionCas,
+          ...immutableExchangeAudit,
           orderUpdateStatement,
           ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(
             `UPDATE order_items
