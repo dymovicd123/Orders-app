@@ -64,6 +64,18 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
     fail('Заказ уже закрыт, отправлен или имеет зарегистрированную выдачу. Нужна проверка фактического движения товара.')
   if(cleanText(order.pricing_mode)!=='itemized_v1')
     fail('Старый формат стоимости требует отдельного сценария отмены цепочки.')
+  // The standalone lifecycle handler can preserve current physical truth after
+  // a later stocktake, yet mark an older event cancelled without reversing
+  // physical stock. That behavior is legitimate for manual correction, but it
+  // MUST NOT silently qualify a whole-order delete saga as stock-reconciled.
+  // Block every applied event on this order before ANY handler writes, even if
+  // shipping says "not_sent" and no fulfilled reservation remains.
+  const applied=await db.prepare(
+    `SELECT COUNT(*) AS n FROM inventory_lifecycle_events
+     WHERE order_id=? AND status='applied'`
+  ).bind(step.orderId).first<{n:number}>()
+  if(toInt(applied?.n,0)>0)
+    fail('По заказу есть проведённые физические складские движения. Автоматическая отмена запрещена: необходима проверка последующих ревизий и фактических остатков.')
 }
 
 async function assertCriticalOwnedBySaga(db:D1Database,step:SagaCancelStep,needsCompleted:boolean){
