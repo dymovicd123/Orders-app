@@ -26,26 +26,19 @@ async function readStepTarget(db:D1Database,step:SagaCancelStep){
   return row!
 }
 
-async function verifyNoMoneyMutation(db:D1Database,step:SagaCancelStep){
+async function verifyFinancialLedger(db:D1Database,step:SagaCancelStep){
+  // Financial movements are allowed; their source rows and the order's
+  // aggregate MUST reconcile before and after each idempotent cancellation.
+  // We do not pretend an accounting void is a cash refund.
   const ledger=await readOrderFinancialLedger(db,step.orderId)
-  const payments=await db.prepare(
-    `SELECT COUNT(*) AS n FROM payments WHERE order_id=?`
-  ).bind(step.orderId).first<{n:number}>()
-  const returns=await db.prepare(
-    `SELECT COUNT(*) AS n FROM returns
-     WHERE order_id=? AND COALESCE(amount,0)<>0`
-  ).bind(step.orderId).first<{n:number}>()
-  const exchanges=await db.prepare(
-    `SELECT COUNT(*) AS n FROM exchanges
-     WHERE order_id=?
-       AND (COALESCE(financial_amount,0)<>0
-         OR COALESCE(financial_action,'none') NOT IN ('none','')
-         OR payment_id IS NOT NULL)`
-  ).bind(step.orderId).first<{n:number}>()
-  if(toInt(payments?.n,0)||toInt(returns?.n,0)||toInt(exchanges?.n,0)
-    ||ledger.receivedAmount!==0||ledger.returnAmount!==0
-    ||ledger.debtAmount!==Math.max(0,ledger.totalAmount))
-    fail('У заказа найдены денежные операции, включая исторически отменённые. Пока их сторно не подтверждено, цепочка остановлена.')
+  const order=await db.prepare(
+    'SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=?'
+  ).bind(step.orderId).first<Record<string,unknown>>()
+  if(!order || toInt(order.total_amount,-1)!==ledger.totalAmount
+    ||toInt(order.received_amount,-1)!==ledger.receivedAmount
+    ||toInt(order.return_amount,-1)!==ledger.returnAmount
+    ||toInt(order.debt_amount,-1)!==ledger.debtAmount)
+    fail('Финансовая сумма не совпадает с проводками заказа. Цепочка остановлена до сверки.')
 }
 
 async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
@@ -175,19 +168,18 @@ export function createRealAdminDeleteCancellationDriver(
       if(step.type==='exchange') {
         if(!await h.isExchangeSetV2(db,step.id))
           fail('Обмен старого формата не допускает автоматического исполнения этой цепочки.')
-        if(toInt(row.financial_amount,0)>0||toInt(row.payment_id,0)>0
-          ||!['','none'].includes(cleanText(row.financial_action)))
-          fail('У обмена зарегистрирована денежная операция. Для неё требуется отдельная проверка сторно.')
+        // The V2 cancellation handler itself reverses the linked extra payment
+        // or exchange refund in its own idempotent money ledger.
       } else {
-        if(toInt(row.amount,0)!==0)
-          fail('Возврат с денежным движением нельзя автоматически отменять без утверждённого финансового сторно.')
+        // The existing Return cancellation reverses the refund and keeps
+        // historical financial events for audit.
         const parent=await db.prepare(
           `SELECT id FROM exchanges WHERE refund_return_id=?
            AND COALESCE(status,'completed')<>'cancelled' LIMIT 1`
         ).bind(step.id).first<{id:number}>()
         if(parent?.id)fail('Этот возврат принадлежит обмену. Отменять отдельно его нельзя.')
       }
-      await verifyNoMoneyMutation(db,step)
+      await verifyFinancialLedger(db,step)
       await verifyNoIssuedItems(db,step)
     },
     async cancel(step) {
@@ -204,7 +196,7 @@ export function createRealAdminDeleteCancellationDriver(
       // A concurrent inbound or confirmed handover on a sibling operation
       // must stop the saga cursor even if this step itself reconciled.
       await verifyNoIssuedItems(db,step)
-      await verifyNoMoneyMutation(db,step)
+      await verifyFinancialLedger(db,step)
       await verifyOrderAndInventoryFacts(db,step)
       return true
     },
