@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'70bfc88ee2d0ad042bbed0a64527c54187ca05d6',
+  'worker/index.ts':'0870d5135e9912030276309911544500186bc4d0',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -69,14 +69,16 @@ for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
-  appAfter: '4dc09ef0662a3a611681af7df4596c5512e43cab',
+  appAfter: '0f4e7180833a89060c0d2f173146a843d45b57f9',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
+  tableAfter: '315d20db8f42dbf9ae47b11d4c4dc1b9e831ad5d',
+  beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedHandoverUx.appAfter
+  : file === 'worker/domains/orders-write.ts' ? '14782dfc074b408bcbaa9c154a348ce360e2e816'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -264,6 +266,7 @@ for(const entry of inventorySafetyFixtures){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
@@ -399,7 +402,12 @@ try{
   // Independently test and retain the new review-first shipping action in current code.
   const reviewFirstHelp='                            {projection.canShip && order.stock_handover_review_needed ? (\n                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>\n                            ) : null}\n'
   check(orderTableCurrent.includes(reviewFirstHelp),'Current review-first shipping helper disappeared')
-  const orderTableHistorical=orderTableCurrent
+  // Historical order list assertions remain byte-exact. Replay the previous
+  // accepted view from a separately pinned fixture, never dilute old tests.
+  const orderTablePrior=fs.readFileSync('scripts/fixtures/recorded-price-20261017/OrdersTableSection-before.tsx','utf8')
+  check(gitBlob(orderTablePrior)===reviewedHandoverUx.beforePriceAction,
+    'Frozen before-price-correction table view changed')
+  const orderTableHistorical=orderTablePrior
     .replace(reviewFirstHelp,'')
     .replace('{projection.canShip && !order.stock_handover_review_needed ? (','{projection.canShip ? (')
     .replace('Проверить выдачу после ревизии','Уточнить выдачу')
