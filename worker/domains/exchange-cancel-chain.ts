@@ -100,6 +100,7 @@ export async function previewExchangeCancellationChain(
     returnsByItem.get(itemId)!.add(rid)
   }
 
+  const anomalies=new Set<string>()
   // The legacy format may store links only on exchanges rather than
   // exchange_items. Both representations must be considered or a later legacy
   // exchange can disappear from a manager's dependency preview.
@@ -119,7 +120,6 @@ export async function previewExchangeCancellationChain(
   // Edges always point from an earlier Exchange to a later operation that
   // consumed/returned one of its NEW lines, not to unrelated order events.
   const outgoing=new Map<string,Set<string>>()
-  const anomalies=new Set<string>()
   for(const [itemId,owners] of newItemOwners){
     for(const owner of owners){
       const key='e'+owner
