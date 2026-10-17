@@ -75,7 +75,10 @@ const priceCommitStart = write.indexOf('const priceOnlyItemUpdates = Array.isArr
 const priceCommitEnd = write.indexOf("await advanceCriticalOperation(db, criticalOperation, 'order_updated');", priceCommitStart)
 const priceCommit = write.slice(priceCommitStart, priceCommitEnd)
 check(priceCommit.includes('SET unit_price = ?, line_total = ?'), 'H8C persisted sold price/line total write missing')
-check(!priceCommit.includes('catalog_price_snapshot'), 'H8C must never rewrite historical Catalog snapshot')
+// Reads of a saved snapshot in a price-correction CAS predicate are required;
+// only a direct UPDATE SET assignment would rewrite historical Catalog truth.
+const priceOnlyUpdateSets = [...priceCommit.matchAll(/\bUPDATE\s+order_items\s+SET\b([\s\S]*?)\bWHERE\b/gi)].map(match => match[1])
+check(priceOnlyUpdateSets.length>0 && priceOnlyUpdateSets.every(setClause => !/\bcatalog_price_snapshot\s*=/.test(setClause)), 'H8C must never rewrite historical Catalog snapshot')
 check(priceCommit.includes('await db.batch([') && priceCommit.includes('orderUpdateStatement'), 'H8C line and order totals must commit together')
 check(write.includes('stockReversals = (p.rewriteItems || p.deletingOrder)'), 'H8C price correction started moving stock')
 check(write.includes('if (p.rewriteItems) await retireOrderItemsForRewrite'), 'H8C price correction may retire physical order items')
