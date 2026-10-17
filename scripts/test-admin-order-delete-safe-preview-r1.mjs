@@ -6,8 +6,12 @@ import { previewAdminOrderDeletion } from '../worker/domains/order-delete-previe
 const dbsqlite=new DatabaseSync(':memory:')
 dbsqlite.exec([
  "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,shipping_status TEXT,received_amount INTEGER,return_amount INTEGER)",
- "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT)",
+ "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,refund_return_id INTEGER,old_order_item_id INTEGER,new_order_item_id INTEGER)",
  "CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,amount INTEGER)",
+ "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,unit_price INTEGER)",
+ "CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,role TEXT)",
+ "CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER)",
+ "CREATE TABLE critical_operations(id INTEGER PRIMARY KEY,operation_type TEXT,target_type TEXT,target_id INTEGER)",
  "CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER)",
  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,quantity INTEGER)",
 ].join(';')+';')
@@ -36,8 +40,8 @@ preview=await previewAdminOrderDeletion(db,42)
 assert.equal(preview.registeredPayments,65000)
 assert.equal(preview.paymentCount,1)
 assert(preview.explanations.some(s=>s.includes('65'+'000')),'Payment disclosure must be explicit')
-dbsqlite.exec("INSERT INTO exchanges VALUES(100,42,'completed')")
-dbsqlite.exec("INSERT INTO exchanges VALUES(101,42,'cancelled')")
+dbsqlite.exec("INSERT INTO exchanges VALUES(100,42,'completed',NULL,1,2)")
+dbsqlite.exec("INSERT INTO exchanges VALUES(101,42,'cancelled',NULL,1,2)")
 dbsqlite.exec("INSERT INTO returns VALUES(200,42,'completed',5000)")
 dbsqlite.exec("INSERT INTO returns VALUES(201,42,'cancelled',1000)")
 preview=await previewAdminOrderDeletion(db,42)
