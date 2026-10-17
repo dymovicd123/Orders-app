@@ -6,6 +6,7 @@ import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.
 import { writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot } from './catalog.ts'
 import { orderItemWasPhysicallyIssued } from './catalog-review.ts'
+import { isApprovedExchangePriceLineage } from './exchange-price-history.ts'
 import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, refreshCriticalOperation, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import type { InventoryLifecycleEventRow } from './lifecycle.ts'
@@ -4122,13 +4123,20 @@ export async function cancelExchangeSetV2(
         const lineTotal = requiredSafeMoney(row?.current_line_total, `Сумма новой позиции ${index + 1}`)
         const expectedQuantity = Math.max(1, toInt(planItem?.item?.quantity, 1))
         const expectedUnitPrice = requiredSafeMoney(planItem?.item?.unitPrice, `Исходная цена новой позиции ${index + 1}`)
-        const expectedLineTotal = expectedQuantity * expectedUnitPrice
+        const expectedLineTotal = expectedQuantity * unitPrice
+        // The original execution plan remains immutable. Recognize an explicitly
+        // recorded price typo fix ONLY if its append-only lineage bridges from
+        // the original sale price to the current item value.
+        const authorizedPrice = unitPrice === expectedUnitPrice
+          || (orderItemId > 0 && await isApprovedExchangePriceLineage(
+            db, exchangeId, orderItemId, expectedUnitPrice, unitPrice,
+          ))
         if (!orderItemId
           || quantity !== expectedQuantity
-          || unitPrice !== expectedUnitPrice
+          || !authorizedPrice
           || lineTotal !== expectedLineTotal) {
           throw new CriticalOperationConflictError(
-            `Новая позиция обмена ${index + 1} уже изменилась после проведения. Обновите историю; автоматическая отмена остановлена.`
+            `Новая позиция обмена ${index + 1} изменилась без подтверждённой истории цены или количества. Автоматическая отмена остановлена.`
           )
         }
         removedNewValue += lineTotal
