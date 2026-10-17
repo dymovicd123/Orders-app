@@ -21,7 +21,7 @@ assert(table.includes("key==='orderDate'&&!isAdmin"),'Only admin can backdate a 
 assert(worker.includes("field==='requestId'||field==='metadataCorrection'"),'Metadata must be a narrow payload')
 assert(worker.includes("if(isolatedMetadataRequest && rawMetadata)"),'Original field CAS missing')
 assert(worker.includes('rawMetadata.expectedState')&&worker.includes('expected.receivedAmount'),'Original financial snapshot guard missing')
-assert(worker.includes('SET order_date=?,customer_id=?,city=?,delivery_type=?,comment=?,updated_at=?'),'Only allowlisted metadata columns may be changed')
+assert(worker.includes('customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?'),'Order-scoped customer name must be preserved without mutating shared clients')
 assert(worker.includes("!recordedPriceOnlyRequest && !isolatedMetadataRequest"),'Active exchanges must not block independent metadata')
 assert(worker.includes("!recordedPriceOnlyRequest && !isolatedMetadataRequest)))"),'Shipment must not cause a product-rewrite on pure metadata')
 assert(worker.includes("if (isolatedMetadataRequest) {"),'Metadata correction must preserve historical money totals')
