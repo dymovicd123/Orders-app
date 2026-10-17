@@ -6,10 +6,60 @@
 // human possession; all uncertain cases remain blocked.
 import { cleanText, toInt } from '../core/text.ts'
 
+export type ExchangeMovementCompensation = {
+  state:'none'|'compensated'|'ambiguous';movementId:number|null;
+}
+// A 2nd outward undo is WRONG when an explicit false-handover correction
+// already restored the same unit. Require exact order+SKU+source+quantity and
+// the ONLY subsequent movement for this SKU. Ordinary arrivals/revisions are
+// never misidentified as compensation.
+export async function findExchangeFalseHandoverCompensation(
+  db:D1Database,input:{
+    orderId:number;source:string;variantId:number;movementId:number;
+    outboundQuantity:number;eventAt:string;
+  },
+):Promise<ExchangeMovementCompensation>{
+  if(!input.orderId||!input.variantId||!input.movementId
+    ||input.outboundQuantity<=0||!input.eventAt)
+    return {state:'ambiguous',movementId:null}
+  try{
+    const found=await db.prepare(`SELECT m.id,m.movement_type,m.quantity_delta,
+        m.quantity_after,m.reference_type,m.reference_id,m.created_at,
+        o.external_id AS expected_order_ref
+      FROM inventory_movements m
+      JOIN orders o ON o.id=?
+      WHERE m.inventory_source=? AND m.variant_id=? AND m.id>?
+      ORDER BY m.id LIMIT 3`
+    ).bind(input.orderId,input.source,input.variantId,input.movementId)
+      .all<Record<string,unknown>>()
+    const rows=found.results||[]
+    if(!rows.length)return {state:'none',movementId:null}
+    if(rows.length!==1)return {state:'ambiguous',movementId:null}
+    const row=rows[0],at=Date.parse(cleanText(row.created_at)),
+      prior=Date.parse(input.eventAt)
+    if(cleanText(row.movement_type)!=='revision'
+      ||cleanText(row.reference_type)!=='order_handover_correction'
+      ||!cleanText(row.expected_order_ref)
+      ||cleanText(row.reference_id)!==cleanText(row.expected_order_ref)
+      ||toInt(row.quantity_delta,0)!==input.outboundQuantity
+      ||!Number.isFinite(at)||!Number.isFinite(prior)||at<=prior)
+      return {state:'ambiguous',movementId:null}
+    const stock=await db.prepare(`SELECT quantity FROM inventory_stock
+      WHERE inventory_source=? AND variant_id=? ORDER BY id LIMIT 1`
+    ).bind(input.source,input.variantId).first<{quantity:number}>()
+    if(!stock||toInt(stock.quantity,-1)!==toInt(row.quantity_after,-2))
+      return {state:'ambiguous',movementId:null}
+    return {state:'compensated',movementId:toInt(row.id,0)}
+  }catch{
+    return {state:'ambiguous',movementId:null}
+  }
+}
+
 export type UnissuedExchangeStockUndo = {
   eventId:number;exchangeId:number;orderItemId:number;name:string;
   source:string;variantId:number;quantity:number;
   recordedOutbound:number;physicalRestore:number;reserveRelease:number;
+  alreadyCompensated:boolean;correctionMovementId:number|null;
 }
 export type AdminDeleteAppliedStockReview = {
   allowed:boolean;appliedCount:number;
@@ -44,7 +94,7 @@ export async function reviewAdminDeleteAppliedStock(
           r.id AS reservation_id,r.status AS reservation_status,
           r.quantity AS reservation_quantity,r.variant_id AS reservation_variant_id,
           r.inventory_source AS reservation_source,r.fulfilled_at,
-          m.quantity_delta AS movement_delta,
+          m.quantity_delta AS movement_delta,m.quantity_after AS movement_quantity_after,
           m.variant_id AS movement_variant_id,m.inventory_source AS movement_source,
           (SELECT COUNT(*) FROM inventory_stock_checks ch
             WHERE ch.inventory_source=le.inventory_source AND ch.variant_id=le.variant_id
@@ -124,10 +174,23 @@ export async function reviewAdminDeleteAppliedStock(
     )
     if(!valid)return bad(appliedCount,
       'Складское событие #'+String(eventId)+' нельзя безопасно отменить: отсутствует доказательство невыданного резерва, надёжное списание или актуальная физическая история.')
+    const eventAt=cleanText(x.applied_at)||cleanText(x.created_at)
+    const correction=await findExchangeFalseHandoverCompensation(db,{
+      orderId,source,variantId,movementId:toInt(x.movement_id,0),
+      outboundQuantity:-delta,eventAt,
+    })
+    if(correction.state==='ambiguous')
+      return bad(appliedCount,
+        'После списания по обмену #'+String(exchangeId)+' обнаружены другие или неоднозначные складские движения. Автоматическое сторно остановлено.')
+    if(correction.state==='none'
+      &&toInt(x.current_physical,-1)!==toInt(x.movement_quantity_after,-2))
+      return bad(appliedCount,'Физический остаток отличается от последнего списания без понятной истории. Требуется сверка.')
     reversals.push({
       eventId,exchangeId,orderItemId,name:cleanText(x.product_name_snapshot)||'Товар обмена',
       source,variantId,quantity:qty,recordedOutbound:delta,
-      physicalRestore:-delta,reserveRelease:reserveQty,
+      physicalRestore:correction.state==='compensated'?0:-delta,
+      reserveRelease:reserveQty,alreadyCompensated:correction.state==='compensated',
+      correctionMovementId:correction.movementId,
     })
   }
   return {allowed:true,appliedCount,reversals,blockers:[]}
