@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS exchange_order_item_price_corrections (
   order_id INTEGER NOT NULL REFERENCES orders(id),
   order_item_id INTEGER NOT NULL REFERENCES order_items(id),
   exchange_id INTEGER NOT NULL REFERENCES exchanges(id),
+  role TEXT NOT NULL DEFAULT 'new' CHECK(role IN ('new','old')),
   original_exchange_unit_price INTEGER NOT NULL CHECK(original_exchange_unit_price >= 0),
   old_unit_price INTEGER NOT NULL CHECK(old_unit_price >= 0),
   new_unit_price INTEGER NOT NULL CHECK(new_unit_price >= 0),
