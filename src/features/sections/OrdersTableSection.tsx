@@ -8,9 +8,22 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
   const [extraActionsOrderId, setExtraActionsOrderId] = useState<number | null>(null)
   const [priceDraft, setPriceDraft] = useState<{order: any; itemId: number; price: string; error: string} | null>(null)
+  const [oldExchangePriceDraft,setOldExchangePriceDraft] = useState<{
+    order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
+  } | null>(null)
+  const [exchangeChainDraft,setExchangeChainDraft] = useState<{
+    order:any;selected:number;available:number[];preview:any|null;error:string;loading:boolean;
+  } | null>(null)
+  const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
+    order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;
+  } | null>(null)
   const {
     correctMistakenOrderShipping,
     correctRecordedOrderItemPrice,
+    loadRetiredExchangePriceOptions,
+    correctRetiredExchangePrice,
+    loadExchangeCancellationPreview,
+    loadAdminOrderDeletePreview,
     deleteOrderAsAdmin,
     expandedOrderItemCounts,
     filters,
@@ -437,6 +450,45 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     Исправить записанную цену
                                   </button>
                                 ) : null}
+                                {extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
+                                  <button className="secondary compact" type="button" onClick={(event) => {
+                                    event.stopPropagation()
+                                    setOldExchangePriceDraft({order,items:[],itemId:0,price:'',error:'',loading:true})
+                                    void (async()=>{
+                                      try {
+                                        const items=await loadRetiredExchangePriceOptions(order)
+                                        if(!items.length) {
+                                          setOldExchangePriceDraft({order,items:[],itemId:0,price:'',loading:false,
+                                            error:'В этом заказе нет полностью выведенных старых позиций обмена, которые можно исправить без проверки цепочки.'})
+                                          return
+                                        }
+                                        setOldExchangePriceDraft({order,items,itemId:items[0].orderItemId,
+                                          price:String(items[0].currentRecordedUnitPrice),error:'',loading:false})
+                                      } catch(error) {
+                                        setOldExchangePriceDraft({order,items:[],itemId:0,price:'',loading:false,
+                                          error:error instanceof Error?error.message:'Не удалось загрузить историю обмена.'})
+                                      }
+                                    })()
+                                  }}>
+                                    Исправить цену товара до обмена
+                                  </button>
+                                ) : null}
+                                {extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
+                                  <button className="secondary compact" type="button" onClick={(event)=>{
+                                    event.stopPropagation()
+                                    setExchangeChainDraft({order,selected:0,available:[],preview:null,error:'',loading:true})
+                                    void (async()=>{
+                                      try {
+                                        const result=await loadExchangeCancellationPreview(order)
+                                        setExchangeChainDraft({order,selected:result.preview?.exchangeId||0,
+                                          available:result.availableExchangeIds,preview:result.preview,error:'',loading:false})
+                                      } catch(error) {
+                                        setExchangeChainDraft({order,selected:0,available:[],preview:null,loading:false,
+                                          error:error instanceof Error?error.message:'Не удалось загрузить зависимости обмена.'})
+                                      }
+                                    })()
+                                  }}>Порядок отмены обменов</button>
+                                ) : null}
                               </div>
                             ) : null}
                             {isAdmin && !retainedOnly && !archived ? (
@@ -445,7 +497,16 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  void deleteOrderAsAdmin(order)
+                                  setAdminDeleteDraft({order,preview:null,error:'',loading:true,submitting:false})
+                                  void (async()=>{
+                                    try {
+                                      const preview=await loadAdminOrderDeletePreview(order)
+                                      setAdminDeleteDraft({order,preview,error:'',loading:false,submitting:false})
+                                    } catch(error) {
+                                      setAdminDeleteDraft({order,preview:null,loading:false,submitting:false,
+                                        error:error instanceof Error?error.message:'Не удалось проверить заказ.'})
+                                    }
+                                  })()
                                 }}
                               >
                                 Удалить
@@ -487,6 +548,203 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" disabled={busy || !orderPageInfo?.hasMore} onClick={() => void changeOrderPage('next')}>Дальше</button>
                 </div>
               </div>
+              {adminDeleteDraft ? (
+                <div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{
+                  if(event.target===event.currentTarget&&!adminDeleteDraft.submitting)setAdminDeleteDraft(null)
+                }}>
+                  <div className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Проверка последствий удаления заказа" style={{maxWidth:620}}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Только администратор</div>
+                        <h3>Удаление заказа {adminDeleteDraft.order.external_id}</h3>
+                      </div>
+                      <button className="ghost compact" type="button" disabled={adminDeleteDraft.submitting}
+                        onClick={()=>setAdminDeleteDraft(null)}>Закрыть</button>
+                    </div>
+                    {adminDeleteDraft.loading ? <p>Проверяю обмены, возвраты, оплаты и выдачи…</p> : null}
+                    {adminDeleteDraft.error ? <p role="alert" className="error">{adminDeleteDraft.error}</p> : null}
+                    {adminDeleteDraft.preview ? (
+                      <>
+                        <p><strong>{adminDeleteDraft.preview.canAttemptDelete ?
+                          'Проверка пройдена: удаление можно запросить.' :
+                          'Удаление заблокировано до исправления связанных операций.'}</strong></p>
+                        <p>Обменов: {adminDeleteDraft.preview.activeExchanges.length} · Возвратов: {adminDeleteDraft.preview.activeReturns.length} ·
+                          Оплат: {adminDeleteDraft.preview.paymentCount} ({formatMoney(adminDeleteDraft.preview.registeredPayments)} ₸) ·
+                          Возвращено по активным возвратам: {formatMoney(adminDeleteDraft.preview.recordedRefunds)} ₸</p>
+                        {adminDeleteDraft.preview.issuedItemCount ? (
+                          <p>Отмечена выдача {adminDeleteDraft.preview.issuedQuantity} шт. по
+                            {adminDeleteDraft.preview.issuedItemCount} складским записям.</p>
+                        ) : null}
+                        {adminDeleteDraft.preview.activeExchanges.length ? (
+                          <p>Связанные обмены: #{adminDeleteDraft.preview.activeExchanges.join(', #')}</p>
+                        ) : null}
+                        {adminDeleteDraft.preview.activeReturns.length ? (
+                          <p>Связанные возвраты: #{adminDeleteDraft.preview.activeReturns.join(', #')}</p>
+                        ) : null}
+                        {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
+                          <>
+                            <p><strong>Порядок, в котором нужно разбирать связанные операции:</strong></p>
+                            <ol>{adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>(
+                              <li key={step.type+':'+step.id}>
+                                {step.type==='return'?'Возврат':'Обмен'} #{step.id}
+                                {' — '}{step.reason}{step.requiresManualReview?' (требуется ручная проверка)':''}
+                              </li>
+                            ))}</ol>
+                            <p className="muted">Это план проверки, а не автоматическая отмена.
+                              Финансовые и складские операции не запускаются из этого окна.</p>
+                          </>
+                        ) : null}
+                        {adminDeleteDraft.preview.reasons.length ? (
+                          <ul>{adminDeleteDraft.preview.reasons.map((reason:string,i:number)=>
+                            <li key={i}>{reason}</li>
+                          )}</ul>
+                        ) : null}
+                        {adminDeleteDraft.preview.explanations.length ? (
+                          <ul>{adminDeleteDraft.preview.explanations.map((reason:string,i:number)=>
+                            <li key={i}>{reason}</li>
+                          )}</ul>
+                        ) : null}
+                        <p className="muted">Удаление меняет учётную историю, но не возвращает деньги физически.
+                          Если покупатель уже получил товар или деньги, сначала оформите фактическое движение.
+                          При выдаче товара система отдельно потребует подтвердить физический факт.</p>
+                      </>
+                    ) : null}
+                    <div className="toolbar-actions">
+                      <button className="secondary" type="button" disabled={adminDeleteDraft.submitting}
+                        onClick={()=>setAdminDeleteDraft(null)}>Отмена</button>
+                      <button className="ghost danger" type="button"
+                        disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder||(!adminDeleteDraft.preview?.canAttemptDelete||!adminDeleteDraft.preview?.chainPlan?.snapshotFingerprint)}
+                        onClick={()=>{void(async()=>{
+                          setAdminDeleteDraft((d)=>d?{...d,submitting:true,error:''}:d)
+                          const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true,adminDeleteDraft.preview.chainPlan.snapshotFingerprint)
+                          if(ok)setAdminDeleteDraft(null)
+                          else setAdminDeleteDraft((d)=>d?{...d,submitting:false,
+                            error:'Удаление не выполнено. Проверьте сообщение об ошибке и обновите проверку.'}:d)
+                        })()}}>
+                        {adminDeleteDraft.submitting?'Удаляю…':'Подтвердить удаление'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {exchangeChainDraft ? (
+                <div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{
+                  if(event.target===event.currentTarget)setExchangeChainDraft(null)
+                }}>
+                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Порядок отмены обменов" style={{maxWidth:580}}>
+                    <div className="modal-head">
+                      <div><div className="card-label">Только проверка зависимостей</div>
+                        <h3>Порядок отмены — {exchangeChainDraft.order.external_id}</h3></div>
+                      <button className="ghost compact" type="button" onClick={()=>setExchangeChainDraft(null)}>Закрыть</button>
+                    </div>
+                    {exchangeChainDraft.loading ? <p>Проверяю последовательность обменов и возвратов…</p> : null}
+                    {exchangeChainDraft.error ? <p role="alert" className="error">{exchangeChainDraft.error}</p> : null}
+                    {exchangeChainDraft.available.length>0 ? (
+                      <label className="form-field"><span>Какой обмен нужно отменить?</span>
+                        <select value={exchangeChainDraft.selected} disabled={exchangeChainDraft.loading}
+                          onChange={(event)=>{
+                            const exchangeId=Number(event.target.value)
+                            setExchangeChainDraft((d)=>d?{...d,selected:exchangeId,loading:true,error:''}:d)
+                            void (async()=>{
+                              try {
+                                const result=await loadExchangeCancellationPreview(exchangeChainDraft.order,exchangeId)
+                                setExchangeChainDraft((d)=>d?{...d,loading:false,selected:exchangeId,
+                                  preview:result.preview,available:result.availableExchangeIds,error:''}:d)
+                              } catch(error) {
+                                setExchangeChainDraft((d)=>d?{...d,loading:false,preview:null,
+                                  error:error instanceof Error?error.message:'Не удалось обновить проверку.'}:d)
+                              }
+                            })()
+                          }}>
+                          {exchangeChainDraft.available.map((id:number)=><option key={id} value={id}>Обмен #{id}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
+                    {exchangeChainDraft.preview ? (
+                      <>
+                        <p>{exchangeChainDraft.preview.notice}</p>
+                        <ol>
+                          {exchangeChainDraft.preview.steps.map((step:any)=>(
+                            <li key={step.type+':'+step.id}>
+                              {step.type==='return'?'Возврат':'Обмен'} #{step.id}
+                              {' — '}{step.reason}{step.requiresManualReview?' (нужна ручная проверка)':''}
+                            </li>
+                          ))}
+                        </ol>
+                        <p className="muted">Это только рекомендуемый порядок. Отмены здесь не выполняются. Перед каждым действием система отдельно проверит финансы, склад и актуальность данных.</p>
+                      </>
+                    ) : !exchangeChainDraft.loading && !exchangeChainDraft.error ?
+                      <p>У этого заказа нет активных обменов.</p> : null}
+                    <div className="toolbar-actions">
+                      <button type="button" className="secondary" onClick={()=>setExchangeChainDraft(null)}>Понятно</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {oldExchangePriceDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={(event)=>{if(event.target===event.currentTarget&&!savingOrder)setOldExchangePriceDraft(null)}}>
+                  <form className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Исправление цены до обмена" style={{maxWidth:560}}
+                    onSubmit={(event)=>{event.preventDefault();void (async()=>{
+                      if(!oldExchangePriceDraft||oldExchangePriceDraft.loading)return
+                      const item=oldExchangePriceDraft.items.find((x:any)=>x.orderItemId===oldExchangePriceDraft.itemId)
+                      const next=Number(oldExchangePriceDraft.price)
+                      if(!item||!Number.isSafeInteger(next)||next<0){
+                        setOldExchangePriceDraft((d)=>d?{...d,error:'Укажите целую корректную цену.'}:d);return
+                      }
+                      const ok=await correctRetiredExchangePrice(oldExchangePriceDraft.order,item,next)
+                      if(ok){setOldExchangePriceDraft(null);setExtraActionsOrderId(null)}
+                    })()}}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Исправление исторической записи</div>
+                        <h3>{oldExchangePriceDraft.order.external_id}</h3>
+                      </div>
+                      <button type="button" className="ghost compact" disabled={savingOrder}
+                        onClick={()=>setOldExchangePriceDraft(null)}>Закрыть</button>
+                    </div>
+                    {oldExchangePriceDraft.loading?<p>Загружаю связанные позиции обмена…</p>:null}
+                    {oldExchangePriceDraft.error?<p role="alert" className="error">{oldExchangePriceDraft.error}</p>:null}
+                    {oldExchangePriceDraft.items.length>0?(
+                      <>
+                        <label className="form-field">
+                          <span>Старая позиция обмена</span>
+                          <select value={oldExchangePriceDraft.itemId} disabled={savingOrder}
+                            onChange={(event)=>{
+                              const itemId=Number(event.target.value)
+                              const item=oldExchangePriceDraft.items.find((x:any)=>x.orderItemId===itemId)
+                              setOldExchangePriceDraft((d)=>d?{...d,itemId,
+                                price:String(item?.currentRecordedUnitPrice??0),error:''}:d)
+                            }}>
+                            {oldExchangePriceDraft.items.map((item:any)=>
+                              <option key={item.exchangeId+':'+item.orderItemId} value={item.orderItemId}>
+                                {item.productName} · {item.size||'—'} · {item.color||'—'} (обмен #{item.exchangeId})
+                              </option>
+                            )}
+                          </select>
+                        </label>
+                        <p className="muted">Исправленная цена относится к старой позиции обмена, которая сейчас отсутствует в заказе. Деньги, склад и сам обмен не меняются.</p>
+                        <label className="form-field">
+                          <span>Правильная цена за 1 шт. (₸)</span>
+                          <input type="number" min="0" step="1" required
+                            disabled={savingOrder} value={oldExchangePriceDraft.price}
+                            onChange={(event)=>setOldExchangePriceDraft((d)=>d?{...d,price:event.target.value,error:''}:d)}/>
+                        </label>
+                        <p className="muted">При последующей отмене обмена система проверит, допустимо ли восстановить товар по этой цене без несоответствия оплат и возвратов.</p>
+                      </>
+                    ):null}
+                    <div className="toolbar-actions">
+                      <button type="button" className="secondary" disabled={savingOrder}
+                        onClick={()=>setOldExchangePriceDraft(null)}>Отмена</button>
+                      <button className="primary" type="submit" disabled={savingOrder||oldExchangePriceDraft.loading||!oldExchangePriceDraft.items.length}>
+                        {savingOrder?'Сохраняю…':'Сохранить исправление'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
               {priceDraft ? (
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={(event) => { if (event.target === event.currentTarget && !savingOrder) setPriceDraft(null) }}>
@@ -527,7 +785,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         disabled={savingOrder} onChange={(event) => setPriceDraft((current) => current ? {...current, price: event.target.value, error: ''} : current)} />
                     </label>
                     {priceDraft.error ? <p role="alert" className="error">{priceDraft.error}</p> : null}
-                    <p className="muted">Самостоятельный возврат не нужно отменять: сумма возврата остаётся прежней. Цена позиции, связанной с действующим обменом, пока защищена от перезаписи — система объяснит причину.</p>
+                    <p className="muted">Самостоятельный возврат не нужно отменять. Для товара из обмена V2 исправление разрешается только при однозначной связи и без последующих зависимых операций. Деньги, склад и исходная история обмена не изменяются.</p>
                     <div className="toolbar-actions">
                       <button className="secondary" type="button" disabled={savingOrder} onClick={() => setPriceDraft(null)}>Отмена</button>
                       <button className="primary" type="submit" disabled={savingOrder}>{savingOrder ? 'Сохраняю…' : 'Исправить цену'}</button>

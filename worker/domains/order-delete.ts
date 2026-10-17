@@ -4,12 +4,12 @@ import { isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot } from './ca
 import { CriticalOperationConflictError } from './critical.ts'
 import { restoreArchivedOrder } from './orders-read.ts'
 import { getOrder, updateOrderCritical } from './orders-write.ts'
-import { cancelExchange, cancelReturn } from './returns-exchanges.ts'
+import { previewAdminOrderDeletion } from './order-delete-preview.ts'
 
 export async function deleteOrderSafely(
   db: D1Database,
   orderId: number,
-  input: { requestId?: string; comment?: string; physicalOutcome?: 'not_issued' },
+  input: { requestId?: string; comment?: string; physicalOutcome?: 'not_issued'; expectedSnapshot?: string },
   actor: AuthUser | null = null,
   checkedBy = '',
 ) {
@@ -19,6 +19,23 @@ export async function deleteOrderSafely(
   if (!order) throw new CriticalOperationConflictError('Заказ не найден. Возможно, он уже был удалён.')
   if (normalizeOrderStatus((order as any).order_status) === 'deleted') {
     return { ok: true, alreadyDeleted: true, autoCancelledReturns: 0, autoCancelledExchanges: 0, refreshRequired: true, message: 'Заказ уже удалён.' }
+  }
+
+  // Do not start ANY physical/shipping/archive mutation while downstream
+  // operations exist: the legacy loop was not atomic and called the wrong
+  // handler for Exchange Set V2. Admin must correct/cancel dependent operations
+  // separately until the full resumable chain cancel workflow is verified.
+  const deletionPreview=await previewAdminOrderDeletion(db,orderId)
+  const expectedSnapshot=cleanText(input.expectedSnapshot)
+  if(!/^[0-9a-f]{64}$/.test(expectedSnapshot)
+    || expectedSnapshot!==deletionPreview.chainPlan.snapshotFingerprint){
+    throw new CriticalOperationConflictError('Данные заказа изменились или предварительная проверка устарела. Откройте удаление заново и проверьте финансовые и складские последствия.')
+  }
+  if(!deletionPreview.canAttemptDelete) {
+    throw new CriticalOperationConflictError(
+      'Удаление остановлено без изменений. '+deletionPreview.reasons.join(' ')+
+      ' Откройте «Удалить» для просмотра последствий и зависимостей.'
+    )
   }
 
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
@@ -299,30 +316,10 @@ export async function deleteOrderSafely(
     if (!order) throw new CriticalOperationConflictError('Заказ не загрузился после выхода из архива. Повторите удаление — повтор безопасен.')
   }
 
-  let autoCancelledExchanges = 0
-  for (const exchange of activeExchanges) {
-    const exchangeId = toInt(exchange.id, 0)
-    await cancelExchange(db, exchangeId, {
-      requestId: `${requestId}:exchange:${exchangeId}`,
-      comment: `Автоматически отменено перед удалением ошибочного заказа ${(order as any).external_id}`,
-    })
-    autoCancelledExchanges += 1
-  }
-
-  const activeReturns = await db.prepare(
-    `SELECT id FROM returns
-     WHERE order_id = ? AND COALESCE(status, 'completed') <> 'cancelled'
-     ORDER BY id DESC`
-  ).bind(orderId).all<{ id: number }>()
-  let autoCancelledReturns = 0
-  for (const ret of activeReturns.results || []) {
-    const returnId = toInt(ret.id, 0)
-    await cancelReturn(db, returnId, {
-      requestId: `${requestId}:return:${returnId}`,
-      comment: `Автоматически отменено перед удалением ошибочного заказа ${(order as any).external_id}`,
-    })
-    autoCancelledReturns += 1
-  }
+  // Linked Exchanges and Returns are preflight-blocked above. No partial
+  // auto-cancellation is allowed inside the order deletion path.
+  const autoCancelledExchanges = 0
+  const autoCancelledReturns = 0
 
   const externalId = cleanText((order as any).external_id)
   const result = await updateOrderCritical(

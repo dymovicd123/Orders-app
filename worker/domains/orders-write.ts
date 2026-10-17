@@ -2,6 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
+import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
@@ -1860,6 +1861,7 @@ export async function updateOrderCritical(
         };
       }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+      const linkedExchangePriceCorrections = new Map<number,{exchangeId:number;originalUnitPrice:number;role:'old'|'new'}>()
       if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
         const operations = await completedOrderOperationCounts(db, id);
         if (recordedPriceOnlyRequest && priceOnlyItemsEdit && (operations.returns > 0 || operations.exchanges > 0)) {
@@ -1901,7 +1903,16 @@ export async function updateOrderCritical(
               id, correction.orderItemId,
               id, correction.orderItemId).first<{ exchange_link: number; return_link: number }>();
             if (toInt(dependency?.exchange_link, 0)) {
-              throw new CriticalOperationConflictError('Позиция связана с действующим обменом. Его отмена сверяет исходные ценовые снимки. Исправление цены выполняется отдельным сценарием с сохранением истории обмена.');
+              if (rawItemPriceCorrections.length!==1) {
+                throw new CriticalOperationConflictError('Исправляйте цену позиции обмена отдельно от остальных позиций.')
+              }
+              const actual=itemizedPricingRows?.find((row)=>toInt(row.id,0)===correction.orderItemId)
+              if (!actual) throw new CriticalOperationConflictError('Позиция обмена не найдена для проверки цены.')
+              const partialOld=await findPartialV2OldPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const newLink=partialOld?null:await findExchangeNewPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const link=partialOld||newLink
+              if (!link) throw new CriticalOperationConflictError('Связь позиции с обменом не найдена. Исправление остановлено.')
+              linkedExchangePriceCorrections.set(correction.orderItemId,{...link,role:partialOld?'old':'new'})
             }
             // A standalone Return retains the actual refund as its own money
             // event. Its cancellation never rewrites or compares order_item price.
@@ -1941,6 +1952,9 @@ export async function updateOrderCritical(
               expectedOrderTotal: toInt(existingAny.total_amount, 0),
               expectedReceived: toInt(existingAny.received_amount, 0),
               expectedReturns: toInt(existingAny.return_amount, 0),
+              exchangeId: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.exchangeId ?? null,
+              originalExchangeUnitPrice: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.originalUnitPrice ?? null,
+              exchangeRole: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.role ?? null,
             }))
           : [],
         rewritePayments, deletingOrder, deferShippingCommit,
@@ -2018,11 +2032,40 @@ export async function updateOrderCritical(
                  AND COALESCE(o.order_status, 'active') <> 'deleted'
                  AND (SELECT COALESCE(SUM(active.line_total),0)
                       FROM order_items active WHERE active.order_id=o.id AND active.quantity>0) = o.total_amount
-                 AND NOT EXISTS(
-                   SELECT 1 FROM exchanges e
-                   WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
-                     AND (e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id
-                       OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id AND ei.order_item_id=oi.id))
+                 AND (
+                   (? IS NULL AND NOT EXISTS(
+                     SELECT 1 FROM exchanges e
+                     WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
+                       AND (e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id
+                         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id AND ei.order_item_id=oi.id))
+                   ))
+                   OR (? IS NOT NULL
+                     AND (SELECT COUNT(*)
+                          FROM exchanges e JOIN exchange_items ei ON ei.exchange_id=e.id
+                          WHERE e.order_id=o.id AND ei.order_item_id=oi.id
+                            AND COALESCE(e.status,'completed')<>'cancelled') = 1
+                     AND EXISTS(
+                       SELECT 1 FROM exchanges e
+                       JOIN exchange_items ei ON ei.exchange_id=e.id
+                       JOIN critical_operations op
+                         ON op.operation_type='exchange_set_create' AND op.target_type='exchange'
+                         AND op.target_id=e.id
+                       WHERE e.id=? AND e.order_id=o.id AND ei.order_item_id=oi.id
+                         AND ei.role=? AND COALESCE(e.status,'completed')<>'cancelled'
+                         AND NOT EXISTS(
+                           SELECT 1 FROM critical_operations cancel
+                           WHERE cancel.operation_type='exchange_set_cancel'
+                             AND cancel.status IN ('started','completed')
+                             AND (cancel.target_id=e.id
+                               OR CAST(json_extract(cancel.context_json,'$.exchangeId') AS INTEGER)=e.id)
+                         )
+                     )
+                     AND (? <> 'old' OR NOT EXISTS(
+                       SELECT 1 FROM returns r JOIN return_items ri ON ri.return_id=r.id
+                       WHERE r.order_id=o.id AND ri.order_item_id=oi.id
+                         AND COALESCE(r.status,'completed')<>'cancelled'
+                     ))
+                   )
                  )
                  AND NOT EXISTS(
                    SELECT 1 FROM returns refund
@@ -2038,10 +2081,26 @@ export async function updateOrderCritical(
             audit.expectedCatalogPriceSnapshot ?? null, audit.expectedCatalogPriceSnapshot ?? null,
             toInt(audit.expectedOrderTotal, 0), toInt(audit.expectedReceived, 0),
             toInt(audit.expectedReturns, 0),
+            audit.exchangeId ?? null,audit.exchangeId ?? null,audit.exchangeId ?? null,
+            audit.exchangeRole ?? 'new',audit.exchangeRole ?? 'new',
+          )) : [];
+        const immutableExchangeAudit = p.recordedPriceOnlyRequest && Array.isArray(p.priceAudit)
+          ? p.priceAudit.filter((audit: Record<string, any>)=>toInt(audit.exchangeId,0)>0).map((audit: Record<string, any>)=>db.prepare(
+            `INSERT INTO exchange_order_item_price_corrections(
+              request_id,order_id,order_item_id,exchange_id,role,
+              original_exchange_unit_price,old_unit_price,new_unit_price,
+              quantity_at_correction,actor_label,corrected_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+          ).bind(
+            `${criticalOperation!.requestId}:exchange:${audit.exchangeRole || 'new'}:${audit.itemId}`, id, toInt(audit.itemId,0),
+            toInt(audit.exchangeId,0),audit.exchangeRole||'new',toInt(audit.originalExchangeUnitPrice,0),
+            toInt(audit.from,0),toInt(audit.to,0),toInt(audit.expectedQuantity,0),
+            cleanText(checkedBy)||'Сотрудник',p.timestamp,
           )) : [];
         try {
           await db.batch([
           ...correctionCas,
+          ...immutableExchangeAudit,
           orderUpdateStatement,
           ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(
             `UPDATE order_items

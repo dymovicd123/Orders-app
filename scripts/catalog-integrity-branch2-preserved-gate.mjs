@@ -20,7 +20,7 @@ const reviewedDeleteGuidance = {
   originalApp: '562a41973ad154496a81c8d5c151aff5119a46bf',
   currentApp: '505ae6ee1e691db95c78c97aba445cd3aa066d7e',
   files: {
-    'worker/domains/order-delete.ts': '2a6b3ecb5afbd0256b9d880ca9bcb038707fe1f4',
+    'worker/domains/order-delete.ts': '041aaa47af3ae1cfc45a822e968dc63ce536ac5f',
     'worker/domains/critical.ts': '4d45032c6e75fd6a62f213242def01b5f47b81db',
     'scripts/test-order-delete-physical-guidance-r1.mjs': '5a28da06b7da7c82e65e94f5d475c58aaa6b27d7',
   },
@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'0870d5135e9912030276309911544500186bc4d0',
+  'worker/index.ts':'a070d1aa667f5094e20574ac2d178fd16e243398',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -69,16 +69,16 @@ for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
-  appAfter: '0f4e7180833a89060c0d2f173146a843d45b57f9',
+  appAfter: 'cc2be798b049f4063848449c3fec4460a380ac2e',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: 'c0adb876107e848d7ff6bca0269a3f4edc382951',
+  tableAfter: '52f95261a9f63eaa9c4e7e0a3e634e95896ac730',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedHandoverUx.appAfter
-  : file === 'worker/domains/orders-write.ts' ? '38d64e6c9e547d8566ea976300197a530a83be88'
+  : file === 'worker/domains/orders-write.ts' ? 'edfcd173c02adb7a448ba759935a0348d144b95d'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -112,6 +112,19 @@ const stage04B2Extensions={
   'src/features/workshop/WorkshopSettlementsPanel.tsx':'8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
   'src/styles/stage04-workshop-settlements.css':'6796899d63de3e2183a95605b9280764c9e64b48',
 }
+const reviewedExchangePriceFiles={
+  'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
+  'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
+  'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
+  'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
+  'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
+  'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
+  'worker/domains/admin-delete-saga.ts':'be55ff1c5d9158754c9699349dfb9a1efe39e3a8',
+  'worker/domains/admin-delete-real-driver.ts':'561725d77df44af089e1aee0e5d1cbe23cc16f5a',
+}
+for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
+
 const reviewedEthnoNewFiles={
   'migrations/0109_v72_catalog_manual_movement_finalization.sql':'06314e11b70918ae5a133b076f397fbbb27d0511',
   'worker/domains/catalog-manual-history-finalization.ts':'ce672c90cd6d223a853aa827bb5bea466c695624',
@@ -180,7 +193,7 @@ const priorExchangeModules=[
   {
     "file": "worker/domains/returns-exchanges.ts",
     "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
-    "after": "14327c966fceb9f42f49c1fc39148e8081c4a19f",
+    "after": "c10b1e68928efe742940499e5b4c9b4375ece72e",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
   },
   {
@@ -221,7 +234,7 @@ const recordedPricePolicyTests=[
     file:'scripts/test-order-delete-mobility.mjs',
     fixture:'scripts/fixtures/recorded-price-20261017/test-order-delete-mobility.mjs',
     before:'24f70e68f044b0ac3a63cd750f2324a350d1da74',
-    after:'2e891bf9223cd17995731e877b326bcc26e35cc8',
+    after:'f0f1c68544a0d49aeaaf6cab942208dd911bacc5',
   },
 ]
 for(const entry of recordedPricePolicyTests){
@@ -290,6 +303,26 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
+  ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
+  ['scripts/test-v2-old-retired-price-correction-r1.mjs',true],
+  ['scripts/test-v2-partial-old-price-correction-r1.mjs',true],
+  ['scripts/test-exchange-cancel-chain-preview-r1.mjs',true],
+  ['scripts/test-admin-order-delete-safe-preview-r1.mjs',true],
+  ['scripts/test-admin-delete-chain-plan-r1.mjs',true],
+  ['scripts/test-admin-delete-resumable-saga-r1.mjs',true],
+  ['scripts/test-admin-delete-real-driver-r1.mjs',true],
+  ['scripts/test-admin-delete-real-return-handler-r1.mjs',true],
+  ['scripts/test-admin-delete-real-v2-handler-r1.mjs',true],
+  ['scripts/test-admin-delete-real-chain-handler-r1.mjs',true],
+  ['scripts/test-admin-saga-local-cloudflare-d1-r1.mjs',true],
+  ['scripts/test-admin-saga-worker-local-d1-r1.mjs',true],
+  ['scripts/fixtures/admin-delete-local-d1-worker.ts',true],
+  ['scripts/test-admin-saga-worker-chain-local-d1-r1.mjs',true],
+  ['scripts/fixtures/admin-delete-local-d1-chain-worker.ts',true],
+  ['scripts/fixtures/admin-delete-worker-chain-seed.mjs',true],
+  ['worker/domains/admin-delete-finalize.ts',true],
+  ['worker/domains/admin-delete-final-driver.ts',true],
+  ['scripts/test-admin-saga-migrations-schema-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
@@ -370,6 +403,7 @@ try{
     ...Object.entries(manifest.addedFiles || {}),
     ...Object.entries(stage04B2Extensions),
     ...Object.entries(reviewedEthnoNewFiles),
+    ...Object.entries(reviewedExchangePriceFiles),
   ]){
     const from=path.resolve(relative)
     check(gitBlob(fs.readFileSync(from,'utf8'))===reviewedCatalogAdded(relative,expected),'New module drifted: '+relative)
@@ -378,6 +412,24 @@ try{
     fs.renameSync(from,to)
     hidden.push({relative,from,to,expected:reviewedCatalogAdded(relative,expected)})
   }
+  // PR472 adds two dormant Worker modules absent from the historical
+  // declaration-count snapshot. Confirm exact hashes, move them out only
+  // during that archived suite, and restore both in finally. They are
+  // independently exercised by current Worker+D1 tests and TS build.
+  for(const [relative,expected] of [
+    ['worker/domains/admin-delete-finalize.ts','95107cab38dfda9b837331399cebe5cb4d5476ab'],
+    ['worker/domains/admin-delete-final-driver.ts','60c3fe406d6e52dfff4ef20cd54230cf06923968'],
+  ]){
+    const from=path.resolve(relative)
+    check(gitBlob(fs.readFileSync(from,'utf8'))===expected,
+      'Unreviewed finalizer module drift: '+relative)
+    const to=path.join(staged,relative)
+    fs.mkdirSync(path.dirname(to),{recursive:true})
+    fs.renameSync(from,to)
+    hidden.push({relative,from,to,expected})
+  }
+  // admin-delete-saga.ts was already hidden by the frozen added-file manifest;
+  // do not stage it twice or the historical source tree would be incomplete.
   for(const [relative,delta] of Object.entries(manifest.files)){
     const full=path.resolve(relative)
     saved.set(full,fs.readFileSync(full,'utf8'))

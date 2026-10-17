@@ -1,0 +1,32 @@
+name: Dormant admin delete saga retry fault injection
+on:
+  pull_request:
+    branches:
+      - feat/branch2-admin-delete-chain-plan-20261017
+      - branch2
+    paths:
+      - 'worker/domains/admin-delete-saga.ts'
+      - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
+      - 'scripts/test-admin-delete-resumable-saga-r1.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+      - 'docs/continuation/MANAGER_ORDER_CORRECTION_CHAIN_MATRIX_20261017.md'
+      - '.github/workflows/test-admin-delete-resumable-saga.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: SQLite durable saga before and after cancellation failure injections
+        run: node --experimental-strip-types scripts/test-admin-delete-resumable-saga-r1.mjs
+      - name: Full history and Stage04 regression
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: Production TypeScript and frontend build
+        run: npm run build
