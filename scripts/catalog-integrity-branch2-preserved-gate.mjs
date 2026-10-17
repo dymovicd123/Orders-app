@@ -173,7 +173,7 @@ const reviewedExchangePriceFiles={
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
   'worker/domains/order-delete-preview.ts':'4c87b34ec14f502c1d1ee4a8c15fcc8c530ac2ee',
-  'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
+  'worker/domains/order-delete-chain-plan.ts':'410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
   'worker/domains/admin-delete-saga.ts':'35d9d2b07c47eb203e19c071888c49ee77e9729a',
