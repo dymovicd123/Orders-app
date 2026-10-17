@@ -7,6 +7,7 @@ import { CriticalOperationConflictError } from './critical.ts'
 
 type ExchangeNode = {
   type:'exchange'; id:number; isV2:boolean; generatedRefundId:number|null;
+  legacyOldItemId:number|null;legacyNewItemId:number|null;
 }
 type ReturnNode = {type:'return';id:number}
 export type ChainCancellationStep = {
@@ -25,7 +26,7 @@ export async function previewExchangeCancellationChain(
   const orderId=toInt(orderIdRaw,0), exchangeId=toInt(exchangeIdRaw,0)
   if(!orderId||!exchangeId)throw new CriticalOperationConflictError('Укажите заказ и обмен для проверки цепочки.')
   const exchangeRows=await db.prepare(
-    \`SELECT e.id,e.refund_return_id,
+    \`SELECT e.id,e.refund_return_id,e.old_order_item_id,e.new_order_item_id,
       EXISTS(SELECT 1 FROM critical_operations op
         WHERE op.operation_type='exchange_set_create' AND op.target_type='exchange'
           AND op.target_id=e.id) AS is_v2
@@ -40,7 +41,9 @@ export async function previewExchangeCancellationChain(
     const id=toInt(x.id,0)
     if(!id||nodes.has('e'+id))throw new CriticalOperationConflictError('В цепочке обнаружены неоднозначные обмены.')
     nodes.set('e'+id,{type:'exchange',id,isV2:toInt(x.is_v2,0)===1,
-      generatedRefundId:toInt(x.refund_return_id,0)||null})
+      generatedRefundId:toInt(x.refund_return_id,0)||null,
+      legacyOldItemId:toInt(x.old_order_item_id,0)||null,
+      legacyNewItemId:toInt(x.new_order_item_id,0)||null})
   }
   const root='e'+exchangeId
   if(!nodes.has(root))throw new CriticalOperationConflictError('Обмен не найден в активных обменах этого заказа.')
@@ -95,6 +98,22 @@ export async function previewExchangeCancellationChain(
       throw new CriticalOperationConflictError('Связь возвращённого товара повреждена.')
     if(!returnsByItem.has(itemId))returnsByItem.set(itemId,new Set())
     returnsByItem.get(itemId)!.add(rid)
+  }
+
+  // The legacy format may store links only on exchanges rather than
+  // exchange_items. Both representations must be considered or a later legacy
+  // exchange can disappear from a manager's dependency preview.
+  for (const node of nodes.values()) {
+    if(node.type!=='exchange')continue
+    if(node.legacyOldItemId){
+      if(!oldItemConsumers.has(node.legacyOldItemId))oldItemConsumers.set(node.legacyOldItemId,new Set())
+      oldItemConsumers.get(node.legacyOldItemId)!.add(node.id)
+    }
+    if(node.legacyNewItemId){
+      if(!newItemOwners.has(node.legacyNewItemId))newItemOwners.set(node.legacyNewItemId,new Set())
+      newItemOwners.get(node.legacyNewItemId)!.add(node.id)
+    }
+    if(node.isV2 && ![...newItemOwners.values()].some(owners=>owners.has(node.id)))anomalies.add('e'+node.id)
   }
 
   // Edges always point from an earlier Exchange to a later operation that
