@@ -20,7 +20,7 @@ Correct **recorded information**, not actual money or physical inventory. The UI
 | Employee cancels erroneous Return/Exchange | Explicit action with safe preview and accurate ownership | NOT IMPLEMENTED |
 | Admin deletion: preview all active Exchanges/Returns and money/stock consequences | Stacked PR #458 admin-only impact dialog and early block on linked operations; removes legacy non-atomic auto-cancellation | Candidate; linked deletion fail-closed; E2E pending |
 | Admin deletion: full dependency ordering and stale approval | Stacked PR #459 composes ALL active operations, generated refunds owned by their Exchange, SHA-256 fingerprint for current items/payments/returns/reservations. Blocks positive payments and inconsistent ledger | Candidate; read-only plan and SQLite tests; NO executor |
-| Admin safely deletes erroneous order with multiple related operations in ONE action | PR #460 adds dormant persisted per-step saga with deterministic idempotency keys, lease and atomic checkpoint CAS; existing real cancellation handlers are NOT wired; financial cases blocked | Fault-injected SQLite candidate ONLY; full live executor and cash/stock E2E NOT IMPLEMENTED |
+| Admin safely deletes erroneous order with multiple related operations in ONE action | PR #460 persistent saga and stacked PR #461 dormant REAL handler adapter (`cancelReturn`, `cancelExchangeSetV2`), per-step critical-operation verification and cash/physical blockers; no HTTP activation | Isolated SQL mocks and failure tests only; actual D1 handler + stock lifecycle E2E NOT IMPLEMENTED |
 
 ## Required schema/rollout
 PR #454 introduces migration 0110 (immutable exchange-order-line price provenance). This schema must be applied **to branch2's isolated D1 first**, before deploying Worker code that allows exchange-linked corrections. Do not run it on production without explicit separate authorization. No automatic merge of main and branch2.
@@ -36,4 +36,12 @@ PR #454 introduces migration 0110 (immutable exchange-order-line price provenanc
 8. Admin delete preflight must show every dependent exchange/return/payment impact and either execute safely or block before partial mutation.
 9. Independently query **branch2 D1** for actual totals and event chain, and manually check manager UI. Do not use production data for destructive tests.
 
-Current status: PR #454, stacked PR #455, stacked PR #456, chain preview PR #457, admin safety PR #458, full read-only plan PR #459 and dormant saga PR #460 are separate, **not yet merged or deployed**. Migration 0111 for the journal has NOT been applied. Saga currently cannot execute from any Worker HTTP route and forbids unresolved payments/refunds. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.
+Current status: PR #454, stacked PR #455, stacked PR #456, chain preview PR #457, admin safety PR #458, full read-only plan PR #459, dormant saga PR #460 and V2 handler adapter PR #461 are separate, **not yet merged or deployed**. Migration 0111 for the journal has NOT been applied. Saga currently cannot execute from any Worker HTTP route and forbids unresolved payments/refunds. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.
+
+
+## Explicit blockers before staging branch2
+- Exchange Set V2 cancellation must be exercised against its **actual** Worker+D1 implementation, not just injected handler mocks, including physical stock/transfer and revision chronology.
+- Saga adapter deliberately refuses sent/fulfilled handovers and any payment, Return refund or Exchange financial action. These common customer orders still need a sanctioned actual-money and physical-truth reversal workflow.
+- Legacy Exchange is excluded; never substitute `cancelExchange` silently for V2.
+- Migrations 0110 and 0111 have NOT been run on branch2 D1. Their production binding must never be passed to a migration workflow.
+- The one-click admin action remains disabled; no frontend or HTTP route invokes the saga. Full manual branch2 acceptance can only follow schema-first isolated migration and real D1 E2E.
