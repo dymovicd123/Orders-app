@@ -92,14 +92,23 @@ const reviewedMetadataUx={
 check(reviewedMetadataUx.priorApp==='b1928fcc44a23260087adb4a4df294bd11444a84'
   &&reviewedMetadataUx.priorTable==='413b5cfd086c2f24037f00492bc2684eb24c3fe6',
   'Previous accepted batch-price UI drifted')
-check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedMetadataUx.app,
-  'Unreviewed metadata correction App drift')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedMetadataUx.table,
+const reviewedReferenceDropdownUx={
+  previousApp:reviewedMetadataUx.app,
+  previousTable:reviewedMetadataUx.table,
+  app:'daf1365cacdc7af4b3a6026c0f80a5660567a0f0',
+  table:'6d7870e410571d5978577570fe9e5c2cb5fd260e',
+}
+check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc99586450e7'
+  &&reviewedReferenceDropdownUx.previousTable==='75d40b03cf1d4beb99b24d0ed380c3200b378324',
+  'Previous approved metadata UI changed unexpectedly')
+check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedReferenceDropdownUx.app,
+  'Unreviewed reference dropdown App drift')
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedReferenceDropdownUx.table,
   'Unreviewed metadata correction UI drift')
 check(gitBlob(fs.readFileSync('worker/domains/orders-write.ts','utf8'))===reviewedMetadataUx.write,
   'Unreviewed metadata correction Worker drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedMetadataUx.app
+  ? reviewedReferenceDropdownUx.app
   : file === 'worker/domains/orders-write.ts' ? reviewedMetadataUx.write
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
@@ -325,6 +334,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-safe-order-metadata-edit-20261017.mjs',false],
+  ['scripts/test-metadata-reference-dropdown-20261017.mjs',false],
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
   ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
@@ -502,7 +512,7 @@ try{
   }
   const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
   const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
-  check(gitBlob(orderTableCurrent)===reviewedMetadataUx.table,'Current order list price UX changed')
+  check(gitBlob(orderTableCurrent)===reviewedReferenceDropdownUx.table,'Current order list price UX changed')
   // Reconstruct only the previously accepted UI for its immutable historical tests.
   // Independently test and retain the new review-first shipping action in current code.
   const reviewFirstHelp='                            {projection.canShip && order.stock_handover_review_needed ? (\n                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>\n                            ) : null}\n'
@@ -568,7 +578,7 @@ for(const entry of recordedPricePolicyTests)
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order test was not restored: '+entry.file)
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedMetadataUx.table,
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedReferenceDropdownUx.table,
   'Failed to restore reviewed order list handover UI after historical tests')
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,
