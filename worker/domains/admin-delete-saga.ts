@@ -140,8 +140,8 @@ export async function advanceAdminDeleteSagaOneStep(
   if(!validId(requestId))throw new CriticalOperationConflictError('Неправильный ключ операции.')
   const before=await readSaga(db,requestId)
   if(!before)throw new CriticalOperationConflictError('Журнал отмены не найден.')
-  if(cleanText(before.status)==='ready_for_final_delete'
-    ||cleanText(before.status)==='cancelled')return getAdminDeleteSagaProgress(db,requestId)
+  if(['ready_for_final_delete','cancelled','completed'].includes(cleanText(before.status)))
+    return getAdminDeleteSagaProgress(db,requestId)
   if(!['planned','running'].includes(cleanText(before.status)))
     throw new CriticalOperationConflictError('Цепочка ожидает проверки администратором.')
   const orderId=toInt(before.order_id,0),next=toInt(before.next_step,0)
