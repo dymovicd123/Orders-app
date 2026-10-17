@@ -15,8 +15,8 @@ assert((reader.match(/COALESCE\(o\.customer_name_override,c\.display_name\) AS c
   'Order list and debt list must show override')
 assert(clientReader.includes('COALESCE(o.customer_name_override,c.display_name) AS customer_name'),
   'Client order history should reflect saved name')
-assert(app.includes('customerName:String(order.customer_name||\'\').trim()')===false || app.includes('customerName:String(order.customer_name||\'\').trim()'),
-  'App source must remain parseable')
+assert(app.includes('metadataCorrection:{expected,next,expectedState}'), 'Frontend must transmit separate metadata fields')
+assert(table.includes("customerName:String(order.customer_name||'').trim()"), 'Form should initialize from current order name')
 for(const key of ['customerName','customerPhone','city','deliveryType','orderDate','comment']){
   assert(table.includes(key), 'Metadata field not wired: '+key)
 }
