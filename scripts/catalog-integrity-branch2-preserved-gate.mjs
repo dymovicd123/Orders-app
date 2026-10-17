@@ -322,6 +322,7 @@ const tests=[
   ['scripts/fixtures/admin-delete-worker-chain-seed.mjs',true],
   ['worker/domains/admin-delete-finalize.ts',true],
   ['worker/domains/admin-delete-final-driver.ts',true],
+  ['scripts/fixtures/admin-delete-final-20261017/admin-delete-saga-before.ts',true],
   ['scripts/test-admin-saga-migrations-schema-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
@@ -412,6 +413,33 @@ try{
     fs.renameSync(from,to)
     hidden.push({relative,from,to,expected:reviewedCatalogAdded(relative,expected)})
   }
+  // PR472 adds two dormant Worker modules absent from the historical
+  // declaration-count snapshot. Confirm exact hashes, move them out only
+  // during that archived suite, and restore both in finally. They are
+  // independently exercised by current Worker+D1 tests and TS build.
+  for(const [relative,expected] of [
+    ['worker/domains/admin-delete-finalize.ts','51b7f14c8bc3fa29fcf287a32172627229581085'],
+    ['worker/domains/admin-delete-final-driver.ts','60c3fe406d6e52dfff4ef20cd54230cf06923968'],
+  ]){
+    const from=path.resolve(relative)
+    check(gitBlob(fs.readFileSync(from,'utf8'))===expected,
+      'Unreviewed finalizer module drift: '+relative)
+    const to=path.join(staged,relative)
+    fs.mkdirSync(path.dirname(to),{recursive:true})
+    fs.renameSync(from,to)
+    hidden.push({relative,from,to,expected})
+  }
+  // Compare the exact approved predecessor, rather than allowing a modified
+  // saga declaration to rewrite the immutable historical source snapshot.
+  const sagaCurrentPath=path.resolve('worker/domains/admin-delete-saga.ts')
+  const sagaCurrent=fs.readFileSync(sagaCurrentPath,'utf8')
+  const sagaBeforeFile='scripts/fixtures/admin-delete-final-20261017/admin-delete-saga-before.ts'
+  const sagaBefore=fs.readFileSync(sagaBeforeFile,'utf8')
+  check(gitBlob(sagaCurrent)==='be55ff1c5d9158754c9699349dfb9a1efe39e3a8'
+    &&gitBlob(sagaBefore)==='68aff3adaef1205690918bb1c39841b266eb41d5',
+    'Final saga predecessor or current source changed unexpectedly')
+  saved.set(sagaCurrentPath,sagaCurrent)
+  fs.writeFileSync(sagaCurrentPath,sagaBefore)
   for(const [relative,delta] of Object.entries(manifest.files)){
     const full=path.resolve(relative)
     saved.set(full,fs.readFileSync(full,'utf8'))
