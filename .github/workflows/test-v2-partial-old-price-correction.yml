@@ -8,6 +8,8 @@ on:
       - 'worker/domains/orders-write.ts'
       - 'worker/domains/exchange-price-history.ts'
       - 'worker/domains/returns-exchanges.ts'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
       - 'scripts/test-v2-partial-old-price-correction-r1.mjs'
       - 'scripts/test-order-standalone-return-price-correction-r2.mjs'
       - '.github/workflows/test-v2-partial-old-price-correction.yml'
