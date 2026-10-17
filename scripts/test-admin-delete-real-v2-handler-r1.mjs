@@ -84,9 +84,13 @@ function fixture(failurePoint) {
         crashPending=false
         throw new Error('SIMULATED_CRASH_AFTER_BUSINESS_COMMIT')
       }
+      const isNewRowZero=/UPDATE order_items\s+SET quantity = 0, line_total = 0/.test(query)
+      const beforeQuantity=isNewRowZero
+        ? sql.prepare('SELECT quantity FROM order_items WHERE id=?').get(args[0])?.quantity
+        : null
       const result=sql.prepare(query).run(...args)
       if(/UPDATE inventory_stock\s+SET reserved_quantity = MAX\(0, COALESCE\(reserved_quantity, 0\) -/.test(query)&&result.changes)stockTransitions++
-      if(/UPDATE order_items\s+SET quantity = 0, line_total = 0/.test(query)&&result.changes)zeroedNewRows++
+      if(isNewRowZero&&result.changes&&beforeQuantity>0)zeroedNewRows++
       if(crashPending && failurePoint==='new_row_zeroed'
         && /UPDATE order_items\s+SET quantity = 0, line_total = 0/.test(query)){
         crashPending=false
