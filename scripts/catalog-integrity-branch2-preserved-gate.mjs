@@ -114,11 +114,27 @@ check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedReferenceDropdown
   'Unreviewed reference dropdown App drift')
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedOptionalMetadata.table,
   'Unreviewed metadata correction UI drift')
-check(gitBlob(fs.readFileSync('worker/domains/orders-write.ts','utf8'))===reviewedOptionalMetadata.write,
-  'Unreviewed metadata correction Worker drift')
+check(reviewedOptionalMetadata.write==='e157deed999da92d7207c9bc88a70f4ea662e562','Unexpected previous Worker baseline')
+// Order-scoped customer names are additive to the previously reviewed metadata UX.
+// Read-path changes and the new migration are pinned independently, never folded
+// into old Stage04 manifests or their unchanged historical test fixtures.
+const reviewedClientNameFix={
+  write:'081a03ae4190e4b9a3de2080a8cfd3487cdf37e7',
+  read:'46166a1be5ca9a96b29e57edf63689e1278cece0',
+  clients:'4ad304386c48734ac7c9e4792ec3d0823d553221',
+  migration:'f0f3f04494747513030992a052de0d437da57525',
+  test:'73be07b2041138b3a17c1cc15d4811eeb5a3ddc5',
+}
+for(const [file,sha] of [
+  ['worker/domains/orders-write.ts',reviewedClientNameFix.write],
+  ['worker/domains/orders-read.ts',reviewedClientNameFix.read],
+  ['worker/domains/clients.ts',reviewedClientNameFix.clients],
+  ['migrations/0112_v72_order_client_name_override.sql',reviewedClientNameFix.migration],
+  ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',reviewedClientNameFix.test],
+])check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed customer name patch drift: '+file)
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedReferenceDropdownUx.app
-  : file === 'worker/domains/orders-write.ts' ? reviewedOptionalMetadata.write
+  : file === 'worker/domains/orders-write.ts' ? reviewedClientNameFix.write
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -159,6 +175,7 @@ const reviewedExchangePriceFiles={
   'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
   'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
+  'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
   'worker/domains/admin-delete-saga.ts':'be55ff1c5d9158754c9699349dfb9a1efe39e3a8',
   'worker/domains/admin-delete-real-driver.ts':'561725d77df44af089e1aee0e5d1cbe23cc16f5a',
 }
@@ -343,6 +360,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-safe-order-metadata-edit-20261017.mjs',false],
+  ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',false],
   ['scripts/test-metadata-reference-dropdown-20261017.mjs',false],
   ['scripts/test-optional-metadata-fields-20261017.mjs',false],
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
