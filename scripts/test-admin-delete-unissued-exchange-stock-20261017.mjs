@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { reviewAdminDeleteAppliedStock } from '../worker/domains/admin-delete-physical.ts'
 
 const sql=new DatabaseSync(':memory:')
-sql.exec(\`
+sql.exec(`
 CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,
   operation_id INTEGER,operation_type TEXT,event_type TEXT,direction TEXT,status TEXT,
   quantity INTEGER,variant_id INTEGER,inventory_source TEXT,movement_id INTEGER,
@@ -38,7 +38,7 @@ INSERT INTO inventory_lifecycle_events
    applied_at,created_at,operation_item_id)
 VALUES (7,9,15,2,'exchange','exchange_new_out','out','applied',1,1465,
   'warehouse',12,'2026-10-14T14:46:43.892Z','2026-10-14T14:46:43.892Z',8);
-\`)
+`)
 let writes=0
 const db={prepare(query){
   const statement={_params:[],
