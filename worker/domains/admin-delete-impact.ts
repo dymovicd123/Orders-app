@@ -48,9 +48,7 @@ export async function previewAdminDeleteImpact(db:D1Database,orderId:number,
   // Never substitute a later order-item price/name for the original snapshot.
   const exchangeIds=activeExchangeRows.map(row=>toInt(row.id,0)).filter(Boolean)
   const exchangeItems=exchangeIds.length
-    ?await db.prepare(`SELECT id,exchange_id,role,order_item_id,product_name_snapshot,
-        gender_snapshot,color_snapshot,material_snapshot,length_snapshot,
-        size_snapshot,quantity,inventory_source
+    ?await db.prepare(`SELECT *
         FROM exchange_items
         WHERE exchange_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
         ORDER BY exchange_id,id LIMIT 501`).bind(JSON.stringify(exchangeIds)).all<Record<string,unknown>>()
