@@ -658,8 +658,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                       <strong>{effect.name}</strong> ·
                                       {' '}{effect.source==='warehouse'?'Склад':
                                         effect.source==='boutique'?'Бутик':effect.source} ·
-                                      {' '}отмена списания: <strong>+{effect.physicalRestore} шт.</strong> к остатку,
-                                      {' '}освободится резерв: <strong>{effect.reserveRelease} шт.</strong>
+                                      {effect.alreadyCompensated
+                                        ?<> · списание уже компенсировано корректировкой выдачи
+                                            #{effect.correctionMovementId}. <strong>Физический остаток не изменится.</strong></>
+                                        :<> · отмена списания: <strong>+{effect.physicalRestore} шт.</strong> к остатку</>}
+                                      {' '}· освободится резерв: <strong>{effect.reserveRelease} шт.</strong>
                                       <div className="muted">Обмен #{effect.exchangeId} · складская операция #{effect.eventId}</div>
                                     </li>
                                   ))}
