@@ -40,7 +40,7 @@ ret(400,30,5000)
 ret(420,1,0) // Exchange's own automatic refund, NOT a standalone step
 ret(500,1,1000) // Another standalone Return on original item
 const initialPayments=sql.prepare('SELECT amount FROM payments WHERE id=1').get().amount
-const initialStatuses=sql.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE status="completed"').get().n
+const initialStatuses=sql.prepare("SELECT COUNT(*) AS n FROM exchanges WHERE status='completed'").get().n
 let writeCalls=0
 const db={prepare(query){
   assert(/^SELECT\s/i.test(query.trim()),'The plan must only prepare SELECT statements')
@@ -76,7 +76,7 @@ assert.equal(preview.registeredPayments,35000)
 assert.equal(preview.recordedRefunds,6000)
 assert.equal(writeCalls,0)
 assert.equal(sql.prepare('SELECT amount FROM payments WHERE id=1').get().amount,initialPayments)
-assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE status="completed"').get().n,initialStatuses)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM exchanges WHERE status='completed'").get().n,initialStatuses)
 
 sql.exec("UPDATE payments SET amount=36000 WHERE id=1")
 const paymentChanged=await previewAdminOrderDeleteChain(db,42)
