@@ -582,6 +582,19 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         {adminDeleteDraft.preview.activeReturns.length ? (
                           <p>Связанные возвраты: #{adminDeleteDraft.preview.activeReturns.join(', #')}</p>
                         ) : null}
+                        {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
+                          <>
+                            <p><strong>Порядок, в котором нужно разбирать связанные операции:</strong></p>
+                            <ol>{adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>(
+                              <li key={step.type+':'+step.id}>
+                                {step.type==='return'?'Возврат':'Обмен'} #{step.id}
+                                {' — '}{step.reason}{step.requiresManualReview?' (требуется ручная проверка)':''}
+                              </li>
+                            ))}</ol>
+                            <p className="muted">Это план проверки, а не автоматическая отмена.
+                              Финансовые и складские операции не запускаются из этого окна.</p>
+                          </>
+                        ) : null}
                         {adminDeleteDraft.preview.reasons.length ? (
                           <ul>{adminDeleteDraft.preview.reasons.map((reason:string,i:number)=>
                             <li key={i}>{reason}</li>
@@ -601,10 +614,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       <button className="secondary" type="button" disabled={adminDeleteDraft.submitting}
                         onClick={()=>setAdminDeleteDraft(null)}>Отмена</button>
                       <button className="ghost danger" type="button"
-                        disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder||!adminDeleteDraft.preview?.canAttemptDelete}
+                        disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder||(!adminDeleteDraft.preview?.canAttemptDelete||!adminDeleteDraft.preview?.chainPlan?.snapshotFingerprint)}
                         onClick={()=>{void(async()=>{
                           setAdminDeleteDraft((d)=>d?{...d,submitting:true,error:''}:d)
-                          const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true)
+                          const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true,adminDeleteDraft.preview.chainPlan.snapshotFingerprint)
                           if(ok)setAdminDeleteDraft(null)
                           else setAdminDeleteDraft((d)=>d?{...d,submitting:false,
                             error:'Удаление не выполнено. Проверьте сообщение об ошибке и обновите проверку.'}:d)
