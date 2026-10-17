@@ -1249,7 +1249,7 @@ export async function updateOrderCritical(
       ||Object.keys(rawMetadata.next).some(field=>!metadataFields.includes(field as typeof metadataFields[number]))
       ||metadataFields.some(field=>rawMetadata.next[field].length>500 || rawMetadata.expected[field].length>500))
       throw new OrderInputValidationError('Реквизиты переданы в неверном формате. Обновите заказ.');
-    if(actor?.role!=='admin' && rawMetadata.next.orderDate!==rawMetadata.expected.orderDate)
+    if(actor?.role!=='admin' && cleanText(rawMetadata.next.orderDate) && rawMetadata.next.orderDate!==rawMetadata.expected.orderDate)
       throw new CriticalOperationConflictError('Изменение даты заказа разрешено только администратору.');
   }
   let criticalOperation: CriticalOperationHandle | null = null;
@@ -1286,7 +1286,11 @@ export async function updateOrderCritical(
           ||cleanText(existingAny.shipping_status)!==cleanText(expected.shippingStatus)
           ||cleanText(existingAny.order_status)!==cleanText(expected.orderStatus))
           throw new CriticalOperationConflictError('Оплата, итог или статус заказа изменились после открытия редактора. Обновите заказ.');
-        input={...input,...rawMetadata.next};
+        // Order dates are non-null in the established D1 schema. A blank
+        // optional editor field means leave that date unchanged, rather than
+        // normalizeDate('') silently replacing it with today's date.
+        input={...input,...rawMetadata.next,
+          orderDate:cleanText(rawMetadata.next.orderDate)||cleanText(existingAny.order_date)};
       }
       const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
       type ItemPriceCorrectionInput = {

@@ -914,12 +914,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         orderDate:string;customerPhone:string;customerName:string;
                         city:string;deliveryType:string;comment:string;
                       }
-                      if(!/^\d{4}-\d{2}-\d{2}$/.test(next.orderDate)){
+                      if(next.orderDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(next.orderDate)){
                         setMetadataDraft((d)=>d?{...d,error:'Укажите дату в формате ГГГГ-ММ-ДД.'}:d)
-                        return
-                      }
-                      if(!next.customerPhone.trim()||!next.customerName.trim()){
-                        setMetadataDraft((d)=>d?{...d,error:'Укажите имя и телефон клиента.'}:d)
                         return
                       }
                       const ok=await correctOrderMetadata(metadataDraft.order,next)
@@ -935,6 +931,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         onClick={()=>setMetadataDraft(null)}>Закрыть</button>
                     </div>
                     <p>Можно исправить сведения о заказе без изменения состава, цен, оплат и склада.</p>
+                    <p className="muted" style={{fontSize:13,marginTop:0}}>Все поля необязательны. Если оставить дату пустой, прежняя дата заказа сохранится.</p>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,240px),1fr))',
                       gap:12,margin:'12px 0'}}>
                       {([
@@ -967,7 +964,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             </select>
                           ) : (
                             <input type={key==='orderDate'?'date':'text'}
-                              required={key==='orderDate'||key==='customerName'||key==='customerPhone'}
                               disabled={savingOrder||(key==='orderDate'&&!isAdmin)}
                               value={metadataDraft.next[key]||''}
                               style={{width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
