@@ -20,7 +20,8 @@ assert(worker.includes('orderDate:cleanText(rawMetadata.next.orderDate)||cleanTe
   'Empty date must preserve previous business date instead of normalizing to today')
 assert(worker.includes("if(actor?.role!=='admin' && cleanText(rawMetadata.next.orderDate)"),
   'Managers should not be blocked by an untouched date left empty')
-assert(worker.includes('SET order_date=?,customer_id=?,city=?,delivery_type=?,comment=?,updated_at=?'),
+assert(worker.includes('customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?') &&
+  worker.includes('customer_id=CASE WHEN ?') && worker.includes('ON CONFLICT(phone_normalized) DO NOTHING'),
   'Only metadata columns may be changed')
 assert(worker.includes('rawMetadata.expectedState')&&worker.includes('ORDER_METADATA_STALE'),
   'CAS protection against concurrent money/order status changes is mandatory')

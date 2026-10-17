@@ -21,7 +21,7 @@ assert(table.includes("key==='orderDate'&&!isAdmin"),'Only admin can backdate a 
 assert(worker.includes("field==='requestId'||field==='metadataCorrection'"),'Metadata must be a narrow payload')
 assert(worker.includes("if(isolatedMetadataRequest && rawMetadata)"),'Original field CAS missing')
 assert(worker.includes('rawMetadata.expectedState')&&worker.includes('expected.receivedAmount'),'Original financial snapshot guard missing')
-assert(worker.includes('SET order_date=?,customer_id=?,city=?,delivery_type=?,comment=?,updated_at=?'),'Only allowlisted metadata columns may be changed')
+assert(worker.includes('customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?'),'Order-scoped customer name must be preserved without mutating shared clients')
 assert(worker.includes("!recordedPriceOnlyRequest && !isolatedMetadataRequest"),'Active exchanges must not block independent metadata')
 assert(worker.includes("!recordedPriceOnlyRequest && !isolatedMetadataRequest)))"),'Shipment must not cause a product-rewrite on pure metadata')
 assert(worker.includes("if (isolatedMetadataRequest) {"),'Metadata correction must preserve historical money totals')
@@ -35,9 +35,9 @@ assert(worker.includes("if (p.rewriteItems || p.rewritePayments)"),'Stock/paymen
 const match=worker.match(/db\.prepare\(\`(SELECT json\('ORDER_METADATA_STALE'\)[\s\S]*?)\`\)\.bind\(id,m\.orderDate/)
 assert(match,'Cannot extract current real metadata stale guard SQL')
 const sql=new DatabaseSync(':memory:')
-sql.exec("CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,customer_id INTEGER,city TEXT,delivery_type TEXT,comment TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,return_amount INTEGER,shipping_status TEXT,order_status TEXT)")
-sql.exec("INSERT INTO orders VALUES (42,'2026-10-17',NULL,'Алматы','Самовывоз','',20000,5000,15000,0,'not_sent','active')")
-const expected=[42,'2026-10-17',0,'Алматы','Самовывоз','',20000,5000,15000,0,'not_sent','active']
+sql.exec("CREATE TABLE customers(id INTEGER PRIMARY KEY,phone_normalized TEXT,display_name TEXT);CREATE TABLE orders(id INTEGER PRIMARY KEY,order_date TEXT,customer_id INTEGER,customer_name_override TEXT,city TEXT,delivery_type TEXT,comment TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,return_amount INTEGER,shipping_status TEXT,order_status TEXT)")
+sql.exec("INSERT INTO orders VALUES (42,'2026-10-17',NULL,NULL,'Алматы','Самовывоз','',20000,5000,15000,0,'not_sent','active')")
+const expected=[42,'2026-10-17',0,'','','Алматы','Самовывоз','',20000,5000,15000,0,'not_sent','active']
 assert.deepEqual(sql.prepare(match[1]).all(...expected),[],'Matching order snapshot must pass')
 sql.exec('UPDATE orders SET received_amount=6000 WHERE id=42')
 assert.throws(()=>sql.prepare(match[1]).all(...expected),/malformed JSON|JSON|ORDER_METADATA_STALE/,'A changed payment must fail closed')

@@ -2001,20 +2001,24 @@ export async function updateOrderCritical(
         }
       }
 
-      nextCustomerId = await upsertCustomerIdentityForOrderCreate(db, nextPhone, nextCustomerName, nextCity, timestamp);
+      // Metadata edits belong to this order only: do not mutate shared clients.
+      // New phone identities are created inside the final atomic CAS batch.
+      nextCustomerId = isolatedMetadataRequest ? null
+        : await upsertCustomerIdentityForOrderCreate(db, nextPhone, nextCustomerName, nextCity, timestamp);
 
       plan = {
         timestamp,
         externalId: cleanText(existingAny.external_id),
         existingManagerId, existingCustomerId: toInt(existingAny.customer_id, 0) || null,
         previousManagerName: cleanText(existingAny.manager_name || existingAny.manager_snapshot_name),
-        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextOrderPaymentMethod, nextSource: replacementOrderSource,
+        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCustomerName, nextPhone, nextCity, nextDelivery, nextOrderPaymentMethod, nextSource: replacementOrderSource,
         finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
         persistedShippingStatus, persistedShippingDate, nextComment,
         itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,
         recordedPriceOnlyRequest,isolatedMetadataRequest,
         metadataBefore: isolatedMetadataRequest ? {
           orderDate:cleanText(existingAny.order_date),customerId:toInt(existingAny.customer_id,0),
+          customerName:cleanText(existingAny.customer_name),customerPhone:cleanText(existingAny.customer_phone),
           city:cleanText(existingAny.city),deliveryType:cleanText(existingAny.delivery_type),
           comment:cleanText(existingAny.comment),
           totalAmount:rawMetadata!.expectedState.totalAmount,
@@ -2213,21 +2217,32 @@ export async function updateOrderCritical(
             db.prepare(`SELECT json('ORDER_METADATA_STALE') WHERE NOT EXISTS(
               SELECT 1 FROM orders WHERE id=?
               AND COALESCE(order_date,'')=? AND COALESCE(customer_id,0)=?
+              AND COALESCE(customer_name_override,
+                (SELECT display_name FROM customers WHERE id=orders.customer_id),'')=?
+              AND COALESCE((SELECT phone_normalized FROM customers WHERE id=orders.customer_id),'')=?
               AND COALESCE(city,'')=? AND COALESCE(delivery_type,'')=?
               AND COALESCE(comment,'')=? AND total_amount=? AND received_amount=?
               AND debt_amount=? AND COALESCE(return_amount,0)=?
               AND COALESCE(shipping_status,'')=? AND COALESCE(order_status,'')=?
-            )`).bind(id,m.orderDate,m.customerId,m.city,m.deliveryType,m.comment,
+            )`).bind(id,m.orderDate,m.customerId,m.customerName,m.customerPhone,m.city,m.deliveryType,m.comment,
               m.totalAmount,m.receivedAmount,m.debtAmount,m.returnAmount,
               m.shippingStatus,m.orderStatus),
-            // Never execute the broad editor statement in metadata-only mode:
-            // it rewrites statuses, source, payment-method and financial totals.
-            // Only the six allowlisted details (customer through customer_id)
-            // and the technical timestamp can change.
-            db.prepare(`UPDATE orders
-              SET order_date=?,customer_id=?,city=?,delivery_type=?,comment=?,updated_at=?
-              WHERE id=?`).bind(p.nextOrderDate,p.nextCustomerId,p.nextCity||null,
-                p.nextDelivery||null,p.nextComment||null,p.timestamp,id)
+            // Creating a new phone identity, when needed, is part of the CAS
+            // transaction. Existing shared customer rows are never modified.
+            db.prepare(`INSERT INTO customers
+              (phone_normalized,display_name,city,orders_count,created_at,updated_at)
+              SELECT ?,?,?,0,?,? WHERE ?<>''
+              ON CONFLICT(phone_normalized) DO NOTHING`).bind(
+                p.nextPhone,p.nextCustomerName||null,p.nextCity||null,
+                p.timestamp,p.timestamp,p.nextPhone),
+            // Only customer/date/city/delivery/comment change. Name is order-scoped.
+            db.prepare(`UPDATE orders SET order_date=?,
+                customer_id=CASE WHEN ?<>'' THEN
+                  (SELECT id FROM customers WHERE phone_normalized=?) ELSE NULL END,
+                customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?
+              WHERE id=?`).bind(p.nextOrderDate,p.nextPhone,p.nextPhone,
+                p.nextCustomerName,p.nextCity||null,p.nextDelivery||null,
+                p.nextComment||null,p.timestamp,id)
           ]);
         }catch(error){
           if(/ORDER_METADATA_STALE|malformed JSON/i.test(String(error)))
@@ -2427,7 +2442,8 @@ export async function getOrder(db: D1Database, id: number) {
       CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
       o.manager_snapshot_name,
       COALESCE(m.color_key, '#64748B') AS manager_color,
-      c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+      c.phone_normalized AS customer_phone,
+       COALESCE(o.customer_name_override,c.display_name) AS customer_name,
       o.city, o.delivery_type, o.order_payment_method, o.source_type, o.workshop_status, o.order_status,
       ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,

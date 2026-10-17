@@ -1,0 +1,147 @@
+name: Branch2 isolated D1 name snapshot migration 0112
+on:
+  pull_request:
+    branches: [branch2]
+    types: [opened, synchronize, reopened]
+    paths: ['.github/workflows/branch2-order-client-name-schema-0112.yml']
+permissions:
+  contents: read
+concurrency:
+  group: branch2-order-name-schema-0112
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse unapproved head, fork, main or production
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == 'pull_request' && "$GITHUB_BASE_REF" == 'branch2' ]]
+          [[ "$GITHUB_HEAD_REF" == 'fix/branch2-order-client-name-snapshot-20261017' ]]
+          [[ '${{ github.event.pull_request.number }}' == '482' ]]
+          [[ '${{ github.event.pull_request.head.repo.full_name }}' == "$GITHUB_REPOSITORY" ]]
+          [[ '${{ github.event.pull_request.user.login }}' == 'dymovicd123' ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          [[ -n "$CLOUDFLARE_ACCOUNT_ID" && -n "$CLOUDFLARE_API_TOKEN" ]]
+          [[ "$(git hash-object migrations/0112_v72_order_client_name_override.sql)" == 'f0f3f04494747513030992a052de0d437da57525' ]]
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Validate new form, money/stock safety and production build
+        run: |
+          set -euo pipefail
+          node scripts/test-branch2-environment.mjs
+          node scripts/test-order-metadata-client-name-snapshot-20261017.mjs
+          node scripts/test-safe-order-metadata-edit-20261017.mjs
+          node scripts/test-admin-price-batch-delete-ux-20261017.mjs
+          npm run build
+      - name: Isolated remote schema preflight and financial/stock fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='customer_name_override') AS column_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_search_orders_fts') AS fts_exists,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
+                ('trg_order_search_orders_ai','trg_order_search_orders_au','trg_order_search_managers_au','trg_order_search_customers_au')) AS triggers,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
+                ('trg_order_search_orders_ai','trg_order_search_orders_au','trg_order_search_managers_au','trg_order_search_customers_au')
+                AND sql LIKE '%customer_name_override%') AS migrated_triggers
+          " --json | jq -cSe '.[0].results[0]' > /tmp/b2-name-schema-before.json
+          jq -e '.fts_exists==1 and .triggers==4 and
+            ((.column_count==0 and .migrated_triggers==0) or
+             (.column_count==1 and .migrated_triggers==4))' /tmp/b2-name-schema-before.json
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS total,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received,
+              (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt,
+              (SELECT COUNT(*) FROM customers) AS customers,
+              (SELECT COUNT(*) FROM order_items) AS items,
+              (SELECT COUNT(*) FROM payments) AS payments,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_total,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges,
+              (SELECT COUNT(*) FROM returns) AS returns,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservations,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements
+          " --json | jq -cSe '.[0].results[0]' > /tmp/b2-name-business-before.json
+          test -s /tmp/b2-name-business-before.json
+      - name: Capture Cloudflare Time Travel recovery bookmark before ANY writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/40065052-854e-44b8-bcd5-251bdd488301/time_travel/bookmark" \
+            | jq -e -r 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No recoverable bookmark") end' > /tmp/b2-name-backup-bookmark
+          test -s /tmp/b2-name-backup-bookmark
+          echo "Branch2 recovery bookmark: $(cat /tmp/b2-name-backup-bookmark)"
+          {
+            echo '## D1 migration 0112: Cloudflare native Time Travel backup'
+            echo ''
+            echo 'Database: orders_db_branch2 (isolated).'
+            echo "Pre-migration restore bookmark: $(cat /tmp/b2-name-backup-bookmark)"
+            echo 'Restore must not be executed automatically: it overwrites subsequent writes.'
+            echo 'No database dump or customer personal data uploaded to this public repository.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply migration 0112 ONLY to remote Branch2
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -s /tmp/b2-name-backup-bookmark ]]
+          if [[ "$(jq -r '.column_count' /tmp/b2-name-schema-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc \
+              --file migrations/0112_v72_order_client_name_override.sql
+          else
+            echo '0112 already present and validated: no repeat writes'
+          fi
+      - name: Verify new column, rebuilt FTS and unchanged business fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='customer_name_override') AS column_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
+                ('trg_order_search_orders_ai','trg_order_search_orders_au','trg_order_search_managers_au','trg_order_search_customers_au')
+                AND sql LIKE '%customer_name_override%') AS migrated_triggers,
+              (SELECT COUNT(*) FROM order_search_orders_fts) AS indexed,
+              (SELECT COUNT(*) FROM orders) AS orders_count
+          " --json | jq -e '.[0].results[0] | .column_count==1 and .migrated_triggers==4 and .indexed==.orders_count'
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS total,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received,
+              (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt,
+              (SELECT COUNT(*) FROM customers) AS customers,
+              (SELECT COUNT(*) FROM order_items) AS items,
+              (SELECT COUNT(*) FROM payments) AS payments,
+              (SELECT COALESCE(SUM(amount),0) FROM payments) AS payments_total,
+              (SELECT COUNT(*) FROM financial_events) AS money_events,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges,
+              (SELECT COUNT(*) FROM returns) AS returns,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservations,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements
+          " --json | jq -cSe '.[0].results[0]' > /tmp/b2-name-business-after.json
+          cmp /tmp/b2-name-business-before.json /tmp/b2-name-business-after.json
+          echo 'BRANCH2 0112 MIGRATED: order/customer/money/stock fingerprints unchanged.'
