@@ -1,0 +1,36 @@
+name: Retired V2 old-line price safety
+on:
+  pull_request:
+    branches:
+      - feat/branch2-exchange-price-audit-20261017
+      - branch2
+    paths:
+      - 'worker/domains/exchange-price-history.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
+      - 'scripts/test-v2-old-retired-price-correction-r1.mjs'
+      - '.github/workflows/test-v2-old-retired-price-correction.yml'
+permissions:
+  contents: read
+jobs:
+  sqlite_and_build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Retired old V2 price audit and no cash or inventory changes
+        run: node --experimental-strip-types scripts/test-v2-old-retired-price-correction-r1.mjs
+      - name: Existing new V2 price corrections regression
+        run: node --experimental-strip-types scripts/test-v2-exchange-price-audit-r1.mjs
+      - name: Complete historical Stage04 and order regression gate
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: Build TypeScript Worker and frontend
+        run: npm run build

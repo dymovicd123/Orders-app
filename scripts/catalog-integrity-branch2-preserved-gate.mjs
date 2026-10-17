@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'0870d5135e9912030276309911544500186bc4d0',
+  'worker/index.ts':'74bad586c252c457794c515e796cb2e93f186f92',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -69,9 +69,9 @@ for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
-  appAfter: '0f4e7180833a89060c0d2f173146a843d45b57f9',
+  appAfter: '6c32381001b5a679d1f3d762a522568916d8c978',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: 'c0adb876107e848d7ff6bca0269a3f4edc382951',
+  tableAfter: 'c1aecf28697867d30feed37ca1517265a8562c89',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
@@ -113,8 +113,8 @@ const stage04B2Extensions={
   'src/styles/stage04-workshop-settlements.css':'6796899d63de3e2183a95605b9280764c9e64b48',
 }
 const reviewedExchangePriceFiles={
-  'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'297101d048962c3696e2531575a84733e2253016',
-  'worker/domains/exchange-price-history.ts':'04b102e651db1b081d89e35af5df69b30511f2d5',
+  'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
+  'worker/domains/exchange-price-history.ts':'e8a10558fa2e3a59fc6ce6a727c5cc8a9cb3b09c',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -187,7 +187,7 @@ const priorExchangeModules=[
   {
     "file": "worker/domains/returns-exchanges.ts",
     "before": "af53527b060ec388bbe9058b80df16a564b8af4c",
-    "after": "9f6443ef335a84f989108fc50135321103956f4a",
+    "after": "ef978d6c7bef104443e30ec4d6eceb3c73750bff",
     "fixture": "scripts/fixtures/exchange-issue-before-20261013/worker/domains/returns-exchanges.ts"
   },
   {
@@ -298,6 +298,7 @@ const tests=[
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
   ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
   ['scripts/test-v2-exchange-price-audit-r1.mjs',true],
+  ['scripts/test-v2-old-retired-price-correction-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],
