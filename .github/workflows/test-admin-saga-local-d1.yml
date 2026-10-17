@@ -1,0 +1,35 @@
+name: Admin delete migration workerd D1 local safety
+on:
+  pull_request:
+    branches:
+      - feat/branch2-admin-delete-real-chain-e2e-20261017
+      - branch2
+    paths:
+      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
+      - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
+      - 'scripts/test-admin-saga-local-cloudflare-d1-r1.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+      - '.github/workflows/test-admin-saga-local-d1.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Real local Cloudflare D1 migrations, idempotency and FK checks
+        run: node scripts/test-admin-saga-local-cloudflare-d1-r1.mjs
+      - name: Prior SQLite additive schema invariants
+        run: node scripts/test-admin-saga-migrations-schema-r1.mjs
+      - name: Real handler chain with durable saga checkpoint
+        run: node --experimental-strip-types scripts/test-admin-delete-real-chain-handler-r1.mjs
+      - name: Frozen historical regression
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: Production build
+        run: npm run build
