@@ -5,6 +5,7 @@ import { cleanText, toInt } from '../core/text.ts'
 import { CriticalOperationConflictError } from './critical.ts'
 import { previewAdminOrderDeletion } from './order-delete-preview.ts'
 import { getAdminDeleteSagaProgress, type SagaProgress } from './admin-delete-saga.ts'
+import { readOrderFinancialLedger } from './money.ts'
 export type FinalOrderDelete=(db:D1Database,orderId:number,input:{
   requestId:string; expectedSnapshot:string; comment:string
 })=>Promise<unknown>
@@ -29,11 +30,6 @@ async function finalFacts(db:D1Database,orderId:number){
     ||txt(order.pricing_mode)!=='itemized_v1')
     fail('Статус или схема цены изменились; окончательное удаление остановлено.')
   const summary=await db.prepare(`SELECT
-    (SELECT COUNT(*) FROM payments WHERE order_id=?) AS payments,
-    (SELECT COUNT(*) FROM returns WHERE order_id=? AND COALESCE(amount,0)<>0) AS refunded,
-    (SELECT COUNT(*) FROM exchanges WHERE order_id=?
-      AND (COALESCE(financial_amount,0)<>0 OR
-      COALESCE(financial_action,'none') NOT IN ('none','') OR payment_id IS NOT NULL)) AS cash_exchanges,
     (SELECT COUNT(*) FROM returns WHERE order_id=?
       AND COALESCE(status,'completed')<>'cancelled') AS active_returns,
     (SELECT COUNT(*) FROM exchanges WHERE order_id=?
@@ -42,12 +38,17 @@ async function finalFacts(db:D1Database,orderId:number){
       AND status='fulfilled') AS issued,
     (SELECT COUNT(*) FROM inventory_lifecycle_events
       WHERE order_id=? AND status='applied') AS applied`
-  ).bind(...Array(7).fill(orderId)).first<Record<string,unknown>>()
+  ).bind(orderId,orderId,orderId,orderId).first<Record<string,unknown>>()
   if(Object.values(summary||{}).some(v=>n(v)!==0))
-    fail('Появились деньги, действующие обмены/возвраты или физические движения.')
-  if(n(order.received_amount)||n(order.return_amount)
-    ||n(order.total_amount)!==n(order.debt_amount))
-    fail('Финансовый баланс заказа изменился.')
+    fail('Появились действующие обмены/возвраты или физические складские движения.')
+  const ledger=await readOrderFinancialLedger(db,orderId)
+  if(n(order.total_amount)!==ledger.totalAmount
+    ||n(order.received_amount)!==ledger.receivedAmount
+    ||n(order.return_amount)!==ledger.returnAmount
+    ||n(order.debt_amount)!==ledger.debtAmount)
+    fail('Финансовый баланс изменился; перед удалением нужна сверка.')
+  // Payments may remain at the final stage. The established order-delete
+  // handler preserves their rows for audit and appends idempotent reversals.
   const lines=await db.prepare(`SELECT COALESCE(SUM(line_total),0) AS total,
     SUM(CASE WHEN quantity<0 OR unit_price<0 OR line_total<0
       OR line_total<>quantity*unit_price THEN 1 ELSE 0 END) AS invalid
@@ -61,8 +62,7 @@ async function finalFacts(db:D1Database,orderId:number){
   if(n(stock?.n))fail('На складе отрицательные остатки или резервы.')
   const preview=await previewAdminOrderDeletion(db,orderId)
   if(!preview.canAttemptDelete||preview.requiresPhysicalFact
-    ||preview.paymentCount!==0||preview.activeExchanges.length
-    ||preview.activeReturns.length)
+    ||preview.activeExchanges.length||preview.activeReturns.length)
     fail('Штатный предпросмотр не разрешил удаление. Остановлено.')
   return {deleted:false,snapshot:preview.chainPlan.snapshotFingerprint}
 }
