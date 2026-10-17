@@ -2,6 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
+import { findExchangeNewPriceLink } from './exchange-price-history.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
@@ -1860,6 +1861,7 @@ export async function updateOrderCritical(
         };
       }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+      const linkedExchangePriceCorrections = new Map<number,{exchangeId:number;originalUnitPrice:number}>()
       if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
         const operations = await completedOrderOperationCounts(db, id);
         if (recordedPriceOnlyRequest && priceOnlyItemsEdit && (operations.returns > 0 || operations.exchanges > 0)) {
@@ -1901,7 +1903,14 @@ export async function updateOrderCritical(
               id, correction.orderItemId,
               id, correction.orderItemId).first<{ exchange_link: number; return_link: number }>();
             if (toInt(dependency?.exchange_link, 0)) {
-              throw new CriticalOperationConflictError('Позиция связана с действующим обменом. Его отмена сверяет исходные ценовые снимки. Исправление цены выполняется отдельным сценарием с сохранением истории обмена.');
+              if (rawItemPriceCorrections.length!==1) {
+                throw new CriticalOperationConflictError('Исправляйте цену позиции обмена отдельно от остальных позиций.')
+              }
+              const actual=itemizedPricingRows?.find((row)=>toInt(row.id,0)===correction.orderItemId)
+              if (!actual) throw new CriticalOperationConflictError('Позиция обмена не найдена для проверки цены.')
+              const link=await findExchangeNewPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              if (!link) throw new CriticalOperationConflictError('Связь позиции с обменом не найдена. Исправление остановлено.')
+              linkedExchangePriceCorrections.set(correction.orderItemId,link)
             }
             // A standalone Return retains the actual refund as its own money
             // event. Its cancellation never rewrites or compares order_item price.
@@ -1941,6 +1950,8 @@ export async function updateOrderCritical(
               expectedOrderTotal: toInt(existingAny.total_amount, 0),
               expectedReceived: toInt(existingAny.received_amount, 0),
               expectedReturns: toInt(existingAny.return_amount, 0),
+              exchangeId: linkedExchangePriceCorrections.get(entry.orderItemId)?.exchangeId ?? null,
+              originalExchangeUnitPrice: linkedExchangePriceCorrections.get(entry.orderItemId)?.originalUnitPrice ?? null,
             }))
           : [],
         rewritePayments, deletingOrder, deferShippingCommit,
