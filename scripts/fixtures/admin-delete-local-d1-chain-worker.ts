@@ -3,6 +3,7 @@
 import { createRealAdminDeleteCancellationDriver } from '../../worker/domains/admin-delete-real-driver.ts'
 import { finalizeAdminDeleteSaga } from '../../worker/domains/admin-delete-finalize.ts'
 import { createRealAdminOrderDeleteFinalAction } from '../../worker/domains/admin-delete-final-driver.ts'
+import { getOrder, updateOrderCritical } from '../../worker/domains/orders-write.ts'
 import type { AuthUser } from '../../worker/core/types.ts'
 import {
   advanceAdminDeleteSagaOneStep,getAdminDeleteSagaProgress,
@@ -28,6 +29,23 @@ export default {
       if(route==='/health')return Response.json({ok:true,fixture:'isolated-chain-d1'})
       if(route==='/preflight'){
         await driver.preflight(step)
+        return Response.json({ok:true})
+      }
+      if(route==='/metadata-order') {
+        return Response.json(await getOrder(env.DB,42))
+      }
+      if(route==='/metadata-edit') {
+        const input=await request.json() as Record<string,unknown>
+        return Response.json(await updateOrderCritical(env.DB,42,input as any,{
+          role:'admin',id:1,displayName:'CI administrator'
+        } as unknown as AuthUser,'CI administrator'))
+      }
+      if(route==='/metadata-money-changed'){
+        await env.DB.prepare("UPDATE orders SET received_amount=100,debt_amount=24900 WHERE id=42").run()
+        return Response.json({ok:true})
+      }
+      if(route==='/metadata-money-restored'){
+        await env.DB.prepare("UPDATE orders SET received_amount=0,debt_amount=25000 WHERE id=42").run()
         return Response.json({ok:true})
       }
       if(route==='/set-applied'){
@@ -126,7 +144,7 @@ export default {
           results(env.DB,'SELECT id,status FROM inventory_lifecycle_events WHERE order_id=42 ORDER BY id'),
           results(env.DB,"SELECT request_id,operation_type,status,target_type,target_id FROM critical_operations WHERE operation_type IN ('return_cancel','exchange_set_cancel') ORDER BY request_id"),
           results(env.DB,"SELECT step_index,operation_type,operation_id,status FROM admin_order_delete_saga_steps WHERE saga_request_id='REAL_CHAIN_42' ORDER BY step_index"),
-          results(env.DB,"SELECT request_id,operation_type,status,target_type,target_id FROM critical_operations WHERE operation_type='order_edit' ORDER BY request_id"),
+          results(env.DB,"SELECT request_id,operation_type,status,target_type,target_id FROM critical_operations WHERE operation_type='order_edit' AND request_id LIKE '%:final:order' ORDER BY request_id"),
           results(env.DB,"SELECT id,amount FROM payments WHERE order_id=42 ORDER BY id"),
         ])
         return Response.json({order,items,exchanges,ret,stock,reservations,events,critical,sagaSteps,finalOperations,payments})

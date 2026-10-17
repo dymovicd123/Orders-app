@@ -7,6 +7,12 @@ type SectionContext = Record<string, any>
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [expandedOrderPaymentCounts, setExpandedOrderPaymentCounts] = useState<Record<number, number>>({})
   const [extraActionsOrderId, setExtraActionsOrderId] = useState<number | null>(null)
+  const [metadataDraft,setMetadataDraft]=useState<{
+    order:any;next:Record<string,string>;error:string;
+  }|null>(null)
+  // Historical old V2 pricing keeps its backend/audit for rare reconciliation,
+  // but no longer clutters the everyday order menu.
+  const showRetiredExchangePriceActions=false
   const [priceDraft, setPriceDraft] = useState<{order: any; prices: Record<number,string>; error: string} | null>(null)
   const [oldExchangePriceDraft,setOldExchangePriceDraft] = useState<{
     order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
@@ -19,6 +25,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   } | null>(null)
   const {
     correctMistakenOrderShipping,
+    correctOrderMetadata,
     correctRecordedOrderItemPrice,
     correctRecordedOrderItemPrices,
     loadRetiredExchangePriceOptions,
@@ -454,6 +461,22 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Редактировать
                               </button>
                             ) : null}
+                            {!retainedOnly && !archived && !projection.deleted ? (
+                              <button className="secondary compact" type="button"
+                                onClick={(event)=>{
+                                  event.stopPropagation()
+                                  setMetadataDraft({order,error:'',next:{
+                                    orderDate:String(order.order_date||'').trim(),
+                                    customerPhone:String(order.customer_phone||'').trim(),
+                                    customerName:String(order.customer_name||'').trim(),
+                                    city:String(order.city||'').trim(),
+                                    deliveryType:String(order.delivery_type||'').trim(),
+                                    comment:String(order.comment||'').trim(),
+                                  }})
+                                }}>
+                                Исправить реквизиты
+                              </button>
+                            ) : null}
                             {!retainedOnly && !archived && !projection.deleted && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item) => Number(item.quantity) > 0 && Number(item.id) > 0) ? (
                               <div className="order-extra-actions">
                                 <button className="secondary compact" type="button" aria-expanded={extraActionsOrderId === order.id}
@@ -475,7 +498,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     Исправить записанную цену
                                   </button>
                                 ) : null}
-                                {extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
+                                {showRetiredExchangePriceActions && extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
                                     setOldExchangePriceDraft({order,items:[],itemId:0,price:'',error:'',loading:true})
@@ -843,10 +866,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               </div>
                               <div className="muted" style={{fontSize:13}}>Было: {formatMoney(current)} ₸ / шт.</div>
                             </div>
-                            <label className="form-field" style={{flex:'0 1 170px',minWidth:140,margin:0}}>
+                            <label className="form-field" style={{flex:'1 1 170px',minWidth:0,maxWidth:'100%',margin:0,boxSizing:'border-box'}}>
                               <span>Новая цена, ₸ / шт.</span>
                               <input aria-label={`Новая цена: ${item.productName||'Товар'}`}
                                 type="number" min="0" step="1" inputMode="numeric" required
+                                style={{display:'block',width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
                                 value={priceDraft.prices[id]??''} disabled={savingOrder}
                                 onChange={(event)=>setPriceDraft((draft)=>draft?{
                                   ...draft,prices:{...draft.prices,[id]:event.target.value},error:'',
@@ -875,6 +899,83 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                     <p className="muted" style={{fontSize:12}}>
                       Склад, оплаты и история обменов не меняются. Цены сохраняются только после проверки заказа сервером.</p>
+                  </form>
+                </div>
+              ) : null}
+              {metadataDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={(event)=>{if(event.target===event.currentTarget&&!savingOrder)setMetadataDraft(null)}}>
+                  <form className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Исправить реквизиты заказа"
+                    style={{maxWidth:680,maxHeight:'min(88vh,760px)',overflowY:'auto',boxSizing:'border-box'}}
+                    onSubmit={(event)=>{event.preventDefault();void(async()=>{
+                      const next=metadataDraft.next as {
+                        orderDate:string;customerPhone:string;customerName:string;
+                        city:string;deliveryType:string;comment:string;
+                      }
+                      if(!/^\d{4}-\d{2}-\d{2}$/.test(next.orderDate)){
+                        setMetadataDraft((d)=>d?{...d,error:'Укажите дату в формате ГГГГ-ММ-ДД.'}:d)
+                        return
+                      }
+                      if(!next.customerPhone.trim()||!next.customerName.trim()){
+                        setMetadataDraft((d)=>d?{...d,error:'Укажите имя и телефон клиента.'}:d)
+                        return
+                      }
+                      const ok=await correctOrderMetadata(metadataDraft.order,next)
+                      if(ok)setMetadataDraft(null)
+                      else setMetadataDraft((d)=>d?{...d,error:'Не удалось сохранить. Проверьте сообщение об ошибке и обновите заказ.'}:d)
+                    })()}}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Реквизиты заказа</div>
+                        <h3>{metadataDraft.order.external_id}</h3>
+                      </div>
+                      <button className="ghost compact" type="button" disabled={savingOrder}
+                        onClick={()=>setMetadataDraft(null)}>Закрыть</button>
+                    </div>
+                    <p>Можно исправить сведения о заказе без изменения состава, цен, оплат и склада.</p>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,240px),1fr))',
+                      gap:12,margin:'12px 0'}}>
+                      {([
+                        ['orderDate','Дата заказа'],
+                        ['customerName','Имя клиента'],
+                        ['customerPhone','Телефон клиента'],
+                        ['city','Город'],
+                        ['deliveryType','Доставка'],
+                      ] as const).map(([key,name])=>(
+                        <label key={key} className="form-field" style={{minWidth:0,margin:0}}>
+                          <span>{name}</span>
+                          <input type={key==='orderDate'?'date':'text'}
+                            required={key==='orderDate'||key==='customerName'||key==='customerPhone'}
+                            disabled={savingOrder||(key==='orderDate'&&!isAdmin)}
+                            value={metadataDraft.next[key]||''}
+                            style={{width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
+                            onChange={(event)=>setMetadataDraft((d)=>d?{
+                              ...d,next:{...d.next,[key]:event.target.value},error:'',
+                            }:d)}/>
+                        </label>
+                      ))}
+                    </div>
+                    <label className="form-field" style={{minWidth:0}}>
+                      <span>Комментарий к заказу</span>
+                      <textarea rows={3} disabled={savingOrder}
+                        style={{width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
+                        value={metadataDraft.next.comment||''}
+                        onChange={(event)=>setMetadataDraft((d)=>d?{
+                          ...d,next:{...d.next,comment:event.target.value},error:'',
+                        }:d)}/>
+                    </label>
+                    {!isAdmin?<p className="muted">Дата заказа доступна для исправления администратору.</p>:null}
+                    {metadataDraft.error?<p className="error" role="alert">{metadataDraft.error}</p>:null}
+                    <div className="toolbar-actions">
+                      <button className="secondary" type="button" disabled={savingOrder}
+                        onClick={()=>setMetadataDraft(null)}>Отмена</button>
+                      <button className="primary" type="submit" disabled={savingOrder}>
+                        {savingOrder?'Сохраняю…':'Сохранить реквизиты'}
+                      </button>
+                    </div>
+                    <p className="muted" style={{fontSize:12}}>
+                      При изменении заказа другим сотрудником сохранение будет остановлено — обновите данные и повторите.</p>
                   </form>
                 </div>
               ) : null}

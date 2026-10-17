@@ -38,9 +38,11 @@ function execute(file){
 }
 let child=null
 let log=''
-async function probe(path){
+async function probe(path,body){
   const res=await fetch(url+path,{
-    headers:{'x-isolated-ci-fixture':'allow'},
+    method:body===undefined?'GET':'POST',
+    headers:{'x-isolated-ci-fixture':'allow',...(body===undefined?{}:{'content-type':'application/json'})},
+    ...(body===undefined?{}:{body:JSON.stringify(body)}),
     signal:AbortSignal.timeout(8000)
   })
   return {status:res.status,data:await res.json()}
@@ -53,10 +55,18 @@ try{
   writeFileSync(baseline,seed.baseline)
   writeFileSync(journal,seed.journal)
   execute(baseline)
-  if(process.argv.includes('--real')||process.argv.includes('--race')){
+  if(process.argv.includes('--real')||process.argv.includes('--race')||process.argv.includes('--metadata')){
     const schema=join(temp,'real-final-fixture.sql')
     writeFileSync(schema,localRealFinalSchema())
     execute(schema)
+    if(process.argv.includes('--metadata')){
+      const customerSetup=join(temp,'metadata-customer-seed.sql')
+      writeFileSync(customerSetup,[
+        "INSERT INTO customers(id,phone_normalized,display_name,city,created_at,updated_at) VALUES(1,'77001234567','OLD CLIENT','ALMATY','2026-10-17','2026-10-17');",
+        "UPDATE orders SET customer_id=1,city='ALMATY',delivery_type='Самовывоз',comment='original' WHERE id=42;",
+      ].join('\n'))
+      execute(customerSetup)
+    }
   }
   execute('migrations/0110_v72_exchange_order_item_price_correction_audit.sql')
   execute('migrations/0111_v72_admin_order_delete_saga_journal.sql')
@@ -87,6 +97,74 @@ try{
   assert.deepEqual(initial.data.stock.map(s=>[s.variant_id,s.quantity,s.reserved_quantity]),
     [[10,5,0],[11,3,0],[12,4,1]])
   assert.equal(initial.data.critical.length,0)
+  if(process.argv.includes('--metadata')){
+    // Call the REAL updateOrderCritical on a shipped-in-history business chain
+    // which currently has two V2 Exchanges and one Return.
+    const before=await probe('/metadata-order')
+    assert.equal(before.status,200,JSON.stringify(before))
+    assert.equal(before.data.committed_exchange_count,2)
+    assert.equal(before.data.committed_return_count,1)
+    assert.equal(before.data.customer_phone,'77001234567')
+    const original={
+      orderDate:before.data.order_date,
+      customerPhone:before.data.customer_phone,
+      customerName:before.data.customer_name,
+      city:before.data.city||'',
+      deliveryType:before.data.delivery_type||'',
+      comment:before.data.comment||''
+    }
+    const changed={...original,customerName:'NEW CLIENT',comment:'Updated without Exchange cancellation'}
+    const expectedState={
+      totalAmount:before.data.total_amount,
+      receivedAmount:before.data.received_amount,
+      debtAmount:before.data.debt_amount,
+      returnAmount:before.data.return_amount,
+      shippingStatus:before.data.shipping_status||'',
+      orderStatus:before.data.order_status||''
+    }
+    const payload={requestId:'METADATA-CHAIN-ORDER-42-0001',
+      metadataCorrection:{expected:original,next:changed,expectedState}}
+    const first=await probe('/metadata-edit',payload)
+    assert.equal(first.status,200,'Real metadata edit failed: '+JSON.stringify(first))
+    assert.equal(first.data.ok,true)
+    const after=await probe('/metadata-order')
+    assert.equal(after.data.customer_name,'NEW CLIENT')
+    assert.equal(after.data.comment,changed.comment)
+    for(const field of ['total_amount','received_amount','return_amount','debt_amount','order_status','shipping_status']){
+      assert.equal(after.data[field],before.data[field],'Money/lifecycle changed: '+field)
+    }
+    const afterFacts=await probe('/facts')
+    assert.deepEqual(afterFacts.data.stock,initial.data.stock)
+    assert.deepEqual(afterFacts.data.reservations,initial.data.reservations)
+    assert.deepEqual(afterFacts.data.exchanges,initial.data.exchanges)
+    assert.deepEqual(afterFacts.data.payments,initial.data.payments)
+    const replay=await probe('/metadata-edit',payload)
+    assert.equal(replay.status,200,'Idempotent replay failed: '+JSON.stringify(replay))
+    assert.equal((await probe('/metadata-order')).data.comment,changed.comment)
+    const stale=await probe('/metadata-edit',{
+      requestId:'METADATA-CHAIN-ORDER-42-0002',
+      metadataCorrection:{expected:original,next:{...original,comment:'STALE MUST NOT SAVE'},expectedState}
+    })
+    assert.equal(stale.status,409,'Old metadata snapshot must be rejected')
+    assert.match(stale.data.error,/изменились|Обновите/)
+    assert.equal((await probe('/metadata-order')).data.comment,changed.comment)
+    assert.equal((await probe('/metadata-money-changed')).status,200)
+    const money=await probe('/metadata-edit',{
+      requestId:'METADATA-CHAIN-ORDER-42-0003',
+      metadataCorrection:{expected:changed,next:{...changed,comment:'MONEY STALE MUST NOT SAVE'},expectedState}
+    })
+    assert.equal(money.status,409,'Concurrent financial change must reject metadata correction')
+    assert.match(money.data.error,/изменился|Обновите/)
+    assert.equal((await probe('/metadata-order')).data.comment,changed.comment)
+    assert.equal((await probe('/metadata-money-restored')).status,200)
+    const finalFacts=await probe('/facts')
+    assert.deepEqual(finalFacts.data.stock,initial.data.stock)
+    assert.deepEqual(finalFacts.data.reservations,initial.data.reservations)
+    assert.deepEqual(finalFacts.data.exchanges,initial.data.exchanges)
+    assert.deepEqual(finalFacts.data.payments,initial.data.payments)
+    assert.deepEqual(finalFacts.data.order,initial.data.order)
+    console.log('REAL_METADATA_ONLY_EDIT_ACTIVE_EXCHANGE_RETURN_CAS_NO_MONEY_STOCK_MUTATION_PASSED')
+  }
 
   // A physical event applied after the initial saga plan must block BEFORE
   // executing the first dependent cancellation, not after touching stock.
