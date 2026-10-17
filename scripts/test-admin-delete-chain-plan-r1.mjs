@@ -15,6 +15,9 @@ sql.exec([
  "CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER)",
  "CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER,method TEXT)",
  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,quantity INTEGER)",
+ "CREATE TABLE financial_events(id INTEGER PRIMARY KEY,order_id INTEGER,amount_delta INTEGER,event_key TEXT)",
+ "CREATE TABLE cash_register_entries(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER,source_key TEXT)",
+ "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT)",
 ].join(';')+';')
 sql.exec("INSERT INTO orders VALUES(42,'ORD-42','active','not_sent',35000,5000,60000)")
 sql.exec("INSERT INTO order_items VALUES(1,42,0,10000,0)")
@@ -39,6 +42,9 @@ ex(300,20,30)
 ret(400,30,5000)
 ret(420,1,0) // Exchange's own automatic refund, NOT a standalone step
 ret(500,1,1000) // Another standalone Return on original item
+sql.exec("INSERT INTO financial_events VALUES(1,42,35000,'payment:1')")
+sql.exec("INSERT INTO cash_register_entries VALUES(1,42,1000,'cash:1')")
+sql.exec("INSERT INTO inventory_lifecycle_events VALUES(1,42,'pending')")
 const initialPayments=sql.prepare('SELECT amount FROM payments WHERE id=1').get().amount
 const initialStatuses=sql.prepare("SELECT COUNT(*) AS n FROM exchanges WHERE status='completed'").get().n
 let writeCalls=0
@@ -78,6 +84,19 @@ assert.equal(writeCalls,0)
 assert.equal(sql.prepare('SELECT amount FROM payments WHERE id=1').get().amount,initialPayments)
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM exchanges WHERE status='completed'").get().n,initialStatuses)
 
+
+sql.exec("UPDATE financial_events SET amount_delta=35001 WHERE id=1")
+assert.notEqual((await previewAdminOrderDeleteChain(db,42)).snapshotFingerprint,plan.snapshotFingerprint,
+  'Finance audit changes must invalidate approved deletion snapshot')
+sql.exec("UPDATE financial_events SET amount_delta=35000 WHERE id=1")
+sql.exec("UPDATE cash_register_entries SET amount=1100 WHERE id=1")
+assert.notEqual((await previewAdminOrderDeleteChain(db,42)).snapshotFingerprint,plan.snapshotFingerprint,
+  'Cash-register changes must invalidate approved deletion snapshot')
+sql.exec("UPDATE cash_register_entries SET amount=1000 WHERE id=1")
+sql.exec("UPDATE inventory_lifecycle_events SET status='applied' WHERE id=1")
+assert.notEqual((await previewAdminOrderDeleteChain(db,42)).snapshotFingerprint,plan.snapshotFingerprint,
+  'New physical lifecycle evidence must invalidate approved deletion snapshot')
+sql.exec("UPDATE inventory_lifecycle_events SET status='pending' WHERE id=1")
 sql.exec("UPDATE payments SET amount=36000 WHERE id=1")
 const paymentChanged=await previewAdminOrderDeleteChain(db,42)
 assert.notEqual(paymentChanged.snapshotFingerprint,plan.snapshotFingerprint,'Actual payment edit must make approval stale')
