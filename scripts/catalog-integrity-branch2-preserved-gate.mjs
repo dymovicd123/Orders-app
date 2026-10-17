@@ -71,14 +71,14 @@ const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
   appAfter: '0f4e7180833a89060c0d2f173146a843d45b57f9',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: '315d20db8f42dbf9ae47b11d4c4dc1b9e831ad5d',
+  tableAfter: 'c0adb876107e848d7ff6bca0269a3f4edc382951',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedHandoverUx.tableAfter,'Unreviewed order list handover UI drift')
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
   ? reviewedHandoverUx.appAfter
-  : file === 'worker/domains/orders-write.ts' ? '14782dfc074b408bcbaa9c154a348ce360e2e816'
+  : file === 'worker/domains/orders-write.ts' ? '38d64e6c9e547d8566ea976300197a530a83be88'
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -289,6 +289,7 @@ for(const entry of inventorySafetyFixtures){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-order-recorded-price-correction-r1.mjs',false],
+  ['scripts/test-order-standalone-return-price-correction-r2.mjs',false],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],

@@ -527,7 +527,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         disabled={savingOrder} onChange={(event) => setPriceDraft((current) => current ? {...current, price: event.target.value, error: ''} : current)} />
                     </label>
                     {priceDraft.error ? <p role="alert" className="error">{priceDraft.error}</p> : null}
-                    <p className="muted">Если товар участвовал в обмене или возврате и изменение затрагивает связанную операцию, система остановит исправление и объяснит причину.</p>
+                    <p className="muted">Самостоятельный возврат не нужно отменять: сумма возврата остаётся прежней. Цена позиции, связанной с действующим обменом, пока защищена от перезаписи — система объяснит причину.</p>
                     <div className="toolbar-actions">
                       <button className="secondary" type="button" disabled={savingOrder} onClick={() => setPriceDraft(null)}>Отмена</button>
                       <button className="primary" type="submit" disabled={savingOrder}>{savingOrder ? 'Сохраняю…' : 'Исправить цену'}</button>

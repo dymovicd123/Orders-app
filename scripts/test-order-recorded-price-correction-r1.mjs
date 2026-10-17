@@ -27,18 +27,18 @@ assert(route.includes('const denied = requireAdminUser(authUser)'), 'Delete API 
 
 // Extract and execute the exact downstream dependency guard SQL from runtime.
 // An unrelated SKU correction is permitted even if the order has other returns/exchanges.
-// Editing a SKU that has a return/exchange must be rejected.
-const m=write.match(/const dependency = await db\.prepare\(\s*\`([\s\S]+?)\`\s*\)\.bind\(id, correction\.orderItemId, correction\.orderItemId, correction\.orderItemId,\s*id, correction\.orderItemId\)/)
+// Editing a SKU linked to an active exchange is blocked; standalone refunds are independent.
+const m=write.match(/const dependency = await db\.prepare\(\s*\`([\s\S]+?)\`\s*\)\.bind\(id, correction\.orderItemId, correction\.orderItemId, correction\.orderItemId,\s*id, correction\.orderItemId,\s*id, correction\.orderItemId\)/)
 assert(m, 'Live downstream dependency SQL not found')
 const db=new DatabaseSync(':memory:')
 db.exec([
-'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,old_order_item_id INTEGER,new_order_item_id INTEGER)',
+'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,old_order_item_id INTEGER,new_order_item_id INTEGER,refund_return_id INTEGER)',
 'CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,role TEXT)',
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT)',
 'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER)',
 ].join(';')+';')
-const check=(item)=>({...db.prepare(m[1]).get(42,item,item,item,42,item)})
-db.exec("INSERT INTO exchanges VALUES(100,42,'completed',10,11)")
+const check=(item)=>({...db.prepare(m[1]).get(42,item,item,item,42,item,42,item)})
+db.exec("INSERT INTO exchanges VALUES(100,42,'completed',10,11,NULL)")
 db.exec("INSERT INTO exchange_items VALUES(200,100,12,'new')")
 db.exec("INSERT INTO returns VALUES(300,42,'completed')")
 db.exec("INSERT INTO return_items VALUES(400,300,13)")
