@@ -91,10 +91,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     const value = priceDraft?.prices[Number(item.id)] ?? ''
     return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
   })
+  // Ask about the real handover for EVERY erroneous-order deletion, including
+  // orders where bookkeeping wrongly says "not sent".
   const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
-    &&!adminDeleteDraft.preview.activeSaga
-    &&(adminDeleteDraft.preview.requiresPhysicalFact
-      ||adminDeleteDraft.preview.appliedStockReview?.appliedCount>0))
+    &&!adminDeleteDraft.preview.activeSaga)
   const deleteReasons = adminDeleteDraft?.preview
     ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
       !(adminDeleteDraft.preview?.canPreparePhysicalCorrection
@@ -793,8 +793,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         {physicalQuestionRequired ? (
                           <section style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:14,marginTop:16}}>
                             <h4>Товар действительно передавался клиенту?</h4>
-                            <p className="muted">Учёт содержит складские движения или отметку выдачи.
-                              Подтвердите реальный факт передачи, прежде чем аннулировать ошибочный заказ.</p>
+                            <p className="muted">
+                              {adminDeleteDraft.preview?.requiresPhysicalFact
+                                ||adminDeleteDraft.preview?.appliedStockReview?.appliedCount>0
+                                ?'В учёте есть движения товара или отметки выдачи.'
+                                :'В учёте нет подтверждённой выдачи.'}
+                              {' '}Перед удалением подтвердите, что произошло на самом деле.
+                            </p>
                             <div style={{display:'grid',gap:10}}>
                               <label style={{display:'flex',alignItems:'start',gap:9,cursor:'pointer'}}>
                                 <input type="radio" name="admin-delete-physical-answer"
