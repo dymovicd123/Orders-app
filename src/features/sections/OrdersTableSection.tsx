@@ -665,8 +665,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder}
                           onClick={()=>{void(async()=>{
                             setAdminDeleteDraft((d)=>d?{...d,submitting:true,error:''}:d)
-                            const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true,
-                              adminDeleteDraft.preview.chainPlan.snapshotFingerprint)
+                            const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true,adminDeleteDraft.preview.chainPlan.snapshotFingerprint)
                             if(ok)setAdminDeleteDraft(null)
                             else setAdminDeleteDraft((d)=>d?{...d,submitting:false,
                               error:'Удаление не выполнено. Проверьте сообщение об ошибке и обновите проверку.'}:d)
