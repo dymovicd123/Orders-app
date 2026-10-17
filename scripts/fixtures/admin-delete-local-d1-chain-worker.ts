@@ -64,6 +64,26 @@ export default {
         await env.DB.prepare("INSERT INTO payments(id,order_id,amount) VALUES(9,42,500)").run()
         return Response.json({ok:true})
       }
+      if(route==='/sync-money'){
+        await env.DB.prepare(`UPDATE orders
+          SET received_amount=(SELECT COALESCE(SUM(amount),0) FROM payments WHERE order_id=42),
+              debt_amount=total_amount-(SELECT COALESCE(SUM(amount),0) FROM payments WHERE order_id=42)
+          WHERE id=42`).run()
+        return Response.json({ok:true})
+      }
+      if(route==='/record-money-event'){
+        await env.DB.prepare(`INSERT INTO financial_events
+          (event_key,order_id,external_order_id,event_date,event_at,event_type,
+           amount_delta,payment_method,source_type,source_id,created_at)
+          VALUES('TEST:PAID_ORDER_42:9',42,'ISOLATED_EXCHANGE_42','2026-10-17',
+            '2026-10-17T09:00:00Z','order_payment',500,'Kaspi','payment',9,
+            '2026-10-17T09:00:00Z')`).run()
+        return Response.json({ok:true})
+      }
+      if(route==='/money-events'){
+        return Response.json(await results(env.DB,
+          "SELECT event_type,amount_delta,event_key FROM financial_events WHERE order_id=42 ORDER BY id"))
+      }
       if(route==='/clear-money'){
         await env.DB.prepare("DELETE FROM payments WHERE id=9 AND order_id=42").run()
         return Response.json({ok:true})
