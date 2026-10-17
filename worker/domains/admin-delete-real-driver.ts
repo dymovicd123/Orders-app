@@ -57,7 +57,8 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
     `SELECT order_status,shipping_status,pricing_mode,total_amount
      FROM orders WHERE id=?`
   ).bind(step.orderId).first<Record<string,unknown>>()
-  if(!order||cleanText(order.order_status)==='deleted'
+  if(!order)throw new CriticalOperationConflictError('Заказ не найден при проверке фактического состояния.')
+  if(cleanText(order.order_status)==='deleted'
     ||cleanText(order.order_status)==='archived'
     ||cleanText(order.shipping_status)==='sent'||toInt(issued?.n,0)>0)
     fail('Заказ уже закрыт, отправлен или имеет зарегистрированную выдачу. Нужна проверка фактического движения товара.')
