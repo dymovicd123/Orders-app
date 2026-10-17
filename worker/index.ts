@@ -1785,7 +1785,7 @@ export default {
         const denied = requireAdminUser(authUser);
         if (denied) return denied;
         const id = toInt(orderDeleteMatch[1], 0);
-        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued' }>(request);
+        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued'; expectedSnapshot?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await deleteOrderSafely(
