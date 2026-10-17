@@ -579,6 +579,24 @@ try{
     'Order reservation historical baseline does not match accepted Branch2')
   fs.writeFileSync(orderReservationPath,orderReservationHistorical)
 
+  // This PR changes only the current read projection of customer names. Historic
+  // Kaspi/Main parity checks must see the exact pre-0112 read files, while current
+  // tests above and the final restoration keep the new runtime independently pinned.
+  for(const entry of [
+    {file:'worker/domains/orders-read.ts',before:'2cb5748339262d465d9743f12184508b8742394e',
+      reverse:(value)=>value.replaceAll('COALESCE(o.customer_name_override,c.display_name)','c.display_name')
+        .replaceAll("COALESCE(o.customer_name_override, c.display_name, c.phone_normalized, '')",
+          "COALESCE(c.display_name, c.phone_normalized, '')")},
+    {file:'worker/domains/clients.ts',before:'953e92bb67f2d9cba95abcc01c17bbcfdacd4488',
+      reverse:(value)=>value.replaceAll('COALESCE(o.customer_name_override,c.display_name)','c.display_name')},
+  ]){
+    const full=path.resolve(entry.file)
+    const now=fs.readFileSync(full,'utf8')
+    const previous=entry.reverse(now)
+    check(gitBlob(previous)===entry.before,'Historical customer read baseline mismatch: '+entry.file)
+    saved.set(full,now)
+    fs.writeFileSync(full,previous)
+  }
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
   run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',
