@@ -19,7 +19,7 @@ function fixture(failurePoint) {
     "CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER)",
     "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,status TEXT,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,released_at TEXT,updated_at TEXT)",
     "CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER,last_action TEXT,last_source_ref TEXT,updated_at TEXT)",
-    "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,operation_type TEXT,operation_id INTEGER,operation_item_id INTEGER,order_item_id INTEGER,event_type TEXT,direction TEXT,inventory_source TEXT,quantity INTEGER,variant_id INTEGER,status TEXT,cancelled_at TEXT,updated_at TEXT,resolution_comment TEXT)",
+    "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,operation_type TEXT,operation_id INTEGER,order_id INTEGER,operation_item_id INTEGER,order_item_id INTEGER,event_type TEXT,direction TEXT,inventory_source TEXT,quantity INTEGER,variant_id INTEGER,status TEXT,cancelled_at TEXT,updated_at TEXT,resolution_comment TEXT)",
     "CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT,category TEXT,is_active INTEGER)",
     "CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,category TEXT,gender TEXT,color TEXT,material TEXT,length TEXT,size_label TEXT,is_active INTEGER)",
     "CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,request_fingerprint TEXT,status TEXT,step TEXT,context_json TEXT,lease_token TEXT,lease_until_ms INTEGER,created_at TEXT,updated_at TEXT,response_json TEXT,completed_at TEXT,last_error TEXT,target_type TEXT,target_id INTEGER,target_ref TEXT)"
@@ -67,7 +67,7 @@ function fixture(failurePoint) {
     "INSERT INTO inventory_reservations(id,order_id,order_item_id,status,inventory_source,variant_id,quantity) VALUES(101,42,2,'active','warehouse',11,1)",
     "INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity) VALUES(10,'warehouse',10,5,0)",
     "INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity) VALUES(11,'warehouse',11,3,1)",
-    "INSERT INTO inventory_lifecycle_events(id,operation_type,operation_id,operation_item_id,order_item_id,event_type,direction,inventory_source,quantity,variant_id,status) VALUES(900,'exchange',200,301,2,'exchange_new_out','out','warehouse',1,11,'pending')"
+    "INSERT INTO inventory_lifecycle_events(id,operation_type,operation_id,order_id,operation_item_id,order_item_id,event_type,direction,inventory_source,quantity,variant_id,status) VALUES(900,'exchange',200,42,301,2,'exchange_new_out','out','warehouse',1,11,'pending')"
   ].join(';')+';')
   sql.prepare(
     "INSERT INTO critical_operations(request_id,operation_type,status,step,context_json,target_type,target_id,created_at) VALUES('EX_CREATE_200','exchange_set_create','completed','completed',?,'exchange',200,'2026-10-17')"
@@ -126,6 +126,15 @@ async function test(failurePoint){
   const driver=createRealAdminDeleteCancellationDriver(db)
   const step={orderId:42,sagaRequestId:'V2_CANCEL_TEST_42',cancelRequestId:'V2_CANCEL_TEST_42:exchange:200',stepIndex:0,type:'exchange',id:200}
   assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=42').get().total_amount,23000)
+  // Applied outward movement + a newer stocktake is intentionally OUTSIDE the
+  // autonomous deletion scope. No business handler may run. Here we block
+  // based on the applied event even if the order is incorrectly "not_sent".
+  sql.exec("UPDATE inventory_lifecycle_events SET status='applied' WHERE id=900")
+  await assert.rejects(()=>driver.preflight(step),/проведённые физические складские движения/)
+  assert.equal(sql.prepare('SELECT status FROM exchanges WHERE id=200').get().status,'completed')
+  assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE variant_id=11').get().reserved_quantity,1)
+  assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM critical_operations WHERE operation_type='exchange_set_cancel'").get().n,0)
+  sql.exec("UPDATE inventory_lifecycle_events SET status='pending' WHERE id=900")
   await driver.preflight(step)
   const crashMessage={
     pending_event_batch:/SIMULATED_CRASH_AFTER_RESERVATION_BATCH/,
