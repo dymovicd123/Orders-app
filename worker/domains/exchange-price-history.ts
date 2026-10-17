@@ -234,6 +234,7 @@ export async function findPartialV2OldPriceLink(
   ).bind(orderId,itemId).all<Record<string,unknown>>()
   const rows=links.results||[]
   if(!rows.length)return null
+  if(rows.length===1 && cleanText(rows[0].role)==='new')return null
   if(rows.length!==1||cleanText(rows[0].role)!=='old') {
     throw new CriticalOperationConflictError('Позиция участвует в нескольких обменах. Исправление требует проверки всей цепочки.')
   }
