@@ -77,6 +77,11 @@ function fixture(failurePoint) {
     async first(){return sql.prepare(query).get(...args)??null},
     async all(){return {results:sql.prepare(query).all(...args)}},
     _run(){
+      if(crashPending && failurePoint==='critical_complete'
+        && /UPDATE critical_operations\s+SET status = 'completed'/.test(query)){
+        crashPending=false
+        throw new Error('SIMULATED_CRASH_AFTER_BUSINESS_COMMIT')
+      }
       const result=sql.prepare(query).run(...args)
       if(/UPDATE inventory_stock\s+SET reserved_quantity = MAX\(0, COALESCE\(reserved_quantity, 0\) -/.test(query)&&result.changes)stockTransitions++
       if(/UPDATE order_items\s+SET quantity = 0, line_total = 0/.test(query)&&result.changes)zeroedNewRows++
@@ -84,11 +89,6 @@ function fixture(failurePoint) {
         && /UPDATE order_items\s+SET quantity = 0, line_total = 0/.test(query)){
         crashPending=false
         throw new Error('SIMULATED_CRASH_AFTER_NEW_ITEM_ZEROED')
-      }
-      if(crashPending && failurePoint==='critical_complete'
-        && /UPDATE critical_operations\s+SET status = 'completed'/.test(query)){
-        crashPending=false
-        throw new Error('SIMULATED_CRASH_AFTER_BUSINESS_COMMIT')
       }
       return {success:true,meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}}
     },
@@ -131,7 +131,11 @@ async function test(failurePoint){
     const partial=sql.prepare("SELECT status FROM critical_operations WHERE request_id=?").get(step.cancelRequestId)
     assert.equal(partial?.status,'started','Saga cannot mark incomplete critical operation as completed')
     await driver.preflight(step)
-    await assert.rejects(()=>driver.verifyReconciled(step),/Обработчик ещё не завершил отмену|Складские|Суммы|false|Операция/)
+    // A not-yet-cancelled entity returns false; a cancelled one whose critical
+    // checkpoint is still 'started' throws. Neither may authorize a saga step.
+    let reconciled=false
+    try { reconciled=await driver.verifyReconciled(step) } catch {}
+    assert.equal(reconciled,false,'Partial cancellation must not advance the saga')
   }
   await driver.cancel(step)
   assert.equal(await driver.verifyReconciled(step),true)
