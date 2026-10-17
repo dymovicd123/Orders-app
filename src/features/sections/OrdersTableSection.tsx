@@ -61,6 +61,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     selectedOrderId,
     setExpandedOrderItemCounts,
     shippingStatusLabel,
+    suggestionValues,
     summarizeOrderItemLines,
     summarizeOrderPaymentLines,
     summary,
@@ -462,28 +463,28 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               </button>
                             ) : null}
                             {!retainedOnly && !archived && !projection.deleted ? (
-                              <button className="secondary compact" type="button"
-                                onClick={(event)=>{
-                                  event.stopPropagation()
-                                  setMetadataDraft({order,error:'',next:{
-                                    orderDate:String(order.order_date||'').trim(),
-                                    customerPhone:String(order.customer_phone||'').trim(),
-                                    customerName:String(order.customer_name||'').trim(),
-                                    city:String(order.city||'').trim(),
-                                    deliveryType:String(order.delivery_type||'').trim(),
-                                    comment:String(order.comment||'').trim(),
-                                  }})
-                                }}>
-                                Исправить реквизиты
-                              </button>
-                            ) : null}
-                            {!retainedOnly && !archived && !projection.deleted && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item) => Number(item.quantity) > 0 && Number(item.id) > 0) ? (
                               <div className="order-extra-actions">
                                 <button className="secondary compact" type="button" aria-expanded={extraActionsOrderId === order.id}
                                   onClick={(event) => { event.stopPropagation(); setExtraActionsOrderId((current) => current === order.id ? null : order.id) }}>
                                   Доп. действия
                                 </button>
                                 {extraActionsOrderId === order.id ? (
+                                  <button className="secondary compact" type="button"
+                                    onClick={(event)=>{
+                                      event.stopPropagation()
+                                      setMetadataDraft({order,error:'',next:{
+                                        orderDate:String(order.order_date||'').trim(),
+                                        customerPhone:String(order.customer_phone||'').trim(),
+                                        customerName:String(order.customer_name||'').trim(),
+                                        city:String(order.city||'').trim(),
+                                        deliveryType:String(order.delivery_type||'').trim(),
+                                        comment:String(order.comment||'').trim(),
+                                      }})
+                                    }}>
+                                    Исправить реквизиты
+                                  </button>
+                            ) : null}
+                                {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item:any) => Number(item.id)>0 && Number(item.quantity)>0) ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
                                     const first = order.items.find((item) => Number(item.quantity) > 0 && Number(item.id) > 0)
@@ -941,18 +942,39 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         ['customerName','Имя клиента'],
                         ['customerPhone','Телефон клиента'],
                         ['city','Город'],
-                        ['deliveryType','Доставка'],
+                        ['deliveryType','Способ доставки'],
                       ] as const).map(([key,name])=>(
                         <label key={key} className="form-field" style={{minWidth:0,margin:0}}>
                           <span>{name}</span>
-                          <input type={key==='orderDate'?'date':'text'}
-                            required={key==='orderDate'||key==='customerName'||key==='customerPhone'}
-                            disabled={savingOrder||(key==='orderDate'&&!isAdmin)}
-                            value={metadataDraft.next[key]||''}
-                            style={{width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
-                            onChange={(event)=>setMetadataDraft((d)=>d?{
-                              ...d,next:{...d.next,[key]:event.target.value},error:'',
-                            }:d)}/>
+                          {key==='city'||key==='deliveryType' ? (
+                            <select
+                              aria-label={name}
+                              disabled={savingOrder}
+                              value={metadataDraft.next[key]||''}
+                              style={{width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
+                              onChange={(event)=>setMetadataDraft((d)=>d?{
+                                ...d,next:{...d.next,[key]:event.target.value},error:'',
+                              }:d)}>
+                              <option value="">Не указано</option>
+                              {[...new Set([
+                                ...(Array.isArray(key==='city'?suggestionValues?.cities:suggestionValues?.deliveryTypes)
+                                  ? (key==='city'?suggestionValues.cities:suggestionValues.deliveryTypes) : [])
+                                  .map((value:any)=>String(value||'').trim()).filter(Boolean),
+                                String(metadataDraft.next[key]||'').trim(),
+                              ].filter(Boolean))].map((value:string)=>(
+                                <option key={value} value={value}>{value}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input type={key==='orderDate'?'date':'text'}
+                              required={key==='orderDate'||key==='customerName'||key==='customerPhone'}
+                              disabled={savingOrder||(key==='orderDate'&&!isAdmin)}
+                              value={metadataDraft.next[key]||''}
+                              style={{width:'100%',maxWidth:'100%',minWidth:0,boxSizing:'border-box'}}
+                              onChange={(event)=>setMetadataDraft((d)=>d?{
+                                ...d,next:{...d.next,[key]:event.target.value},error:'',
+                              }:d)}/>
+                          )}
                         </label>
                       ))}
                     </div>
