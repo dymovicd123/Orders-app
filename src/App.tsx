@@ -7071,7 +7071,10 @@ function removeDebtPayment(index: number) {
 
 
   async function loadAdminOrderDeletePreview(order: OrderRecord) {
-    const response=await apiFetch(`/api/orders/${order.id}/delete-preview`)
+    const [response,chainResponse]=await Promise.all([
+      apiFetch(`/api/orders/${order.id}/delete-preview`),
+      apiFetch(`/api/orders/${order.id}/delete-chain`),
+    ])
     const data=await readJsonResponse<{
       ok?:boolean;message?:string;
       preview?:{
@@ -7094,7 +7097,12 @@ function removeDebtPayment(index: number) {
     }>(response,'Предварительная проверка удаления')
     if(!response.ok||data.ok===false||!data.preview)
       throw new Error(data.message||'Не удалось проверить последствия удаления.')
-    return data.preview
+    const saga=await readJsonResponse<{
+      ok?:boolean;progress?:{requestId:string;status:string;nextStep:number;totalSteps:number}
+    }>(chainResponse,'Проверка удаления')
+    if(!chainResponse.ok||saga.ok===false)
+      throw new Error('Не удалось проверить уже начатое удаление.')
+    return {...data.preview,activeSaga:saga.progress||null}
   }
 
   // Resume the SAME durable cancellation after a lost response or page reload.
