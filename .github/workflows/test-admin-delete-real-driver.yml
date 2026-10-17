@@ -6,6 +6,7 @@ on:
       - feat/branch2-admin-delete-real-cancel-adapter-20261017
       - feat/branch2-admin-delete-critical-ownership-20261017
       - feat/branch2-admin-delete-real-return-e2e-20261017
+      - feat/branch2-admin-delete-real-v2-sqlite-20261017
       - branch2
     paths:
       - 'worker/domains/admin-delete-real-driver.ts'
