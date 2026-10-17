@@ -166,6 +166,51 @@ await assert.rejects(
   ()=>planAdminDeleteSaga(db,42,requestId,'0'.repeat(64)),/ключ уже принадлежит/,
   'An existing saga cannot be replaced with a different preview')
 
+// Lease stolen AFTER a business cancellation but BEFORE the atomic step
+// completion checkpoint: stale worker must not advance. Retry same key safely.
+sqlite.exec("INSERT INTO orders VALUES(99,'ORD-99','active','not_sent',0,0,8000)")
+sqlite.exec("INSERT INTO order_items VALUES(990,99,0,8000,0)")
+sqlite.exec("INSERT INTO order_items VALUES(991,99,1,8000,8000)")
+sqlite.exec("INSERT INTO exchanges VALUES(900,99,'completed',NULL,990,991)")
+sqlite.exec("INSERT INTO exchange_items(exchange_id,order_item_id,role) VALUES(900,990,'old')")
+sqlite.exec("INSERT INTO exchange_items(exchange_id,order_item_id,role) VALUES(900,991,'new')")
+sqlite.exec("INSERT INTO critical_operations(operation_type,target_type,target_id) VALUES('exchange_set_create','exchange',900)")
+const fp99=(await previewAdminOrderDeleteChain(db,99)).snapshotFingerprint
+const otherReq='ADMIN_DELETE_LEASE_STOLEN_99'
+await planAdminDeleteSaga(db,99,otherReq,fp99)
+let stoleLease=true,physicalCancels=0,retries=0
+const racingDriver={
+ async preflight(step){assert.equal(step.orderId,99)},
+ async cancel(step){
+   retries++
+   const status=sqlite.prepare('SELECT status FROM exchanges WHERE id=900').get().status
+   if(status!=='cancelled'){
+     sqlite.exec("UPDATE exchanges SET status='cancelled' WHERE id=900")
+     physicalCancels++
+   }
+   return {ok:true}
+ },
+ async verifyReconciled(step){
+   if(stoleLease){
+     stoleLease=false
+     sqlite.prepare("UPDATE admin_order_delete_sagas SET lease_token='other-worker',lease_until_ms=? WHERE request_id=?")
+       .run(Date.now()+60000,otherReq)
+   }
+   return sqlite.prepare("SELECT status FROM exchanges WHERE id=900").get().status==='cancelled'
+ }
+}
+await assert.rejects(()=>advanceAdminDeleteSagaOneStep(db,otherReq,racingDriver),
+ /malformed JSON|ADMIN_DELETE_SAGA_STALE/i)
+assert.equal((await getAdminDeleteSagaProgress(db,otherReq)).nextStep,0,
+ 'Stolen lease cannot commit a stale checkpoint')
+assert.equal(sqlite.prepare("SELECT status FROM admin_order_delete_saga_steps WHERE saga_request_id=?").get(otherReq).status,'started')
+sqlite.prepare("UPDATE admin_order_delete_sagas SET lease_token=NULL,lease_until_ms=0 WHERE request_id=?").run(otherReq)
+const resumed=await advanceAdminDeleteSagaOneStep(db,otherReq,racingDriver)
+assert.equal(resumed.nextStep,1)
+assert.equal(resumed.status,'ready_for_final_delete')
+assert.equal(physicalCancels,1,'Business action executed only once even when checkpoint lease stolen')
+assert.equal(retries,2,'Cancellation retried with same idempotency key')
+
 const ts=readFileSync('worker/domains/admin-delete-saga.ts','utf8')
 const worker=readFileSync('worker/index.ts','utf8')
 assert(!worker.includes('advanceAdminDeleteSagaOneStep('),'Never expose incomplete actual-money saga through HTTP router')
