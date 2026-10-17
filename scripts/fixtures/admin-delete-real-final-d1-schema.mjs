@@ -19,6 +19,7 @@ export function localRealFinalSchema(){
       payment_date:'TEXT',method:'TEXT',payment_kind:"TEXT DEFAULT 'primary'",comment:'TEXT'
     }),
     ...add('returns',{return_date:'TEXT',comment:'TEXT'}),
+    ...add('inventory_reservations',{product_id:'INTEGER',fulfilled_at:'TEXT',created_at:'TEXT'}),
     ...add('inventory_stock',{
       product_id:'INTEGER',product_name_snapshot:'TEXT',gender_snapshot:'TEXT',
       color_snapshot:'TEXT',material_snapshot:'TEXT',length_snapshot:'TEXT',
