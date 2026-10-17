@@ -22,7 +22,7 @@ const reviewedDeleteGuidance = {
   files: {
     'worker/domains/order-delete.ts': '134832d497d66f80e0d3683cb346d3036005eb58',
     'worker/domains/critical.ts': '4d45032c6e75fd6a62f213242def01b5f47b81db',
-    'scripts/test-order-delete-physical-guidance-r1.mjs': '5a28da06b7da7c82e65e94f5d475c58aaa6b27d7',
+    'scripts/test-order-delete-physical-guidance-r1.mjs': '339fd7e2cdc512f18d2d193a43e28fb233e33432',
   },
 }
 check(manifest.files['src/App.tsx'].afterGitBlob === reviewedDeleteGuidance.originalApp,
