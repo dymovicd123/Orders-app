@@ -29,12 +29,12 @@ assert(table.includes('priceItems.map((item:any)=>'), 'Every active order line m
 assert(table.includes('Разница по заказу:'), 'Price delta must be shown before submission')
 assert(table.includes('priceHasInvalid||priceChanges.length===0'), 'No invalid or empty edits')
 assert(table.includes('Если цена позиции связана с обменом, исправьте её отдельно.'), 'Communicate active exchange restriction')
-assert(table.includes('Подробности проверки и порядок действий'), 'Explanations must be optional')
-assert(table.includes('Сейчас удалить заказ нельзя'))
+assert(table.includes('Обмены и возвраты товаров'), 'The complete dependent operation list must be visible')
+assert(table.includes('Нужно уточнение перед удалением'))
 const modal=table.slice(table.indexOf('{adminDeleteDraft ? ('),table.indexOf('{exchangeChainDraft ? ('))
-assert(modal.includes('{adminDeleteDraft.preview?.canAttemptDelete &&'), 'Do not render destructive button on blocked order')
+assert(modal.includes('adminDeleteDraft.preview?.canStartChain') && modal.includes('adminDeleteDraft.preview?.canAttemptDelete'), 'Only safe previews can expose direct or chained delete')
 assert(modal.includes('deleteOrderAsAdmin('), 'Permitted delete still calls real admin-only flow')
-assert(deletePreview.includes('canAttemptDelete:reasons.length===0'), 'Delete blockers must still be server-derived')
+assert(deletePreview.includes('canAttemptDelete:!hasChain&&reasons.length===0'), 'Direct delete blockers must remain server-derived')
 
 // Extract and execute actual live linked-line dependency SQL. Independent items
 // remain available as an atomic batch, linked exchange lines cannot be bundled.

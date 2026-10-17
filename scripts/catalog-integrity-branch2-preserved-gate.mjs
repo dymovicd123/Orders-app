@@ -20,7 +20,7 @@ const reviewedDeleteGuidance = {
   originalApp: '562a41973ad154496a81c8d5c151aff5119a46bf',
   currentApp: '505ae6ee1e691db95c78c97aba445cd3aa066d7e',
   files: {
-    'worker/domains/order-delete.ts': '041aaa47af3ae1cfc45a822e968dc63ce536ac5f',
+    'worker/domains/order-delete.ts': '134832d497d66f80e0d3683cb346d3036005eb58',
     'worker/domains/critical.ts': '4d45032c6e75fd6a62f213242def01b5f47b81db',
     'scripts/test-order-delete-physical-guidance-r1.mjs': '5a28da06b7da7c82e65e94f5d475c58aaa6b27d7',
   },
@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'a070d1aa667f5094e20574ac2d178fd16e243398',
+  'worker/index.ts':'527be8a818e974c711e1a1386e4151b000e8f193',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -95,7 +95,7 @@ check(reviewedMetadataUx.priorApp==='b1928fcc44a23260087adb4a4df294bd11444a84'
 const reviewedReferenceDropdownUx={
   previousApp:reviewedMetadataUx.app,
   previousTable:reviewedMetadataUx.table,
-  app:'daf1365cacdc7af4b3a6026c0f80a5660567a0f0',
+  app:'97c8467213a0c457548c324f8bedf160cc84383d',
   table:'6d7870e410571d5978577570fe9e5c2cb5fd260e',
 }
 check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc99586450e7'
@@ -104,7 +104,7 @@ check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc9
 const reviewedOptionalMetadata={
   previousTable:reviewedReferenceDropdownUx.table,
   previousWrite:reviewedMetadataUx.write,
-  table:'9aa1836545f549035a4ba59a523c1beb2c144412',
+  table:'e7236d5a39286091ecc201bf7f3736668ce43f39',
   write:'e157deed999da92d7207c9bc88a70f4ea662e562',
 }
 check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
@@ -172,12 +172,14 @@ const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
-  'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
-  'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
+  'worker/domains/order-delete-preview.ts':'4c87b34ec14f502c1d1ee4a8c15fcc8c530ac2ee',
+  'worker/domains/order-delete-chain-plan.ts':'410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
-  'worker/domains/admin-delete-saga.ts':'be55ff1c5d9158754c9699349dfb9a1efe39e3a8',
-  'worker/domains/admin-delete-real-driver.ts':'561725d77df44af089e1aee0e5d1cbe23cc16f5a',
+  'worker/domains/admin-delete-saga.ts':'35d9d2b07c47eb203e19c071888c49ee77e9729a',
+  'worker/domains/admin-delete-real-driver.ts':'ba2905fee50cea2cc0c88398deff33531b6cae1d',
+  'worker/domains/admin-delete-impact.ts':'77985b72ca4ffbd63eb966f78616b0a07cd11935',
+  'worker/domains/admin-delete-execute.ts':'356701d33688e9bba08fa7855f56b9319b862d5f',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -479,7 +481,7 @@ try{
   // during that archived suite, and restore both in finally. They are
   // independently exercised by current Worker+D1 tests and TS build.
   for(const [relative,expected] of [
-    ['worker/domains/admin-delete-finalize.ts','95107cab38dfda9b837331399cebe5cb4d5476ab'],
+    ['worker/domains/admin-delete-finalize.ts','54d60e732b09985368d9b47bd097281fa9836c31'],
     ['worker/domains/admin-delete-final-driver.ts','60c3fe406d6e52dfff4ef20cd54230cf06923968'],
   ]){
     const from=path.resolve(relative)

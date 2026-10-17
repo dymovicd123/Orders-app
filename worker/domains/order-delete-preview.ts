@@ -3,15 +3,16 @@
 // rechecks all dependencies before any mutation.
 import { cleanText, toInt } from '../core/text.ts'
 import { previewAdminOrderDeleteChain, type AdminDeleteChainPlan } from './order-delete-chain-plan.ts'
+import { previewAdminDeleteImpact, type AdminDeleteImpact } from './admin-delete-impact.ts'
 
 export type AdminOrderDeletePreview = {
   orderId:number;externalId:string;orderStatus:string;shippingStatus:string;
-  canAttemptDelete:boolean;requiresPhysicalFact:boolean;
+  canAttemptDelete:boolean;canStartChain:boolean;requiresPhysicalFact:boolean;
   activeExchanges:number[];activeReturns:number[];
   receivedAmount:number;returnAmount:number;paymentCount:number;
   registeredPayments:number;recordedRefunds:number;
   issuedItemCount:number;issuedQuantity:number;
-  reasons:string[];explanations:string[];
+  reasons:string[];explanations:string[];impact:AdminDeleteImpact;
   chainPlan:AdminDeleteChainPlan;
 }
 
@@ -21,7 +22,7 @@ export async function previewAdminOrderDeletion(
   const orderId=toInt(orderIdRaw,0)
   if(!orderId)throw new Error('Укажите существующий заказ.')
   const order=await db.prepare(
-    `SELECT id,external_id,order_status,shipping_status,received_amount,return_amount
+    `SELECT id,external_id,order_status,shipping_status,total_amount,received_amount,return_amount
      FROM orders WHERE id=? LIMIT 1`
   ).bind(orderId).first<Record<string,unknown>>()
   if(!order)throw new Error('Заказ не найден.')
@@ -47,11 +48,13 @@ export async function previewAdminOrderDeletion(
   const activeExchanges=(exchanges.results||[]).map(x=>toInt(x.id,0)).filter(Boolean)
   const activeReturns=(returns.results||[]).map(x=>toInt(x.id,0)).filter(Boolean)
   const chainPlan=await previewAdminOrderDeleteChain(db,orderId)
+  const impact=await previewAdminDeleteImpact(db,orderId,Math.max(0,toInt(order.total_amount,0)),new Set(activeReturns))
   const reasons:string[]=[]
   if(activeExchanges.length>200||activeReturns.length>200)
     reasons.push('Слишком много связанных операций. Требуется отдельная проверка истории.')
-  if(activeExchanges.length||activeReturns.length)
-    reasons.push('Есть действующие обмены или возвраты. Их нельзя отменять при удалении по одной операции без защищённого плана восстановления.')
+  const hasChain=Boolean(activeExchanges.length||activeReturns.length)
+  if(hasChain&&(chainPlan.manualReviewRequired||!chainPlan.allOperationsAccountedFor))
+    reasons.push('Некоторые связанные операции требуют ручной проверки истории перед автоматической отменой.')
   const status=cleanText(order.order_status).toLowerCase()
   if(status==='archived')reasons.push('Заказ находится в архиве. Сначала верните его из архива.')
   if(status==='deleted')reasons.push('Заказ уже удалён.')
@@ -64,20 +67,24 @@ export async function previewAdminOrderDeletion(
     reasons.push('Невозможно сверить полный список связанных операций. Удаление заблокировано.')
   const cachedPaid=toInt(order.received_amount,0)
   const cachedReturned=toInt(order.return_amount,0)
-  if(registeredPayments>0)
-    reasons.push('У заказа остаются зарегистрированные оплаты. Сначала проверьте, реальное это поступление или ошибочная запись: удаление не должно подменять возврат денег клиенту.')
+  if(impact.truncated)reasons.push('Список финансовых или складских операций слишком велик; удаление остановлено для проверки.')
   if(cachedPaid!==registeredPayments||cachedReturned!==recordedRefunds)
     reasons.push('Финансовые суммы заказа не совпадают с действующими оплатами и возвратами. Перед удалением требуется сверка.')
   const explanations=[
-    activeExchanges.length?`Активных обменов: ${activeExchanges.length}. Их учёт и складские события останутся неизменными, пока не будет безопасно подтверждена цепочка отмен.`:'',
-    activeReturns.length?`Активных возвратов: ${activeReturns.length}. Их финансы и склад не будут отменены автоматически при текущем ограничении.`:'',
-    registeredPayments?`Зарегистрировано оплат на ${registeredPayments} ₸. Удаление не означает физическую выдачу денег клиенту; необходимо подтвердить реальное движение отдельно.`:'',
-    recordedRefunds?`По активным возвратам записано ${recordedRefunds} ₸. Действительно переданные деньги нельзя просто стирать.`:'',
+    activeExchanges.length?`Будут отменены ${activeExchanges.length} обменов в безопасном порядке зависимостей.`:'',
+    activeReturns.length?`Возвратов в истории: ${activeReturns.length}; при отмене их учётные движения сторнируются.`:'',
+    registeredPayments?`Записанные оплаты на ${registeredPayments} ₸ будут аннулированы в учёте. Это не физическая выдача денег клиенту.`:'',
+    recordedRefunds?`Зарегистрированные возвраты на ${recordedRefunds} ₸ будут компенсированы учётным сторно.`:'',
     requiresPhysicalFact?'Есть признак выдачи товара. Система отдельно запросит факт физической передачи и проверит более поздние ревизии.':'',
   ].filter(Boolean)
+  if(hasChain&&requiresPhysicalFact)
+    reasons.push('Для цепочки с зафиксированной выдачей товара сначала нужна проверка фактической передачи и более поздних ревизий.')
+  const canStartChain=hasChain && reasons.length===0
+    && !requiresPhysicalFact && chainPlan.allOperationsAccountedFor
+    && !chainPlan.manualReviewRequired && chainPlan.steps.length>0
   return {
     orderId,externalId:cleanText(order.external_id),orderStatus:status,shippingStatus:shipping,
-    canAttemptDelete:reasons.length===0,requiresPhysicalFact,
+    canAttemptDelete:!hasChain&&reasons.length===0,canStartChain,requiresPhysicalFact,
     activeExchanges,activeReturns,
     receivedAmount:Math.max(0,toInt(order.received_amount,0)),
     returnAmount:Math.max(0,toInt(order.return_amount,0)),
@@ -85,6 +92,6 @@ export async function previewAdminOrderDeletion(
     registeredPayments,recordedRefunds,
     issuedItemCount:Math.max(0,toInt(fulfilled?.issued_count,0)),
     issuedQuantity:Math.max(0,toInt(fulfilled?.issued_quantity,0)),
-    reasons,explanations,chainPlan,
+    reasons,explanations,chainPlan,impact,
   }
 }

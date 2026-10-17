@@ -7071,15 +7071,23 @@ function removeDebtPayment(index: number) {
 
 
   async function loadAdminOrderDeletePreview(order: OrderRecord) {
-    const response=await apiFetch(`/api/orders/${order.id}/delete-preview`)
+    const [response,chainResponse]=await Promise.all([
+      apiFetch(`/api/orders/${order.id}/delete-preview`),
+      apiFetch(`/api/orders/${order.id}/delete-chain`),
+    ])
     const data=await readJsonResponse<{
       ok?:boolean;message?:string;
       preview?:{
-        orderId:number;externalId:string;canAttemptDelete:boolean;requiresPhysicalFact:boolean;
+        orderId:number;externalId:string;canAttemptDelete:boolean;canStartChain:boolean;requiresPhysicalFact:boolean;
         activeExchanges:number[];activeReturns:number[];
         receivedAmount:number;returnAmount:number;paymentCount:number;
         registeredPayments:number;recordedRefunds:number;issuedItemCount:number;issuedQuantity:number;
         reasons:string[];explanations:string[];
+        impact:{saleAmount:number;debtAmount:number;paymentReversal:number;refundReversal:number;netMoneyReversal:number;
+          payments:Array<{id:number;date:string;method:string;amount:number;kind:string}>;
+          refunds:Array<{id:number;date:string;method:string;amount:number}>;
+          exchanges:Array<{id:number;financialAction:string;financialAmount:number}>;
+          reservations:Array<{orderItemId:number;name:string;source:string;quantity:number;status:string;action:string}>;truncated:boolean};
         chainPlan:{
           snapshotFingerprint:string;steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
           activeExchangeIds:number[];activeReturnIds:number[];generatedExchangeRefundIds:number[];
@@ -7089,7 +7097,56 @@ function removeDebtPayment(index: number) {
     }>(response,'Предварительная проверка удаления')
     if(!response.ok||data.ok===false||!data.preview)
       throw new Error(data.message||'Не удалось проверить последствия удаления.')
-    return data.preview
+    const saga=await readJsonResponse<{
+      ok?:boolean;progress?:{requestId:string;status:string;nextStep:number;totalSteps:number}
+    }>(chainResponse,'Проверка удаления')
+    if(!chainResponse.ok||saga.ok===false)
+      throw new Error('Не удалось проверить уже начатое удаление.')
+    return {...data.preview,activeSaga:saga.progress||null}
+  }
+
+  // Resume the SAME durable cancellation after a lost response or page reload.
+  // Each HTTP call executes no more than one verified operation.
+  async function executeAdminDeleteChain(order:OrderRecord,expectedSnapshot:string,
+    onProgress?:(done:number,total:number)=>void):Promise<boolean>{
+    if(!/^[0-9a-f]{64}$/.test(expectedSnapshot))return false
+    setSavingOrder(true);setError(null);setMessage(null)
+    try{
+      const key='admin-delete-chain:'+order.id
+      const check=await apiFetch('/api/orders/'+order.id+'/delete-chain')
+      const state=await readJsonResponse<{ok?:boolean;progress?:{requestId:string}}>(check,'Восстановление удаления')
+      if(!check.ok)throw new Error('Не удалось проверить ранее начатое удаление.')
+      const prepared=prepareCriticalRequest(key,{expectedSnapshot})
+      const requestId=state.progress?.requestId||prepared.requestId
+      const maxSteps=125
+      for(let index=0;index<maxSteps;index++){
+        const response=await apiFetch('/api/orders/'+order.id+'/delete-chain',{
+          method:'POST',headers:{'Content-Type':'application/json','X-Idempotency-Key':requestId},
+          body:JSON.stringify({requestId,expectedSnapshot}),
+        })
+        const data=await readJsonResponse<{
+          ok?:boolean;message?:string;
+          progress?:{requestId:string;status:string;nextStep:number;totalSteps:number;lastError:string};
+        }>(response,'Отмена зависимых операций')
+        if(!response.ok||data.ok===false||!data.progress)
+          throw new Error(data.message||'Удаление остановлено. Повторите — уже завершённые шаги не выполнятся повторно.')
+        onProgress?.(data.progress.nextStep,data.progress.totalSteps)
+        if(data.progress.status==='completed'){
+          completeCriticalRequest(key,prepared.requestId)
+          setOrders(current=>current.filter(entry=>entry.id!==order.id))
+          if(selectedOrderId===order.id){setSelectedOrderId(null);setEditorOpen(false)}
+          invalidateFinanceReadCaches()
+          invalidateInventoryStockCaches(true)
+          setMessage(data.message||'Заказ и его связанные записи аннулированы.')
+          void loadDashboard()
+          return true
+        }
+      }
+      throw new Error('Цепочка слишком длинная. Повторите удаление для безопасного продолжения.')
+    }catch(err){
+      setError(err instanceof Error?err.message:'Не удалось завершить удаление.')
+      return false
+    }finally{setSavingOrder(false)}
   }
 
   async function deleteOrderAsAdmin(order: OrderRecord, previewAcknowledged = false, expectedSnapshot = ''): Promise<boolean> {
@@ -8771,7 +8828,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi-заказы">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadAdminOrderDeletePreview, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
@@ -8783,7 +8840,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadAdminOrderDeletePreview, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">

@@ -38,6 +38,14 @@ export async function deleteOrderSafely(
     )
   }
 
+  // Do not bypass an unfinished dependency saga via the ordinary Delete POST.
+  // Only the final, lease-protected saga step may call this deleter.
+  const pendingSaga=await db.prepare(
+    "SELECT request_id FROM admin_order_delete_sagas WHERE order_id=? AND status IN ('planned','running','review_required','ready_for_final_delete') LIMIT 1"
+  ).bind(orderId).first<{request_id:string}>()
+  if(pendingSaga?.request_id && requestId!==pendingSaga.request_id+':final')
+    throw new CriticalOperationConflictError('Идёт отмена связанных операций. Продолжите начатое удаление, чтобы не пропустить финансовые или складские шаги.')
+
   const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
   const fulfilledRows = humanInventoryModelEnabled
     ? await db.prepare(

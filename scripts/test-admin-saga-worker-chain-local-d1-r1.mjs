@@ -249,7 +249,16 @@ try{
   const paymentBlock=await probe('/finalize')
   assert.equal(paymentBlock.status,409)
   assert.match(paymentBlock.data.error,/деньги|оплат|финансов/i)
-  assert.equal((await probe('/clear-money')).status,200)
+  const realPaymentVoid=process.argv.includes('--real')||process.argv.includes('--race')
+  if(realPaymentVoid){
+    assert.equal((await probe('/sync-money')).status,200)
+    assert.equal((await probe('/record-money-event')).status,200)
+    const beforeVoid=await probe('/money-events')
+    assert.deepEqual(beforeVoid.data.map(e=>[e.event_type,e.amount_delta]),
+      [['order_payment',500]])
+  }else{
+    assert.equal((await probe('/clear-money')).status,200)
+  }
   let unfinished=await probe('/facts')
   assert.equal(unfinished.data.order.order_status,'active')
   assert.equal(unfinished.data.finalOperations.length,0)
@@ -289,7 +298,13 @@ try{
     assert.deepEqual(justDeleted.data.exchanges,final.data.exchanges)
     assert.deepEqual(justDeleted.data.events,final.data.events)
     assert.deepEqual(justDeleted.data.critical,final.data.critical)
-    assert.equal(justDeleted.data.payments.length,0)
+    assert.equal(justDeleted.data.payments.length,1,
+      'Original payment row must remain as audited historical evidence')
+    const voidEvents=await probe('/money-events')
+    assert.equal(voidEvents.status,200)
+    assert.deepEqual(voidEvents.data.map(e=>[e.event_type,e.amount_delta]),
+      [['order_payment',500],['payment_reversal',-500]],
+      'Erroneous original payment must have exactly one balancing reversal')
     const firstRetry=await probe('/finalize-real')
     assert.equal(firstRetry.status,200,'Retry real deletion: '+JSON.stringify(firstRetry))
     assert.equal(firstRetry.data.status,'completed')
