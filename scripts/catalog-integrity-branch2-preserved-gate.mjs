@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'527be8a818e974c711e1a1386e4151b000e8f193',
+  'worker/index.ts':'0341328a072b2e7e17a3fdd29312a1f10ea796a7',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -95,7 +95,7 @@ check(reviewedMetadataUx.priorApp==='b1928fcc44a23260087adb4a4df294bd11444a84'
 const reviewedReferenceDropdownUx={
   previousApp:reviewedMetadataUx.app,
   previousTable:reviewedMetadataUx.table,
-  app:'97c8467213a0c457548c324f8bedf160cc84383d',
+  app:'aa4570bd00c3032240a52fd7a3811bf44704656f',
   table:'6d7870e410571d5978577570fe9e5c2cb5fd260e',
 }
 check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc99586450e7'
@@ -104,7 +104,7 @@ check(reviewedReferenceDropdownUx.previousApp==='a8c7f7b4b38bbe213fb54e1df4b1dc9
 const reviewedOptionalMetadata={
   previousTable:reviewedReferenceDropdownUx.table,
   previousWrite:reviewedMetadataUx.write,
-  table:'6c326dc5ba4e0e8b227a070506058967c71540ec',
+  table:'f61ae0e0ea85addd6efb2e612e49ef802861f4ee',
   write:'e157deed999da92d7207c9bc88a70f4ea662e562',
 }
 check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
@@ -172,18 +172,20 @@ const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
-  'worker/domains/order-delete-preview.ts':'663c5d6cbc89242c4224f2e1daa5ae6c20670cb2',
+  'worker/domains/order-delete-preview.ts':'6d26790728dc218217da2ae92c73c0effd046a24',
   'worker/domains/order-delete-chain-plan.ts':'410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
-  'worker/domains/admin-delete-saga.ts':'35d9d2b07c47eb203e19c071888c49ee77e9729a',
+  'worker/domains/admin-delete-saga.ts':'73346aaebdb8bbf7b29669cf04d1f73dfd06de48',
   'worker/domains/admin-delete-real-driver.ts':'9eb58e24e6bd26a512494ab53f345a89bb597c81',
   'worker/domains/admin-delete-physical.ts':'fd97f102d73d463865e2be5cb1f26013daea8d74',
   'scripts/test-admin-delete-compensated-lifecycle-20261017.mjs':'7e87937176ce7da383dcea8b185e99a4845e72da',
   'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'af58232a739d1a46330964c61925a386955d0ca2',
   'worker/domains/admin-delete-impact.ts':'eb5461a761519e21c700c65cabe2d97e3cf96988',
   'scripts/test-admin-delete-exchange-details-20261017.mjs':'b30f28e597ed21ff9b069388415d2aa3bed4672c',
-  'worker/domains/admin-delete-execute.ts':'356701d33688e9bba08fa7855f56b9319b862d5f',
+  'worker/domains/admin-delete-execute.ts':'ef7e0e64ed4721ff359089454c6e376c23244028',
+  'worker/domains/admin-delete-physical-confirm.ts':'d119cc2e5b2b83d46d9a80eee1254d3e7e5a4c65',
+  'scripts/test-admin-delete-physical-confirm-dialog-20261018.mjs':'6a6c4f4efe67202fe82dc8c28433088fb2966f2f',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -368,6 +370,7 @@ const tests=[
   ['scripts/test-admin-delete-exchange-details-20261017.mjs',true],
   ['scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs',true],
   ['scripts/test-admin-delete-compensated-lifecycle-20261017.mjs',true],
+  ['scripts/test-admin-delete-physical-confirm-dialog-20261018.mjs',false],
   ['scripts/test-safe-order-metadata-edit-20261017.mjs',false],
   ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',false],
   ['scripts/test-metadata-reference-dropdown-20261017.mjs',false],
