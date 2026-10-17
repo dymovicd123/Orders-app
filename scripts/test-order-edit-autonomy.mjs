@@ -17,7 +17,10 @@ check(!orderPatch.match(/if \(request\.method === 'PATCH'\) \{\s*const denied = 
 check(worker.includes("orderEditAutonomy: '192b2a6'"), 'order edit autonomy health marker missing')
 
 check(orders.includes("const workingModeEdit = actor?.role !== 'admin'"), 'server working-mode boundary missing')
-check(orders.includes("['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent'"), 'destructive/sent server gate missing')
+check(orders.includes("['deleted', 'archived'].includes(existingOrderStatus)"), 'destructive server gate missing')
+check(orders.includes("existingShippingStatus === 'sent' && !recordedPriceOnlyRequest"), 'sent orders must remain blocked except the isolated price-record correction')
+check(orders.includes("Object.keys(input as Record<string, unknown>).every"), 'manager sent-order correction must not accept any unrelated fields')
+check(orders.includes('recordedPriceOnlyRequest && priceOnlyItemsEdit'), 'downstream returns/exchanges require precise eligibility preflight')
 check(!orders.includes("existingOrderStatus !== 'active' || existingShippingStatus === 'sent'"), 'closed orders are still blocked by the old active-only server gate')
 check(orders.includes('nextOrderStatus !== existingOrderStatus'), 'order-status transition boundary missing')
 check(orders.includes('nextWorkshopStatus !== existingWorkshopStatus'), 'workshop-status transition boundary missing')
@@ -48,4 +51,4 @@ check(!/\bisReturnedOrderRecord\b/.test(orderDetailsContext), 'OrderDetailsSecti
 check(!editor.includes("updateEditorDraft(\n                            'workshopStatus'"), 'generic order editor must not mutate coarse workshop_status directly')
 check(editor.includes('Состояние меняется по конкретным позициям в разделе «Цех».'), 'editor must explain that Workshop state comes from concrete Workshop positions')
 
-console.log('ORDER EDIT AUTONOMY PASSED — ordinary staff can correct active or closed unshipped orders while sent/deleted/archived lifecycle and physical handover remain protected')
+console.log('ORDER EDIT AUTONOMY PASSED — ordinary staff may correct recorded price on sent orders only in isolated guarded mode, without changing lifecycle')
