@@ -2990,7 +2990,7 @@ type ExchangeSetCancelContext = {
   preflight?: {
     projectedRestoredTotal: number
     projectedNetPaid: number
-    oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number; originalUnitPrice: number; restoredUnitPrice: number }>
+    oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number; originalUnitPrice: number; expectedCurrentUnitPrice: number; restoredUnitPrice: number }>
     newSnapshots: Array<{ orderItemId: number; quantity: number; unitPrice: number; lineTotal: number }>
   }
 }
@@ -4151,18 +4151,13 @@ export async function cancelExchangeSetV2(
         const orderItemId = toInt(row.order_item_id, 0)
         if (orderItemId) oldRowsByOrderItemId.set(orderItemId, row)
       }
-      const oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number; originalUnitPrice: number; restoredUnitPrice: number }> = []
+      const oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number; originalUnitPrice: number; expectedCurrentUnitPrice: number; restoredUnitPrice: number }> = []
       let originalRemovedValue = 0
       let correctedRemovedValue = 0
       for (const [index, planItem] of plan.oldItems.entries()) {
         const row = oldRowsByOrderItemId.get(planItem.orderItemId)
         if (!row) throw new CriticalOperationConflictError(`Старая позиция обмена ${index + 1} больше не найдена.`)
         const currentUnitPrice = requiredSafeMoney(row.current_unit_price, `Цена старой позиции ${index + 1}`)
-        if (currentUnitPrice !== planItem.unitPrice) {
-          throw new CriticalOperationConflictError(
-            `Цена старой позиции обмена ${index + 1} изменилась после проведения. Автоматическая отмена остановлена.`
-          )
-        }
         const baselineQuantity = Math.max(0, toInt(row.current_quantity, 0))
         const targetQuantity = baselineQuantity + planItem.quantity
         const correction = await db.prepare(
@@ -4173,10 +4168,18 @@ export async function cancelExchangeSetV2(
         const restoredUnitPrice = correction
           ? requiredSafeMoney(correction.new_unit_price, `Исправленная цена старой позиции ${index + 1}`)
           : currentUnitPrice
-        if(correction && (baselineQuantity !== 0
-          || !await isApprovedExchangePriceLineage(db,exchangeId,planItem.orderItemId,
-              planItem.unitPrice,restoredUnitPrice,'old'))) {
-          throw new CriticalOperationConflictError('История исправления старой цены повреждена. Отмена остановлена до движения товара.')
+        if (correction) {
+          const valid=await isApprovedExchangePriceLineage(db,exchangeId,planItem.orderItemId,
+              planItem.unitPrice,restoredUnitPrice,'old')
+          const expectedPresentPrice = baselineQuantity > 0 ? restoredUnitPrice : planItem.unitPrice
+          if (!valid || currentUnitPrice !== expectedPresentPrice) {
+            throw new CriticalOperationConflictError('Цена оставшейся старой позиции расходится с подтверждённой историей. Отмена остановлена до движения товара.')
+          }
+        } else if(currentUnitPrice !== planItem.unitPrice) {
+          throw new CriticalOperationConflictError('Цена старой позиции обмена изменилась без истории коррекции. Отмена остановлена.')
+        }
+        if (baselineQuantity > 0 && toInt(row.current_line_total,-1)!==baselineQuantity*currentUnitPrice) {
+          throw new CriticalOperationConflictError('Сумма оставшегося товара обмена не совпадает с количеством и ценой.')
         }
         if (!Number.isSafeInteger(targetQuantity) || targetQuantity < 0) {
           throw new CriticalOperationConflictError('Не удалось безопасно рассчитать восстановление старой позиции.')
@@ -4187,7 +4190,7 @@ export async function cancelExchangeSetV2(
           throw new CriticalOperationConflictError('Итог восстановленных цен вышел за пределы безопасного целого числа.')
         }
         oldTargets.push({ orderItemId: planItem.orderItemId, baselineQuantity, targetQuantity,
-          originalUnitPrice: planItem.unitPrice,restoredUnitPrice })
+          originalUnitPrice: planItem.unitPrice,expectedCurrentUnitPrice:currentUnitPrice,restoredUnitPrice })
       }
       if(originalRemovedValue !== plan.removedValue) {
         throw new CriticalOperationConflictError('Исходный денежный снимок обмена не совпадает с ценами его старых позиций.')
@@ -4270,7 +4273,7 @@ export async function cancelExchangeSetV2(
       const currentQuantity = Math.max(0, toInt(current.quantity, 0))
       if (currentQuantity !== target.targetQuantity) {
         if (currentQuantity !== target.baselineQuantity
-          || toInt(current.unit_price,-1) !== target.originalUnitPrice) {
+          || toInt(current.unit_price,-1) !== target.expectedCurrentUnitPrice) {
           throw new CriticalOperationConflictError(
             'Старая позиция или её цена изменились во время отмены обмена. Операция остановлена.'
           )
@@ -4284,7 +4287,7 @@ export async function cancelExchangeSetV2(
         ).bind(
           target.targetQuantity,target.restoredUnitPrice,restoredLineTotal,
           planItem.originalStockStatus || (planItem.isWorkshop ? 'workshop' : 'reserved'),
-          planItem.orderItemId,orderId,target.baselineQuantity,target.originalUnitPrice,
+          planItem.orderItemId,orderId,target.baselineQuantity,target.expectedCurrentUnitPrice,
         ).run()
         if(!result.meta?.changes) throw new CriticalOperationConflictError('Старая позиция изменилась во время восстановления.')
       } else if(toInt(current.unit_price,-1)!==target.restoredUnitPrice) {
