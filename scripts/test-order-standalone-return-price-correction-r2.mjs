@@ -47,7 +47,7 @@ db.exec([
  "INSERT INTO inventory_stock VALUES(7,240,4,2)",
 ].join(';')+';')
 const dep=item=>({...db.prepare(dependency[1]).get(42,item,item,item,42,item,42,item)})
-const args=[14,42,1,12000,12000,12000,12000,30000,25000,5000,null,null,null]
+const args=[14,42,1,12000,12000,12000,12000,30000,25000,5000,null,null,null,'new','new']
 function apply({nextPrice=14000,old=30000}={}){
   db.exec('BEGIN')
   try{
