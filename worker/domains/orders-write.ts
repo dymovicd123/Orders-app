@@ -1279,6 +1279,20 @@ export async function updateOrderCritical(
       const recordedPriceOnlyRequest = rawItemPriceCorrections.length > 0
         && !itemContentReplacementRequested
         && Object.keys(input as Record<string, unknown>).every((field) => ['requestId', 'itemPriceCorrections'].includes(field));
+      if (recordedPriceOnlyRequest) {
+        if (normalizeOrderStatus(existingAny.order_status) === 'deleted') {
+          throw new CriticalOperationConflictError('Удалённый заказ не предназначен для исправления цены.');
+        }
+        for (const entry of rawItemPriceCorrections) {
+          if (!Number.isSafeInteger(Number(entry?.orderItemId))
+            || !Number.isSafeInteger(Number(entry?.expectedUnitPrice))
+            || !Number.isSafeInteger(Number(entry?.expectedQuantity))
+            || !Number.isSafeInteger(Number(entry?.expectedLineTotal))
+            || !Object.prototype.hasOwnProperty.call(entry, 'expectedCatalogPriceSnapshot')) {
+            throw new CriticalOperationConflictError('Для безопасного исправления цены нужны исходные цена, количество и сумма позиции. Обновите заказ.');
+          }
+        }
+      }
       if (rawItemPriceCorrections.length && existingPricingMode !== 'itemized_v1') {
         throw new CriticalOperationConflictError('Построчная коррекция цены доступна только для itemized-заказа.');
       }
