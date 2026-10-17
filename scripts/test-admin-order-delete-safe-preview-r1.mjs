@@ -5,7 +5,7 @@ import { previewAdminOrderDeletion } from '../worker/domains/order-delete-previe
 
 const dbsqlite=new DatabaseSync(':memory:')
 dbsqlite.exec([
- "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,shipping_status TEXT,received_amount INTEGER,return_amount INTEGER)",
+ "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,shipping_status TEXT,total_amount INTEGER,received_amount INTEGER,return_amount INTEGER)",
  "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,refund_return_id INTEGER,old_order_item_id INTEGER,new_order_item_id INTEGER)",
  "CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,amount INTEGER)",
  "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,unit_price INTEGER)",
@@ -26,7 +26,7 @@ const db={prepare(query) {
   async run(){writes++;throw Error('Preview must never run a mutating statement')},
  }
 }}
-dbsqlite.exec("INSERT INTO orders VALUES(42,'ORD-42','active','not_sent',0,0)")
+dbsqlite.exec("INSERT INTO orders VALUES(42,'ORD-42','active','not_sent',65000,0,0)")
 let preview=await previewAdminOrderDeletion(db,42)
 assert.equal(preview.canAttemptDelete,true)
 assert.equal(preview.requiresPhysicalFact,false)
@@ -49,12 +49,13 @@ assert.equal(preview.canAttemptDelete,false,'Cannot execute partial chain cancel
 assert.deepEqual(preview.activeExchanges,[100])
 assert.deepEqual(preview.activeReturns,[200])
 assert.equal(preview.recordedRefunds,5000)
-assert(preview.reasons.some(s=>s.includes('действующие обмены')||s.includes('действующие')),'Must explain blocked dependency')
+assert(preview.chainPlan.steps.length>0,'Must show the order of dependent operation cancellation')
+assert(preview.impact.payments.length===1 && preview.impact.refunds.length===1,'Complete money list must be disclosed')
 dbsqlite.exec("UPDATE exchanges SET status='cancelled' WHERE id=100")
 dbsqlite.exec("UPDATE returns SET status='cancelled' WHERE id=200")
 preview=await previewAdminOrderDeletion(db,42)
-assert.equal(preview.canAttemptDelete,false,'Recorded positive payment requires separate financial correction before deleting')
-assert(preview.reasons.some(x=>x.includes('зарегистрированные оплаты')))
+assert.equal(preview.canAttemptDelete,true,'Correctly reconciled recorded payments must be voidable with the erroneous order')
+assert.equal(preview.impact.paymentReversal,65000)
 assert.equal(preview.recordedRefunds,0)
 dbsqlite.exec("DELETE FROM payments WHERE order_id=42")
 dbsqlite.exec("UPDATE orders SET received_amount=0 WHERE id=42")
