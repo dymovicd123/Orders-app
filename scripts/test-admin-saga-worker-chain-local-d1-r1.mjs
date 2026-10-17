@@ -114,8 +114,16 @@ try{
       comment:before.data.comment||''
     }
     const changed={...original,customerName:'NEW CLIENT',comment:'Updated without Exchange cancellation'}
+    const expectedState={
+      totalAmount:before.data.total_amount,
+      receivedAmount:before.data.received_amount,
+      debtAmount:before.data.debt_amount,
+      returnAmount:before.data.return_amount,
+      shippingStatus:before.data.shipping_status||'',
+      orderStatus:before.data.order_status||''
+    }
     const payload={requestId:'METADATA-CHAIN-ORDER-42-0001',
-      metadataCorrection:{expected:original,next:changed}}
+      metadataCorrection:{expected:original,next:changed,expectedState}}
     const first=await probe('/metadata-edit',payload)
     assert.equal(first.status,200,'Real metadata edit failed: '+JSON.stringify(first))
     assert.equal(first.data.ok,true)
@@ -135,7 +143,7 @@ try{
     assert.equal((await probe('/metadata-order')).data.comment,changed.comment)
     const stale=await probe('/metadata-edit',{
       requestId:'METADATA-CHAIN-ORDER-42-0002',
-      metadataCorrection:{expected:original,next:{...original,comment:'STALE MUST NOT SAVE'}}
+      metadataCorrection:{expected:original,next:{...original,comment:'STALE MUST NOT SAVE'},expectedState}
     })
     assert.equal(stale.status,409,'Old metadata snapshot must be rejected')
     assert.match(stale.data.error,/изменились|Обновите/)
@@ -143,7 +151,7 @@ try{
     assert.equal((await probe('/metadata-money-changed')).status,200)
     const money=await probe('/metadata-edit',{
       requestId:'METADATA-CHAIN-ORDER-42-0003',
-      metadataCorrection:{expected:changed,next:{...changed,comment:'MONEY STALE MUST NOT SAVE'}}
+      metadataCorrection:{expected:changed,next:{...changed,comment:'MONEY STALE MUST NOT SAVE'},expectedState}
     })
     assert.equal(money.status,409,'Concurrent financial change must reject metadata correction')
     assert.match(money.data.error,/изменился|Обновите/)
