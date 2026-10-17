@@ -79,7 +79,7 @@ export async function previewAdminOrderDeletion(
     registeredPayments?`Записанные оплаты на ${registeredPayments} ₸ будут аннулированы в учёте. Это не физическая выдача денег клиенту.`:'',
     recordedRefunds?`Зарегистрированные возвраты на ${recordedRefunds} ₸ будут компенсированы учётным сторно.`:'',
     requiresPhysicalFact?'Есть признак выдачи товара. Система отдельно запросит факт физической передачи и проверит более поздние ревизии.':'',
-    appliedStockReview.reversals.length?`Обнаружено ${appliedStockReview.reversals.length} подтверждённых учётных списаний без выдачи: при отмене обмена восстановится точно списанное количество, а активные резервы освободятся.`:'',
+    appliedStockReview.reversals.length?`Обнаружено ${appliedStockReview.reversals.length} подтверждённых учётных списаний без выдачи: при отмене обмена учтутся уже проведённые компенсации, а повторное прибавление к остатку будет запрещено. Активные резервы освободятся.`:'',
   ].filter(Boolean)
   if(hasChain&&requiresPhysicalFact)
     reasons.push('Для цепочки с зафиксированной выдачей товара сначала нужна проверка фактической передачи и более поздних ревизий.')
