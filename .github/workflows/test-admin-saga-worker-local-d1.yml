@@ -1,0 +1,33 @@
+name: Admin delete actual Worker on disposable local D1
+on:
+  pull_request:
+    branches:
+      - feat/branch2-admin-delete-local-d1-migrations-20261017
+      - branch2
+    paths:
+      - 'scripts/test-admin-saga-worker-local-d1-r1.mjs'
+      - 'scripts/fixtures/admin-delete-local-d1-worker.ts'
+      - 'worker/domains/admin-delete-real-driver.ts'
+      - '.github/workflows/test-admin-saga-worker-local-d1.yml'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Real Return handler inside isolated workerd Worker + local D1
+        run: node scripts/test-admin-saga-worker-local-d1-r1.mjs
+      - name: 0110/0111 local D1 migration validation
+        run: node scripts/test-admin-saga-local-cloudflare-d1-r1.mjs
+      - name: Frozen historic regression
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: TypeScript and frontend build
+        run: npm run build

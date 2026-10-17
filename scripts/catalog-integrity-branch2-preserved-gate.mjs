@@ -315,6 +315,8 @@ const tests=[
   ['scripts/test-admin-delete-real-v2-handler-r1.mjs',true],
   ['scripts/test-admin-delete-real-chain-handler-r1.mjs',true],
   ['scripts/test-admin-saga-local-cloudflare-d1-r1.mjs',true],
+  ['scripts/test-admin-saga-worker-local-d1-r1.mjs',true],
+  ['scripts/fixtures/admin-delete-local-d1-worker.ts',true],
   ['scripts/test-admin-saga-migrations-schema-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
