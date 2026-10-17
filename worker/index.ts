@@ -12,6 +12,7 @@ import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
+import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
@@ -1972,6 +1973,57 @@ export default {
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
+          throw error;
+        }
+      }
+
+      const oldExchangePriceCandidatesMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/exchange-old-price-candidates$/);
+      if (oldExchangePriceCandidatesMatch && request.method === 'GET') {
+        const orderId=toInt(oldExchangePriceCandidatesMatch[1],0);
+        const candidates=await env.DB.prepare(
+          `SELECT e.id AS exchange_id,ei.order_item_id,oi.product_name_snapshot,
+                  oi.size_snapshot,oi.color_snapshot
+           FROM exchanges e JOIN exchange_items ei ON ei.exchange_id=e.id
+           JOIN order_items oi ON oi.id=ei.order_item_id AND oi.order_id=e.order_id
+           WHERE e.order_id=? AND ei.role='old' AND oi.quantity=0
+             AND COALESCE(e.status,'completed')<>'cancelled'
+           ORDER BY e.id DESC,ei.id ASC LIMIT 100`
+        ).bind(orderId).all<Record<string,unknown>>();
+        const items=[];
+        for(const row of candidates.results||[]){
+          try {
+            const state=await findRetiredV2OldItemPriceLink(env.DB,toInt(row.exchange_id,0),toInt(row.order_item_id,0));
+            items.push({
+              exchangeId:state.exchangeId,orderItemId:state.oldItemId,
+              productName:cleanText(row.product_name_snapshot),size:cleanText(row.size_snapshot),
+              color:cleanText(row.color_snapshot),
+              originalUnitPrice:state.originalUnitPrice,
+              currentRecordedUnitPrice:state.currentRecordedUnitPrice,
+            });
+          } catch {
+            // Legacy or multi-hop items are not automatically eligible.
+          }
+        }
+        return json({ok:true,items});
+      }
+
+      const oldExchangePriceCorrectionMatch = url.pathname.match(/^\/api\/exchanges\/(\d+)\/old-recorded-price$/);
+      if (oldExchangePriceCorrectionMatch && request.method === 'PATCH') {
+        const body=await readJson<{orderItemId?:number;expectedUnitPrice?:number;newUnitPrice?:number;requestId?:string}>(request);
+        const requestId=cleanText(body.requestId)||cleanText(request.headers.get('X-Idempotency-Key'));
+        try {
+          return json(await recordRetiredV2OldPriceCorrection(env.DB,{
+            exchangeId:toInt(oldExchangePriceCorrectionMatch[1],0),
+            oldItemId:toInt(body.orderItemId,0),
+            expectedUnitPrice:Number(body.expectedUnitPrice),
+            newUnitPrice:Number(body.newUnitPrice),
+            requestId,
+            actorLabel:cleanText(authUser?.display_name)||cleanText(authUser?.email)
+              ||cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
+          }));
+        } catch(error) {
+          const criticalResponse=criticalOperationErrorResponse(error);
+          if(criticalResponse) return criticalResponse;
           throw error;
         }
       }
