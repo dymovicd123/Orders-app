@@ -2,6 +2,7 @@
 // cancels an Exchange/Return, or changes inventory. The actual POST independently
 // rechecks all dependencies before any mutation.
 import { cleanText, toInt } from '../core/text.ts'
+import { previewAdminOrderDeleteChain, type AdminDeleteChainPlan } from './order-delete-chain-plan.ts'
 
 export type AdminOrderDeletePreview = {
   orderId:number;externalId:string;orderStatus:string;shippingStatus:string;
@@ -11,6 +12,7 @@ export type AdminOrderDeletePreview = {
   registeredPayments:number;recordedRefunds:number;
   issuedItemCount:number;issuedQuantity:number;
   reasons:string[];explanations:string[];
+  chainPlan:AdminDeleteChainPlan;
 }
 
 export async function previewAdminOrderDeletion(
@@ -44,6 +46,7 @@ export async function previewAdminOrderDeletion(
   ])
   const activeExchanges=(exchanges.results||[]).map(x=>toInt(x.id,0)).filter(Boolean)
   const activeReturns=(returns.results||[]).map(x=>toInt(x.id,0)).filter(Boolean)
+  const chainPlan=await previewAdminOrderDeleteChain(db,orderId)
   const reasons:string[]=[]
   if(activeExchanges.length>200||activeReturns.length>200)
     reasons.push('Слишком много связанных операций. Требуется отдельная проверка истории.')
@@ -56,6 +59,15 @@ export async function previewAdminOrderDeletion(
   const requiresPhysicalFact=shipping==='sent'||toInt(fulfilled?.issued_count,0)>0
   const recordedRefunds=(returns.results||[]).reduce((sum,x)=>sum+Math.max(0,toInt(x.amount,0)),0)
   const registeredPayments=Math.max(0,toInt(payments?.positive_amount,0))
+  for(const blocker of chainPlan.blockers)reasons.push(blocker)
+  if(activeExchanges.length!==chainPlan.activeExchangeIds.length||activeReturns.length!==chainPlan.activeReturnIds.length)
+    reasons.push('Невозможно сверить полный список связанных операций. Удаление заблокировано.')
+  const cachedPaid=toInt(order.received_amount,0)
+  const cachedReturned=toInt(order.return_amount,0)
+  if(registeredPayments>0)
+    reasons.push('У заказа остаются зарегистрированные оплаты. Сначала проверьте, реальное это поступление или ошибочная запись: удаление не должно подменять возврат денег клиенту.')
+  if(cachedPaid!==registeredPayments||cachedReturned!==recordedRefunds)
+    reasons.push('Финансовые суммы заказа не совпадают с действующими оплатами и возвратами. Перед удалением требуется сверка.')
   const explanations=[
     activeExchanges.length?`Активных обменов: ${activeExchanges.length}. Их учёт и складские события останутся неизменными, пока не будет безопасно подтверждена цепочка отмен.`:'',
     activeReturns.length?`Активных возвратов: ${activeReturns.length}. Их финансы и склад не будут отменены автоматически при текущем ограничении.`:'',
@@ -73,6 +85,6 @@ export async function previewAdminOrderDeletion(
     registeredPayments,recordedRefunds,
     issuedItemCount:Math.max(0,toInt(fulfilled?.issued_count,0)),
     issuedQuantity:Math.max(0,toInt(fulfilled?.issued_quantity,0)),
-    reasons,explanations,
+    reasons,explanations,chainPlan,
   }
 }

@@ -6969,6 +6969,11 @@ function removeDebtPayment(index: number) {
         receivedAmount:number;returnAmount:number;paymentCount:number;
         registeredPayments:number;recordedRefunds:number;issuedItemCount:number;issuedQuantity:number;
         reasons:string[];explanations:string[];
+        chainPlan:{
+          snapshotFingerprint:string;steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
+          activeExchangeIds:number[];activeReturnIds:number[];generatedExchangeRefundIds:number[];
+          manualReviewRequired:boolean;canExecuteAutomatically:boolean;blockers:string[];
+        };
       }
     }>(response,'Предварительная проверка удаления')
     if(!response.ok||data.ok===false||!data.preview)
@@ -6976,8 +6981,8 @@ function removeDebtPayment(index: number) {
     return data.preview
   }
 
-  async function deleteOrderAsAdmin(order: OrderRecord, previewAcknowledged = false): Promise<boolean> {
-    if (!previewAcknowledged) return false // Only the explicit admin impact dialog may authorize execution.
+  async function deleteOrderAsAdmin(order: OrderRecord, previewAcknowledged = false, expectedSnapshot = ''): Promise<boolean> {
+    if (!previewAcknowledged || !/^[0-9a-f]{64}$/.test(expectedSnapshot)) return false // Only approved and current preview may authorize execution.
     if (isArchivedOrderRecord(order)) {
       setMessage('Архивный заказ нельзя удалить. Сначала верните его из архива.')
       return false
@@ -6990,6 +6995,7 @@ function removeDebtPayment(index: number) {
       const sendDelete = async (physicalOutcome?: 'not_issued') => {
         const payload = {
           comment: order.comment || 'Удалено сотрудником как ошибочный заказ',
+          expectedSnapshot,
           ...(physicalOutcome ? { physicalOutcome } : {}),
         }
         const critical = prepareCriticalRequest(criticalKey, payload)

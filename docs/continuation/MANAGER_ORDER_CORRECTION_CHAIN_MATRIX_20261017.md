@@ -18,7 +18,9 @@ Correct **recorded information**, not actual money or physical inventory. The UI
 | Exchange refund and additional payment | Actual receipt/refund immutable unless correcting a wrong bookkeeping record through an independent action | NOT IMPLEMENTED |
 | Correction that creates overpayment or already inconsistent totals | Fail-closed, no automatic refund | Partially checked; E2E pending |
 | Employee cancels erroneous Return/Exchange | Explicit action with safe preview and accurate ownership | NOT IMPLEMENTED |
-| Admin safely deletes erroneous order with multiple related operations | Atomic/saga cancellation chain, no partial data changes | NOT IMPLEMENTED |
+| Admin deletion: preview all active Exchanges/Returns and money/stock consequences | Stacked PR #458 admin-only impact dialog and early block on linked operations; removes legacy non-atomic auto-cancellation | Candidate; linked deletion fail-closed; E2E pending |
+| Admin deletion: full dependency ordering and stale approval | Stacked PR #459 composes ALL active operations, generated refunds owned by their Exchange, SHA-256 fingerprint for current items/payments/returns/reservations. Blocks positive payments and inconsistent ledger | Candidate; read-only plan and SQLite tests; NO executor |
+| Admin safely deletes erroneous order with multiple related operations in ONE action | Persistent resumable, individually CAS-checked cancellation saga, recovery after each intermediate failure | NOT IMPLEMENTED — must not simulate atomicity with sequential API calls |
 
 ## Required schema/rollout
 PR #454 introduces migration 0110 (immutable exchange-order-line price provenance). This schema must be applied **to branch2's isolated D1 first**, before deploying Worker code that allows exchange-linked corrections. Do not run it on production without explicit separate authorization. No automatic merge of main and branch2.
@@ -34,4 +36,4 @@ PR #454 introduces migration 0110 (immutable exchange-order-line price provenanc
 8. Admin delete preflight must show every dependent exchange/return/payment impact and either execute safely or block before partial mutation.
 9. Independently query **branch2 D1** for actual totals and event chain, and manually check manager UI. Do not use production data for destructive tests.
 
-Current status: PR #454, stacked PR #455, stacked PR #456 and chain preview PR #457 are separate, **not yet merged or deployed**. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.
+Current status: PR #454, stacked PR #455, stacked PR #456, chain preview PR #457, admin safety PR #458 and full read-only plan PR #459 are separate, **not yet merged or deployed**. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.

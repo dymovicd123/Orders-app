@@ -20,7 +20,7 @@ const reviewedDeleteGuidance = {
   originalApp: '562a41973ad154496a81c8d5c151aff5119a46bf',
   currentApp: '505ae6ee1e691db95c78c97aba445cd3aa066d7e',
   files: {
-    'worker/domains/order-delete.ts': '05d2cca882464dacec90dbb909555c58db84bd75',
+    'worker/domains/order-delete.ts': '041aaa47af3ae1cfc45a822e968dc63ce536ac5f',
     'worker/domains/critical.ts': '4d45032c6e75fd6a62f213242def01b5f47b81db',
     'scripts/test-order-delete-physical-guidance-r1.mjs': '5a28da06b7da7c82e65e94f5d475c58aaa6b27d7',
   },
@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'d4ce303d08e546f5001a282729c8d1d798e54f1d',
+  'worker/index.ts':'a070d1aa667f5094e20574ac2d178fd16e243398',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -69,9 +69,9 @@ for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
-  appAfter: 'dc1130bd640e7dbf07fd69707ffd1946f18e12a8',
+  appAfter: 'cc2be798b049f4063848449c3fec4460a380ac2e',
   tableBefore: '45088dbd1b594fa165f9ea7cfdc35109e2be3417',
-  tableAfter: '8f7a0718449df1aad556b807cbd55bdc5dfa5518',
+  tableAfter: '52f95261a9f63eaa9c4e7e0a3e634e95896ac730',
   beforePriceAction: '02dd262da588cb22d9aa71b0cf3a9e374d667282',
 }
 check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedHandoverUx.appAfter,'Unreviewed customer handover UI drift')
@@ -116,7 +116,8 @@ const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
-  'worker/domains/order-delete-preview.ts':'6b43796dc78a9a2f3bd8a1e0a2a3b7151755c826',
+  'worker/domains/order-delete-preview.ts':'8171354876f5c7f7dc9c9389e8636d4fffeb71c1',
+  'worker/domains/order-delete-chain-plan.ts':'b54f9ab80301f0cc3293c718cd4100a2afda8c8d',
 }
 for(const [file,expected] of Object.entries(reviewedExchangePriceFiles))
   check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'New exchange price ledger drift: '+file)
@@ -304,6 +305,7 @@ const tests=[
   ['scripts/test-v2-partial-old-price-correction-r1.mjs',true],
   ['scripts/test-exchange-cancel-chain-preview-r1.mjs',true],
   ['scripts/test-admin-order-delete-safe-preview-r1.mjs',true],
+  ['scripts/test-admin-delete-chain-plan-r1.mjs',true],
   ['scripts/test-old-order-post-stocktake-handover-r1.mjs',true],
   ['scripts/test-handover-cas-after-revision-r2.mjs',true],
   ['scripts/test-old-order-post-stocktake-guard-r1.mjs',false],

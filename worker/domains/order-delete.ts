@@ -9,7 +9,7 @@ import { previewAdminOrderDeletion } from './order-delete-preview.ts'
 export async function deleteOrderSafely(
   db: D1Database,
   orderId: number,
-  input: { requestId?: string; comment?: string; physicalOutcome?: 'not_issued' },
+  input: { requestId?: string; comment?: string; physicalOutcome?: 'not_issued'; expectedSnapshot?: string },
   actor: AuthUser | null = null,
   checkedBy = '',
 ) {
@@ -26,6 +26,11 @@ export async function deleteOrderSafely(
   // handler for Exchange Set V2. Admin must correct/cancel dependent operations
   // separately until the full resumable chain cancel workflow is verified.
   const deletionPreview=await previewAdminOrderDeletion(db,orderId)
+  const expectedSnapshot=cleanText(input.expectedSnapshot)
+  if(!/^[0-9a-f]{64}$/.test(expectedSnapshot)
+    || expectedSnapshot!==deletionPreview.chainPlan.snapshotFingerprint){
+    throw new CriticalOperationConflictError('Данные заказа изменились или предварительная проверка устарела. Откройте удаление заново и проверьте финансовые и складские последствия.')
+  }
   if(!deletionPreview.canAttemptDelete) {
     throw new CriticalOperationConflictError(
       'Удаление остановлено без изменений. '+deletionPreview.reasons.join(' ')+
