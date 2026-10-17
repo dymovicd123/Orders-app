@@ -2990,7 +2990,7 @@ type ExchangeSetCancelContext = {
   preflight?: {
     projectedRestoredTotal: number
     projectedNetPaid: number
-    oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number }>
+    oldTargets: Array<{ orderItemId: number; baselineQuantity: number; targetQuantity: number; originalUnitPrice: number; restoredUnitPrice: number }>
     newSnapshots: Array<{ orderItemId: number; quantity: number; unitPrice: number; lineTotal: number }>
   }
 }
