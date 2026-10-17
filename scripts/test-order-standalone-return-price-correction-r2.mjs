@@ -30,6 +30,7 @@ db.exec([
   "CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT,total_amount INTEGER,received_amount INTEGER,return_amount INTEGER)",
   "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,unit_price INTEGER,line_total INTEGER,catalog_price_snapshot INTEGER)",
   "CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,old_order_item_id INTEGER,new_order_item_id INTEGER,refund_return_id INTEGER)",
+  "CREATE TABLE critical_operations(id INTEGER PRIMARY KEY,operation_type TEXT,target_type TEXT,target_id INTEGER)",
   "CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,role TEXT)",
   "CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,amount INTEGER)",
   "CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER)",
@@ -46,7 +47,7 @@ db.exec([
  "INSERT INTO inventory_stock VALUES(7,240,4,2)",
 ].join(';')+';')
 const dep=item=>({...db.prepare(dependency[1]).get(42,item,item,item,42,item,42,item)})
-const args=[14,42,1,12000,12000,12000,12000,30000,25000,5000]
+const args=[14,42,1,12000,12000,12000,12000,30000,25000,5000,null,null,null]
 function apply({nextPrice=14000,old=30000}={}){
   db.exec('BEGIN')
   try{
