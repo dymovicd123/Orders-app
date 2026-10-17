@@ -669,23 +669,72 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <section>
                           <h4>Обмены и возвраты товаров</h4>
                           {adminDeleteDraft.preview.chainPlan?.steps?.length ? (
-                            <ol>{adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>(
-                              <li key={step.type+':'+step.id}>
-                                {step.type==='return'?'Отменить возврат':'Отменить обмен'} #{step.id}
-                                {step.requiresManualReview?' — неоднозначная история':''}
-                              </li>
-                            ))}</ol>
+                            <ol style={{display:'grid',gap:12,paddingLeft:22}}>
+                              {adminDeleteDraft.preview.chainPlan.steps.map((step:any)=>{
+                                const exchange=step.type==='exchange'
+                                  ?(adminDeleteDraft.preview.impact?.exchanges||[]).find((item:any)=>item.id===step.id)
+                                  :null
+                                const exchangeSource=(source:string)=>source==='not_issued'?'не выдавался'
+                                  :source==='warehouse'?'склад':source==='boutique'?'бутик'
+                                    :source==='workshop'?'цех':source==='pending'?'ожидает подтверждения'
+                                      :source||''
+                                const renderExchangeItems=(items:any[],label:string)=>(
+                                  <div style={{flex:'1 1 230px',minWidth:0}}>
+                                    <div style={{fontWeight:600,marginBottom:6}}>{label}</div>
+                                    {items.length ? (
+                                      <ul style={{margin:'0 0 0 18px',padding:0,display:'grid',gap:7}}>
+                                        {items.map((item:any,i:number)=>{
+                                          const attributes=[item.color,item.size,item.material,item.length]
+                                            .map((v:unknown)=>String(v||'').trim()).filter(Boolean)
+                                          return <li key={item.id||i}>
+                                            <strong>{item.quantity} шт. · {item.name}</strong>
+                                            {attributes.length?<div className="muted">{attributes.join(' · ')}</div>:null}
+                                            {item.source?<div className="muted">Учёт: {exchangeSource(item.source)}</div>:null}
+                                          </li>
+                                        })}
+                                      </ul>
+                                    ):<p className="muted" style={{margin:0}}>
+                                      В истории нет сохранённых позиций. Проверьте состав обмена.
+                                    </p>}
+                                  </div>
+                                )
+                                return <li key={step.type+':'+step.id}>
+                                  {step.type==='exchange' ? (
+                                    <div style={{border:'1px solid var(--border,#dce1e8)',borderRadius:10,padding:12}}>
+                                      <strong>Отменить обмен #{step.id}</strong>
+                                      {exchange?.date?<span className="muted"> · {exchange.date}</span>:null}
+                                      {step.requiresManualReview?<p className="muted">Требуется проверка истории</p>:null}
+                                      {exchange?<>
+                                        <div style={{display:'flex',flexWrap:'wrap',gap:16,marginTop:12}}>
+                                          {renderExchangeItems(exchange.oldItems||[],'Заменяемые товары')}
+                                          {renderExchangeItems(exchange.newItems||[],'Товары взамен')}
+                                        </div>
+                                        <div style={{marginTop:12}}>
+                                          {exchange.financialAction==='extra_payment'&&exchange.financialAmount>0
+                                            ?<>Будет аннулирована доплата: <strong>{formatMoney(exchange.financialAmount)} ₸</strong></>
+                                            :exchange.financialAction==='refund'&&exchange.financialAmount>0
+                                              ?<>Будет аннулирован возврат разницы: <strong>{formatMoney(exchange.financialAmount)} ₸</strong></>
+                                              :<span className="muted">Без доплаты или возврата разницы</span>}
+                                          {exchange.paymentMethod&&exchange.financialAmount>0
+                                            ?<span className="muted"> · {exchange.paymentMethod}</span>:null}
+                                        </div>
+                                        {exchange.comment?<p className="muted" style={{margin:'8px 0 0'}}>
+                                          Комментарий: {exchange.comment}</p>:null}
+                                      </>:<p className="muted">Подробности обмена не найдены в истории.</p>}
+                                    </div>
+                                  ):<>
+                                    Отменить возврат #{step.id}
+                                    {step.requiresManualReview?' — требуется проверка истории':''}
+                                  </>}
+                                </li>
+                              })}
+                            </ol>
                           ) : <p className="muted">Связанных операций для отмены нет.</p>}
                           {(adminDeleteDraft.preview.chainPlan?.generatedExchangeRefundIds||[]).length ? (
-                            <p className="muted">Возвраты, созданные обменами:
+                            <p className="muted">Возвраты денег, созданные обменами:
                               {' '}{adminDeleteDraft.preview.chainPlan.generatedExchangeRefundIds.map((id:number)=>'#'+id).join(', ')}.
-                              Они отменяются вместе с обменом, без второго сторно.</p>
+                              Они отменяются вместе с обменом, без повторного сторно.</p>
                           ) : null}
-                          {(adminDeleteDraft.preview.impact?.exchanges||[]).filter((x:any)=>x.financialAmount>0).map((ex:any)=>(
-                            <p key={ex.id} className="muted">Обмен #{ex.id} ·
-                              {ex.financialAction==='extra_payment'?' доплата':' возврат/разница'}:
-                              {' '}{formatMoney(ex.financialAmount)} ₸ (учтено в связанных операциях)</p>
-                          ))}
                         </section>
                         <section>
                           <h4>Резервы и складские движения по позициям</h4>
