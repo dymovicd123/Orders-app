@@ -12,7 +12,7 @@ Correct **recorded information**, not actual money or physical inventory. The UI
 | New V2 Exchange line, active qty > 0 | PR #454 guarded correction provenance | code candidate; DO NOT MERGE until schema and E2E |
 | Old V2 Exchange line, qty 0 (fully retired) | Stacked PR #455: immutable old-role price ledger; no changes to active order, money or stock; cancellation restores confirmed price if financially safe | Candidate; isolated SQLite pass, full-chain E2E pending |
 | Old V2 Exchange line with nonzero remaining qty (partially exchanged) | Stacked PR #456: price-only manager action updates live remainder quantity × corrected price; role='old' correction ledger and exchange cancellation preflight restore exchanged quantity at approved price | Candidate, isolated SQLite/full historical CI required; no DB migration applied |
-| Multiple sequential V2 Exchanges | Dependents, current values and cancellation order | NOT IMPLEMENTED |
+| Multiple sequential V2 Exchanges | Stacked PR #457 read-only chain dependency graph, earlier/later Exchange and Return order, legacy fallback links, cycle and ambiguous refund blocking; it performs NO cancellation | Preview candidate; actual chained cancel/price E2E NOT COMPLETE |
 | Legacy single Exchange old/new | Separate legacy cancel path | NOT IMPLEMENTED |
 | Item returned after Exchange | Return must be unwound before exchange cancellation; preserve money+inventory | NOT IMPLEMENTED |
 | Exchange refund and additional payment | Actual receipt/refund immutable unless correcting a wrong bookkeeping record through an independent action | NOT IMPLEMENTED |
@@ -34,4 +34,4 @@ PR #454 introduces migration 0110 (immutable exchange-order-line price provenanc
 8. Admin delete preflight must show every dependent exchange/return/payment impact and either execute safely or block before partial mutation.
 9. Independently query **branch2 D1** for actual totals and event chain, and manually check manager UI. Do not use production data for destructive tests.
 
-Current status: PR #454, stacked PR #455 and stacked PR #456 are separate, **not yet merged or deployed**. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.
+Current status: PR #454, stacked PR #455, stacked PR #456 and chain preview PR #457 are separate, **not yet merged or deployed**. Migration 0110 is required for all exchange-linked price corrections and is not applied to branch2 D1. This coverage matrix is not proof of end-to-end cancellation safety. No production changes.

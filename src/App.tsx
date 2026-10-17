@@ -6137,6 +6137,31 @@ function removeDebtPayment(index: number) {
     }
   }
 
+
+  async function loadExchangeCancellationPreview(order:OrderRecord, exchangeId?:number):Promise<{
+    availableExchangeIds:number[];
+    preview:null|{
+      exchangeId:number;blockedByLaterOperations:boolean;canAttemptCancelNow:boolean;
+      manualReviewRequired:boolean;notice:string;
+      steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
+    };
+  }> {
+    const url=`/api/orders/${order.id}/exchange-cancel-chain`
+      + (exchangeId ? `?exchangeId=${encodeURIComponent(exchangeId)}` : '')
+    const response=await apiFetch(url)
+    const data=await readJsonResponse<{
+      ok?:boolean;message?:string;availableExchangeIds?:number[];
+      preview?:{
+        exchangeId:number;blockedByLaterOperations:boolean;canAttemptCancelNow:boolean;
+        manualReviewRequired:boolean;notice:string;
+        steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
+      } | null;
+    }>(response,'Зависимости обменов')
+    if(!response.ok || data.ok===false)throw new Error(data.message||'Не удалось проверить цепочку обменов.')
+    return {availableExchangeIds:Array.isArray(data.availableExchangeIds)?data.availableExchangeIds:[],
+      preview:data.preview??null}
+  }
+
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
@@ -8610,7 +8635,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi-заказы">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctRecordedOrderItemPrice, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctRecordedOrderItemPrice, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
@@ -8622,7 +8647,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctRecordedOrderItemPrice, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctRecordedOrderItemPrice, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">

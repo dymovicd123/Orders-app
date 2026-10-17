@@ -13,6 +13,7 @@ import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogRevi
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
+import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
@@ -2024,6 +2025,35 @@ export default {
         } catch(error) {
           const criticalResponse=criticalOperationErrorResponse(error);
           if(criticalResponse) return criticalResponse;
+          throw error;
+        }
+      }
+
+      // Read-only dependency plan. Managers may inspect the chain, but this
+      // route does not cancel a Return, Exchange, payment or stock movement.
+      const exchangeChainPreviewMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/exchange-cancel-chain$/);
+      if (exchangeChainPreviewMatch && request.method === 'GET') {
+        const orderId=toInt(exchangeChainPreviewMatch[1],0);
+        const requestedExchangeId=toInt(url.searchParams.get('exchangeId'),0);
+        try {
+          const available=await env.DB.prepare(
+            `SELECT id FROM exchanges WHERE order_id=?
+             AND COALESCE(status,'completed')<>'cancelled'
+             ORDER BY id ASC LIMIT 201`
+          ).bind(orderId).all<{id:number}>();
+          const availableExchangeIds=(available.results||[]).map((row)=>toInt(row.id,0)).filter(Boolean);
+          if (availableExchangeIds.length>200) {
+            return json({ok:false,message:'Слишком много активных обменов для предпросмотра.'},{status:409});
+          }
+          if(!availableExchangeIds.length) {
+            return json({ok:true,availableExchangeIds:[],preview:null});
+          }
+          const exchangeId=requestedExchangeId||availableExchangeIds[0];
+          return json({ok:true,availableExchangeIds,
+            preview:await previewExchangeCancellationChain(env.DB,orderId,exchangeId)});
+        } catch(error) {
+          const criticalResponse=criticalOperationErrorResponse(error);
+          if(criticalResponse)return criticalResponse;
           throw error;
         }
       }
