@@ -18,6 +18,7 @@ sql.exec([
   "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT,inventory_source TEXT,variant_id INTEGER)",
   "CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER)",
   "CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,operation_type TEXT,operation_id INTEGER,operation_item_id INTEGER,order_id INTEGER,status TEXT)",
+  "CREATE TABLE financial_events(id INTEGER PRIMARY KEY,event_key TEXT UNIQUE,order_id INTEGER,external_order_id TEXT,event_date TEXT,event_at TEXT,event_type TEXT,related_type TEXT,amount_delta INTEGER,payment_method TEXT,source_type TEXT,source_id INTEGER,source_ref TEXT,reason TEXT,comment TEXT,is_backfill INTEGER,created_at TEXT)",
   "CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,request_fingerprint TEXT,status TEXT,step TEXT,context_json TEXT,lease_token TEXT,lease_until_ms INTEGER,created_at TEXT,updated_at TEXT,response_json TEXT,completed_at TEXT,last_error TEXT,target_type TEXT,target_id INTEGER,target_ref TEXT)"
 ].join(';')+';')
 sql.exec([
@@ -99,5 +100,33 @@ assert.deepEqual({
 assert.deepEqual({
   ...sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1").get()
 },{quantity:5,reserved_quantity:1})
+// Real paid Return: cancelling a refund must append exactly ONE positive
+// money reversal, preserve the original negative refund, and reconcile order
+// balances without changing a single physical stock or reservation row.
+sql.exec("INSERT INTO payments VALUES(3,42,2000)")
+sql.exec("INSERT INTO returns(id,order_id,status,amount,payment_method) VALUES(402,42,'completed',1000,'Kaspi')")
+sql.exec("UPDATE orders SET received_amount=2000,return_amount=1000,debt_amount=18000 WHERE id=42")
+sql.exec("INSERT INTO financial_events(event_key,order_id,external_order_id,event_date,event_at,event_type,amount_delta,payment_method,source_type,source_id,created_at) VALUES('REFUND_402_ORIGINAL',42,'ORDER_TEST_42','2026-10-17','2026-10-17','order_refund',-1000,'Kaspi','return',402,'2026-10-17')")
+const paidStep={
+  orderId:42,sagaRequestId:'TEST_PAID_RETURN_42',
+  cancelRequestId:'TEST_PAID_RETURN_42:return:402',
+  stepIndex:0,type:'return',id:402
+}
+const previousStock={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()}
+await driver.preflight(paidStep)
+await driver.cancel(paidStep)
+assert.equal(await driver.verifyReconciled(paidStep),true)
+await driver.preflight(paidStep)
+await driver.cancel(paidStep)
+assert.equal(await driver.verifyReconciled(paidStep),true)
+assert.deepEqual(sql.prepare('SELECT event_type,amount_delta FROM financial_events ORDER BY id').all()
+  .map(x=>[x.event_type,x.amount_delta]),
+  [['order_refund',-1000],['refund_reversal',1000]],
+  'The same refund must be reversed ONCE while original audit remains immutable')
+assert.deepEqual({...sql.prepare('SELECT received_amount,return_amount,debt_amount FROM orders WHERE id=42').get()},
+  {received_amount:2000,return_amount:0,debt_amount:18000})
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()},
+  previousStock,'A money-only Return must not mutate physical stock or reserves')
 sql.close()
 console.log('REAL_RETURN_HANDLER_SQLITE_FAILURE_AFTER_BUSINESS_COMMIT_RECOVERY_PASSED')
+console.log('REAL_PAID_RETURN_FINANCIAL_STORNO_EXACTLY_ONCE_PASSED')
