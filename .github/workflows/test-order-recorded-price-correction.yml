@@ -1,0 +1,28 @@
+name: Recorded order price correction safety
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/orders-write.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-order-recorded-price-correction-r1.mjs'
+      - '.github/workflows/test-order-recorded-price-correction.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Independent price/return/exchange safety in real SQLite
+        run: node scripts/test-order-recorded-price-correction-r1.mjs
+      - name: Build production frontend and Worker
+        run: npm run build
