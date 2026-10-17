@@ -4021,7 +4021,7 @@ export async function cancelExchangeSetV2(
   let criticalOperation: CriticalOperationHandle | null = null
   try {
     const startedAt = new Date().toISOString()
-    criticalOperation = await beginCriticalOperation(db, 'exchange_set_cancel', input.requestId, { exchangeId, ...input }, { startedAt })
+    criticalOperation = await beginCriticalOperation(db, 'exchange_set_cancel', input.requestId, { exchangeId, ...input }, { startedAt, exchangeId })
     if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse
     if (!exchangeId) throw new Error('exchangeId is required.')
     let cancelContext = parseCriticalContext<ExchangeSetCancelContext>(criticalOperation.row)
@@ -4221,7 +4221,9 @@ export async function cancelExchangeSetV2(
         ...cancelContext,
         preflight: { projectedRestoredTotal, projectedNetPaid, oldTargets, newSnapshots },
       }
-      await advanceCriticalOperation(db, criticalOperation, 'validated', { context: cancelContext })
+      await advanceCriticalOperation(db, criticalOperation, 'validated', {
+        targetType:'exchange',targetId:exchangeId,context:cancelContext,
+      })
     }
 
     const lifecycleRows = await db.prepare(
