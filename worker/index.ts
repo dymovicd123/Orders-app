@@ -2034,9 +2034,23 @@ export default {
       const exchangeChainPreviewMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/exchange-cancel-chain$/);
       if (exchangeChainPreviewMatch && request.method === 'GET') {
         const orderId=toInt(exchangeChainPreviewMatch[1],0);
-        const exchangeId=toInt(url.searchParams.get('exchangeId'),0);
+        const requestedExchangeId=toInt(url.searchParams.get('exchangeId'),0);
         try {
-          return json({ok:true,preview:await previewExchangeCancellationChain(env.DB,orderId,exchangeId)});
+          const available=await env.DB.prepare(
+            `SELECT id FROM exchanges WHERE order_id=?
+             AND COALESCE(status,'completed')<>'cancelled'
+             ORDER BY id ASC LIMIT 201`
+          ).bind(orderId).all<{id:number}>();
+          const availableExchangeIds=(available.results||[]).map((row)=>toInt(row.id,0)).filter(Boolean);
+          if (availableExchangeIds.length>200) {
+            return json({ok:false,message:'Слишком много активных обменов для предпросмотра.'},{status:409});
+          }
+          if(!availableExchangeIds.length) {
+            return json({ok:true,availableExchangeIds:[],preview:null});
+          }
+          const exchangeId=requestedExchangeId||availableExchangeIds[0];
+          return json({ok:true,availableExchangeIds,
+            preview:await previewExchangeCancellationChain(env.DB,orderId,exchangeId)});
         } catch(error) {
           const criticalResponse=criticalOperationErrorResponse(error);
           if(criticalResponse)return criticalResponse;
