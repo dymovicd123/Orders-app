@@ -14,12 +14,16 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [exchangeChainDraft,setExchangeChainDraft] = useState<{
     order:any;selected:number;available:number[];preview:any|null;error:string;loading:boolean;
   } | null>(null)
+  const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
+    order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;
+  } | null>(null)
   const {
     correctMistakenOrderShipping,
     correctRecordedOrderItemPrice,
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
     loadExchangeCancellationPreview,
+    loadAdminOrderDeletePreview,
     deleteOrderAsAdmin,
     expandedOrderItemCounts,
     filters,
@@ -493,7 +497,16 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  void deleteOrderAsAdmin(order)
+                                  setAdminDeleteDraft({order,preview:null,error:'',loading:true,submitting:false})
+                                  void (async()=>{
+                                    try {
+                                      const preview=await loadAdminOrderDeletePreview(order)
+                                      setAdminDeleteDraft({order,preview,error:'',loading:false,submitting:false})
+                                    } catch(error) {
+                                      setAdminDeleteDraft({order,preview:null,loading:false,submitting:false,
+                                        error:error instanceof Error?error.message:'Не удалось проверить заказ.'})
+                                    }
+                                  })()
                                 }}
                               >
                                 Удалить
@@ -535,6 +548,73 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" disabled={busy || !orderPageInfo?.hasMore} onClick={() => void changeOrderPage('next')}>Дальше</button>
                 </div>
               </div>
+              {adminDeleteDraft ? (
+                <div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{
+                  if(event.target===event.currentTarget&&!adminDeleteDraft.submitting)setAdminDeleteDraft(null)
+                }}>
+                  <div className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Проверка последствий удаления заказа" style={{maxWidth:620}}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Только администратор</div>
+                        <h3>Удаление заказа {adminDeleteDraft.order.external_id}</h3>
+                      </div>
+                      <button className="ghost compact" type="button" disabled={adminDeleteDraft.submitting}
+                        onClick={()=>setAdminDeleteDraft(null)}>Закрыть</button>
+                    </div>
+                    {adminDeleteDraft.loading ? <p>Проверяю обмены, возвраты, оплаты и выдачи…</p> : null}
+                    {adminDeleteDraft.error ? <p role="alert" className="error">{adminDeleteDraft.error}</p> : null}
+                    {adminDeleteDraft.preview ? (
+                      <>
+                        <p><strong>{adminDeleteDraft.preview.canAttemptDelete ?
+                          'Проверка пройдена: удаление можно запросить.' :
+                          'Удаление заблокировано до исправления связанных операций.'}</strong></p>
+                        <p>Обменов: {adminDeleteDraft.preview.activeExchanges.length} · Возвратов: {adminDeleteDraft.preview.activeReturns.length} ·
+                          Оплат: {adminDeleteDraft.preview.paymentCount} ({formatMoney(adminDeleteDraft.preview.registeredPayments)} ₸) ·
+                          Возвращено по активным возвратам: {formatMoney(adminDeleteDraft.preview.recordedRefunds)} ₸</p>
+                        {adminDeleteDraft.preview.issuedItemCount ? (
+                          <p>Отмечена выдача {adminDeleteDraft.preview.issuedQuantity} шт. по
+                            {adminDeleteDraft.preview.issuedItemCount} складским записям.</p>
+                        ) : null}
+                        {adminDeleteDraft.preview.activeExchanges.length ? (
+                          <p>Связанные обмены: #{adminDeleteDraft.preview.activeExchanges.join(', #')}</p>
+                        ) : null}
+                        {adminDeleteDraft.preview.activeReturns.length ? (
+                          <p>Связанные возвраты: #{adminDeleteDraft.preview.activeReturns.join(', #')}</p>
+                        ) : null}
+                        {adminDeleteDraft.preview.reasons.length ? (
+                          <ul>{adminDeleteDraft.preview.reasons.map((reason:string,i:number)=>
+                            <li key={i}>{reason}</li>
+                          )}</ul>
+                        ) : null}
+                        {adminDeleteDraft.preview.explanations.length ? (
+                          <ul>{adminDeleteDraft.preview.explanations.map((reason:string,i:number)=>
+                            <li key={i}>{reason}</li>
+                          )}</ul>
+                        ) : null}
+                        <p className="muted">Удаление меняет учётную историю, но не возвращает деньги физически.
+                          Если покупатель уже получил товар или деньги, сначала оформите фактическое движение.
+                          При выдаче товара система отдельно потребует подтвердить физический факт.</p>
+                      </>
+                    ) : null}
+                    <div className="toolbar-actions">
+                      <button className="secondary" type="button" disabled={adminDeleteDraft.submitting}
+                        onClick={()=>setAdminDeleteDraft(null)}>Отмена</button>
+                      <button className="ghost danger" type="button"
+                        disabled={adminDeleteDraft.loading||adminDeleteDraft.submitting||savingOrder||!adminDeleteDraft.preview?.canAttemptDelete}
+                        onClick={()=>{void(async()=>{
+                          setAdminDeleteDraft((d)=>d?{...d,submitting:true,error:''}:d)
+                          const ok=await deleteOrderAsAdmin(adminDeleteDraft.order,true)
+                          if(ok)setAdminDeleteDraft(null)
+                          else setAdminDeleteDraft((d)=>d?{...d,submitting:false,
+                            error:'Удаление не выполнено. Проверьте сообщение об ошибке и обновите проверку.'}:d)
+                        })()}}>
+                        {adminDeleteDraft.submitting?'Удаляю…':'Подтвердить удаление'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {exchangeChainDraft ? (
                 <div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{
                   if(event.target===event.currentTarget)setExchangeChainDraft(null)

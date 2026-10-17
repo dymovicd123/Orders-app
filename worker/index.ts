@@ -14,6 +14,7 @@ import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
 import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
 import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
+import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
@@ -1761,6 +1762,20 @@ export default {
           refreshRequired: !updatedOrder,
           inventoryDelivery,
         });
+      }
+
+      const orderDeletePreviewMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete-preview$/);
+      if (orderDeletePreviewMatch && request.method === 'GET') {
+        const denied=requireAdminUser(authUser);
+        if(denied)return denied;
+        const id=toInt(orderDeletePreviewMatch[1],0);
+        try {
+          return json({ok:true,preview:await previewAdminOrderDeletion(env.DB,id)});
+        } catch(error) {
+          const criticalResponse=criticalOperationErrorResponse(error);
+          if(criticalResponse)return criticalResponse;
+          throw error;
+        }
       }
 
       const orderDeleteMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete$/);

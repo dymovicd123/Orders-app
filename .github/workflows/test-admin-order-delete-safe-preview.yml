@@ -1,0 +1,39 @@
+name: Admin order delete preflight and atomicity safety
+on:
+  pull_request:
+    branches:
+      - feat/branch2-chain-exchange-cancellation-preview-20261017
+      - branch2
+    paths:
+      - 'worker/domains/order-delete-preview.ts'
+      - 'worker/domains/order-delete.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'scripts/test-admin-order-delete-safe-preview-r1.mjs'
+      - 'scripts/test-order-delete-mobility.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
+      - '.github/workflows/test-admin-order-delete-safe-preview.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: SQLite admin deletion summary without writes
+        run: node --experimental-strip-types scripts/test-admin-order-delete-safe-preview-r1.mjs
+      - name: Role and early-rejection regression
+        run: node scripts/test-order-delete-mobility.mjs
+      - name: Exact handover chronology/physical evidence regression
+        run: node scripts/test-order-delete-physical-guidance-r1.mjs
+      - name: Historical Stage04 and all order stock tests
+        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      - name: Build Worker/frontend
+        run: npm run build
