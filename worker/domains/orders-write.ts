@@ -1874,21 +1874,22 @@ export async function updateOrderCritical(
           for (const correction of priceOnlyItemUpdates) {
             const dependency = await db.prepare(
               `SELECT
-                 EXISTS(
+                 (EXISTS(
                    SELECT 1 FROM exchanges e
                    WHERE e.order_id = ?
                      AND COALESCE(e.status, 'completed') <> 'cancelled'
                      AND (e.old_order_item_id = ? OR e.new_order_item_id = ?
                        OR EXISTS (SELECT 1 FROM exchange_items ei WHERE ei.exchange_id = e.id AND ei.order_item_id = ?))
-                   OR EXISTS(
-                     SELECT 1 FROM returns refund
+                 )
+                 OR EXISTS(
+                   SELECT 1 FROM returns refund
                      JOIN return_items refund_item ON refund_item.return_id = refund.id
                      JOIN exchanges linked ON linked.refund_return_id = refund.id
                      WHERE refund.order_id = ?
                        AND refund_item.order_item_id = ?
                        AND COALESCE(linked.status, 'completed') <> 'cancelled'
                    )
-                 ) AS exchange_link,
+                 )) AS exchange_link,
                  EXISTS(
                    SELECT 1 FROM returns r
                    JOIN return_items ri ON ri.return_id = r.id
