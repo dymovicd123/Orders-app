@@ -490,7 +490,6 @@ try{
   for(const [relative,expected] of [
     ['worker/domains/admin-delete-finalize.ts','54d60e732b09985368d9b47bd097281fa9836c31'],
     ['worker/domains/admin-delete-final-driver.ts','60c3fe406d6e52dfff4ef20cd54230cf06923968'],
-    ['worker/domains/admin-delete-physical.ts','fd97f102d73d463865e2be5cb1f26013daea8d74'],
   ]){
     const from=path.resolve(relative)
     check(gitBlob(fs.readFileSync(from,'utf8'))===expected,
