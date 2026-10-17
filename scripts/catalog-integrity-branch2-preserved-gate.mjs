@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'e1615694216a2ae6028c90c69562ac6c65b4e610',
+  'worker/index.ts':'74bad586c252c457794c515e796cb2e93f186f92',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
