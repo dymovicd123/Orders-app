@@ -428,17 +428,8 @@ try{
     fs.renameSync(from,to)
     hidden.push({relative,from,to,expected})
   }
-  // Compare the exact approved predecessor, rather than allowing a modified
-  // saga declaration to rewrite the immutable historical source snapshot.
-  const sagaCurrentPath=path.resolve('worker/domains/admin-delete-saga.ts')
-  const sagaCurrent=fs.readFileSync(sagaCurrentPath,'utf8')
-  const sagaBeforeFile='scripts/fixtures/admin-delete-final-20261017/admin-delete-saga-before.ts'
-  const sagaBefore=fs.readFileSync(sagaBeforeFile,'utf8')
-  check(gitBlob(sagaCurrent)==='be55ff1c5d9158754c9699349dfb9a1efe39e3a8'
-    &&gitBlob(sagaBefore)==='68aff3adaef1205690918bb1c39841b266eb41d5',
-    'Final saga predecessor or current source changed unexpectedly')
-  saved.set(sagaCurrentPath,sagaCurrent)
-  fs.writeFileSync(sagaCurrentPath,sagaBefore)
+  // admin-delete-saga.ts was already hidden by the frozen added-file manifest;
+  // do not stage it twice or the historical source tree would be incomplete.
   for(const [relative,delta] of Object.entries(manifest.files)){
     const full=path.resolve(relative)
     saved.set(full,fs.readFileSync(full,'utf8'))
