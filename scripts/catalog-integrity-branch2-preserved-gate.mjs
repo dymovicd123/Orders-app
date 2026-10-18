@@ -131,7 +131,7 @@ const reviewedExchangeCancelUx={
   previousTable:'f398558a8860a8fc587fb3cf227533c6219e2200',
   app:'c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7',
   table:'e74f3d1077900ddec02c1b7103857d9b4e572f4c',
-  regression:'ef6109570a61a2edbb8238487d465d37b15d6829',
+  regression:'dece747acaa4352ae72246886b6756b7d8de8053',
   zeroDebitTest:'ea0b1cbf405c11984b1fd96ec4ea9e32831e7e65',
   returnCancelTest:'6e82869c8b5848faef6315c0e51bb327053e24e2',
 }
