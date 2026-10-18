@@ -18,8 +18,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
   } | null>(null)
   const [exchangeChainDraft,setExchangeChainDraft] = useState<{
-    order:any;selected:number;available:number[];preview:any|null;error:string;loading:boolean;
+    order:any;mode:'last'|'all';plan:any|null;error:string;loading:boolean;submitting:boolean;progress:string;
   } | null>(null)
+  const [linkedAdminEditOrder,setLinkedAdminEditOrder] = useState<any|null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
     order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
     physicalAnswer?:'undecided'|'not_issued'|'issued';
@@ -32,6 +33,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
     loadExchangeCancellationPreview,
+    loadOrderExchangeCancellationPlan,
+    cancelOrderExchangeChain,
     loadAdminOrderDeletePreview,
     deleteOrderAsAdmin,
     executeAdminDeleteChain,
@@ -91,14 +94,40 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     const value = priceDraft?.prices[Number(item.id)] ?? ''
     return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
   })
-  // Ask about the real handover for EVERY erroneous-order deletion, including
-  // orders where bookkeeping wrongly says "not sent".
-  const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
+  // Ask only when the SERVER found recorded handover, not for every unshipped order.
+  const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview?.requiresPhysicalFact
     &&!adminDeleteDraft.preview.activeSaga)
   const deleteReasons = adminDeleteDraft?.preview
     ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
       !(adminDeleteDraft.preview?.canPreparePhysicalCorrection
         && reason.startsWith('Для цепочки с зафиксированной выдачей товара'))) : []
+
+
+  const openMetadataCorrection=(order:any)=>setMetadataDraft({order,error:'',next:{
+    orderDate:String(order.order_date||'').trim(),
+    customerPhone:String(order.customer_phone||'').trim(),
+    customerName:String(order.customer_name||'').trim(),
+    city:String(order.city||'').trim(),
+    deliveryType:String(order.delivery_type||'').trim(),
+    comment:String(order.comment||'').trim(),
+  }})
+  const openPriceCorrection=(order:any)=>setPriceDraft({order,error:'',
+    prices:Object.fromEntries((order.items||[])
+      .filter((item:any)=>Number(item.id)>0&&Number(item.quantity)>0)
+      .map((item:any)=>[Number(item.id),String(item.unitPrice??0)])),
+  })
+  const openExchangeCancellation=(order:any,mode:'last'|'all')=>{
+    setExchangeChainDraft({order,mode,plan:null,error:'',loading:true,submitting:false,progress:''})
+    void (async()=>{
+      try{
+        const plan=await loadOrderExchangeCancellationPlan(order,mode)
+        setExchangeChainDraft(d=>d&&d.order.id===order.id&&d.mode===mode?{...d,plan,loading:false,error:''}:d)
+      }catch(error){
+        setExchangeChainDraft(d=>d&&d.order.id===order.id&&d.mode===mode
+          ?{...d,plan:null,loading:false,error:error instanceof Error?error.message:'Проверка не удалась.'}:d)
+      }
+    })()
+  }
 
   const kaspiAverageCheck = summary.count > 0 ? Math.round(summary.total / summary.count) : 0
 
@@ -459,16 +488,17 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                       : 'Есть возврат денег'}
                               </span>
                             ) : null}
-                            {projection.canEdit ? (
+                            {(projection.canEdit || (isAdmin && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
                               <button
                                 className="primary compact"
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  if(projection.canEdit)handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  else setLinkedAdminEditOrder(order)
                                 }}
                               >
-                                Редактировать
+                                {projection.canEdit?'Редактировать':'Исправить заказ'}
                               </button>
                             ) : null}
                             {!retainedOnly && !archived && !projection.deleted ? (
@@ -481,14 +511,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   <button className="secondary compact" type="button"
                                     onClick={(event)=>{
                                       event.stopPropagation()
-                                      setMetadataDraft({order,error:'',next:{
-                                        orderDate:String(order.order_date||'').trim(),
-                                        customerPhone:String(order.customer_phone||'').trim(),
-                                        customerName:String(order.customer_name||'').trim(),
-                                        city:String(order.city||'').trim(),
-                                        deliveryType:String(order.delivery_type||'').trim(),
-                                        comment:String(order.comment||'').trim(),
-                                      }})
+                                      openMetadataCorrection(order)
                                     }}>
                                     Исправить реквизиты
                                   </button>
@@ -496,14 +519,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item:any) => Number(item.id)>0 && Number(item.quantity)>0) ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
-                                    const first = order.items.find((item) => Number(item.quantity) > 0 && Number(item.id) > 0)
-                                    if (!first) return
-                                    setPriceDraft({order,
-                                      prices: Object.fromEntries(order.items
-                                        .filter((item:any)=>Number(item.id)>0 && Number(item.quantity)>0)
-                                        .map((item:any)=>[Number(item.id),String(item.unitPrice ?? 0)])),
-                                      error: '',
-                                    })
+                                    openPriceCorrection(order)
                                   }}>
                                     Исправить записанную цену
                                   </button>
@@ -534,18 +550,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
                                   <button className="secondary compact" type="button" onClick={(event)=>{
                                     event.stopPropagation()
-                                    setExchangeChainDraft({order,selected:0,available:[],preview:null,error:'',loading:true})
-                                    void (async()=>{
-                                      try {
-                                        const result=await loadExchangeCancellationPreview(order)
-                                        setExchangeChainDraft({order,selected:result.preview?.exchangeId||0,
-                                          available:result.availableExchangeIds,preview:result.preview,error:'',loading:false})
-                                      } catch(error) {
-                                        setExchangeChainDraft({order,selected:0,available:[],preview:null,loading:false,
-                                          error:error instanceof Error?error.message:'Не удалось загрузить зависимости обмена.'})
-                                      }
-                                    })()
-                                  }}>Порядок отмены обменов</button>
+                                    openExchangeCancellation(order,'last')
+                                  }}>Отменить обмены</button>
                                 ) : null}
                               </div>
                             ) : null}
