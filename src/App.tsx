@@ -6274,6 +6274,7 @@ function removeDebtPayment(index: number) {
   }
 
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
+    if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
@@ -6318,6 +6319,10 @@ function removeDebtPayment(index: number) {
   }
 
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
+    if (!isAdmin) {
+      setError('Полный редактор доступен только администратору. Используйте отдельные исправления цены и реквизитов.')
+      return null
+    }
     const order = targetOrder || selectedOrder
     if (!order) return
     const isItemizedEdit = order.pricing_mode === 'itemized_v1'
@@ -7111,13 +7116,19 @@ function removeDebtPayment(index: number) {
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({expectedSnapshot,physicalOutcome:'not_issued'}),
     })
-    const result=await readJsonResponse<{ok?:boolean;message?:string}>(
-      response,'Проверка фактической выдачи перед удалением')
+    const result=await readJsonResponse<{
+      ok?:boolean;message?:string;
+      preview?:Awaited<ReturnType<typeof loadAdminOrderDeletePreview>>
+    }>(response,'Проверка фактической выдачи перед удалением')
     if(!response.ok||result.ok===false)
       throw new Error(result.message||'Не удалось безопасно исправить выдачу.')
     invalidateInventoryStockCaches(true)
-    // This correction changes the approved stock/order snapshot.
-    // Never execute the old chain plan; obtain an entirely new read-only preview.
+    // The Worker already calculated a fresh preview AFTER the correction.
+    // Reuse it instead of issuing another heavyweight delete-preview GET.
+    // A missing/malformed preview falls back to a fresh read, never to old data.
+    if(result.preview?.chainPlan?.snapshotFingerprint
+      && /^[a-f0-9]{64}$/.test(result.preview.chainPlan.snapshotFingerprint))
+      return {...result.preview,activeSaga:null}
     return await loadAdminOrderDeletePreview(order)
   }
 

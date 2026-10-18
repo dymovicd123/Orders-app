@@ -110,8 +110,27 @@ const reviewedOptionalMetadata={
 check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
   &&reviewedOptionalMetadata.previousWrite==='9f327389c1e27763a2a343fd00afb2bb2b170ab1',
   'Previous reviewed metadata form or Worker changed')
-check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedReferenceDropdownUx.app,
-  'Unreviewed reference dropdown App drift')
+// The 18 October role and latency change starts from the accepted editor
+// baseline. No Stage04 historical fixtures or preceding approved SHA are changed.
+const reviewedAdminEditor={
+  baselineApp:reviewedReferenceDropdownUx.app,
+  baselineWorker:'081a03ae4190e4b9a3de2080a8cfd3487cdf37e7',
+  app:'81b04853cc3fc95ff83b8587c7675c1d108a5819',
+  write:'8af447451f82a89bfee29f51f1cc2ac040c13cc5',
+  projection:'62823c931c1c5078e167154a5ad70919272ac8cb',
+  editor:'ada21af4cae3f554088b6ab3641b20a380ba08c7',
+  regression:'beed85b9b01514b5e8d22e6bb90b419123b56f42',
+  returns:'a8c970f6608c73138c6c39894dccb7832ab76958',
+}
+for(const [file,expected] of [
+  ['src/App.tsx',reviewedAdminEditor.app],
+  ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
+  ['src/app/orderOperationalProjection.ts',reviewedAdminEditor.projection],
+  ['src/features/sections/OrderEditorSection.tsx',reviewedAdminEditor.editor],
+  ['src/features/sections/OrderReturnsSection.tsx',reviewedAdminEditor.returns],
+  ['scripts/test-admin-full-editor-role-performance-20261018.mjs',reviewedAdminEditor.regression],
+]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unreviewed admin editor role/performance drift: '+file)
+
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedOptionalMetadata.table,
   'Unreviewed metadata correction UI drift')
 check(reviewedOptionalMetadata.write==='e157deed999da92d7207c9bc88a70f4ea662e562','Unexpected previous Worker baseline')
@@ -126,15 +145,15 @@ const reviewedClientNameFix={
   test:'73be07b2041138b3a17c1cc15d4811eeb5a3ddc5',
 }
 for(const [file,sha] of [
-  ['worker/domains/orders-write.ts',reviewedClientNameFix.write],
+  ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
   ['worker/domains/orders-read.ts',reviewedClientNameFix.read],
   ['worker/domains/clients.ts',reviewedClientNameFix.clients],
   ['migrations/0112_v72_order_client_name_override.sql',reviewedClientNameFix.migration],
   ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',reviewedClientNameFix.test],
 ])check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed customer name patch drift: '+file)
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedReferenceDropdownUx.app
-  : file === 'worker/domains/orders-write.ts' ? reviewedClientNameFix.write
+  ? reviewedAdminEditor.app
+  : file === 'worker/domains/orders-write.ts' ? reviewedAdminEditor.write
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -366,6 +385,7 @@ for(const entry of inventorySafetyFixtures){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-admin-delete-exchange-details-20261017.mjs',true],
   ['scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs',true],
@@ -471,6 +491,50 @@ const saved=new Map()
 const staged=fs.mkdtempSync(path.join(os.tmpdir(),'branch2-catalog-baseline-'))
 const hidden=[]
 try{
+  // Archived Kaspi/main-sync checks require the pre-role-change editor.
+  // Restore it byte-for-byte only during those historical tests. The current
+  // security UI and its new assertions already ran above on the real source.
+  const editorPath=path.resolve('src/features/sections/OrderEditorSection.tsx')
+  const currentEditor=fs.readFileSync(editorPath,'utf8')
+  check(gitBlob(currentEditor)===reviewedAdminEditor.editor,
+    'Admin editor changed outside the reviewed role patch')
+  const oldEditor=currentEditor
+    .replace("display: isAdmin && selectedOrder && projection?.canEdit",
+      "display: selectedOrder && projection?.canEdit")
+    .replace('                          <option value="closed">Закрыт</option>',
+      '                          <option value="closed">Закрыт</option>\n                          <option value="deleted">Удалён</option>')
+  check(gitBlob(oldEditor)==='4b0419ce40575f6c0b33809dbb1fb973f0683bbf',
+    'Could not restore byte-exact pre-role editor for immutable checks')
+  saved.set(editorPath,currentEditor)
+  fs.writeFileSync(editorPath,oldEditor)
+  const projectionPath=path.resolve('src/app/orderOperationalProjection.ts')
+  const currentProjection=fs.readFileSync(projectionPath,'utf8')
+  check(gitBlob(currentProjection)===reviewedAdminEditor.projection,
+    'Admin-only editor role projection drifted')
+  const oldProjection=currentProjection.replace(
+    "    // Full editing may rewrite item, payment, manager and stock relationships.\n"+
+    "    // Safe recorded-price and metadata corrections remain separately available to managers.\n"+
+    "    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && simpleAdmin,",
+    "    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),")
+  check(gitBlob(oldProjection)==='bda4f3ea71bc07c0801817ad582d8dbd659a645b',
+    'Cannot restore exact old operational projection for historical modularization')
+  saved.set(projectionPath,currentProjection)
+  fs.writeFileSync(projectionPath,oldProjection)
+  const returnsPath=path.resolve('src/features/sections/OrderReturnsSection.tsx')
+  const currentReturns=fs.readFileSync(returnsPath,'utf8')
+  check(gitBlob(currentReturns)===reviewedAdminEditor.returns,
+    'Admin-only Return editor entrypoint drifted')
+  const oldReturns=currentReturns
+    .replace("    handleEditOrder,\n    isAdmin,\n    ManagerBadge,",
+      "    handleEditOrder,\n    ManagerBadge,")
+    .replace(`                              {isAdmin ? (
+                                <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
+                              ) : <span className="muted-small">Для изменения состава заказа обратитесь к администратору. Исправление цены и реквизитов доступно в «Доп. действия».</span>}`,
+      '                              <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>')
+  check(gitBlob(oldReturns)==='7ae10ca9eec0c596b661db31589dfffb6b3d107b',
+    'Cannot reproduce exact pre-role Return view for immutable historical tests')
+  saved.set(returnsPath,currentReturns)
+  fs.writeFileSync(returnsPath,oldReturns)
   // The historical size/count checks must see exactly the original Branch2
   // source tree; new modules are tested above against their own current code.
   for(const [relative,expected] of [
