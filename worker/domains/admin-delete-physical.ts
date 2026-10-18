@@ -60,9 +60,11 @@ export type UnissuedExchangeStockUndo = {
   source:string;variantId:number;quantity:number;
   recordedOutbound:number;physicalRestore:number;reserveRelease:number;
   alreadyCompensated:boolean;correctionMovementId:number|null;
+  bookkeepingFulfillmentOnly?:boolean;
 }
 export type AdminDeleteAppliedStockReview = {
   allowed:boolean;appliedCount:number;
+  bookkeepingFulfilledCount?:number;
   reversals:UnissuedExchangeStockUndo[];blockers:string[];
 }
 const reason='Есть проведённое складское движение без доказанного безопасного сторно. Удаление остановлено; требуется проверка физической истории.'
@@ -95,6 +97,12 @@ export async function reviewAdminDeleteAppliedStock(
           r.quantity AS reservation_quantity,r.variant_id AS reservation_variant_id,
           r.inventory_source AS reservation_source,r.fulfilled_at,
           m.quantity_delta AS movement_delta,m.quantity_after AS movement_quantity_after,
+          m.movement_type AS movement_type,m.reference_type AS movement_reference_type,
+          m.reference_id AS movement_reference_id,
+          (SELECT COUNT(*) FROM inventory_movements newer
+            WHERE newer.inventory_source=le.inventory_source
+              AND newer.variant_id=le.variant_id AND newer.id>le.movement_id
+          ) AS later_movement_count,
           m.variant_id AS movement_variant_id,m.inventory_source AS movement_source,
           (SELECT COUNT(*) FROM inventory_stock_checks ch
             WHERE ch.inventory_source=le.inventory_source AND ch.variant_id=le.variant_id
@@ -133,15 +141,38 @@ export async function reviewAdminDeleteAppliedStock(
   if(rows.length!==appliedCount)return bad(appliedCount,'Складские движения заказа не удалось однозначно сопоставить.')
 
   const reversals:UnissuedExchangeStockUndo[]=[]
+  let bookkeepingFulfilledCount=0
   for(const x of rows){
     const eventId=toInt(x.id,0),exchangeId=toInt(x.operation_id,0),
       orderItemId=toInt(x.order_item_id,0),source=cleanText(x.inventory_source),
       variantId=toInt(x.variant_id,0),qty=toInt(x.quantity,0),
       delta=toInt(x.movement_delta,0),reserveQty=toInt(x.reservation_quantity,0)
-    // EXACT case: V2 replacement is not handed over, a live matching reservation
-    // still exists, and the original sale movement is traceable and reversible.
-    // Other applied events (returns, inbound movements, fulfilled handovers,
-    // different SKUs, stale revisions) intentionally remain forbidden.
+    // Two distinct proved states:
+    // (a) reserved replacement with a real negative sale movement,
+    // (b) zero-stock replacement whose bookkeeping is "fulfilled", but
+    //     the actual sale movement is exactly ZERO. Confirmation by the
+    //     administrator is mandatory at saga planning time for both.
+    // A zero booking cannot authorize +1 physical stock on cancellation.
+    const zeroBookedFulfillment=Boolean(
+      delta===0
+      &&cleanText(x.movement_type)==='sale'
+      &&cleanText(x.movement_reference_type)==='exchange_new'
+      &&cleanText(x.movement_reference_id)===String(exchangeId)
+      &&toInt(x.movement_quantity_after,-1)===0
+      &&toInt(x.later_movement_count,-1)===0
+      &&toInt(x.current_physical,-1)===0
+      &&toInt(x.current_reserved,-1)===0
+      &&cleanText(x.reservation_status)==='fulfilled'
+      &&Boolean(cleanText(x.fulfilled_at))
+      &&cleanText(x.stock_writeoff_status)==='fulfilled'
+    )
+    const negativeBookedReserve=Boolean(
+      delta===-qty
+      &&cleanText(x.reservation_status)==='active'
+      &&!cleanText(x.fulfilled_at)
+      &&cleanText(x.stock_writeoff_status)==='reserved'
+      &&toInt(x.current_reserved,-1)>=reserveQty
+    )
     const valid=Boolean(
       eventId>0&&exchangeId>0&&orderItemId>0&&variantId>0&&qty>0
       &&cleanText(x.operation_type)==='exchange'
@@ -154,28 +185,29 @@ export async function reviewAdminDeleteAppliedStock(
       &&toInt(x.physical_tracking,1)===0
       &&!cleanText(x.physical_received_at)
       &&toInt(x.current_item_quantity,0)===qty
-      &&cleanText(x.stock_writeoff_status)==='reserved'
+      &&(zeroBookedFulfillment||negativeBookedReserve)
       &&toInt(x.reservation_id,0)>0
-      &&cleanText(x.reservation_status)==='active'
-      &&!cleanText(x.fulfilled_at)
       &&toInt(x.reservation_variant_id,0)===variantId
       &&cleanText(x.reservation_source)===source
       &&reserveQty===qty
       &&toInt(x.movement_id,0)>0
       &&toInt(x.movement_variant_id,0)===variantId
       &&cleanText(x.movement_source)===source
-      &&delta===-qty
       &&toInt(x.later_physical_checks,0)===0
       &&toInt(x.stocktake_conflicts,0)===0
       &&toInt(x.live_variant,0)===1
       &&x.current_physical!=null&&toInt(x.current_physical,-1)>=0
-      &&x.current_reserved!=null&&toInt(x.current_reserved,-1)>=reserveQty
+      &&x.current_reserved!=null
       &&Boolean(cleanText(x.applied_at)||cleanText(x.created_at))
     )
     if(!valid)return bad(appliedCount,
       'Складское событие #'+String(eventId)+' нельзя безопасно отменить: отсутствует доказательство невыданного резерва, надёжное списание или актуальная физическая история.')
     const eventAt=cleanText(x.applied_at)||cleanText(x.created_at)
-    const correction=await findExchangeFalseHandoverCompensation(db,{
+    // A ZERO-delta booking did not move physical stock; no compensation
+    // lookup can possibly authorize adding stock.
+    const correction=zeroBookedFulfillment
+      ?{state:'none' as const,movementId:null}
+      :await findExchangeFalseHandoverCompensation(db,{
       orderId,source,variantId,movementId:toInt(x.movement_id,0),
       outboundQuantity:-delta,eventAt,
     })
@@ -185,13 +217,16 @@ export async function reviewAdminDeleteAppliedStock(
     if(correction.state==='none'
       &&toInt(x.current_physical,-1)!==toInt(x.movement_quantity_after,-2))
       return bad(appliedCount,'Физический остаток отличается от последнего списания без понятной истории. Требуется сверка.')
+    if(zeroBookedFulfillment)bookkeepingFulfilledCount++
     reversals.push({
       eventId,exchangeId,orderItemId,name:cleanText(x.product_name_snapshot)||'Товар обмена',
       source,variantId,quantity:qty,recordedOutbound:delta,
-      physicalRestore:correction.state==='compensated'?0:-delta,
-      reserveRelease:reserveQty,alreadyCompensated:correction.state==='compensated',
+      physicalRestore:zeroBookedFulfillment?0:correction.state==='compensated'?0:-delta,
+      reserveRelease:zeroBookedFulfillment?0:reserveQty,
+      alreadyCompensated:correction.state==='compensated',
       correctionMovementId:correction.movementId,
+      ...(zeroBookedFulfillment?{bookkeepingFulfillmentOnly:true}:{}),
     })
   }
-  return {allowed:true,appliedCount,reversals,blockers:[]}
+  return {allowed:true,appliedCount,...(bookkeepingFulfilledCount?{bookkeepingFulfilledCount}:{}),reversals,blockers:[]}
 }

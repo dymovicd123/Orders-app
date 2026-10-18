@@ -62,7 +62,16 @@ export async function previewAdminOrderDeletion(
   if(status==='archived')reasons.push('Заказ находится в архиве. Сначала верните его из архива.')
   if(status==='deleted')reasons.push('Заказ уже удалён.')
   const shipping=cleanText(order.shipping_status).toLowerCase()
-  const requiresPhysicalFact=shipping==='sent'||toInt(fulfilled?.issued_count,0)>0
+  // The outgoing Exchange can mark a reserve fulfilled even when its real
+  // sale movement was ZERO (no stock existed to deduct). The admin's explicit
+  // "not issued" consent is still required by the saga whenever an applied
+  // event exists. A ZERO booking must NOT be mistaken for real physical
+  // handover if every fulfilled reservation has been independently proven.
+  const bookedOnlyFulfilled=appliedStockReview.allowed
+    &&toInt(fulfilled?.issued_count,0)>0
+    &&toInt(fulfilled?.issued_count,0)===appliedStockReview.bookkeepingFulfilledCount
+  const requiresPhysicalFact=shipping==='sent'
+    ||(toInt(fulfilled?.issued_count,0)>0&&!bookedOnlyFulfilled)
   const recordedRefunds=(returns.results||[]).reduce((sum,x)=>sum+Math.max(0,toInt(x.amount,0)),0)
   const registeredPayments=Math.max(0,toInt(payments?.positive_amount,0))
   for(const blocker of chainPlan.blockers)reasons.push(blocker)
@@ -79,7 +88,7 @@ export async function previewAdminOrderDeletion(
     registeredPayments?`Записанные оплаты на ${registeredPayments} ₸ будут аннулированы в учёте. Это не физическая выдача денег клиенту.`:'',
     recordedRefunds?`Зарегистрированные возвраты на ${recordedRefunds} ₸ будут компенсированы учётным сторно.`:'',
     requiresPhysicalFact?'Есть признак выдачи товара. Система отдельно запросит факт физической передачи и проверит более поздние ревизии.':'',
-    appliedStockReview.reversals.length?`Обнаружено ${appliedStockReview.reversals.length} подтверждённых учётных списаний без выдачи: при отмене обмена учтутся уже проведённые компенсации, а повторное прибавление к остатку будет запрещено. Активные резервы освободятся.`:'',
+    appliedStockReview.reversals.length?`Обнаружено ${appliedStockReview.reversals.length} подтверждённых складских событий обмена. Физический остаток изменится только на доказанную величину исходного списания; нулевые списания не прибавляют товары на склад.`:'',
   ].filter(Boolean)
   if(hasChain&&requiresPhysicalFact)
     reasons.push('Для цепочки с зафиксированной выдачей товара сначала нужна проверка фактической передачи и более поздних ревизий.')

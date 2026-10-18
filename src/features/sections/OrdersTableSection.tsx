@@ -21,6 +21,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     order:any;mode:'last'|'all';plan:any|null;error:string;loading:boolean;submitting:boolean;progress:string;
   } | null>(null)
   const [linkedAdminEditOrder,setLinkedAdminEditOrder] = useState<any|null>(null)
+  const [returnCancelDraft,setReturnCancelDraft]=useState<{
+    order:any;choices:any[];selectedId:number;loading:boolean;submitting:boolean;error:string;
+  }|null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
     order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
     physicalAnswer?:'undecided'|'not_issued'|'issued';
@@ -35,6 +38,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     loadExchangeCancellationPreview,
     loadOrderExchangeCancellationPlan,
     cancelOrderExchangeChain,
+    loadOrderReturnCancellationChoices,
+    cancelOrderReturnChoice,
     loadAdminOrderDeletePreview,
     deleteOrderAsAdmin,
     executeAdminDeleteChain,
@@ -128,6 +133,21 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
       }catch(error){
         setExchangeChainDraft(d=>d&&d.order.id===order.id&&d.mode===mode
           ?{...d,plan:null,loading:false,error:error instanceof Error?error.message:'Проверка не удалась.'}:d)
+      }
+    })()
+  }
+
+  const openReturnCancel=(order:any)=>{
+    setReturnCancelDraft({order,choices:[],selectedId:0,loading:true,submitting:false,error:''})
+    void(async()=>{
+      try{
+        const choices=await loadOrderReturnCancellationChoices(order)
+        setReturnCancelDraft(d=>d&&d.order.id===order.id
+          ?{...d,choices,selectedId:choices.find((choice:any)=>!choice.parentExchangeId)?.id||choices[0]?.id||0,
+            loading:false,error:''}:d)
+      }catch(error){
+        setReturnCancelDraft(d=>d&&d.order.id===order.id
+          ?{...d,choices:[],loading:false,error:error instanceof Error?error.message:'Не удалось загрузить возвраты.'}:d)
       }
     })()
   }
@@ -556,6 +576,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     openExchangeCancellation(order,'last')
                                   }}>Отменить обмены</button>
                                 ) : null}
+                                {extraActionsOrderId === order.id && Number(order.committed_return_count||0)>0 ? (
+                                  <button className="secondary compact" type="button" onClick={(event)=>{
+                                    event.stopPropagation()
+                                    openReturnCancel(order)
+                                  }}>Отменить возврат</button>
+                                ) : null}
                               </div>
                             ) : null}
                             {isAdmin && !retainedOnly && !archived ? (
@@ -707,23 +733,25 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               {(adminDeleteDraft.preview.impact?.reservations||[])
                                 .filter((x:any)=>x.action==='release_reserve')
                                 .reduce((sum:number,x:any)=>sum+x.quantity,0)} шт.</strong></p>
-                            <p>Зафиксировано выдач: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
+                            <p>Учётных отметок выдачи: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
                             {(adminDeleteDraft.preview.appliedStockReview?.reversals||[]).length ? (
                               <div style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:10,marginTop:10}}>
-                                <strong>Сторно прежних складских списаний</strong>
-                                <p className="muted">Товар числится невыданным, но обмен уже списал его со склада.
-                                  Отмена восстановит только это проведённое списание. Снятие резерва учитывается отдельно.</p>
+                                <strong>Отмена складских событий обмена</strong>
+                                <p className="muted">При нулевом списании отмена снимет ошибочную учётную выдачу, не прибавляя товар к остатку.
+                                  Реальные списания и резервы обрабатываются отдельно.</p>
                                 <ul style={{paddingLeft:18}}>
                                   {adminDeleteDraft.preview.appliedStockReview.reversals.map((effect:any)=>(
                                     <li key={effect.eventId}>
                                       <strong>{effect.name}</strong> ·
                                       {' '}{effect.source==='warehouse'?'Склад':
                                         effect.source==='boutique'?'Бутик':effect.source} ·
-                                      {effect.alreadyCompensated
+                                      {effect.bookkeepingFulfillmentOnly
+                                        ?<> · <strong>Учётная выдача без списания (0 шт.).</strong> Физический остаток не изменится.</>
+                                        :effect.alreadyCompensated
                                         ?<> · списание уже компенсировано корректировкой выдачи
                                             #{effect.correctionMovementId}. <strong>Физический остаток не изменится.</strong></>
                                         :<> · отмена списания: <strong>+{effect.physicalRestore} шт.</strong> к остатку</>}
-                                      {' '}· освободится резерв: <strong>{effect.reserveRelease} шт.</strong>
+                                      {effect.reserveRelease>0?<span> · освободится резерв: <strong>{effect.reserveRelease} шт.</strong></span>:null}
                                       <div className="muted">Обмен #{effect.exchangeId} · складская операция #{effect.eventId}</div>
                                     </li>
                                   ))}
@@ -1021,6 +1049,90 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             :exchangeChainDraft.mode==='last'?'Отменить последний обмен':'Отменить все обмены'}
                         </button>
                       ):null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {returnCancelDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={event=>{if(event.target===event.currentTarget&&!returnCancelDraft.submitting)setReturnCancelDraft(null)}}>
+                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Отмена возврата заказа"
+                    style={{maxWidth:620,maxHeight:'min(90vh,800px)',overflowY:'auto'}}>
+                    <div className="modal-head">
+                      <div><div className="card-label">Отмена ошибочного возврата</div>
+                        <h3>Возвраты — {returnCancelDraft.order.external_id}</h3></div>
+                      <button className="ghost compact" type="button" disabled={returnCancelDraft.submitting}
+                        onClick={()=>setReturnCancelDraft(null)}>Закрыть</button>
+                    </div>
+                    <p>Выберите конкретный возврат для отмены. Сам заказ останется.
+                      Сервер проверит деньги и склад перед выполнением. История сохраняется.</p>
+                    {returnCancelDraft.loading?<p>Загружаю возвраты…</p>:null}
+                    {returnCancelDraft.error?<p role="alert" className="error">{returnCancelDraft.error}</p>:null}
+                    {returnCancelDraft.choices.length>0?(
+                      <>
+                        <label className="form-field">
+                          <span>Какой возврат отменить</span>
+                          <select value={returnCancelDraft.selectedId}
+                            disabled={returnCancelDraft.submitting||returnCancelDraft.loading}
+                            onChange={event=>setReturnCancelDraft(d=>d?{...d,selectedId:Number(event.target.value),error:''}:d)}>
+                            {returnCancelDraft.choices.map((entry:any)=>(
+                              <option key={entry.id} value={entry.id}>
+                                {'#'+entry.id+' · '+(entry.date||'Без даты')+' · '+formatMoney(entry.amount)+' ₸'
+                                +(entry.parentExchangeId?' · обмен #'+entry.parentExchangeId:'')}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {(()=>{const selected=returnCancelDraft.choices.find((x:any)=>x.id===returnCancelDraft.selectedId)
+                          if(!selected)return null
+                          return <div style={{border:'1px solid var(--border,#dce1e8)',padding:12,borderRadius:10,margin:'12px 0'}}>
+                            <p>Возврат денег: <strong>{formatMoney(selected.amount)} ₸</strong>
+                              {selected.method?' · '+selected.method:''}</p>
+                            <p>Учтено возвращённых товаров: <strong>{selected.itemQuantity} шт.</strong></p>
+                            {selected.parentExchangeId?(
+                              <p role="status">Этот возврат создан обменом #{selected.parentExchangeId}.
+                                Отмените сам обмен через «Отменить обмены»: деньги и товары
+                                должны откатываться вместе.</p>
+                            ):<p className="muted">Отмена самостоятельно проведённого возврата.
+                              Сервер проверит зависимости, финансы, склад и более поздние ревизии.
+                              Это учётное сторно, а не фактическая передача денег клиенту.</p>}
+                          </div>
+                        })()}
+                      </>
+                    ):!returnCancelDraft.loading&&!returnCancelDraft.error?<p>Активных возвратов нет.</p>:null}
+                    <div className="toolbar-actions">
+                      <button className="secondary" type="button" disabled={returnCancelDraft.submitting}
+                        onClick={()=>setReturnCancelDraft(null)}>Закрыть</button>
+                      {(()=>{const selected=returnCancelDraft.choices.find((x:any)=>x.id===returnCancelDraft.selectedId)
+                        return selected&&!selected.parentExchangeId?(
+                          <button className="ghost danger" type="button"
+                            disabled={returnCancelDraft.submitting||returnCancelDraft.loading||savingOrder}
+                            onClick={()=>{void(async()=>{
+                              const draft=returnCancelDraft
+                              const chosen=draft?.choices.find((x:any)=>x.id===draft.selectedId)
+                              if(!chosen||chosen.parentExchangeId)return
+                              if(!window.confirm('Отменить возврат #'+chosen.id+' по заказу '+draft.order.external_id+
+                                '? Сумма: '+formatMoney(chosen.amount)+' ₸. Склад и деньги будут проверены перед выполнением.'))return
+                              setReturnCancelDraft(d=>d?{...d,submitting:true,error:''}:d)
+                              try{
+                                await cancelOrderReturnChoice(draft.order,chosen)
+                                setReturnCancelDraft(null)
+                              }catch(error){
+                                const message=error instanceof Error?error.message:'Не удалось отменить возврат.'
+                                try{
+                                  const choices=await loadOrderReturnCancellationChoices(draft.order)
+                                  setReturnCancelDraft(d=>d?{...d,choices,
+                                    selectedId:choices.find((x:any)=>x.id===chosen.id)?.id||choices[0]?.id||0,
+                                    submitting:false,error:message}:d)
+                                }catch{
+                                  setReturnCancelDraft(d=>d?{...d,submitting:false,error:message}:d)
+                                }
+                              }
+                            })()}}>
+                            {returnCancelDraft.submitting?'Отменяю…':'Отменить выбранный возврат'}
+                          </button>
+                        ):null
+                      })()}
                     </div>
                   </div>
                 </div>

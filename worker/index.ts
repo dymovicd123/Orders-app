@@ -1974,6 +1974,35 @@ export default {
         }
       }
 
+      // Order-scoped, read-only Return cancellation choices. A Return created
+      // by a still-active Exchange must be cancelled through that Exchange;
+      // never expose a separate button that would split its money/stock chain.
+      const orderReturnCancelChoicesMatch=url.pathname.match(/^\/api\/orders\/(\d+)\/return-cancel-choices$/);
+      if(orderReturnCancelChoicesMatch && request.method==='GET'){
+        const orderId=toInt(orderReturnCancelChoicesMatch[1],0);
+        const order=await env.DB.prepare(
+          "SELECT id,order_status FROM orders WHERE id=? LIMIT 1"
+        ).bind(orderId).first<{id:number;order_status:string}>();
+        if(!order?.id || ['deleted','archived'].includes(cleanText(order.order_status)))
+          return json({ok:false,message:'Заказ не найден или находится в архиве.'},{status:409});
+        const found=await env.DB.prepare(
+          `SELECT r.id,r.return_date,r.amount,r.payment_method,
+             (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id=r.id) AS item_rows,
+             (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri WHERE ri.return_id=r.id) AS item_quantity,
+             (SELECT e.id FROM exchanges e WHERE e.refund_return_id=r.id
+               AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1) AS parent_exchange_id
+           FROM returns r WHERE r.order_id=? AND COALESCE(r.status,'completed')<>'cancelled'
+           ORDER BY r.id DESC LIMIT 101`
+        ).bind(orderId).all<Record<string,unknown>>();
+        const rows=found.results||[];
+        if(rows.length>100)return json({ok:false,message:'Слишком много возвратов для автоматического просмотра.'},{status:409});
+        return json({ok:true,choices:rows.map(row=>({
+          id:toInt(row.id,0),date:cleanText(row.return_date),amount:toInt(row.amount,0),
+          method:cleanText(row.payment_method),itemQuantity:toInt(row.item_quantity,0),
+          parentExchangeId:toInt(row.parent_exchange_id,0)||null,
+        }))});
+      }
+
       if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {
         try {
           return json(await createItemizedExchangeBatchFromRequest(env.DB, request), { status: 201 });

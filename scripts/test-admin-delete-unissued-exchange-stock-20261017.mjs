@@ -133,5 +133,6 @@ const preview=readFileSync('worker/domains/order-delete-preview.ts','utf8')
 const ui=readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 assert(worker.includes('reviewAdminDeleteAppliedStock(db,step.orderId)'))
 assert(preview.includes('reviewAdminDeleteAppliedStock(db,orderId)'))
-assert(ui.includes('Сторно прежних складских списаний'))
+assert(ui.includes('Отмена складских событий обмена') && ui.includes('При нулевом списании'),
+  'The operator must see the recorded debit and never assume a physical reversal for zero movement')
 console.log('ADMIN_DELETE_UNISSUED_EXCHANGE_BOOKED_STOCK_SAFE_GATE_PASSED')

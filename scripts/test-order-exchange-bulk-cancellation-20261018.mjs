@@ -43,8 +43,10 @@ assert(ui.includes('const physicalQuestionRequired=Boolean(adminDeleteDraft?.pre
   &&ui.includes('adminDeleteDraft.preview.requiresPhysicalFact')
   &&ui.includes('adminDeleteDraft.preview.appliedStockReview?.allowed'),
   'Consent only when server detects handover or a safely reversible applied movement')
-assert(preview.includes("const requiresPhysicalFact=shipping==='sent'||toInt(fulfilled?.issued_count,0)>0"),
-  'Recorded fulfilled reservations must still require fact-check regardless of status')
+assert(preview.includes("const requiresPhysicalFact=shipping==='sent'") &&
+  preview.includes('toInt(fulfilled?.issued_count,0)>0&&!bookedOnlyFulfilled') &&
+  preview.includes('appliedStockReview.bookkeepingFulfilledCount'),
+  'Only the independently proved zero-booked fulfillment may skip physical handover correction')
 assert(physical.includes('if(!valid)return bad(appliedCount'),
   'Unsafe booked stock movements must not be deleted through a checkbox')
 console.log('ORDER_EXCHANGE_LAST_ALL_CANCELLATION_AND_DELETE_CONSENT_GUARDS_PASSED')

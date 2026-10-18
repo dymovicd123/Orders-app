@@ -54,7 +54,7 @@ check(reviewedArrivalMaterialChoice.before === reviewedStockProjection.after,
 const reviewedEthnoManualHistory = {
   'worker/domains/catalog-variant-consolidation.ts':'126710444bcd74638386e53df91dbb1ca95a75e6',
   'worker/domains/inventory-movement.ts':'5403949b89141ee3c0ccbf41e0ac42228d921443',
-  'worker/index.ts':'0341328a072b2e7e17a3fdd29312a1f10ea796a7',
+  'worker/index.ts':'e0d0602645004b19d990a525d26250b50e1c2635',
   'src/features/sections/ReferenceMergeWorkspace.tsx':'dfbf117fd4a7c4a92eec28615ee5334ad6a69f47',
   'scripts/test-catalog-stock-reconciliation-write.mjs':'a5731d0c1556f0708444a51217348e1bb3fea1c8',
   'scripts/test-catalog-integrity-r2-sku-consolidation.mjs':'dac49e71f9673c9766b4c6af256d6fe9f2a41cc4',
@@ -124,11 +124,24 @@ const reviewedAdminEditor={
 }
 // 18 October follow-up. Keep earlier editor/metadata identities frozen for
 // historical replay; pin the new current UI and regression independently.
+// Follow-up retains the accepted #487 client behavior as a reviewed prior,
+// rather than rewriting the historical immutable Stage04 test fixtures.
 const reviewedExchangeCancelUx={
-  app:'086d433f46b2f6da129f82eaf636f01e9fdd8499',
-  table:'f398558a8860a8fc587fb3cf227533c6219e2200',
-  regression:'ef6109570a61a2edbb8238487d465d37b15d6829',
+  previousApp:'086d433f46b2f6da129f82eaf636f01e9fdd8499',
+  previousTable:'f398558a8860a8fc587fb3cf227533c6219e2200',
+  app:'c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7',
+  table:'e74f3d1077900ddec02c1b7103857d9b4e572f4c',
+  regression:'dece747acaa4352ae72246886b6756b7d8de8053',
+  zeroDebitTest:'44859bb83e970b63cf808dbad0f7aada8bf00761',
+  returnCancelTest:'6e82869c8b5848faef6315c0e51bb327053e24e2',
 }
+check(reviewedExchangeCancelUx.previousApp==='086d433f46b2f6da129f82eaf636f01e9fdd8499'
+  &&reviewedExchangeCancelUx.previousTable==='f398558a8860a8fc587fb3cf227533c6219e2200',
+  'Previous accepted Exchange cancel UI drifted')
+for(const [file,hash] of [
+  ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',reviewedExchangeCancelUx.zeroDebitTest],
+  ['scripts/test-order-return-cancel-menu-20261018.mjs',reviewedExchangeCancelUx.returnCancelTest],
+])check(gitBlob(fs.readFileSync(file,'utf8'))===hash,'New deletion/Return regression drift: '+file)
 check(gitBlob(fs.readFileSync('scripts/test-order-exchange-bulk-cancellation-20261018.mjs','utf8'))
   ===reviewedExchangeCancelUx.regression,'Unreviewed exchange cancellation regression')
 for(const [file,expected] of [
@@ -200,15 +213,15 @@ const reviewedExchangePriceFiles={
   'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
   'worker/domains/exchange-price-history.ts':'589786815066ebd670dac8747850f41769c163b2',
   'worker/domains/exchange-cancel-chain.ts':'0f51af34bfae6f217577bf34340760c7f0094f4f',
-  'worker/domains/order-delete-preview.ts':'6d26790728dc218217da2ae92c73c0effd046a24',
+  'worker/domains/order-delete-preview.ts':'b28c560913fd4871facc50533d600b768daffbe8',
   'worker/domains/order-delete-chain-plan.ts':'410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f',
   'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
   'worker/domains/admin-delete-saga.ts':'73346aaebdb8bbf7b29669cf04d1f73dfd06de48',
-  'worker/domains/admin-delete-real-driver.ts':'9eb58e24e6bd26a512494ab53f345a89bb597c81',
-  'worker/domains/admin-delete-physical.ts':'fd97f102d73d463865e2be5cb1f26013daea8d74',
+  'worker/domains/admin-delete-real-driver.ts':'232e376b69c5d65ed733ecc044141504a525fea6',
+  'worker/domains/admin-delete-physical.ts':'23a31cbdfd11875d22975caeaab1411b89998929',
   'scripts/test-admin-delete-compensated-lifecycle-20261017.mjs':'7e87937176ce7da383dcea8b185e99a4845e72da',
-  'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'af58232a739d1a46330964c61925a386955d0ca2',
+  'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'68b77488d329c89211e7ed88943b809dcb7a14e6',
   'worker/domains/admin-delete-impact.ts':'eb5461a761519e21c700c65cabe2d97e3cf96988',
   'scripts/test-admin-delete-exchange-details-20261017.mjs':'b30f28e597ed21ff9b069388415d2aa3bed4672c',
   'worker/domains/admin-delete-execute.ts':'ef7e0e64ed4721ff359089454c6e376c23244028',
@@ -396,6 +409,8 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-order-exchange-bulk-cancellation-20261018.mjs',false],
+  ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',false],
+  ['scripts/test-order-return-cancel-menu-20261018.mjs',false],
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-admin-delete-exchange-details-20261017.mjs',true],
   ['scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs',true],
