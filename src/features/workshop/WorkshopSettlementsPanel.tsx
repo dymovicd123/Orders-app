@@ -4,7 +4,7 @@ import '../../styles/stage04-workshop-settlements.css'
 type RecentEvent = { id:number; event_type:string; business_date:string; source_business_date?:string|null; related_event_id?:number|null; product_name_snapshot:string|null; quantity:number|null; unit_cost:number|null; amount_delta:number|null; payment_method:string|null; comment:string|null }
 type LedgerEvent = RecentEvent & { isReversed:number; external_order_id:string|null; related_event_id:number|null }
 type Day = { date:string; completed:number; costConfirmed:number; completionCorrections:number; paid:number; paymentCorrections:number; netChange:number }
-type Summary = { ok:boolean; captureEnabled:boolean; confirmedDebt:number; correctionCredit:number; unresolvedPrices:number;
+type Summary = { ok:boolean; captureEnabled:boolean; canInitialize:boolean; confirmedDebt:number; correctionCredit:number; unresolvedPrices:number;
   today:{ completed:number; costConfirmed:number; completionCorrections:number; paid:number; paymentCorrections:number };
   recent:RecentEvent[] }
 type Ledger = { ok:boolean; range:{ from:string; to:string; openingBalance:number }; days:Day[]; events:LedgerEvent[]; hasMore:boolean; nextBeforeId:number|null }
@@ -57,9 +57,9 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   const [notice,setNotice]=useState('')
   const [paymentMode,setPaymentMode]=useState<PaymentMode|null>(null)
   const [amountDraft,setAmountDraft]=useState('')
-  const [method,setMethod]=useState('')
+  const [openingDebtDraft,setOpeningDebtDraft]=useState('')
+  const [openingConfirmed,setOpeningConfirmed]=useState(false)
   const [comment,setComment]=useState('')
-  const [showOptional,setShowOptional]=useState(false)
   const [fromDraft,setFromDraft]=useState(beforeDays(today,29))
   const [toDraft,setToDraft]=useState(today)
   const [period,setPeriod]=useState({from:beforeDays(today,29),to:today})
@@ -115,6 +115,10 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   const amountValue=Number(amountDraft)
   const validAmount=Number.isSafeInteger(amountValue)&&amountValue>0&&amountValue<=debt
   const maySave=activated&&!busy&&!summaryLoading&&validAmount
+  const openingAmount=Number(openingDebtDraft)
+  const mayActivate=Boolean(summary?.canInitialize)&&!busy&&!summaryLoading
+    &&openingConfirmed&&openingDebtDraft.trim()!==''
+    &&Number.isSafeInteger(openingAmount)&&openingAmount>=0&&openingAmount<=1_000_000_000_000
   const days=useMemo(()=>{
     let running=Number(details?.range.openingBalance||0)
     return [...(details?.days||[])].sort((a,b)=>a.date.localeCompare(b.date)).map(day=>{
@@ -128,16 +132,29 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     setAmountDraft(mode==='full'?String(debt):'')
     setError('');setNotice('')
   }
-  const closePayment=()=>{setPaymentMode(null);setAmountDraft('');setComment('');setShowOptional(false)}
+  const closePayment=()=>{setPaymentMode(null);setAmountDraft('');setComment('')}
   const successfulWrite=async(message:string)=>{
     setNotice(message);setError('');clearPaymentId();closePayment()
     // The write already succeeded. A later network read error is NOT a failed payment.
     await Promise.all([refreshSummary(),...(view!=='home'?[loadDetails()]:[])])
   }
+  const activate=async(e:FormEvent)=>{
+    e.preventDefault()
+    if(writeLocked.current||!mayActivate)return
+    if(!window.confirm('Запустить учёт цеха с начальным долгом '+money(openingAmount)+'? Готовые ранее изделия повторно не начисляются. Изменить эту сумму через форму после запуска нельзя.'))return
+    writeLocked.current=true;setBusy(true);setError('');setNotice('')
+    try {
+      await api('/api/workshop/settlements/activate',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({openingDebt:openingAmount})})
+      setNotice('Учёт включён. Начальный долг '+money(openingAmount)+' сохранён. Новые готовые изделия будут начисляться автоматически.')
+      await refreshSummary()
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось включить учёт.')}
+    finally{writeLocked.current=false;setBusy(false)}
+  }
   const submitPayment=async(e:FormEvent)=>{
     e.preventDefault()
     if(writeLocked.current||!maySave)return
-    const body={amount:amountValue,method:method.trim(),comment:comment.trim()}
+    const body={amount:amountValue,comment:comment.trim()}
     const requestId=paymentIdempotency(JSON.stringify(body))
     writeLocked.current=true;setBusy(true);setError('');setNotice('')
     try{
@@ -198,7 +215,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     finally{setMoreBusy(false)}
   }
   const isWork=(event:RecentEvent)=>['completion','completion_reversal','price_adjustment'].includes(event.event_type)
-  const eventLabel=(event:RecentEvent)=>event.product_name_snapshot||(event.event_type==='payment'?'Выплата цеху':event.event_type==='payment_reversal'?'Исправление выплаты':event.comment||'Операция')
+  const eventLabel=(event:RecentEvent)=>event.product_name_snapshot||(event.event_type==='opening_balance'?'Начальный долг':event.event_type==='payment'?'Выплата цеху':event.event_type==='payment_reversal'?'Исправление выплаты':event.comment||'Операция')
   const openView=(next:View)=>{setError('');setView(next)}
   const openDayHistory=(date:string)=>{
     setFromDraft(date);setToDraft(date);setPeriod({from:date,to:date})
@@ -214,12 +231,29 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
 
   return <section className="ws-settlements ws-settlements-fast" aria-label="Расчёты с Цехом">
     <div className="ws-fast-top">
-      <div><h3>Расчёты с Цехом</h3><p>Общие выплаты и задолженность по обычным и Kaspi-заказам.</p></div>
+      <div><h3>Расчёты с Цехом</h3><p>Единый долг и выплаты за готовые изделия: обычные и Kaspi-заказы.</p></div>
       <button className="secondary compact" type="button" disabled={summaryLoading||busy} onClick={()=>void refreshSummary()}>
         {summaryLoading?'Загружаю…':'Обновить'}
       </button>
     </div>
-    {summary&&!activated&&<div className="ws-settlements-startup" role="status">Учёт пока не запущен. Финансовые действия недоступны.</div>}
+    {summary&&!activated&&<div className="ws-settlements-startup" role="status">
+      <strong>Учёт пока не запущен</strong>
+      {summary.canInitialize?<form className="ws-opening-form" onSubmit={e=>void activate(e)}>
+        <p>Укажите фактическую задолженность перед цехом на момент запуска. Работа, отмеченная готовой раньше, повторно не начислится.</p>
+        <label htmlFor="ws-opening-debt">Начальный долг, ₸
+          <input id="ws-opening-debt" type="number" min="0" max="1000000000000" step="1"
+            placeholder="Например, 50000" required value={openingDebtDraft}
+            onChange={e=>{setOpeningDebtDraft(e.target.value);setOpeningConfirmed(false)}}/>
+        </label>
+        <label className="ws-opening-confirm"><input type="checkbox" checked={openingConfirmed}
+          onChange={e=>setOpeningConfirmed(e.target.checked)}/>
+          Сумма проверена. После включения учёт начнётся автоматически.
+        </label>
+        <button className="primary compact" type="submit" disabled={!mayActivate}>
+          {busy?'Включаю…':'Сохранить долг и включить учёт'}
+        </button>
+      </form>:<p>В журнале уже есть операции. Начальный долг повторно не устанавливается; проверьте состояние учёта перед запуском.</p>}
+    </div>}
     <div className="ws-fast-overview">
       <div className="ws-fast-debt">
         <span>Осталось выплатить</span>
@@ -244,7 +278,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     {activated&&<div className="ws-fast-pay">
       <div className="ws-fast-pay-head">
         <strong>Выплата цеху</strong>
-        <span>Каждая выплата сохраняется в истории. С кассой магазина пока не связана.</span>
+        <span>Выплаты сохраняются в истории и не изменяют кассу магазина.</span>
       </div>
       {!paymentMode?<div className="ws-fast-pay-actions">
         <button type="button" className="primary compact" disabled={!debt||summaryLoading||busy}
@@ -260,19 +294,10 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
               placeholder="Введите сумму" required autoFocus value={amountDraft} onChange={e=>setAmountDraft(e.target.value)}/>}
         </div>
         {paymentMode==='partial'&&Number(amountDraft)>debt&&<p className="ws-settlements-warning">Больше текущего долга выплатить нельзя. Авансы не предусмотрены.</p>}
-        <button type="button" className="ws-fast-optional-toggle" aria-expanded={showOptional}
-          onClick={()=>setShowOptional(open=>!open)}>Дополнительно (необязательно) {showOptional?'▴':'▾'}</button>
-        {showOptional&&<div className="ws-fast-optional-fields">
-          <label>Способ выплаты
-            <select value={method} onChange={e=>setMethod(e.target.value)}>
-              <option value="">Не указывать</option><option value="Наличные">Наличные</option>
-              <option value="Kaspi Pay">Kaspi Pay</option>
-            </select>
-          </label>
-          <label>Комментарий
-            <input type="text" maxLength={500} value={comment} onChange={e=>setComment(e.target.value)} placeholder="При необходимости"/>
-          </label>
-        </div>}
+        <label className="ws-fast-comment" htmlFor="ws-payment-comment">Комментарий (необязательно)
+          <input id="ws-payment-comment" type="text" maxLength={500} value={comment}
+            onChange={e=>setComment(e.target.value)} placeholder="Если нужно пояснить выплату"/>
+        </label>}
         <div className="ws-fast-pay-confirm">
           <button type="button" className="secondary compact" onClick={closePayment} disabled={busy}>Отмена</button>
           <button type="submit" className="primary compact" disabled={!maySave}>
@@ -326,7 +351,6 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
             {causeLabel(event)&&<small className="ws-fast-event-context">{causeLabel(event)}</small>}
             {event.quantity!=null&&event.unit_cost!=null&&<small>{event.quantity} шт. × {money(event.unit_cost)}</small>}
             {event.event_type==='payment_reversal'&&event.comment&&<small>Причина отмены: {event.comment}</small>}
-            {event.payment_method&&<small>Способ выплаты: {event.payment_method}</small>}
           </div>
           <div className="ws-fast-event-side"><strong>{event.amount_delta===null?'Цена не указана':money(event.amount_delta)}</strong>
             {event.event_type==='payment'&&!event.isReversed&&activated&&<button type="button" className="secondary compact" disabled={busy}
