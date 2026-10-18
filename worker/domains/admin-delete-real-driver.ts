@@ -60,7 +60,7 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
     fail('Старый формат стоимости требует отдельного сценария отмены цепочки.')
   const review=await reviewAdminDeleteAppliedStock(db,step.orderId)
   if(!review.allowed)
-    fail('По заказу есть неподтверждённые складские движения. '+review.blockers.join(' '))
+    fail('По заказу есть проведённые физические складские движения. '+review.blockers.join(' '))
   // The only permitted "fulfilled" item while an unsent order is being
   // deleted is an Exchange replacement with a proved ZERO sale movement.
   // The saga requires the administrator's not-issued consent before any step,
