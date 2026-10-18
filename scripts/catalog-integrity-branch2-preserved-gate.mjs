@@ -126,6 +126,17 @@ const reviewedAdminEditor={
 // historical replay; pin the new current UI and regression independently.
 // Follow-up retains the accepted #487 client behavior as a reviewed prior,
 // rather than rewriting the historical immutable Stage04 test fixtures.
+// This isolated resolver fix prevents a 'ready' state when a source order
+// conflicts with the fixed gender scope of its catalog base product.
+const reviewedGenderScopeResolver={
+  modal:'bfb33eb6f86caf3ebecb58c2855e12f801cacbbf',
+  test:'f0aa98f93d42ad798c5115d22f691e678ce8cc3a',
+}
+for(const [file,expected] of [
+  ['src/features/orders/OrderCatalogResolutionModal.tsx',reviewedGenderScopeResolver.modal],
+  ['scripts/test-resolver-gender-scope-guard-20261018.mjs',reviewedGenderScopeResolver.test],
+]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,
+  'Unreviewed gender scope resolver regression: '+file)
 const reviewedExchangeCancelUx={
   previousApp:'086d433f46b2f6da129f82eaf636f01e9fdd8499',
   previousTable:'f398558a8860a8fc587fb3cf227533c6219e2200',
@@ -409,6 +420,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-order-exchange-bulk-cancellation-20261018.mjs',false],
+  ['scripts/test-resolver-gender-scope-guard-20261018.mjs',false],
   ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',false],
   ['scripts/test-order-return-cancel-menu-20261018.mjs',false],
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
