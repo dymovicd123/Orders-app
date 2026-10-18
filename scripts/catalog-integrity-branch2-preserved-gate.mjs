@@ -132,7 +132,7 @@ const reviewedExchangeCancelUx={
   app:'c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7',
   table:'e74f3d1077900ddec02c1b7103857d9b4e572f4c',
   regression:'dece747acaa4352ae72246886b6756b7d8de8053',
-  zeroDebitTest:'ea0b1cbf405c11984b1fd96ec4ea9e32831e7e65',
+  zeroDebitTest:'034b2f9c735e63d786e6eef48e3c746ff77c6623',
   returnCancelTest:'6e82869c8b5848faef6315c0e51bb327053e24e2',
 }
 check(reviewedExchangeCancelUx.previousApp==='086d433f46b2f6da129f82eaf636f01e9fdd8499'
