@@ -18,7 +18,7 @@ if (!process.env.RETIRED_CORRECTION_READBACK_REPLAY) {
   const accepted='78b641d14f140906ae91a310fa655af08653cdf3';
   const reviewed={
     'worker/domains/retired-item-correction.ts': ['dcbdc5000df7be78761929906931a84df9a8d002','4553e6df8b17433a21b9b0a386c06b14ddba6546'],
-    'scripts/test-retired-manager-one-line-correction-20261018.mjs': ['b08e0fd3630dd67b7f3783d14befc7d106130e3f','6cd4a0f0441de1238468a91c07ad862795a98c26']
+    'scripts/test-retired-manager-one-line-correction-20261018.mjs': ['b08e0fd3630dd67b7f3783d14befc7d106130e3f','dabb66183fe09ed8ff225e62faa79670cbdcef90']
   };
   const hash=(pathName)=>gitBlob(fs.readFileSync(pathName));
   const exec=(cmd,args,env=process.env)=>{
