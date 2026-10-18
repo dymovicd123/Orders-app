@@ -18,8 +18,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     order:any; items:any[]; itemId:number; price:string; error:string; loading:boolean;
   } | null>(null)
   const [exchangeChainDraft,setExchangeChainDraft] = useState<{
-    order:any;selected:number;available:number[];preview:any|null;error:string;loading:boolean;
+    order:any;mode:'last'|'all';plan:any|null;error:string;loading:boolean;submitting:boolean;progress:string;
   } | null>(null)
+  const [linkedAdminEditOrder,setLinkedAdminEditOrder] = useState<any|null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
     order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
     physicalAnswer?:'undecided'|'not_issued'|'issued';
@@ -32,6 +33,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
     loadExchangeCancellationPreview,
+    loadOrderExchangeCancellationPlan,
+    cancelOrderExchangeChain,
     loadAdminOrderDeletePreview,
     deleteOrderAsAdmin,
     executeAdminDeleteChain,
@@ -91,14 +94,43 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     const value = priceDraft?.prices[Number(item.id)] ?? ''
     return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
   })
-  // Ask about the real handover for EVERY erroneous-order deletion, including
-  // orders where bookkeeping wrongly says "not sent".
+  // Ask only when the SERVER found recorded handover, not for every unshipped order.
   const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
-    &&!adminDeleteDraft.preview.activeSaga)
+    &&!adminDeleteDraft.preview.activeSaga
+    &&(adminDeleteDraft.preview.requiresPhysicalFact
+      ||(adminDeleteDraft.preview.appliedStockReview?.appliedCount>0
+        &&adminDeleteDraft.preview.appliedStockReview?.allowed)))
   const deleteReasons = adminDeleteDraft?.preview
     ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
       !(adminDeleteDraft.preview?.canPreparePhysicalCorrection
         && reason.startsWith('Для цепочки с зафиксированной выдачей товара'))) : []
+
+
+  const openMetadataCorrection=(order:any)=>setMetadataDraft({order,error:'',next:{
+    orderDate:String(order.order_date||'').trim(),
+    customerPhone:String(order.customer_phone||'').trim(),
+    customerName:String(order.customer_name||'').trim(),
+    city:String(order.city||'').trim(),
+    deliveryType:String(order.delivery_type||'').trim(),
+    comment:String(order.comment||'').trim(),
+  }})
+  const openPriceCorrection=(order:any)=>setPriceDraft({order,error:'',
+    prices:Object.fromEntries((order.items||[])
+      .filter((item:any)=>Number(item.id)>0&&Number(item.quantity)>0)
+      .map((item:any)=>[Number(item.id),String(item.unitPrice??0)])),
+  })
+  const openExchangeCancellation=(order:any,mode:'last'|'all')=>{
+    setExchangeChainDraft({order,mode,plan:null,error:'',loading:true,submitting:false,progress:''})
+    void (async()=>{
+      try{
+        const plan=await loadOrderExchangeCancellationPlan(order,mode)
+        setExchangeChainDraft(d=>d&&d.order.id===order.id&&d.mode===mode?{...d,plan,loading:false,error:''}:d)
+      }catch(error){
+        setExchangeChainDraft(d=>d&&d.order.id===order.id&&d.mode===mode
+          ?{...d,plan:null,loading:false,error:error instanceof Error?error.message:'Проверка не удалась.'}:d)
+      }
+    })()
+  }
 
   const kaspiAverageCheck = summary.count > 0 ? Math.round(summary.total / summary.count) : 0
 
@@ -459,16 +491,17 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                       : 'Есть возврат денег'}
                               </span>
                             ) : null}
-                            {projection.canEdit ? (
+                            {(projection.canEdit || (isAdmin && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
                               <button
                                 className="primary compact"
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  if(projection.canEdit)handleEditOrder(order, kaspiMode ? 'kaspi' : 'orders')
+                                  else setLinkedAdminEditOrder(order)
                                 }}
                               >
-                                Редактировать
+                                {projection.canEdit?'Редактировать':'Исправить заказ'}
                               </button>
                             ) : null}
                             {!retainedOnly && !archived && !projection.deleted ? (
@@ -481,14 +514,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   <button className="secondary compact" type="button"
                                     onClick={(event)=>{
                                       event.stopPropagation()
-                                      setMetadataDraft({order,error:'',next:{
-                                        orderDate:String(order.order_date||'').trim(),
-                                        customerPhone:String(order.customer_phone||'').trim(),
-                                        customerName:String(order.customer_name||'').trim(),
-                                        city:String(order.city||'').trim(),
-                                        deliveryType:String(order.delivery_type||'').trim(),
-                                        comment:String(order.comment||'').trim(),
-                                      }})
+                                      openMetadataCorrection(order)
                                     }}>
                                     Исправить реквизиты
                                   </button>
@@ -496,14 +522,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item:any) => Number(item.id)>0 && Number(item.quantity)>0) ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
-                                    const first = order.items.find((item) => Number(item.quantity) > 0 && Number(item.id) > 0)
-                                    if (!first) return
-                                    setPriceDraft({order,
-                                      prices: Object.fromEntries(order.items
-                                        .filter((item:any)=>Number(item.id)>0 && Number(item.quantity)>0)
-                                        .map((item:any)=>[Number(item.id),String(item.unitPrice ?? 0)])),
-                                      error: '',
-                                    })
+                                    openPriceCorrection(order)
                                   }}>
                                     Исправить записанную цену
                                   </button>
@@ -534,18 +553,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {extraActionsOrderId === order.id && Number(order.committed_exchange_count||0)>0 ? (
                                   <button className="secondary compact" type="button" onClick={(event)=>{
                                     event.stopPropagation()
-                                    setExchangeChainDraft({order,selected:0,available:[],preview:null,error:'',loading:true})
-                                    void (async()=>{
-                                      try {
-                                        const result=await loadExchangeCancellationPreview(order)
-                                        setExchangeChainDraft({order,selected:result.preview?.exchangeId||0,
-                                          available:result.availableExchangeIds,preview:result.preview,error:'',loading:false})
-                                      } catch(error) {
-                                        setExchangeChainDraft({order,selected:0,available:[],preview:null,loading:false,
-                                          error:error instanceof Error?error.message:'Не удалось загрузить зависимости обмена.'})
-                                      }
-                                    })()
-                                  }}>Порядок отмены обменов</button>
+                                    openExchangeCancellation(order,'last')
+                                  }}>Отменить обмены</button>
                                 ) : null}
                               </div>
                             ) : null}
@@ -900,56 +909,118 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 </div>
               ) : null}
-              {exchangeChainDraft ? (
-                <div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{
-                  if(event.target===event.currentTarget)setExchangeChainDraft(null)
-                }}>
-                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Порядок отмены обменов" style={{maxWidth:580}}>
+              {linkedAdminEditOrder ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={event=>{if(event.target===event.currentTarget)setLinkedAdminEditOrder(null)}}>
+                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Редактирование после обмена" style={{maxWidth:600}}>
                     <div className="modal-head">
-                      <div><div className="card-label">Только проверка зависимостей</div>
-                        <h3>Порядок отмены — {exchangeChainDraft.order.external_id}</h3></div>
-                      <button className="ghost compact" type="button" onClick={()=>setExchangeChainDraft(null)}>Закрыть</button>
+                      <div><div className="card-label">Администратор · заказ с зависимыми операциями</div>
+                        <h3>Исправить заказ {linkedAdminEditOrder.external_id}</h3></div>
+                      <button className="ghost compact" type="button" onClick={()=>setLinkedAdminEditOrder(null)}>Закрыть</button>
                     </div>
-                    {exchangeChainDraft.loading ? <p>Проверяю последовательность обменов и возвратов…</p> : null}
-                    {exchangeChainDraft.error ? <p role="alert" className="error">{exchangeChainDraft.error}</p> : null}
-                    {exchangeChainDraft.available.length>0 ? (
-                      <label className="form-field"><span>Какой обмен нужно отменить?</span>
-                        <select value={exchangeChainDraft.selected} disabled={exchangeChainDraft.loading}
-                          onChange={(event)=>{
-                            const exchangeId=Number(event.target.value)
-                            setExchangeChainDraft((d)=>d?{...d,selected:exchangeId,loading:true,error:''}:d)
-                            void (async()=>{
-                              try {
-                                const result=await loadExchangeCancellationPreview(exchangeChainDraft.order,exchangeId)
-                                setExchangeChainDraft((d)=>d?{...d,loading:false,selected:exchangeId,
-                                  preview:result.preview,available:result.availableExchangeIds,error:''}:d)
-                              } catch(error) {
-                                setExchangeChainDraft((d)=>d?{...d,loading:false,preview:null,
-                                  error:error instanceof Error?error.message:'Не удалось обновить проверку.'}:d)
-                              }
-                            })()
-                          }}>
-                          {exchangeChainDraft.available.map((id:number)=><option key={id} value={id}>Обмен #{id}</option>)}
-                        </select>
-                      </label>
-                    ) : null}
-                    {exchangeChainDraft.preview ? (
+                    <p>После обмена можно исправить реквизиты и допустимые записанные цены.
+                      Эти действия не переписывают выданные товары и связанные платежи.</p>
+                    <div className="toolbar-actions" style={{flexWrap:'wrap'}}>
+                      <button className="secondary" type="button" onClick={()=>{
+                        openMetadataCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
+                      }}>Исправить реквизиты</button>
+                      {linkedAdminEditOrder.pricing_mode==='itemized_v1'?(
+                        <button className="secondary" type="button" onClick={()=>{
+                          openPriceCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
+                        }}>Исправить цены</button>
+                      ):null}
+                      {Number(linkedAdminEditOrder.committed_exchange_count||0)>0?(
+                        <button className="secondary" type="button" onClick={()=>{
+                          openExchangeCancellation(linkedAdminEditOrder,'last');setLinkedAdminEditOrder(null)
+                        }}>Отменить обмены</button>
+                      ):null}
+                    </div>
+                    <p className="muted">Для изменения состава, количества и оплаты в полном редакторе
+                      сначала отмените зависимые обмены и возвраты. Иначе изменения разрушат
+                      связь заказа с уже проведённым складским и финансовым учётом.</p>
+                  </div>
+                </div>
+              ) : null}
+              {exchangeChainDraft ? (
+                <div className="modal-backdrop" role="presentation" onMouseDown={event=>{
+                  if(event.target===event.currentTarget&&!exchangeChainDraft.submitting)setExchangeChainDraft(null)
+                }}>
+                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Отмена обменов заказа"
+                    style={{maxWidth:680,maxHeight:'min(90vh,820px)',overflowY:'auto'}}>
+                    <div className="modal-head">
+                      <div><div className="card-label">Отмена с сохранением истории</div>
+                        <h3>Обмены — {exchangeChainDraft.order.external_id}</h3></div>
+                      <button className="ghost compact" type="button" disabled={exchangeChainDraft.submitting}
+                        onClick={()=>setExchangeChainDraft(null)}>Закрыть</button>
+                    </div>
+                    <p>Что необходимо отменить? Сам заказ останется. Система проверит деньги, резервы
+                      и склад до каждой операции.</p>
+                    <div className="toolbar-actions" style={{flexWrap:'wrap'}}>
+                      {(['last','all'] as const).map(mode=>(
+                        <button type="button" key={mode}
+                          className={exchangeChainDraft.mode===mode?'primary':'secondary'}
+                          disabled={exchangeChainDraft.submitting||exchangeChainDraft.loading}
+                          onClick={()=>openExchangeCancellation(exchangeChainDraft.order,mode)}>
+                          {mode==='last'?'Последний обмен':'Все обмены'}
+                        </button>
+                      ))}
+                    </div>
+                    {exchangeChainDraft.loading?<p>Проверяю зависимости…</p>:null}
+                    {exchangeChainDraft.error?<p role="alert" className="error">{exchangeChainDraft.error}</p>:null}
+                    {exchangeChainDraft.progress?<p role="status">{exchangeChainDraft.progress}</p>:null}
+                    {exchangeChainDraft.plan?(
                       <>
-                        <p>{exchangeChainDraft.preview.notice}</p>
-                        <ol>
-                          {exchangeChainDraft.preview.steps.map((step:any)=>(
+                        <p><strong>Обменов: {exchangeChainDraft.plan.selectedExchangeIds.length}.
+                          {' '}Шагов отмены: {exchangeChainDraft.plan.steps.length}.</strong></p>
+                        <p className="muted">{exchangeChainDraft.plan.notice}</p>
+                        <ol style={{paddingLeft:24,display:'grid',gap:8}}>
+                          {exchangeChainDraft.plan.steps.map((step:any)=>(
                             <li key={step.type+':'+step.id}>
                               {step.type==='return'?'Возврат':'Обмен'} #{step.id}
-                              {' — '}{step.reason}{step.requiresManualReview?' (нужна ручная проверка)':''}
+                              {' — '}{step.reason}
+                              {step.requiresManualReview?' (нужна ручная проверка)':''}
                             </li>
                           ))}
                         </ol>
-                        <p className="muted">Это только рекомендуемый порядок. Отмены здесь не выполняются. Перед каждым действием система отдельно проверит финансы, склад и актуальность данных.</p>
+                        <p className="muted">Самостоятельные возвраты, не зависящие от обменов,
+                          не отменяются. Если отдельный шаг нельзя безопасно выполнить,
+                          цепочка остановится. Повторное открытие покажет оставшиеся операции.</p>
                       </>
-                    ) : !exchangeChainDraft.loading && !exchangeChainDraft.error ?
-                      <p>У этого заказа нет активных обменов.</p> : null}
+                    ):!exchangeChainDraft.loading&&!exchangeChainDraft.error?<p>Нет активных обменов.</p>:null}
                     <div className="toolbar-actions">
-                      <button type="button" className="secondary" onClick={()=>setExchangeChainDraft(null)}>Понятно</button>
+                      <button className="secondary" type="button" disabled={exchangeChainDraft.submitting}
+                        onClick={()=>setExchangeChainDraft(null)}>Закрыть</button>
+                      {exchangeChainDraft.plan?.canExecute&&exchangeChainDraft.plan.steps.length>0?(
+                        <button className="ghost danger" type="button"
+                          disabled={exchangeChainDraft.loading||exchangeChainDraft.submitting||savingOrder}
+                          onClick={()=>{void(async()=>{
+                            const draft=exchangeChainDraft
+                            if(!draft?.plan)return
+                            const returns=draft.plan.steps.filter((s:any)=>s.type==='return').length
+                            if(!window.confirm('Отменить '+draft.plan.selectedExchangeIds.length
+                              +' обмен(ов) по заказу '+draft.order.external_id+'?\n'
+                              +'Шагов: '+draft.plan.steps.length+'. Зависимых возвратов: '+returns
+                              +'. Каждая операция отдельно проверит деньги и склад.'))return
+                            setExchangeChainDraft(d=>d?{...d,submitting:true,error:'',progress:'Начинаю отмену…'}:d)
+                            try{
+                              await cancelOrderExchangeChain(draft.order,draft.plan,
+                                (done:number,total:number)=>setExchangeChainDraft(d=>d
+                                  ?{...d,progress:'Выполнено '+done+' из '+total}:d))
+                              setExchangeChainDraft(null)
+                            }catch(error){
+                              const message=error instanceof Error?error.message:'Отмена остановлена.'
+                              try{
+                                const plan=await loadOrderExchangeCancellationPlan(draft.order,draft.mode)
+                                setExchangeChainDraft(d=>d?{...d,plan,error:message,submitting:false,loading:false}:d)
+                              }catch{
+                                setExchangeChainDraft(d=>d?{...d,plan:null,error:message,submitting:false,loading:false}:d)
+                              }
+                            }
+                          })()}}>
+                          {exchangeChainDraft.submitting?'Отменяю…'
+                            :exchangeChainDraft.mode==='last'?'Отменить последний обмен':'Отменить все обмены'}
+                        </button>
+                      ):null}
                     </div>
                   </div>
                 </div>
