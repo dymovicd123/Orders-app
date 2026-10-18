@@ -18,7 +18,7 @@ const db={
  prepare(q){const stmt=sql.prepare(q);return {bind(...args){return {
   async first(){return stmt.get(...args)||null},
   async all(){return {results:stmt.all(...args)}},
-  async run(){const r=stmt.run(...args);return {meta:{changes:r.changes}}}
+  async run(){const r=stmt.run(...args);return {meta:{changes:0}}}
  }}}},
  async batch(statements){sql.exec('BEGIN IMMEDIATE');try{
   const out=[];for(const s of statements)out.push(await s.run())
@@ -46,6 +46,11 @@ assert.equal(saved.debtAmount,17000)
 assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM retired_order_item_corrections').get().n,1)
 assert.equal(sql.prepare('SELECT status FROM retired_order_item_corrections WHERE order_item_id=100').get().status,'completed')
+// The real production symptom: Cloudflare driver can return unexpected
+// per-statement metadata even after the entire D1 batch commits correctly.
+// The handler must not show the manager an error if the persisted facts agree.
+assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
+assert.equal(sql.prepare('SELECT status FROM retired_order_item_corrections WHERE order_item_id=100').get().status,'completed')
 assert.equal(sql.prepare('SELECT material_snapshot FROM order_items WHERE id=100').get().material_snapshot,'ШЕРСТЬ')
 assert.equal(sql.prepare('SELECT unit_price FROM order_items WHERE id=100').get().unit_price,22000)
 assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=1').get().total_amount,22000)
@@ -71,5 +76,11 @@ assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_movements').get().n,b
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments').get().n,before.payments)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=1').get().quantity,0)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_stock WHERE variant_id=22').get().n,1)
-console.log('RETIRED_MANAGER_CORRECTION_RESERVES_AT_ZERO_OR_MISSING_STOCK_NO_FAKED_PHYSICAL_WITH_PRICE_AND_AUDIT_PASSED')
+// Retry with deliberately inconsistent saved business state should pinpoint
+// the exact category of mismatch, not tell the manager to inspect a SQL journal.
+sql.prepare("UPDATE inventory_reservations SET variant_id=20 WHERE order_item_id=100").run()
+await assert.rejects(()=>correctRetiredItem(db,req),/резерв не закреплён за новым исполнением/i)
+sql.prepare("UPDATE inventory_reservations SET variant_id=21 WHERE order_item_id=100").run()
+assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
+console.log('RETIRED_CORRECTION_COMMITTED_BATCH_DRIVER_META_ZERO_AND_DESCRIPTIVE_READBACK_PASSED')
 sql.close()
