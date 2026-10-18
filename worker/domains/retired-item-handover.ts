@@ -57,7 +57,7 @@ export async function confirmRetiredOrderItemDelivered(
     throw new Error('Позиция изменилась либо не относится к удалённому исполнению. Обновите заказ.');
   }
   const now=new Date().toISOString();
-  await db.batch([
+  const writes = await db.batch([
     db.prepare(`
       INSERT OR IGNORE INTO retired_order_item_issues(
         order_item_id,order_id,retired_variant_id,quantity,confirmed_by,confirmed_at
@@ -101,5 +101,7 @@ export async function confirmRetiredOrderItemDelivered(
       || cleanText(confirmed?.stock_writeoff_status)!=='retired_physically_issued') {
     throw new Error('Подтверждение не записано: заказ или резерв изменились. Обновите страницу.');
   }
-  return {ok:true,alreadyConfirmed:false,orderId,orderItemId:itemId};
+  // A racing retry can pass the initial read but lose INSERT OR IGNORE.
+  // In that case there is only one journal event, and no second activity event.
+  return {ok:true,alreadyConfirmed:toInt(writes[0]?.meta?.changes,0)===0,orderId,orderItemId:itemId};
 }
