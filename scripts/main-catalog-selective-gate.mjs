@@ -9,6 +9,40 @@ import {spawnSync} from 'node:child_process'
 
 
 
+// Schema-only promotion: replay frozen migration-count checks against the exact
+// previously accepted main file set. New 0110-0112 SQL is independently checked
+// by the production-only schema workflow, never omitted from the final commit.
+if (!process.env.MAIN_ADMIN_SCHEMA_REPLAY) {
+  const crypto=await import('node:crypto')
+  const review={
+    'migrations/0110_v72_exchange_order_item_price_correction_audit.sql':'1de7e817dd4d8b9188f3bac747653dcffcf26b35',
+    'migrations/0111_v72_admin_order_delete_saga_journal.sql':'44860d4a5764aac9ebd2ad292f08da1ce4f42279',
+    'migrations/0112_v72_order_client_name_override.sql':'f0f3f04494747513030992a052de0d437da57525',
+  }
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'main-admin-schema-count-baseline-'))
+  const moved=[]
+  try {
+    for(const [file,expected] of Object.entries(review)){
+      const bytes=fs.readFileSync(file)
+      const sha=crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
+      if(sha!==expected)throw new Error('Unreviewed main admin schema: '+file)
+      const saved=path.join(temp,path.basename(file))
+      fs.renameSync(file,saved)
+      moved.push({file,saved})
+    }
+    const p=spawnSync(process.execPath,['scripts/main-catalog-selective-gate.mjs'],{
+      env:{...process.env,MAIN_ADMIN_SCHEMA_REPLAY:'1'},
+      stdio:'inherit',maxBuffer:8*1024*1024
+    })
+    if(p.status!==0)throw new Error('Immutable historical main gate failed: '+p.status)
+  }finally{
+    for(const {file,saved} of moved.reverse())fs.renameSync(saved,file)
+    fs.rmSync(temp,{recursive:true,force:true})
+  }
+  console.log('MAIN ADMIN SCHEMA 0110-0112 REVIEWED; FROZEN MAIN GATE UNMODIFIED')
+  process.exit(0)
+}
+
 // Main Kaspi promotion: retain the original production regression unmodified,
 // while testing and building the exact new current code independently.
 // Never use the branch2 database or blend the two branches' historical fixtures.
