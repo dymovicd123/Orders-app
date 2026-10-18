@@ -110,8 +110,25 @@ const reviewedOptionalMetadata={
 check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2cb5fd260e'
   &&reviewedOptionalMetadata.previousWrite==='9f327389c1e27763a2a343fd00afb2bb2b170ab1',
   'Previous reviewed metadata form or Worker changed')
-check(gitBlob(fs.readFileSync('src/App.tsx','utf8'))===reviewedReferenceDropdownUx.app,
-  'Unreviewed reference dropdown App drift')
+// The 18 October role and latency change starts from the accepted editor
+// baseline. No Stage04 historical fixtures or preceding approved SHA are changed.
+const reviewedAdminEditor={
+  baselineApp:reviewedReferenceDropdownUx.app,
+  baselineWorker:reviewedClientNameFix.write,
+  app:'b08a703faf24bb5d11fad51a38509be28d174c94',
+  write:'8af447451f82a89bfee29f51f1cc2ac040c13cc5',
+  projection:'62823c931c1c5078e167154a5ad70919272ac8cb',
+  editor:'ada21af4cae3f554088b6ab3641b20a380ba08c7',
+  regression:'d1b65ed010557fbe353962cf218c94fea6becc10',
+}
+for(const [file,expected] of [
+  ['src/App.tsx',reviewedAdminEditor.app],
+  ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
+  ['src/app/orderOperationalProjection.ts',reviewedAdminEditor.projection],
+  ['src/features/sections/OrderEditorSection.tsx',reviewedAdminEditor.editor],
+  ['scripts/test-admin-full-editor-role-performance-20261018.mjs',reviewedAdminEditor.regression],
+]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unreviewed admin editor role/performance drift: '+file)
+
 check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedOptionalMetadata.table,
   'Unreviewed metadata correction UI drift')
 check(reviewedOptionalMetadata.write==='e157deed999da92d7207c9bc88a70f4ea662e562','Unexpected previous Worker baseline')
@@ -126,15 +143,15 @@ const reviewedClientNameFix={
   test:'73be07b2041138b3a17c1cc15d4811eeb5a3ddc5',
 }
 for(const [file,sha] of [
-  ['worker/domains/orders-write.ts',reviewedClientNameFix.write],
+  ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
   ['worker/domains/orders-read.ts',reviewedClientNameFix.read],
   ['worker/domains/clients.ts',reviewedClientNameFix.clients],
   ['migrations/0112_v72_order_client_name_override.sql',reviewedClientNameFix.migration],
   ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',reviewedClientNameFix.test],
 ])check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed customer name patch drift: '+file)
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedReferenceDropdownUx.app
-  : file === 'worker/domains/orders-write.ts' ? reviewedClientNameFix.write
+  ? reviewedAdminEditor.app
+  : file === 'worker/domains/orders-write.ts' ? reviewedAdminEditor.write
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -366,6 +383,7 @@ for(const entry of inventorySafetyFixtures){
 
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
+  ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
   ['scripts/test-admin-delete-exchange-details-20261017.mjs',true],
   ['scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs',true],
