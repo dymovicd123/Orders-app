@@ -44,7 +44,7 @@ jobs:
           grep -q 'correct-retired-item' worker/index.ts
           grep -q 'confirm-retired-delivery' worker/index.ts
           grep -q 'authUser.displayName' worker/index.ts
-      - name: Check exact real SQL handler: handover, one-line correction, no duplicate reserve
+      - name: "Check exact real SQL handler: handover, one-line correction, no duplicate reserve"
         run: |
           set -euo pipefail
           node --experimental-strip-types scripts/test-retired-order-item-handover-20261018.mjs
