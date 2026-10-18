@@ -7113,11 +7113,24 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
+        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; kaspiPaymentPending?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
         if (response.ok) completeCriticalRequest(criticalKey, critical.requestId)
         return { response, result }
       }
       let { response, result } = await submitShipping()
+      // Shipping is already committed. Retry only the server's idempotent
+      // Kaspi finance completion without shipping physical stock again.
+      if (response.ok && result.kaspiPaymentPending) {
+        try {
+          const resumed = await submitShipping()
+          if (resumed.response.ok) {
+            response = resumed.response
+            result = resumed.result
+          }
+        } catch (error) {
+          console.warn('Kaspi finance retry after committed shipping failed', error)
+        }
+      }
       if (!response.ok && (result.code === 'workshop_not_ready' || result.code === 'stock_handover_review_required')) {
         setMessage(result.message || 'Перед отправкой проверьте товары со склада.')
         await openOrderStockHandover(order)
@@ -7166,7 +7179,10 @@ function removeDebtPayment(index: number) {
       }
       // Shipping is now the physical stock event. Invalidate cached physical/reserved/available values.
       invalidateInventoryStockCaches(true)
-      setMessage(`Заказ ${order.external_id} отмечен как отправленный клиенту.`)
+      invalidateFinanceReadCaches()
+      setMessage(result.kaspiPaymentPending
+        ? `Заказ ${order.external_id} отправлен. Учёт оплаты Kaspi пока не завершился; обратитесь к администратору для повторной сверки. Повторно отправлять товары не нужно.`
+        : `Заказ ${order.external_id} отмечен как отправленный клиенту.`)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
