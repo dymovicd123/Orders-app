@@ -14,10 +14,16 @@ async function row(db:D1Database,orderId:number,itemId:number) {
  LEFT JOIN catalog_stock_positions sp ON sp.id=v.stock_position_id
  WHERE oi.order_id=? AND oi.id=? LIMIT 1`).bind(orderId,itemId).first<Row>();
  if(!data)error('Позиция заказа не найдена. Обновите заказ.');
- if(cleanText(data.order_status)!=='active'||cleanText(data.archived_at)
-  ||cleanText(data.shipping_status)==='sent'||cleanText(data.stock_writeoff_status)!=='catalog_retired'
-  ||toInt(data.is_workshop,0)!==0||(toInt(data.old_active,0)!==0&&toInt(data.execution_active,0)!==0))
-  error('Исправление возможно только для неотправленной позиции удалённого исполнения.');
+ if(cleanText(data.order_status)!=='active'||cleanText(data.archived_at))
+  error('Этот заказ закрыт или находится в архиве. Состав закрытого заказа менеджер изменить не может.');
+ if(cleanText(data.shipping_status)==='sent')
+  error('Заказ уже отмечен отправленным. Менять исполнение после отправки через резолвер нельзя.');
+ if(toInt(data.is_workshop,0)!==0)
+  error('Эта позиция оформлена для цеха, а не со склада. Простое исправление складского исполнения к ней не подходит.');
+ if(cleanText(data.stock_writeoff_status)!=='catalog_retired')
+  error('Позиция уже изменилась: удалённый товар больше не ожидает исправления. Обновите заказ и проверьте фактическую позицию.');
+ if(toInt(data.old_active,0)!==0&&toInt(data.execution_active,0)!==0)
+  error('Это исполнение снова активно в каталоге. Резолвер удалённых исполнений для него не требуется.');
  return data;
 }
 async function blockers(db:D1Database,orderId:number,itemId:number){
@@ -28,8 +34,16 @@ async function blockers(db:D1Database,orderId:number,itemId:number){
   (SELECT COUNT(*) FROM inventory_reservations WHERE order_item_id=? AND status NOT IN ('released')) AS reserved,
   (SELECT COUNT(*) FROM retired_order_item_issues WHERE order_item_id=?) AS physically_issued
  `).bind(orderId,orderId,orderId,itemId,itemId).first<Row>();
- if(Object.values(r||{}).some(v=>toInt(v,0)>0))
-  error('У заказа есть выдача, обмен, возврат или незавершённый резерв. Требуется администратор.');
+ if(toInt(r?.physically_issued,0)>0)
+  error('По этой позиции уже подтвердили фактическую выдачу. Заменять выданную вещь через резолвер нельзя.');
+ if(toInt(r?.ex,0)>0)
+  error('По заказу уже оформлен обмен. Исправление затронуло бы историю обмена; его должен проверить администратор.');
+ if(toInt(r?.ret,0)>0)
+  error('По заказу уже оформлен возврат. Исправление затронуло бы историю возврата; его должен проверить администратор.');
+ if(toInt(r?.issued,0)>0)
+  error('В заказе уже есть выданные товары. Менять состав упрощённой операцией нельзя.');
+ if(toInt(r?.reserved,0)>0)
+  error('По этой позиции ещё действует старый резерв. Обновите заказ: перед исправлением нужно разобраться именно с ним.');
 }
 function safePrice(r:Row){
  return n(r.sum_lines)===n(r.total_amount)&&n(r.total_amount)===n(r.received_amount)+n(r.debt_amount)
@@ -107,8 +121,11 @@ function explainCorrectionStage(stage:string):never{
 export async function previewRetiredItemCorrection(db:D1Database,orderId:number,itemId:number){
  const r=await row(db,orderId,itemId);
  await blockers(db,orderId,itemId);
- if(await db.prepare('SELECT 1 FROM retired_order_item_corrections WHERE order_item_id=?').bind(itemId).first())
-  error('Эта позиция уже исправлена. Обновите заказ.');
+ const applied=await db.prepare('SELECT status,new_variant_id,new_price FROM retired_order_item_corrections WHERE order_item_id=?').bind(itemId).first<Row>();
+ if(applied)
+  error(cleanText(applied.status)==='completed'
+    ? 'Эта позиция уже исправлена: сохранена цена '+toInt(applied.new_price,0)+' ₸. Закройте окно и обновите заказ.'
+    : 'Для этой позиции исправление пока не завершилось. Не повторяйте действие; сообщите администратору номер заказа.');
  return {ok:true,oldVariantId:toInt(r.variant_id,0),quantity:toInt(r.quantity,0),
   oldPrice:toInt(r.unit_price,0),oldTotal:toInt(r.total_amount,0),
   received:toInt(r.received_amount,0),canEditPrice:safePrice(r),
@@ -133,9 +150,14 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
  }
  const r=await row(db,orderId,itemId);
  await blockers(db,orderId,itemId);
- if(n(r.variant_id)!==oldVariantId||n(r.quantity)!==quantity||n(r.unit_price)!==oldPrice
-  ||n(r.total_amount)!==oldTotal)
-  error('Данные заказа изменились или цена строки некорректна. Обновите заказ.');
+ if(n(r.variant_id)!==oldVariantId)
+  error('С момента открытия окна в заказе изменился товар. Обновите заказ — прежняя замена больше не нужна.');
+ if(n(r.quantity)!==quantity)
+  error('С момента открытия окна изменилось количество позиции. Обновите заказ и выберите исполнение заново.');
+ if(n(r.unit_price)!==oldPrice)
+  error('С момента открытия окна изменили цену позиции. Обновите заказ, чтобы не затереть новую цену.');
+ if(n(r.total_amount)!==oldTotal)
+  error('С момента открытия окна изменилась общая сумма заказа. Обновите заказ перед исправлением товара.');
  const delta=(newPrice-oldPrice)*quantity, nextTotal=oldTotal+delta;
  if(!Number.isSafeInteger(delta)||!Number.isSafeInteger(nextTotal)||nextTotal<0)
   error('Некорректный пересчёт цены.');
@@ -166,6 +188,8 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
   size:target.size,unitPrice:newPrice,lineTotal:newLineTotal,total:nextTotal,quantity});
  // The first journal INSERT is the per-line claim. All changes are a single
  // Cloudflare D1 atomic batch. Subsequent statements only run while pending.
+ let batchError:unknown=null;
+ try {
  await db.batch([
   db.prepare(`INSERT OR IGNORE INTO retired_order_item_corrections(
    order_item_id,order_id,old_variant_id,new_variant_id,quantity,
@@ -275,11 +299,21 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
       ) THEN 'completed' ELSE 'invalid_partial_state' END
    WHERE order_item_id=? AND status='pending'`).bind(itemId)
  ]);
+ } catch(reason) {
+  batchError=reason;
+ }
  // D1 batches are committed as a single transaction. Driver-reported per-step
  // changes may be unreliable; verify business state instead of declaring a
  // successful correction failed because of meta.changes.
  const verified=await correctionReadback(db,itemId,orderId);
- if(!verified.ok)explainCorrectionStage(verified.stage);
- return {ok:true,alreadyCorrected:false,orderItemId:itemId,
-  totalAmount:nextTotal,debtAmount:nextTotal-toInt(r.received_amount,0)};
+ if(verified.ok)return {ok:true,alreadyCorrected:false,orderItemId:itemId,
+   totalAmount:nextTotal,debtAmount:nextTotal-toInt(r.received_amount,0)};
+ if(batchError){
+   console.error('Retired SKU correction D1 transaction failed', {
+     orderId,itemId,stage:verified.stage,error:batchError instanceof Error?batchError.message:String(batchError)
+   });
+   if(verified.stage==='journal_not_created')
+     error('Исправление не сохранилось: товар, резерв и сумму заказа не удалось записать вместе. Прежний товар остался в заказе. Обновите окно и попробуйте снова.');
+ }
+ explainCorrectionStage(verified.stage);
 }
