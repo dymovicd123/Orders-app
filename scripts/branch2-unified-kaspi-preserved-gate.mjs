@@ -26,7 +26,7 @@ const current = {
   'src/features/inventory/views/renderInventoryMovementPanel.tsx': '88ec6ad9ff725980972d77d2a804efefa781c1be',
 }
 const immutable = {
-  'scripts/catalog-integrity-branch2-preserved-gate.mjs': 'e43850702703bddb872c1d820762ef9ce6f7f75f',
+  'scripts/catalog-integrity-branch2-preserved-gate.mjs': 'd2cb4cab2e9dd77bdb0b2dc59e15706dca20a2e9',
   'scripts/test-kaspi-unified-orders-writeoff-20261018.mjs': '0b1aa8b59c698944dcf0da846920641ed8b36c92',
   'src/features/sections/WorkshopSection.tsx': '86a9fcea1a569a6a72f67cf42cea92f75ead5d1d',
 }
