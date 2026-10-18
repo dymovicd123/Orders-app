@@ -124,3 +124,22 @@
 .ws-fast-day-link:focus-visible{outline:2px solid #2563eb;outline-offset:3px;border-radius:4px}
 .ws-settlements-table-scroll .data-table td{vertical-align:middle}
 .ws-settlements-table-scroll .data-table th{white-space:nowrap}
+
+/* Stage04 final cutover: simple payout, no cash-method selection. */
+.ws-fast-comment{display:grid;gap:5px;max-width:480px;font-size:.79rem;font-weight:650;color:#475569}
+.ws-fast-comment input,.ws-opening-form input[type=number]{width:100%;min-width:0;box-sizing:border-box;
+  padding:10px 12px;font:inherit;color:#0f172a;background:#fff;border:1px solid #cbd5e1;border-radius:9px}
+.ws-fast-pay{background:#fff;border-color:#dce4ef;padding:17px 19px}
+.ws-fast-pay-actions .primary{font-weight:750}
+.ws-opening-form{display:grid;gap:12px;margin-top:12px;max-width:580px}
+.ws-opening-form p{margin:0;line-height:1.5}
+.ws-opening-form>label:not(.ws-opening-confirm){display:grid;gap:6px;max-width:290px;font-weight:700}
+.ws-opening-confirm{display:flex;align-items:flex-start;gap:9px;line-height:1.4;cursor:pointer;font-size:.84rem}
+.ws-opening-confirm input{margin-top:3px;flex:0 0 auto}
+.ws-opening-form>button{justify-self:start;min-height:40px}
+.ws-settlements-startup>strong{display:block;font-size:.96rem;margin-bottom:3px}
+@media(max-width:590px){
+  .ws-fast-pay{padding:14px}
+  .ws-opening-form>button{width:100%}
+  .ws-opening-form>label:not(.ws-opening-confirm){max-width:100%}
+}
