@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto'
 
 const preStage04 = '5910cd2bc632bc8799d0b9c325f4d3f64c92c93b'
 const changed = {
+  'package.json': ['6704ecffe7139119f982732584bb1b981a6df118','9867683a1a5733244ff70abfd4b8a2881fca94dd'],
   'worker/index.ts': ['b22e62557120aeece3b2ea1916784a9759d450be','c03ca7fb506a4cfe0ec8a0e41422c251bc095098'],
   'src/features/sections/WorkshopSection.tsx': ['d21020d65f3469997a3a579d9233362a026a5336','86a9fcea1a569a6a72f67cf42cea92f75ead5d1d'],
 }
