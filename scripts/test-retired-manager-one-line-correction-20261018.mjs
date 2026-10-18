@@ -18,7 +18,7 @@ const db={
  prepare(q){const stmt=sql.prepare(q);return {bind(...args){return {
   async first(){return stmt.get(...args)||null},
   async all(){return {results:stmt.all(...args)}},
-  async run(){const r=stmt.run(...args);return {meta:{changes:r.changes}}}
+  async run(){const r=stmt.run(...args);return {meta:{changes:0}}}
  }}}},
  async batch(statements){sql.exec('BEGIN IMMEDIATE');try{
   const out=[];for(const s of statements)out.push(await s.run())
@@ -38,13 +38,18 @@ assert(!modal.includes('disabled={variant.free<retiredCorrection.quantity}'))
 const req={orderId:1,itemId:100,oldVariantId:20,newVariantId:21,quantity:1,
  oldPrice:20000,newPrice:22000,oldTotal:20000,actor:'manager-1'}
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_stock').get().n,1)
-await assert.rejects(()=>correctRetiredItem(db,{...req,oldPrice:30000}),/изменились/i)
+await assert.rejects(()=>correctRetiredItem(db,{...req,oldPrice:30000}),/изменили цену позиции/i)
 const saved=await correctRetiredItem(db,req)
 assert.equal(saved.ok,true)
 assert.equal(saved.totalAmount,22000)
 assert.equal(saved.debtAmount,17000)
 assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM retired_order_item_corrections').get().n,1)
+assert.equal(sql.prepare('SELECT status FROM retired_order_item_corrections WHERE order_item_id=100').get().status,'completed')
+// The real production symptom: Cloudflare driver can return unexpected
+// per-statement metadata even after the entire D1 batch commits correctly.
+// The handler must not show the manager an error if the persisted facts agree.
+assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
 assert.equal(sql.prepare('SELECT status FROM retired_order_item_corrections WHERE order_item_id=100').get().status,'completed')
 assert.equal(sql.prepare('SELECT material_snapshot FROM order_items WHERE id=100').get().material_snapshot,'ШЕРСТЬ')
 assert.equal(sql.prepare('SELECT unit_price FROM order_items WHERE id=100').get().unit_price,22000)
@@ -66,10 +71,37 @@ const created=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stoc
 assert.equal(created.quantity,0)
 assert.equal(created.reserved_quantity,1)
 assert.equal(sql.prepare('SELECT variant_id FROM inventory_reservations WHERE order_item_id=200').get().variant_id,22)
-await assert.rejects(()=>previewRetiredItemCorrection(db,3,300),/неотправленной/i)
+await assert.rejects(()=>previewRetiredItemCorrection(db,3,300),/заказ уже отмечен отправленным/i)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_movements').get().n,before.movements)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments').get().n,before.payments)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=1').get().quantity,0)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_stock WHERE variant_id=22').get().n,1)
-console.log('RETIRED_MANAGER_CORRECTION_RESERVES_AT_ZERO_OR_MISSING_STOCK_NO_FAKED_PHYSICAL_WITH_PRICE_AND_AUDIT_PASSED')
+// Retry with deliberately inconsistent saved business state should pinpoint
+// the exact category of mismatch, not tell the manager to inspect a SQL journal.
+sql.prepare("UPDATE inventory_reservations SET variant_id=20 WHERE order_item_id=100").run()
+await assert.rejects(()=>correctRetiredItem(db,req),/резерв не закреплён за новым исполнением/i)
+sql.prepare("UPDATE inventory_reservations SET variant_id=21 WHERE order_item_id=100").run()
+assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
+
+ // A constraint in the final journal assertion must roll back ALL writes,
+ // not leave the stock reserved while showing the manager a failed edit.
+ sql.exec(`
+ INSERT INTO orders VALUES(4,'O4','active','','not_sent',20000,0,20000,0,NULL);
+ INSERT INTO order_items VALUES(400,4,1,20,'ЭТНО КАРДИГАН','adult','ЖЕН','СВЕТЛО СЕРЫЙ','ДРАП','СТАНДАРТ','52','warehouse',0,1,20000,20000,'catalog_retired',NULL,NULL);
+ INSERT INTO inventory_reservations VALUES(4,4,400,'warehouse',1,20,1,'released','order','O4','t','t','t',NULL);
+ CREATE TRIGGER test_refuse_reactivate BEFORE UPDATE ON inventory_reservations
+ WHEN OLD.order_item_id=400 AND NEW.status='active'
+ BEGIN SELECT RAISE(IGNORE); END;
+ `)
+ const reservedBefore=sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE variant_id=21').get().reserved_quantity
+ await assert.rejects(()=>correctRetiredItem(db,{...req,orderId:4,itemId:400,oldTotal:20000,newPrice:20000}),
+   /изменение заказа не удалось|не сохранилось/i)
+ assert.equal(sql.prepare('SELECT variant_id FROM order_items WHERE id=400').get().variant_id,20)
+ assert.equal(sql.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=400').get().stock_writeoff_status,'catalog_retired')
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM retired_order_item_corrections WHERE order_item_id=400').get().n,0)
+ assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE variant_id=21').get().reserved_quantity,reservedBefore)
+ assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=4').get().total_amount,20000)
+ console.log('RETIRED_CORRECTION_TRANSACTION_FAILURE_ROLLED_BACK_JOURNAL_SKU_STOCK_AND_TOTAL_PASSED')
+
+console.log('RETIRED_CORRECTION_COMMITTED_BATCH_DRIVER_META_ZERO_AND_DESCRIPTIVE_READBACK_PASSED')
 sql.close()
