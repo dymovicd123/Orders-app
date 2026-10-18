@@ -733,23 +733,25 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               {(adminDeleteDraft.preview.impact?.reservations||[])
                                 .filter((x:any)=>x.action==='release_reserve')
                                 .reduce((sum:number,x:any)=>sum+x.quantity,0)} шт.</strong></p>
-                            <p>Зафиксировано выдач: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
+                            <p>Учётных отметок выдачи: <strong>{adminDeleteDraft.preview.issuedQuantity} шт.</strong></p>
                             {(adminDeleteDraft.preview.appliedStockReview?.reversals||[]).length ? (
                               <div style={{borderTop:'1px solid var(--border,#dce1e8)',paddingTop:10,marginTop:10}}>
-                                <strong>Сторно прежних складских списаний</strong>
-                                <p className="muted">Товар числится невыданным, но обмен уже списал его со склада.
-                                  Отмена восстановит только это проведённое списание. Снятие резерва учитывается отдельно.</p>
+                                <strong>Отмена складских событий обмена</strong>
+                                <p className="muted">При нулевом списании отмена снимет ошибочную учётную выдачу, не прибавляя товар к остатку.
+                                  Реальные списания и резервы обрабатываются отдельно.</p>
                                 <ul style={{paddingLeft:18}}>
                                   {adminDeleteDraft.preview.appliedStockReview.reversals.map((effect:any)=>(
                                     <li key={effect.eventId}>
                                       <strong>{effect.name}</strong> ·
                                       {' '}{effect.source==='warehouse'?'Склад':
                                         effect.source==='boutique'?'Бутик':effect.source} ·
-                                      {effect.alreadyCompensated
+                                      {effect.bookkeepingFulfillmentOnly
+                                        ?<> · <strong>Учётная выдача без списания (0 шт.).</strong> Физический остаток не изменится.</>
+                                        :effect.alreadyCompensated
                                         ?<> · списание уже компенсировано корректировкой выдачи
                                             #{effect.correctionMovementId}. <strong>Физический остаток не изменится.</strong></>
                                         :<> · отмена списания: <strong>+{effect.physicalRestore} шт.</strong> к остатку</>}
-                                      {' '}· освободится резерв: <strong>{effect.reserveRelease} шт.</strong>
+                                      {effect.reserveRelease>0?<span> · освободится резерв: <strong>{effect.reserveRelease} шт.</strong></span>:null}
                                       <div className="muted">Обмен #{effect.exchangeId} · складская операция #{effect.eventId}</div>
                                     </li>
                                   ))}
