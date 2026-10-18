@@ -11,7 +11,7 @@ import { writeActivityLog } from './activity.ts'
 
 export function orderItemWasPhysicallyIssued(row: Record<string, unknown>) {
   const status = cleanText(row.stock_writeoff_status);
-  return status === 'fulfilled' || status === 'written_off' || status === 'negative';
+  return status === 'fulfilled' || status === 'written_off' || status === 'negative' || status === 'retired_physically_issued';
 }
 
 
