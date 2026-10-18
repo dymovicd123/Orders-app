@@ -34,7 +34,9 @@ jobs:
           ! grep -q orders_db_branch2 wrangler.jsonc
           ! grep -q "workshop-settlements.ts" worker/index.ts
           ! grep -q "workshop-settlement-prices.ts" worker/index.ts
-          grep -q reconcileKaspiPaymentAfterShipping worker/index.ts
+          ! grep -q 'reconcileKaspiPaymentAfterShipping' worker/index.ts
+          grep -q 'createManualOrderPaymentCritical' worker/index.ts
+          grep -q "url.pathname === '/api/payments'" worker/index.ts
           grep -q 'delete-preview' worker/index.ts
           grep -q 'delete-chain' worker/index.ts
       - name: Isolated editor/cancel/delete safety suites
