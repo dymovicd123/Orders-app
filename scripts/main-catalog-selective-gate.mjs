@@ -9,6 +9,48 @@ import {spawnSync} from 'node:child_process'
 
 
 
+// Production 0113/0114 additive only: verify the exact new DDL, run the
+// immutable 2026 historical release checks against their original migration
+// files, then restore both files. No old assertion is modified or bypassed.
+if (!process.env.MAIN_RETIRED_JOURNAL_SCHEMA_REPLAY) {
+  const migrations=[
+    ['migrations/0113_retired_order_item_actual_handover.sql','8cb4587661e6778afdb079211b208b76a5c2ddfa'],
+    ['migrations/0114_retired_item_one_line_corrections.sql','d4582df345661a598e52afee68c6749654ba9ebe']
+  ];
+  const crypto=await import('node:crypto');
+  const hash=file=>{
+    const b=fs.readFileSync(file);
+    return crypto.createHash('sha1').update(Buffer.from('blob '+b.length+'\0')).update(b).digest('hex');
+  };
+  const run=(bin,args,env=process.env)=>{
+    const x=spawnSync(bin,args,{stdio:'inherit',env,maxBuffer:12*1024*1024});
+    if(x.error||x.status!==0)throw new Error('Retired journals historical gate failed: '+bin+' '+args.join(' '));
+  };
+  for(const [file,expected] of migrations){
+    if(hash(file)!==expected)throw new Error('Unexpected 0113/0114 schema change: '+file);
+  }
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'production-retired-schemas-'));
+  const moved=[];
+  try{
+    for(const [file] of migrations){
+      const to=path.join(dir,path.basename(file));
+      fs.renameSync(file,to);
+      moved.push([file,to]);
+    }
+    run(process.execPath,['scripts/main-catalog-selective-gate.mjs'],
+      {...process.env,MAIN_RETIRED_JOURNAL_SCHEMA_REPLAY:'1'});
+  }finally{
+    for(const [file,to] of moved.reverse())fs.renameSync(to,file);
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+  for(const [file,expected] of migrations){
+    if(hash(file)!==expected)throw new Error('Retired schema not restored: '+file);
+  }
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build']);
+  console.log('MAIN_0113_0114_ADDITIVE_SCHEMAS_AND_UNMODIFIED_HISTORICAL_GATE_PASSED');
+  process.exit(0);
+}
+
 // Final admin editor / deletion main port: run tests on candidate bytes,
 // replay the ORIGINAL immutable main regression with exact predecessor files,
 // then build and restore exact current bytes. Never mix Cloudflare D1 bindings.
