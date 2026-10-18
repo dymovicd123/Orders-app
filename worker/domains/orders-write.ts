@@ -1212,6 +1212,28 @@ export async function updateOrderCritical(
   checkedBy: string,
   options: { lifecycleAction?: 'order_delete' } = {},
 ) {
+  // A manager may only use the two narrow, optimistic-concurrency-corrected
+  // forms. Never accept the legacy full editor as a manager, including crafted
+  // requests that contain the right safe fields AND additional mutations.
+  // Validate before allocating a critical-operation lease or reading stock.
+  const fields=Object.keys(input as Record<string,unknown>)
+    .filter(field=>field!=='requestId')
+  const raw=input as Record<string,unknown>
+  const managerMetadataOnly=fields.length===1 && fields[0]==='metadataCorrection'
+  const managerPriceOnly=fields.length===1 && fields[0]==='itemPriceCorrections'
+    && Array.isArray(raw.itemPriceCorrections) && raw.itemPriceCorrections.length>0
+  if(actor?.role!=='admin' && options.lifecycleAction!=='order_delete'
+      && !managerMetadataOnly && !managerPriceOnly)
+    throw new CriticalOperationConflictError(
+      'Полное редактирование заказа доступно только администратору. Менеджеру доступны «Исправить записанную цену» и «Исправить реквизиты».'
+    );
+  // Admin deletion has its own fully previewed, resumable operation; the legacy
+  // editor must never bypass it by PATCHing orderStatus=deleted.
+  if(options.lifecycleAction!=='order_delete'
+      && cleanText(input.orderStatus).toLowerCase()==='deleted')
+    throw new CriticalOperationConflictError(
+      'Удаление выполняется только отдельным действием администратора с предпросмотром последствий.'
+    );
   await ensureOrderItemWorkshopColumn(db);
   // Safely update non-stock, non-money order details without constructing the
   // large legacy editor draft. The existing saga still owns retries and IDs.
