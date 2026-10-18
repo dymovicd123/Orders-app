@@ -6,6 +6,20 @@ import { clean, normalize, fields, fieldLabel, initialDraft, nextQuestion, compo
 import type { Draft, Field } from './catalogResolutionFlow'
 import './OrderCatalogResolutionModal.css'
 
+type RetiredLineCorrection = {
+  ok: boolean
+  oldVariantId: number
+  quantity: number
+  oldPrice: number
+  oldTotal: number
+  received: number
+  canEditPrice: boolean
+  variants: Array<{
+    variantId: number;productName: string;gender:string;color:string;material:string
+    length:string;size:string;free:number;physical:number;reserved:number
+  }>
+}
+
 type Props = {
   order: OrderRecord | null
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>
@@ -32,6 +46,9 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const [search, setSearch] = useState('')
   const [variantQuery, setVariantQuery] = useState('')
   const [retiredChoice, setRetiredChoice] = useState<'choose' | 'another' | 'same'>('choose')
+  const [retiredCorrection, setRetiredCorrection] = useState<RetiredLineCorrection | null>(null)
+  const [replacementVariantId, setReplacementVariantId] = useState('')
+  const [replacementPrice, setReplacementPrice] = useState('')
   const [classified, setClassified] = useState(false)
   const [confirmed, setConfirmed] = useState<Partial<Record<Field, boolean>>>({})
   const [legacy, setLegacy] = useState(false)
@@ -81,7 +98,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       setItem(first); setContext(data); setDraft(initialDraft(first, data)); setChoices(data.products || [])
       setProgress(previous => ({ total: previous.total || Number(review.count || review.items.length), remaining: Number(review.count || review.items.length) }))
       setConfirmed({}); setClassified(false); setLegacy(false); setEditing(null); setAnswer(''); setCreatingReference(null); setCompoundOverride(null)
-      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false); setRetiredChoice('choose')
+      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false); setRetiredChoice('choose'); setRetiredCorrection(null); setReplacementVariantId(''); setReplacementPrice('')
       return false
     } finally { if (ticket === generation.current) setBusy(false) }
   }
@@ -180,6 +197,65 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       }, async () => ticket === generation.current ? load() : false, async () => owner === session.current ? await onCompleted(order) : false)
     } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.') }
     finally { mutationPending.current = false; if (owner === session.current) setResolving(false) }
+  }
+
+
+  const openRetiredCorrection = async () => {
+    if (!item || !order || busy || resolving || mutationPending.current) return
+    setRetiredChoice('another')
+    setBusy(true); setError('')
+    const ticket=generation.current
+    try{
+      const preview=await read<RetiredLineCorrection>(
+        '/api/orders/'+order.id+'/catalog-review/'+item.orderItemId+'/correct-retired-item'
+      )
+      if(ticket!==generation.current)return
+      setRetiredCorrection(preview)
+      setReplacementVariantId('')
+      setReplacementPrice(String(preview.oldPrice))
+    }catch(reason){
+      if(ticket===generation.current)setError(reason instanceof Error?reason.message:'Не удалось проверить позиции склада.')
+    }finally{if(ticket===generation.current)setBusy(false)}
+  }
+  const applyRetiredCorrection = async () => {
+    if(!order||!item||!retiredCorrection||resolving||busy||mutationPending.current)return
+    const variantId=Number(replacementVariantId),price=Number(replacementPrice)
+    const option=retiredCorrection.variants.find(v=>v.variantId===variantId)
+    if(!option||option.free<retiredCorrection.quantity)return setError('Выберите исполнение с достаточным свободным остатком.')
+    if(!replacementPrice.trim()||!Number.isSafeInteger(price)||price<0)return setError('Укажите целую цену продажи от 0.')
+    if(!retiredCorrection.canEditPrice&&price!==retiredCorrection.oldPrice)
+      return setError('Цена этого старого заказа требует проверки. Оставьте прежнюю цену.')
+    const after=retiredCorrection.oldTotal+(price-retiredCorrection.oldPrice)*retiredCorrection.quantity
+    if(!Number.isSafeInteger(after)||after<retiredCorrection.received)
+      return setError('Новая сумма не может быть ниже уже полученных оплат.')
+    if(!window.confirm('Исправить только эту позицию заказа?\n'+
+      item.productName+' · '+item.material+' → '+option.material+' · '+option.color+' · '+option.size+
+      '\nЦена: '+price.toLocaleString('ru-RU')+' ₸. Резерв будет закреплён за новым вариантом.'))return
+    const owner=session.current,ticket=generation.current
+    mutationPending.current=true;setResolving(true);setError('')
+    try{
+      await owner.run(async()=>{
+        await read<{ok:boolean;alreadyCorrected?:boolean}>(
+          '/api/orders/'+order.id+'/catalog-review/'+item.orderItemId+'/correct-retired-item',
+          {method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              oldVariantId:retiredCorrection.oldVariantId,newVariantId:variantId,
+              quantity:retiredCorrection.quantity,oldPrice:retiredCorrection.oldPrice,
+              oldTotal:retiredCorrection.oldTotal,newPrice:price,
+            })}
+        )
+        if(ticket===generation.current){
+          setNeedsRecheck(true)
+          setNotice('Товар и резерв исправлены. Другие позиции заказа не изменялись.')
+        }
+      },async()=>ticket===generation.current?load():false,
+      async()=>owner===session.current?await onCompleted(order):false)
+    }catch(err){
+      if(owner===session.current)setError(err instanceof Error?err.message:'Исправление не завершилось.')
+    }finally{
+      mutationPending.current=false
+      if(owner===session.current)setResolving(false)
+    }
   }
 
   const confirmRetiredPhysicalIssue = async () => {
@@ -313,16 +389,39 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         <h4 ref={questionHeading} tabIndex={-1}>Исполнение удалено из каталога</h4>
         <p>Проверьте, что фактически передаёте клиенту. История удалённой позиции остаётся неизменной.</p>
         {retiredChoice === 'choose' ? <div className="resolution-choices">
-          <button type="button" disabled={disabled} onClick={() => setRetiredChoice('another')}>В заказе указан неправильный товар</button>
+          <button type="button" disabled={disabled} onClick={() => void openRetiredCorrection()}>В заказе указан неправильный товар</button>
           <button type="button" disabled={disabled} onClick={() => setRetiredChoice('same')}>Клиенту передают именно этот удалённый товар</button>
         </div> : null}
         {retiredChoice === 'another' ? <div className="resolution-admin-required">
-          <p>Необходимо заменить позицию в заказе через редактор. Резолвер не подменяет материал молча и не списывает другой товар без проверки.</p>
-          {isAdmin && onEditOrder ?
-            <button type="button" disabled={disabled} className="primary-button" onClick={() => void onEditOrder(order)}>Открыть редактор заказа</button>
-            : <p>Попросите администратора исправить состав заказа. История и цены сохраняются штатным редактором.</p>}
-          <button type="button" className="secondary-button" disabled={disabled} onClick={() => setRetiredChoice('choose')}>Назад</button>
-        </div> : null}
+          <p>Исправьте одну ошибочно выбранную позицию. Доступны только действующие исполнения этого товара. Остальные товары и оплаты не меняются.</p>
+          {retiredCorrection ? <>
+            <label>Фактически выдаваемое исполнение
+              <select value={replacementVariantId} onChange={event=>setReplacementVariantId(event.target.value)} disabled={disabled}>
+                <option value="">Выберите действующий вариант</option>
+                {retiredCorrection.variants.map(variant=><option key={variant.variantId} value={variant.variantId} disabled={variant.free<retiredCorrection.quantity}>
+                  {[variant.material,variant.length,variant.color,variant.size].filter(Boolean).join(' · ')} — свободно {variant.free}
+                </option>)}
+              </select>
+            </label>
+            {!retiredCorrection.variants.some(variant=>variant.free>=retiredCorrection.quantity)
+              ? <p>На складе нет подходящего доступного исполнения. Исправьте остатки штатным приходом или ревизией.</p> : null}
+            <label>Цена за штуку (₸)
+              <input type="number" min="0" step="1" inputMode="numeric" value={replacementPrice}
+                disabled={disabled||!retiredCorrection.canEditPrice}
+                onChange={event=>setReplacementPrice(event.target.value)}/>
+            </label>
+            {!retiredCorrection.canEditPrice?<small>Для этого старого заказа цена не совпадает с финансовой историей. Исправление товара возможно без изменения цены.</small>:null}
+            <p>Было: {retiredCorrection.oldPrice.toLocaleString('ru-RU')} ₸ × {retiredCorrection.quantity}.
+              После исправления сумма заказа: {
+                Number.isSafeInteger(Number(replacementPrice)) && replacementPrice.trim()
+                ? (retiredCorrection.oldTotal+(Number(replacementPrice)-retiredCorrection.oldPrice)*retiredCorrection.quantity).toLocaleString('ru-RU')+' ₸'
+                : '—'
+              }.</p>
+            <button type="button" className="primary-button" disabled={disabled||!replacementVariantId}
+              onClick={()=>void applyRetiredCorrection()}>{resolving?'Сохраняю…':'Исправить товар и резерв'}</button>
+          </> : <p>Загружаю доступные варианты…</p>}
+          <button type="button" className="secondary-button" disabled={disabled} onClick={()=>{setRetiredChoice('choose');setRetiredCorrection(null)}}>Назад</button>
+        </div>:null}
         {retiredChoice === 'same' ? <div className="resolution-admin-required">
           <p>Подтверждайте только фактически переданную вещь: {item.quantity} шт. Старые остатки были выведены из учёта при удалении. Повторного списания не будет.</p>
           <button type="button" className="primary-button" disabled={disabled || !item.variantId} onClick={() => void confirmRetiredPhysicalIssue()}>
