@@ -9,6 +9,82 @@ import {spawnSync} from 'node:child_process'
 
 
 
+// Exact main backport of the retired SKU resolver. The new runtime and both
+// actual D1 SQL handlers are tested together; every old production release
+// assertion is replayed against byte-exact pre-port code. Stage04 stays absent.
+if (!process.env.MAIN_RETIRED_SKU_RUNTIME_REPLAY) {
+  const baseline='26984eeab14cbfc437b57583d1efb304c3c0fa9f';
+  const reviewed=[["worker/index.ts","ef86ca767ebcf3d9139c2c407cbfbfe7169b0d00","eef52a7c298538d8d595677f9d18595e39328dff"],["src/App.tsx","0530b595a24e9f3e3b36b4333221018e3da3780a","c21c662a85da31297d5a77ca7b8a640e6885f9a4"],["worker/domains/catalog-review.ts","4c155ec4477f4020d2a31ef0b532c0dc29e5d5c0","7f230db90e1da9efd6c16f63519fbeaeb05c6639"],["worker/domains/order-reservations.ts","d96b55cc499dc54c9c5301197f0f0c759d17ba1f","00d18e4d2e0964bcd9f912aade1fd285399076a0"],["src/features/orders/OrderCatalogResolutionModal.tsx","b955d232ad7d0e91a3375905fa56b81601a19925","39dae332b8e0a50aa320f4dd3265a49d197185ff"]];
+  const added=[["worker/domains/retired-item-handover.ts","632ea5704d8c79b74746d41368d41063495c8f4b"],["worker/domains/retired-item-correction.ts","4553e6df8b17433a21b9b0a386c06b14ddba6546"],["scripts/test-retired-order-item-handover-20261018.mjs","4ec67fde50ca23c8e6009252b5608ef9369d5a5e"],["scripts/test-retired-manager-one-line-correction-20261018.mjs","062a3c266dff043b9bee153da611130b5873d7f5"]];
+  const blobSHA=file=>{
+    const result=spawnSync('git',['hash-object',file],{encoding:'utf8'});
+    if(result.error||result.status!==0)throw new Error('Cannot hash '+file);
+    return result.stdout.trim();
+  };
+  const run=(command,args,env=process.env)=>{
+    const result=spawnSync(command,args,{env,stdio:'inherit',maxBuffer:16*1024*1024});
+    if(result.error||result.status!==0)throw new Error('Main retired SKU release check failed: '+command+' '+args.join(' '));
+  };
+  for(const [file,,current] of reviewed)
+    if(blobSHA(file)!==current)throw new Error('Unreviewed production retired-SKU runtime edit: '+file);
+  for(const [file,current] of added)
+    if(blobSHA(file)!==current)throw new Error('Unreviewed production retired-SKU addition: '+file);
+  const worker=fs.readFileSync('worker/index.ts','utf8');
+  if(worker.includes("from './domains/workshop-settlements.ts'")
+    ||worker.includes("from './domains/workshop-settlement-prices.ts'"))
+    throw new Error('Dormant Stage04 unexpectedly imported into main');
+  if(!worker.includes('reconcileKaspiPaymentAfterShipping')
+     ||!worker.includes('correct-retired-item')
+     ||!worker.includes('confirm-retired-delivery')
+     ||!worker.includes("actor: cleanText(authUser.displayName) || 'authenticated user'"))
+    throw new Error('Kaspi or authenticated retired-SKU business route missing');
+  run(process.execPath,['--experimental-strip-types','scripts/test-retired-order-item-handover-20261018.mjs']);
+  run(process.execPath,['--experimental-strip-types','scripts/test-retired-manager-one-line-correction-20261018.mjs']);
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build']);
+  const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'main-retired-sku-runtime-'));
+  const previous=new Map();
+  const hidden=[];
+  try{
+    const check=spawnSync('git',['cat-file','-e',baseline+':worker/index.ts'],{stdio:'ignore'});
+    if(check.status!==0)run('git',['fetch','--no-tags','--depth=1','origin',baseline]);
+    for(const [file,oldSha,newSha] of reviewed){
+      if(blobSHA(file)!==newSha)throw new Error('Candidate changed during historical replay: '+file);
+      const old=spawnSync('git',['show',baseline+':'+file],{encoding:null,maxBuffer:24*1024*1024});
+      if(old.error||old.status!==0)throw new Error('Historical main baseline unavailable: '+file);
+      const verify=spawnSync('git',['hash-object','--stdin'],{input:old.stdout,encoding:'utf8'});
+      if(verify.error||verify.status!==0||verify.stdout.trim()!==oldSha)
+        throw new Error('Historical main file altered: '+file);
+      previous.set(file,fs.readFileSync(file));
+      fs.writeFileSync(file,old.stdout);
+    }
+    for(const [file] of added){
+      const hiddenPath=path.join(temporary,path.basename(file));
+      fs.renameSync(file,hiddenPath);
+      hidden.push([file,hiddenPath]);
+    }
+    run(process.execPath,['scripts/main-catalog-selective-gate.mjs'],
+      {...process.env,MAIN_RETIRED_SKU_RUNTIME_REPLAY:'1'});
+  }finally{
+    for(const [file,bytes] of previous)fs.writeFileSync(file,bytes);
+    for(const [file,hiddenPath] of hidden.reverse())fs.renameSync(hiddenPath,file);
+    fs.rmSync(temporary,{recursive:true,force:true});
+  }
+  for(const [file,,current] of reviewed)
+    if(blobSHA(file)!==current)throw new Error('Failed to restore current production runtime: '+file);
+  for(const [file,current] of added)
+    if(blobSHA(file)!==current)throw new Error('Failed to restore current retired-SKU module: '+file);
+  fs.rmSync('dist',{recursive:true,force:true});
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build']);
+  const built=path.resolve('dist/client/assets');
+  const resolver=fs.readdirSync(built).filter(file=>/^OrderCatalogResolutionModal-[A-Za-z0-9_-]+\\.js$/.test(file));
+  if(resolver.length!==1)throw new Error('Current retired SKU resolver chunk missing');
+  const output=fs.readFileSync(path.join(built,resolver[0]),'utf8');
+  for(const label of ['Материал','Цвет','Размер','Исправить товар и резерв'])
+    if(!output.includes(label))throw new Error('Production resolver bundle stale: '+label);
+  console.log('MAIN_RETIRED_SKU_EXACT_HANDOVER_INLINE_PRICE_TRUTHFUL_ERRORS_AND_HISTORICAL_GATES_PASSED');
+  process.exit(0);
+}
+
 // Production 0113/0114 additive only: verify the exact new DDL, run the
 // immutable 2026 historical release checks against their original migration
 // files, then restore both files. No old assertion is modified or bypassed.
