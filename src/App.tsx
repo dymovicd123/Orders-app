@@ -6294,9 +6294,7 @@ function removeDebtPayment(index: number) {
     window.location.hash = '#editor'
     if (order.pricing_mode === 'itemized_v1') {
       void Promise.all([
-        loadCatalogData(false),
-        // Cached data accelerates opening. Stock and catalog identity are revalidated
-        // by the server at save time; the editor's inventory effect loads fresh stock.
+        loadCatalogData(true),
         // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here
         // instead of issuing a second forced Warehouse + Boutique read for the same transition.
         loadInventoryData('warehouse', false, '', false),
