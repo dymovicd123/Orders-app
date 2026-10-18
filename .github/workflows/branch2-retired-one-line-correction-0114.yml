@@ -1,0 +1,107 @@
+name: Branch2 manager one-line retired SKU correction 0114
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/retired-item-correction.ts'
+      - 'worker/index.ts'
+      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
+      - 'scripts/test-retired-manager-one-line-correction-20261018.mjs'
+      - '.github/workflows/branch2-retired-one-line-correction-0114.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'migrations/0114_retired_item_one_line_corrections.sql'
+      - '.github/workflows/branch2-retired-one-line-correction-0114.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-retired-one-line-correction-0114
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Execute exact single-line server SQLite regression
+        run: node --experimental-strip-types scripts/test-retired-manager-one-line-correction-20261018.mjs
+      - name: Check TypeScript and compile test website
+        run: npm run build
+  branch2-schema:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Require exact isolated branch2 D1
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - run: npm ci
+      - name: Snapshot schema and financial/stock business totals (read only)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_corrections') AS journal,
+          (SELECT COUNT(*) FROM orders) AS orders,
+          (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS value,
+          (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt,
+          (SELECT COUNT(*) FROM payments) AS payments,
+          (SELECT COUNT(*) FROM inventory_movements) AS movements,
+          (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+          (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved
+          " --json | jq -cSe '.[0].results[0]' > /tmp/retired-correct-before.json
+          jq -e '.journal==0 or .journal==1' /tmp/retired-correct-before.json
+      - name: Capture Time Travel bookmark before adding table
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/40065052-854e-44b8-bcd5-251bdd488301/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No backup") end' > /tmp/retired-correct-bookmark
+          test -s /tmp/retired-correct-bookmark
+          echo "Branch2 Time Travel: $(cat /tmp/retired-correct-bookmark)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create additive 0114 journal on branch2 only
+        run: |
+          set -euo pipefail
+          test -s /tmp/retired-correct-bookmark
+          if [[ "$(jq -r .journal /tmp/retired-correct-before.json)" == 0 ]]; then
+            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0114_retired_item_one_line_corrections.sql
+          fi
+      - name: Verify no existing order/stock/finance values changed
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+          SELECT
+          (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_corrections') AS journal,
+          (SELECT COUNT(*) FROM orders) AS orders,
+          (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS value,
+          (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt,
+          (SELECT COUNT(*) FROM payments) AS payments,
+          (SELECT COUNT(*) FROM inventory_movements) AS movements,
+          (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+          (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved
+          " --json | jq -cSe '.[0].results[0]' > /tmp/retired-correct-after.json
+          jq -e '.journal==1' /tmp/retired-correct-after.json
+          jq 'del(.journal)' /tmp/retired-correct-before.json > /tmp/retired-correct-before-business.json
+          jq 'del(.journal)' /tmp/retired-correct-after.json > /tmp/retired-correct-after-business.json
+          cmp /tmp/retired-correct-before-business.json /tmp/retired-correct-after-business.json
+          echo 'BRANCH2 RETIRED ITEM ONE-LINE CORRECTION SCHEMA READY; FINANCE AND STOCK UNCHANGED'

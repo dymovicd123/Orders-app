@@ -12,6 +12,68 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Inline manager one-line correction is validated on its current sources;
+// all immutable 2026-10-18 Stage04, Kaspi and order-history tests are replayed
+// against their exact accepted previous branch2 blobs, then current UI rebuilt.
+if (!process.env.RETIRED_ONE_LINE_MANAGER_REPLAY) {
+  const reviewed={"worker/index.ts":["fc7f8a747069788f708ed095aa40e7f5adfe5d4d","527547151f4ea89baa4465fac4df4eba4dd3281f"],"src/features/orders/OrderCatalogResolutionModal.tsx":["1a9ff8f554c4b38332124c8922172ddd32136fc4","286b0ddec3f8bf9fae2e024a6cc50afc83f3daed"]};
+  const added={"worker/domains/retired-item-correction.ts":"05e63bb5dcd399ca207f738fdf4dea37659c1a8d","migrations/0114_retired_item_one_line_corrections.sql":"d4582df345661a598e52afee68c6749654ba9ebe","scripts/test-retired-manager-one-line-correction-20261018.mjs":"0a8e5defd0e1e7464df51f370564bc59f3894b55"};
+  const acceptedCommit='d630bd5c49ebbbec6e3b6b723cfc8a8adc5a30f2';
+  const hash=file=>gitBlob(fs.readFileSync(file,'utf8'));
+  const runCheck=(cmd,args,env=process.env)=>{
+    const result=spawnSync(cmd,args,{stdio:'inherit',env,maxBuffer:12*1024*1024});
+    check(!result.error&&result.status===0,
+      'Retired manager SKU correction gate failed: '+cmd+' '+args.join(' '));
+  };
+  for(const [file,[,sha]] of Object.entries(reviewed))
+    check(hash(file)===sha,'Unreviewed manager one-line runtime: '+file);
+  for(const [file,sha] of Object.entries(added))
+    check(hash(file)===sha,'Unreviewed manager SKU correction source: '+file);
+  const npm=process.platform==='win32'?'npm.cmd':'npm';
+  runCheck(process.execPath,['--experimental-strip-types',
+    'scripts/test-retired-manager-one-line-correction-20261018.mjs']);
+  const snapshot=fs.mkdtempSync(path.join(os.tmpdir(),'retired-one-line-baseline-'));
+  const stored=new Map(),hidden=[];
+  try {
+    const has=spawnSync('git',['cat-file','-e',acceptedCommit+':worker/index.ts'],{stdio:'ignore'});
+    if(has.status!==0)
+      runCheck('git',['fetch','--depth=1','--no-tags','origin',acceptedCommit]);
+    for(const [file,[before,after]] of Object.entries(reviewed)) {
+      check(hash(file)===after,'Concurrent manager correction change: '+file);
+      const old=spawnSync('git',['show',acceptedCommit+':'+file],{encoding:null,maxBuffer:14*1024*1024});
+      check(!old.error&&old.status===0&&gitBlob(old.stdout)===before,
+        'Unreviewed historical correction runtime: '+file);
+      stored.set(file,fs.readFileSync(file));
+      fs.writeFileSync(file,old.stdout);
+    }
+    for(const file of Object.keys(added)){
+      const destination=path.join(snapshot,path.basename(file));
+      fs.renameSync(file,destination);
+      hidden.push([file,destination]);
+    }
+    runCheck(process.execPath,['scripts/catalog-integrity-branch2-preserved-gate.mjs'],
+      {...process.env,RETIRED_ONE_LINE_MANAGER_REPLAY:'1'});
+  }finally{
+    for(const [file,buffer] of stored)fs.writeFileSync(file,buffer);
+    for(const [file,destination] of hidden.reverse())fs.renameSync(destination,file);
+    fs.rmSync(snapshot,{recursive:true,force:true});
+  }
+  for(const [file,[,sha]] of Object.entries(reviewed))
+    check(hash(file)===sha,'Failed to restore actual manager correction source: '+file);
+  for(const [file,sha] of Object.entries(added))
+    check(hash(file)===sha,'Failed to restore new correction source: '+file);
+  fs.rmSync('dist',{recursive:true,force:true});
+  runCheck(npm,['run','build']);
+  const assetDir=path.resolve('dist/client/assets');
+  const resolver=fs.readdirSync(assetDir).filter(v=>/^OrderCatalogResolutionModal-[A-Za-z0-9_-]+\.js$/.test(v));
+  check(resolver.length===1,'Expected exactly one compiled manager resolver');
+  const compiled=fs.readFileSync(path.join(assetDir,resolver[0]),'utf8');
+  for(const phrase of ['Исправить товар и резерв','Цена за штуку','Выберите действующий вариант'])
+    check(compiled.includes(phrase),'Refusing stale manager resolver UI: '+phrase);
+  console.log('MANAGER RETIRED SKU PRICE AND STOCK FIX + IMMUTABLE PREVIOUS RELEASE GATES PASSED');
+  process.exit(0);
+}
+
 // New retired-SKU handover generation: execute the complete previous 2026-10-18
 // suite on its exact accepted Branch2 source, not on altered assertions.
 // Independently pin the new SKU confirmation, test the real SQL, and rebuild the
