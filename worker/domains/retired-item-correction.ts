@@ -56,6 +56,54 @@ async function options(db:D1Database,r:Row) {
   free:toInt(x.physical,0)-toInt(x.reserved,0)
  }));
 }
+
+/** Read actual order, reservation, stock and audit, not D1's driver metadata. */
+async function correctionReadback(db:D1Database,itemId:number,orderId:number){
+ const result=await db.prepare(`
+  SELECT j.status,j.new_variant_id,j.new_price,j.new_total,j.quantity AS recorded_quantity,
+         oi.variant_id AS item_variant,oi.unit_price AS item_price,
+         oi.quantity AS item_quantity,oi.stock_writeoff_status,
+         o.total_amount AS order_total,o.received_amount,o.debt_amount,
+         r.status AS reserve_status,r.variant_id AS reserve_variant,r.quantity AS reserve_quantity,
+         s.reserved_quantity AS recorded_reserved_quantity,s.quantity AS physical_quantity
+  FROM retired_order_item_corrections j
+  LEFT JOIN order_items oi ON oi.id=j.order_item_id AND oi.order_id=j.order_id
+  LEFT JOIN orders o ON o.id=j.order_id
+  LEFT JOIN inventory_reservations r ON r.order_item_id=j.order_item_id
+  LEFT JOIN inventory_stock s ON s.variant_id=j.new_variant_id AND s.inventory_source=r.inventory_source
+  WHERE j.order_item_id=? AND j.order_id=? LIMIT 1
+ `).bind(itemId,orderId).first<Row>();
+ if(!result)return {ok:false,stage:'journal_not_created'};
+ if(cleanText(result.status)!=='completed')return {ok:false,stage:'journal_not_completed'};
+ if(n(result.item_variant)!==n(result.new_variant_id)
+    ||n(result.item_price)!==n(result.new_price)
+    ||n(result.item_quantity)!==n(result.recorded_quantity)
+    ||cleanText(result.stock_writeoff_status)!=='reserved')
+  return {ok:false,stage:'item_not_updated'};
+ if(n(result.order_total)!==n(result.new_total)
+    ||n(result.debt_amount)!==n(result.order_total)-n(result.received_amount))
+  return {ok:false,stage:'order_totals_not_updated'};
+ if(cleanText(result.reserve_status)!=='active'
+    ||n(result.reserve_variant)!==n(result.new_variant_id)
+    ||n(result.reserve_quantity)!==n(result.recorded_quantity))
+  return {ok:false,stage:'reservation_not_attached'};
+ if(n(result.recorded_reserved_quantity)<n(result.reserve_quantity))
+  return {ok:false,stage:'stock_reservation_not_reflected'};
+ return {ok:true,stage:'completed'};
+}
+
+function explainCorrectionStage(stage:string):never{
+ const explanation:Record<string,string>={
+  journal_not_created:'Исправление не записано: данные заказа или выбранного исполнения изменились. Обновите заказ и повторите.',
+  journal_not_completed:'Запись исправления существует, но ещё не завершена. Не повторяйте операцию; сообщите администратору номер заказа для проверки.',
+  item_not_updated:'Журнал содержит исправление, но товар в заказе не совпадает с записью. Не повторяйте операцию; сообщите администратору номер заказа.',
+  order_totals_not_updated:'Товар исправлен, но сумма заказа не совпадает с записью. Не повторяйте операцию; сообщите администратору номер заказа.',
+  reservation_not_attached:'Товар исправлен, но резерв не закреплён за новым исполнением. Не повторяйте операцию; сообщите администратору номер заказа.',
+  stock_reservation_not_reflected:'Товар исправлен, но резерв в остатках не соответствует заказу. Не повторяйте операцию; сообщите администратору номер заказа.',
+ };
+ error(explanation[stage]||'Не удалось проверить результат исправления. Обновите заказ и проверьте выбранное исполнение.');
+}
+
 export async function previewRetiredItemCorrection(db:D1Database,orderId:number,itemId:number){
  const r=await row(db,orderId,itemId);
  await blockers(db,orderId,itemId);
@@ -76,9 +124,12 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
  if(previous){
   if(toInt(previous.order_id,0)===orderId&&toInt(previous.old_variant_id,0)===oldVariantId
   &&toInt(previous.new_variant_id,0)===newVariantId&&toInt(previous.new_price,-1)===newPrice
-  &&cleanText(previous.status)==='completed')
-   return {ok:true,alreadyCorrected:true};
-  error('Другое исправление уже записано для этой позиции. Обновите заказ.');
+  &&cleanText(previous.status)==='completed') {
+   const verified=await correctionReadback(db,itemId,orderId);
+   if(verified.ok)return {ok:true,alreadyCorrected:true};
+   explainCorrectionStage(verified.stage);
+  }
+  error('Эта позиция уже исправлена другим действием. Обновите заказ, чтобы увидеть фактически сохранённый товар и цену.');
  }
  const r=await row(db,orderId,itemId);
  await blockers(db,orderId,itemId);
@@ -94,6 +145,16 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
  if(!target)
   error('Выбранное исполнение больше не доступно. Обновите каталог.');
  const source=normalizeSourceType(r.source_type), now=new Date().toISOString();
+ const stockIdentity=await db.prepare(`
+  SELECT id,variant_id FROM inventory_stock
+  WHERE inventory_source=? AND product_name_snapshot=? AND
+        COALESCE(gender_snapshot,'')=? AND COALESCE(color_snapshot,'')=?
+        AND COALESCE(material_snapshot,'')=? AND COALESCE(length_snapshot,'')=?
+        AND COALESCE(size_snapshot,'')=? AND COALESCE(variant_id,0)<>?
+  LIMIT 1
+ `).bind(source,target.productName,target.gender,target.color,target.material,target.length,target.size,newVariantId).first<Row>();
+ if(stockIdentity)
+  error('У выбранного исполнения обнаружено конфликтующее соответствие складской позиции. Исправление не выполнено. Администратор должен устранить дублирование исполнения в каталоге.');
  const originalLineTotal=n(r.line_total);
  if(originalLineTotal<0)error('Неверная историческая сумма позиции. Требуется администратор.');
  const newLineTotal=delta===0?originalLineTotal:newPrice*quantity;
@@ -105,7 +166,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
   size:target.size,unitPrice:newPrice,lineTotal:newLineTotal,total:nextTotal,quantity});
  // The first journal INSERT is the per-line claim. All changes are a single
  // Cloudflare D1 atomic batch. Subsequent statements only run while pending.
- const changes=await db.batch([
+ await db.batch([
   db.prepare(`INSERT OR IGNORE INTO retired_order_item_corrections(
    order_item_id,order_id,old_variant_id,new_variant_id,quantity,
    old_price,new_price,old_total,new_total,previous_snapshot,next_snapshot,actor,recorded_at,status)
@@ -190,15 +251,35 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    WHERE id=? AND total_amount=? AND received_amount<=? AND EXISTS
    (SELECT 1 FROM retired_order_item_corrections j WHERE j.order_item_id=? AND j.status='pending')`
   ).bind(nextTotal,nextTotal,now,orderId,oldTotal,nextTotal,itemId),
-  db.prepare(`UPDATE retired_order_item_corrections SET status='completed'
+  // Last SQL statement is the transaction assertion. An impossible status
+  // violates the 0114 CHECK constraint and rolls back the entire D1 batch,
+  // rather than committing a pending journal or a partially moved reserve.
+  db.prepare(`UPDATE retired_order_item_corrections
+   SET status=CASE WHEN EXISTS (
+      SELECT 1 FROM order_items oi
+      JOIN orders o ON o.id=oi.order_id
+      JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+      JOIN inventory_stock stock ON stock.variant_id=ir.variant_id AND stock.inventory_source=ir.inventory_source
+      WHERE oi.id=retired_order_item_corrections.order_item_id
+        AND oi.order_id=retired_order_item_corrections.order_id
+        AND oi.variant_id=retired_order_item_corrections.new_variant_id
+        AND oi.unit_price=retired_order_item_corrections.new_price
+        AND oi.quantity=retired_order_item_corrections.quantity
+        AND oi.stock_writeoff_status='reserved'
+        AND o.total_amount=retired_order_item_corrections.new_total
+        AND o.debt_amount=o.total_amount-o.received_amount
+        AND ir.status='active'
+        AND ir.variant_id=retired_order_item_corrections.new_variant_id
+        AND ir.quantity=retired_order_item_corrections.quantity
+        AND stock.reserved_quantity>=ir.quantity
+      ) THEN 'completed' ELSE 'invalid_partial_state' END
    WHERE order_item_id=? AND status='pending'`).bind(itemId)
  ]);
- if(toInt(changes[0]?.meta?.changes,0)!==1
-   ||toInt(changes[2]?.meta?.changes,0)!==1
-   ||toInt(changes[3]?.meta?.changes,0)+toInt(changes[4]?.meta?.changes,0)!==1
-   ||toInt(changes[5]?.meta?.changes,0)!==1
-   ||toInt(changes[6]?.meta?.changes,0)!==1||toInt(changes[7]?.meta?.changes,0)!==1)
-    error('Не все шаги исправления завершились. Проверьте журнал и обновите заказ.');
+ // D1 batches are committed as a single transaction. Driver-reported per-step
+ // changes may be unreliable; verify business state instead of declaring a
+ // successful correction failed because of meta.changes.
+ const verified=await correctionReadback(db,itemId,orderId);
+ if(!verified.ok)explainCorrectionStage(verified.stage);
  return {ok:true,alreadyCorrected:false,orderItemId:itemId,
   totalAmount:nextTotal,debtAmount:nextTotal-toInt(r.received_amount,0)};
 }
