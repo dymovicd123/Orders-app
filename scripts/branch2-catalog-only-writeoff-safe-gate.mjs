@@ -13,12 +13,20 @@ const baseline = {
   'worker/domains/inventory-movement.ts': '5403949b89141ee3c0ccbf41e0ac42228d921443',
   'scripts/catalog-integrity-branch2-preserved-gate.mjs': 'd2cb4cab2e9dd77bdb0b2dc59e15706dca20a2e9',
   'scripts/branch2-unified-kaspi-preserved-gate.mjs': 'c9cd8c8c31b4c19fde6ba45045f4d5ae218f8ae8',
+  'worker/index.ts': '36a89ede46aeaefa20433cbc4ccaf0dcf741ebe2',
+  'worker/domains/workshop-settlements.ts': '2b7d7461758c116053b4a62a3576f451180b32fc',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx': '8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
+  'src/styles/stage04-workshop-settlements.css': '6796899d63de3e2183a95605b9280764c9e64b48',
 }
 const candidate = {
   'src/app/controllers/useOperationalViewModel.ts': 'c5f2f71b6d18094afbcc5cafdfe04a972521e8c0',
   'src/features/inventory/views/renderInventoryMovementPanel.tsx': '7f53b8243ab67442c853f91e6e58e62a1dcaefee',
   'worker/domains/inventory-movement.ts': '605699debb2b9981a95ac85ea72bbf041995c417',
   'scripts/test-catalog-only-writeoff-20261018.mjs': '04ac4678d9296c1c780c59d69cdeaf2f36f1f875',
+  'worker/index.ts': '1511ecd841a31c86ab9fc352b84bd5bc0e6f9e06',
+  'worker/domains/workshop-settlements.ts': 'ac745c67e7679d7f7fac7454a625579e1d6c6635',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx': '0234d727606f5b851c678df014c103ddfd9f8178',
+  'src/styles/stage04-workshop-settlements.css': '7c91b20890748ed713048f13bf96c6754680fa96',
 }
 const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
@@ -32,6 +40,7 @@ const run = (cmd,args) => {
 for(const [file,expected] of Object.entries(candidate))
   check(sha(file)===expected,'Unreviewed writeoff candidate: '+file)
 run(process.execPath,['--experimental-strip-types','scripts/test-catalog-only-writeoff-20261018.mjs'])
+run(process.execPath,['--experimental-strip-types','scripts/test-stage04-opening-cutover-20261018.mjs'])
 run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
 
 const saved=new Map()
