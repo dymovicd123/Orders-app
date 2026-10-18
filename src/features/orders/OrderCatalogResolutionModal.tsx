@@ -330,7 +330,11 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
           </button>
           <button type="button" className="secondary-button" disabled={disabled} onClick={() => setRetiredChoice('choose')}>Назад</button>
         </div> : null}
-        {retiredChoice === 'choose' && exactDraftVariant?.id ? <p>Также доступна отдельная привязка к новой рабочей версии той же комбинации — без изменения исторической SKU.</p> : null}
+        {retiredChoice === 'choose' && exactDraftVariant?.id ? <div className="resolution-choices">
+          <button type="button" className="secondary-button" disabled={disabled} onClick={() => void finish(exactDraftVariant.id)}>
+            Привязать резерв к свежей версии той же комбинации
+          </button>
+        </div> : null}
       </>
     }
     if (!question) return null
