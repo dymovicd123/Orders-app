@@ -297,7 +297,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
         <label className="ws-fast-comment" htmlFor="ws-payment-comment">Комментарий (необязательно)
           <input id="ws-payment-comment" type="text" maxLength={500} value={comment}
             onChange={e=>setComment(e.target.value)} placeholder="Если нужно пояснить выплату"/>
-        </label>}
+        </label>
         <div className="ws-fast-pay-confirm">
           <button type="button" className="secondary compact" onClick={closePayment} disabled={busy}>Отмена</button>
           <button type="submit" className="primary compact" disabled={!maySave}>
