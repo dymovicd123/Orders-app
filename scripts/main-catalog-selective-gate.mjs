@@ -76,7 +76,7 @@ if (!process.env.MAIN_RETIRED_SKU_RUNTIME_REPLAY) {
   fs.rmSync('dist',{recursive:true,force:true});
   run(process.platform==='win32'?'npm.cmd':'npm',['run','build']);
   const built=path.resolve('dist/client/assets');
-  const resolver=fs.readdirSync(built).filter(file=>/^OrderCatalogResolutionModal-[A-Za-z0-9_-]+\\.js$/.test(file));
+  const resolver=fs.readdirSync(built).filter(file=>/^OrderCatalogResolutionModal-[A-Za-z0-9_-]+\.js$/.test(file));
   if(resolver.length!==1)throw new Error('Current retired SKU resolver chunk missing');
   const output=fs.readFileSync(path.join(built,resolver[0]),'utf8');
   for(const label of ['Материал','Цвет','Размер','Исправить товар и резерв'])
