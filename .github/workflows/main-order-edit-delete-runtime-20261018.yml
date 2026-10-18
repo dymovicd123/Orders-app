@@ -1,0 +1,57 @@
+name: Main order edit and deletion exact runtime candidate
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-order-edit-delete-runtime-20261018.yml'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'worker/index.ts'
+      - 'worker/domains/admin-delete-*.ts'
+      - 'worker/domains/orders-write.ts'
+  push:
+    branches: [main]
+    paths: ['.github/workflows/main-order-edit-delete-runtime-20261018.yml']
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify production identity and exclude dormant Stage04
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          ! grep -q orders_db_branch2 wrangler.jsonc
+          ! grep -q "workshop-settlements.ts" worker/index.ts
+          ! grep -q "workshop-settlement-prices.ts" worker/index.ts
+          grep -q reconcileKaspiPaymentAfterShipping worker/index.ts
+          grep -q 'delete-preview' worker/index.ts
+          grep -q 'delete-chain' worker/index.ts
+      - name: Isolated editor/cancel/delete safety suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/test-safe-order-metadata-edit-20261017.mjs
+          node scripts/test-order-recorded-price-correction-r1.mjs
+          node scripts/test-order-metadata-client-name-snapshot-20261017.mjs
+          node scripts/test-admin-full-editor-role-performance-20261018.mjs
+          node scripts/test-admin-editor-linked-payment-method-20261018.mjs
+          node scripts/test-order-return-cancel-menu-20261018.mjs
+          node scripts/test-order-exchange-bulk-cancellation-20261018.mjs
+          node scripts/test-admin-delete-physical-confirm-dialog-20261018.mjs
+          node scripts/test-admin-delete-real-driver-r1.mjs
+          node scripts/test-admin-delete-resumable-saga-r1.mjs
+          node scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs
+          node scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs
+      - name: Typecheck and production build
+        run: npm run build
