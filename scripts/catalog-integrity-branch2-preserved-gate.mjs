@@ -146,6 +146,23 @@ const reviewedExchangeCancelUx={
   zeroDebitTest:'44859bb83e970b63cf808dbad0f7aada8bf00761',
   returnCancelTest:'6e82869c8b5848faef6315c0e51bb327053e24e2',
 }
+// Safe admin correction after committed Exchange/Return, independently
+// reviewed from PR #487/#488 and pinned without changing old archived manifests.
+const reviewedEditorPaymentMethod={
+  previousApp:reviewedExchangeCancelUx.app,
+  previousTable:reviewedExchangeCancelUx.table,
+  previousWrite:reviewedAdminEditor.write,
+  app:'4a836629608d5baa9a4686fc1d775661eea5fac4',
+  table:'7f021393ebb02522653b6fc72ed72b0c4c7f2152',
+  write:'5f48e1ca27af2e94ff9ecede1231a21ef6e5f8af',
+  regression:'86a69330d4c775659ea852b2dba84e69a03b74a6',
+}
+check(reviewedEditorPaymentMethod.previousApp==='c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7'
+ &&reviewedEditorPaymentMethod.previousTable==='e74f3d1077900ddec02c1b7103857d9b4e572f4c'
+ &&reviewedEditorPaymentMethod.previousWrite==='8af447451f82a89bfee29f51f1cc2ac040c13cc5',
+ 'Previous accepted editor state changed unexpectedly')
+check(gitBlob(fs.readFileSync('scripts/test-admin-editor-linked-payment-method-20261018.mjs','utf8'))
+ ===reviewedEditorPaymentMethod.regression,'Unreviewed linked-order payment method regression')
 check(reviewedExchangeCancelUx.previousApp==='086d433f46b2f6da129f82eaf636f01e9fdd8499'
   &&reviewedExchangeCancelUx.previousTable==='f398558a8860a8fc587fb3cf227533c6219e2200',
   'Previous accepted Exchange cancel UI drifted')
@@ -156,15 +173,15 @@ for(const [file,hash] of [
 check(gitBlob(fs.readFileSync('scripts/test-order-exchange-bulk-cancellation-20261018.mjs','utf8'))
   ===reviewedExchangeCancelUx.regression,'Unreviewed exchange cancellation regression')
 for(const [file,expected] of [
-  ['src/App.tsx',reviewedExchangeCancelUx.app],
-  ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
+  ['src/App.tsx',reviewedEditorPaymentMethod.app],
+  ['worker/domains/orders-write.ts',reviewedEditorPaymentMethod.write],
   ['src/app/orderOperationalProjection.ts',reviewedAdminEditor.projection],
   ['src/features/sections/OrderEditorSection.tsx',reviewedAdminEditor.editor],
   ['src/features/sections/OrderReturnsSection.tsx',reviewedAdminEditor.returns],
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',reviewedAdminEditor.regression],
 ]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unreviewed admin editor role/performance drift: '+file)
 
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedExchangeCancelUx.table,
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedEditorPaymentMethod.table,
   'Unreviewed metadata correction UI drift')
 check(reviewedOptionalMetadata.write==='e157deed999da92d7207c9bc88a70f4ea662e562','Unexpected previous Worker baseline')
 // Order-scoped customer names are additive to the previously reviewed metadata UX.
@@ -178,15 +195,15 @@ const reviewedClientNameFix={
   test:'73be07b2041138b3a17c1cc15d4811eeb5a3ddc5',
 }
 for(const [file,sha] of [
-  ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
+  ['worker/domains/orders-write.ts',reviewedEditorPaymentMethod.write],
   ['worker/domains/orders-read.ts',reviewedClientNameFix.read],
   ['worker/domains/clients.ts',reviewedClientNameFix.clients],
   ['migrations/0112_v72_order_client_name_override.sql',reviewedClientNameFix.migration],
   ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',reviewedClientNameFix.test],
 ])check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed customer name patch drift: '+file)
 const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedExchangeCancelUx.app
-  : file === 'worker/domains/orders-write.ts' ? reviewedAdminEditor.write
+  ? reviewedEditorPaymentMethod.app
+  : file === 'worker/domains/orders-write.ts' ? reviewedEditorPaymentMethod.write
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -419,6 +436,7 @@ for(const entry of inventorySafetyFixtures){
 console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runtime...')
 const tests=[
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
+  ['scripts/test-admin-editor-linked-payment-method-20261018.mjs',false],
   ['scripts/test-order-exchange-bulk-cancellation-20261018.mjs',false],
   ['scripts/test-resolver-gender-scope-guard-20261018.mjs',false],
   ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',false],
@@ -653,7 +671,7 @@ try{
   }
   const orderTablePath=path.resolve('src/features/sections/OrdersTableSection.tsx')
   const orderTableCurrent=fs.readFileSync(orderTablePath,'utf8')
-  check(gitBlob(orderTableCurrent)===reviewedExchangeCancelUx.table,'Current order list price UX changed')
+  check(gitBlob(orderTableCurrent)===reviewedEditorPaymentMethod.table,'Current order list price UX changed')
   // Reconstruct only the previously accepted UI for its immutable historical tests.
   // Independently test and retain the new review-first shipping action in current code.
   const reviewFirstHelp='                            {projection.canShip && order.stock_handover_review_needed ? (\n                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>\n                            ) : null}\n'
@@ -755,7 +773,7 @@ for(const entry of recordedPricePolicyTests)
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order test was not restored: '+entry.file)
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedExchangeCancelUx.table,
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedEditorPaymentMethod.table,
   'Failed to restore reviewed order list handover UI after historical tests')
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,

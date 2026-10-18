@@ -21,6 +21,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     order:any;mode:'last'|'all';plan:any|null;error:string;loading:boolean;submitting:boolean;progress:string;
   } | null>(null)
   const [linkedAdminEditOrder,setLinkedAdminEditOrder] = useState<any|null>(null)
+  const [linkedPaymentDraft,setLinkedPaymentDraft]=useState<{
+    order:any;paymentId:number;method:string;error:string;
+  }|null>(null)
   const [returnCancelDraft,setReturnCancelDraft]=useState<{
     order:any;choices:any[];selectedId:number;loading:boolean;submitting:boolean;error:string;
   }|null>(null)
@@ -33,6 +36,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     correctOrderMetadata,
     correctRecordedOrderItemPrice,
     correctRecordedOrderItemPrices,
+    correctRecordedPaymentMethod,
     loadRetiredExchangePriceOptions,
     correctRetiredExchangePrice,
     loadExchangeCancellationPreview,
@@ -111,6 +115,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
         && reason.startsWith('Для цепочки с зафиксированной выдачей товара'))) : []
 
 
+  const openLinkedPaymentCorrection=(order:any)=>{
+    const payment=Array.isArray(order.payments)?order.payments.find((p:any)=>Number(p.id)>0):null
+    if(!payment)return
+    setLinkedPaymentDraft({order,paymentId:Number(payment.id),method:String(payment.method||''),error:''})
+  }
   const openMetadataCorrection=(order:any)=>setMetadataDraft({order,error:'',next:{
     orderDate:String(order.order_date||'').trim(),
     customerPhone:String(order.customer_phone||'').trim(),
@@ -946,16 +955,25 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <h3>Исправить заказ {linkedAdminEditOrder.external_id}</h3></div>
                       <button className="ghost compact" type="button" onClick={()=>setLinkedAdminEditOrder(null)}>Закрыть</button>
                     </div>
-                    <p>После обмена можно исправить реквизиты и допустимые записанные цены.
-                      Эти действия не переписывают выданные товары и связанные платежи.</p>
+                    <p>После обмена или возврата можно исправить реквизиты, допустимые цены
+                      и способ проведённой оплаты. Состав товаров, выдачи и суммы проведённых
+                      обменов здесь не переписываются.</p>
                     <div className="toolbar-actions" style={{flexWrap:'wrap'}}>
                       <button className="secondary" type="button" onClick={()=>{
                         openMetadataCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
                       }}>Исправить реквизиты</button>
-                      {linkedAdminEditOrder.pricing_mode==='itemized_v1'?(
+                      {linkedAdminEditOrder.pricing_mode==='itemized_v1'
+                        &&Array.isArray(linkedAdminEditOrder.items)
+                        &&linkedAdminEditOrder.items.some((item:any)=>Number(item.id)>0&&Number(item.quantity)>0)?(
                         <button className="secondary" type="button" onClick={()=>{
                           openPriceCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
                         }}>Исправить цены</button>
+                      ):null}
+                      {Array.isArray(linkedAdminEditOrder.payments)
+                        &&linkedAdminEditOrder.payments.some((payment:any)=>Number(payment.id)>0)?(
+                        <button className="secondary" type="button" onClick={()=>{
+                          openLinkedPaymentCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
+                        }}>Исправить способ оплаты</button>
                       ):null}
                       {Number(linkedAdminEditOrder.committed_exchange_count||0)>0?(
                         <button className="secondary" type="button" onClick={()=>{
@@ -963,10 +981,82 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         }}>Отменить обмены</button>
                       ):null}
                     </div>
-                    <p className="muted">Для изменения состава, количества и оплаты в полном редакторе
-                      сначала отмените зависимые обмены и возвраты. Иначе изменения разрушат
-                      связь заказа с уже проведённым складским и финансовым учётом.</p>
+                    <p className="muted">Изменение состава, количества и суммы оплаты
+                      требует отдельной проверки зависимых операций или их штатной отмены.
+                      Исправление способа оплаты сохраняет её сумму и ID, но оставляет
+                      проверяемый след в финансовой истории.</p>
                   </div>
+                </div>
+              ) : null}
+              {linkedPaymentDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={event=>{if(event.target===event.currentTarget&&!savingOrder)setLinkedPaymentDraft(null)}}>
+                  <form className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Исправить способ проведённой оплаты"
+                    style={{maxWidth:590,maxHeight:'min(88vh,740px)',overflowY:'auto',boxSizing:'border-box'}}
+                    onSubmit={event=>{event.preventDefault();void(async()=>{
+                      const draft=linkedPaymentDraft
+                      if(!draft||savingOrder)return
+                      const payment=draft.order.payments.find((p:any)=>Number(p.id)===draft.paymentId)
+                      if(!payment){setLinkedPaymentDraft(d=>d?{...d,error:'Оплата не найдена. Обновите заказ.'}:d);return}
+                      const result=await correctRecordedPaymentMethod(draft.order,payment,draft.method)
+                      if(result.ok)setLinkedPaymentDraft(null)
+                      else setLinkedPaymentDraft(d=>d?{...d,error:result.message}:d)
+                    })()}}>
+                    <div className="modal-head">
+                      <div><div className="card-label">Администратор · безопасная коррекция</div>
+                        <h3>Способ оплаты — {linkedPaymentDraft.order.external_id}</h3></div>
+                      <button className="ghost compact" type="button" disabled={savingOrder}
+                        onClick={()=>setLinkedPaymentDraft(null)}>Закрыть</button>
+                    </div>
+                    <p>Исправляется только способ уже проведённой оплаты. Сумма, дата,
+                      товары, обмены и резервы остаются прежними.</p>
+                    <div style={{display:'grid',gap:12}}>
+                      <label className="form-field" style={{minWidth:0}}>
+                        <span>Проведённая оплата</span>
+                        <select value={linkedPaymentDraft.paymentId} disabled={savingOrder}
+                          style={{width:'100%',boxSizing:'border-box'}}
+                          onChange={event=>{
+                            const payment=linkedPaymentDraft.order.payments.find((p:any)=>Number(p.id)===Number(event.target.value))
+                            if(payment)setLinkedPaymentDraft(d=>d?{...d,paymentId:Number(payment.id),
+                              method:String(payment.method||''),error:''}:d)
+                          }}>
+                          {linkedPaymentDraft.order.payments.filter((p:any)=>Number(p.id)>0).map((p:any)=>(
+                            <option key={p.id} value={p.id}>
+                              {'#'+p.id+' · '+(p.paymentDate||'Без даты')+' · '+formatMoney(p.amount)+' ₸ · '+(p.method||'Не указан')}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="form-field" style={{minWidth:0}}>
+                        <span>Правильный способ оплаты</span>
+                        <select value={linkedPaymentDraft.method} disabled={savingOrder}
+                          style={{width:'100%',boxSizing:'border-box'}}
+                          onChange={event=>setLinkedPaymentDraft(d=>d?{...d,method:event.target.value,error:''}:d)}>
+                          <option value="">Выберите способ</option>
+                          {[...new Set([
+                            ...(Array.isArray(suggestionValues?.paymentMethods)?suggestionValues.paymentMethods:[])
+                              .map((value:any)=>String(value||'').trim()).filter(Boolean),
+                            ...linkedPaymentDraft.order.payments.map((p:any)=>String(p.method||'').trim()).filter(Boolean),
+                          ])].map((value:string)=><option key={value} value={value}>{value}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    {linkedPaymentDraft.error?<p role="alert" className="error">{linkedPaymentDraft.error}</p>:null}
+                    <p className="muted">При изменении другой операцией сохранение будет остановлено.
+                      Денежная история и касса при необходимости исправляются существующим серверным механизмом.</p>
+                    <div className="toolbar-actions">
+                      <button type="button" className="secondary" disabled={savingOrder}
+                        onClick={()=>setLinkedPaymentDraft(null)}>Отмена</button>
+                      <button type="submit" className="primary"
+                        disabled={savingOrder||!linkedPaymentDraft.method.trim()
+                          ||linkedPaymentDraft.method.trim().toUpperCase()===String(
+                            linkedPaymentDraft.order.payments.find((p:any)=>Number(p.id)===linkedPaymentDraft.paymentId)?.method||''
+                          ).trim().toUpperCase()}>
+                        {savingOrder?'Сохраняю…':'Сохранить способ оплаты'}
+                      </button>
+                    </div>
+                  </form>
                 </div>
               ) : null}
               {exchangeChainDraft ? (

@@ -1525,10 +1525,35 @@ export async function updateOrderCritical(
         : (Array.isArray(input.paymentMethodCorrections)
           ? input.paymentMethodCorrections.map((correction) => ({ paymentId: correction.paymentId, method: correction.method }))
           : []);
+      // Admin-only, standalone method corrections work even after a Return or
+      // Exchange. They cannot carry order metadata, amounts or item edits.
+      const isolatedPaymentMethodRequest = rawPaymentCorrections.length>0
+        && rawPaymentCorrections.length<=20
+        && Object.keys(input as Record<string, unknown>).every(key=>
+          key==='requestId'||key==='paymentCorrections')
+        && Object.keys(input as Record<string, unknown>).some(key=>key==='paymentCorrections');
+      if(isolatedPaymentMethodRequest && rawPaymentCorrections.some(entry=>
+        !entry || typeof entry!=='object'
+        || Object.keys(entry).some(key=>![
+          'paymentId','method','expectedPaymentDate','expectedMethod',
+          'expectedAmount','expectedPaymentKind','expectedComment',
+        ].includes(key))
+        || !Number.isSafeInteger(Number(entry.paymentId))
+        || Number(entry.paymentId)<=0
+        || typeof entry.method!=='string'||!cleanText(entry.method)
+        || typeof entry.expectedPaymentDate!=='string'
+        || typeof entry.expectedMethod!=='string'
+        || typeof entry.expectedPaymentKind!=='string'
+        || typeof entry.expectedComment!=='string'
+        || !Number.isSafeInteger(Number(entry.expectedAmount))
+        || Number(entry.expectedAmount)<=0))
+        throw new OrderInputValidationError('Для исправления способа оплаты требуется её исходный снимок. Обновите заказ.');
       const requestedPaymentCorrections = new Map<number, PaymentCorrectionInput>();
       for (const correction of rawPaymentCorrections) {
         const paymentId = toInt(correction?.paymentId, 0);
         if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления. Обновите заказ и повторите.');
+        if(isolatedPaymentMethodRequest && requestedPaymentCorrections.has(paymentId))
+          throw new OrderInputValidationError('Нельзя исправлять одну оплату дважды за одну операцию.');
         requestedPaymentCorrections.set(paymentId, correction);
       }
       const paymentCorrections: Array<Record<string, any>> = [];
@@ -1602,6 +1627,8 @@ export async function updateOrderCritical(
           || newAmount !== oldAmount
           || newPaymentKind !== oldPaymentKind
           || newComment !== oldComment;
+        if (isolatedPaymentMethodRequest && nonMethodChanged)
+          throw new CriticalOperationConflictError('В этом исправлении можно поменять только способ оплаты. Дата, сумма, смысл и комментарий неизменны.');
         if (isExchangeExtra && nonMethodChanged) {
           throw new CriticalOperationConflictError('Эта доплата принадлежит операции обмена. В редакторе заказа можно исправить только способ оплаты; сумму, дату и смысл меняйте через обмен.');
         }
@@ -1933,6 +1960,13 @@ export async function updateOrderCritical(
           receivedAmount:toInt(existingAny.received_amount,0),
           debtAmount:toInt(existingAny.debt_amount,0)};
       }
+      if (isolatedPaymentMethodRequest) {
+        // A payment method never changes the order's historical money totals,
+        // even when prior exchanges replaced the original order items.
+        totals={totalAmount:toInt(existingAny.total_amount,0),
+          receivedAmount:toInt(existingAny.received_amount,0),
+          debtAmount:toInt(existingAny.debt_amount,0)};
+      }
       if (rawItemPriceCorrections.length) {
         const updatePriceByItemId = new Map(priceOnlyItemUpdates.map((update) => [update.orderItemId, update.unitPrice]));
         const itemizedMoney = assertItemizedOrderMoneyNotOverpaid(
@@ -2026,6 +2060,7 @@ export async function updateOrderCritical(
       // Metadata edits belong to this order only: do not mutate shared clients.
       // New phone identities are created inside the final atomic CAS batch.
       nextCustomerId = isolatedMetadataRequest ? null
+        : isolatedPaymentMethodRequest ? (toInt(existingAny.customer_id,0)||null)
         : await upsertCustomerIdentityForOrderCreate(db, nextPhone, nextCustomerName, nextCity, timestamp);
 
       plan = {
@@ -2037,7 +2072,15 @@ export async function updateOrderCritical(
         finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
         persistedShippingStatus, persistedShippingDate, nextComment,
         itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,
-        recordedPriceOnlyRequest,isolatedMetadataRequest,
+        recordedPriceOnlyRequest,isolatedMetadataRequest,isolatedPaymentMethodRequest,
+        methodBefore:isolatedPaymentMethodRequest?{
+          totalAmount:toInt(existingAny.total_amount,0),
+          receivedAmount:toInt(existingAny.received_amount,0),
+          debtAmount:toInt(existingAny.debt_amount,0),
+          returnAmount:toInt(existingAny.return_amount,0),
+          shippingStatus:cleanText(existingAny.shipping_status),
+          orderStatus:cleanText(existingAny.order_status),
+        }:null,
         metadataBefore: isolatedMetadataRequest ? {
           orderDate:cleanText(existingAny.order_date),customerId:toInt(existingAny.customer_id,0),
           customerName:cleanText(existingAny.customer_name),customerPhone:cleanText(existingAny.customer_phone),
@@ -2229,6 +2272,10 @@ export async function updateOrderCritical(
           }
           throw error;
         }
+      } else if(p.isolatedPaymentMethodRequest){
+        // Payment-method-only edits must not rewrite order metadata, totals,
+        // status, customers or reserves. All money changes occur below with
+        // their own atomic compare-and-swap before ledger reversal/entry.
       } else if(p.isolatedMetadataRequest && p.metadataBefore){
         // Check the financial and order lifecycle snapshot atomically with
         // the metadata UPDATE. A competing payment/exchange/shipment cannot
@@ -2377,7 +2424,35 @@ export async function updateOrderCritical(
             id, p.externalId, correction.newMethod, auditComment, cleanText(checkedBy) || 'admin', p.timestamp,
           ));
         }
-        await db.batch(statements);
+        if(p.isolatedPaymentMethodRequest && p.methodBefore){
+          const m=p.methodBefore;
+          statements.unshift(db.prepare(`SELECT json('ORDER_PAYMENT_METHOD_STALE')
+            WHERE NOT EXISTS(
+              SELECT 1 FROM orders o JOIN payments pay ON pay.order_id=o.id
+              WHERE o.id=? AND pay.id=?
+                AND o.total_amount=? AND o.received_amount=?
+                AND o.debt_amount=? AND COALESCE(o.return_amount,0)=?
+                AND COALESCE(o.shipping_status,'')=? AND COALESCE(o.order_status,'')=?
+                AND COALESCE(pay.payment_date,'')=?
+                AND UPPER(TRIM(COALESCE(pay.method,'')))=?
+                AND pay.amount=?
+                AND COALESCE(pay.payment_kind,'primary')=?
+                AND COALESCE(pay.comment,'')=?
+            )`).bind(
+            id,correction.paymentId,
+            m.totalAmount,m.receivedAmount,m.debtAmount,m.returnAmount,
+            m.shippingStatus,m.orderStatus,
+            correction.oldPaymentDate,correction.oldMethod,oldAmount,
+            correction.oldPaymentKind,correction.oldComment,
+          ));
+        }
+        try{
+          await db.batch(statements);
+        }catch(error){
+          if(p.isolatedPaymentMethodRequest && /ORDER_PAYMENT_METHOD_STALE|malformed JSON/i.test(String(error)))
+            throw new CriticalOperationConflictError('Способ оплаты, суммы или статус заказа изменились. Обновите заказ перед повторным исправлением.');
+          throw error;
+        }
       }
     }
 
