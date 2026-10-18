@@ -404,7 +404,11 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
               </select>
             </label>
             {!retiredCorrection.variants.some(variant=>variant.free>=retiredCorrection.quantity)
-              ? <p>На складе нет подходящего доступного исполнения. Исправьте остатки штатным приходом или ревизией.</p> : null}
+              ? <div>
+                <p>На складе нет подходящего доступного исполнения. Исправьте остатки штатным приходом или ревизией.</p>
+                {isAdmin && onEditOrder ? <button type="button" className="secondary-button" disabled={disabled}
+                  onClick={() => void onEditOrder(order)}>Нестандартный случай: редактор администратора</button> : null}
+              </div> : null}
             <label>Цена за штуку (₸)
               <input type="number" min="0" step="1" inputMode="numeric" value={replacementPrice}
                 disabled={disabled||!retiredCorrection.canEditPrice}
