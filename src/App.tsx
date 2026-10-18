@@ -6294,7 +6294,9 @@ function removeDebtPayment(index: number) {
     window.location.hash = '#editor'
     if (order.pricing_mode === 'itemized_v1') {
       void Promise.all([
-        loadCatalogData(true),
+        loadCatalogData(false),
+        // Cached data accelerates opening. Stock and catalog identity are revalidated
+        // by the server at save time; the editor's inventory effect loads fresh stock.
         // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here
         // instead of issuing a second forced Warehouse + Boutique read for the same transition.
         loadInventoryData('warehouse', false, '', false),
@@ -6643,7 +6645,9 @@ function removeDebtPayment(index: number) {
       if (result?.order) {
         const savedOrder = result.order as OrderRecord
         upsertOrderInState(savedOrder)
-        void loadWorkshopData()
+        // Correcting prices/metadata leaves workshop membership unchanged.
+        // Avoid refetching the entire workshop for these common corrections.
+        if (!isItemizedEdit || isItemizedContentRewrite) void loadWorkshopData()
         setSelectedOrderId(savedOrder.id)
         setEditorOrderOverride(savedOrder)
         const savedDraft = createEditorDraft(savedOrder)
@@ -7116,13 +7120,19 @@ function removeDebtPayment(index: number) {
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({expectedSnapshot,physicalOutcome:'not_issued'}),
     })
-    const result=await readJsonResponse<{ok?:boolean;message?:string}>(
-      response,'Проверка фактической выдачи перед удалением')
+    const result=await readJsonResponse<{
+      ok?:boolean;message?:string;
+      preview?:{chainPlan?:{snapshotFingerprint?:string};activeSaga?:unknown}
+    }>(response,'Проверка фактической выдачи перед удалением')
     if(!response.ok||result.ok===false)
       throw new Error(result.message||'Не удалось безопасно исправить выдачу.')
     invalidateInventoryStockCaches(true)
-    // This correction changes the approved stock/order snapshot.
-    // Never execute the old chain plan; obtain an entirely new read-only preview.
+    // The Worker already calculated a fresh preview AFTER the correction.
+    // Reuse it instead of issuing another heavyweight delete-preview GET.
+    // A missing/malformed preview falls back to a fresh read, never to old data.
+    if(result.preview?.chainPlan?.snapshotFingerprint
+      && /^[a-f0-9]{64}$/.test(result.preview.chainPlan.snapshotFingerprint))
+      return {...result.preview,activeSaga:null}
     return await loadAdminOrderDeletePreview(order)
   }
 
