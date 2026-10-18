@@ -60,16 +60,16 @@ export type UnissuedExchangeStockUndo = {
   source:string;variantId:number;quantity:number;
   recordedOutbound:number;physicalRestore:number;reserveRelease:number;
   alreadyCompensated:boolean;correctionMovementId:number|null;
-  bookkeepingFulfillmentOnly:boolean;
+  bookkeepingFulfillmentOnly?:boolean;
 }
 export type AdminDeleteAppliedStockReview = {
   allowed:boolean;appliedCount:number;
-  bookkeepingFulfilledCount:number;
+  bookkeepingFulfilledCount?:number;
   reversals:UnissuedExchangeStockUndo[];blockers:string[];
 }
 const reason='Есть проведённое складское движение без доказанного безопасного сторно. Удаление остановлено; требуется проверка физической истории.'
 const bad=(appliedCount:number,message=reason):AdminDeleteAppliedStockReview=>({
-  allowed:false,appliedCount,bookkeepingFulfilledCount:0,reversals:[],blockers:[message],
+  allowed:false,appliedCount,reversals:[],blockers:[message],
 })
 
 export async function reviewAdminDeleteAppliedStock(
@@ -79,7 +79,7 @@ export async function reviewAdminDeleteAppliedStock(
     "SELECT COUNT(*) AS n FROM inventory_lifecycle_events WHERE order_id=? AND status='applied'"
   ).bind(orderId).first<{n:number}>()
   const appliedCount=Math.max(0,toInt(count?.n,0))
-  if(!appliedCount)return {allowed:true,appliedCount:0,bookkeepingFulfilledCount:0,reversals:[],blockers:[]}
+  if(!appliedCount)return {allowed:true,appliedCount:0,reversals:[],blockers:[]}
   if(appliedCount>100)return bad(appliedCount,'Слишком много применённых складских движений для безопасной проверки.')
 
   let rows:Record<string,unknown>[]=[]
@@ -225,8 +225,8 @@ export async function reviewAdminDeleteAppliedStock(
       reserveRelease:zeroBookedFulfillment?0:reserveQty,
       alreadyCompensated:correction.state==='compensated',
       correctionMovementId:correction.movementId,
-      bookkeepingFulfillmentOnly:zeroBookedFulfillment,
+      ...(zeroBookedFulfillment?{bookkeepingFulfillmentOnly:true}:{}),
     })
   }
-  return {allowed:true,appliedCount,bookkeepingFulfilledCount,reversals,blockers:[]}
+  return {allowed:true,appliedCount,...(bookkeepingFulfilledCount?{bookkeepingFulfilledCount}:{}),reversals,blockers:[]}
 }
