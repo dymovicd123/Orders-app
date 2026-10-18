@@ -155,7 +155,7 @@ const reviewedEditorPaymentMethod={
   app:'b926146af4b46997f24d2a671a75fa7d97fe27c5',
   table:'7f021393ebb02522653b6fc72ed72b0c4c7f2152',
   write:'52644f3c7850593a02f602ce3124f7183b3dbefb',
-  regression:'930a48e8d1ab0d4862b9af77d2e7aea4a830fd61',
+  regression:'0ab77c08286264edda1c28e285a3236bf7567b39',
 }
 check(reviewedEditorPaymentMethod.previousApp==='c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7'
  &&reviewedEditorPaymentMethod.previousTable==='e74f3d1077900ddec02c1b7103857d9b4e572f4c'
