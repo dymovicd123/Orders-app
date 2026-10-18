@@ -115,11 +115,11 @@ check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2c
 const reviewedAdminEditor={
   baselineApp:reviewedReferenceDropdownUx.app,
   baselineWorker:'081a03ae4190e4b9a3de2080a8cfd3487cdf37e7',
-  app:'b08a703faf24bb5d11fad51a38509be28d174c94',
+  app:'81b04853cc3fc95ff83b8587c7675c1d108a5819',
   write:'8af447451f82a89bfee29f51f1cc2ac040c13cc5',
   projection:'62823c931c1c5078e167154a5ad70919272ac8cb',
   editor:'ada21af4cae3f554088b6ab3641b20a380ba08c7',
-  regression:'b843b378d2c00742cd0f6714022f88f8a3b3da66',
+  regression:'beed85b9b01514b5e8d22e6bb90b419123b56f42',
   returns:'a8c970f6608c73138c6c39894dccb7832ab76958',
 }
 for(const [file,expected] of [
