@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process'
 
 const acceptedRef = '2ce0f7449b239e2f6e36d4c4886b2f672e66f38d'
 const accepted = {
+  'package.json': '7f57884cca246755f08735078fdf4dfa882348cd',
   'src/App.tsx': 'c21c662a85da31297d5a77ca7b8a640e6885f9a4',
   'worker/index.ts': '527547151f4ea89baa4465fac4df4eba4dd3281f',
   'worker/domains/orders-write.ts': '48125cbff7d35ccf4dcfaf18fc7d1fcc89305171',
@@ -17,6 +18,7 @@ const accepted = {
   'src/features/inventory/views/renderInventoryMovementPanel.tsx': '817caf27f28b95bbcb3bd19fa5d422c444cf38e1',
 }
 const current = {
+  'package.json': '3df7ee1f437c6c203c3076d1a6055355d595641c',
   'src/App.tsx': '9d9987b976aa3e5844ed8c968d46f97e3e7d004b',
   'worker/index.ts': '36a89ede46aeaefa20433cbc4ccaf0dcf741ebe2',
   'worker/domains/orders-write.ts': '4511edc57947784301aaf411ac669f6cbc206381',
