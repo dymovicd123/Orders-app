@@ -475,7 +475,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-admin-editor-linked-payment-method-20261018.mjs',false],
-  ['scripts/test-kaspi-paid-cutover-20261018.mjs',false],
+  // Old paid-on-create semantics run on the exact #491 source after staging below.
   ['scripts/test-order-exchange-bulk-cancellation-20261018.mjs',false],
   ['scripts/test-resolver-gender-scope-guard-20261018.mjs',false],
   ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',false],
@@ -590,8 +590,7 @@ run(process.execPath,['scripts/test-kaspi-shipping-payment-20261018.mjs'],
 // Keep the archived 2026-10-18 baseline available to all frozen historical
 // tests without changing their assertions. This uses Git object content (no
 // network if the commit is locally present; fetch only in shallow CI clones).
-function acceptedKaspiBefore(file,sha){
-  const ref=reviewedKaspiPaidCutover.sourceRef
+function acceptedKaspiBefore(file,sha,ref=reviewedKaspiPaidCutover.sourceRef){
   const args=['show',ref+':'+file]
   let found=spawnSync('git',args,{encoding:'utf8',maxBuffer:8*1024*1024})
   if(found.status!==0){
@@ -602,6 +601,24 @@ function acceptedKaspiBefore(file,sha){
   }
   check(found.status===0&&gitBlob(found.stdout)===sha,'Historical Kaspi version changed: '+file)
   return found.stdout
+}
+// Replay the immutable #491 paid-on-create regression against #491 source
+// before rewinding further to the older archived pre-#491 release baseline.
+const paidCutoverLive=new Map()
+try {
+  for(const file of ['src/App.tsx','worker/domains/orders-write.ts',
+    'src/features/sections/CreateOrderSection.tsx']){
+    const full=path.resolve(file)
+    const live=fs.readFileSync(full,'utf8')
+    paidCutoverLive.set(full,live)
+    const expected=reviewedKaspiPaidCutover.sourceFiles[file][1]
+    fs.writeFileSync(full,acceptedKaspiBefore(file,expected,
+      '4ee9ce37bd870b1483f9909eb2d519fbc5d78b8d'))
+  }
+  run(process.execPath,['scripts/test-kaspi-paid-cutover-20261018.mjs'],
+    'Preserved Kaspi paid-on-create #491 regression against historical #491 source')
+} finally {
+  for(const [full,live] of paidCutoverLive) fs.writeFileSync(full,live)
 }
 const staged=fs.mkdtempSync(path.join(os.tmpdir(),'branch2-catalog-baseline-'))
 const hidden=[]
