@@ -58,8 +58,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     handleOpenReturn,
     isAdmin,
     kaspiMode = false,
-    kaspiPaymentBusyOrderId,
-    confirmKaspiPayment,
     ManagerBadge,
     markOrderSentToClient,
     openOrderStockHandover,
@@ -476,14 +474,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 <small>Сначала исправьте возврат товара</small>
                               </div>
                             ) : null}
-                            {projection.canOpenDebt ? (
-                              kaspiMode ? (
-                                <button className="primary compact debt-action-button" type="button" disabled={Number(kaspiPaymentBusyOrderId || 0) === Number(order.id || 0)} onClick={(event) => { event.stopPropagation(); void confirmKaspiPayment(order) }}>
-                                  {Number(kaspiPaymentBusyOrderId || 0) === Number(order.id || 0) ? 'Сохраняю…' : 'Подтвердить оплату'}
-                                </button>
-                              ) : (
-                                <button className="secondary compact debt-action-button" type="button" onClick={(event) => { event.stopPropagation(); handleOpenDebt(order) }}>Закрыть долг</button>
-                              )
+                            {!kaspiMode && projection.canOpenDebt ? (
+                              <button className="secondary compact debt-action-button" type="button"
+                                onClick={(event) => { event.stopPropagation(); handleOpenDebt(order) }}>Закрыть долг</button>
                             ) : null}
                             {projection.canOpenReturn ? (
                               <button

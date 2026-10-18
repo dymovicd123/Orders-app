@@ -132,7 +132,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         options={suggestionValues.paymentMethods}
                       />
                     )}
-                    <small>{zammlerMode ? 'Оплату отметьте после уведомления Kaspi.' : 'Выберите способ, которым клиент будет оплачивать заказ.'}</small>
+                    <small>{zammlerMode ? 'При выборе Kaspi магазин полная сумма учитывается автоматически.' : 'Выберите способ, которым клиент будет оплачивать заказ.'}</small>
                   </label>
                   <label className="wide-field">
                     <span>Комментарий</span>
@@ -339,15 +339,15 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
-                      <p>{isKaspiOrder ? 'Оплата Kaspi подтверждается после уведомления о поступлении.' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
+                      <p>{isKaspiOrder ? 'Полная сумма Kaspi магазин автоматически учитывается при создании заказа.' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
                     </div>
                   </div>
                   {!isKaspiOrder ? <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button> : null}
                 </div>
                 {isKaspiOrder ? (
                   <div className="order-manager-required">
-                    <strong>Сейчас получено: {formatMoney(0)}</strong>
-                    <span>При создании вся сумма останется в долге. После поступления денег нажмите «Подтвердить оплату».</span>
+                    <strong>Будет учтено: {formatMoney(createTotals.totalAmount)}</strong>
+                    <span>Отдельное подтверждение не нужно. Заказ сразу будет записан как оплаченный; данные появятся в разделе Kaspi.</span>
                   </div>
                 ) : (
                   <div className="stack">

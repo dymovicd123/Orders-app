@@ -858,13 +858,23 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
           item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
         ));
-        const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
+        let normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
             : payment
         ));
-        if (orderPaymentMethod === 'КАСПИ МАГАЗИН' && normalizedPayments.some(payment => payment.amount > 0)) {
-          throw new OrderInputValidationError('Kaspi-заказ создаётся без фактической оплаты. Сохраните заказ с долгом, а поступление подтвердите позже в разделе Kaspi после уведомления Kaspi.');
+        if (orderPaymentMethod === 'КАСПИ МАГАЗИН') {
+          if (pricingMode !== 'itemized_v1') {
+            throw new OrderInputValidationError('Kaspi магазин: для автоматической записи полной оплаты нужен построчный расчёт заказа.');
+          }
+          if (normalizedPayments.some(payment => payment.amount > 0)) {
+            throw new OrderInputValidationError('Kaspi магазин: сумма оплаты рассчитывается автоматически. Удалите введённые оплаты и повторите.');
+          }
+          // The Kaspi shop is reconciled externally. Within Orders-app a
+          // single full-price, non-cash primary payment is recorded at creation
+          // using the actual itemized total. No separate "confirm" operation.
+          // It is created in the same idempotent order-create critical saga,
+          // not as a second POST/payment operation.
         }
 
         for (const item of normalizedItems) {
@@ -892,6 +902,19 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
               catalogPriceSnapshot: item?.catalogPriceSnapshot ?? null,
             }));
           try {
+            if (orderPaymentMethod === 'КАСПИ МАГАЗИН') {
+              const unbooked = buildItemizedOrderWritePlan(itemizedLines, []);
+              if (unbooked.totalAmount <= 0) {
+                throw new OrderInputValidationError('Kaspi магазин: сумма заказа должна быть больше нуля.');
+              }
+              normalizedPayments = normalizeOrderPayments([{
+                paymentDate: orderDate,
+                method: 'КАСПИ МАГАЗИН',
+                amount: unbooked.totalAmount,
+                paymentKind: 'primary',
+                comment: 'Оплата Kaspi магазин учтена при создании заказа',
+              }], orderDate);
+            }
             itemizedWritePlan = buildItemizedOrderWritePlan(itemizedLines, normalizedPayments);
           } catch (error) {
             if (error instanceof ItemizedPricingValidationError) {
