@@ -221,7 +221,7 @@ const reviewedExchangePriceFiles={
   'worker/domains/admin-delete-real-driver.ts':'587a0793b25e05099df5ec09a7503f10977dd895',
   'worker/domains/admin-delete-physical.ts':'23a31cbdfd11875d22975caeaab1411b89998929',
   'scripts/test-admin-delete-compensated-lifecycle-20261017.mjs':'7e87937176ce7da383dcea8b185e99a4845e72da',
-  'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'af58232a739d1a46330964c61925a386955d0ca2',
+  'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'68b77488d329c89211e7ed88943b809dcb7a14e6',
   'worker/domains/admin-delete-impact.ts':'eb5461a761519e21c700c65cabe2d97e3cf96988',
   'scripts/test-admin-delete-exchange-details-20261017.mjs':'b30f28e597ed21ff9b069388415d2aa3bed4672c',
   'worker/domains/admin-delete-execute.ts':'ef7e0e64ed4721ff359089454c6e376c23244028',
