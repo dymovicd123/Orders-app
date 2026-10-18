@@ -1953,10 +1953,16 @@ export async function updateOrderCritical(
         receivedAmount: correctedReceivedAmount,
         debtAmount: Math.max(0, calculatedTotals.totalAmount - correctedReceivedAmount),
       };
-      if (isolatedMetadataRequest || isolatedPaymentMethodRequest) {
-        // After an exchange, remaining active SKU lines may differ from the
-        // historical order total. Metadata and payment-METHOD corrections
-        // must NEVER recompute the order amount from those lines.
+      if (isolatedMetadataRequest) {
+        // Historical exchanged orders may have totals that do not equal today's
+        // remaining active SKU sum. A metadata edit must NEVER recalculate money.
+        totals={totalAmount:toInt(existingAny.total_amount,0),
+          receivedAmount:toInt(existingAny.received_amount,0),
+          debtAmount:toInt(existingAny.debt_amount,0)};
+      }
+      if (isolatedPaymentMethodRequest) {
+        // A payment method never changes the order's historical money totals,
+        // even when prior exchanges replaced the original order items.
         totals={totalAmount:toInt(existingAny.total_amount,0),
           receivedAmount:toInt(existingAny.received_amount,0),
           debtAmount:toInt(existingAny.debt_amount,0)};
