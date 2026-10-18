@@ -855,13 +855,20 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
           item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
         ));
-        const normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
+        let normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
             : payment
         ));
-        if (orderPaymentMethod === 'КАСПИ МАГАЗИН' && normalizedPayments.some(payment => payment.amount > 0)) {
-          throw new OrderInputValidationError('Kaspi-заказ создаётся без фактической оплаты. Сохраните заказ с долгом, а поступление подтвердите позже в разделе Kaspi после уведомления Kaspi.');
+        if (orderPaymentMethod === 'КАСПИ МАГАЗИН') {
+          if (pricingMode !== 'itemized_v1') {
+            throw new OrderInputValidationError('Kaspi магазин: сумма заказа определяется по ценам позиций.');
+          }
+          if (normalizedPayments.some(payment => payment.amount > 0)) {
+            throw new OrderInputValidationError('Kaspi магазин: при создании оплата не записывается. Уберите оплаты: долг закроется автоматически при отправке.');
+          }
+          // Kaspi is debt-first. Only the confirmed shipping operation may
+          // subsequently book its outstanding balance, never order creation.
         }
 
         for (const item of normalizedItems) {
@@ -889,6 +896,13 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
               catalogPriceSnapshot: item?.catalogPriceSnapshot ?? null,
             }));
           try {
+            if (orderPaymentMethod === 'КАСПИ МАГАЗИН') {
+              const unbooked = buildItemizedOrderWritePlan(itemizedLines, []);
+              if (unbooked.totalAmount <= 0) {
+                throw new OrderInputValidationError('Kaspi магазин: сумма заказа должна быть больше нуля.');
+              }
+              // The itemized price is validated here, but no payment is booked.
+            }
             itemizedWritePlan = buildItemizedOrderWritePlan(itemizedLines, normalizedPayments);
           } catch (error) {
             if (error instanceof ItemizedPricingValidationError) {
