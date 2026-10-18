@@ -6273,6 +6273,142 @@ function removeDebtPayment(index: number) {
       preview:data.preview??null}
   }
 
+
+  type OrderExchangeCancelStep = {
+    type:'exchange'|'return';id:number;reason:string;requiresManualReview:boolean;order:number;
+  }
+  type OrderExchangeCancelPlan = {
+    mode:'last'|'all';availableExchangeIds:number[];selectedExchangeIds:number[];
+    steps:OrderExchangeCancelStep[];signature:string;canExecute:boolean;
+    manualReviewRequired:boolean;notice:string;
+  }
+
+  // Preview only. Compose the existing, server-proven per-exchange dependency
+  // graphs. Never include an independent Return that is not actually downstream
+  // of an exchange. Each real cancellation revalidates its own money/stock CAS.
+  async function loadOrderExchangeCancellationPlan(
+    order:OrderRecord,mode:'last'|'all',
+  ):Promise<OrderExchangeCancelPlan>{
+    const discovery=await loadExchangeCancellationPreview(order)
+    const available=discovery.availableExchangeIds
+    const selected=mode==='last' ? available.slice(-1) : [...available]
+    if(!selected.length)return {mode,availableExchangeIds:[],selectedExchangeIds:[],
+      steps:[],signature:'',canExecute:false,manualReviewRequired:false,
+      notice:'У заказа нет активных обменов.'}
+    // A bounded bulk action is easier to inspect and safer to resume.
+    if(selected.length>20)throw new Error('Более 20 обменов. Массовую отмену нужно проверить отдельно.')
+    const previews=await Promise.all(selected.map(async(id)=>{
+      const result=await loadExchangeCancellationPreview(order,id)
+      if(result.availableExchangeIds.join(',')!==available.join(',')
+        ||!result.preview||result.preview.exchangeId!==id)
+        throw new Error('История обменов изменилась. Откройте проверку заново.')
+      return result.preview
+    }))
+    const nodes=new Map<string,OrderExchangeCancelStep>()
+    const edges=new Map<string,Set<string>>()
+    let manual=false
+    for(const preview of previews){
+      manual ||=preview.manualReviewRequired
+      for(let i=0;i<preview.steps.length;i++){
+        const step=preview.steps[i]
+        const key=step.type+':'+step.id
+        if(step.id<=0||!['exchange','return'].includes(step.type))
+          throw new Error('Неоднозначная зависимость обмена: автоматическая отмена остановлена.')
+        if(!nodes.has(key))nodes.set(key,{...step})
+        if(!edges.has(key))edges.set(key,new Set())
+        if(i>0){
+          const prior=preview.steps[i-1]
+          const before=prior.type+':'+prior.id
+          if(!edges.has(before))edges.set(before,new Set())
+          edges.get(before)!.add(key)
+        }
+      }
+    }
+    // Merge dependency plans by a topological ordering rather than guessing
+    // that numeric exchange IDs always express the complete causal graph.
+    const indegree=new Map<string,number>([...nodes.keys()].map(key=>[key,0]))
+    for(const children of edges.values())
+      for(const child of children)indegree.set(child,(indegree.get(child)||0)+1)
+    const compare=(a:string,b:string)=>{
+      const ra=a.startsWith('return:'),rb=b.startsWith('return:')
+      return ra===rb ? Number(b.split(':')[1])-Number(a.split(':')[1]) : ra?-1:1
+    }
+    const ready=[...indegree].filter(([,count])=>count===0).map(([key])=>key).sort(compare)
+    const ordered:OrderExchangeCancelStep[]=[]
+    while(ready.length){
+      const key=ready.shift()!
+      ordered.push({...nodes.get(key)!,order:ordered.length+1})
+      for(const child of edges.get(key)||[]){
+        const next=(indegree.get(child)||0)-1
+        indegree.set(child,next)
+        if(next===0)ready.push(child)
+      }
+      ready.sort(compare)
+    }
+    if(ordered.length!==nodes.size||selected.some(id=>!nodes.has('exchange:'+id)))
+      throw new Error('Цепочка содержит цикл или отсутствующую операцию. Автоматическая отмена остановлена.')
+    manual ||=ordered.some(step=>step.requiresManualReview)
+    const signature=JSON.stringify({mode,selected,steps:ordered.map(step=>[step.type,step.id])})
+    return {mode,availableExchangeIds:available,selectedExchangeIds:selected,
+      steps:ordered,signature,manualReviewRequired:manual,canExecute:!manual,
+      notice:manual
+        ? 'В цепочке есть старый обмен или неоднозначные данные. Автоматическая отмена заблокирована.'
+        : ordered.some(step=>step.type==='return')
+          ? 'В цепочке есть зависимые возвраты. Они перечислены ниже и будут отменены до связанных обменов.'
+          : 'Каждая операция повторно проверит финансы, склад и историю перед отменой.'}
+  }
+
+  async function cancelOrderExchangeChain(
+    order:OrderRecord,expected:OrderExchangeCancelPlan,
+    onProgress?:(done:number,total:number)=>void,
+  ):Promise<void>{
+    // Never use a stale preview as authorization. Reconstruct the dependency
+    // graph immediately before writes; the existing endpoints enforce CAS again.
+    const current=await loadOrderExchangeCancellationPlan(order,expected.mode)
+    if(!current.canExecute||!current.steps.length||current.signature!==expected.signature)
+      throw new Error('История обменов изменилась или есть небезопасная операция. Обновите предпросмотр.')
+    let completed=0
+    setSavingOrder(true)
+    setError(null)
+    try{
+      for(const step of current.steps){
+        const key='exchange-chain-cancel:'+order.id+':'+step.type+':'+step.id
+        const payload={comment:'Аннулирование '+(expected.mode==='all'?'всех обменов':'последнего обмена')
+          +' из заказа '+order.external_id}
+        const critical=prepareCriticalRequest(key,payload)
+        const url=step.type==='exchange'
+          ? '/api/exchanges/'+step.id+'/cancel'
+          : '/api/returns/'+step.id+'/cancel'
+        const response=await apiFetch(url,{
+          method:'PATCH',headers:{'Content-Type':'application/json',
+            'X-Idempotency-Key':critical.requestId},
+          body:JSON.stringify(critical.payload),
+        })
+        const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
+          response,'Отмена '+(step.type==='exchange'?'обмена':'возврата')+' #'+step.id)
+        if(!response.ok||result.ok===false)
+          throw new Error('Шаг '+(completed+1)+'/'+current.steps.length+': '
+            +(result.message||'Не удалось отменить операцию #'+step.id)
+            +'. Уже завершённые шаги сохраняются. Повторите оставшуюся цепочку.')
+        completeCriticalRequest(key,critical.requestId)
+        if(result.order)upsertOrderInState(result.order)
+        completed++
+        onProgress?.(completed,current.steps.length)
+      }
+      setMessage('Обмены по заказу '+order.external_id
+        +' отменены. Исходные записи сохранились в истории.')
+    }finally{
+      setSavingOrder(false)
+      invalidateInventoryStockCaches(true)
+      invalidateFinanceReadCaches()
+      await Promise.allSettled([
+        loadExchangeHistory(),loadReturnHistory(),loadDashboard(false),
+        loadWorkshopData(),refreshFinanceReportsIfVisible(),
+        loadInventoryLifecycle(true),
+      ])
+    }
+  }
+
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
     if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
     const projection = await getOrderOperationalProjection(order)
