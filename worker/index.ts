@@ -61,7 +61,7 @@ import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
 import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, PlanInput, TimesheetInput } from './domains/team.ts'
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
-import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
+import { activateWorkshopSettlements, postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
 import { countUnpricedWorkshopCompletions, listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
@@ -705,6 +705,13 @@ export default {
         ), { status: 201 });
       }
 
+      // Stage04: only the administrator may set the opening debt and enable capture.
+      if (url.pathname === '/api/workshop/settlements/activate' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'Запуск учёта цеха доступен только администратору.');
+        if (denied) return denied;
+        const input = await readJson<{ openingDebt?: unknown }>(request);
+        return json(await activateWorkshopSettlements(env.DB, input, (authUser as AuthUser).id), { status: 201 });
+      }
       // Stage04-C: settlement payments are admin-only; worker remains inert until Stage04 cutover.
       if (url.pathname === '/api/workshop/settlements/summary' && request.method === 'GET') {
         const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
