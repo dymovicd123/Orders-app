@@ -12,6 +12,46 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Verify actual Cloudflare D1 business state, not its unreliable per-statement
+// change counts; replay every immutable previous Branch2 suite afterward.
+if (!process.env.RETIRED_CORRECTION_READBACK_REPLAY) {
+  const accepted='78b641d14f140906ae91a310fa655af08653cdf3';
+  const reviewed={
+    'worker/domains/retired-item-correction.ts': ['dcbdc5000df7be78761929906931a84df9a8d002','b29aa44054e449a103b595c131286fe49216e79e'],
+    'scripts/test-retired-manager-one-line-correction-20261018.mjs': ['b08e0fd3630dd67b7f3783d14befc7d106130e3f','6cd4a0f0441de1238468a91c07ad862795a98c26']
+  };
+  const hash=(pathName)=>gitBlob(fs.readFileSync(pathName));
+  const exec=(cmd,args,env=process.env)=>{
+    const proc=spawnSync(cmd,args,{stdio:'inherit',env,maxBuffer:16*1024*1024});
+    check(!proc.error&&proc.status===0,'Retired-correction truthful error gate failed: '+cmd+' '+args.join(' '));
+  };
+  for (const [file,[,expected]] of Object.entries(reviewed))
+    check(hash(file)===expected,'Unexpected correction business logic: '+file);
+  exec(process.execPath,['--experimental-strip-types','scripts/test-retired-manager-one-line-correction-20261018.mjs']);
+  const saved=new Map();
+  try {
+    const exists=spawnSync('git',['cat-file','-e',accepted+':worker/domains/retired-item-correction.ts'],{stdio:'ignore'});
+    if(exists.status!==0)exec('git',['fetch','--no-tags','--depth=1','origin',accepted]);
+    for(const [file,[before]] of Object.entries(reviewed)){
+      const git=spawnSync('git',['show',accepted+':'+file],{encoding:null,maxBuffer:16*1024*1024});
+      check(!git.error&&git.status===0&&gitBlob(git.stdout)===before,
+        'Original accepted correction source changed: '+file);
+      saved.set(file,fs.readFileSync(file));
+      fs.writeFileSync(file,git.stdout);
+    }
+    exec(process.execPath,['scripts/catalog-integrity-branch2-preserved-gate.mjs'],
+      {...process.env,RETIRED_CORRECTION_READBACK_REPLAY:'1'});
+  }finally{
+    for(const [file,bytes] of saved)fs.writeFileSync(file,bytes);
+  }
+  for(const [file,[,expected]] of Object.entries(reviewed))
+    check(hash(file)===expected,'Failed to restore actual corrected runtime: '+file);
+  fs.rmSync('dist',{recursive:true,force:true});
+  exec(process.platform==='win32'?'npm.cmd':'npm',['run','build']);
+  console.log('RETIRED_CORRECTION_TRUTHFUL_COMMITTED_READBACK_AND_FROZEN_BRANCH2_CHECKS_PASSED');
+  process.exit(0);
+}
+
 // Retired SKU correction now follows normal creation reservations: a physical
 // count of zero never turns a catalog correction into a second stocktake.
 if (!process.env.RETIRED_NATURAL_RESERVE_REPLAY) {
