@@ -11,6 +11,9 @@ const accepted = {
   'package.json': '7f57884cca246755f08735078fdf4dfa882348cd',
   'src/App.tsx': 'c21c662a85da31297d5a77ca7b8a640e6885f9a4',
   'worker/index.ts': '527547151f4ea89baa4465fac4df4eba4dd3281f',
+  'worker/domains/workshop-settlements.ts': '2b7d7461758c116053b4a62a3576f451180b32fc',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx': '8ec8a1e6b2fe7849e74881d302ff72a1b095b58f',
+  'src/styles/stage04-workshop-settlements.css': '6796899d63de3e2183a95605b9280764c9e64b48',
   'worker/domains/orders-write.ts': '48125cbff7d35ccf4dcfaf18fc7d1fcc89305171',
   'src/features/sections/CreateOrderSection.tsx': '98a174735cbaf467b5d54be2aadcd2fb5724f82f',
   'src/app/constants.ts': '8175cd21630318ebd9ebc339db3296482d43b83d',
@@ -20,7 +23,10 @@ const accepted = {
 const current = {
   'package.json': '3df7ee1f437c6c203c3076d1a6055355d595641c',
   'src/App.tsx': '9d9987b976aa3e5844ed8c968d46f97e3e7d004b',
-  'worker/index.ts': '36a89ede46aeaefa20433cbc4ccaf0dcf741ebe2',
+  'worker/index.ts': '1511ecd841a31c86ab9fc352b84bd5bc0e6f9e06',
+  'worker/domains/workshop-settlements.ts': 'ac745c67e7679d7f7fac7454a625579e1d6c6635',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx': '17d01ea1565cc5b0bd2185f05d8e02d1dcd6410b',
+  'src/styles/stage04-workshop-settlements.css': '7c91b20890748ed713048f13bf96c6754680fa96',
   'worker/domains/orders-write.ts': '4511edc57947784301aaf411ac669f6cbc206381',
   'src/features/sections/CreateOrderSection.tsx': '55a68a53eb5c3bf501f1e5655240a05b5ad5ec2e',
   'src/app/constants.ts': 'eb9a28ebcf6ecd4456dd5885c747eba8df3b2993',
@@ -62,6 +68,7 @@ if (process.env.KASPI_UNIFIED_HISTORICAL_REPLAY === '1' ||
 for(const [file,expected] of Object.entries({...current,...immutable}))
   check(sha(file)===expected,'Unreviewed current business source: '+file)
 run(process.execPath,['scripts/test-kaspi-unified-orders-writeoff-20261018.mjs'])
+run(process.execPath,['--experimental-strip-types','scripts/test-stage04-opening-cutover-20261018.mjs'])
 
 const archived=new Map()
 try {
