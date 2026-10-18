@@ -12,6 +12,70 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// New retired-SKU handover generation: execute the complete previous 2026-10-18
+// suite on its exact accepted Branch2 source, not on altered assertions.
+// Independently pin the new SKU confirmation, test the real SQL, and rebuild the
+// current UI/Worker *after* restoring sources (Cloudflare deploys this dist).
+if (!process.env.RETIRED_ISSUE_PRESERVED_REPLAY) {
+  const reviewedCurrent={"worker/index.ts":["6b416e9fc0f739aa56e5c883107f515946178736","fc7f8a747069788f708ed095aa40e7f5adfe5d4d"],"worker/domains/order-reservations.ts":["d96b55cc499dc54c9c5301197f0f0c759d17ba1f","00d18e4d2e0964bcd9f912aade1fd285399076a0"],"worker/domains/catalog-review.ts":["4c155ec4477f4020d2a31ef0b532c0dc29e5d5c0","7f230db90e1da9efd6c16f63519fbeaeb05c6639"],"src/features/orders/OrderCatalogResolutionModal.tsx":["f8a24ce8c06a29ec9a6904e53357919b45c83cf2","4a4c39768cfe9cfe5fc473ebc5daedcb3fa88e17"],"src/App.tsx":["0530b595a24e9f3e3b36b4333221018e3da3780a","c21c662a85da31297d5a77ca7b8a640e6885f9a4"]};
+  const reviewedAdded={"worker/domains/retired-item-handover.ts":"4f24d724d768d65a7d2b92b7e4c0a3b9db8bf31c","migrations/0113_retired_order_item_actual_handover.sql":"8cb4587661e6778afdb079211b208b76a5c2ddfa","scripts/test-retired-order-item-handover-20261018.mjs":"678397c649193c3a16a1b97936487e2eec8fca62"};
+  const acceptedCommit='71cca59c558a7d87547a90c364276b48e3167a02';
+  const currentSHA=(file)=>gitBlob(fs.readFileSync(file,'utf8'));
+  for (const [file,[,sha]] of Object.entries(reviewedCurrent))
+    check(currentSHA(file)===sha,'Unreviewed retired issue runtime drift: '+file);
+  for (const [file,sha] of Object.entries(reviewedAdded))
+    check(currentSHA(file)===sha,'Unreviewed retired issue source: '+file);
+  const command=(bin,args,label,env=process.env)=>{
+    const result=spawnSync(bin,args,{env,stdio:'inherit',shell:false,maxBuffer:8*1024*1024});
+    check(!result.error && result.status===0,label+' failed: '+result.status);
+  };
+  const npm=process.platform==='win32'?'npm.cmd':'npm';
+  command(process.execPath,['--experimental-strip-types','scripts/test-retired-order-item-handover-20261018.mjs'],'Current actual-SKU delivery regression');
+  const state=new Map();
+  const hidden=[];
+  const staging=fs.mkdtempSync(path.join(os.tmpdir(),'retired-issue-archived-baseline-'));
+  try {
+    const exists=spawnSync('git',['cat-file','-e',acceptedCommit+':worker/index.ts'],{stdio:'ignore'});
+    if(exists.status!==0)command('git',['fetch','--no-tags','--depth=1','origin',acceptedCommit],'Fetch reviewed historical Branch2');
+    for(const [file,[before,after]] of Object.entries(reviewedCurrent)){
+      check(currentSHA(file)===after,'Concurrent retired SKU source drift: '+file);
+      const old=spawnSync('git',['show',acceptedCommit+':'+file],{encoding:null,maxBuffer:10*1024*1024});
+      check(!old.error && old.status===0,'Historical Branch2 source missing: '+file);
+      check(gitBlob(old.stdout)===before,'Historical Branch2 source checksum drift: '+file);
+      state.set(file,fs.readFileSync(file));
+      fs.writeFileSync(file,old.stdout);
+    }
+    for(const file of Object.keys(reviewedAdded)){
+      const target=path.join(staging,path.basename(file));
+      fs.renameSync(file,target);
+      hidden.push({file,target});
+    }
+    command(process.execPath,['scripts/catalog-integrity-branch2-preserved-gate.mjs'],
+      'Complete unchanged historical Branch2 release and Stage04 gate',
+      {...process.env,RETIRED_ISSUE_PRESERVED_REPLAY:'1'});
+  }finally{
+    for(const [file,bytes] of state)fs.writeFileSync(file,bytes);
+    for(const {file,target} of hidden.reverse())fs.renameSync(target,file);
+    fs.rmSync(staging,{recursive:true,force:true});
+  }
+  for(const [file,[,sha]] of Object.entries(reviewedCurrent))
+    check(currentSHA(file)===sha,'Failed to restore retired SKU runtime: '+file);
+  for(const [file,sha] of Object.entries(reviewedAdded))
+    check(currentSHA(file)===sha,'Failed to restore retired SKU source: '+file);
+  command(process.execPath,['--experimental-strip-types','scripts/test-retired-order-item-handover-20261018.mjs'],'Restored exact SKU delivery regression');
+  fs.rmSync(path.resolve('dist'),{recursive:true,force:true});
+  command(npm,['run','build'],'Current retired SKU frontend/Worker after baseline replay');
+  const assetDir=path.resolve('dist/client/assets');
+  check(fs.existsSync(assetDir),'No frontend bundle for current retired SKU resolver');
+  const resolverChunks=fs.readdirSync(assetDir).filter(name=>/^OrderCatalogResolutionModal-[A-Za-z0-9_-]+\.js$/.test(name));
+  check(resolverChunks.length===1,'Missing or multiple current resolver chunks');
+  const rendered=fs.readFileSync(path.join(assetDir,resolverChunks[0]),'utf8');
+  for(const message of ['В заказе указан неправильный товар','Клиенту передают именно этот удалённый товар'])
+    check(rendered.includes(message),'Refusing stale resolver deployment: '+message);
+  console.log('RETIRED SKU BRANCH2 NEW + HISTORICAL REGRESSIONS PASSED; CURRENT ASSET VERIFIED');
+  process.exit(0);
+}
+
 const manifest=JSON.parse(fs.readFileSync('scripts/catalog-integrity-branch2-stage04-safe-runtime-manifest.json','utf8'))
 check(manifest.version===1 && manifest.revision==='catalog-integrity-branch2-stage04-safe-20261009','Invalid integration manifest')
 // Explicit narrowly reviewed order-delete UX extension. The frozen Catalog
