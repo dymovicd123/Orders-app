@@ -6643,9 +6643,7 @@ function removeDebtPayment(index: number) {
       if (result?.order) {
         const savedOrder = result.order as OrderRecord
         upsertOrderInState(savedOrder)
-        // Correcting prices/metadata leaves workshop membership unchanged.
-        // Avoid refetching the entire workshop for these common corrections.
-        if (!isItemizedEdit || isItemizedContentRewrite) void loadWorkshopData()
+        void loadWorkshopData()
         setSelectedOrderId(savedOrder.id)
         setEditorOrderOverride(savedOrder)
         const savedDraft = createEditorDraft(savedOrder)
