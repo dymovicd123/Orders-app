@@ -38,7 +38,7 @@ assert(app.includes('expectedPaymentKind:String(payment.paymentKind'))
 assert(app.includes('expectedComment:String(payment.comment'))
 assert(app.includes('prepareCriticalRequest(key,payload)'))
 assert(app.includes('completeCriticalRequest(key,critical.requestId)'))
-assert((app.match(/correctRecordedPaymentMethod, loadRetiredExchangePriceOptions/g)||[]).length===2,
+assert((app.match(/loadRetiredExchangePriceOptions, correctRecordedPaymentMethod/g)||[]).length===2,
   'Regular and Kaspi lists must share the same admin payment-method action')
 assert(table.includes('linkedPaymentDraft'))
 assert(table.includes('Исправить способ оплаты'))
