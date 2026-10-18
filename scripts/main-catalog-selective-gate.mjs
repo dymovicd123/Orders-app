@@ -8,6 +8,66 @@ import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 
 
+
+// Main Kaspi promotion: retain the original production regression unmodified,
+// while testing and building the exact new current code independently.
+// Never use the branch2 database or blend the two branches' historical fixtures.
+if (!process.env.MAIN_KASPI_PORT_REPLAY) {
+  const {createHash}=await import('node:crypto')
+  const reviewed={
+    'src/App.tsx':['2126219f2c77fe4752befd2898e1b626fa63df47','822fe0f28ab9877a000d76a133ea4f0b3d67b752'],
+    'worker/index.ts':['f1ce319bc1715a6cfe1529cb26328383d97acec1','f286165f7c3aac6cd1cd2d9ed25fb8fb8443a30a'],
+    'worker/domains/orders-write.ts':['9603938d1b149e7fd76647b253b4671ecdc1e3e3','6300eceb9edac93fd13c34bf320068347d60ae91'],
+    'src/features/sections/CreateOrderSection.tsx':['6649dc8d68c54ec1de7a1f1a4a2283ac3af68665','98a174735cbaf467b5d54be2aadcd2fb5724f82f'],
+    'src/features/sections/OrdersHeaderSection.tsx':['d246548c5c6555e25411ac6bf125442c48b56fda','c9879415e1f7a494a063c4757e55b36823cff49d'],
+    'src/features/sections/OrderFiltersSection.tsx':['8094bea6bac3152c3f41978617febeff54d73c82','20a97854b645787749a39cd1f78fadce79591046'],
+    'src/features/sections/OrdersTableSection.tsx':['02dd262da588cb22d9aa71b0cf3a9e374d667282','32a0e4af8cdd74ce716f3c6cddeb46afbf2cf372'],
+  }
+  const baseline='7b64772bff083b652c09d67ebd642fb7a3257e6d'
+  const hash=data=>createHash('sha1').update(Buffer.concat([
+    Buffer.from('blob '+data.length+'\\0'),data])).digest('hex')
+  const checkHash=(data,sha,file)=>{
+    if(hash(data)!==sha)throw new Error('Kaspi promotion unexpected file version: '+file)
+  }
+  for(const [file,[,current]] of Object.entries(reviewed))
+    checkHash(fs.readFileSync(file),current,file)
+  const ownTest=fs.readFileSync('scripts/test-main-kaspi-shipping-cutover-20261018.mjs')
+  checkHash(ownTest,'604534e382c73c3609e35478e8bfabcd5621777d','Kaspi regression')
+  const exec=(bin,args,env=process.env)=>{
+    const run=spawnSync(bin,args,{encoding:'utf8',env,stdio:'inherit',shell:false,maxBuffer:8*1024*1024})
+    if(run.status!==0)throw new Error(bin+' '+args.join(' ')+' failed: '+run.status)
+  }
+  exec(process.execPath,['scripts/test-main-kaspi-shipping-cutover-20261018.mjs'])
+  const saved=[]
+  try {
+    // Checkout on GitHub Actions is shallow. Fetch only the one verified
+    // production predecessor when needed; no branch2 content is imported.
+    let check=spawnSync('git',['cat-file','-e',baseline+':src/App.tsx'],{encoding:'utf8'})
+    if(check.status!==0)exec('git',['fetch','--no-tags','--depth=1','origin',baseline])
+    for(const [file,[before]] of Object.entries(reviewed)){
+      const full=path.resolve(file)
+      const current=fs.readFileSync(full)
+      const old=spawnSync('git',['show',baseline+':'+file],{encoding:null,maxBuffer:8*1024*1024})
+      if(old.status!==0)throw new Error('Historical main Kaspi source unavailable: '+file)
+      checkHash(old.stdout,before,file)
+      saved.push({file:full,current})
+      fs.writeFileSync(full,old.stdout)
+    }
+    console.log('Checking original unchanged production release gate on exact pre-Kaspi main source')
+    exec(process.platform==='win32'?'npm.cmd':'npm',['run','release:check'],
+      {...process.env,MAIN_KASPI_PORT_REPLAY:'1'})
+  } finally {
+    for(const {file,current} of saved.reverse())fs.writeFileSync(file,current)
+  }
+  for(const [file,[,current]] of Object.entries(reviewed))
+    checkHash(fs.readFileSync(file),current,file)
+  console.log('Building current production Kaspi shipping candidate, not the historical fixture')
+  fs.rmSync('dist',{recursive:true,force:true})
+  exec(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
+  console.log('MAIN_KASPI_CURRENT_AND_HISTORICAL_RELEASE_CHECK_PASSED')
+  process.exit(0)
+}
+
 // 2026-10-13: preserve the last validated production Exchange implementation
 // during historical release:check. The current exchange code has a separate
 // no-stocktake regression and independent current-code build. We fetch the
