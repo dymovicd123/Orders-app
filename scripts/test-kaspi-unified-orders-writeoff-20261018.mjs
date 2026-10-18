@@ -42,11 +42,11 @@ present(workshop, ["workshopChannel === 'kaspi'", "isKaspiTask", "Kaspi мага
 present(movement, [
   "const writeoffVisibleRows",
   ".slice(0, 8)",
-  "inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'transfer'",
+  "inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff'",
   "Выбранные позиции списания",
   "+ Добавить ещё товар",
   "Найти нужный цвет, размер или материал",
 ], 'guided multi-SKU writeoff')
-present(review, ["summarizeWriteoff(lines)", "Проверка списания", "Подтвердить списание"], 'writeoff consequences')
+present(review, ["summarizeWriteoff(lines)", "Проверить списание", "Подтвердить списание"], 'writeoff consequences')
 present(movementWriter, ["if (items.length > 100)", "const items = movementType === 'manual_set' ? rawItems : mergeInventoryItems(rawItems)"], 'batch and anti-duplicate backend')
 console.log('UNIFIED_KASPI_ORDERS_STANDARD_PAYMENTS_WORKSHOP_PRIORITY_MULTI_WRITE_OFF_CHECK_PASSED')
