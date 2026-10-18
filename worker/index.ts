@@ -23,7 +23,7 @@ import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventor
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
-import { createManualOrderPaymentCritical } from './domains/money.ts'
+import { createManualOrderPaymentCritical, readOrderFinancialLedger } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
 import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderHandoverReviewBlockers, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
@@ -62,6 +62,51 @@ import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateW
 import { postWorkshopSettlementPayment, readWorkshopSettlementLedger, readWorkshopSettlementSummary, reverseWorkshopSettlementPayment } from './domains/workshop-settlements.ts'
 import { countUnpricedWorkshopCompletions, listUnpricedWorkshopCompletions, confirmUnpricedWorkshopCompletionCost } from './domains/workshop-settlement-prices.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
+
+
+/**
+ * Kaspi's external settlement is represented by ONE ordinary debt-close payment
+ * after the order becomes sent. Uses the existing durable idempotent payment saga.
+ * The saved plan is reused if a response was lost after payment insertion, even
+ * though a fresh ledger read would then show debt=0.
+ */
+async function reconcileKaspiPaymentAfterShipping(db: D1Database, orderId: number) {
+  const order = await db.prepare(
+    `SELECT id, order_payment_method, shipping_status, shipping_date, order_status, archived_at
+       FROM orders WHERE id = ? LIMIT 1`
+  ).bind(orderId).first<Record<string, unknown>>();
+  if (!order || upperText(order.order_payment_method) !== 'КАСПИ МАГАЗИН') return { applicable: false };
+  if (normalizeShippingStatus(order.shipping_status) !== 'sent') {
+    throw new Error('Оплату Kaspi нельзя записать до отправки заказа.');
+  }
+  if (normalizeOrderStatus(order.order_status) !== 'active' || cleanText(order.archived_at)) {
+    return { applicable: true, skipped: true };
+  }
+  const requestId = `kaspi-shipping-payment:${orderId}:v1`;
+  const operation = await db.prepare(
+    `SELECT context_json FROM critical_operations
+       WHERE request_id = ? AND operation_type = 'order_payment_create' LIMIT 1`
+  ).bind(requestId).first<{ context_json: string | null }>();
+  let savedPlan: { amount?: number; paymentDate?: string } | null = null;
+  if (operation?.context_json) {
+    const context = JSON.parse(operation.context_json) as { plan?: { amount?: number; paymentDate?: string } };
+    savedPlan = context.plan || null;
+  }
+  const ledger = await readOrderFinancialLedger(db, orderId);
+  const amount = savedPlan ? toInt(savedPlan.amount, 0) : ledger.debtAmount;
+  if (amount <= 0) return { applicable: true, alreadyPaid: true };
+  const paymentDate = savedPlan?.paymentDate || normalizeDate(order.shipping_date || new Date().toISOString());
+  await createManualOrderPaymentCritical(db, {
+    requestId,
+    orderId,
+    paymentDate,
+    method: 'КАСПИ МАГАЗИН',
+    amount,
+    paymentKind: 'debt_close',
+    comment: 'Kaspi магазин: оплата учтена по отметке «Отправлено» (внешняя сверка Kaspi)',
+  });
+  return { applicable: true, paymentRecorded: true };
+}
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
 
@@ -1642,6 +1687,13 @@ export default {
           return json({ ok: false, message: 'Операционный маршрут позволяет только отметить заказ отправленным.' }, { status: 400 });
         }
         if (normalizeShippingStatus(existing.shipping_status) === 'sent') {
+          let kaspiPaymentPending = false;
+          try {
+            await reconcileKaspiPaymentAfterShipping(env.DB, id);
+          } catch (error) {
+            kaspiPaymentPending = true;
+            console.warn('Kaspi payment reconciliation after already-sent retry failed', error);
+          }
           let alreadySentOrder = null;
           try {
             alreadySentOrder = await getOrder(env.DB, id);
@@ -1651,6 +1703,7 @@ export default {
           return json({
             ok: true,
             alreadySent: true,
+            ...(kaspiPaymentPending ? { kaspiPaymentPending: true } : {}),
             ...(alreadySentOrder ? { order: alreadySentOrder } : {}),
             refreshRequired: !alreadySentOrder,
             inventoryDelivery: { fulfilled: 0, unresolved: 0 },
@@ -1733,8 +1786,15 @@ export default {
           ).bind(nextShippingDate, timestamp, id).run();
           shippingCommitted = toInt(shippingUpdate.meta?.changes, 0) > 0;
         }
-        // Physical fulfillment + shipping_status above are the critical commit. A secondary readback
-        // must never turn an already-sent order into a false failure response and invite a retry.
+        // Shipping/physical handover is already committed. Finance is a separate,
+        // resumable idempotent step: its failure must not cause a false shipping failure.
+        let kaspiPaymentPending = false;
+        try {
+          await reconcileKaspiPaymentAfterShipping(env.DB, id);
+        } catch (error) {
+          kaspiPaymentPending = true;
+          console.warn('Kaspi payment reconciliation after committed shipping failed', error);
+        }
         let updatedOrder = null;
         try {
           updatedOrder = await getOrder(env.DB, id);
@@ -1760,6 +1820,7 @@ export default {
         return json({
           ok: true,
           ...(!shippingCommitted ? { alreadySent: true } : {}),
+          ...(kaspiPaymentPending ? { kaspiPaymentPending: true } : {}),
           ...(updatedOrder ? { order: updatedOrder } : {}),
           refreshRequired: !updatedOrder,
           inventoryDelivery,
@@ -1881,6 +1942,14 @@ export default {
         if (!orderId) return json({ ok: false, message: 'orderId is required' }, { status: 400 });
         if (!method || !Number.isInteger(rawAmount) || rawAmount <= 0) {
           return json({ ok: false, message: 'Укажите способ оплаты и целую сумму больше нуля.' }, { status: 400 });
+        }
+        // This public manual-payment route must never bypass Kaspi's
+        // shipping-only settlement rule, regardless of supplied requestId.
+        const paymentOrder = await env.DB.prepare(
+          'SELECT order_payment_method FROM orders WHERE id = ? LIMIT 1'
+        ).bind(orderId).first<{ order_payment_method: string | null }>();
+        if (upperText(paymentOrder?.order_payment_method) === 'КАСПИ МАГАЗИН') {
+          return json({ ok: false, message: 'Оплата Kaspi магазин учитывается автоматически при отправке заказа.' }, { status: 409 });
         }
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {

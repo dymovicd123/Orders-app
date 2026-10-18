@@ -4293,8 +4293,8 @@ function App() {
     const isKaspi = normalizeSuggestion(createDraft.orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
     return {
       totalAmount: createPricing.totalAmount ?? 0,
-      receivedAmount: isKaspi ? createPricing.totalAmount ?? 0 : createPricing.receivedAmount,
-      debtAmount: isKaspi ? 0 : createPricing.debtAmount ?? 0,
+      receivedAmount: isKaspi ? 0 : createPricing.receivedAmount,
+      debtAmount: isKaspi ? createPricing.totalAmount ?? 0 : createPricing.debtAmount ?? 0,
     }
   }, [createPricing, createDraft.orderPaymentMethod])
 
@@ -4572,10 +4572,7 @@ function App() {
               isWorkshop: item.sourceType === 'workshop',
             }
           }),
-        payments: isKaspiCreate ? [{
-          paymentDate: createDraft.orderDate, method: 'КАСПИ МАГАЗИН',
-          amount: Number(result.receivedAmount || 0), paymentKind: 'primary', comment: 'Учтена при создании',
-        }] : createDraft.payments
+        payments: isKaspiCreate ? [] : createDraft.payments
           .map((payment, index) => ({
             paymentDate: payment.paymentDate,
             method: payment.method,
