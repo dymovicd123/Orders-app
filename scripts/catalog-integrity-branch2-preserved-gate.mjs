@@ -119,13 +119,15 @@ const reviewedAdminEditor={
   write:'8af447451f82a89bfee29f51f1cc2ac040c13cc5',
   projection:'62823c931c1c5078e167154a5ad70919272ac8cb',
   editor:'ada21af4cae3f554088b6ab3641b20a380ba08c7',
-  regression:'7830edf0a490354d510d5e0871b7ee4fad4b42b1',
+  regression:'b843b378d2c00742cd0f6714022f88f8a3b3da66',
+  returns:'a8c970f6608c73138c6c39894dccb7832ab76958',
 }
 for(const [file,expected] of [
   ['src/App.tsx',reviewedAdminEditor.app],
   ['worker/domains/orders-write.ts',reviewedAdminEditor.write],
   ['src/app/orderOperationalProjection.ts',reviewedAdminEditor.projection],
   ['src/features/sections/OrderEditorSection.tsx',reviewedAdminEditor.editor],
+  ['src/features/sections/OrderReturnsSection.tsx',reviewedAdminEditor.returns],
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',reviewedAdminEditor.regression],
 ]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unreviewed admin editor role/performance drift: '+file)
 
@@ -518,6 +520,21 @@ try{
     'Cannot restore exact old operational projection for historical modularization')
   saved.set(projectionPath,currentProjection)
   fs.writeFileSync(projectionPath,oldProjection)
+  const returnsPath=path.resolve('src/features/sections/OrderReturnsSection.tsx')
+  const currentReturns=fs.readFileSync(returnsPath,'utf8')
+  check(gitBlob(currentReturns)===reviewedAdminEditor.returns,
+    'Admin-only Return editor entrypoint drifted')
+  const oldReturns=currentReturns
+    .replace("    handleEditOrder,\n    isAdmin,\n    ManagerBadge,",
+      "    handleEditOrder,\n    ManagerBadge,")
+    .replace(`                              {isAdmin ? (
+                                <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
+                              ) : <span className="muted-small">Для изменения состава заказа обратитесь к администратору. Исправление цены и реквизитов доступно в «Доп. действия».</span>}`,
+      '                              <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>')
+  check(gitBlob(oldReturns)==='7ae10ca9eec0c596b661db31589dfffb6b3d107b',
+    'Cannot reproduce exact pre-role Return view for immutable historical tests')
+  saved.set(returnsPath,currentReturns)
+  fs.writeFileSync(returnsPath,oldReturns)
   // The historical size/count checks must see exactly the original Branch2
   // source tree; new modules are tested above against their own current code.
   for(const [relative,expected] of [
