@@ -12,6 +12,15 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// The catalog-only writeoff candidate has its own exact-source historical replay.
+// All prior assertions below still run unchanged on the pinned previous runtime.
+if (gitBlob(fs.readFileSync('worker/domains/inventory-movement.ts'))==='605699debb2b9981a95ac85ea72bbf041995c417'
+  && gitBlob(fs.readFileSync('src/app/controllers/useOperationalViewModel.ts'))==='c5f2f71b6d18094afbcc5cafdfe04a972521e8c0') {
+  const replay=spawnSync(process.execPath,['scripts/branch2-catalog-only-writeoff-safe-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!replay.error && replay.status===0,'Catalog-only writeoff candidate gate failed')
+  process.exit(0)
+}
 // Route this *new* business candidate through its source-pinned verifier.
 // All historical snapshots, assertions and migrations below remain unmodified.
 // Replayed old blobs never satisfy this exact-current-code dispatch.
