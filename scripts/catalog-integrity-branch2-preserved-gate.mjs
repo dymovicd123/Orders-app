@@ -163,7 +163,7 @@ const reviewedEditorPaymentMethod={
 const reviewedKaspiPaidCutover={
   sourceRef:'683504c58b116e504cca9b37eea30084131c7127',
   sourceFiles:{
-    'src/App.tsx':['4a836629608d5baa9a4686fc1d775661eea5fac4','b540de5188bbffddd0baf9fecc146bb96fb96bc3'],
+    'src/App.tsx':['4a836629608d5baa9a4686fc1d775661eea5fac4','586ab8a228c54a59b237e2fe1863256ae6391c2c'],
     'worker/domains/orders-write.ts':['5f48e1ca27af2e94ff9ecede1231a21ef6e5f8af','49b39cc9116b833d936b05898e7358bbb2b42934'],
     'src/features/sections/OrdersTableSection.tsx':['7f021393ebb02522653b6fc72ed72b0c4c7f2152','9ddf53e4a0b578ea9eddee7d3a267a65a6bc237a'],
     'src/features/sections/OrdersHeaderSection.tsx':['d246548c5c6555e25411ac6bf125442c48b56fda','c9879415e1f7a494a063c4757e55b36823cff49d'],
