@@ -4293,8 +4293,8 @@ function App() {
     const isKaspi = normalizeSuggestion(createDraft.orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
     return {
       totalAmount: createPricing.totalAmount ?? 0,
-      receivedAmount: isKaspi ? createPricing.totalAmount ?? 0 : createPricing.receivedAmount,
-      debtAmount: isKaspi ? 0 : createPricing.debtAmount ?? 0,
+      receivedAmount: isKaspi ? 0 : createPricing.receivedAmount,
+      debtAmount: isKaspi ? createPricing.totalAmount ?? 0 : createPricing.debtAmount ?? 0,
     }
   }, [createPricing, createDraft.orderPaymentMethod])
 
@@ -4572,10 +4572,7 @@ function App() {
               isWorkshop: item.sourceType === 'workshop',
             }
           }),
-        payments: isKaspiCreate ? [{
-          paymentDate: createDraft.orderDate, method: 'КАСПИ МАГАЗИН',
-          amount: Number(result.receivedAmount || 0), paymentKind: 'primary', comment: 'Учтена при создании',
-        }] : createDraft.payments
+        payments: isKaspiCreate ? [] : createDraft.payments
           .map((payment, index) => ({
             paymentDate: payment.paymentDate,
             method: payment.method,
@@ -7116,11 +7113,24 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
+        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; kaspiPaymentPending?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
         if (response.ok) completeCriticalRequest(criticalKey, critical.requestId)
         return { response, result }
       }
       let { response, result } = await submitShipping()
+      // Shipping is already committed. Retry only the server's idempotent
+      // Kaspi finance completion without shipping physical stock again.
+      if (response.ok && result.kaspiPaymentPending) {
+        try {
+          const resumed = await submitShipping()
+          if (resumed.response.ok) {
+            response = resumed.response
+            result = resumed.result
+          }
+        } catch (error) {
+          console.warn('Kaspi finance retry after committed shipping failed', error)
+        }
+      }
       if (!response.ok && (result.code === 'workshop_not_ready' || result.code === 'stock_handover_review_required')) {
         setMessage(result.message || 'Перед отправкой проверьте товары со склада.')
         await openOrderStockHandover(order)
@@ -7169,7 +7179,10 @@ function removeDebtPayment(index: number) {
       }
       // Shipping is now the physical stock event. Invalidate cached physical/reserved/available values.
       invalidateInventoryStockCaches(true)
-      setMessage(`Заказ ${order.external_id} отмечен как отправленный клиенту.`)
+      invalidateFinanceReadCaches()
+      setMessage(result.kaspiPaymentPending
+        ? `Заказ ${order.external_id} отправлен. Учёт оплаты Kaspi пока не завершился; обратитесь к администратору для повторной сверки. Повторно отправлять товары не нужно.`
+        : `Заказ ${order.external_id} отмечен как отправленный клиенту.`)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')

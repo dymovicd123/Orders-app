@@ -865,16 +865,13 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         ));
         if (orderPaymentMethod === 'КАСПИ МАГАЗИН') {
           if (pricingMode !== 'itemized_v1') {
-            throw new OrderInputValidationError('Kaspi магазин: для автоматической записи полной оплаты нужен построчный расчёт заказа.');
+            throw new OrderInputValidationError('Kaspi магазин: сумма заказа определяется по ценам позиций.');
           }
           if (normalizedPayments.some(payment => payment.amount > 0)) {
-            throw new OrderInputValidationError('Kaspi магазин: сумма оплаты рассчитывается автоматически. Удалите введённые оплаты и повторите.');
+            throw new OrderInputValidationError('Kaspi магазин: при создании оплата не записывается. Уберите оплаты: долг закроется автоматически при отправке.');
           }
-          // The Kaspi shop is reconciled externally. Within Orders-app a
-          // single full-price, non-cash primary payment is recorded at creation
-          // using the actual itemized total. No separate "confirm" operation.
-          // It is created in the same idempotent order-create critical saga,
-          // not as a second POST/payment operation.
+          // Kaspi is debt-first. Only the confirmed shipping operation may
+          // subsequently book its outstanding balance, never order creation.
         }
 
         for (const item of normalizedItems) {
@@ -907,13 +904,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
               if (unbooked.totalAmount <= 0) {
                 throw new OrderInputValidationError('Kaspi магазин: сумма заказа должна быть больше нуля.');
               }
-              normalizedPayments = normalizeOrderPayments([{
-                paymentDate: orderDate,
-                method: 'КАСПИ МАГАЗИН',
-                amount: unbooked.totalAmount,
-                paymentKind: 'primary',
-                comment: 'Оплата Kaspi магазин учтена при создании заказа',
-              }], orderDate);
+              // The itemized price is validated here, but no payment is booked.
             }
             itemizedWritePlan = buildItemizedOrderWritePlan(itemizedLines, normalizedPayments);
           } catch (error) {

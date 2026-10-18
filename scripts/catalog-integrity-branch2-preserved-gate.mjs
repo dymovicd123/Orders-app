@@ -64,8 +64,11 @@ const reviewedEthnoManualHistory = {
   'scripts/test-catalog-positive-stock-undo.mjs':'dae163ccc12b570fd0bde1cf066d60ab77360864',
   'scripts/test-catalog-complex-undo-case.mjs':'b9ab573b89337241e7636e8e9f275d711e4624a6',
 }
+// The current Kaspi shipping route follows the previously accepted Worker.
+const currentKaspiWorkerIndex='6b416e9fc0f739aa56e5c883107f515946178736'
 for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
-  check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed Ethno finalization runtime drift: '+file)
+  check(gitBlob(fs.readFileSync(file,'utf8'))===(file==='worker/index.ts'?currentKaspiWorkerIndex:sha),
+    'Unreviewed Ethno finalization runtime drift: '+file)
 const reviewedCatalogAdded = (file,expected) => reviewedEthnoManualHistory[file] || expected
 const reviewedHandoverUx = {
   appBefore: reviewedDeleteGuidance.currentApp,
@@ -172,10 +175,26 @@ const reviewedKaspiPaidCutover={
   },
   test:'9c6d7af30e51f77fe9db7143e2db1d3c6951b805',
 }
+// The old paid-on-create regression remains frozen for historical replay.
+const reviewedKaspiShippingCutover={
+  sourceFiles:{
+    'src/App.tsx':'0530b595a24e9f3e3b36b4333221018e3da3780a',
+    'worker/domains/orders-write.ts':'48125cbff7d35ccf4dcfaf18fc7d1fcc89305171',
+    'src/features/sections/CreateOrderSection.tsx':'98a174735cbaf467b5d54be2aadcd2fb5724f82f',
+    'worker/index.ts':currentKaspiWorkerIndex,
+  },
+  test:'04c397f79b53c76b2d815ad377b79e94e7c964b9',
+}
+const currentKaspiSourceSha=file=>reviewedKaspiShippingCutover.sourceFiles[file]
+  || reviewedKaspiPaidCutover.sourceFiles[file]?.[1]
+check(gitBlob(fs.readFileSync('scripts/test-kaspi-shipping-payment-20261018.mjs','utf8'))
+  ===reviewedKaspiShippingCutover.test,'Unreviewed current Kaspi shipping regression')
+for(const [file,sha] of Object.entries(reviewedKaspiShippingCutover.sourceFiles))
+  check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed Kaspi shipping runtime: '+file)
 check(gitBlob(fs.readFileSync('scripts/test-kaspi-paid-cutover-20261018.mjs','utf8'))===
   reviewedKaspiPaidCutover.test,'Kaspi paid-on-create regression source drift')
 for(const [file,[before,current]] of Object.entries(reviewedKaspiPaidCutover.sourceFiles))
-  check(gitBlob(fs.readFileSync(file,'utf8'))===current,
+  check(gitBlob(fs.readFileSync(file,'utf8'))===currentKaspiSourceSha(file),
     'Unreviewed Kaspi source change: '+file)
 check(reviewedEditorPaymentMethod.previousApp==='c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7'
  &&reviewedEditorPaymentMethod.previousTable==='e74f3d1077900ddec02c1b7103857d9b4e572f4c'
@@ -193,15 +212,15 @@ for(const [file,hash] of [
 check(gitBlob(fs.readFileSync('scripts/test-order-exchange-bulk-cancellation-20261018.mjs','utf8'))
   ===reviewedExchangeCancelUx.regression,'Unreviewed exchange cancellation regression')
 for(const [file,expected] of [
-  ['src/App.tsx',reviewedKaspiPaidCutover.sourceFiles['src/App.tsx'][1]],
-  ['worker/domains/orders-write.ts',reviewedKaspiPaidCutover.sourceFiles['worker/domains/orders-write.ts'][1]],
+  ['src/App.tsx',currentKaspiSourceSha('src/App.tsx')],
+  ['worker/domains/orders-write.ts',currentKaspiSourceSha('worker/domains/orders-write.ts')],
   ['src/app/orderOperationalProjection.ts',reviewedAdminEditor.projection],
   ['src/features/sections/OrderEditorSection.tsx',reviewedAdminEditor.editor],
   ['src/features/sections/OrderReturnsSection.tsx',reviewedAdminEditor.returns],
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',reviewedAdminEditor.regression],
 ]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,'Unreviewed admin editor role/performance drift: '+file)
 
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedKaspiPaidCutover.sourceFiles['src/features/sections/OrdersTableSection.tsx'][1],
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===currentKaspiSourceSha('src/features/sections/OrdersTableSection.tsx'),
   'Unreviewed metadata correction UI drift')
 check(reviewedOptionalMetadata.write==='e157deed999da92d7207c9bc88a70f4ea662e562','Unexpected previous Worker baseline')
 // Order-scoped customer names are additive to the previously reviewed metadata UX.
@@ -215,15 +234,14 @@ const reviewedClientNameFix={
   test:'73be07b2041138b3a17c1cc15d4811eeb5a3ddc5',
 }
 for(const [file,sha] of [
-  ['worker/domains/orders-write.ts',reviewedKaspiPaidCutover.sourceFiles['worker/domains/orders-write.ts'][1]],
+  ['worker/domains/orders-write.ts',currentKaspiSourceSha('worker/domains/orders-write.ts')],
   ['worker/domains/orders-read.ts',reviewedClientNameFix.read],
   ['worker/domains/clients.ts',reviewedClientNameFix.clients],
   ['migrations/0112_v72_order_client_name_override.sql',reviewedClientNameFix.migration],
   ['scripts/test-order-metadata-client-name-snapshot-20261017.mjs',reviewedClientNameFix.test],
 ])check(gitBlob(fs.readFileSync(file,'utf8'))===sha,'Unreviewed customer name patch drift: '+file)
-const reviewedAfterGitBlob = (file, delta) => file === 'src/App.tsx'
-  ? reviewedKaspiPaidCutover.sourceFiles['src/App.tsx'][1]
-  : file === 'worker/domains/orders-write.ts' ? reviewedKaspiPaidCutover.sourceFiles['worker/domains/orders-write.ts'][1]
+const reviewedAfterGitBlob = (file, delta) => file in reviewedKaspiShippingCutover.sourceFiles
+  ? reviewedKaspiShippingCutover.sourceFiles[file]
   : file === reviewedArrivalMaterialChoice.file ? reviewedArrivalMaterialChoice.after : (reviewedEthnoManualHistory[file] || delta.afterGitBlob)
 const historicalDeleteWorker = [
   {
@@ -457,7 +475,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-admin-editor-linked-payment-method-20261018.mjs',false],
-  ['scripts/test-kaspi-paid-cutover-20261018.mjs',false],
+  // Old paid-on-create semantics run on the exact #491 source after staging below.
   ['scripts/test-order-exchange-bulk-cancellation-20261018.mjs',false],
   ['scripts/test-resolver-gender-scope-guard-20261018.mjs',false],
   ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',false],
@@ -567,11 +585,12 @@ for(const [file,stripTypes] of tests){
 }
 const saved=new Map()
 const kaspiLiveSources=new Map()
+run(process.execPath,['scripts/test-kaspi-shipping-payment-20261018.mjs'],
+  'Current Kaspi shipping settlement and lost-response regression')
 // Keep the archived 2026-10-18 baseline available to all frozen historical
 // tests without changing their assertions. This uses Git object content (no
 // network if the commit is locally present; fetch only in shallow CI clones).
-function acceptedKaspiBefore(file,sha){
-  const ref=reviewedKaspiPaidCutover.sourceRef
+function acceptedKaspiBefore(file,sha,ref=reviewedKaspiPaidCutover.sourceRef){
   const args=['show',ref+':'+file]
   let found=spawnSync('git',args,{encoding:'utf8',maxBuffer:8*1024*1024})
   if(found.status!==0){
@@ -583,15 +602,42 @@ function acceptedKaspiBefore(file,sha){
   check(found.status===0&&gitBlob(found.stdout)===sha,'Historical Kaspi version changed: '+file)
   return found.stdout
 }
+// Replay the immutable #491 paid-on-create regression against #491 source
+// before rewinding further to the older archived pre-#491 release baseline.
+const paidCutoverLive=new Map()
+try {
+  for(const file of ['src/App.tsx','worker/domains/orders-write.ts',
+    'src/features/sections/CreateOrderSection.tsx']){
+    const full=path.resolve(file)
+    const live=fs.readFileSync(full,'utf8')
+    paidCutoverLive.set(full,live)
+    const expected=reviewedKaspiPaidCutover.sourceFiles[file][1]
+    fs.writeFileSync(full,acceptedKaspiBefore(file,expected,
+      '4ee9ce37bd870b1483f9909eb2d519fbc5d78b8d'))
+  }
+  run(process.execPath,['scripts/test-kaspi-paid-cutover-20261018.mjs'],
+    'Preserved Kaspi paid-on-create #491 regression against historical #491 source')
+} finally {
+  for(const [full,live] of paidCutoverLive) fs.writeFileSync(full,live)
+}
 const staged=fs.mkdtempSync(path.join(os.tmpdir(),'branch2-catalog-baseline-'))
 const hidden=[]
 try{
+  // The shipping route also changed. Rewind it for immutable historical
+  // structural tests, then restore it before the current build/deploy.
+  const shippingWorkerPath=path.resolve('worker/index.ts')
+  const shippingWorkerLive=fs.readFileSync(shippingWorkerPath,'utf8')
+  check(gitBlob(shippingWorkerLive)===currentKaspiWorkerIndex,
+    'Unexpected shipping Worker changed before archived baseline')
+  kaspiLiveSources.set(shippingWorkerPath,shippingWorkerLive)
+  fs.writeFileSync(shippingWorkerPath,acceptedKaspiBefore('worker/index.ts',
+    reviewedEthnoManualHistory['worker/index.ts']))
   // Rewind only the six files changed by this PR during the old immutable
   // archived baseline run, then restore the actual production candidate.
   for(const [file,[before,current]] of Object.entries(reviewedKaspiPaidCutover.sourceFiles)){
     const full=path.resolve(file)
     const now=fs.readFileSync(full,'utf8')
-    check(gitBlob(now)===current,'Current Kaspi file changed unexpectedly: '+file)
+    check(gitBlob(now)===currentKaspiSourceSha(file),'Current Kaspi file changed unexpectedly: '+file)
     kaspiLiveSources.set(full,now)
     fs.writeFileSync(full,acceptedKaspiBefore(file,before))
   }
@@ -823,7 +869,7 @@ for(const entry of recordedPricePolicyTests)
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,'Current order test was not restored: '+entry.file)
 check(gitBlob(fs.readFileSync(orderReservationTruthFix.file,'utf8'))===orderReservationTruthFix.after,
   'Failed to restore corrected order reservation code after historical tests')
-check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===reviewedKaspiPaidCutover.sourceFiles['src/features/sections/OrdersTableSection.tsx'][1],
+check(gitBlob(fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8'))===currentKaspiSourceSha('src/features/sections/OrdersTableSection.tsx'),
   'Failed to restore reviewed order list handover UI after historical tests')
 for(const entry of inventorySafetyFixtures){
   check(gitBlob(fs.readFileSync(entry.file,'utf8'))===entry.after,

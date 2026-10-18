@@ -339,15 +339,15 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
-                      <p>{isKaspiOrder ? 'Полная сумма Kaspi магазин автоматически учитывается при создании заказа.' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
+                      <p>{isKaspiOrder ? 'Kaspi-заказ сохраняется с долгом. Оплата учитывается автоматически при нажатии «Отправлено».' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
                     </div>
                   </div>
                   {!isKaspiOrder ? <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button> : null}
                 </div>
                 {isKaspiOrder ? (
                   <div className="order-manager-required">
-                    <strong>Будет учтено: {formatMoney(createTotals.totalAmount)}</strong>
-                    <span>Отдельное подтверждение не нужно. Заказ сразу будет записан как оплаченный; данные появятся в разделе Kaspi.</span>
+                    <strong>К оплате после отправки: {formatMoney(createTotals.totalAmount)}</strong>
+                    <span>При создании: получено 0 ₸. После отметки «Отправлено» оставшийся долг закроется автоматически.</span>
                   </div>
                 ) : (
                   <div className="stack">
