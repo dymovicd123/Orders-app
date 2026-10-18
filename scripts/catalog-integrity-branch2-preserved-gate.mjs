@@ -15,7 +15,7 @@ const check=(condition,message)=>{if(!condition)throw new Error(message)}
 // Retired SKU correction now follows normal creation reservations: a physical
 // count of zero never turns a catalog correction into a second stocktake.
 if (!process.env.RETIRED_NATURAL_RESERVE_REPLAY) {
-  const reviewed={"worker/domains/retired-item-correction.ts":["05e63bb5dcd399ca207f738fdf4dea37659c1a8d","255cd8be502a35abb17b0b2f15054537eb61c546"],"src/features/orders/OrderCatalogResolutionModal.tsx":["286b0ddec3f8bf9fae2e024a6cc50afc83f3daed","39dae332b8e0a50aa320f4dd3265a49d197185ff"],"scripts/test-retired-manager-one-line-correction-20261018.mjs":["0a8e5defd0e1e7464df51f370564bc59f3894b55","857f6955e3afb12a622d54c472e67e3f47eb2357"]};
+  const reviewed={"worker/domains/retired-item-correction.ts":["05e63bb5dcd399ca207f738fdf4dea37659c1a8d","dcbdc5000df7be78761929906931a84df9a8d002"],"src/features/orders/OrderCatalogResolutionModal.tsx":["286b0ddec3f8bf9fae2e024a6cc50afc83f3daed","39dae332b8e0a50aa320f4dd3265a49d197185ff"],"scripts/test-retired-manager-one-line-correction-20261018.mjs":["0a8e5defd0e1e7464df51f370564bc59f3894b55","b08e0fd3630dd67b7f3783d14befc7d106130e3f"]};
   const oldSha='ae9f08c817cd83a9a1fb3439a6133f26e92df3a5';
   const hash=file=>gitBlob(fs.readFileSync(file));
   const execute=(cmd,args,env=process.env)=>{
