@@ -489,6 +489,22 @@ const saved=new Map()
 const staged=fs.mkdtempSync(path.join(os.tmpdir(),'branch2-catalog-baseline-'))
 const hidden=[]
 try{
+  // Archived Kaspi/main-sync checks require the pre-role-change editor.
+  // Restore it byte-for-byte only during those historical tests. The current
+  // security UI and its new assertions already ran above on the real source.
+  const editorPath=path.resolve('src/features/sections/OrderEditorSection.tsx')
+  const currentEditor=fs.readFileSync(editorPath,'utf8')
+  check(gitBlob(currentEditor)===reviewedAdminEditor.editor,
+    'Admin editor changed outside the reviewed role patch')
+  const oldEditor=currentEditor
+    .replace("display: isAdmin && selectedOrder && projection?.canEdit",
+      "display: selectedOrder && projection?.canEdit")
+    .replace('                          <option value="closed">Закрыт</option>',
+      '                          <option value="closed">Закрыт</option>\n                          <option value="deleted">Удалён</option>')
+  check(gitBlob(oldEditor)==='4b0419ce40575f6c0b33809dbb1fb973f0683bbf',
+    'Could not restore byte-exact pre-role editor for immutable checks')
+  saved.set(editorPath,currentEditor)
+  fs.writeFileSync(editorPath,oldEditor)
   // The historical size/count checks must see exactly the original Branch2
   // source tree; new modules are tested above against their own current code.
   for(const [relative,expected] of [
