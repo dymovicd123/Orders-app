@@ -710,6 +710,22 @@ try{
     saved.set(full,now)
     fs.writeFileSync(full,previous)
   }
+  // The Auth R2 historical structural suite expects the previously accepted
+  // resolver modal byte-for-byte. Independently pin/test the new UI above,
+  // then reconstruct the exact prior modal only for historical replay.
+  const resolverPath=path.resolve('src/features/orders/OrderCatalogResolutionModal.tsx')
+  const resolverCurrent=fs.readFileSync(resolverPath,'utf8')
+  check(gitBlob(resolverCurrent)===reviewedGenderScopeResolver.modal,
+    'Current resolver gender conflict guard changed')
+  const resolverPrior=resolverCurrent
+    .replace(/\n  const catalogRequiredGender =[\s\S]*?(?=\n  const disabled =)/,'')
+    .replace(/\n    if \(genderScopeConflict\) \{[\s\S]*?(?=\n    if \(retiredRecovery\) \{)/,'')
+    .replace("context.product ? 'Проверяемые характеристики'",
+      "context.product ? 'В каталоге'")
+  check(gitBlob(resolverPrior)==='b955d232ad7d0e91a3375905fa56b81601a19925',
+    'Cannot reconstruct frozen pre-hotfix resolver modal')
+  saved.set(resolverPath,resolverCurrent)
+  fs.writeFileSync(resolverPath,resolverPrior)
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
   run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',
