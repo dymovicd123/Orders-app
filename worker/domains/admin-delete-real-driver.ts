@@ -68,7 +68,7 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
   // without adding a phantom unit to physical stock.
   const fulfilledCount=toInt(issued?.n,0)
   if(fulfilledCount>0 && fulfilledCount!==review.bookkeepingFulfilledCount)
-    fail('Есть настоящая или неоднозначная выдача помимо нулевого списания обмена. Автоматическая отмена остановлена.')
+    fail('Обнаружена настоящая или неоднозначная выдача. Сначала проверьте выдачу: эта запись не соответствует нулевому списанию обмена. Автоматическая отмена остановлена.')
 
 }
 
