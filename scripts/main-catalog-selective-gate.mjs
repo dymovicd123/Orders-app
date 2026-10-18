@@ -25,7 +25,7 @@ if (!process.env.MAIN_KASPI_PORT_REPLAY) {
   }
   const baseline='7b64772bff083b652c09d67ebd642fb7a3257e6d'
   const hash=data=>createHash('sha1').update(Buffer.concat([
-    Buffer.from('blob '+data.length+'\\0'),data])).digest('hex')
+    Buffer.from('blob '+data.length+'\0'),data])).digest('hex')
   const checkHash=(data,sha,file)=>{
     if(hash(data)!==sha)throw new Error('Kaspi promotion unexpected file version: '+file)
   }
