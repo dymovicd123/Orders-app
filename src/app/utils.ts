@@ -865,7 +865,7 @@ export function sectorFromHash(hash: string): AppSector {
     case 'finances':
       return 'finance'
     case 'kaspi':
-      return 'kaspi'
+      return 'orders'
     case 'clients':
     case 'customers':
       return 'clients'

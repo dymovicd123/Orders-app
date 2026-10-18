@@ -1048,7 +1048,10 @@ export async function applyInventoryMovement(
     const rawItem = entry.raw;
     const item = entry.item;
     const existingStock = entry.legacyStock || (item.variantId ? stockByVariant.get(toInt(item.variantId, 0)) || null : null);
-    if ((movementType === 'manual_set' || movementType === 'writeoff' || movementType === 'delete') && !existingStock?.id) {
+    // Write-off of an active catalog SKU is allowed even when this location
+    // has never had an inventory_stock row. Only explicit quantity confirmation
+    // can record the otherwise untracked physical departure.
+    if ((movementType === 'manual_set' || movementType === 'delete') && !existingStock?.id) {
       throw new Error(`${movementType === 'manual_set' ? 'Корректировка' : 'Списание'}: выбранной позиции больше нет на выбранной точке. Обновите остатки.`);
     }
 
@@ -1073,6 +1076,9 @@ export async function applyInventoryMovement(
       targetQuantity = Math.max(0, item.quantity);
       delta = targetQuantity - currentQuantity;
     } else if (movementType === 'writeoff') {
+      if (expectedQuantity !== null && currentQuantity !== expectedQuantity) {
+        throw new Error(`По «${item.productName}» остаток изменился после выбора варианта: было ${expectedQuantity}, сейчас ${currentQuantity}. Обновите списание перед подтверждением.`);
+      }
       const requested = Math.max(0, item.quantity);
       const boundedOutbound = boundedOutboundStock(currentQuantity, requested);
       if (boundedOutbound.requiresResolution) {
@@ -1228,8 +1234,9 @@ export async function applyInventoryMovement(
        SELECT ?, x.product_id, x.variant_id, x.product_name, x.gender, x.color,
               x.material, x.length, x.size, 0, 0, ?, ?, ?, ?
        FROM x
-       WHERE x.stock_existed = 0 AND x.variant_id IS NOT NULL`
-    ).bind(...chunk.rowBindings, inventorySource, movementType, referenceId, now, now));
+       WHERE x.stock_existed = 0 AND x.variant_id IS NOT NULL
+         AND ? <> 'writeoff'`
+    ).bind(...chunk.rowBindings, inventorySource, movementType, referenceId, now, now, movementType));
   }
 
   statements.push(

@@ -7,6 +7,19 @@ import os from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 
+// Dedicated source-pinned promotion: only unified Kaspi payments and catalog-only
+// writeoff are admitted. All original Production/Stage04-exclusion tests below
+// are run against their exact pre-release files, unchanged.
+if (fs.readFileSync('worker/index.ts','utf8').includes("url.pathname === '/api/payments'")
+  && !fs.readFileSync('worker/index.ts','utf8').includes('reconcileKaspiPaymentAfterShipping')
+  && fs.readFileSync('src/app/controllers/useOperationalViewModel.ts','utf8').includes('const untracked = (catalogData?.variants || [])')) {
+  const candidate=spawnSync(process.execPath,['scripts/main-kaspi-unified-writeoff-release-gate.mjs'],
+    {stdio:'inherit',shell:false,env:process.env,maxBuffer:16*1024*1024})
+  if(candidate.error||candidate.status!==0)
+    throw new Error('Main Kaspi and writeoff candidate verification failed')
+  process.exit(0)
+}
+
 
 
 // Exact main backport of the retired SKU resolver. The new runtime and both

@@ -1,5 +1,6 @@
 import type { InventoryRenderContext } from './types'
 import { partitionTransferVariantRows, refineMovementPickerContext } from '../movementPickerB2B'
+import { WriteoffReview } from './WriteoffReview'
 import '../../../styles/192b2b-movement-picker.css'
 import '../../../styles/w4-human-operations.css'
 
@@ -103,52 +104,77 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     selectedOperationDraftItems.map(({ item }: any) => item?.variantId).filter(Boolean),
     Boolean(String(inventoryExistingVariantSearch || '').trim()),
   )
-  const renderedOperationRows = inventoryDraft.movementType === 'transfer' ? transferPartition.primary : operationVisibleRows
+  // Keep the full selection in the operation draft, but never flood the operator with
+  // every size/color/material of a product. Searching narrows all rows; selected rows
+  // float to the top so a quantity can still be edited without losing the batch.
+  const writeoffVisibleRows = inventoryDraft.movementType === 'writeoff'
+    ? [...operationVisibleRows].sort((a: any, b: any) =>
+        Number(Number(operationDraftItem(b.variantId)?.quantity || 0) > 0) -
+        Number(Number(operationDraftItem(a.variantId)?.quantity || 0) > 0)
+      ).slice(0, 8)
+    : operationVisibleRows
+  const renderedOperationRows = inventoryDraft.movementType === 'transfer'
+    ? transferPartition.primary : writeoffVisibleRows
+  const writeoffReviewLines = inventoryDraft.movementType === 'writeoff'
+    ? selectedOperationDraftItems.filter(({item}:any)=>Number(item?.quantity||0)>0).map(({item,row}:any)=>({
+      variantId: Number(item.variantId||0),
+      productName: String(item.productName||row?.productName||'Товар'),
+      detail: [item.color,item.size,item.material,item.length].filter(Boolean).join(' · '),
+      requested: Number(item.quantity||0),
+      physical: Number(row?.quantity ?? item.expectedQuantity ?? 0),
+      reserved: Number(row?.reservedQuantity||0),
+    })) : []
 
   return (
     <div className="inventory-movement-panel inventory-operations-v182" style={inventoryPanelStyle('movement')} data-step182-operations="human-workflow">
                     <div className="inventory-panel-headline inventory-operations-headline">
                       <div>
-                        <h3>Операции</h3>
-                        <p>Обычная работа здесь — переместить реальный товар между складом и бутиком. Редкие действия убраны ниже.</p>
+                        <h3>{inventoryDraft.movementType === 'writeoff' ? 'Списание товаров' : 'Операции со складом'}</h3>
+                        <p>{inventoryDraft.movementType === 'writeoff'
+                          ? 'Укажите место хранения, причину и товары. Перед списанием система покажет остатки, резервы заказов и последствия.'
+                          : 'Выберите перемещение или списание товара. Приход и исправление количества доступны в дополнительных действиях.'}</p>
                       </div>
                     </div>
     
                     <div className="inventory-operation-entry-actions">
-                      <button
-                        type="button"
-                        className={`inventory-operation-main-action ${inventoryDraft.movementType === 'transfer' ? 'is-active' : ''}`}
-                        disabled={inventoryMovementBusy}
-                        onClick={() => selectInventoryOperationMode('transfer')}
-                      >
-                        <span>
-                          <strong>Переместить товар</strong>
-                          <small>Склад ↔ Бутик · основной сценарий</small>
-                        </span>
+                      <button type="button"
+                        className={`inventory-operation-main-action ${inventoryDraft.movementType==='transfer'?'is-active':''}`}
+                        disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode('transfer')}>
+                        <span><strong>Переместить товар</strong><small>Между складом и бутиком</small></span>
+                        <b>Открыть</b>
+                      </button>
+                      <button type="button"
+                        className={`inventory-operation-main-action inventory-operation-writeoff-action ${inventoryDraft.movementType==='writeoff'?'is-active':''}`}
+                        disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode('writeoff')}>
+                        <span><strong>Списать товар</strong><small>Повреждение, потеря или другая причина</small></span>
                         <b>Открыть</b>
                       </button>
                       <details className="inventory-operation-more-actions">
                         <summary>Другие действия</summary>
                         <div className="inventory-operation-secondary-actions" role="group" aria-label="Другие складские действия">
                           {[
-                            ['arrival', 'Приход'],
-                            ['manual_set', 'Исправить количество'],
-                            ['writeoff', 'Списание'],
-                          ].map(([mode, title]) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              className={inventoryDraft.movementType === mode ? 'is-active' : ''}
-                              disabled={inventoryMovementBusy}
-                              onClick={() => selectInventoryOperationMode(mode)}
-                            >
+                            ['arrival','Приход'],
+                            ['manual_set','Исправить количество'],
+                          ].map(([mode,title])=>(
+                            <button key={mode} type="button"
+                              className={inventoryDraft.movementType===mode?'is-active':''}
+                              disabled={inventoryMovementBusy} onClick={()=>selectInventoryOperationMode(mode)}>
                               {title}
                             </button>
                           ))}
                         </div>
                       </details>
                     </div>
-    
+
+                    {inventoryDraft.movementType === 'writeoff' ? (
+                      <div className="inventory-writeoff-intro" role="note">
+                        <span className="inventory-writeoff-step">Шаг 1 из 2</span>
+                        <div>
+                          <strong>Выберите товары для списания</strong>
+                          <p>Склад или бутик, причина и количество каждого варианта. Ничего не изменится до окончательного подтверждения.</p>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className={`mini-panel inventory-operation-card inventory-operation-card-${inventoryDraft.movementType}`}>
                       <div className="mini-panel-head inventory-operation-clean-head">
                         <div>
@@ -257,21 +283,27 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                 <div className="inventory-operation-selected-product">
                                   <div>
                                     <strong>{selectedInventoryOperationGroup.productName}</strong>
-                                    <span>{selectedInventoryOperationGroup.rows.length} вариантов в точке «{sourceLabel(inventoryDraft.source)}»</span>
+                                    <span>{selectedInventoryOperationGroup.rows.length} вариантов {inventoryDraft.movementType === 'writeoff' ? 'из каталога и учёта' : `в точке «${sourceLabel(inventoryDraft.source)}»`}</span>
                                   </div>
                                   <strong>{selectedInventoryOperationGroup.totalQuantity} на месте</strong>
                                 </div>
     
-                                {selectedInventoryOperationGroup.rows.length > 6 ? (
+                                {(inventoryDraft.movementType === 'writeoff' || selectedInventoryOperationGroup.rows.length > 6) ? (
                                   <label className="inventory-operation-variant-filter">
-                                    <span>Цвет, размер или материал</span>
+                                    <span>{inventoryDraft.movementType === 'writeoff' ? 'Найти нужный цвет, размер или материал' : 'Цвет, размер или материал'}</span>
                                     <input
                                       value={inventoryExistingVariantSearch}
+                                      placeholder={inventoryDraft.movementType === 'writeoff' ? 'Начните вводить характеристики варианта' : undefined}
                                       onChange={(event) => setInventoryExistingVariantSearch(event.target.value)}
                                     />
                                   </label>
                                 ) : null}
     
+                                {inventoryDraft.movementType === 'writeoff' && operationVisibleRows.length > renderedOperationRows.length ? (
+                                  <p className="mini-panel-note" role="status">
+                                    Показано {renderedOperationRows.length} из {operationVisibleRows.length} вариантов. Уточните поиск по цвету, материалу или размеру, чтобы найти остальные.
+                                  </p>
+                                ) : null}
                                 <div className="inventory-operation-variants-table-shell">
                                   <table className="inventory-operation-variants-table">
                                     <thead>
@@ -314,6 +346,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                             <td>
                                               <strong>{inventoryOperationRowPrimary(row)}</strong>
                                               <span>{inventoryOperationRowSecondary(row)}</span>
+                                              {inventoryDraft.movementType === 'writeoff' && !Number(row.id || 0)
+                                                ? <small>Нет записи на этой точке · по системе 0</small>
+                                                : null}
                                             </td>
                                             {inventoryDraft.movementType === 'transfer' ? (
                                               <td>
@@ -409,9 +444,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                 </div>
                                 <button className="ghost compact" type="button" onClick={() => setInventoryDraft((current) => ({ ...current, items: [createEmptyInventoryItem()] }))}>Очистить выбранное</button>
                               </div>
-                              {inventoryDraft.movementType === 'transfer' ? (
+                              {(inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff') ? (
                                 <>
-                                  <div className="inventory-transfer-cart" aria-label="Выбранные позиции перемещения">
+                                  <div className="inventory-transfer-cart" aria-label={inventoryDraft.movementType === 'writeoff' ? 'Выбранные позиции списания' : 'Выбранные позиции перемещения'}>
                                     {selectedOperationDraftItems.map(({ item, row }: any) => {
                                       const physical = Number(row?.quantity ?? item.expectedQuantity ?? 0)
                                       const reserved = Math.max(0, Number(row?.reservedQuantity || 0))
@@ -430,6 +465,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                         >
                                           <strong>{item.productName}</strong>
                                           <span>{[item.color, item.size, item.material, item.length].filter(Boolean).join(' · ')}</span>
+                                          {inventoryDraft.movementType === 'writeoff' && row && !Number(row.id || 0)
+                                            ? <small>Нет складской записи · потребуется подтверждение</small>
+                                            : null}
                                         </button>
                                         <b>{item.quantity} шт.</b>
                                         {shortage > 0 ? <small>нехватка {shortage}</small> : <span className="inventory-transfer-cart-ok">готово</span>}
@@ -452,7 +490,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                     >
                                       + Добавить ещё товар
                                     </button>
-                                    <small>Уже выбранные позиции сохранятся. Можно собрать всё перемещение одной операцией.</small>
+                                    <small>Уже выбранные позиции сохранятся. Можно добавить несколько разных товаров и вариантов в одну операцию.</small>
                                   </div>
                                 </>
                               ) : null}
@@ -461,7 +499,16 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                         </div>
                       )}
     
-                      <div className="inventory-submit-bar inventory-submit-bar-v182">
+                      {inventoryDraft.movementType==='writeoff' ? (
+                        <WriteoffReview source={sourceLabel(inventoryDraft.source)}
+                          reason={inventoryDraft.comment}
+                          lines={writeoffReviewLines}
+                          busy={inventoryMovementBusy}
+                          sourceLoading={movementSourceLoading || Boolean(movementSourceLoadError)}
+                          onConfirm={()=>void saveInventoryMovement()}
+                        />
+                      ) : null}
+                                            <div className="inventory-submit-bar inventory-submit-bar-v182">
                         <div>
                           <strong>{inventoryMovementText.button}</strong>
                           <span>{inventoryDraft.movementType === 'arrival'
@@ -471,14 +518,16 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                               : `${inventoryDraftSummary.rows} позиций · ${inventoryDraftSummary.totalQuantity} шт. · ${sourceLabel(inventoryDraft.source)}${inventoryDraft.movementType === 'transfer' ? ` → ${sourceLabel(inventoryDraft.targetSource)}` : ''}`}</span>
                         </div>
                         <div className="actions">
-                          <button
-                            className="primary"
-                            type="button"
-                            disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}
-                            onClick={() => void saveInventoryMovement()}
-                          >
-                            {inventoryMovementBusy ? 'Сохраняю…' : inventoryMovementText.button}
-                          </button>
+                          {inventoryDraft.movementType!=='writeoff' ? (
+                            <button
+                              className="primary"
+                              type="button"
+                              disabled={inventoryMovementBusy || (inventoryDraft.movementType === 'arrival' ? inventoryArrivalSummary.rows === 0 : inventoryDraftSummary.rows === 0)}
+                              onClick={() => void saveInventoryMovement()}
+                            >
+                              {inventoryMovementBusy ? 'Сохраняю…' : inventoryMovementText.button}
+                            </button>
+                          ) : null}
                           <button className="secondary" type="button" disabled={inventoryMovementBusy} onClick={() => {
                             setInventoryDraft((current) => ({ ...current, items: [createEmptyInventoryItem()], comment: '' }))
                             if (inventoryDraft.movementType === 'arrival') resetInventoryArrivalForm()
