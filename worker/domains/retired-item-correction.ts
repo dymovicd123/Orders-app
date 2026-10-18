@@ -2,7 +2,7 @@ import { cleanText, normalizeSourceType, toInt } from '../core/text.ts';
 type Row=Record<string,unknown>;
 type Input={orderId:number;itemId:number;oldVariantId:number;newVariantId:number;
  quantity:number;oldPrice:number;newPrice:number;oldTotal:number;actor:string};
-const error=(s:string):never=>{throw new Error(s)};
+function error(s:string):never { throw new Error(s); }
 const n=(v:unknown)=>Number.isSafeInteger(Number(v)) ? Number(v) : -1;
 async function row(db:D1Database,orderId:number,itemId:number) {
  const data=await db.prepare(`SELECT oi.*,o.external_id,o.order_status,o.archived_at,
