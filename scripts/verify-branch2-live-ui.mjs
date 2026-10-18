@@ -1,6 +1,6 @@
 // Read-only smoke test of the actual public Branch2 Worker assets.
 // Builds/CI success is insufficient if Cloudflare serves a stale app bundle.
-// Check QA-specific markers and verify consecutive requests: a freshly deployed
+// Check current QA-specific markers and verify consecutive requests: a freshly deployed
 // version can be briefly visible before an older Worker takes traffic back.
 const base = 'https://orders-app-branch2.orders-clothes.workers.dev'
 const expected=[
@@ -37,7 +37,7 @@ async function verifyPass(pass) {
   const workshopChunk=entrySource.match(/WorkshopSection-[A-Za-z0-9_-]+\.js/)
   if(!workshopChunk)throw new Error('Public index.js does not link WorkshopSection')
   const workshop=await get(base+'/assets/'+workshopChunk[0])
-  for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','История операций','Не определена себестоимость','Разобрать позиции','Указать себестоимость','Выплатили полностью','Выплатили часть','Дополнительно (необязательно)','Операции дня','Возвраты в работу','Изменение долга']){
+  for(const marker of ['Расчёты с Цехом','Осталось выплатить','Без себестоимости','История операций','Не определена себестоимость','Разобрать позиции','Указать себестоимость','Выплатили полностью','Выплатили часть','Комментарий (необязательно)','Сохранить долг и включить учёт','Операции дня','Возвраты в работу','Изменение долга']){
     if(!workshop.includes(marker))throw new Error('PUBLIC BRANCH2 IS MISSING STAGE04-D WORKSHOP UI: '+marker)
   }
   const inventoryChunk=entrySource.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
