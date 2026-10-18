@@ -1,0 +1,44 @@
+name: Production Kaspi and Asiya audit SELECT only 20261018
+on:
+  push:
+    branches: ['diag/kaspi-asiya-production-audit-20261018']
+    paths: ['.github/workflows/diag-kaspi-asiya-select-only-20261018.yml']
+permissions:
+  contents: read
+jobs:
+  select-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Verify locked production identity without deploy
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'diag/kaspi-asiya-production-audit-20261018'
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+      - name: Read managers, order sources, Kaspi debt and linked operations ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          queries=(
+            "SELECT m.id,m.name,m.is_active,COUNT(o.id) AS orders,COALESCE(SUM(CASE WHEN UPPER(TRIM(o.order_payment_method))='КАСПИ МАГАЗИН' THEN 1 ELSE 0 END),0) AS kaspi_orders FROM managers m LEFT JOIN orders o ON o.manager_id=m.id GROUP BY m.id,m.name,m.is_active ORDER BY orders DESC LIMIT 100"
+            "SELECT o.manager_id,COALESCE(m.name,o.manager_snapshot_name,'?') AS manager,o.order_payment_method,o.order_status,COUNT(*) AS orders,SUM(o.total_amount) AS total,SUM(o.received_amount) AS received,SUM(o.debt_amount) AS debt FROM orders o LEFT JOIN managers m ON m.id=o.manager_id GROUP BY o.manager_id,manager,o.order_payment_method,o.order_status ORDER BY orders DESC LIMIT 150"
+            "SELECT o.manager_id,COALESCE(m.name,o.manager_snapshot_name,'?') AS manager,COALESCE(o.order_payment_method,'') AS payment_method,COALESCE(oi.is_workshop,0) AS is_workshop,COALESCE(oi.source_type,'') AS item_source,COUNT(DISTINCT o.id) AS orders,COUNT(oi.id) AS lines,SUM(COALESCE(oi.quantity,0)) AS units FROM orders o JOIN order_items oi ON oi.order_id=o.id LEFT JOIN managers m ON m.id=o.manager_id GROUP BY o.manager_id,manager,payment_method,is_workshop,item_source ORDER BY orders DESC LIMIT 150"
+            "SELECT o.order_status,o.shipping_status,COUNT(*) AS orders,SUM(o.total_amount) AS total,SUM(o.received_amount) AS received,SUM(o.debt_amount) AS debt, SUM(CASE WHEN o.received_amount=0 THEN 1 ELSE 0 END) AS zero_received FROM orders o WHERE UPPER(TRIM(o.order_payment_method))='КАСПИ МАГАЗИН' GROUP BY o.order_status,o.shipping_status ORDER BY orders DESC"
+            "SELECT o.id,o.external_id,o.order_date,COALESCE(m.name,o.manager_snapshot_name,'?') AS manager,o.order_payment_method,o.order_status,o.shipping_status,o.total_amount,o.received_amount,o.debt_amount,COUNT(oi.id) AS lines,SUM(CASE WHEN COALESCE(oi.is_workshop,0)=1 THEN 1 ELSE 0 END) AS workshop_lines,SUM(CASE WHEN COALESCE(oi.is_workshop,0)=0 THEN 1 ELSE 0 END) AS physical_lines FROM orders o JOIN order_items oi ON oi.order_id=o.id LEFT JOIN managers m ON m.id=o.manager_id WHERE m.name LIKE '%АСИ%' OR m.name LIKE '%Аси%' OR o.manager_snapshot_name LIKE '%АСИ%' OR o.manager_snapshot_name LIKE '%Аси%' GROUP BY o.id ORDER BY o.id DESC LIMIT 200"
+            "SELECT o.id,o.external_id,o.order_date,o.order_payment_method,o.order_status,o.shipping_status,COUNT(DISTINCT p.id) AS payment_rows,COUNT(DISTINCT e.id) AS exchange_rows,COUNT(DISTINCT r.id) AS return_rows,COUNT(DISTINCT c.id) AS critical_ops FROM orders o LEFT JOIN managers m ON m.id=o.manager_id LEFT JOIN payments p ON p.order_id=o.id LEFT JOIN exchanges e ON e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled' LEFT JOIN returns r ON r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled' LEFT JOIN critical_operations c ON c.target_type='order' AND c.target_id=o.id WHERE m.name LIKE '%АСИ%' OR m.name LIKE '%Аси%' GROUP BY o.id ORDER BY o.id DESC LIMIT 100"
+          )
+          for i in "${!queries[@]}"; do
+            echo "::group::SELECT ONLY $((i+1))"
+            npx wrangler d1 execute orders_db_prod --config wrangler.jsonc --remote --command "${queries[$i]}" --json | jq -c '.[0].results'
+            echo "::endgroup::"
+          done
