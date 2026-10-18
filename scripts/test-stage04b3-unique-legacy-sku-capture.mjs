@@ -9,7 +9,7 @@ assert.doesNotMatch(migration,/\bUPDATE\s+workshop_settlement_capture_control\b/
 assert.doesNotMatch(migration,/\b(?:UPDATE|DELETE\s+FROM)\s+(?:orders|order_items|workshop_tasks|workshop_settlement_events)\b/i)
 const config=fs.readFileSync('wrangler.jsonc','utf8')
 assert.match(config,/"database_name"\s*:\s*"orders_db_prod"/)
-assert.doesNotMatch(config,/orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
+assert.doesNotMatch(config,/orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301/)
 
 const d=new DatabaseSync(':memory:')
 d.exec('PRAGMA foreign_keys=ON')
