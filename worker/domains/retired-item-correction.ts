@@ -83,7 +83,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
  const r=await row(db,orderId,itemId);
  await blockers(db,orderId,itemId);
  if(n(r.variant_id)!==oldVariantId||n(r.quantity)!==quantity||n(r.unit_price)!==oldPrice
-  ||n(r.total_amount)!==oldTotal||n(r.line_total)!==oldPrice*quantity)
+  ||n(r.total_amount)!==oldTotal)
   error('Данные заказа изменились или цена строки некорректна. Обновите заказ.');
  const delta=(newPrice-oldPrice)*quantity, nextTotal=oldTotal+delta;
  if(!Number.isSafeInteger(delta)||!Number.isSafeInteger(nextTotal)||nextTotal<0)
@@ -94,12 +94,15 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
  if(!target||!target.stockId||target.free<quantity)
   error('Свободного остатка выбранного исполнения недостаточно. Выберите другой вариант либо исправьте склад штатной операцией.');
  const source=normalizeSourceType(r.source_type), now=new Date().toISOString();
+ const originalLineTotal=n(r.line_total);
+ if(originalLineTotal<0)error('Неверная историческая сумма позиции. Требуется администратор.');
+ const newLineTotal=delta===0?originalLineTotal:newPrice*quantity;
  const snapshotOld=JSON.stringify({variantId:oldVariantId,productName:r.product_name_snapshot,
   gender:r.gender_snapshot,color:r.color_snapshot,material:r.material_snapshot,length:r.length_snapshot,
-  size:r.size_snapshot,unitPrice:oldPrice,total:oldTotal,quantity});
+  size:r.size_snapshot,unitPrice:oldPrice,lineTotal:originalLineTotal,total:oldTotal,quantity});
  const snapshotNew=JSON.stringify({variantId:newVariantId,productName:target.productName,
   gender:target.gender,color:target.color,material:target.material,length:target.length,
-  size:target.size,unitPrice:newPrice,total:nextTotal,quantity});
+  size:target.size,unitPrice:newPrice,lineTotal:newLineTotal,total:nextTotal,quantity});
  // The first journal INSERT is the per-line claim. All changes are a single
  // Cloudflare D1 atomic batch. Subsequent statements only run while pending.
  const changes=await db.batch([
@@ -115,7 +118,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    JOIN catalog_stock_positions nsp ON nsp.id=newer.stock_position_id AND nsp.is_active=1
    JOIN inventory_stock stock ON stock.variant_id=newer.id AND stock.inventory_source=oi.source_type
    WHERE oi.id=? AND oi.order_id=? AND oi.variant_id=? AND oi.quantity=? AND oi.unit_price=?
-   AND oi.line_total=oi.unit_price*oi.quantity AND oi.is_workshop=0
+   AND (?=0 OR oi.line_total=oi.unit_price*oi.quantity) AND oi.is_workshop=0
    AND oi.stock_writeoff_status='catalog_retired' AND (old.is_active=0 OR osp.is_active=0)
    AND o.total_amount=? AND o.received_amount<=?
    AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')=''
@@ -127,7 +130,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    AND NOT EXISTS(SELECT 1 FROM returns ret WHERE ret.order_id=o.id AND COALESCE(ret.status,'completed')<>'cancelled')
    AND NOT EXISTS(SELECT 1 FROM inventory_reservations used WHERE used.order_id=o.id AND used.status='fulfilled')
   `).bind(newVariantId,newPrice,oldTotal,nextTotal,snapshotOld,snapshotNew,actor,now,newVariantId,
-   itemId,orderId,oldVariantId,quantity,oldPrice,oldTotal,nextTotal),
+   itemId,orderId,oldVariantId,quantity,oldPrice,delta,oldTotal,nextTotal),
   db.prepare(`UPDATE inventory_stock SET reserved_quantity=reserved_quantity+?,
     last_action='Резерв после исправления удалённого товара',last_source_ref=?,updated_at=?
     WHERE id=? AND quantity-reserved_quantity>=? AND EXISTS
@@ -153,7 +156,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    WHERE id=? AND order_id=? AND variant_id=? AND stock_writeoff_status='catalog_retired'
    AND EXISTS(SELECT 1 FROM retired_order_item_corrections j WHERE j.order_item_id=? AND j.status='pending')`
   ).bind(target.productId,newVariantId,target.productName,target.category,target.gender,
-   target.color,target.material,target.length,target.size,newPrice,newPrice*quantity,
+   target.color,target.material,target.length,target.size,newPrice,newLineTotal,
    itemId,orderId,oldVariantId,itemId),
   db.prepare(`UPDATE orders SET total_amount=?,debt_amount=?-received_amount,updated_at=?
    WHERE id=? AND total_amount=? AND received_amount<=? AND EXISTS
