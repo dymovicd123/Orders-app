@@ -13,7 +13,7 @@ assert(worker.includes("actor?.role!=='admin' && options.lifecycleAction!=='orde
 assert(edit.includes("const isolatedPaymentMethodRequest = rawPaymentCorrections.length>0"))
 assert(edit.includes("Object.keys(input as Record<string, unknown>).every(key=>"))
 assert(edit.includes("key==='requestId'||key==='paymentCorrections'"))
-assert(edit.includes('if(isolatedPaymentMethodRequest && nonMethodChanged)'))
+assert(/if\s*\(isolatedPaymentMethodRequest\s*&&\s*nonMethodChanged\)/.test(edit))
 assert(edit.includes("if(isolatedPaymentMethodRequest && requestedPaymentCorrections.has(paymentId))"))
 assert(edit.includes('if (isolatedMetadataRequest || isolatedPaymentMethodRequest)'))
 assert(edit.includes('isolatedPaymentMethodRequest ? (toInt(existingAny.customer_id,0)||null)'))
