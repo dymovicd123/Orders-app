@@ -1,0 +1,145 @@
+/* Stage04 fast settlement surface. Primary actions fit above the fold. */
+.ws-settlements-fast{display:grid;gap:15px;color:#0f172a;padding:4px 0 14px}
+.ws-fast-top{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+.ws-fast-top h3{font-size:1.22rem;margin:0 0 3px;line-height:1.3}
+.ws-fast-top p{margin:0;color:#64748b;font-size:.84rem;line-height:1.5}
+.ws-fast-overview{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px}
+.ws-fast-debt{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:4px;
+  padding:15px 18px;border:1px solid #d0def4;border-radius:15px;background:#f5f9ff}
+.ws-fast-debt>span{font-size:.84rem;font-weight:700;color:#334155}
+.ws-fast-debt>strong{font-size:clamp(1.55rem,3vw,2.35rem);font-weight:850;line-height:1.2;font-variant-numeric:tabular-nums}
+.ws-fast-debt>small{font-size:.75rem;color:#64748b}
+.ws-fast-day{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ws-fast-day>div{display:flex;flex-direction:column;justify-content:center;gap:7px;padding:12px 13px;
+  border:1px solid #e2e8f0;border-radius:13px;min-width:0;background:#fff}
+.ws-fast-day span{font-size:.8rem;font-weight:650;color:#475569}
+.ws-fast-day strong{font-size:clamp(1rem,1.65vw,1.35rem);font-weight:800;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.ws-fast-clarification,.ws-settlements-footnote{margin:0;color:#64748b;font-size:.8rem;line-height:1.55}
+.ws-fast-unpriced{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;
+  border:1px solid #f2be65;border-radius:12px;background:#fffbeb;padding:11px 14px;color:#92400e;width:100%;cursor:pointer}
+.ws-fast-unpriced>span:first-child{display:grid;gap:3px}
+.ws-fast-unpriced small{font-size:.76rem;color:#92400e;line-height:1.3}
+.ws-fast-pay{border:1px solid #dbeafe;border-radius:13px;padding:13px 15px;background:#f8fbff;display:grid;gap:12px}
+.ws-fast-pay-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.ws-fast-pay-head>strong{font-size:.92rem}
+.ws-fast-pay-head>span{font-size:.76rem;color:#64748b}
+.ws-fast-pay-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.ws-fast-pay-actions button{min-height:38px}
+.ws-fast-pay-form{display:grid;gap:9px;border-top:1px solid #dbeafe;padding-top:11px}
+.ws-fast-pay-input{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.ws-fast-pay-input>label{font-size:.82rem;color:#475569;font-weight:650}
+.ws-fast-pay-input strong{font-size:1.14rem;font-variant-numeric:tabular-nums}
+.ws-fast-pay-input input,.ws-fast-optional-fields input,.ws-fast-optional-fields select,
+.ws-fast-period input{border:1px solid #cbd5e1;border-radius:8px;color:#0f172a;background:white;font:inherit;padding:8px 10px}
+.ws-fast-pay-input input{max-width:210px;font-size:1rem}
+.ws-fast-optional-toggle{padding:5px 0;max-width:max-content;background:none;border:0;color:#475569;
+  font-size:.81rem;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.ws-fast-optional-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:660px}
+.ws-fast-optional-fields label,.ws-fast-period label{display:grid;gap:5px;font-size:.79rem;font-weight:650;color:#475569}
+.ws-fast-pay-confirm{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ws-fast-nav{display:flex;gap:5px;flex-wrap:wrap;border-bottom:1px solid #e2e8f0;padding:0 0 7px}
+.ws-fast-nav button{padding:8px 11px;background:transparent;border:0;border-radius:9px;font:inherit;
+  color:#475569;font-size:.82rem;font-weight:700;cursor:pointer}
+.ws-fast-nav button:hover{background:#f1f5f9}
+.ws-fast-nav button.is-active{background:#0f172a;color:#fff}
+.ws-fast-section-title{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.ws-fast-section-title strong{font-size:.91rem}
+.ws-fast-recent,.ws-fast-detail{display:grid;gap:9px;min-width:0}
+.ws-fast-event-list{display:grid;gap:0}
+.ws-fast-event{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 4px;
+  border-bottom:1px solid #edf2f7;font-variant-numeric:tabular-nums}
+.ws-fast-event>div:first-child{display:grid;gap:3px;min-width:0}
+.ws-fast-event span,.ws-fast-event>div:first-child>strong{font-size:.85rem;font-weight:700}
+.ws-fast-event small{font-size:.76rem;line-height:1.45;color:#64748b;overflow-wrap:anywhere}
+.ws-fast-event>strong,.ws-fast-event-side>strong{font-size:.9rem;white-space:nowrap}
+.ws-fast-event-side{display:grid;justify-items:end;gap:5px;min-width:max-content}
+.ws-fast-period{display:flex;align-items:end;gap:9px;flex-wrap:wrap}
+.ws-fast-period input{max-width:165px}
+.ws-settlements-startup,.ws-settlements-warning,.ws-settlements-error,.ws-settlements-success{
+  margin:0;padding:10px 12px;border-radius:10px;line-height:1.45;font-size:.84rem}
+.ws-settlements-startup{border:1px solid #f3d69c;background:#fffbeb;color:#78350f}
+.ws-settlements-warning{border:1px solid #fed7aa;background:#fff7ed;color:#9a3412}
+.ws-settlements-error{border:1px solid #fecaca;background:#fef2f2;color:#991b1b}
+.ws-settlements-success{border:1px solid #bbf7d0;background:#f0fdf4;color:#166534}
+.ws-settlements-table-scroll{overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px}
+.ws-settlements-table-scroll table{min-width:620px;width:100%;margin:0}
+.ws-fast-unpriced-row>button{max-width:330px}
+.workshop-channel-tabs:has(> .is-settlements){display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.workshop-channel-tabs:has(> .is-settlements) .workshop-channel-tab{min-width:0}
+.workshop-channel-tab.is-settlements.is-active{background:#e0f2fe;border-color:#7dd3fc;color:#0c4a6e}
+@media(max-width:830px){
+ .ws-fast-overview{grid-template-columns:1fr}
+ .workshop-channel-tabs:has(> .is-settlements){grid-template-columns:1fr}
+}
+@media(max-width:590px){
+ .ws-fast-day{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .ws-fast-pay-actions{display:grid;grid-template-columns:1fr;width:100%}
+ .ws-fast-pay-actions button,.ws-fast-pay-confirm button{width:100%}
+ .ws-fast-optional-fields{grid-template-columns:1fr}
+ .ws-fast-event{align-items:flex-start}
+ .ws-fast-event-side{min-width:0;justify-items:end}
+ .ws-fast-event-side>strong{white-space:normal;text-align:right}
+ .ws-fast-pay-confirm{display:grid;grid-template-columns:1fr}
+ .ws-fast-nav button{font-size:.77rem;padding:7px}
+}
+
+/* Persistent admin review queue: visible across ordinary / Kaspi / settlement views. */
+.ws-unpriced-attention{
+ display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+ padding:15px 18px;margin-top:14px;border:1px solid #f6b75c;border-left:5px solid #d97706;
+ border-radius:14px;background:#fffbeb;color:#78350f
+}
+.ws-unpriced-attention>div{display:grid;gap:5px;flex:1;min-width:200px}
+.ws-unpriced-attention strong{font-size:1.02rem;font-weight:800}
+.ws-unpriced-attention span{line-height:1.45;font-size:.88rem;color:#92400e}
+.ws-unpriced-attention button{border-color:#d97706!important;color:#78350f!important;background:white!important;font-weight:750}
+.ws-unpriced-attention button:hover{background:#fef3c7!important}
+.ws-unpriced-tab-count{
+ display:inline-block;vertical-align:middle;margin-left:8px;padding:3px 9px;
+ border:1px solid #f59e0b;border-radius:999px;background:#fef3c7;
+ color:#92400e;font-size:.71rem;font-style:normal;font-weight:850;white-space:nowrap
+}
+.ws-unpriced-check-error{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+ padding:10px 14px;border:1px solid #cbd5e1;border-radius:12px;color:#475569;background:#f8fafc;margin-top:10px;font-size:.84rem}
+.ws-unpriced-row-actions{display:grid;gap:7px;justify-items:start}
+.ws-unpriced-row-actions small{max-width:250px;line-height:1.4}
+.ws-settlements-table-scroll tr.ws-unpriced-entry{background:#fffbeb}
+.ws-settlements-table-scroll tr.ws-unpriced-entry:hover{background:#fef3c7}
+@media(max-width:640px){
+ .ws-unpriced-attention{padding:13px;gap:10px}
+ .ws-unpriced-attention button{width:100%}
+ .ws-unpriced-tab-count{margin-left:0;margin-top:4px}
+}
+
+
+/* Stage04-F: make debt adjustments comprehensible without crowding everyday payments. */
+.ws-fast-explainer{display:grid;gap:5px;padding:10px 13px;border-radius:10px;
+  border:1px solid #dbeafe;background:#f8fafc;font-size:.81rem;color:#334155;line-height:1.45}
+.ws-fast-explainer strong{font-variant-numeric:tabular-nums}
+.ws-fast-explainer small{font-size:.75rem;color:#64748b}
+.ws-fast-event-context{color:#1d4ed8!important;font-weight:600}
+.ws-fast-day-link{background:transparent;border:0;color:#1d4ed8;font:inherit;
+  font-size:.79rem;font-weight:700;padding:6px 4px;cursor:pointer;white-space:nowrap}
+.ws-fast-day-link:hover{text-decoration:underline;text-underline-offset:3px}
+.ws-fast-day-link:focus-visible{outline:2px solid #2563eb;outline-offset:3px;border-radius:4px}
+.ws-settlements-table-scroll .data-table td{vertical-align:middle}
+.ws-settlements-table-scroll .data-table th{white-space:nowrap}
+
+/* Stage04 final cutover: simple payout, no cash-method selection. */
+.ws-fast-comment{display:grid;gap:5px;max-width:480px;font-size:.79rem;font-weight:650;color:#475569}
+.ws-fast-comment input,.ws-opening-form input[type=number]{width:100%;min-width:0;box-sizing:border-box;
+  padding:10px 12px;font:inherit;color:#0f172a;background:#fff;border:1px solid #cbd5e1;border-radius:9px}
+.ws-fast-pay{background:#fff;border-color:#dce4ef;padding:17px 19px}
+.ws-fast-pay-actions .primary{font-weight:750}
+.ws-opening-form{display:grid;gap:12px;margin-top:12px;max-width:580px}
+.ws-opening-form p{margin:0;line-height:1.5}
+.ws-opening-form>label:not(.ws-opening-confirm){display:grid;gap:6px;max-width:290px;font-weight:700}
+.ws-opening-confirm{display:flex;align-items:flex-start;gap:9px;line-height:1.4;cursor:pointer;font-size:.84rem}
+.ws-opening-confirm input{margin-top:3px;flex:0 0 auto}
+.ws-opening-form>button{justify-self:start;min-height:40px}
+.ws-settlements-startup>strong{display:block;font-size:.96rem;margin-bottom:3px}
+@media(max-width:590px){
+  .ws-fast-pay{padding:14px}
+  .ws-opening-form>button{width:100%}
+  .ws-opening-form>label:not(.ws-opening-confirm){max-width:100%}
+}
