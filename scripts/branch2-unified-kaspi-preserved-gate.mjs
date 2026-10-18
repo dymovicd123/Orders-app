@@ -27,7 +27,7 @@ const current = {
 }
 const immutable = {
   'scripts/catalog-integrity-branch2-preserved-gate.mjs': 'd2cb4cab2e9dd77bdb0b2dc59e15706dca20a2e9',
-  'scripts/test-kaspi-unified-orders-writeoff-20261018.mjs': '0b1aa8b59c698944dcf0da846920641ed8b36c92',
+  'scripts/test-kaspi-unified-orders-writeoff-20261018.mjs': '489f81a7ac42188e0f607d3c2c02b852de78548a',
   'src/features/sections/WorkshopSection.tsx': '86a9fcea1a569a6a72f67cf42cea92f75ead5d1d',
 }
 const blob = bytes => crypto.createHash('sha1')
