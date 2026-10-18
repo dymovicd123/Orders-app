@@ -24,7 +24,7 @@ if (!process.env.MAIN_ADMIN_SCHEMA_REPLAY) {
   try {
     for(const [file,expected] of Object.entries(review)){
       const bytes=fs.readFileSync(file)
-      const sha=crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\\0')).update(bytes).digest('hex')
+      const sha=crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
       if(sha!==expected)throw new Error('Unreviewed main admin schema: '+file)
       const saved=path.join(temp,path.basename(file))
       fs.renameSync(file,saved)
