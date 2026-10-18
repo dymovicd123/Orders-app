@@ -26,6 +26,7 @@ import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileK
 import { createManualOrderPaymentCritical, readOrderFinancialLedger } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
+import { confirmRetiredOrderItemDelivered } from './domains/retired-item-handover.ts'
 import { activeStocktakeSessionForHandover, confirmItemStillHere, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, getOrderStockHandoverState, normalizeShipmentStockConfirmations, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, orderHandoverReviewBlockers, orderWorkshopPendingForShipping, reconcileIssuedBeforeCheckpoint } from './domains/order-reservations.ts'
 import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
@@ -1298,6 +1299,43 @@ export default {
           details: `Связано позиций: ${result.linked}; создана комбинация: ${result.createdCombination ? 'да' : 'нет'}`,
         });
         return json(result);
+      }
+
+
+      // Deliberate, per-order-item physical handover of a retired SKU. It
+      // never reverses catalog retirement or writes the stock a second time.
+      const retiredHandoverMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/confirm-retired-delivery$/);
+      if (retiredHandoverMatch && request.method === 'POST') {
+        const orderId = toInt(retiredHandoverMatch[1], 0);
+        const orderItemId = toInt(retiredHandoverMatch[2], 0);
+        const input = await readJson<{
+          expectedVariantId?: unknown; expectedQuantity?: unknown; confirmedPhysicallyDelivered?: unknown;
+        }>(request);
+        try {
+          const result = await confirmRetiredOrderItemDelivered(env.DB, {
+            orderId, orderItemId,
+            expectedVariantId: toInt(input.expectedVariantId, 0),
+            expectedQuantity: toInt(input.expectedQuantity, 0),
+            confirmedPhysicallyDelivered: input.confirmedPhysicallyDelivered === true,
+            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+          });
+          if (!result.alreadyConfirmed) {
+            try {
+              await writeActivityLog(env.DB, {
+                eventType: 'retired_catalog_item_physically_delivered',
+                entityType: 'order_item', entityId: orderItemId,
+                orderId, title: 'Подтверждена выдача удалённого исполнения',
+                details: 'Выдача фактически подтверждена сотрудником. Повторных складских движений и восстановления каталога нет.',
+              });
+            } catch (error) {
+              console.warn('Retired item delivery event after committed journal failed', error);
+            }
+          }
+          return json(result);
+        } catch(error) {
+          const publicError = publicApiError(error);
+          return json({ok:false,message:publicError.message}, {status:publicError.status});
+        }
       }
 
       const orderCatalogReviewResolveMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/catalog-review\/(\d+)\/resolve-existing$/);

@@ -13,10 +13,11 @@ type Props = {
   onClose: () => void
   onCompleted: (order: OrderRecord) => boolean | void | Promise<boolean | void>
   onOpenFullReview?: (order: OrderRecord) => void | Promise<void>
+  onEditOrder?: (order: OrderRecord) => void | Promise<void>
 }
 const displayFact = (field: Field, value: string) => field === 'category' ? (value === 'child' ? 'Детский' : 'Взрослый') : field === 'gender' ? (value === 'ЖЕН' ? 'Женский' : value === 'МУЖ' ? 'Мужской' : value) : value
 
-export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted }: Props) {
+export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose, onCompleted, onEditOrder }: Props) {
   const [item, setItem] = useState<CatalogReviewItem | null>(null)
   const [context, setContext] = useState<CatalogResolutionContext | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -30,6 +31,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const [searchOpen, setSearchOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [variantQuery, setVariantQuery] = useState('')
+  const [retiredChoice, setRetiredChoice] = useState<'choose' | 'another' | 'same'>('choose')
   const [classified, setClassified] = useState(false)
   const [confirmed, setConfirmed] = useState<Partial<Record<Field, boolean>>>({})
   const [legacy, setLegacy] = useState(false)
@@ -79,7 +81,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       setItem(first); setContext(data); setDraft(initialDraft(first, data)); setChoices(data.products || [])
       setProgress(previous => ({ total: previous.total || Number(review.count || review.items.length), remaining: Number(review.count || review.items.length) }))
       setConfirmed({}); setClassified(false); setLegacy(false); setEditing(null); setAnswer(''); setCreatingReference(null); setCompoundOverride(null)
-      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false)
+      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false); setRetiredChoice('choose')
       return false
     } finally { if (ticket === generation.current) setBusy(false) }
   }
@@ -106,7 +108,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     : { segments: [], unknown: '', complete: false }
   const alreadyClassified = Boolean(remainder && [draft?.material, draft?.color].some(v => normalize(v) === remainder))
   const question = context && draft ? nextQuestion(context, draft, { remainder, classified: classified || alreadyClassified, confirmed, legacy, editing }) : null
-  const minimalFieldQuestion = question?.kind === 'field' && !editing && Boolean(context?.product)
+  const minimalFieldQuestion = !Boolean(item?.retiredRecovery || context?.retiredRecovery) && question?.kind === 'field' && !editing && Boolean(context?.product)
   const questionKey = question ? `${item?.orderItemId}:${question.kind}:${'field' in question ? question.field : ''}` : ''
   useEffect(() => { if (!busy) questionHeading.current?.focus() }, [questionKey, busy])
 
@@ -179,6 +181,41 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.') }
     finally { mutationPending.current = false; if (owner === session.current) setResolving(false) }
   }
+
+  const confirmRetiredPhysicalIssue = async () => {
+    if (!order || !item || !item.variantId || !Number.isInteger(item.quantity) || item.quantity <= 0
+      || resolving || busy || mutationPending.current) return
+    if (!window.confirm(
+      `Подтвердите, что клиенту ФАКТИЧЕСКИ передали «${item.productName}» × ${item.quantity}, именно удалённое исполнение ${item.material}.\n\n` +
+      'Старый резерв уже снят при удалении исполнения. Повторно склад не списывается. Факт выдачи будет записан в историю.'
+    )) return
+    const owner = session.current, ticket = generation.current
+    mutationPending.current = true
+    setResolving(true); setError('')
+    try {
+      await owner.run(async () => {
+        await read<{ok:boolean;alreadyConfirmed?:boolean}>(
+          `/api/orders/${order.id}/catalog-review/${item.orderItemId}/confirm-retired-delivery`,
+          { method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              expectedVariantId:item.variantId, expectedQuantity:item.quantity,
+              confirmedPhysicallyDelivered:true,
+            }) }
+        )
+        if (ticket === generation.current) {
+          setNeedsRecheck(true)
+          setNotice('Фактическая выдача записана без повторного списания. Проверяем остальные позиции…')
+        }
+      }, async () => ticket === generation.current ? load() : false,
+      async () => owner === session.current ? await onCompleted(order) : false)
+    } catch (error) {
+      if (owner === session.current) setError(error instanceof Error ? error.message : 'Не удалось подтвердить выдачу.')
+    } finally {
+      mutationPending.current = false
+      if (owner === session.current) setResolving(false)
+    }
+  }
+
   const retry = async () => {
     setError('')
     const owner = session.current
@@ -273,9 +310,31 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     if (!draft || !context || !item) return null
     if (retiredRecovery) {
       return <>
-        <h4 ref={questionHeading} tabIndex={-1}>{exactDraftVariant?.id ? 'Найдена свежая рабочая версия' : 'Эта версия товара была удалена из каталога'}</h4>
-        <p>Историческая SKU в заказе останется без изменений. Для дальнейшей отправки система создаст резерв только на новой активной версии той же точной комбинации.</p>
-        {finalAction()}
+        <h4 ref={questionHeading} tabIndex={-1}>Исполнение удалено из каталога</h4>
+        <p>Проверьте, что фактически передаёте клиенту. История удалённой позиции остаётся неизменной.</p>
+        {retiredChoice === 'choose' ? <div className="resolution-choices">
+          <button type="button" disabled={disabled} onClick={() => setRetiredChoice('another')}>В заказе указан неправильный товар</button>
+          <button type="button" disabled={disabled} onClick={() => setRetiredChoice('same')}>Клиенту передают именно этот удалённый товар</button>
+        </div> : null}
+        {retiredChoice === 'another' ? <div className="resolution-admin-required">
+          <p>Необходимо заменить позицию в заказе через редактор. Резолвер не подменяет материал молча и не списывает другой товар без проверки.</p>
+          {isAdmin && onEditOrder ?
+            <button type="button" disabled={disabled} className="primary-button" onClick={() => void onEditOrder(order)}>Открыть редактор заказа</button>
+            : <p>Попросите администратора исправить состав заказа. История и цены сохраняются штатным редактором.</p>}
+          <button type="button" className="secondary-button" disabled={disabled} onClick={() => setRetiredChoice('choose')}>Назад</button>
+        </div> : null}
+        {retiredChoice === 'same' ? <div className="resolution-admin-required">
+          <p>Подтверждайте только фактически переданную вещь: {item.quantity} шт. Старые остатки были выведены из учёта при удалении. Повторного списания не будет.</p>
+          <button type="button" className="primary-button" disabled={disabled || !item.variantId} onClick={() => void confirmRetiredPhysicalIssue()}>
+            {resolving ? 'Записываю выдачу…' : 'Подтвердить фактическую выдачу'}
+          </button>
+          <button type="button" className="secondary-button" disabled={disabled} onClick={() => setRetiredChoice('choose')}>Назад</button>
+        </div> : null}
+        {retiredChoice === 'choose' && exactDraftVariant?.id ? <div className="resolution-choices">
+          <button type="button" className="secondary-button" disabled={disabled} onClick={() => void finish(exactDraftVariant.id)}>
+            Привязать резерв к свежей версии той же комбинации
+          </button>
+        </div> : null}
       </>
     }
     if (!question) return null
