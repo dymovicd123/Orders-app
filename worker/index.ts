@@ -23,7 +23,7 @@ import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventor
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
-import { createManualOrderPaymentCritical, readOrderFinancialLedger } from './domains/money.ts'
+import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
 import { confirmRetiredOrderItemDelivered } from './domains/retired-item-handover.ts'

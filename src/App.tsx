@@ -211,7 +211,7 @@ function App() {
   const [clientDetails, setClientDetails] = useState<ClientDetailsResponse | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
   const [editorOrderOverride, setEditorOrderOverride] = useState<OrderRecord | null>(null)
-  const [editorReturnSector, setEditorReturnSector] = useState<'orders' | 'workshop' | 'kaspi'>('orders')
+  const [editorReturnSector, setEditorReturnSector] = useState<'orders' | 'workshop'>('orders')
   const [editorOpen, setEditorOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [orderBusy, setOrderBusy] = useState(false)
@@ -4029,8 +4029,8 @@ function App() {
         setMessage(`Заказы загружены из базы. Временно не обновились: ${softWarnings.join(', ')}.`)
       }
 
-      // Kaspi separation keeps the ordinary list lightweight; the old finance card is no longer
-      // rendered on this table, so do not spend a second D1 summary read here.
+      // Orders including Kaspi use the same paginated read and period summary.
+      // Do not add a duplicate D1 summary read during each page fetch.
     } catch (err) {
       const hasPreviousData = orders.length > 0 || Boolean(orderPeriodStats)
       if (hasPreviousData && isTransientApiError(err)) {
@@ -4223,9 +4223,6 @@ function App() {
       const nextPayments = current.payments.filter((_, paymentIndex) => paymentIndex !== index)
       const fallback = createEmptyEditorPayment(current.orderDate)
       const payments = nextPayments.length ? nextPayments : [fallback]
-      if (orderPanel === 'zammler') {
-        payments[0] = { ...payments[0], method: 'КАСПИ МАГАЗИН' }
-      }
       return { ...current, payments }
     })
   }
@@ -4252,31 +4249,12 @@ function App() {
     return draft
   }
 
-  function createZammlerOrderDraftWithDefaultManager() {
-    const draft = createOrderDraftWithDefaultManager()
-    return {
-      ...draft,
-      deliveryType: 'ЗАММЛЕР',
-      orderPaymentMethod: 'КАСПИ МАГАЗИН',
-      payments: [{
-        ...createEmptyEditorPayment(draft.orderDate),
-        method: 'КАСПИ МАГАЗИН',
-      }],
-    }
-  }
-
   function resetCreateOrderDraft() {
-    setCreateDraft(orderPanel === 'zammler' ? createZammlerOrderDraftWithDefaultManager() : createOrderDraftWithDefaultManager())
+    setCreateDraft(createOrderDraftWithDefaultManager())
   }
 
   useEffect(() => {
-    if (orderPanel === 'zammler') {
-      setCreateDraft(createZammlerOrderDraftWithDefaultManager())
-      return
-    }
-    if (orderPanel === 'create') {
-      setCreateDraft(createOrderDraftWithDefaultManager())
-    }
+    if (orderPanel === 'create') setCreateDraft(createOrderDraftWithDefaultManager())
   }, [orderPanel])
 
   async function createOrderFromDraft(retiredCatalogRecreateKeys: string[] = []) {
@@ -5876,10 +5854,6 @@ function removeDebtPayment(index: number) {
     if (editorReturnSector === 'workshop') {
       setActiveSector('workshop')
       window.location.hash = '#workshop'
-    } else if (editorReturnSector === 'kaspi') {
-      setActiveSector('kaspi')
-      setOrderPanel('list')
-      window.location.hash = '#kaspi'
     } else {
       setActiveSector('orders')
       setOrderPanel('list')
@@ -6355,7 +6329,7 @@ function removeDebtPayment(index: number) {
     }finally{setSavingOrder(false)}
   }
 
-  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
+  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
     if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
@@ -6746,7 +6720,7 @@ function removeDebtPayment(index: number) {
         closeOrderEditor()
       }
       if (result.refreshRequired || !result.order) {
-        if (editorReturnSector !== 'kaspi') void loadDashboard(false)
+        void loadDashboard(false)
         void loadWorkshopData()
       }
       return null
@@ -7042,7 +7016,7 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; kaspiPaymentPending?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
+        const result = await readJsonResponse<{ message?: string; order?: OrderRecord; refreshRequired?: boolean; code?: string; reviewOrderId?: number; operationType?: string; items?: Array<{ source?: InventorySourceKey; variantId?: number; productName?: string; trackedPhysicalQuantity?: number; operationQuantity?: number; unexplainedQuantity?: number }> }>(response, 'Отправка клиенту', { allowHttpError: true })
         if (response.ok) completeCriticalRequest(criticalKey, critical.requestId)
         return { response, result }
       }
