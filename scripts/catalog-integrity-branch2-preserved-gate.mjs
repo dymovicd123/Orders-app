@@ -129,8 +129,8 @@ const reviewedAdminEditor={
 // This isolated resolver fix prevents a 'ready' state when a source order
 // conflicts with the fixed gender scope of its catalog base product.
 const reviewedGenderScopeResolver={
-  modal:'bfb33eb6f86caf3ebecb58c2855e12f801cacbbf',
-  test:'f0aa98f93d42ad798c5115d22f691e678ce8cc3a',
+  modal:'f8a24ce8c06a29ec9a6904e53357919b45c83cf2',
+  test:'5a4a343fa4ccc53f6c88df2cf17b2dc2126dbcce',
 }
 for(const [file,expected] of [
   ['src/features/orders/OrderCatalogResolutionModal.tsx',reviewedGenderScopeResolver.modal],
@@ -722,6 +722,8 @@ try{
     .replace(/\n    if \(genderScopeConflict\) \{[\s\S]*?(?=\n    if \(retiredRecovery\) \{)/,'')
     .replace("context.product ? 'Проверяемые характеристики'",
       "context.product ? 'В каталоге'")
+    .replace("genderScopeConflict ? 'Нужно исправить пол товара' : 'Всё необходимое уточнено'",
+      "'Всё необходимое уточнено'")
   check(gitBlob(resolverPrior)==='b955d232ad7d0e91a3375905fa56b81601a19925',
     'Cannot reconstruct frozen pre-hotfix resolver modal')
   saved.set(resolverPath,resolverCurrent)
