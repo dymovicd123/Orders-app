@@ -283,7 +283,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                 <div className="inventory-operation-selected-product">
                                   <div>
                                     <strong>{selectedInventoryOperationGroup.productName}</strong>
-                                    <span>{selectedInventoryOperationGroup.rows.length} вариантов в точке «{sourceLabel(inventoryDraft.source)}»</span>
+                                    <span>{selectedInventoryOperationGroup.rows.length} вариантов {inventoryDraft.movementType === 'writeoff' ? 'из каталога и учёта' : `в точке «${sourceLabel(inventoryDraft.source)}»`}</span>
                                   </div>
                                   <strong>{selectedInventoryOperationGroup.totalQuantity} на месте</strong>
                                 </div>
@@ -346,6 +346,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                             <td>
                                               <strong>{inventoryOperationRowPrimary(row)}</strong>
                                               <span>{inventoryOperationRowSecondary(row)}</span>
+                                              {inventoryDraft.movementType === 'writeoff' && !Number(row.id || 0)
+                                                ? <small>Нет записи на этой точке · по системе 0</small>
+                                                : null}
                                             </td>
                                             {inventoryDraft.movementType === 'transfer' ? (
                                               <td>
@@ -462,6 +465,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                         >
                                           <strong>{item.productName}</strong>
                                           <span>{[item.color, item.size, item.material, item.length].filter(Boolean).join(' · ')}</span>
+                                          {inventoryDraft.movementType === 'writeoff' && row && !Number(row.id || 0)
+                                            ? <small>Нет складской записи · потребуется подтверждение</small>
+                                            : null}
                                         </button>
                                         <b>{item.quantity} шт.</b>
                                         {shortage > 0 ? <small>нехватка {shortage}</small> : <span className="inventory-transfer-cart-ok">готово</span>}

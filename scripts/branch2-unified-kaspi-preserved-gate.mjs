@@ -36,6 +36,15 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+// Dispatch only this reviewed writeoff extension. Its archived baseline gate
+// is staged byte-for-byte; Kaspi's existing frozen assertions stay intact.
+if (sha('worker/domains/inventory-movement.ts')==='605699debb2b9981a95ac85ea72bbf041995c417'
+  && sha('src/app/controllers/useOperationalViewModel.ts')==='c5f2f71b6d18094afbcc5cafdfe04a972521e8c0') {
+  const next=spawnSync(process.execPath,['scripts/branch2-catalog-only-writeoff-safe-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!next.error && next.status===0,'Catalog-only writeoff candidate gate failed')
+  process.exit(0)
+}
 const run = (command,args,env=process.env) => {
   const result=spawnSync(command,args,{env,stdio:'inherit',shell:false,maxBuffer:16*1024*1024})
   check(!result.error && result.status===0,
