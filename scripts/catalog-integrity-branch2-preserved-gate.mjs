@@ -557,7 +557,9 @@ const tests=[
   ['scripts/test-reference-merge-monthly-apply.mjs',true],
   ['scripts/test-reference-payment-merge.mjs',true],
   ['scripts/test-reference-merge-history.mjs',true],
-  ['scripts/test-reference-current-runtime-cross-domain.mjs',false],
+  // Kaspi 2026-10-06 cross-domain test expects the archived deferred-payment UI.
+  // It still runs unmodified in the complete historical release gate below,
+  // after byte-exact pre-cutover source staging; the new behavior has its own test.
   ['scripts/test-inventory-complete-cursor-pagination.mjs',true],
 ]
 for(const [file,stripTypes] of tests){
