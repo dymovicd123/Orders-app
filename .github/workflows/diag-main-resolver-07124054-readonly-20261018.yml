@@ -33,6 +33,8 @@ jobs:
         run: |
           set -euo pipefail
           for sql in \
+            "SELECT v.id,v.product_id,v.gender,v.color,v.size_label,v.material,v.length,v.is_active FROM catalog_variants v WHERE v.product_id IN (1,83) AND v.color IN ('ОРАНЖЕВЫЙ','КОРИЧНЕВЫЙ') AND v.size_label IN ('52','48') AND v.is_active=1 ORDER BY v.product_id,v.id LIMIT 50" \
+            "SELECT v.id,v.product_id,v.gender,v.color,v.size_label,v.material,v.length,s.inventory_source,s.quantity,s.reserved_quantity FROM catalog_variants v LEFT JOIN inventory_stock s ON s.variant_id=v.id WHERE v.product_id IN (1,83) AND v.color IN ('ОРАНЖЕВЫЙ','КОРИЧНЕВЫЙ') AND v.size_label IN ('52','48') AND v.is_active=1 ORDER BY v.product_id,v.id,s.inventory_source LIMIT 90" \
             "SELECT id,order_status,shipping_status,created_at FROM orders WHERE external_id='ORD-20261007124054-6D9204A9' LIMIT 1" \
             "SELECT oi.id,oi.order_id,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.product_id,oi.variant_id,oi.source_type,oi.stock_writeoff_status,oi.is_workshop,oi.quantity FROM order_items oi WHERE oi.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9') ORDER BY oi.id" \
             "SELECT r.id,r.order_item_id,r.status,r.quantity,r.inventory_source,r.product_id,r.variant_id,r.unresolved_reason FROM inventory_reservations r WHERE r.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9') ORDER BY r.id" \
