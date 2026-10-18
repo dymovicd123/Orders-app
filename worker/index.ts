@@ -79,7 +79,7 @@ async function reconcileKaspiPaymentAfterShipping(db: D1Database, orderId: numbe
   if (normalizeShippingStatus(order.shipping_status) !== 'sent') {
     throw new Error('Оплату Kaspi нельзя записать до отправки заказа.');
   }
-  if (normalizeOrderStatus(order.order_status) !== 'active' || cleanText(order.archived_at)) {
+  if (['deleted', 'archived'].includes(normalizeOrderStatus(order.order_status)) || cleanText(order.archived_at)) {
     return { applicable: true, skipped: true };
   }
   const requestId = `kaspi-shipping-payment:${orderId}:v1`;
