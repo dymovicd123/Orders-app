@@ -6319,6 +6319,10 @@ function removeDebtPayment(index: number) {
   }
 
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
+    if (!isAdmin) {
+      setError('Полный редактор доступен только администратору. Используйте отдельные исправления цены и реквизитов.')
+      return null
+    }
     const order = targetOrder || selectedOrder
     if (!order) return
     const isItemizedEdit = order.pricing_mode === 'itemized_v1'
