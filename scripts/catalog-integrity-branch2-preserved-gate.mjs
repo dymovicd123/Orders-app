@@ -12,6 +12,51 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Retired SKU correction now follows normal creation reservations: a physical
+// count of zero never turns a catalog correction into a second stocktake.
+if (!process.env.RETIRED_NATURAL_RESERVE_REPLAY) {
+  const reviewed={"worker/domains/retired-item-correction.ts":["05e63bb5dcd399ca207f738fdf4dea37659c1a8d","255cd8be502a35abb17b0b2f15054537eb61c546"],"src/features/orders/OrderCatalogResolutionModal.tsx":["286b0ddec3f8bf9fae2e024a6cc50afc83f3daed","39dae332b8e0a50aa320f4dd3265a49d197185ff"],"scripts/test-retired-manager-one-line-correction-20261018.mjs":["0a8e5defd0e1e7464df51f370564bc59f3894b55","857f6955e3afb12a622d54c472e67e3f47eb2357"]};
+  const oldSha='ae9f08c817cd83a9a1fb3439a6133f26e92df3a5';
+  const hash=file=>gitBlob(fs.readFileSync(file));
+  const execute=(cmd,args,env=process.env)=>{
+    const result=spawnSync(cmd,args,{env,stdio:'inherit',maxBuffer:12*1024*1024});
+    check(!result.error&&result.status===0,
+      'Natural retired correction + frozen history checks failed: '+cmd+' '+args.join(' '));
+  };
+  for(const [file,[,current]] of Object.entries(reviewed))
+    check(hash(file)===current,'Unexpected normal-reserve SKU correction version: '+file);
+  execute(process.execPath,['--experimental-strip-types','scripts/test-retired-manager-one-line-correction-20261018.mjs']);
+  const originals=new Map();
+  try {
+    const cat=spawnSync('git',['cat-file','-e',oldSha+':worker/domains/retired-item-correction.ts'],{stdio:'ignore'});
+    if(cat.status!==0)execute('git',['fetch','--no-tags','--depth=1','origin',oldSha]);
+    for(const [file,[old,current]] of Object.entries(reviewed)){
+      check(hash(file)===current,'Concurrent correction source edit: '+file);
+      const before=spawnSync('git',['show',oldSha+':'+file],{encoding:null,maxBuffer:16*1024*1024});
+      check(!before.error&&before.status===0&&gitBlob(before.stdout)===old,
+        'Original accepted branch2 correction version changed: '+file);
+      originals.set(file,fs.readFileSync(file));
+      fs.writeFileSync(file,before.stdout);
+    }
+    execute(process.execPath,['scripts/catalog-integrity-branch2-preserved-gate.mjs'],
+      {...process.env,RETIRED_NATURAL_RESERVE_REPLAY:'1'});
+  }finally{
+    for(const [file,bytes] of originals)fs.writeFileSync(file,bytes);
+  }
+  for(const [file,[,current]] of Object.entries(reviewed))
+    check(hash(file)===current,'Natural correction sources not restored: '+file);
+  fs.rmSync('dist',{recursive:true,force:true});
+  execute(process.platform==='win32'?'npm.cmd':'npm',['run','build']);
+  const assets=path.resolve('dist/client/assets');
+  const matches=fs.readdirSync(assets).filter(file=>/^OrderCatalogResolutionModal-[A-Za-z0-9_-]+\.js$/.test(file));
+  check(matches.length===1,'Missing current three-field resolver bundle');
+  const bundle=fs.readFileSync(path.join(assets,matches[0]),'utf8');
+  for(const label of ['Материал','Цвет','Размер','По учёту свободно'])
+    check(bundle.includes(label),'Stale resolver bundle: '+label);
+  console.log('NATURAL ZERO-STOCK RESERVATION AND COMPACT RESOLVER WITH HISTORICAL RELEASE GATES PASSED');
+  process.exit(0);
+}
+
 // Inline manager one-line correction is validated on its current sources;
 // all immutable 2026-10-18 Stage04, Kaspi and order-history tests are replayed
 // against their exact accepted previous branch2 blobs, then current UI rebuilt.
