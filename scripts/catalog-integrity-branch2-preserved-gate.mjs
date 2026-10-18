@@ -114,7 +114,7 @@ check(reviewedOptionalMetadata.previousTable==='6d7870e410571d5978577570fe9e5c2c
 // baseline. No Stage04 historical fixtures or preceding approved SHA are changed.
 const reviewedAdminEditor={
   baselineApp:reviewedReferenceDropdownUx.app,
-  baselineWorker:reviewedClientNameFix.write,
+  baselineWorker:'081a03ae4190e4b9a3de2080a8cfd3487cdf37e7',
   app:'b08a703faf24bb5d11fad51a38509be28d174c94',
   write:'8af447451f82a89bfee29f51f1cc2ac040c13cc5',
   projection:'62823c931c1c5078e167154a5ad70919272ac8cb',
