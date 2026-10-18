@@ -154,8 +154,8 @@ const reviewedEditorPaymentMethod={
   previousWrite:reviewedAdminEditor.write,
   app:'4a836629608d5baa9a4686fc1d775661eea5fac4',
   table:'7f021393ebb02522653b6fc72ed72b0c4c7f2152',
-  write:'52644f3c7850593a02f602ce3124f7183b3dbefb',
-  regression:'977d2ca967ba66952bcb980bf1794cd4e1734724',
+  write:'5f48e1ca27af2e94ff9ecede1231a21ef6e5f8af',
+  regression:'86a69330d4c775659ea852b2dba84e69a03b74a6',
 }
 check(reviewedEditorPaymentMethod.previousApp==='c5495ed2ff7569cd7f69ffba8ec3b4b36e183cc7'
  &&reviewedEditorPaymentMethod.previousTable==='e74f3d1077900ddec02c1b7103857d9b4e572f4c'
