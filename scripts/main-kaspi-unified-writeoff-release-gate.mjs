@@ -86,6 +86,10 @@ try{
     fs.renameSync(original,target)
     hidden.push([original,target])
   }
+  // Preserve every specific editor/cancellation/delete regression the original
+  // production workflow ran; replay on exact accepted pre-Kaspi runtime.
+  for(const file of ["test-safe-order-metadata-edit-20261017.mjs","test-order-recorded-price-correction-r1.mjs","test-order-metadata-client-name-snapshot-20261017.mjs","test-admin-full-editor-role-performance-20261018.mjs","test-admin-editor-linked-payment-method-20261018.mjs","test-order-return-cancel-menu-20261018.mjs","test-order-exchange-bulk-cancellation-20261018.mjs","test-admin-delete-physical-confirm-dialog-20261018.mjs","test-admin-delete-real-driver-r1.mjs","test-admin-delete-resumable-saga-r1.mjs","test-admin-delete-unissued-exchange-stock-20261017.mjs","test-admin-delete-zero-booked-fulfilled-20261018.mjs"])
+    run(process.execPath,['scripts/'+file])
   // Entire unchanged Production cumulative check on exact previous runtime.
   run(npm,['run','release:check'])
 }finally{
