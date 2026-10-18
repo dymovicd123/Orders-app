@@ -24,7 +24,7 @@ const d1={
   const statement=sqlite.prepare(sql);
   return {bind(...args){return {
    async first(){return statement.get(...args)||null},
-   async run(){return statement.run(...args)}
+   async run(){const result=statement.run(...args);return {...result,meta:{changes:result.changes}}}
   }}};
  },
  async batch(statements){
