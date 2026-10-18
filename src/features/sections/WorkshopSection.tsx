@@ -1,9 +1,10 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
+import { WorkshopSettlementsPanel } from '../workshop/WorkshopSettlementsPanel'
 
 type SectionContext = Record<string, any>
-type WorkshopChannel = 'regular' | 'kaspi'
+type WorkshopChannel = 'regular' | 'kaspi' | 'settlements'
 type WorkshopPanel = 'orders' | 'invoice'
 
 export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
@@ -39,6 +40,40 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
 
   const [workshopChannel, setWorkshopChannel] = useState<WorkshopChannel>(workshopInvoiceIsKaspi ? 'kaspi' : 'regular')
   const [workshopPanel, setWorkshopPanel] = useState<WorkshopPanel>(workshopFilters.view === 'invoice' ? 'invoice' : 'orders')
+  const canSeeSettlements = Boolean(ctx.isAdmin)
+  // Persistent admin-only attention; status changes and returning from Catalog refresh it.
+  const [unpricedCount, setUnpricedCount] = useState<number | null>(null)
+  const [unpricedReadError, setUnpricedReadError] = useState(false)
+  const [openUnpricedRequest, setOpenUnpricedRequest] = useState(0)
+  const refreshUnpricedCount = useCallback(async () => {
+    if (!canSeeSettlements) return
+    try {
+      const response = await fetch('/api/workshop/settlements/unpriced/count', { credentials: 'include', cache: 'no-store' })
+      const data = await response.json() as { ok?: boolean; total?: number }
+      if (!response.ok || data.ok === false || !Number.isSafeInteger(data.total)) throw Error('unpriced count unavailable')
+      setUnpricedCount(Number(data.total))
+      setUnpricedReadError(false)
+    } catch {
+      setUnpricedReadError(true)
+    }
+  }, [canSeeSettlements])
+  useEffect(() => {
+    if (!canSeeSettlements) return
+    void refreshUnpricedCount()
+    const recheck = () => { if (document.visibilityState === 'visible') void refreshUnpricedCount() }
+    window.addEventListener('focus', recheck)
+    document.addEventListener('visibilitychange', recheck)
+    const timer = window.setInterval(recheck, 60_000)
+    return () => {
+      window.removeEventListener('focus', recheck)
+      document.removeEventListener('visibilitychange', recheck)
+      window.clearInterval(timer)
+    }
+  }, [canSeeSettlements, refreshUnpricedCount])
+  const showUnpricedQueue = () => {
+    setOpenUnpricedRequest(current => current + 1)
+    setWorkshopChannel('settlements')
+  }
 
   const isKaspiTask = (task: any) => String(task.orderPaymentMethod || '').trim().toUpperCase() === 'КАСПИ МАГАЗИН'
   const visibleWorkshopTasks = useMemo(
@@ -90,6 +125,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
 
   const changeChannel = (channel: WorkshopChannel) => {
     setWorkshopChannel(channel)
+    if (channel === 'settlements') return
     if (workshopPanel === 'invoice') {
       setWorkshopInvoiceMode(channel === 'kaspi' ? 'kaspi' : 'period')
       setWorkshopFilters((current: any) => {
@@ -177,8 +213,33 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
           <span>Kaspi магазин</span>
           <small>Отдельная приоритетная очередь</small>
         </button>
+        {canSeeSettlements && <button type="button" className={'workshop-channel-tab is-settlements ' + (workshopChannel === 'settlements' ? 'is-active' : '')} onClick={() => changeChannel('settlements')} aria-pressed={workshopChannel === 'settlements'}>
+          <span>Расчёты с Цехом {unpricedCount !== null && unpricedCount > 0 ? <em className="ws-unpriced-tab-count">{unpricedCount} без цены</em> : null}</span>
+          <small>Готовые изделия, выплаты и долги</small>
+        </button>}
       </div>
 
+      {canSeeSettlements && unpricedCount !== null && unpricedCount > 0 ? (
+        <div className="ws-unpriced-attention" role="status">
+          <div>
+            <strong>Не определена себестоимость: {unpricedCount} {unpricedCount === 1 ? 'позиция' : 'позиций'}</strong>
+            <span>Готовые изделия пока не включены в задолженность перед цехом. Нужно назначить цену или проверить соответствие каталогу.</span>
+          </div>
+          <button className="secondary compact" type="button" onClick={showUnpricedQueue}>Разобрать позиции →</button>
+        </div>
+      ) : null}
+      {canSeeSettlements && unpricedReadError ? (
+        <div className="ws-unpriced-check-error" role="status">
+          Не удалось проверить готовые изделия без себестоимости.
+          <button className="secondary compact" type="button" onClick={() => void refreshUnpricedCount()}>Повторить</button>
+        </div>
+      ) : null}
+
+      {workshopChannel === 'settlements' && canSeeSettlements ? (
+        <WorkshopSettlementsPanel openUnpricedRequest={openUnpricedRequest}
+          onUnpricedCountChange={setUnpricedCount}
+          openCatalogPrice={ctx.openWorkshopCatalogPrice}/>
+      ) : <>
       <div className="workshop-section-tabs" role="tablist" aria-label="Раздел цеха">
         <button type="button" className={workshopPanel === 'orders' ? 'is-active' : ''} onClick={openOrders}>Заказы</button>
         <button type="button" className={workshopPanel === 'invoice' ? 'is-active' : ''} onClick={openInvoice}>Накладная</button>
@@ -348,13 +409,13 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
                           Заказ: {task.shippingStatus === 'sent' ? 'отправлен' : 'не отправлен'}
                         </span>
                         {task.status === 'active' ? (
-                          <button className="primary compact" type="button" onClick={() => void markWorkshopTaskDone(task)} disabled={workshopBusy}>
+                          <button className="primary compact" type="button" onClick={() => void markWorkshopTaskDone(task).then(refreshUnpricedCount)} disabled={workshopBusy}>
                             Готово в цехе
                           </button>
                         ) : (
                           <>
                             <span className="status-pill status-online">Цех: готово</span>
-                            <button className="primary compact" type="button" onClick={() => void restoreWorkshopTaskActive(task)} disabled={workshopBusy}>
+                            <button className="primary compact" type="button" onClick={() => void restoreWorkshopTaskActive(task).then(refreshUnpricedCount)} disabled={workshopBusy}>
                               Вернуть в работу
                             </button>
                           </>
@@ -498,6 +559,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
           </div>
         </>
       )}
+      </>}
     </article>
   )
 }
