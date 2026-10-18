@@ -4,7 +4,6 @@ type SectionContext = Record<string, any>
 export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
   const {
     kaspiMode = false,
-    openKaspiCreate,
     orderPanel,
     orderPanelOptions,
     returnHistorySummary,
@@ -18,21 +17,8 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className={`card wide sector-${workspaceSector} orders-workspace-header`} id={kaspiMode ? 'kaspi-orders-tabs' : 'orders-tabs'} style={sectorStyle(workspaceSector)}>
       {kaspiMode ? (
-        <div className="order-panel-tabs" role="tablist" aria-label="Разделы Kaspi">
-          <button
-            className={`secondary compact ${orderPanel === 'zammler' ? 'is-active' : ''}`}
-            type="button"
-            onClick={openKaspiCreate}
-          >
-            Создать заказ
-          </button>
-          <button
-            className={`secondary compact ${orderPanel === 'list' ? 'is-active' : ''}`}
-            type="button"
-            onClick={() => setOrderPanel('list')}
-          >
-            Kaspi-заказы
-          </button>
+        <div className="order-panel-tabs" role="tablist" aria-label="Раздел Kaspi">
+          <span className="soft-badge">Заказы Kaspi магазина · создаются через общий раздел «Заказы»</span>
         </div>
       ) : (
         <div className="order-panel-tabs" role="tablist" aria-label="Разделы заказов">
