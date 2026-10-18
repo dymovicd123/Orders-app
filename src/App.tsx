@@ -7122,7 +7122,7 @@ function removeDebtPayment(index: number) {
     })
     const result=await readJsonResponse<{
       ok?:boolean;message?:string;
-      preview?:{chainPlan?:{snapshotFingerprint?:string};activeSaga?:unknown}
+      preview?:Awaited<ReturnType<typeof loadAdminOrderDeletePreview>>
     }>(response,'Проверка фактической выдачи перед удалением')
     if(!response.ok||result.ok===false)
       throw new Error(result.message||'Не удалось безопасно исправить выдачу.')
