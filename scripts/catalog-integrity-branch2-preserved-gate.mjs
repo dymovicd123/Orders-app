@@ -126,6 +126,17 @@ const reviewedAdminEditor={
 // historical replay; pin the new current UI and regression independently.
 // Follow-up retains the accepted #487 client behavior as a reviewed prior,
 // rather than rewriting the historical immutable Stage04 test fixtures.
+// This isolated resolver fix prevents a 'ready' state when a source order
+// conflicts with the fixed gender scope of its catalog base product.
+const reviewedGenderScopeResolver={
+  modal:'f8a24ce8c06a29ec9a6904e53357919b45c83cf2',
+  test:'5a4a343fa4ccc53f6c88df2cf17b2dc2126dbcce',
+}
+for(const [file,expected] of [
+  ['src/features/orders/OrderCatalogResolutionModal.tsx',reviewedGenderScopeResolver.modal],
+  ['scripts/test-resolver-gender-scope-guard-20261018.mjs',reviewedGenderScopeResolver.test],
+]) check(gitBlob(fs.readFileSync(file,'utf8'))===expected,
+  'Unreviewed gender scope resolver regression: '+file)
 const reviewedExchangeCancelUx={
   previousApp:'086d433f46b2f6da129f82eaf636f01e9fdd8499',
   previousTable:'f398558a8860a8fc587fb3cf227533c6219e2200',
@@ -409,6 +420,7 @@ console.log('Checking Stage04 and new Catalog/Writeoff behavior on current runti
 const tests=[
   ['scripts/test-admin-full-editor-role-performance-20261018.mjs',true],
   ['scripts/test-order-exchange-bulk-cancellation-20261018.mjs',false],
+  ['scripts/test-resolver-gender-scope-guard-20261018.mjs',false],
   ['scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs',false],
   ['scripts/test-order-return-cancel-menu-20261018.mjs',false],
   ['scripts/test-admin-price-batch-delete-ux-20261017.mjs',false],
@@ -698,6 +710,24 @@ try{
     saved.set(full,now)
     fs.writeFileSync(full,previous)
   }
+  // The Auth R2 historical structural suite expects the previously accepted
+  // resolver modal byte-for-byte. Independently pin/test the new UI above,
+  // then reconstruct the exact prior modal only for historical replay.
+  const resolverPath=path.resolve('src/features/orders/OrderCatalogResolutionModal.tsx')
+  const resolverCurrent=fs.readFileSync(resolverPath,'utf8')
+  check(gitBlob(resolverCurrent)===reviewedGenderScopeResolver.modal,
+    'Current resolver gender conflict guard changed')
+  const resolverPrior=resolverCurrent
+    .replace(/\n  const catalogRequiredGender =[\s\S]*?(?=\n  const disabled =)/,'')
+    .replace(/\n    if \(genderScopeConflict\) \{[\s\S]*?(?=\n    if \(retiredRecovery\) \{)/,'')
+    .replace("context.product ? 'Проверяемые характеристики'",
+      "context.product ? 'В каталоге'")
+    .replace("genderScopeConflict ? 'Нужно исправить пол товара' : 'Всё необходимое уточнено'",
+      "'Всё необходимое уточнено'")
+  check(gitBlob(resolverPrior)==='b955d232ad7d0e91a3375905fa56b81601a19925',
+    'Cannot reconstruct frozen pre-hotfix resolver modal')
+  saved.set(resolverPath,resolverCurrent)
+  fs.writeFileSync(resolverPath,resolverPrior)
   console.log('Running complete unmodified historical release gate against frozen Branch2 baseline...')
   const npm=process.platform==='win32'?'npm.cmd':'npm'
   run(npm,['run','release:check'],'Historical cumulative Branch2 regression gate',

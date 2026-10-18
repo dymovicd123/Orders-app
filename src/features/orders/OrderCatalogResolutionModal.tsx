@@ -201,6 +201,12 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const exactDraftVariant = context?.exactVariant
   const retiredRecovery = Boolean(item?.retiredRecovery || context?.retiredRecovery || item?.stockWriteoffStatus === 'catalog_retired')
   const canLegacy = !retiredRecovery && isAdmin && Boolean(context?.canLeaveGenderUnknown) && !draft?.createProduct
+  const catalogRequiredGender = context?.product?.genderScope === 'female' ? 'ЖЕН'
+    : context?.product?.genderScope === 'male' ? 'МУЖ' : ''
+  // An individually known fact can still contradict the product's fixed
+  // gender scope. Never submit a knowingly impossible SKU mutation.
+  const genderScopeConflict = Boolean(!draft?.createProduct && context?.product?.id
+    && catalogRequiredGender && normalize(draft?.gender) !== catalogRequiredGender)
   const disabled = busy || resolving || needsRecheck
   const approveReference = (field: Field, value = clean(draft?.[field])) => {
     if (!draft || !clean(value)) return
@@ -234,6 +240,20 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   }
   const finalAction = () => {
     if (!draft || !context) return null
+    if (genderScopeConflict) {
+      const catalogGender = catalogRequiredGender === 'ЖЕН' ? 'женский' : 'мужской'
+      const orderGender = normalize(draft.gender) === 'ЖЕН' ? 'женский'
+        : normalize(draft.gender) === 'МУЖ' ? 'мужской' : 'не указан'
+      return <div className="resolution-admin-required" role="alert">
+        <strong>Пол изделия в заказе не совпадает с назначением товара.</strong>
+        <p>В заказе: {orderGender}. В каталоге товар «{context.product?.name}» зарегистрирован как {catalogGender}.</p>
+        <p>Проверьте, что реально заказал клиент. Если ошибка в заказе, администратор исправляет исходную позицию.
+          Если изделие действительно выпускается для обоих полов, администратор сначала проверяет
+          и изменяет назначение базового товара на «Унисекс» в каталоге.
+          Система не будет создавать или привязывать SKU с противоречивым полом.</p>
+        <button type="button" className="secondary-button" onClick={() => void load()} disabled={busy || resolving}>Проверить после исправления</button>
+      </div>
+    }
     if (retiredRecovery) {
       if (!exactDraftVariant?.id) {
         return <div className="resolution-admin-required">
@@ -363,7 +383,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         </>}
         {field === 'gender' && canLegacy ? <button type="button" className="resolution-link" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Не удалось выяснить</button> : null}</>
     }
-    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
+    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : genderScopeConflict ? 'Нужно исправить пол товара' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
   }
   return <div className="modal-backdrop order-catalog-resolution-backdrop"><div ref={dialog} className="modal-card order-catalog-resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title" onKeyDown={event => {
     if (event.key === 'Escape' && !resolving) onClose()
@@ -386,7 +406,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     </header>
     {!minimalFieldQuestion ? <div className="resolution-context">
       {item && !minimalFieldQuestion ? <section className="resolution-source"><small>В заказе</small><strong>{item.productName}</strong><span>{[item.gender, item.material, normalize(item.length) !== 'СТАНДАРТ' ? item.length : '', context?.isWorkshop ? '' : item.color || 'Цвет не указан', context?.isWorkshop ? '' : item.size || (draft?.category === 'child' ? 'Возраст не указан' : 'Размер не указан')].filter(Boolean).join(' · ')}</span></section> : null}
-      {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'В каталоге' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Пока не выбран'}</strong>
+      {draft && context && !minimalFieldQuestion ? <section className="resolution-understanding"><small className="resolution-eyebrow">{draft.createProduct ? 'Новый товар' : context.product ? 'Проверяемые характеристики' : 'Товар'}</small><strong>{draft.createProduct ? draft.productName : context.product ? context.product.name : 'Пока не выбран'}</strong>
         {!context.isWorkshop ? <p>{fields.filter(field => clean(draft[field]) && (field !== 'length' || normalize(draft.length) !== 'СТАНДАРТ')).map(field => <span key={field}>{fieldLabel(field, draft.category)}: {displayFact(field, draft[field])}{confirmed[field] ? ' ✓' : ''}</span>)}</p> : <p>Для Цеха нужно уточнить только сам товар.</p>}
       </section> : null}
     </div> : null}
