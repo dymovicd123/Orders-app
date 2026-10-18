@@ -1585,7 +1585,7 @@ export function stockHandoverItemFromRow(row: Record<string, unknown>): OrderSto
     && checkpointMillis > 0
     && (checkpointMillis > reviewedMillis || (checkpointMillis === reviewedMillis && checkpointId !== reviewedCheckpointId))
   );
-  const alreadyIssued = reservationStatus === 'fulfilled' || ['fulfilled', 'written_off', 'negative'].includes(stockStatus);
+  const alreadyIssued = reservationStatus === 'fulfilled' || ['fulfilled', 'written_off', 'negative', 'retired_physically_issued'].includes(stockStatus);
   const state: OrderStockHandoverItem['state'] = alreadyIssued
     ? 'already_issued'
     : reviewNeeded ? 'handover_review'
@@ -2895,7 +2895,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
      WHERE oi.order_id = ?
        AND COALESCE(oi.is_workshop, 0) = 0
        AND oi.quantity > 0
-       AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
+       AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'retired_physically_issued', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
        AND (r.id IS NULL OR r.status <> 'active' OR r.variant_id IS NULL OR stock.id IS NULL)
      ORDER BY oi.id ASC
      LIMIT 20`
@@ -2920,7 +2920,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
        AND r.variant_id IS NOT NULL
        AND oi.quantity > 0
        AND COALESCE(oi.is_workshop, 0) = 0
-       AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
+       AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'retired_physically_issued', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
      GROUP BY r.inventory_source, r.variant_id, stock.quantity
      HAVING COALESCE(stock.quantity, 0) < SUM(r.quantity)
      ORDER BY MIN(oi.id) ASC
