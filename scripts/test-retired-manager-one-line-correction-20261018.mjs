@@ -38,7 +38,7 @@ assert(!modal.includes('disabled={variant.free<retiredCorrection.quantity}'))
 const req={orderId:1,itemId:100,oldVariantId:20,newVariantId:21,quantity:1,
  oldPrice:20000,newPrice:22000,oldTotal:20000,actor:'manager-1'}
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_stock').get().n,1)
-await assert.rejects(()=>correctRetiredItem(db,{...req,oldPrice:30000}),/изменились/i)
+await assert.rejects(()=>correctRetiredItem(db,{...req,oldPrice:30000}),/изменили цену позиции/i)
 const saved=await correctRetiredItem(db,req)
 assert.equal(saved.ok,true)
 assert.equal(saved.totalAmount,22000)
@@ -71,7 +71,7 @@ const created=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stoc
 assert.equal(created.quantity,0)
 assert.equal(created.reserved_quantity,1)
 assert.equal(sql.prepare('SELECT variant_id FROM inventory_reservations WHERE order_item_id=200').get().variant_id,22)
-await assert.rejects(()=>previewRetiredItemCorrection(db,3,300),/неотправленной/i)
+await assert.rejects(()=>previewRetiredItemCorrection(db,3,300),/заказ уже отмечен отправленным/i)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM inventory_movements').get().n,before.movements)
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM payments').get().n,before.payments)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=1').get().quantity,0)
