@@ -106,7 +106,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
   db.prepare(`INSERT OR IGNORE INTO retired_order_item_corrections(
    order_item_id,order_id,old_variant_id,new_variant_id,quantity,
    old_price,new_price,old_total,new_total,previous_snapshot,next_snapshot,actor,recorded_at,status)
-   SELECT oi.id,oi.order_id,oi.variant_id,?,oi.quantity,oi.unit_price,?,?, ?,?,?,?,'pending'
+   SELECT oi.id,oi.order_id,oi.variant_id,?,oi.quantity,oi.unit_price,?,?,?,?,?,?,?,'pending'
    FROM order_items oi JOIN orders o ON o.id=oi.order_id
    JOIN catalog_variants old ON old.id=oi.variant_id
    JOIN catalog_stock_positions osp ON osp.id=old.stock_position_id
@@ -126,7 +126,7 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled')
    AND NOT EXISTS(SELECT 1 FROM returns ret WHERE ret.order_id=o.id AND COALESCE(ret.status,'completed')<>'cancelled')
    AND NOT EXISTS(SELECT 1 FROM inventory_reservations used WHERE used.order_id=o.id AND used.status='fulfilled')
-  `).bind(newVariantId,oldTotal,nextTotal,snapshotOld,snapshotNew,actor,now,newVariantId,
+  `).bind(newVariantId,newPrice,oldTotal,nextTotal,snapshotOld,snapshotNew,actor,now,newVariantId,
    itemId,orderId,oldVariantId,quantity,oldPrice,oldTotal,nextTotal),
   db.prepare(`UPDATE inventory_stock SET reserved_quantity=reserved_quantity+?,
     last_action='Резерв после исправления удалённого товара',last_source_ref=?,updated_at=?
