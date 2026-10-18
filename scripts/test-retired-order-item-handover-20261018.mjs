@@ -45,8 +45,8 @@ const before={
 };
 await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,confirmedPhysicallyDelivered:false}),/подтвердите/i);
 await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,expectedQuantity:2}),/изменилась/i);
-await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,orderItemId:103}),/Уже отправленный/i);
-await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,orderItemId:104}),/архивный/i);
+await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,orderId:2,orderItemId:103}),/Уже отправленный/i);
+await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,orderId:3,orderItemId:104}),/архивный/i);
 await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,orderItemId:105}),/Подтверждение не записано/i);
 await assert.rejects(()=>confirmRetiredOrderItemDelivered(d1,{...good,orderItemId:106}),/Подтверждение не записано/i);
 const result=await confirmRetiredOrderItemDelivered(d1,good);
