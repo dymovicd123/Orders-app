@@ -1,0 +1,69 @@
+name: Audit production Kaspi sent-payment candidates (SELECT only)
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/audit-main-kaspi-sent-payments-20261018.yml']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-main-kaspi-sent-payments-20261018.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify isolated production D1 identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          ! grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - run: npm ci
+      - name: Read-only Kaspi order counts, shipping and ledger differences
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL=$(cat <<'SQL'
+          WITH kaspi AS (
+            SELECT o.id,
+              COALESCE(o.order_status,'active') AS status,
+              COALESCE(o.shipping_status,'not_sent') AS shipping,
+              MAX(0,COALESCE(o.total_amount,0)) AS total,
+              MAX(0,COALESCE(o.received_amount,0)) AS recorded_received,
+              MAX(0,COALESCE(o.debt_amount,0)) AS recorded_debt,
+              COALESCE((SELECT SUM(p.amount) FROM payments p
+                WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0) AS actual_payments
+            FROM orders o
+            WHERE UPPER(TRIM(COALESCE(o.order_payment_method,'')))='КАСПИ МАГАЗИН'
+          )
+          SELECT shipping, status, COUNT(*) AS order_count,
+            SUM(total) AS commercial_total,
+            SUM(recorded_received) AS received_total,
+            SUM(recorded_debt) AS recorded_debt_total,
+            SUM(MAX(0,total-actual_payments)) AS calculated_outstanding,
+            SUM(CASE WHEN total>actual_payments THEN 1 ELSE 0 END) AS outstanding_orders,
+            SUM(CASE WHEN recorded_received<>actual_payments OR recorded_debt<>MAX(0,total-actual_payments) THEN 1 ELSE 0 END) AS inconsistent_ledger_orders
+          FROM kaspi GROUP BY shipping,status ORDER BY shipping,status;
+          SQL
+          )
+          # Never write financial or personal information. Query contains only SELECTs.
+          [[ "$SQL" == *"SELECT shipping, status"* ]]
+          if echo "$SQL" | grep -Eiq '\b(UPDATE|DELETE|INSERT|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|VACUUM)\b'; then
+            echo 'Unsafe SQL rejected' >&2; exit 47
+          fi
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
+          echo 'PRODUCTION KASPI SELECT-ONLY AUDIT COMPLETE (NO WRITES)'
