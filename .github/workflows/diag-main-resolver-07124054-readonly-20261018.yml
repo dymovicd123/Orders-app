@@ -33,18 +33,13 @@ jobs:
         run: |
           set -euo pipefail
           for sql in \
-            "SELECT v.id,v.product_id,v.gender,v.color,v.size_label,v.material,v.length,v.is_active FROM catalog_variants v WHERE v.product_id IN (1,83) AND v.color IN ('ОРАНЖЕВЫЙ','КОРИЧНЕВЫЙ') AND v.size_label IN ('52','48') AND v.is_active=1 ORDER BY v.product_id,v.id LIMIT 50" \
-            "SELECT v.id,v.product_id,v.gender,v.color,v.size_label,v.material,v.length,s.inventory_source,s.quantity,s.reserved_quantity FROM catalog_variants v LEFT JOIN inventory_stock s ON s.variant_id=v.id WHERE v.product_id IN (1,83) AND v.color IN ('ОРАНЖЕВЫЙ','КОРИЧНЕВЫЙ') AND v.size_label IN ('52','48') AND v.is_active=1 ORDER BY v.product_id,v.id,s.inventory_source LIMIT 90" \
-            "SELECT id,order_status,shipping_status,created_at FROM orders WHERE external_id='ORD-20261007124054-6D9204A9' LIMIT 1" \
-            "SELECT oi.id,oi.order_id,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.product_id,oi.variant_id,oi.source_type,oi.stock_writeoff_status,oi.is_workshop,oi.quantity FROM order_items oi WHERE oi.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9') ORDER BY oi.id" \
-            "SELECT r.id,r.order_item_id,r.status,r.quantity,r.inventory_source,r.product_id,r.variant_id,r.unresolved_reason FROM inventory_reservations r WHERE r.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9') ORDER BY r.id" \
-            "SELECT id,name,category,gender_scope,is_active FROM catalog_products WHERE id IN (1,83) ORDER BY id" \
-            "SELECT id,product_id,is_active,category,gender,material,length,color,size_label FROM catalog_variants WHERE product_id IN (1,83) ORDER BY id LIMIT 120" \
-            "SELECT p.id,p.name,p.category,p.is_active FROM catalog_products p WHERE p.name LIKE '%ЖИЛЕТ%' ORDER BY p.id LIMIT 80" \
-            "SELECT v.id,v.product_id,p.name,v.is_active,v.category,v.gender,v.material,v.length,v.color,v.size_label,v.stock_position_id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.name LIKE '%ЖИЛЕТ%' AND (v.size_label='48' OR v.color LIKE '%КОРИЧ%') ORDER BY v.id LIMIT 100" \
-            "SELECT x.id,x.product_id,x.material,x.length,x.is_active FROM catalog_stock_positions x WHERE x.product_id IN (SELECT id FROM catalog_products WHERE name LIKE '%ЖИЛЕТ%') ORDER BY x.id LIMIT 100" \
-            "SELECT s.id,s.variant_id,s.inventory_source,s.quantity,s.reserved_quantity FROM inventory_stock s WHERE s.variant_id IN (SELECT variant_id FROM order_items WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9')) LIMIT 40" \
-            "SELECT a.input_key,a.variant_id FROM catalog_input_aliases a WHERE a.input_key LIKE '%ЖИЛЕТ%' LIMIT 25"
+            "SELECT id,name,gender_scope,is_active FROM catalog_products WHERE id IN (1,83)" \
+            "SELECT id,product_id,gender,color,material,length,size_label,stock_position_id,is_active FROM catalog_variants WHERE product_id IN (1,83) AND gender='МУЖ' ORDER BY id DESC LIMIT 30" \
+            "SELECT id,order_id,product_id,variant_id,stock_writeoff_status,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,source_type,quantity FROM order_items WHERE id IN (4329,4333)" \
+            "SELECT id,order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,unresolved_reason FROM inventory_reservations WHERE order_item_id IN (4329,4333)" \
+            "SELECT product_id,gender_snapshot,stock_writeoff_status,COUNT(*) AS n FROM order_items WHERE product_id IN (1,83) AND gender_snapshot='МУЖ' GROUP BY product_id,gender_snapshot,stock_writeoff_status" \
+            "SELECT product_id,material,length,id,is_active FROM catalog_stock_positions WHERE product_id IN(1,83) AND ((product_id=1 AND material='ЗАМША ВЕЛЮР' AND length='СТАНДАРТ') OR (product_id=83 AND material='СТАНДАРТ' AND length='СТАНДАРТ'))" \
+            "SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE variant_id IN (351,1787) ORDER BY variant_id,inventory_source"
           do
             echo "::group::SELECT-ONLY DIAGNOSTIC"
             npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c 'if type=="array" then .[0].results elif type=="object" then . else . end'
