@@ -95,8 +95,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     return value.trim()==='' || !Number.isSafeInteger(Number(value)) || Number(value)<0
   })
   // Ask only when the SERVER found recorded handover, not for every unshipped order.
-  const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview?.requiresPhysicalFact
-    &&!adminDeleteDraft.preview.activeSaga)
+  const physicalQuestionRequired=Boolean(adminDeleteDraft?.preview
+    &&!adminDeleteDraft.preview.activeSaga
+    &&(adminDeleteDraft.preview.requiresPhysicalFact
+      ||(adminDeleteDraft.preview.appliedStockReview?.appliedCount>0
+        &&adminDeleteDraft.preview.appliedStockReview?.allowed)))
   const deleteReasons = adminDeleteDraft?.preview
     ? [...new Set<string>(adminDeleteDraft.preview.reasons || [])].filter(reason=>
       !(adminDeleteDraft.preview?.canPreparePhysicalCorrection
