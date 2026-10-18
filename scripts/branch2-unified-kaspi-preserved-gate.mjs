@@ -25,7 +25,7 @@ const current = {
   'src/App.tsx': '9d9987b976aa3e5844ed8c968d46f97e3e7d004b',
   'worker/index.ts': '1511ecd841a31c86ab9fc352b84bd5bc0e6f9e06',
   'worker/domains/workshop-settlements.ts': 'ac745c67e7679d7f7fac7454a625579e1d6c6635',
-  'src/features/workshop/WorkshopSettlementsPanel.tsx': '17d01ea1565cc5b0bd2185f05d8e02d1dcd6410b',
+  'src/features/workshop/WorkshopSettlementsPanel.tsx': '0234d727606f5b851c678df014c103ddfd9f8178',
   'src/styles/stage04-workshop-settlements.css': '7c91b20890748ed713048f13bf96c6754680fa96',
   'worker/domains/orders-write.ts': '4511edc57947784301aaf411ac669f6cbc206381',
   'src/features/sections/CreateOrderSection.tsx': '55a68a53eb5c3bf501f1e5655240a05b5ad5ec2e',
