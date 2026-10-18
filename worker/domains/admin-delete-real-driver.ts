@@ -54,18 +54,21 @@ async function verifyNoIssuedItems(db:D1Database,step:SagaCancelStep){
   if(!order)throw new CriticalOperationConflictError('Заказ не найден при проверке фактического состояния.')
   if(cleanText(order.order_status)==='deleted'
     ||cleanText(order.order_status)==='archived'
-    ||cleanText(order.shipping_status)==='sent'||toInt(issued?.n,0)>0)
-    fail('Заказ уже закрыт, отправлен или имеет зарегистрированную выдачу. Нужна проверка фактического движения товара.')
+    ||cleanText(order.shipping_status)==='sent')
+    fail('Заказ уже закрыт или отмечен отправленным. Требуется отдельная проверка выдачи.')
   if(cleanText(order.pricing_mode)!=='itemized_v1')
     fail('Старый формат стоимости требует отдельного сценария отмены цепочки.')
-  // An applied Exchange movement is not necessarily a confirmed handover.
-  // Accept ONLY a traceable reserved/not-issued replacement with a genuine
-  // negative movement and no later stocktake. The established handler will
-  // reverse precisely that movement and release the reservation.
-  // All other applied movements fail closed.
   const review=await reviewAdminDeleteAppliedStock(db,step.orderId)
   if(!review.allowed)
-    fail('По заказу есть проведённые физические складские движения. '+review.blockers.join(' '))
+    fail('По заказу есть неподтверждённые складские движения. '+review.blockers.join(' '))
+  // The only permitted "fulfilled" item while an unsent order is being
+  // deleted is an Exchange replacement with a proved ZERO sale movement.
+  // The saga requires the administrator's not-issued consent before any step,
+  // and cancelInventoryLifecycleEvent releases this bookkeeping-only reserve
+  // without adding a phantom unit to physical stock.
+  const fulfilledCount=toInt(issued?.n,0)
+  if(fulfilledCount>0 && fulfilledCount!==review.bookkeepingFulfilledCount)
+    fail('Есть настоящая или неоднозначная выдача помимо нулевого списания обмена. Автоматическая отмена остановлена.')
 
 }
 
