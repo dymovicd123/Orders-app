@@ -4609,7 +4609,9 @@ function App() {
       if (createdAsKaspi) {
         setActiveSector('kaspi')
         window.location.hash = '#kaspi'
-        void loadDashboard(false, kaspiFilters, 0)
+        // The Kaspi sector effect reloads with the correct payment-method filter
+        // after navigation. Do not start an ordinary-orders query using the
+        // previous sector closure while its transition is still in progress.
       }
       setOrderPanel('list')
       resetCreateOrderDraft()
