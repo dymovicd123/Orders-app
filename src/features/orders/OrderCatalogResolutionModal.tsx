@@ -383,7 +383,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         </>}
         {field === 'gender' && canLegacy ? <button type="button" className="resolution-link" onClick={() => { setLegacy(true); setNotice('Пол останется неизвестным для этой позиции ✓') }}>Не удалось выяснить</button> : null}</>
     }
-    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
+    return <><h4 ref={questionHeading} tabIndex={-1}>{question.kind === 'workshop' ? 'Подтвердите товар для Цеха' : genderScopeConflict ? 'Нужно исправить пол товара' : 'Всё необходимое уточнено'}</h4>{finalAction()}</>
   }
   return <div className="modal-backdrop order-catalog-resolution-backdrop"><div ref={dialog} className="modal-card order-catalog-resolution-modal" role="dialog" aria-modal="true" aria-labelledby="resolution-title" onKeyDown={event => {
     if (event.key === 'Escape' && !resolving) onClose()
