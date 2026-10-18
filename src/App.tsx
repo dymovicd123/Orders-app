@@ -6464,6 +6464,53 @@ function removeDebtPayment(index: number) {
     }
   }
 
+  // Admin correction of a recorded payment method, including an exchange-
+  // linked extra payment. This is not a second payment and does not submit the
+  // item/payment editor draft or rewrite the order after a completed exchange.
+  async function correctRecordedPaymentMethod(
+    order:OrderRecord,payment:OrderRecord['payments'][number],nextMethod:string,
+  ):Promise<{ok:boolean;message:string}>{
+    if(!isAdmin)return {ok:false,message:'Способ проведённой оплаты исправляет только администратор.'}
+    const method=String(nextMethod||'').trim()
+    if(!method)return {ok:false,message:'Выберите способ оплаты.'}
+    if(!Number.isSafeInteger(Number(payment.id))||Number(payment.id)<=0)
+      return {ok:false,message:'Не удалось определить запись оплаты. Обновите заказ.'}
+    if(method.toUpperCase()===String(payment.method||'').trim().toUpperCase())
+      return {ok:true,message:'Способ оплаты не изменился.'}
+    const payload={paymentCorrections:[{
+      paymentId:Number(payment.id),method,
+      expectedPaymentDate:String(payment.paymentDate||''),
+      expectedMethod:String(payment.method||''),
+      expectedAmount:Number(payment.amount||0),
+      expectedPaymentKind:String(payment.paymentKind||'primary'),
+      expectedComment:String(payment.comment||''),
+    }]}
+    const key='order-admin-payment-method:'+order.id+':'+payment.id
+    setSavingOrder(true);setError(null);setMessage(null)
+    try{
+      const critical=prepareCriticalRequest(key,payload)
+      const response=await apiFetch('/api/orders/'+order.id,{
+        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
+        body:JSON.stringify(critical.payload),
+      })
+      const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord;refreshRequired?:boolean}>(
+        response,'Исправление способа оплаты')
+      if(!response.ok||result.ok===false)throw new Error(result.message||'Не удалось исправить способ оплаты.')
+      completeCriticalRequest(key,critical.requestId)
+      if(result.order)upsertOrderInState(result.order)
+      else if(result.refreshRequired)void loadDashboard(false)
+      invalidateFinanceReadCaches()
+      void Promise.allSettled([refreshFinanceReportsIfVisible(),loadDashboard(false)])
+      const message='Способ оплаты #'+payment.id+' исправлен. Сумма, заказ, товары и склад не менялись.'
+      setMessage(message)
+      return {ok:true,message}
+    }catch(error){
+      const message=error instanceof Error?error.message:'Не удалось изменить способ оплаты.'
+      setError(message)
+      return {ok:false,message}
+    }finally{setSavingOrder(false)}
+  }
+
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
     if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
     const projection = await getOrderOperationalProjection(order)
@@ -9017,7 +9064,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi-заказы">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, correctRecordedPaymentMethod, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, kaspiPaymentBusyOrderId, confirmKaspiPayment, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'zammler'} label="Создание Kaspi-заказа">
@@ -9029,7 +9076,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, correctRecordedPaymentMethod, loadRetiredExchangePriceOptions, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
