@@ -122,6 +122,18 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    AND o.total_amount=? AND o.received_amount<=?
    AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')=''
    AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+   AND (SELECT COUNT(*) FROM inventory_stock t
+        WHERE t.inventory_source=oi.source_type AND t.variant_id=newer.id)<=1
+   -- Snapshot-based legacy unique stock index must not silently bind a
+   -- different variant to the same stock row.
+   AND NOT EXISTS(SELECT 1 FROM inventory_stock t
+     WHERE t.inventory_source=oi.source_type AND t.product_name_snapshot=cp.name
+       AND COALESCE(t.gender_snapshot,'')=COALESCE(newer.gender,'')
+       AND COALESCE(t.color_snapshot,'')=COALESCE(newer.color,'')
+       AND COALESCE(t.material_snapshot,'')=COALESCE(newer.material,'')
+       AND COALESCE(t.length_snapshot,'')=COALESCE(newer.length,'')
+       AND COALESCE(t.size_snapshot,'')=COALESCE(newer.size_label,'')
+       AND COALESCE(t.variant_id,0)<>newer.id)
    AND NOT EXISTS(SELECT 1 FROM retired_order_item_issues i WHERE i.order_item_id=oi.id)
    AND NOT EXISTS(SELECT 1 FROM inventory_reservations ir WHERE ir.order_item_id=oi.id AND ir.status<>'released')
    AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled')
@@ -137,11 +149,13 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
     color_snapshot,material_snapshot,length_snapshot,size_snapshot,
     quantity,reserved_quantity,last_action,last_source_ref,created_at,updated_at)
     SELECT ?,?,?,?,?,?,?,?,?,0,0,?,?,?,?
-    WHERE EXISTS (SELECT 1 FROM retired_order_item_corrections j
+    WHERE NOT EXISTS (SELECT 1 FROM inventory_stock existing
+                      WHERE existing.inventory_source=? AND existing.variant_id=?)
+      AND EXISTS (SELECT 1 FROM retired_order_item_corrections j
                   WHERE j.order_item_id=? AND j.status='pending')`
   ).bind(source,target.productId,newVariantId,target.productName,target.gender,target.color,
     target.material,target.length,target.size,'Создана позиция для резерва',
-    'order-item:'+itemId,now,now,itemId),
+    'order-item:'+itemId,now,now,source,newVariantId,itemId),
   db.prepare(`UPDATE inventory_stock
     SET reserved_quantity=COALESCE(reserved_quantity,0)+?,
         last_action='Резерв после исправления удалённого товара',
