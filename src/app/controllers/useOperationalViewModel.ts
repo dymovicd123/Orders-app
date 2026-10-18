@@ -867,6 +867,39 @@ const summary = useMemo(() => {
 
   const inventoryOperationSourceRows = useMemo(() => {
     const sourceRows = inventoryStockRowsForSource(inventoryDraft.source)
+    if (inventoryDraft.movementType === 'writeoff') {
+      // A catalog variant can exist without a stock record in this location.
+      // Make it selectable for a confirmed write-off, without fabricating an arrival
+      // or silently adding a physical unit to the source.
+      const sourceIds = new Set(sourceRows.map(row => Number(row.variantId || 0)))
+      const activeProductIds = new Set((catalogData?.products || [])
+        .filter(product => product.isActive).map(product => Number(product.id)))
+      const untracked = (catalogData?.variants || [])
+        .filter(variant => variant.isActive
+          && activeProductIds.has(Number(variant.productId))
+          && !sourceIds.has(Number(variant.id)))
+        .map(variant => ({
+          id: 0,
+          inventorySource: inventoryDraft.source,
+          productId: Number(variant.productId),
+          variantId: Number(variant.id),
+          productName: variant.productName,
+          gender: variant.gender || '',
+          color: variant.color || '',
+          material: variant.material || 'СТАНДАРТ',
+          length: variant.length || 'СТАНДАРТ',
+          size: variant.sizeLabel || '',
+          audienceType: variant.productCategory || '',
+          quantity: 0,
+          reservedQuantity: 0,
+          availableQuantity: 0,
+          lastAction: '',
+          lastSourceRef: '',
+          updatedAt: '',
+          createdAt: '',
+        } satisfies InventoryStockRecord))
+      return [...sourceRows, ...untracked]
+    }
     if (inventoryDraft.movementType !== 'transfer') return sourceRows
 
     // A real source mismatch can mean that the canonical SKU is physically here even though
@@ -886,7 +919,7 @@ const summary = useMemo(() => {
         lastSourceRef: '',
       }))
     return [...sourceRows, ...targetRows]
-  }, [inventoryData, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType])
+  }, [inventoryData, catalogData, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType])
 
   const inventoryOperationAllProductGroups = useMemo(() => {
     const groups = new Map<string, { key: string; productId: number; productName: string; category: 'adult' | 'child'; adultVariantCount: number; childVariantCount: number; variantsCount: number; totalQuantity: number; rows: InventoryStockRecord[] }>()
