@@ -15,7 +15,7 @@ assert(edit.includes("Object.keys(input as Record<string, unknown>).every(key=>"
 assert(edit.includes("key==='requestId'||key==='paymentCorrections'"))
 assert(/if\s*\(isolatedPaymentMethodRequest\s*&&\s*nonMethodChanged\)/.test(edit))
 assert(edit.includes("if(isolatedPaymentMethodRequest && requestedPaymentCorrections.has(paymentId))"))
-assert(edit.includes('if (isolatedMetadataRequest || isolatedPaymentMethodRequest)'))
+assert(edit.includes('if (isolatedMetadataRequest) {')&&edit.includes('if (isolatedPaymentMethodRequest) {'))
 assert(edit.includes('isolatedPaymentMethodRequest ? (toInt(existingAny.customer_id,0)||null)'))
 assert(edit.includes('} else if(p.isolatedPaymentMethodRequest){'))
 assert(edit.includes("SELECT json('ORDER_PAYMENT_METHOD_STALE')"))
