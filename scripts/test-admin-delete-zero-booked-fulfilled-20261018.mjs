@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import {DatabaseSync} from 'node:sqlite'
 import {readFileSync} from 'node:fs'
 import {reviewAdminDeleteAppliedStock} from '../worker/domains/admin-delete-physical.ts'
+import {cancelInventoryLifecycleEvent} from '../worker/domains/lifecycle.ts'
 
 const sql=new DatabaseSync(':memory:')
 sql.exec([
@@ -104,3 +105,58 @@ assert(driver.includes('fulfilledCount!==review.bookkeepingFulfilledCount'),
 assert(lifecycle.includes('Math.max(0, -Math.min(0, toInt(originalMovement?.quantity_delta, 0)))'),
   'Established V2 cancellation must use the actual ZERO delta, never nominal quantity')
 console.log('BRANCH2_EVENT8_ZERO_BOOKED_FULFILLED_CONSENTED_DELETE_PROOF_PASSED')
+
+
+// Execute the *real* lifecycle cancellation handler against an isolated
+// zero-stock fulfilled Exchange with an actual movement of zero. It must never
+// turn a bookkeeping-only event into phantom physical inventory.
+const stepDb=new DatabaseSync(':memory:')
+stepDb.exec([
+"CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT)",
+"CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT,category TEXT,is_active INTEGER)",
+"CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,category TEXT,gender TEXT,color TEXT,material TEXT,length TEXT,size_label TEXT,is_active INTEGER)",
+"CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,event_key TEXT,operation_type TEXT,operation_id INTEGER,operation_item_id INTEGER,order_id INTEGER,order_item_id INTEGER,event_type TEXT,direction TEXT,inventory_source TEXT,quantity INTEGER,product_id INTEGER,variant_id INTEGER,status TEXT,movement_id INTEGER,applied_at TEXT,created_at TEXT,cancelled_at TEXT,updated_at TEXT,resolution_comment TEXT,reversal_movement_id INTEGER)",
+"CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY,inventory_source TEXT,movement_type TEXT,product_id INTEGER,variant_id INTEGER,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,quantity_delta INTEGER,quantity_after INTEGER,reference_type TEXT,reference_id TEXT,comment TEXT,created_at TEXT)",
+"CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,product_id INTEGER,variant_id INTEGER,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,quantity INTEGER,reserved_quantity INTEGER,last_action TEXT,last_source_ref TEXT,updated_at TEXT)",
+"CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_item_id INTEGER,status TEXT,released_at TEXT,updated_at TEXT)",
+"CREATE TABLE inventory_stock_checks(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,checked_at TEXT)",
+"CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,inventory_source TEXT,status TEXT,started_at TEXT)"
+].join(';')+';')
+stepDb.exec([
+"INSERT INTO orders VALUES(3,'ORDER_TEST_3')",
+"INSERT INTO catalog_products VALUES(1,'АБАЙ ТАКИЯ','adult',1)",
+"INSERT INTO catalog_variants(id,product_id,category,is_active) VALUES(1336,1,'adult',1)",
+"INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity) VALUES(1,'warehouse',1336,0,0)",
+"INSERT INTO inventory_reservations(id,order_item_id,status) VALUES(14,16,'fulfilled')",
+"INSERT INTO inventory_movements(id,inventory_source,movement_type,variant_id,quantity_delta,quantity_after,reference_type,reference_id,created_at) VALUES(14,'warehouse','sale',1336,0,0,'exchange_new','3','2026-10-18T06:49:17.647Z')",
+"INSERT INTO inventory_lifecycle_events(id,event_key,operation_type,operation_id,operation_item_id,order_id,order_item_id,event_type,direction,inventory_source,quantity,product_id,variant_id,status,movement_id,applied_at,created_at) VALUES(8,'exchange:3:new:6','exchange',3,6,3,16,'exchange_new_out','out','warehouse',1,1,1336,'applied',14,'2026-10-18T06:49:17.647Z','2026-10-18T06:49:17.647Z')"
+].join(';')+';')
+const statement=(query,params=[])=>({
+  query,params,bind(...values){return statement(query,values)},
+  async first(){return stepDb.prepare(query).get(...params)??null},
+  async all(){return {results:stepDb.prepare(query).all(...params)}},
+  async run(){const v=stepDb.prepare(query).run(...params);return {success:true,meta:{changes:Number(v.changes),last_row_id:Number(v.lastInsertRowid)}}},
+  _run(){return stepDb.prepare(query).run(...params)}
+})
+const stepConn={prepare(query){return statement(query)},async batch(stmts){
+  stepDb.exec('BEGIN')
+  try{const values=stmts.map(s=>s._run());stepDb.exec('COMMIT');return values}
+  catch(err){stepDb.exec('ROLLBACK');throw err}
+}}
+const cancelled=await cancelInventoryLifecycleEvent(stepConn,8,'2026-10-18T08:15:00.000Z','Администратор подтвердил отсутствие выдачи')
+assert.equal(cancelled.cancelled,true)
+assert.equal(cancelled.quantityDelta,0,'ZERO movement must only be reversed by ZERO')
+assert.equal(stepDb.prepare('SELECT quantity FROM inventory_stock WHERE id=1').get().quantity,0)
+assert.equal(stepDb.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=1').get().reserved_quantity,0)
+assert.equal(stepDb.prepare('SELECT status FROM inventory_reservations WHERE id=14').get().status,'released')
+assert.equal(stepDb.prepare('SELECT status FROM inventory_lifecycle_events WHERE id=8').get().status,'cancelled')
+const afterStep=stepDb.prepare('SELECT id,quantity_delta FROM inventory_movements ORDER BY id').all()
+assert.equal(afterStep.length,2)
+assert.equal(afterStep[0].quantity_delta,0)
+assert.equal(afterStep[1].quantity_delta,0)
+const replayZero=await cancelInventoryLifecycleEvent(stepConn,8,'2026-10-18T08:16:00.000Z','retry')
+assert.equal(replayZero.already,true)
+assert.equal(stepDb.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,2)
+assert.equal(stepDb.prepare('SELECT quantity FROM inventory_stock WHERE id=1').get().quantity,0)
+stepDb.close()
+console.log('REAL_LIFECYCLE_EVENT8_ZERO_DELTA_CANCEL_IDEMPOTENT_NO_PHANTOM_STOCK_PASSED')
