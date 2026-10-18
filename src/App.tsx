@@ -8761,6 +8761,10 @@ function removeDebtPayment(index: number) {
           setOrderCatalogResolutionOrder(null)
           return true
         }}
+        onEditOrder={async (blockedOrder: OrderRecord) => {
+          setOrderCatalogResolutionOrder(null)
+          await handleEditOrder(blockedOrder)
+        }}
         onOpenFullReview={async (blockedOrder: OrderRecord) => {
           setOrderCatalogResolutionOrder(null)
           await loadCatalogReview(true, blockedOrder.id)
