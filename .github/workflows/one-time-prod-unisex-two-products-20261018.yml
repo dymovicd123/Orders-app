@@ -1,0 +1,50 @@
+name: One-time guarded unisex scope for two production products
+on:
+  push:
+    branches: ['ops/one-time-prod-unisex-two-products-20261018']
+    paths: ['.github/workflows/one-time-prod-unisex-two-products-20261018.yml']
+permissions:
+  contents: read
+jobs:
+  product-scope-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Fixed production binding and job identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ops/one-time-prod-unisex-two-products-20261018'
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+      - name: Preflight, guarded UPDATE, postflight (never mutate SKU, inventory or orders)
+        shell: bash
+        run: |
+          set -euo pipefail
+          W='npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc'
+          $W --command "SELECT id,name,gender_scope,is_active FROM catalog_products WHERE id IN (1,83) ORDER BY id" --json > /tmp/prod-before.json
+          jq -c '.[0].results' /tmp/prod-before.json
+          jq -e '.[0].results | length == 2 and .[0].id == 1 and .[0].name == "БАЯН СҰЛУ ШАПАН" and .[0].gender_scope == "female" and .[0].is_active == 1 and .[1].id == 83 and .[1].name == "АЙ-НӘЗІК ЖИЛЕТІ" and .[1].gender_scope == "female" and .[1].is_active == 1' /tmp/prod-before.json >/dev/null
+          $W --command "SELECT id,order_id,product_id,gender_snapshot,variant_id,stock_writeoff_status,source_type,quantity FROM order_items WHERE id IN (4329,4333) ORDER BY id" --json > /tmp/prod-orders.json
+          jq -c '.[0].results' /tmp/prod-orders.json
+          jq -e '.[0].results | length == 2 and .[0].id == 4329 and .[0].order_id == 1773 and .[0].product_id == 1 and .[0].gender_snapshot == "МУЖ" and .[0].variant_id == null and .[0].stock_writeoff_status == "catalog_unresolved" and .[0].source_type == "boutique" and .[0].quantity == 1 and .[1].id == 4333 and .[1].order_id == 1773 and .[1].product_id == 83 and .[1].gender_snapshot == "МУЖ" and .[1].variant_id == null and .[1].stock_writeoff_status == "catalog_unresolved" and .[1].source_type == "boutique" and .[1].quantity == 1' /tmp/prod-orders.json >/dev/null
+          $W --command "SELECT id,order_status,shipping_status FROM orders WHERE id=1773" --json > /tmp/prod-order.json
+          jq -e '.[0].results | length == 1 and .[0].id == 1773 and .[0].order_status == "active" and .[0].shipping_status == "not_sent"' /tmp/prod-order.json >/dev/null
+          # Repeat preflight predicates inside the only write statement.
+          $W --command "UPDATE catalog_products SET gender_scope='unisex',updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id IN (1,83) AND is_active=1 AND gender_scope='female' AND ((id=1 AND name='БАЯН СҰЛУ ШАПАН') OR (id=83 AND name='АЙ-НӘЗІК ЖИЛЕТІ')) AND (SELECT COUNT(*) FROM catalog_products WHERE (id=1 AND name='БАЯН СҰЛУ ШАПАН' OR id=83 AND name='АЙ-НӘЗІК ЖИЛЕТІ') AND is_active=1 AND gender_scope='female')=2 AND (SELECT COUNT(*) FROM orders WHERE id=1773 AND order_status='active' AND shipping_status='not_sent')=1 AND (SELECT COUNT(*) FROM order_items WHERE (id=4329 AND order_id=1773 AND product_id=1 AND gender_snapshot='МУЖ' AND variant_id IS NULL AND stock_writeoff_status='catalog_unresolved') OR (id=4333 AND order_id=1773 AND product_id=83 AND gender_snapshot='МУЖ' AND variant_id IS NULL AND stock_writeoff_status='catalog_unresolved'))=2" --json > /tmp/prod-scope-write.json
+          jq -c '.' /tmp/prod-scope-write.json
+          $W --command "SELECT id,name,gender_scope,is_active FROM catalog_products WHERE id IN (1,83) ORDER BY id" --json > /tmp/prod-after.json
+          jq -c '.[0].results' /tmp/prod-after.json
+          jq -e '.[0].results | length == 2 and .[0].id == 1 and .[0].gender_scope == "unisex" and .[1].id == 83 and .[1].gender_scope == "unisex"' /tmp/prod-after.json >/dev/null
+          echo 'SUCCESS: only two catalog product gender scopes changed.'
