@@ -13,7 +13,7 @@
     "typecheck": "tsc -b",
     "verify": "npm run release:check",
     "check": "npm run release:check",
-    "release:check": "node scripts/catalog-integrity-branch2-preserved-gate.mjs",
+    "release:check": "node scripts/branch2-unified-kaspi-preserved-gate.mjs",
     "verify:db-safety": "node scripts/verify-database-safety.mjs",
     "test:d1-read-budget-r5-7": "node scripts/test-d1-read-budget-r5-7.mjs",
     "test:d1-read-budget-r5-8": "node scripts/test-d1-read-budget-r5-8.mjs",

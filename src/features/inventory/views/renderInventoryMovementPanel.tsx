@@ -104,7 +104,17 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
     selectedOperationDraftItems.map(({ item }: any) => item?.variantId).filter(Boolean),
     Boolean(String(inventoryExistingVariantSearch || '').trim()),
   )
-  const renderedOperationRows = inventoryDraft.movementType === 'transfer' ? transferPartition.primary : operationVisibleRows
+  // Keep the full selection in the operation draft, but never flood the operator with
+  // every size/color/material of a product. Searching narrows all rows; selected rows
+  // float to the top so a quantity can still be edited without losing the batch.
+  const writeoffVisibleRows = inventoryDraft.movementType === 'writeoff'
+    ? [...operationVisibleRows].sort((a: any, b: any) =>
+        Number(Number(operationDraftItem(b.variantId)?.quantity || 0) > 0) -
+        Number(Number(operationDraftItem(a.variantId)?.quantity || 0) > 0)
+      ).slice(0, 8)
+    : operationVisibleRows
+  const renderedOperationRows = inventoryDraft.movementType === 'transfer'
+    ? transferPartition.primary : writeoffVisibleRows
   const writeoffReviewLines = inventoryDraft.movementType === 'writeoff'
     ? selectedOperationDraftItems.filter(({item}:any)=>Number(item?.quantity||0)>0).map(({item,row}:any)=>({
       variantId: Number(item.variantId||0),
@@ -278,16 +288,22 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                   <strong>{selectedInventoryOperationGroup.totalQuantity} на месте</strong>
                                 </div>
     
-                                {selectedInventoryOperationGroup.rows.length > 6 ? (
+                                {(inventoryDraft.movementType === 'writeoff' || selectedInventoryOperationGroup.rows.length > 6) ? (
                                   <label className="inventory-operation-variant-filter">
-                                    <span>Цвет, размер или материал</span>
+                                    <span>{inventoryDraft.movementType === 'writeoff' ? 'Найти нужный цвет, размер или материал' : 'Цвет, размер или материал'}</span>
                                     <input
                                       value={inventoryExistingVariantSearch}
+                                      placeholder={inventoryDraft.movementType === 'writeoff' ? 'Начните вводить характеристики варианта' : undefined}
                                       onChange={(event) => setInventoryExistingVariantSearch(event.target.value)}
                                     />
                                   </label>
                                 ) : null}
     
+                                {inventoryDraft.movementType === 'writeoff' && operationVisibleRows.length > renderedOperationRows.length ? (
+                                  <p className="mini-panel-note" role="status">
+                                    Показано {renderedOperationRows.length} из {operationVisibleRows.length} вариантов. Уточните поиск по цвету, материалу или размеру, чтобы найти остальные.
+                                  </p>
+                                ) : null}
                                 <div className="inventory-operation-variants-table-shell">
                                   <table className="inventory-operation-variants-table">
                                     <thead>
@@ -425,9 +441,9 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                 </div>
                                 <button className="ghost compact" type="button" onClick={() => setInventoryDraft((current) => ({ ...current, items: [createEmptyInventoryItem()] }))}>Очистить выбранное</button>
                               </div>
-                              {inventoryDraft.movementType === 'transfer' ? (
+                              {(inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff') ? (
                                 <>
-                                  <div className="inventory-transfer-cart" aria-label="Выбранные позиции перемещения">
+                                  <div className="inventory-transfer-cart" aria-label={inventoryDraft.movementType === 'writeoff' ? 'Выбранные позиции списания' : 'Выбранные позиции перемещения'}>
                                     {selectedOperationDraftItems.map(({ item, row }: any) => {
                                       const physical = Number(row?.quantity ?? item.expectedQuantity ?? 0)
                                       const reserved = Math.max(0, Number(row?.reservedQuantity || 0))
@@ -468,7 +484,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
                                     >
                                       + Добавить ещё товар
                                     </button>
-                                    <small>Уже выбранные позиции сохранятся. Можно собрать всё перемещение одной операцией.</small>
+                                    <small>Уже выбранные позиции сохранятся. Можно добавить несколько разных товаров и вариантов в одну операцию.</small>
                                   </div>
                                 </>
                               ) : null}

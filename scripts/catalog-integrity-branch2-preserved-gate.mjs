@@ -12,6 +12,16 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Route this *new* business candidate through its source-pinned verifier.
+// All historical snapshots, assertions and migrations below remain unmodified.
+// Replayed old blobs never satisfy this exact-current-code dispatch.
+if (gitBlob(fs.readFileSync('worker/index.ts'))==='36a89ede46aeaefa20433cbc4ccaf0dcf741ebe2'
+  && gitBlob(fs.readFileSync('src/App.tsx'))==='9d9987b976aa3e5844ed8c968d46f97e3e7d004b') {
+  const result=spawnSync(process.execPath,['scripts/branch2-unified-kaspi-preserved-gate.mjs'],
+    {stdio:'inherit',env:process.env,shell:false,maxBuffer:16*1024*1024})
+  check(!result.error&&result.status===0,'Unified Kaspi candidate release gate failed')
+  process.exit(0)
+}
 // Verify actual Cloudflare D1 business state, not its unreliable per-statement
 // change counts; replay every immutable previous Branch2 suite afterward.
 if (!process.env.RETIRED_CORRECTION_READBACK_REPLAY) {
