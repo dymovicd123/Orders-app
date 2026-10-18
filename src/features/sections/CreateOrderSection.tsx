@@ -36,20 +36,14 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     updateCreateDraft,
     updateCreateItem,
     updateCreatePayment,
-    zammlerMode = false,
   } = ctx
-  const isKaspiOrder = normalizeSuggestion(createDraft.orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
 
   return (
-    <article className="card wide sector-orders" id={zammlerMode ? 'kaspi-create' : 'create'} style={{ ...sectorStyle(zammlerMode ? 'kaspi' : 'orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>
+    <article className="card wide sector-orders" id="create" style={{ ...sectorStyle('orders'), ...orderPanelStyle('create') }}>
               <div className="create-hero">
                 <div>
-                  <div className="card-label">{zammlerMode ? 'Новый заказ Kaspi' : 'Новый заказ'}</div>
-                  {zammlerMode ? (
-                    <div className="card-meta">Доставка по умолчанию — ЗАММЛЕР. При необходимости выберите другую.</div>
-                  ) : (
-                    <div className="card-meta">Заполните данные клиента, товары и оплату.</div>
-                  )}
+                  <div className="card-label">Новый заказ</div>
+                  <div className="card-meta">Заполните данные клиента, товары и оплату.</div>
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
                   <div>
@@ -115,24 +109,19 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <SmartPickerInput
                       value={createDraft.deliveryType}
                       onChange={(value) => updateCreateDraft('deliveryType', value)}
-                      placeholder={zammlerMode ? 'Рекомендуется ЗАММЛЕР' : 'Выберите доставку'}
+                      placeholder="Выберите доставку"
                       options={suggestionValues.deliveryTypes}
                     />
-                    {zammlerMode ? <small>При необходимости выберите другой способ доставки.</small> : null}
                   </label>
                   <label>
                     <span>Способ оплаты заказа</span>
-                    {zammlerMode ? (
-                      <input value="КАСПИ МАГАЗИН" readOnly aria-label="Способ оплаты заказа КАСПИ МАГАЗИН" />
-                    ) : (
-                      <SmartPickerInput
-                        value={createDraft.orderPaymentMethod}
-                        onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}
-                        placeholder="Как клиент будет оплачивать заказ"
-                        options={suggestionValues.paymentMethods}
-                      />
-                    )}
-                    <small>{zammlerMode ? 'При выборе Kaspi магазин полная сумма учитывается автоматически.' : 'Выберите способ, которым клиент будет оплачивать заказ.'}</small>
+                    <SmartPickerInput
+                      value={createDraft.orderPaymentMethod}
+                      onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}
+                      placeholder="Как клиент будет оплачивать заказ"
+                      options={suggestionValues.paymentMethods}
+                    />
+                    <small>Выберите способ, которым клиент будет оплачивать заказ.</small>
                   </label>
                   <label className="wide-field">
                     <span>Комментарий</span>
@@ -339,18 +328,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
-                      <p>{isKaspiOrder ? 'Kaspi-заказ сохраняется с долгом. Оплата учитывается автоматически при нажатии «Отправлено».' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
+                      <p>Можно добавить несколько способов оплаты, включая КАСПИ МАГАЗИН. Неоплаченная часть останется в долге.</p>
                     </div>
                   </div>
-                  {!isKaspiOrder ? <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button> : null}
+                  <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button>
                 </div>
-                {isKaspiOrder ? (
-                  <div className="order-manager-required">
-                    <strong>К оплате после отправки: {formatMoney(createTotals.totalAmount)}</strong>
-                    <span>При создании: получено 0 ₸. После отметки «Отправлено» оставшийся долг закроется автоматически.</span>
-                  </div>
-                ) : (
-                  <div className="stack">
+                <div className="stack">
                     {createDraft.payments.map((payment, index) => (
                       <div className="mini-item order-payment-card" key={`create-payment-${index}`}>
                         <div className="mini-item-head"><strong>Оплата {index + 1}</strong><button className="ghost danger compact" type="button" onClick={() => removeCreatePayment(index)}>Удалить</button></div>
@@ -362,7 +345,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                     ))}
                   </div>
-                )}
               </section>    
               <section className="order-step-card">
                 <div className="order-step-head">
