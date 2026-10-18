@@ -490,7 +490,7 @@ export async function listOrders(db: D1Database, url: URL) {
     SELECT
       o.id, o.external_id, o.order_date, o.manager_id,
       CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
-      o.manager_snapshot_name, COALESCE(m.color_key, '#64748B') AS manager_color, c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+      o.manager_snapshot_name, COALESCE(m.color_key, '#64748B') AS manager_color, c.phone_normalized AS customer_phone, COALESCE(o.customer_name_override,c.display_name) AS customer_name,
       o.city, o.delivery_type, o.order_payment_method, o.source_type, o.workshop_status, o.order_status,
       o.shipping_status, o.shipping_date,
       ${pricingModeSelect},
@@ -750,7 +750,7 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
       `SELECT o.id, o.external_id, o.order_date, o.manager_id,
               CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
               COALESCE(m.color_key, '#64748B') AS manager_color,
-              c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+              c.phone_normalized AS customer_phone, COALESCE(o.customer_name_override,c.display_name) AS customer_name,
               o.city, o.comment, o.total_amount, o.received_amount, o.debt_amount,
               o.order_status, o.shipping_status, o.shipping_date
        FROM orders o
@@ -765,7 +765,7 @@ export async function listOpenDebtOrders(db: D1Database, url: URL) {
               o.id AS order_id, o.external_id, o.order_date,
               COALESCE(m.name, o.manager_snapshot_name, '') AS manager_name,
               COALESCE(m.color_key, '#475569') AS manager_color,
-              COALESCE(c.display_name, c.phone_normalized, '') AS customer
+              COALESCE(o.customer_name_override, c.display_name, c.phone_normalized, '') AS customer
        FROM payments p
        JOIN orders o ON o.id = p.order_id
        LEFT JOIN managers m ON m.id = o.manager_id

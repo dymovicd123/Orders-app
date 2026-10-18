@@ -353,7 +353,7 @@ export async function getClientDetails(db: D1Database, clientId: number, url: UR
            o.external_id, o.order_date, o.manager_id,
            CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
            o.manager_snapshot_name, COALESCE(m.color_key, '#64748B') AS manager_color,
-           c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+           c.phone_normalized AS customer_phone, COALESCE(o.customer_name_override,c.display_name) AS customer_name,
            o.city, o.delivery_type, o.source_type, o.workshop_status, o.order_status,
            o.shipping_status, o.shipping_date,
            o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,

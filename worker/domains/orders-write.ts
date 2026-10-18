@@ -2,6 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
+import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
@@ -850,8 +851,10 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         } else if (input.orderTotal !== undefined && input.orderTotal !== null && cleanText(input.orderTotal) !== '') {
           throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
         }
-        // Only a deliberate whole-SKU count can establish physical stock truth.
-        // Orders reserve goods; stale clients' stock observations must not rewrite Physical.
+        // Ordering is a promise/reservation, not a full physical stock count.
+        // Older clients may still submit observedPhysicalQuantity: ignore it rather than
+        // silently changing the Warehouse/Boutique truth. A shortage is kept as a
+        // negative available balance and surfaced for warehouse attention.
         let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
           item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
         ));
@@ -1223,7 +1226,68 @@ export async function updateOrderCritical(
   checkedBy: string,
   options: { lifecycleAction?: 'order_delete' } = {},
 ) {
+  // A manager may only use the two narrow, optimistic-concurrency-corrected
+  // forms. Never accept the legacy full editor as a manager, including crafted
+  // requests that contain the right safe fields AND additional mutations.
+  // Validate before allocating a critical-operation lease or reading stock.
+  const fields=Object.keys(input as Record<string,unknown>)
+    .filter(field=>field!=='requestId')
+  const raw=input as Record<string,unknown>
+  const managerMetadataOnly=fields.length===1 && fields[0]==='metadataCorrection'
+  const managerPriceOnly=fields.length===1 && fields[0]==='itemPriceCorrections'
+    && Array.isArray(raw.itemPriceCorrections) && raw.itemPriceCorrections.length>0
+  if(actor?.role!=='admin' && options.lifecycleAction!=='order_delete'
+      && !managerMetadataOnly && !managerPriceOnly)
+    throw new CriticalOperationConflictError(
+      'Полное редактирование заказа доступно только администратору. Менеджеру доступны «Исправить записанную цену» и «Исправить реквизиты».'
+    );
+  // Admin deletion has its own fully previewed, resumable operation; the legacy
+  // editor must never bypass it by PATCHing orderStatus=deleted.
+  if(options.lifecycleAction!=='order_delete'
+      && cleanText(input.orderStatus).toLowerCase()==='deleted')
+    throw new CriticalOperationConflictError(
+      'Удаление выполняется только отдельным действием администратора с предпросмотром последствий.'
+    );
   await ensureOrderItemWorkshopColumn(db);
+  // Safely update non-stock, non-money order details without constructing the
+  // large legacy editor draft. The existing saga still owns retries and IDs.
+  type MetadataFields = {
+    orderDate:string; customerPhone:string; customerName:string;
+    city:string; deliveryType:string; comment:string;
+  };
+  type MetadataSnapshot = {
+    totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number;
+    shippingStatus:string;orderStatus:string;
+  };
+  const rawMetadata = (input as OrderInput & {
+    metadataCorrection?: {expected:MetadataFields;next:MetadataFields;expectedState:MetadataSnapshot}
+  }).metadataCorrection;
+  const isolatedMetadataRequest = rawMetadata !== undefined
+    && Object.keys(input as Record<string,unknown>).every(field =>
+      field==='requestId'||field==='metadataCorrection');
+  if(rawMetadata!==undefined&&!isolatedMetadataRequest)
+    throw new OrderInputValidationError('Реквизиты заказа исправляются отдельно от цен, оплат и складских действий.');
+  const metadataFields=['orderDate','customerPhone','customerName','city','deliveryType','comment'] as const;
+  if(isolatedMetadataRequest){
+    if(!rawMetadata||typeof rawMetadata!=='object'||!rawMetadata.expected||!rawMetadata.next
+      ||!rawMetadata.expectedState
+      ||Object.keys(rawMetadata).some(field=>!['expected','next','expectedState'].includes(field))
+      ||Object.keys(rawMetadata.expectedState).some(field=>
+        !['totalAmount','receivedAmount','debtAmount','returnAmount','shippingStatus','orderStatus'].includes(field))
+      ||['totalAmount','receivedAmount','debtAmount','returnAmount'].some(field=>
+        !Number.isSafeInteger(rawMetadata.expectedState[field as keyof MetadataSnapshot])
+        || Number(rawMetadata.expectedState[field as keyof MetadataSnapshot])<0)
+      ||typeof rawMetadata.expectedState.shippingStatus!=='string'
+      ||typeof rawMetadata.expectedState.orderStatus!=='string'
+      ||metadataFields.some(field=>typeof rawMetadata.expected[field]!=='string'
+        ||typeof rawMetadata.next[field]!=='string')
+      ||Object.keys(rawMetadata.expected).some(field=>!metadataFields.includes(field as typeof metadataFields[number]))
+      ||Object.keys(rawMetadata.next).some(field=>!metadataFields.includes(field as typeof metadataFields[number]))
+      ||metadataFields.some(field=>rawMetadata.next[field].length>500 || rawMetadata.expected[field].length>500))
+      throw new OrderInputValidationError('Реквизиты переданы в неверном формате. Обновите заказ.');
+    if(actor?.role!=='admin' && cleanText(rawMetadata.next.orderDate) && rawMetadata.next.orderDate!==rawMetadata.expected.orderDate)
+      throw new CriticalOperationConflictError('Изменение даты заказа разрешено только администратору.');
+  }
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
     criticalOperation = await beginCriticalOperation(db, 'order_edit', input.requestId, { orderId: id, ...input }, { orderId: id });
@@ -1237,6 +1301,33 @@ export async function updateOrderCritical(
       if (isArchivedOrder(existing)) throw new CriticalOperationConflictError(`Заказ ${(existing as any).external_id} находится в архиве. Архивные заказы доступны только для просмотра.`);
 
       const existingAny = existing as any;
+      if(isolatedMetadataRequest && rawMetadata){
+        if(['archived','deleted'].includes(normalizeOrderStatus(existingAny.order_status)))
+          throw new CriticalOperationConflictError('Архивный или удалённый заказ нельзя изменять.');
+        const current:MetadataFields={
+          orderDate:cleanText(existingAny.order_date),
+          customerPhone:cleanText(existingAny.customer_phone),
+          customerName:cleanText(existingAny.customer_name),
+          city:cleanText(existingAny.city),
+          deliveryType:cleanText(existingAny.delivery_type),
+          comment:cleanText(existingAny.comment),
+        };
+        if(metadataFields.some(field=>current[field]!==cleanText(rawMetadata.expected[field])))
+          throw new CriticalOperationConflictError('Реквизиты заказа уже изменились. Обновите заказ и повторите.');
+        const expected=rawMetadata.expectedState;
+        if(toInt(existingAny.total_amount,0)!==expected.totalAmount
+          ||toInt(existingAny.received_amount,0)!==expected.receivedAmount
+          ||toInt(existingAny.debt_amount,0)!==expected.debtAmount
+          ||toInt(existingAny.return_amount,0)!==expected.returnAmount
+          ||cleanText(existingAny.shipping_status)!==cleanText(expected.shippingStatus)
+          ||cleanText(existingAny.order_status)!==cleanText(expected.orderStatus))
+          throw new CriticalOperationConflictError('Оплата, итог или статус заказа изменились после открытия редактора. Обновите заказ.');
+        // Order dates are non-null in the established D1 schema. A blank
+        // optional editor field means leave that date unchanged, rather than
+        // normalizeDate('') silently replacing it with today's date.
+        input={...input,...rawMetadata.next,
+          orderDate:cleanText(rawMetadata.next.orderDate)||cleanText(existingAny.order_date)};
+      }
       const existingPricingMode = cleanText(existingAny.pricing_mode) === 'itemized_v1' ? 'itemized_v1' : 'legacy_manual_total';
       type ItemPriceCorrectionInput = {
         orderItemId?: number;
@@ -1286,6 +1377,25 @@ export async function updateOrderCritical(
         throw new OrderInputValidationError('Безопасная замена состава передана в неверном формате.');
       }
       const itemContentReplacementRequested = rawItemContentReplacement !== null;
+      // Isolated record correction: never ships, rewrites items, touches payments, or
+      // runs full editor payload. Safe to use after shipment and unrelated downstream operations.
+      const recordedPriceOnlyRequest = rawItemPriceCorrections.length > 0
+        && !itemContentReplacementRequested
+        && Object.keys(input as Record<string, unknown>).every((field) => ['requestId', 'itemPriceCorrections'].includes(field));
+      if (recordedPriceOnlyRequest) {
+        if (normalizeOrderStatus(existingAny.order_status) === 'deleted') {
+          throw new CriticalOperationConflictError('Удалённый заказ не предназначен для исправления цены.');
+        }
+        for (const entry of rawItemPriceCorrections) {
+          if (!Number.isSafeInteger(Number(entry?.orderItemId))
+            || !Number.isSafeInteger(Number(entry?.expectedUnitPrice))
+            || !Number.isSafeInteger(Number(entry?.expectedQuantity))
+            || !Number.isSafeInteger(Number(entry?.expectedLineTotal))
+            || !Object.prototype.hasOwnProperty.call(entry, 'expectedCatalogPriceSnapshot')) {
+            throw new CriticalOperationConflictError('Для безопасного исправления цены нужны исходные цена, количество и сумма позиции. Обновите заказ.');
+          }
+        }
+      }
       if (rawItemPriceCorrections.length && existingPricingMode !== 'itemized_v1') {
         throw new CriticalOperationConflictError('Построчная коррекция цены доступна только для itemized-заказа.');
       }
@@ -1358,7 +1468,8 @@ export async function updateOrderCritical(
         throw new CriticalOperationConflictError('Отправленный заказ нельзя менять по составу. Используйте возврат, обмен или складскую корректировку.');
       }
       const workingModeEdit = actor?.role !== 'admin';
-      if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus) || existingShippingStatus === 'sent')) {
+      if (workingModeEdit && (['deleted', 'archived'].includes(existingOrderStatus)
+        || (existingShippingStatus === 'sent' && !recordedPriceOnlyRequest && !isolatedMetadataRequest))) {
         throw new CriticalOperationConflictError('Отправленный, удалённый или архивный заказ нельзя переписывать в рабочем режиме. Используйте отдельное штатное действие заказа.');
       }
       const deletingOrder = existingOrderStatus !== 'deleted' && nextOrderStatus === 'deleted';
@@ -1428,10 +1539,35 @@ export async function updateOrderCritical(
         : (Array.isArray(input.paymentMethodCorrections)
           ? input.paymentMethodCorrections.map((correction) => ({ paymentId: correction.paymentId, method: correction.method }))
           : []);
+      // Admin-only, standalone method corrections work even after a Return or
+      // Exchange. They cannot carry order metadata, amounts or item edits.
+      const isolatedPaymentMethodRequest = rawPaymentCorrections.length>0
+        && rawPaymentCorrections.length<=20
+        && Object.keys(input as Record<string, unknown>).every(key=>
+          key==='requestId'||key==='paymentCorrections')
+        && Object.keys(input as Record<string, unknown>).some(key=>key==='paymentCorrections');
+      if(isolatedPaymentMethodRequest && rawPaymentCorrections.some(entry=>
+        !entry || typeof entry!=='object'
+        || Object.keys(entry).some(key=>![
+          'paymentId','method','expectedPaymentDate','expectedMethod',
+          'expectedAmount','expectedPaymentKind','expectedComment',
+        ].includes(key))
+        || !Number.isSafeInteger(Number(entry.paymentId))
+        || Number(entry.paymentId)<=0
+        || typeof entry.method!=='string'||!cleanText(entry.method)
+        || typeof entry.expectedPaymentDate!=='string'
+        || typeof entry.expectedMethod!=='string'
+        || typeof entry.expectedPaymentKind!=='string'
+        || typeof entry.expectedComment!=='string'
+        || !Number.isSafeInteger(Number(entry.expectedAmount))
+        || Number(entry.expectedAmount)<=0))
+        throw new OrderInputValidationError('Для исправления способа оплаты требуется её исходный снимок. Обновите заказ.');
       const requestedPaymentCorrections = new Map<number, PaymentCorrectionInput>();
       for (const correction of rawPaymentCorrections) {
         const paymentId = toInt(correction?.paymentId, 0);
         if (!paymentId) throw new OrderInputValidationError('Не удалось определить оплату для исправления. Обновите заказ и повторите.');
+        if(isolatedPaymentMethodRequest && requestedPaymentCorrections.has(paymentId))
+          throw new OrderInputValidationError('Нельзя исправлять одну оплату дважды за одну операцию.');
         requestedPaymentCorrections.set(paymentId, correction);
       }
       const paymentCorrections: Array<Record<string, any>> = [];
@@ -1505,6 +1641,8 @@ export async function updateOrderCritical(
           || newAmount !== oldAmount
           || newPaymentKind !== oldPaymentKind
           || newComment !== oldComment;
+        if (isolatedPaymentMethodRequest && nonMethodChanged)
+          throw new CriticalOperationConflictError('В этом исправлении можно поменять только способ оплаты. Дата, сумма, смысл и комментарий неизменны.');
         if (isExchangeExtra && nonMethodChanged) {
           throw new CriticalOperationConflictError('Эта доплата принадлежит операции обмена. В редакторе заказа можно исправить только способ оплаты; сумму, дату и смысл меняйте через обмен.');
         }
@@ -1746,7 +1884,7 @@ export async function updateOrderCritical(
       }
       const nextItems = requestedItems || existingItemsForEdit;
       if (rewriteItems) {
-        // Order edits may change promises, but never the absolute shelf count.
+        // Rewriting order lines has no authority to overwrite the shelf count.
         for (const item of nextItems) {
           if (!item.isWorkshop) {
             item.observedPhysicalQuantity = null;
@@ -1829,6 +1967,20 @@ export async function updateOrderCritical(
         receivedAmount: correctedReceivedAmount,
         debtAmount: Math.max(0, calculatedTotals.totalAmount - correctedReceivedAmount),
       };
+      if (isolatedMetadataRequest) {
+        // Historical exchanged orders may have totals that do not equal today's
+        // remaining active SKU sum. A metadata edit must NEVER recalculate money.
+        totals={totalAmount:toInt(existingAny.total_amount,0),
+          receivedAmount:toInt(existingAny.received_amount,0),
+          debtAmount:toInt(existingAny.debt_amount,0)};
+      }
+      if (isolatedPaymentMethodRequest) {
+        // A payment method never changes the order's historical money totals,
+        // even when prior exchanges replaced the original order items.
+        totals={totalAmount:toInt(existingAny.total_amount,0),
+          receivedAmount:toInt(existingAny.received_amount,0),
+          debtAmount:toInt(existingAny.debt_amount,0)};
+      }
       if (rawItemPriceCorrections.length) {
         const updatePriceByItemId = new Map(priceOnlyItemUpdates.map((update) => [update.orderItemId, update.unitPrice]));
         const itemizedMoney = assertItemizedOrderMoneyNotOverpaid(
@@ -1852,9 +2004,65 @@ export async function updateOrderCritical(
         };
       }
       if (totals.receivedAmount > totals.totalAmount) throw new OrderInputValidationError(`Оплаты (${totals.receivedAmount}) больше цены заказа (${totals.totalAmount}). Исправьте цену или оплаты.`);
+      const linkedExchangePriceCorrections = new Map<number,{exchangeId:number;originalUnitPrice:number;role:'old'|'new'}>()
       if (itemContentChanged || priceOnlyItemsEdit || rewritePayments || deletingOrder) {
         const operations = await completedOrderOperationCounts(db, id);
-        if (operations.returns > 0 || operations.exchanges > 0) {
+        if (recordedPriceOnlyRequest && priceOnlyItemsEdit && (operations.returns > 0 || operations.exchanges > 0)) {
+          // An untouched active SKU can be corrected without changing any linked return/
+          // exchange monetary snapshot. Never rewrite a historical operation's item price.
+          const activeTotal = (itemizedPricingRows || []).reduce(
+            (sum, row) => sum + Math.max(0, toInt(row.quantity, 0)) * Math.max(0, toInt(row.unit_price, 0)), 0,
+          );
+          if (activeTotal !== toInt(existingAny.total_amount, 0)) {
+            throw new CriticalOperationConflictError('Итог заказа не совпадает с суммой действующих позиций. Исправление цены остановлено до проверки финансовой истории.');
+          }
+          for (const correction of priceOnlyItemUpdates) {
+            const dependency = await db.prepare(
+              `SELECT
+                 (EXISTS(
+                   SELECT 1 FROM exchanges e
+                   WHERE e.order_id = ?
+                     AND COALESCE(e.status, 'completed') <> 'cancelled'
+                     AND (e.old_order_item_id = ? OR e.new_order_item_id = ?
+                       OR EXISTS (SELECT 1 FROM exchange_items ei WHERE ei.exchange_id = e.id AND ei.order_item_id = ?))
+                 )
+                 OR EXISTS(
+                   SELECT 1 FROM returns refund
+                     JOIN return_items refund_item ON refund_item.return_id = refund.id
+                     JOIN exchanges linked ON linked.refund_return_id = refund.id
+                     WHERE refund.order_id = ?
+                       AND refund_item.order_item_id = ?
+                       AND COALESCE(linked.status, 'completed') <> 'cancelled'
+                   )
+                 ) AS exchange_link,
+                 EXISTS(
+                   SELECT 1 FROM returns r
+                   JOIN return_items ri ON ri.return_id = r.id
+                   WHERE r.order_id = ?
+                     AND COALESCE(r.status, 'completed') <> 'cancelled'
+                     AND ri.order_item_id = ?
+                 ) AS return_link`
+            ).bind(id, correction.orderItemId, correction.orderItemId, correction.orderItemId,
+              id, correction.orderItemId,
+              id, correction.orderItemId).first<{ exchange_link: number; return_link: number }>();
+            if (toInt(dependency?.exchange_link, 0)) {
+              if (rawItemPriceCorrections.length!==1) {
+                throw new CriticalOperationConflictError('Исправляйте цену позиции обмена отдельно от остальных позиций.')
+              }
+              const actual=itemizedPricingRows?.find((row)=>toInt(row.id,0)===correction.orderItemId)
+              if (!actual) throw new CriticalOperationConflictError('Позиция обмена не найдена для проверки цены.')
+              const partialOld=await findPartialV2OldPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const newLink=partialOld?null:await findExchangeNewPriceLink(db,id,correction.orderItemId,toInt(actual.unit_price,0))
+              const link=partialOld||newLink
+              if (!link) throw new CriticalOperationConflictError('Связь позиции с обменом не найдена. Исправление остановлено.')
+              linkedExchangePriceCorrections.set(correction.orderItemId,{...link,role:partialOld?'old':'new'})
+            }
+            // A standalone Return retains the actual refund as its own money
+            // event. Its cancellation never rewrites or compares order_item price.
+            // The current order's full paid/line-total constraints remain mandatory.
+          }
+        }
+        if ((operations.returns > 0 || operations.exchanges > 0) && !recordedPriceOnlyRequest && !isolatedMetadataRequest) {
           const parts = [
             operations.returns > 0 ? `возвратов: ${operations.returns}` : '',
             operations.exchanges > 0 ? `обменов: ${operations.exchanges}` : '',
@@ -1863,17 +2071,59 @@ export async function updateOrderCritical(
         }
       }
 
-      nextCustomerId = await upsertCustomerIdentityForOrderCreate(db, nextPhone, nextCustomerName, nextCity, timestamp);
+      // Metadata edits belong to this order only: do not mutate shared clients.
+      // New phone identities are created inside the final atomic CAS batch.
+      nextCustomerId = isolatedMetadataRequest ? null
+        : isolatedPaymentMethodRequest ? (toInt(existingAny.customer_id,0)||null)
+        : await upsertCustomerIdentityForOrderCreate(db, nextPhone, nextCustomerName, nextCity, timestamp);
 
       plan = {
         timestamp,
         externalId: cleanText(existingAny.external_id),
         existingManagerId, existingCustomerId: toInt(existingAny.customer_id, 0) || null,
         previousManagerName: cleanText(existingAny.manager_name || existingAny.manager_snapshot_name),
-        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCity, nextDelivery, nextOrderPaymentMethod, nextSource: replacementOrderSource,
+        nextOrderDate, nextManager, nextManagerId, nextCustomerId, nextCustomerName, nextPhone, nextCity, nextDelivery, nextOrderPaymentMethod, nextSource: replacementOrderSource,
         finalWorkshopStatus, nextOrderStatus, nextShippingStatus, nextShippingDate,
         persistedShippingStatus, persistedShippingDate, nextComment,
         itemContentChanged, rewriteItems, priceOnlyItemsEdit, priceOnlyItemUpdates,
+        recordedPriceOnlyRequest,isolatedMetadataRequest,isolatedPaymentMethodRequest,
+        methodBefore:isolatedPaymentMethodRequest?{
+          totalAmount:toInt(existingAny.total_amount,0),
+          receivedAmount:toInt(existingAny.received_amount,0),
+          debtAmount:toInt(existingAny.debt_amount,0),
+          returnAmount:toInt(existingAny.return_amount,0),
+          shippingStatus:cleanText(existingAny.shipping_status),
+          orderStatus:cleanText(existingAny.order_status),
+        }:null,
+        metadataBefore: isolatedMetadataRequest ? {
+          orderDate:cleanText(existingAny.order_date),customerId:toInt(existingAny.customer_id,0),
+          customerName:cleanText(existingAny.customer_name),customerPhone:cleanText(existingAny.customer_phone),
+          city:cleanText(existingAny.city),deliveryType:cleanText(existingAny.delivery_type),
+          comment:cleanText(existingAny.comment),
+          totalAmount:rawMetadata!.expectedState.totalAmount,
+          receivedAmount:rawMetadata!.expectedState.receivedAmount,
+          debtAmount:rawMetadata!.expectedState.debtAmount,
+          returnAmount:rawMetadata!.expectedState.returnAmount,
+          shippingStatus:cleanText(rawMetadata!.expectedState.shippingStatus),
+          orderStatus:cleanText(rawMetadata!.expectedState.orderStatus)
+        } : null,
+        priceAudit: recordedPriceOnlyRequest
+          ? rawItemPriceCorrections.filter((entry) => priceOnlyItemUpdates.some((item) => item.orderItemId === entry.orderItemId))
+            .map((entry) => ({
+              itemId: entry.orderItemId,
+              from: toInt(entry.expectedUnitPrice, 0),
+              to: toInt(entry.unitPrice, 0),
+              expectedQuantity: toInt(entry.expectedQuantity, 0),
+              expectedLineTotal: toInt(entry.expectedLineTotal, 0),
+              expectedCatalogPriceSnapshot: entry.expectedCatalogPriceSnapshot ?? null,
+              expectedOrderTotal: toInt(existingAny.total_amount, 0),
+              expectedReceived: toInt(existingAny.received_amount, 0),
+              expectedReturns: toInt(existingAny.return_amount, 0),
+              exchangeId: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.exchangeId ?? null,
+              originalExchangeUnitPrice: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.originalUnitPrice ?? null,
+              exchangeRole: linkedExchangePriceCorrections.get(toInt(entry.orderItemId,0))?.role ?? null,
+            }))
+          : [],
         rewritePayments, deletingOrder, deferShippingCommit,
         paymentCorrections,
         nextItems, nextPayments, totals, rewritePreResolvedCatalog: rewritePreResolvedCatalog || null,
@@ -1932,7 +2182,92 @@ export async function updateOrderCritical(
       );
       const priceOnlyItemUpdates = Array.isArray(p.priceOnlyItemUpdates) ? p.priceOnlyItemUpdates : [];
       if (priceOnlyItemUpdates.length) {
-        await db.batch([
+        // A price correction must never overwrite an order total computed from
+        // an out-of-date item or from an intervening Return/Exchange.
+        // The failing JSON expression makes D1's single atomic batch roll back.
+        const correctionCas = p.recordedPriceOnlyRequest && Array.isArray(p.priceAudit)
+          ? p.priceAudit.map((audit: Record<string, any>) => db.prepare(
+            `SELECT json('ORDER_RECORDED_PRICE_STALE')
+             WHERE NOT EXISTS(
+               SELECT 1
+               FROM order_items oi JOIN orders o ON o.id = oi.order_id
+               WHERE oi.id = ? AND oi.order_id = ?
+                 AND oi.quantity = ? AND oi.unit_price = ? AND oi.line_total = ?
+                 AND (oi.catalog_price_snapshot = ? OR (oi.catalog_price_snapshot IS NULL AND ? IS NULL))
+                 AND o.total_amount = ? AND o.received_amount = ?
+                 AND COALESCE(o.return_amount, 0) = ?
+                 AND COALESCE(o.order_status, 'active') <> 'deleted'
+                 AND (SELECT COALESCE(SUM(active.line_total),0)
+                      FROM order_items active WHERE active.order_id=o.id AND active.quantity>0) = o.total_amount
+                 AND (
+                   (? IS NULL AND NOT EXISTS(
+                     SELECT 1 FROM exchanges e
+                     WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
+                       AND (e.old_order_item_id=oi.id OR e.new_order_item_id=oi.id
+                         OR EXISTS(SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id AND ei.order_item_id=oi.id))
+                   ))
+                   OR (? IS NOT NULL
+                     AND (SELECT COUNT(*)
+                          FROM exchanges e JOIN exchange_items ei ON ei.exchange_id=e.id
+                          WHERE e.order_id=o.id AND ei.order_item_id=oi.id
+                            AND COALESCE(e.status,'completed')<>'cancelled') = 1
+                     AND EXISTS(
+                       SELECT 1 FROM exchanges e
+                       JOIN exchange_items ei ON ei.exchange_id=e.id
+                       JOIN critical_operations op
+                         ON op.operation_type='exchange_set_create' AND op.target_type='exchange'
+                         AND op.target_id=e.id
+                       WHERE e.id=? AND e.order_id=o.id AND ei.order_item_id=oi.id
+                         AND ei.role=? AND COALESCE(e.status,'completed')<>'cancelled'
+                         AND NOT EXISTS(
+                           SELECT 1 FROM critical_operations cancel
+                           WHERE cancel.operation_type='exchange_set_cancel'
+                             AND cancel.status IN ('started','completed')
+                             AND (cancel.target_id=e.id
+                               OR CAST(json_extract(cancel.context_json,'$.exchangeId') AS INTEGER)=e.id)
+                         )
+                     )
+                     AND (? <> 'old' OR NOT EXISTS(
+                       SELECT 1 FROM returns r JOIN return_items ri ON ri.return_id=r.id
+                       WHERE r.order_id=o.id AND ri.order_item_id=oi.id
+                         AND COALESCE(r.status,'completed')<>'cancelled'
+                     ))
+                   )
+                 )
+                 AND NOT EXISTS(
+                   SELECT 1 FROM returns refund
+                   JOIN return_items ri ON ri.return_id=refund.id
+                   JOIN exchanges e ON e.refund_return_id=refund.id
+                   WHERE refund.order_id=o.id AND ri.order_item_id=oi.id
+                     AND COALESCE(e.status,'completed')<>'cancelled'
+                 )
+             )`
+          ).bind(
+            toInt(audit.itemId, 0), id, toInt(audit.expectedQuantity, 0),
+            toInt(audit.from, 0), toInt(audit.expectedLineTotal, 0),
+            audit.expectedCatalogPriceSnapshot ?? null, audit.expectedCatalogPriceSnapshot ?? null,
+            toInt(audit.expectedOrderTotal, 0), toInt(audit.expectedReceived, 0),
+            toInt(audit.expectedReturns, 0),
+            audit.exchangeId ?? null,audit.exchangeId ?? null,audit.exchangeId ?? null,
+            audit.exchangeRole ?? 'new',audit.exchangeRole ?? 'new',
+          )) : [];
+        const immutableExchangeAudit = p.recordedPriceOnlyRequest && Array.isArray(p.priceAudit)
+          ? p.priceAudit.filter((audit: Record<string, any>)=>toInt(audit.exchangeId,0)>0).map((audit: Record<string, any>)=>db.prepare(
+            `INSERT INTO exchange_order_item_price_corrections(
+              request_id,order_id,order_item_id,exchange_id,role,
+              original_exchange_unit_price,old_unit_price,new_unit_price,
+              quantity_at_correction,actor_label,corrected_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+          ).bind(
+            `${criticalOperation!.requestId}:exchange:${audit.exchangeRole || 'new'}:${audit.itemId}`, id, toInt(audit.itemId,0),
+            toInt(audit.exchangeId,0),audit.exchangeRole||'new',toInt(audit.originalExchangeUnitPrice,0),
+            toInt(audit.from,0),toInt(audit.to,0),toInt(audit.expectedQuantity,0),
+            cleanText(checkedBy)||'Сотрудник',p.timestamp,
+          )) : [];
+        try {
+          await db.batch([
+          ...correctionCas,
+          ...immutableExchangeAudit,
           orderUpdateStatement,
           ...priceOnlyItemUpdates.map((update: Record<string, any>) => db.prepare(
             `UPDATE order_items
@@ -1944,7 +2279,59 @@ export async function updateOrderCritical(
             toInt(update.orderItemId, 0),
             id,
           )),
-        ]);
+          ]);
+        } catch (error) {
+          if (p.recordedPriceOnlyRequest && /ORDER_RECORDED_PRICE_STALE|malformed JSON/i.test(String(error))) {
+            throw new CriticalOperationConflictError('Заказ, цена или связанные операции изменились. Обновите заказ и повторите исправление.')
+          }
+          throw error;
+        }
+      } else if(p.isolatedPaymentMethodRequest){
+        // Payment-method-only edits must not rewrite order metadata, totals,
+        // status, customers or reserves. All money changes occur below with
+        // their own atomic compare-and-swap before ledger reversal/entry.
+      } else if(p.isolatedMetadataRequest && p.metadataBefore){
+        // Check the financial and order lifecycle snapshot atomically with
+        // the metadata UPDATE. A competing payment/exchange/shipment cannot
+        // silently be overwritten by an older editor snapshot.
+        const m=p.metadataBefore;
+        try{
+          await db.batch([
+            db.prepare(`SELECT json('ORDER_METADATA_STALE') WHERE NOT EXISTS(
+              SELECT 1 FROM orders WHERE id=?
+              AND COALESCE(order_date,'')=? AND COALESCE(customer_id,0)=?
+              AND COALESCE(customer_name_override,
+                (SELECT display_name FROM customers WHERE id=orders.customer_id),'')=?
+              AND COALESCE((SELECT phone_normalized FROM customers WHERE id=orders.customer_id),'')=?
+              AND COALESCE(city,'')=? AND COALESCE(delivery_type,'')=?
+              AND COALESCE(comment,'')=? AND total_amount=? AND received_amount=?
+              AND debt_amount=? AND COALESCE(return_amount,0)=?
+              AND COALESCE(shipping_status,'')=? AND COALESCE(order_status,'')=?
+            )`).bind(id,m.orderDate,m.customerId,m.customerName,m.customerPhone,m.city,m.deliveryType,m.comment,
+              m.totalAmount,m.receivedAmount,m.debtAmount,m.returnAmount,
+              m.shippingStatus,m.orderStatus),
+            // Creating a new phone identity, when needed, is part of the CAS
+            // transaction. Existing shared customer rows are never modified.
+            db.prepare(`INSERT INTO customers
+              (phone_normalized,display_name,city,orders_count,created_at,updated_at)
+              SELECT ?,?,?,0,?,? WHERE ?<>''
+              ON CONFLICT(phone_normalized) DO NOTHING`).bind(
+                p.nextPhone,p.nextCustomerName||null,p.nextCity||null,
+                p.timestamp,p.timestamp,p.nextPhone),
+            // Only customer/date/city/delivery/comment change. Name is order-scoped.
+            db.prepare(`UPDATE orders SET order_date=?,
+                customer_id=CASE WHEN ?<>'' THEN
+                  (SELECT id FROM customers WHERE phone_normalized=?) ELSE NULL END,
+                customer_name_override=?,city=?,delivery_type=?,comment=?,updated_at=?
+              WHERE id=?`).bind(p.nextOrderDate,p.nextPhone,p.nextPhone,
+                p.nextCustomerName,p.nextCity||null,p.nextDelivery||null,
+                p.nextComment||null,p.timestamp,id)
+          ]);
+        }catch(error){
+          if(/ORDER_METADATA_STALE|malformed JSON/i.test(String(error)))
+            throw new CriticalOperationConflictError('Заказ изменился после открытия реквизитов. Обновите заказ и повторите.')
+          throw error;
+        }
       } else {
         await orderUpdateStatement.run();
       }
@@ -2051,7 +2438,35 @@ export async function updateOrderCritical(
             id, p.externalId, correction.newMethod, auditComment, cleanText(checkedBy) || 'admin', p.timestamp,
           ));
         }
-        await db.batch(statements);
+        if(p.isolatedPaymentMethodRequest && p.methodBefore){
+          const m=p.methodBefore;
+          statements.unshift(db.prepare(`SELECT json('ORDER_PAYMENT_METHOD_STALE')
+            WHERE NOT EXISTS(
+              SELECT 1 FROM orders o JOIN payments pay ON pay.order_id=o.id
+              WHERE o.id=? AND pay.id=?
+                AND o.total_amount=? AND o.received_amount=?
+                AND o.debt_amount=? AND COALESCE(o.return_amount,0)=?
+                AND COALESCE(o.shipping_status,'')=? AND COALESCE(o.order_status,'')=?
+                AND COALESCE(pay.payment_date,'')=?
+                AND UPPER(TRIM(COALESCE(pay.method,'')))=?
+                AND pay.amount=?
+                AND COALESCE(pay.payment_kind,'primary')=?
+                AND COALESCE(pay.comment,'')=?
+            )`).bind(
+            id,correction.paymentId,
+            m.totalAmount,m.receivedAmount,m.debtAmount,m.returnAmount,
+            m.shippingStatus,m.orderStatus,
+            correction.oldPaymentDate,correction.oldMethod,oldAmount,
+            correction.oldPaymentKind,correction.oldComment,
+          ));
+        }
+        try{
+          await db.batch(statements);
+        }catch(error){
+          if(p.isolatedPaymentMethodRequest && /ORDER_PAYMENT_METHOD_STALE|malformed JSON/i.test(String(error)))
+            throw new CriticalOperationConflictError('Способ оплаты, суммы или статус заказа изменились. Обновите заказ перед повторным исправлением.');
+          throw error;
+        }
       }
     }
 
@@ -2096,7 +2511,7 @@ export async function updateOrderCritical(
       await writeActivityLog(db, {
         eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
         title: `Изменён заказ ${p.externalId}`,
-        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${Array.isArray(p.priceAudit) && p.priceAudit.length ? p.priceAudit.map((item: {itemId: number; from: number; to: number}) => `позиция #${item.itemId}: ${item.from} → ${item.to} ₸`).join('; ') + '; ' : ''}${p.recordedPriceOnlyRequest ? `сотрудник: ${cleanText(actor?.displayName || actor?.email || checkedBy) || 'не указан'}; ` : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
         amount: p.totals.totalAmount, createdAt: p.timestamp,
       });
     } catch (error) {
@@ -2138,7 +2553,8 @@ export async function getOrder(db: D1Database, id: number) {
       CASE WHEN m.id IS NOT NULL THEN m.name WHEN NULLIF(TRIM(COALESCE(o.manager_snapshot_name, '')), '') IS NOT NULL THEN o.manager_snapshot_name || ' · исторический менеджер' ELSE 'Менеджер требует уточнения' END AS manager_name,
       o.manager_snapshot_name,
       COALESCE(m.color_key, '#64748B') AS manager_color,
-      c.phone_normalized AS customer_phone, c.display_name AS customer_name,
+      c.phone_normalized AS customer_phone,
+       COALESCE(o.customer_name_override,c.display_name) AS customer_name,
       o.city, o.delivery_type, o.order_payment_method, o.source_type, o.workshop_status, o.order_status,
       ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment, o.shipping_status, o.shipping_date,

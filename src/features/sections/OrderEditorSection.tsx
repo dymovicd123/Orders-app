@@ -63,7 +63,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
               className="card wide sector-orders"
               id="editor"
               ref={editorFormRef}
-              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: selectedOrder && projection?.canEdit && editorDraft && editorOpen ? undefined : 'none' }}
+              style={{ ...sectorStyle('orders'), ...orderPanelStyle('edit'), display: isAdmin && selectedOrder && projection?.canEdit && editorDraft && editorOpen ? undefined : 'none' }}
             >
               <div className="card-label">Редактирование заказа</div>
               <div className="actions form-top-actions">
@@ -226,7 +226,6 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                         >
                           <option value="active">Активен</option>
                           <option value="closed">Закрыт</option>
-                          <option value="deleted">Удалён</option>
                         </select>
                       </label>
                     )}
