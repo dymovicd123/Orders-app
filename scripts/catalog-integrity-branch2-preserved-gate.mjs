@@ -119,7 +119,7 @@ const reviewedAdminEditor={
   write:'8af447451f82a89bfee29f51f1cc2ac040c13cc5',
   projection:'62823c931c1c5078e167154a5ad70919272ac8cb',
   editor:'ada21af4cae3f554088b6ab3641b20a380ba08c7',
-  regression:'d1b65ed010557fbe353962cf218c94fea6becc10',
+  regression:'7830edf0a490354d510d5e0871b7ee4fad4b42b1',
 }
 for(const [file,expected] of [
   ['src/App.tsx',reviewedAdminEditor.app],
