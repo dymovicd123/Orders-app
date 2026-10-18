@@ -40,7 +40,9 @@ jobs:
           ! grep -q 'orders_db_branch2' wrangler.jsonc
           ! grep -q "from './domains/workshop-settlements.ts'" worker/index.ts
           ! grep -q "from './domains/workshop-settlement-prices.ts'" worker/index.ts
-          grep -q 'reconcileKaspiPaymentAfterShipping' worker/index.ts
+          ! grep -q 'reconcileKaspiPaymentAfterShipping' worker/index.ts
+          grep -q 'createManualOrderPaymentCritical' worker/index.ts
+          grep -q "url.pathname === '/api/payments'" worker/index.ts
           grep -q 'correct-retired-item' worker/index.ts
           grep -q 'confirm-retired-delivery' worker/index.ts
           grep -q 'authUser.displayName' worker/index.ts
