@@ -8,6 +8,7 @@ import {projectOrderOperationalState} from '../src/app/orderOperationalProjectio
 const project=readFileSync('src/app/orderOperationalProjection.ts','utf8')
 const table=readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 const details=readFileSync('src/features/sections/OrderDetailsSection.tsx','utf8')
+const returnsView=readFileSync('src/features/sections/OrderReturnsSection.tsx','utf8')
 const editor=readFileSync('src/features/sections/OrderEditorSection.tsx','utf8')
 const app=readFileSync('src/App.tsx','utf8')
 const worker=readFileSync('worker/domains/orders-write.ts','utf8')
@@ -30,6 +31,8 @@ assert(project.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstream
   'Complete order editor must require admin in one shared projection')
 assert(table.includes('projectOrderOperationalState(order, { isAdmin })'))
 assert(details.includes('projectOrderOperationalState(selectedOrder, { isAdmin })'))
+assert(returnsView.includes('isAdmin ? (')&&returnsView.includes('handleEditOrder(returnSelectedOrder)'),
+  'Returns must never offer full editor button to manager')
 assert(editor.includes('display: isAdmin && selectedOrder && projection?.canEdit'))
 assert(!editor.includes('<option value="deleted">'), 'Admin delete must use consequence preview, not legacy editor')
 assert(app.includes('if (!isAdmin) { setMessage(\'Полное редактирование доступно только администратору.'))
