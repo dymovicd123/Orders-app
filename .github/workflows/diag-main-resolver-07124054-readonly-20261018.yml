@@ -1,0 +1,48 @@
+name: Main resolver exact order SELECT-only diagnostic 20261018
+on:
+  push:
+    branches: ['diag/main-resolver-07124054-readonly-20261018']
+    paths: ['.github/workflows/diag-main-resolver-07124054-readonly-20261018.yml']
+permissions:
+  contents: read
+jobs:
+  select-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify single fixed PRODUCTION database identity and diagnostic branch (NEVER DEPLOY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'diag/main-resolver-07124054-readonly-20261018'
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
+      - run: npm ci
+      - name: SELECT exact order, lines, SKU and reservation facts (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for sql in \
+            "SELECT id,order_status,shipping_status,created_at FROM orders WHERE external_id='ORD-20261007124054-6D9204A9' LIMIT 1" \
+            "SELECT oi.id,oi.order_id,oi.product_name_snapshot,oi.audience_type,oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.product_id,oi.variant_id,oi.source_type,oi.stock_writeoff_status,oi.is_workshop,oi.quantity FROM order_items oi WHERE oi.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9') ORDER BY oi.id" \
+            "SELECT r.id,r.order_item_id,r.status,r.quantity,r.inventory_source,r.product_id,r.variant_id,r.unresolved_reason FROM inventory_reservations r WHERE r.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9') ORDER BY r.id" \
+            "SELECT p.id,p.name,p.category,p.is_active FROM catalog_products p WHERE p.name LIKE '%ЖИЛЕТ%' ORDER BY p.id LIMIT 80" \
+            "SELECT v.id,v.product_id,p.name,v.is_active,v.category,v.gender,v.material,v.length,v.color,v.size_label,v.stock_position_id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE p.name LIKE '%ЖИЛЕТ%' AND (v.size_label='48' OR v.color LIKE '%КОРИЧ%') ORDER BY v.id LIMIT 100" \
+            "SELECT x.id,x.product_id,x.material,x.length,x.is_active FROM catalog_stock_positions x WHERE x.product_id IN (SELECT id FROM catalog_products WHERE name LIKE '%ЖИЛЕТ%') ORDER BY x.id LIMIT 100" \
+            "SELECT s.id,s.variant_id,s.inventory_source,s.quantity,s.reserved_quantity FROM inventory_stock s WHERE s.variant_id IN (SELECT variant_id FROM order_items WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261007124054-6D9204A9')) LIMIT 40" \
+            "SELECT a.input_key,a.variant_id FROM catalog_input_aliases a WHERE a.input_key LIKE '%ЖИЛЕТ%' LIMIT 25"
+          do
+            echo "::group::SELECT-ONLY DIAGNOSTIC"
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
+            echo "::endgroup::"
+          done
