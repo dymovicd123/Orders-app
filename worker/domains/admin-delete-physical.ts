@@ -99,6 +99,10 @@ export async function reviewAdminDeleteAppliedStock(
           m.quantity_delta AS movement_delta,m.quantity_after AS movement_quantity_after,
           m.movement_type AS movement_type,m.reference_type AS movement_reference_type,
           m.reference_id AS movement_reference_id,
+          (SELECT COUNT(*) FROM inventory_movements newer
+            WHERE newer.inventory_source=le.inventory_source
+              AND newer.variant_id=le.variant_id AND newer.id>le.movement_id
+          ) AS later_movement_count,
           m.variant_id AS movement_variant_id,m.inventory_source AS movement_source,
           (SELECT COUNT(*) FROM inventory_stock_checks ch
             WHERE ch.inventory_source=le.inventory_source AND ch.variant_id=le.variant_id
@@ -155,6 +159,7 @@ export async function reviewAdminDeleteAppliedStock(
       &&cleanText(x.movement_reference_type)==='exchange_new'
       &&cleanText(x.movement_reference_id)===String(exchangeId)
       &&toInt(x.movement_quantity_after,-1)===0
+      &&toInt(x.later_movement_count,-1)===0
       &&toInt(x.current_physical,-1)===0
       &&toInt(x.current_reserved,-1)===0
       &&cleanText(x.reservation_status)==='fulfilled'
