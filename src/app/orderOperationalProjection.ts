@@ -174,7 +174,9 @@ export function projectOrderOperationalState(
     canOpenExchange: mutableWorkingOrder,
     // Current backend blocks rewriting an order after a committed Return or Exchange
     // until that downstream operation is cancelled. Mirror that fact explicitly.
-    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),
+    // Full editing may rewrite item, payment, manager and stock relationships.
+    // Safe recorded-price and metadata corrections remain separately available to managers.
+    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && simpleAdmin,
     // A completed exchange replaces the active order item; it does not permanently block
     // future shipping. If a false "sent" mark is corrected, the current replacement can be
     // reserved and handed over normally. A real item return still blocks this path.
