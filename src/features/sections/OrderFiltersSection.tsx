@@ -8,7 +8,6 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     ChoicePills,
     filters,
     kaspiMode = false,
-    kaspiPaymentState = 'all',
     ManagerPicker,
     orderPanel,
     orderPanelStyle,
@@ -17,7 +16,6 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     resetOrderFilters,
     sectorStyle,
     setFilters,
-    setKaspiPaymentState,
     workspaceSector = 'orders',
   } = ctx
 
@@ -43,16 +41,6 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
             </div>
           ) : null}
         </div>
-        {kaspiMode ? (
-          <div className="orders-period-row">
-            <span className="orders-filter-title">Оплата:</span>
-            <ChoicePills value={kaspiPaymentState} onChange={(value) => setKaspiPaymentState(value)} options={[
-              { value: 'all', label: 'Все' },
-              { value: 'awaiting', label: 'Ожидают оплату' },
-              { value: 'paid', label: 'Оплачены' },
-            ]} />
-          </div>
-        ) : null}
         <div className="orders-filter-grid orders-filter-grid-simple">
           <label className="order-filter-manager">
             <span>Менеджер</span>
