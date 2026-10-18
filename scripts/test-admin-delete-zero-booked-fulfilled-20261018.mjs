@@ -87,8 +87,9 @@ await reject("UPDATE catalog_variants SET is_active=0 WHERE id=1336",
   "UPDATE catalog_variants SET is_active=1 WHERE id=1336",'retired SKU')
 await reject("UPDATE inventory_lifecycle_events SET movement_id=NULL WHERE id=8",
   "UPDATE inventory_lifecycle_events SET movement_id=14 WHERE id=8",'no source movement')
-assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10').get(),
-  {quantity:0,reserved_quantity:0})
+const finalStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=10').get()
+assert.equal(finalStock.quantity,0)
+assert.equal(finalStock.reserved_quantity,0)
 assert.equal(writes,0)
 sql.close()
 const preview=readFileSync('worker/domains/order-delete-preview.ts','utf8')
