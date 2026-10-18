@@ -82,5 +82,26 @@ sql.prepare("UPDATE inventory_reservations SET variant_id=20 WHERE order_item_id
 await assert.rejects(()=>correctRetiredItem(db,req),/резерв не закреплён за новым исполнением/i)
 sql.prepare("UPDATE inventory_reservations SET variant_id=21 WHERE order_item_id=100").run()
 assert.equal((await correctRetiredItem(db,req)).alreadyCorrected,true)
+
+ // A constraint in the final journal assertion must roll back ALL writes,
+ // not leave the stock reserved while showing the manager a failed edit.
+ sql.exec(`
+ INSERT INTO orders VALUES(4,'O4','active','','not_sent',20000,0,20000,0,NULL);
+ INSERT INTO order_items VALUES(400,4,1,20,'ЭТНО КАРДИГАН','adult','ЖЕН','СВЕТЛО СЕРЫЙ','ДРАП','СТАНДАРТ','52','warehouse',0,1,20000,20000,'catalog_retired',NULL,NULL);
+ INSERT INTO inventory_reservations VALUES(4,4,400,'warehouse',1,20,1,'released','order','O4','t','t','t',NULL);
+ CREATE TRIGGER test_refuse_reactivate BEFORE UPDATE ON inventory_reservations
+ WHEN OLD.order_item_id=400 AND NEW.status='active'
+ BEGIN SELECT RAISE(IGNORE); END;
+ `)
+ const reservedBefore=sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE variant_id=21').get().reserved_quantity
+ await assert.rejects(()=>correctRetiredItem(db,{...req,orderId:4,itemId:400,oldTotal:20000,newPrice:20000}),
+   /изменение заказа не удалось|не сохранилось/i)
+ assert.equal(sql.prepare('SELECT variant_id FROM order_items WHERE id=400').get().variant_id,20)
+ assert.equal(sql.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=400').get().stock_writeoff_status,'catalog_retired')
+ assert.equal(sql.prepare('SELECT COUNT(*) n FROM retired_order_item_corrections WHERE order_item_id=400').get().n,0)
+ assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE variant_id=21').get().reserved_quantity,reservedBefore)
+ assert.equal(sql.prepare('SELECT total_amount FROM orders WHERE id=4').get().total_amount,20000)
+ console.log('RETIRED_CORRECTION_TRANSACTION_FAILURE_ROLLED_BACK_JOURNAL_SKU_STOCK_AND_TOTAL_PASSED')
+
 console.log('RETIRED_CORRECTION_COMMITTED_BATCH_DRIVER_META_ZERO_AND_DESCRIPTIVE_READBACK_PASSED')
 sql.close()
