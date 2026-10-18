@@ -505,6 +505,19 @@ try{
     'Could not restore byte-exact pre-role editor for immutable checks')
   saved.set(editorPath,currentEditor)
   fs.writeFileSync(editorPath,oldEditor)
+  const projectionPath=path.resolve('src/app/orderOperationalProjection.ts')
+  const currentProjection=fs.readFileSync(projectionPath,'utf8')
+  check(gitBlob(currentProjection)===reviewedAdminEditor.projection,
+    'Admin-only editor role projection drifted')
+  const oldProjection=currentProjection.replace(
+    "    // Full editing may rewrite item, payment, manager and stock relationships.\n"+
+    "    // Safe recorded-price and metadata corrections remain separately available to managers.\n"+
+    "    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && simpleAdmin,",
+    "    canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && (simpleAdmin || !sent),")
+  check(gitBlob(oldProjection)==='bda4f3ea71bc07c0801817ad582d8dbd659a645b',
+    'Cannot restore exact old operational projection for historical modularization')
+  saved.set(projectionPath,currentProjection)
+  fs.writeFileSync(projectionPath,oldProjection)
   // The historical size/count checks must see exactly the original Branch2
   // source tree; new modules are tested above against their own current code.
   for(const [relative,expected] of [
