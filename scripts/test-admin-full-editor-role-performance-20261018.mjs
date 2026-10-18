@@ -46,8 +46,8 @@ assert(app.includes('const payload={metadataCorrection:{expected,next,expectedSt
 assert(app.includes('itemPriceCorrections: changes.map'), 'Existing manager price-batch editor must remain available')
 assert(app.includes('return {...result.preview,activeSaga:null}'), 'Reuse already verified server deletion preview to avoid duplicate D1 queries')
 assert(app.includes('return await loadAdminOrderDeletePreview(order)'), 'Fallback must remain for legacy servers')
-assert(app.includes('if (!isItemizedEdit || isItemizedContentRewrite) void loadWorkshopData()'),
-  'Price/metadata edit should avoid redundant workshop read, without breaking composition edits')
+assert(app.includes('void loadWorkshopData()'),
+  'Full editor must refresh workshop view after metadata, payment and composition edits')
 
 const manager={role:'manager',id:12,displayName:'Test manager'}
 const admin={role:'admin',id:1,displayName:'Test admin'}
