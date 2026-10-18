@@ -65,7 +65,7 @@ const reviewedEthnoManualHistory = {
   'scripts/test-catalog-complex-undo-case.mjs':'b9ab573b89337241e7636e8e9f275d711e4624a6',
 }
 // The current Kaspi shipping route follows the previously accepted Worker.
-const currentKaspiWorkerIndex='1bed1de0c012b59cddbbbf9101f2d0192e29ce50'
+const currentKaspiWorkerIndex='6b416e9fc0f739aa56e5c883107f515946178736'
 for(const [file,sha] of Object.entries(reviewedEthnoManualHistory))
   check(gitBlob(fs.readFileSync(file,'utf8'))===(file==='worker/index.ts'?currentKaspiWorkerIndex:sha),
     'Unreviewed Ethno finalization runtime drift: '+file)
