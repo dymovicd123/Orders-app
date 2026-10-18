@@ -37,6 +37,8 @@ export type CriticalOperationHandle = {
 export class CriticalOperationConflictError extends Error {
   status = 409;
   code = 'critical_operation_conflict';
+  // Narrow, read-only facts for operator guidance when an order has recorded handovers.
+  details?: unknown;
 }
 
 
@@ -48,7 +50,9 @@ export class CriticalOperationBusyError extends Error {
 
 export function criticalOperationErrorResponse(error: unknown) {
   if (error instanceof CriticalOperationBusyError || error instanceof CriticalOperationConflictError) {
-    return json({ ok: false, code: error.code, message: error.message }, { status: error.status });
+    const details = error instanceof CriticalOperationConflictError
+      && error.code === 'order_delete_physical_confirmation_required' ? error.details : undefined;
+    return json({ ok: false, code: error.code, message: error.message, ...(details ? { details } : {}) }, { status: error.status });
   }
   return null;
 }

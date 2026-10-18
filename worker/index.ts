@@ -12,6 +12,11 @@ import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
+import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
+import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
+import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
+import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
+import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
@@ -55,6 +60,7 @@ import type { CallCentreInput, DepartmentPlanInput, EmployeeInput, LeadInput, Pl
 import { deleteCallCentreRecord, deleteDepartmentPlanRecord, deleteLeadRecord, deleteManagerPlanRecord, deleteTeamEmployee, listCallCentreRecords, listLeadRecords, listPlans, listTeamActivity, listTeamEmployees, listTeamSalaryPreview, listTeamTimesheet, saveCallCentreRecord, saveDepartmentPlan, saveLeadRecord, saveManagerPlan, saveTeamEmployee, saveTeamTimesheet, setTeamEmployeeActive } from './domains/team.ts'
 import { bulkUpdateWorkshopTasks, listWorkshopTasks, readWorkshopCounts, updateWorkshopTask } from './domains/workshop.ts'
 import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
+
 
 /**
  * Kaspi's external settlement is represented by ONE ordinary debt-close payment
@@ -1045,8 +1051,8 @@ export default {
       if (url.pathname === '/api/inventory/movements' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const movementType = cleanText(input.movementType).toLowerCase();
-        // Temporary manager Warehouse access: explicit operations only, never implicit order counts.
-        // System-only movement types retain the administrator permission boundary.
+        // Temporary warehouse access for authenticated managers. Only these named
+        // operations are opened; system-only movement types remain admin-only.
         const managerWarehouseOperation = ['arrival', 'manual_set', 'writeoff'].includes(movementType);
         if (!managerWarehouseOperation) {
           const denied = requireAdminAccess(request);
@@ -1771,10 +1777,62 @@ export default {
         });
       }
 
+      const orderDeletePreviewMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete-preview$/);
+      if (orderDeletePreviewMatch && request.method === 'GET') {
+        const denied=requireAdminUser(authUser);
+        if(denied)return denied;
+        const id=toInt(orderDeletePreviewMatch[1],0);
+        try {
+          return json({ok:true,preview:await previewAdminOrderDeletion(env.DB,id)});
+        } catch(error) {
+          const criticalResponse=criticalOperationErrorResponse(error);
+          if(criticalResponse)return criticalResponse;
+          throw error;
+        }
+      }
+
+      const adminDeletePhysicalMatch=url.pathname.match(/^\/api\/orders\/(\d+)\/delete-physical-confirm$/);
+      if(adminDeletePhysicalMatch && request.method==='POST'){
+        const denied=requireAdminUser(authUser);
+        if(denied)return denied;
+        const id=toInt(adminDeletePhysicalMatch[1],0);
+        const input=await readJson<{expectedSnapshot?:string;physicalOutcome?:string}>(request);
+        try{
+          return json(await correctPhysicalBeforeAdminDelete(env.DB,id,input,authUser!));
+        }catch(error){
+          const critical=criticalOperationErrorResponse(error);
+          if(critical)return critical;
+          const safe=publicApiError(error);
+          return json({ok:false,message:safe.message},{status:safe.status});
+        }
+      }
+
+      const adminChainMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete-chain$/);
+      if(adminChainMatch && (request.method==='GET'||request.method==='POST')){
+        const denied=requireAdminUser(authUser);
+        if(denied)return denied;
+        const id=toInt(adminChainMatch[1],0);
+        try{
+          if(request.method==='GET')
+            return json({ok:true,progress:await readActiveAdminDeleteChain(env.DB,id)});
+          const input=await readJson<{requestId?:string;expectedSnapshot?:string;physicalOutcome?:string}>(request);
+          return json(await executeAdminDeleteChainStep(env.DB,id,input,authUser!));
+        }catch(error){
+          const critical=criticalOperationErrorResponse(error);
+          if(critical)return critical;
+          const safe=publicApiError(error);
+          return json({ok:false,message:safe.message}, {status:safe.status});
+        }
+      }
+
       const orderDeleteMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/delete$/);
       if (orderDeleteMatch && request.method === 'POST') {
+        // Only the authenticated administrator may delete an order, even if a
+        // non-admin client submits this route directly.
+        const denied = requireAdminUser(authUser);
+        if (denied) return denied;
         const id = toInt(orderDeleteMatch[1], 0);
-        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued' }>(request);
+        const input = await readJson<{ requestId?: string; comment?: string; physicalOutcome?: 'not_issued'; expectedSnapshot?: string }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined;
         try {
           return json(await deleteOrderSafely(
@@ -1935,6 +1993,35 @@ export default {
         }
       }
 
+      // Order-scoped, read-only Return cancellation choices. A Return created
+      // by a still-active Exchange must be cancelled through that Exchange;
+      // never expose a separate button that would split its money/stock chain.
+      const orderReturnCancelChoicesMatch=url.pathname.match(/^\/api\/orders\/(\d+)\/return-cancel-choices$/);
+      if(orderReturnCancelChoicesMatch && request.method==='GET'){
+        const orderId=toInt(orderReturnCancelChoicesMatch[1],0);
+        const order=await env.DB.prepare(
+          "SELECT id,order_status FROM orders WHERE id=? LIMIT 1"
+        ).bind(orderId).first<{id:number;order_status:string}>();
+        if(!order?.id || ['deleted','archived'].includes(cleanText(order.order_status)))
+          return json({ok:false,message:'Заказ не найден или находится в архиве.'},{status:409});
+        const found=await env.DB.prepare(
+          `SELECT r.id,r.return_date,r.amount,r.payment_method,
+             (SELECT COUNT(*) FROM return_items ri WHERE ri.return_id=r.id) AS item_rows,
+             (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri WHERE ri.return_id=r.id) AS item_quantity,
+             (SELECT e.id FROM exchanges e WHERE e.refund_return_id=r.id
+               AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1) AS parent_exchange_id
+           FROM returns r WHERE r.order_id=? AND COALESCE(r.status,'completed')<>'cancelled'
+           ORDER BY r.id DESC LIMIT 101`
+        ).bind(orderId).all<Record<string,unknown>>();
+        const rows=found.results||[];
+        if(rows.length>100)return json({ok:false,message:'Слишком много возвратов для автоматического просмотра.'},{status:409});
+        return json({ok:true,choices:rows.map(row=>({
+          id:toInt(row.id,0),date:cleanText(row.return_date),amount:toInt(row.amount,0),
+          method:cleanText(row.payment_method),itemQuantity:toInt(row.item_quantity,0),
+          parentExchangeId:toInt(row.parent_exchange_id,0)||null,
+        }))});
+      }
+
       if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {
         try {
           return json(await createItemizedExchangeBatchFromRequest(env.DB, request), { status: 201 });
@@ -1986,6 +2073,86 @@ export default {
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
           if (criticalResponse) return criticalResponse;
+          throw error;
+        }
+      }
+
+      const oldExchangePriceCandidatesMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/exchange-old-price-candidates$/);
+      if (oldExchangePriceCandidatesMatch && request.method === 'GET') {
+        const orderId=toInt(oldExchangePriceCandidatesMatch[1],0);
+        const candidates=await env.DB.prepare(
+          `SELECT e.id AS exchange_id,ei.order_item_id,oi.product_name_snapshot,
+                  oi.size_snapshot,oi.color_snapshot
+           FROM exchanges e JOIN exchange_items ei ON ei.exchange_id=e.id
+           JOIN order_items oi ON oi.id=ei.order_item_id AND oi.order_id=e.order_id
+           WHERE e.order_id=? AND ei.role='old' AND oi.quantity=0
+             AND COALESCE(e.status,'completed')<>'cancelled'
+           ORDER BY e.id DESC,ei.id ASC LIMIT 100`
+        ).bind(orderId).all<Record<string,unknown>>();
+        const items=[];
+        for(const row of candidates.results||[]){
+          try {
+            const state=await findRetiredV2OldItemPriceLink(env.DB,toInt(row.exchange_id,0),toInt(row.order_item_id,0));
+            items.push({
+              exchangeId:state.exchangeId,orderItemId:state.oldItemId,
+              productName:cleanText(row.product_name_snapshot),size:cleanText(row.size_snapshot),
+              color:cleanText(row.color_snapshot),
+              originalUnitPrice:state.originalUnitPrice,
+              currentRecordedUnitPrice:state.currentRecordedUnitPrice,
+            });
+          } catch {
+            // Legacy or multi-hop items are not automatically eligible.
+          }
+        }
+        return json({ok:true,items});
+      }
+
+      const oldExchangePriceCorrectionMatch = url.pathname.match(/^\/api\/exchanges\/(\d+)\/old-recorded-price$/);
+      if (oldExchangePriceCorrectionMatch && request.method === 'PATCH') {
+        const body=await readJson<{orderItemId?:number;expectedUnitPrice?:number;newUnitPrice?:number;requestId?:string}>(request);
+        const requestId=cleanText(body.requestId)||cleanText(request.headers.get('X-Idempotency-Key'));
+        try {
+          return json(await recordRetiredV2OldPriceCorrection(env.DB,{
+            exchangeId:toInt(oldExchangePriceCorrectionMatch[1],0),
+            oldItemId:toInt(body.orderItemId,0),
+            expectedUnitPrice:Number(body.expectedUnitPrice),
+            newUnitPrice:Number(body.newUnitPrice),
+            requestId,
+            actorLabel:cleanText(authUser?.displayName)||cleanText(authUser?.email)
+              ||cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
+          }));
+        } catch(error) {
+          const criticalResponse=criticalOperationErrorResponse(error);
+          if(criticalResponse) return criticalResponse;
+          throw error;
+        }
+      }
+
+      // Read-only dependency plan. Managers may inspect the chain, but this
+      // route does not cancel a Return, Exchange, payment or stock movement.
+      const exchangeChainPreviewMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/exchange-cancel-chain$/);
+      if (exchangeChainPreviewMatch && request.method === 'GET') {
+        const orderId=toInt(exchangeChainPreviewMatch[1],0);
+        const requestedExchangeId=toInt(url.searchParams.get('exchangeId'),0);
+        try {
+          const available=await env.DB.prepare(
+            `SELECT id FROM exchanges WHERE order_id=?
+             AND COALESCE(status,'completed')<>'cancelled'
+             ORDER BY id ASC LIMIT 201`
+          ).bind(orderId).all<{id:number}>();
+          const availableExchangeIds=(available.results||[]).map((row)=>toInt(row.id,0)).filter(Boolean);
+          if (availableExchangeIds.length>200) {
+            return json({ok:false,message:'Слишком много активных обменов для предпросмотра.'},{status:409});
+          }
+          if(!availableExchangeIds.length) {
+            return json({ok:true,availableExchangeIds:[],preview:null});
+          }
+          const exchangeId=requestedExchangeId||availableExchangeIds[0];
+          return json({ok:true,availableExchangeIds,
+            preview:await previewExchangeCancellationChain(env.DB,orderId,exchangeId)});
+        } catch(error) {
+          const criticalResponse=criticalOperationErrorResponse(error);
+          if(criticalResponse)return criticalResponse;
           throw error;
         }
       }

@@ -12,6 +12,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     formatMoney,
     FriendlyNumberInput,
     handleEditOrder,
+    isAdmin,
     ManagerBadge,
     managerColorFor,
     orderPanelStyle,
@@ -352,7 +353,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                             <span>Есть товары, которые клиенту не выдавали</span>
                             <strong>Их нельзя «вернуть на склад»: они и так физически остались у вас. Если позицию отменили до выдачи, сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0 и укажите сумму выше.</strong>
                             <div className="mini-panel-actions">
-                              <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
+                              {isAdmin ? (
+                                <button className="secondary compact" type="button" disabled={returnBusy} onClick={() => void handleEditOrder(returnSelectedOrder)}>Изменить заказ</button>
+                              ) : <span className="muted-small">Для изменения состава заказа обратитесь к администратору. Исправление цены и реквизитов доступно в «Доп. действия».</span>}
                             </div>
                           </div>
                         ) : null}

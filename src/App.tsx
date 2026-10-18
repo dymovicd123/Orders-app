@@ -48,6 +48,7 @@ import { downloadBlobFile, makeExportHtml } from './features/export/documentExpo
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
+import './styles/195-kaspi-orders.css'
 
 
 
@@ -1130,6 +1131,20 @@ function App() {
     workshopInvoiceMode,
     workshopSortDirection,
   })
+  // A missing Workshop cost never grants editing permission or guesses a SKU.
+  // Exact matches open the corresponding Catalog product; unlinked items open
+  // a name search for administrator review instead.
+  const openWorkshopCatalogPrice = (productId: number | null, productName: string) => {
+    if (!isAdmin) return
+    const exactProductId = Number.isSafeInteger(productId) && Number(productId) > 0 ? Number(productId) : 0
+    setCatalogCategoryFilter('all')
+    setCatalogOnlyWithoutVariants(false)
+    setInventoryQuery(exactProductId ? '' : String(productName || '').trim())
+    setExpandedCatalogProducts(exactProductId ? { [String(exactProductId)]: true } : {})
+    setInventoryPanel('catalog')
+    setActiveSector('inventory')
+    window.location.hash = '#catalog'
+  }
   const openInventoryPanel = (panel: InventoryPanel) => {
     const nextPanel: InventoryPanel = panel === 'audit' ? 'settings' : panel
     if (!isAdmin && (nextPanel === 'catalog' || nextPanel === 'settings')) {
@@ -5944,7 +5959,475 @@ function removeDebtPayment(index: number) {
     setEditorReturnSector('orders')
   }
 
+  // Narrow metadata correction: only six order details, never items, payments,
+  // prices, shipping state or manager ownership. The Worker performs the
+  // original-value + lifecycle/finance CAS before the actual update.
+  async function correctOrderMetadata(order: OrderRecord, next: {
+    orderDate:string;customerPhone:string;customerName:string;
+    city:string;deliveryType:string;comment:string;
+  }): Promise<boolean> {
+    const expected={
+      orderDate:String(order.order_date||'').trim(),
+      customerPhone:String(order.customer_phone||'').trim(),
+      customerName:String(order.customer_name||'').trim(),
+      city:String(order.city||'').trim(),
+      deliveryType:String(order.delivery_type||'').trim(),
+      comment:String(order.comment||'').trim(),
+    }
+    if(Object.keys(expected).every(key=>
+      expected[key as keyof typeof expected]===next[key as keyof typeof next]))return true
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const expectedState={
+        totalAmount:Number(order.total_amount||0),
+        receivedAmount:Number(order.received_amount||0),
+        debtAmount:Number(order.debt_amount||0),
+        returnAmount:Number(order.return_amount||0),
+        shippingStatus:String(order.shipping_status||'').trim(),
+        orderStatus:String(order.order_status||'').trim(),
+      }
+      const payload={metadataCorrection:{expected,next,expectedState}}
+      const criticalKey=`order-metadata-correction:${order.id}`
+      const critical=prepareCriticalRequest(criticalKey,payload)
+      const response=await apiFetch(`/api/orders/${order.id}`,{
+        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
+        body:JSON.stringify(critical.payload),
+      })
+      const data=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
+        response,'Исправление реквизитов заказа')
+      if(!response.ok||data.ok===false)throw new Error(data.message||'Не удалось сохранить реквизиты.')
+      completeCriticalRequest(criticalKey,critical.requestId)
+      if(data.order)upsertOrderInState(data.order)
+      setMessage('Реквизиты заказа обновлены. Оплаты, товары и склад не менялись.')
+      void loadDashboard()
+      return true
+    }catch(error){
+      setError(error instanceof Error?error.message:'Не удалось обновить реквизиты.')
+      return false
+    }finally{
+      setSavingOrder(false)
+    }
+  }
+
+  // A recorded-price typo is NOT a new sale, cash refund, stock edit, or exchange cancellation.
+  // Send the minimal correction payload, never the whole editor draft.
+  async function correctRecordedOrderItemPrice(order: OrderRecord, item: OrderRecord['items'][number], nextUnitPrice: number): Promise<boolean> {
+    if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0 || !item.id) {
+      setError('Укажите корректную цену и выберите существующую позицию заказа.')
+      return false
+    }
+    if (nextUnitPrice === Number(item.unitPrice || 0)) return true
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload = {
+        itemPriceCorrections: [{
+          orderItemId: Number(item.id),
+          unitPrice: nextUnitPrice,
+          expectedUnitPrice: Number(item.unitPrice || 0),
+          expectedQuantity: Number(item.quantity || 0),
+          expectedLineTotal: Number(item.lineTotal || 0),
+          expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+        }],
+      }
+      const criticalKey = `recorded-price-correction:${order.id}:${item.id}`
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; refreshRequired?: boolean }>(
+        response, 'Исправление записанной цены',
+      )
+      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось исправить цену.')
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (data.order) upsertOrderInState(data.order)
+      setMessage(`Цена позиции в заказе ${order.external_id} исправлена. Склад, обмены, возвраты и оплаты не затронуты.`)
+      void loadDashboard()
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось исправить записанную цену.')
+      return false
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+
+  // An order with several independent price typos can be corrected in one
+  // atomic server request. Every line carries its original CAS facts; cash,
+  // inventory and linked exchange/return records are never included.
+  async function correctRecordedOrderItemPrices(
+    order: OrderRecord,
+    changes: Array<{item: OrderRecord['items'][number]; unitPrice: number}>,
+  ): Promise<boolean> {
+    if (!changes.length) return true
+    const ids = new Set<number>()
+    if (changes.some(({item, unitPrice}) => {
+      const id = Number(item?.id)
+      if (!Number.isSafeInteger(id) || id <= 0 || ids.has(id)
+        || !Number.isSafeInteger(unitPrice) || unitPrice < 0) return true
+      ids.add(id)
+      return false
+    })) {
+      setError('Выберите существующие позиции и укажите целые цены от 0 ₸ без повторов.')
+      return false
+    }
+    const payload = {
+      itemPriceCorrections: changes.map(({item,unitPrice}) => ({
+        orderItemId: Number(item.id),
+        unitPrice,
+        expectedUnitPrice: Number(item.unitPrice || 0),
+        expectedQuantity: Number(item.quantity || 0),
+        expectedLineTotal: Number(item.lineTotal || 0),
+        expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+      })),
+    }
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    const sortedIds = [...ids].sort((a,b)=>a-b)
+    const criticalKey = `recorded-price-correction-batch:${order.id}:${sortedIds.join('-')}`
+    try {
+      const critical = prepareCriticalRequest(criticalKey, payload)
+      const response = await apiFetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(
+        response, 'Исправление записанных цен',
+      )
+      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось сохранить исправления цен.')
+      completeCriticalRequest(criticalKey, critical.requestId)
+      if (data.order) upsertOrderInState(data.order)
+      setMessage(`Исправлено позиций: ${changes.length}. Склад, оплаты и обмены не изменены.`)
+      void loadDashboard()
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось исправить записанные цены.')
+      return false
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+
+  type RetiredExchangePriceOption = {
+    exchangeId:number;orderItemId:number;productName:string;size:string;color:string;
+    originalUnitPrice:number;currentRecordedUnitPrice:number;
+  }
+
+  async function loadRetiredExchangePriceOptions(order:OrderRecord):Promise<RetiredExchangePriceOption[]> {
+    const response=await apiFetch(`/api/orders/${order.id}/exchange-old-price-candidates`)
+    const data=await readJsonResponse<{ok?:boolean;message?:string;items?:RetiredExchangePriceOption[]}>(
+      response,'Исторические цены обмена')
+    if(!response.ok || data.ok===false) throw new Error(data.message||'Не удалось загрузить старые позиции обмена.')
+    return Array.isArray(data.items)?data.items:[]
+  }
+
+  async function correctRetiredExchangePrice(order:OrderRecord, entry:RetiredExchangePriceOption, next:number):Promise<boolean> {
+    if(!Number.isSafeInteger(next)||next<0) {
+      setError('Укажите целую правильную цену.')
+      return false
+    }
+    if(next===entry.currentRecordedUnitPrice) return true
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const payload={orderItemId:entry.orderItemId,expectedUnitPrice:entry.currentRecordedUnitPrice,newUnitPrice:next}
+      const key=`old-exchange-price:${entry.exchangeId}:${entry.orderItemId}`
+      const critical=prepareCriticalRequest(key,payload)
+      const response=await apiFetch(`/api/exchanges/${entry.exchangeId}/old-recorded-price`,{
+        method:'PATCH',
+        headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
+        body:JSON.stringify(critical.payload),
+      })
+      const result=await readJsonResponse<{ok?:boolean;message?:string}>(
+        response,'Исправление исторической цены обмена')
+      if(!response.ok||result.ok===false) throw new Error(result.message||'Не удалось исправить историческую цену.')
+      completeCriticalRequest(key,critical.requestId)
+      setMessage(`Исправленная цена позиции до обмена сохранена в истории заказа ${order.external_id}. Фактические оплаты и остатки не менялись.`)
+      void loadDashboard()
+      return true
+    } catch(error) {
+      setError(error instanceof Error?error.message:'Не удалось сохранить историческую цену.')
+      return false
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+
+  async function loadExchangeCancellationPreview(order:OrderRecord, exchangeId?:number):Promise<{
+    availableExchangeIds:number[];
+    preview:null|{
+      exchangeId:number;blockedByLaterOperations:boolean;canAttemptCancelNow:boolean;
+      manualReviewRequired:boolean;notice:string;
+      steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
+    };
+  }> {
+    const url=`/api/orders/${order.id}/exchange-cancel-chain`
+      + (exchangeId ? `?exchangeId=${encodeURIComponent(exchangeId)}` : '')
+    const response=await apiFetch(url)
+    const data=await readJsonResponse<{
+      ok?:boolean;message?:string;availableExchangeIds?:number[];
+      preview?:{
+        exchangeId:number;blockedByLaterOperations:boolean;canAttemptCancelNow:boolean;
+        manualReviewRequired:boolean;notice:string;
+        steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
+      } | null;
+    }>(response,'Зависимости обменов')
+    if(!response.ok || data.ok===false)throw new Error(data.message||'Не удалось проверить цепочку обменов.')
+    return {availableExchangeIds:Array.isArray(data.availableExchangeIds)?data.availableExchangeIds:[],
+      preview:data.preview??null}
+  }
+
+
+  type OrderExchangeCancelStep = {
+    type:'exchange'|'return';id:number;reason:string;requiresManualReview:boolean;order:number;
+  }
+  type OrderExchangeCancelPlan = {
+    mode:'last'|'all';availableExchangeIds:number[];selectedExchangeIds:number[];
+    steps:OrderExchangeCancelStep[];signature:string;canExecute:boolean;
+    manualReviewRequired:boolean;notice:string;
+  }
+
+  // Preview only. Compose the existing, server-proven per-exchange dependency
+  // graphs. Never include an independent Return that is not actually downstream
+  // of an exchange. Each real cancellation revalidates its own money/stock CAS.
+  async function loadOrderExchangeCancellationPlan(
+    order:OrderRecord,mode:'last'|'all',
+  ):Promise<OrderExchangeCancelPlan>{
+    const discovery=await loadExchangeCancellationPreview(order)
+    const available=discovery.availableExchangeIds
+    const selected=mode==='last' ? available.slice(-1) : [...available]
+    if(!selected.length)return {mode,availableExchangeIds:[],selectedExchangeIds:[],
+      steps:[],signature:'',canExecute:false,manualReviewRequired:false,
+      notice:'У заказа нет активных обменов.'}
+    // A bounded bulk action is easier to inspect and safer to resume.
+    if(selected.length>20)throw new Error('Более 20 обменов. Массовую отмену нужно проверить отдельно.')
+    const previews=await Promise.all(selected.map(async(id)=>{
+      const result=await loadExchangeCancellationPreview(order,id)
+      if(result.availableExchangeIds.join(',')!==available.join(',')
+        ||!result.preview||result.preview.exchangeId!==id)
+        throw new Error('История обменов изменилась. Откройте проверку заново.')
+      return result.preview
+    }))
+    const nodes=new Map<string,OrderExchangeCancelStep>()
+    const edges=new Map<string,Set<string>>()
+    let manual=false
+    for(const preview of previews){
+      manual ||=preview.manualReviewRequired
+      for(let i=0;i<preview.steps.length;i++){
+        const step=preview.steps[i]
+        const key=step.type+':'+step.id
+        if(step.id<=0||!['exchange','return'].includes(step.type))
+          throw new Error('Неоднозначная зависимость обмена: автоматическая отмена остановлена.')
+        if(!nodes.has(key))nodes.set(key,{...step})
+        if(!edges.has(key))edges.set(key,new Set())
+        if(i>0){
+          const prior=preview.steps[i-1]
+          const before=prior.type+':'+prior.id
+          if(!edges.has(before))edges.set(before,new Set())
+          edges.get(before)!.add(key)
+        }
+      }
+    }
+    // Merge dependency plans by a topological ordering rather than guessing
+    // that numeric exchange IDs always express the complete causal graph.
+    const indegree=new Map<string,number>([...nodes.keys()].map(key=>[key,0]))
+    for(const children of edges.values())
+      for(const child of children)indegree.set(child,(indegree.get(child)||0)+1)
+    const compare=(a:string,b:string)=>{
+      const ra=a.startsWith('return:'),rb=b.startsWith('return:')
+      return ra===rb ? Number(b.split(':')[1])-Number(a.split(':')[1]) : ra?-1:1
+    }
+    const ready=[...indegree].filter(([,count])=>count===0).map(([key])=>key).sort(compare)
+    const ordered:OrderExchangeCancelStep[]=[]
+    while(ready.length){
+      const key=ready.shift()!
+      ordered.push({...nodes.get(key)!,order:ordered.length+1})
+      for(const child of edges.get(key)||[]){
+        const next=(indegree.get(child)||0)-1
+        indegree.set(child,next)
+        if(next===0)ready.push(child)
+      }
+      ready.sort(compare)
+    }
+    if(ordered.length!==nodes.size||selected.some(id=>!nodes.has('exchange:'+id)))
+      throw new Error('Цепочка содержит цикл или отсутствующую операцию. Автоматическая отмена остановлена.')
+    manual ||=ordered.some(step=>step.requiresManualReview)
+    const signature=JSON.stringify({mode,selected,steps:ordered.map(step=>[step.type,step.id])})
+    return {mode,availableExchangeIds:available,selectedExchangeIds:selected,
+      steps:ordered,signature,manualReviewRequired:manual,canExecute:!manual,
+      notice:manual
+        ? 'В цепочке есть старый обмен или неоднозначные данные. Автоматическая отмена заблокирована.'
+        : ordered.some(step=>step.type==='return')
+          ? 'В цепочке есть зависимые возвраты. Они перечислены ниже и будут отменены до связанных обменов.'
+          : 'Каждая операция повторно проверит финансы, склад и историю перед отменой.'}
+  }
+
+  async function cancelOrderExchangeChain(
+    order:OrderRecord,expected:OrderExchangeCancelPlan,
+    onProgress?:(done:number,total:number)=>void,
+  ):Promise<void>{
+    // Never use a stale preview as authorization. Reconstruct the dependency
+    // graph immediately before writes; the existing endpoints enforce CAS again.
+    const current=await loadOrderExchangeCancellationPlan(order,expected.mode)
+    if(!current.canExecute||!current.steps.length||current.signature!==expected.signature)
+      throw new Error('История обменов изменилась или есть небезопасная операция. Обновите предпросмотр.')
+    let completed=0
+    setSavingOrder(true)
+    setError(null)
+    try{
+      for(const step of current.steps){
+        const key='exchange-chain-cancel:'+order.id+':'+step.type+':'+step.id
+        const payload={comment:'Аннулирование '+(expected.mode==='all'?'всех обменов':'последнего обмена')
+          +' из заказа '+order.external_id}
+        const critical=prepareCriticalRequest(key,payload)
+        const url=step.type==='exchange'
+          ? '/api/exchanges/'+step.id+'/cancel'
+          : '/api/returns/'+step.id+'/cancel'
+        const response=await apiFetch(url,{
+          method:'PATCH',headers:{'Content-Type':'application/json',
+            'X-Idempotency-Key':critical.requestId},
+          body:JSON.stringify(critical.payload),
+        })
+        const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
+          response,'Отмена '+(step.type==='exchange'?'обмена':'возврата')+' #'+step.id)
+        if(!response.ok||result.ok===false)
+          throw new Error('Шаг '+(completed+1)+'/'+current.steps.length+': '
+            +(result.message||'Не удалось отменить операцию #'+step.id)
+            +'. Уже завершённые шаги сохраняются. Повторите оставшуюся цепочку.')
+        completeCriticalRequest(key,critical.requestId)
+        if(result.order)upsertOrderInState(result.order)
+        completed++
+        onProgress?.(completed,current.steps.length)
+      }
+      setMessage('Обмены по заказу '+order.external_id
+        +' отменены. Исходные записи сохранились в истории.')
+    }finally{
+      setSavingOrder(false)
+      invalidateInventoryStockCaches(true)
+      invalidateFinanceReadCaches()
+      await Promise.allSettled([
+        loadExchangeHistory(),loadReturnHistory(),loadDashboard(false),
+        loadWorkshopData(),refreshFinanceReportsIfVisible(),
+        loadInventoryLifecycle(true),
+      ])
+    }
+  }
+
+
+  type ReturnCancelChoice={
+    id:number;date:string;amount:number;method:string;itemQuantity:number;
+    parentExchangeId:number|null;
+  }
+  async function loadOrderReturnCancellationChoices(order:OrderRecord):Promise<ReturnCancelChoice[]>{
+    const response=await apiFetch('/api/orders/'+order.id+'/return-cancel-choices')
+    const data=await readJsonResponse<{ok?:boolean;message?:string;choices?:ReturnCancelChoice[]}>(
+      response,'Возвраты по заказу')
+    if(!response.ok||data.ok===false)throw new Error(data.message||'Не удалось загрузить возвраты.')
+    return Array.isArray(data.choices)?data.choices:[]
+  }
+
+  async function cancelOrderReturnChoice(
+    order:OrderRecord,selected:ReturnCancelChoice,
+  ):Promise<void>{
+    // No stale selection can be used as authority. A separate Exchange-owned
+    // refund must NEVER be cancelled independently.
+    const current=await loadOrderReturnCancellationChoices(order)
+    const actual=current.find(x=>x.id===selected.id)
+    if(!actual||actual.parentExchangeId
+      ||actual.amount!==selected.amount
+      ||actual.itemQuantity!==selected.itemQuantity
+      ||actual.date!==selected.date)
+      throw new Error('Возврат изменился или связан с обменом. Откройте его заново.')
+    const payload={comment:'Аннулирование самостоятельного возврата по заказу '+order.external_id}
+    const criticalKey='order-return-cancel:'+order.id+':'+selected.id
+    const critical=prepareCriticalRequest(criticalKey,payload)
+    setSavingOrder(true)
+    setError(null)
+    try{
+      const response=await apiFetch('/api/returns/'+selected.id+'/cancel',{
+        method:'PATCH',headers:{'Content-Type':'application/json',
+          'X-Idempotency-Key':critical.requestId},
+        body:JSON.stringify(critical.payload),
+      })
+      const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
+        response,'Отмена возврата #'+selected.id)
+      if(!response.ok||result.ok===false)
+        throw new Error(result.message||'Не удалось отменить возврат #'+selected.id)
+      completeCriticalRequest(criticalKey,critical.requestId)
+      if(result.order)upsertOrderInState(result.order)
+      setMessage('Возврат #'+selected.id+' по заказу '+order.external_id+
+        ' аннулирован. Складская и финансовая история сохранена.')
+    }finally{
+      setSavingOrder(false)
+      invalidateInventoryStockCaches(true)
+      invalidateFinanceReadCaches()
+      await Promise.allSettled([
+        loadReturnHistory(),loadDashboard(false),loadWorkshopData(),
+        refreshFinanceReportsIfVisible(),loadInventoryLifecycle(true),
+      ])
+    }
+  }
+
+  // Admin correction of a recorded payment method, including an exchange-
+  // linked extra payment. This is not a second payment and does not submit the
+  // item/payment editor draft or rewrite the order after a completed exchange.
+  async function correctRecordedPaymentMethod(
+    order:OrderRecord,payment:OrderRecord['payments'][number],nextMethod:string,
+  ):Promise<{ok:boolean;message:string}>{
+    if(!isAdmin)return {ok:false,message:'Способ проведённой оплаты исправляет только администратор.'}
+    const method=String(nextMethod||'').trim()
+    if(!method)return {ok:false,message:'Выберите способ оплаты.'}
+    if(!Number.isSafeInteger(Number(payment.id))||Number(payment.id)<=0)
+      return {ok:false,message:'Не удалось определить запись оплаты. Обновите заказ.'}
+    if(method.toUpperCase()===String(payment.method||'').trim().toUpperCase())
+      return {ok:true,message:'Способ оплаты не изменился.'}
+    const payload={paymentCorrections:[{
+      paymentId:Number(payment.id),method,
+      expectedPaymentDate:String(payment.paymentDate||''),
+      expectedMethod:String(payment.method||''),
+      expectedAmount:Number(payment.amount||0),
+      expectedPaymentKind:String(payment.paymentKind||'primary'),
+      expectedComment:String(payment.comment||''),
+    }]}
+    const key='order-admin-payment-method:'+order.id+':'+payment.id
+    setSavingOrder(true);setError(null);setMessage(null)
+    try{
+      const critical=prepareCriticalRequest(key,payload)
+      const response=await apiFetch('/api/orders/'+order.id,{
+        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
+        body:JSON.stringify(critical.payload),
+      })
+      const result=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord;refreshRequired?:boolean}>(
+        response,'Исправление способа оплаты')
+      if(!response.ok||result.ok===false)throw new Error(result.message||'Не удалось исправить способ оплаты.')
+      completeCriticalRequest(key,critical.requestId)
+      if(result.order)upsertOrderInState(result.order)
+      else if(result.refreshRequired)void loadDashboard(false)
+      invalidateFinanceReadCaches()
+      void Promise.allSettled([refreshFinanceReportsIfVisible(),loadDashboard(false)])
+      const message='Способ оплаты #'+payment.id+' исправлен. Сумма, заказ, товары и склад не менялись.'
+      setMessage(message)
+      return {ok:true,message}
+    }catch(error){
+      const message=error instanceof Error?error.message:'Не удалось изменить способ оплаты.'
+      setError(message)
+      return {ok:false,message}
+    }finally{setSavingOrder(false)}
+  }
+
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' | 'kaspi' = 'orders') {
+    if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
@@ -5989,6 +6472,10 @@ function removeDebtPayment(index: number) {
   }
 
   async function persistOrder(nextDraft: EditorDraft, targetOrder?: OrderRecord | null) {
+    if (!isAdmin) {
+      setError('Полный редактор доступен только администратору. Используйте отдельные исправления цены и реквизитов.')
+      return null
+    }
     const order = targetOrder || selectedOrder
     if (!order) return
     const isItemizedEdit = order.pricing_mode === 'itemized_v1'
@@ -6756,13 +7243,114 @@ function removeDebtPayment(index: number) {
     }
   }
 
-  async function deleteOrderAsAdmin(order: OrderRecord) {
+
+  async function loadAdminOrderDeletePreview(order: OrderRecord) {
+    const [response,chainResponse]=await Promise.all([
+      apiFetch(`/api/orders/${order.id}/delete-preview`),
+      apiFetch(`/api/orders/${order.id}/delete-chain`),
+    ])
+    const data=await readJsonResponse<{
+      ok?:boolean;message?:string;
+      preview?:{
+        orderId:number;externalId:string;canAttemptDelete:boolean;canStartChain:boolean;requiresPhysicalFact:boolean;
+        activeExchanges:number[];activeReturns:number[];
+        receivedAmount:number;returnAmount:number;paymentCount:number;
+        registeredPayments:number;recordedRefunds:number;issuedItemCount:number;issuedQuantity:number;
+        reasons:string[];explanations:string[];
+        impact:{saleAmount:number;debtAmount:number;paymentReversal:number;refundReversal:number;netMoneyReversal:number;
+          payments:Array<{id:number;date:string;method:string;amount:number;kind:string}>;
+          refunds:Array<{id:number;date:string;method:string;amount:number}>;
+          exchanges:Array<{id:number;financialAction:string;financialAmount:number}>;
+          reservations:Array<{orderItemId:number;name:string;source:string;quantity:number;status:string;action:string}>;truncated:boolean};
+        chainPlan:{
+          snapshotFingerprint:string;steps:Array<{type:'exchange'|'return';id:number;order:number;reason:string;requiresManualReview:boolean}>;
+          activeExchangeIds:number[];activeReturnIds:number[];generatedExchangeRefundIds:number[];
+          manualReviewRequired:boolean;canExecuteAutomatically:boolean;blockers:string[];
+        };
+      }
+    }>(response,'Предварительная проверка удаления')
+    if(!response.ok||data.ok===false||!data.preview)
+      throw new Error(data.message||'Не удалось проверить последствия удаления.')
+    const saga=await readJsonResponse<{
+      ok?:boolean;progress?:{requestId:string;status:string;nextStep:number;totalSteps:number}
+    }>(chainResponse,'Проверка удаления')
+    if(!chainResponse.ok||saga.ok===false)
+      throw new Error('Не удалось проверить уже начатое удаление.')
+    return {...data.preview,activeSaga:saga.progress||null}
+  }
+
+  async function confirmAdminDeletePhysicalBeforeChain(order:OrderRecord,expectedSnapshot:string){
+    if(!/^[0-9a-f]{64}$/.test(expectedSnapshot))throw new Error('Предпросмотр устарел.')
+    const response=await apiFetch('/api/orders/'+order.id+'/delete-physical-confirm',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({expectedSnapshot,physicalOutcome:'not_issued'}),
+    })
+    const result=await readJsonResponse<{
+      ok?:boolean;message?:string;
+      preview?:Awaited<ReturnType<typeof loadAdminOrderDeletePreview>>
+    }>(response,'Проверка фактической выдачи перед удалением')
+    if(!response.ok||result.ok===false)
+      throw new Error(result.message||'Не удалось безопасно исправить выдачу.')
+    invalidateInventoryStockCaches(true)
+    // The Worker already calculated a fresh preview AFTER the correction.
+    // Reuse it instead of issuing another heavyweight delete-preview GET.
+    // A missing/malformed preview falls back to a fresh read, never to old data.
+    if(result.preview?.chainPlan?.snapshotFingerprint
+      && /^[a-f0-9]{64}$/.test(result.preview.chainPlan.snapshotFingerprint))
+      return {...result.preview,activeSaga:null}
+    return await loadAdminOrderDeletePreview(order)
+  }
+
+  // Resume the SAME durable cancellation after a lost response or page reload.
+  // Each HTTP call executes no more than one verified operation.
+  async function executeAdminDeleteChain(order:OrderRecord,expectedSnapshot:string,
+    onProgress?:(done:number,total:number)=>void,physicalOutcome?:'not_issued'):Promise<boolean>{
+    if(!/^[0-9a-f]{64}$/.test(expectedSnapshot))return false
+    setSavingOrder(true);setError(null);setMessage(null)
+    try{
+      const key='admin-delete-chain:'+order.id
+      const check=await apiFetch('/api/orders/'+order.id+'/delete-chain')
+      const state=await readJsonResponse<{ok?:boolean;progress?:{requestId:string}}>(check,'Восстановление удаления')
+      if(!check.ok)throw new Error('Не удалось проверить ранее начатое удаление.')
+      const prepared=prepareCriticalRequest(key,{expectedSnapshot})
+      const requestId=state.progress?.requestId||prepared.requestId
+      const maxSteps=125
+      for(let index=0;index<maxSteps;index++){
+        const response=await apiFetch('/api/orders/'+order.id+'/delete-chain',{
+          method:'POST',headers:{'Content-Type':'application/json','X-Idempotency-Key':requestId},
+          body:JSON.stringify({requestId,expectedSnapshot, ...(physicalOutcome?{physicalOutcome}:{})}),
+        })
+        const data=await readJsonResponse<{
+          ok?:boolean;message?:string;
+          progress?:{requestId:string;status:string;nextStep:number;totalSteps:number;lastError:string};
+        }>(response,'Отмена зависимых операций')
+        if(!response.ok||data.ok===false||!data.progress)
+          throw new Error(data.message||'Удаление остановлено. Повторите — уже завершённые шаги не выполнятся повторно.')
+        onProgress?.(data.progress.nextStep,data.progress.totalSteps)
+        if(data.progress.status==='completed'){
+          completeCriticalRequest(key,prepared.requestId)
+          setOrders(current=>current.filter(entry=>entry.id!==order.id))
+          if(selectedOrderId===order.id){setSelectedOrderId(null);setEditorOpen(false)}
+          invalidateFinanceReadCaches()
+          invalidateInventoryStockCaches(true)
+          setMessage(data.message||'Заказ и его связанные записи аннулированы.')
+          void loadDashboard()
+          return true
+        }
+      }
+      throw new Error('Цепочка слишком длинная. Повторите удаление для безопасного продолжения.')
+    }catch(err){
+      setError(err instanceof Error?err.message:'Не удалось завершить удаление.')
+      return false
+    }finally{setSavingOrder(false)}
+  }
+
+  async function deleteOrderAsAdmin(order: OrderRecord, previewAcknowledged = false, expectedSnapshot = '', physicalOutcome?: 'not_issued'): Promise<boolean> {
+    if (!previewAcknowledged || !/^[0-9a-f]{64}$/.test(expectedSnapshot)) return false // Only approved and current preview may authorize execution.
     if (isArchivedOrderRecord(order)) {
       setMessage('Архивный заказ нельзя удалить. Сначала верните его из архива.')
-      return
+      return false
     }
-    const confirmed = window.confirm(`Удалить заказ ${order.external_id}? Он исчезнет из рабочих таблиц, но запись останется в журнале.`)
-    if (!confirmed) return
     setSavingOrder(true)
     setError(null)
     setMessage(null)
@@ -6771,6 +7359,7 @@ function removeDebtPayment(index: number) {
       const sendDelete = async (physicalOutcome?: 'not_issued') => {
         const payload = {
           comment: order.comment || 'Удалено сотрудником как ошибочный заказ',
+          expectedSnapshot,
           ...(physicalOutcome ? { physicalOutcome } : {}),
         }
         const critical = prepareCriticalRequest(criticalKey, payload)
@@ -6779,20 +7368,26 @@ function removeDebtPayment(index: number) {
           headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
           body: JSON.stringify(critical.payload),
         })
-        const result = await readJsonResponse<{ ok?: boolean; code?: string; message?: string; order?: OrderRecord }>(response, 'Удаление заказа')
+        const result = await readJsonResponse<{
+          ok?: boolean; code?: string; message?: string; order?: OrderRecord;
+          details?: {
+            shippingStatus: 'sent' | 'not_sent';
+            issuedItemsTotal: number;
+            issuedItems: Array<{
+              orderItemId: number; variantId: number; productName: string;
+              color: string; material: string; size: string;
+              quantity: number; source: string; fulfilledAt: string;
+            }>;
+            activeExchangeCount: number;
+            activeReturnCount: number;
+          };
+        }>(response, 'Удаление заказа')
         return { response, result, critical }
       }
 
-      let attempt = await sendDelete()
-      if (!attempt.response.ok && attempt.result.code === 'order_delete_physical_confirmation_required') {
-        const notIssued = window.confirm(
-          `Заказ ${order.external_id} отмечен как выданный или отправленный.\n\nПодтвердите только если товар ФАКТИЧЕСКИ НЕ передавался клиенту и отметка выдачи ошибочная. Тогда система сама отменит ложное складское списание и продолжит удаление.\n\nЕсли товар реально передавался — нажмите «Отмена»: удаление остановится без изменений.`
-        )
-        if (!notIssued) {
-          throw new Error('Удаление остановлено. Заказ с реальной выдачей нужно сначала привести к фактическому состоянию через возврат товара.')
-        }
-        attempt = await sendDelete('not_issued')
-      }
+      let attempt = await sendDelete(physicalOutcome)
+      if (!attempt.response.ok && attempt.result.code === 'order_delete_physical_confirmation_required')
+        throw new Error('Перед удалением подтвердите в окне, что товар действительно не передавался клиенту.')
       if (!attempt.response.ok) throw new Error(attempt.result.message || `Delete failed: ${attempt.response.status}`)
       completeCriticalRequest(criticalKey, attempt.critical.requestId)
       setOrders((current) => current.filter((entry) => entry.id !== order.id))
@@ -6804,8 +7399,10 @@ function removeDebtPayment(index: number) {
       invalidateInventoryStockCaches(true)
       setMessage(attempt.result.message || `Заказ ${order.external_id} удалён из активной работы.`)
       void loadDashboard()
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
+      return false
     } finally {
       setSavingOrder(false)
     }
@@ -8335,7 +8932,7 @@ function removeDebtPayment(index: number) {
         </section>
 
         <DeferredSection active={activeSector === 'workshop'} label="Цех">
-        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
+        <WorkshopSection ctx={{ activeWorkshopTasks, applyWorkshopPeriodPreset, copyWorkshopInvoiceText, downloadWorkshopInvoicePdf, exportWorkshopInvoiceWord, formatDateShort, getPeriodRange, getWorkshopInvoiceDeadlineLabel, getWorkshopInvoiceImportanceLabel, isAdmin, markWorkshopTaskDone, openWorkshopExchange, openWorkshopOrderEditor, openWorkshopCatalogPrice, printWorkshopInvoice, restoreWorkshopTaskActive, sectorStyle, setWorkshopFilters, setWorkshopInvoiceMode, setWorkshopSortDirection, workshopBusy, workshopCustomerIdentity, workshopData, workshopDetailRows, workshopFilters, workshopInvoiceIsKaspi, workshopInvoiceMode, workshopInvoiceRows, workshopScopeTasks, workshopSortDirection }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
@@ -8359,7 +8956,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'kaspi' && orderPanel === 'list'} label="Kaspi-заказы">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters: kaspiFilters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, kaspiMode: true, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, orderFinanceBusy: false, orderFinanceReport: null, orderPanel, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel, workspaceSector: 'kaspi' }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'edit'} label="Редактирование заказа">
@@ -8367,7 +8964,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, deleteOrderAsAdmin, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
