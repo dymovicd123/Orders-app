@@ -38,7 +38,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     updateCreatePayment,
     zammlerMode = false,
   } = ctx
-  const isKaspiOrder = normalizeSuggestion(createDraft.orderPaymentMethod) === normalizeSuggestion('КАСПИ МАГАЗИН')
 
   return (
     <article className="card wide sector-orders" id={zammlerMode ? 'kaspi-create' : 'create'} style={{ ...sectorStyle(zammlerMode ? 'kaspi' : 'orders'), ...orderPanelStyle(zammlerMode ? 'zammler' : 'create') }}>
@@ -339,18 +338,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
-                      <p>{isKaspiOrder ? 'Kaspi-заказ сохраняется с долгом. Оплата учитывается автоматически при нажатии «Отправлено».' : 'Можно добавить несколько способов оплаты. Неоплаченная часть останется в долге.'}</p>
+                      <p>Можно добавить несколько способов оплаты, включая КАСПИ МАГАЗИН. Неоплаченная часть останется в долге.</p>
                     </div>
                   </div>
-                  {!isKaspiOrder ? <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button> : null}
+                  <button className="secondary compact" type="button" onClick={addCreatePayment}>+ Добавить оплату</button>
                 </div>
-                {isKaspiOrder ? (
-                  <div className="order-manager-required">
-                    <strong>К оплате после отправки: {formatMoney(createTotals.totalAmount)}</strong>
-                    <span>При создании: получено 0 ₸. После отметки «Отправлено» оставшийся долг закроется автоматически.</span>
-                  </div>
-                ) : (
-                  <div className="stack">
+                <div className="stack">
                     {createDraft.payments.map((payment, index) => (
                       <div className="mini-item order-payment-card" key={`create-payment-${index}`}>
                         <div className="mini-item-head"><strong>Оплата {index + 1}</strong><button className="ghost danger compact" type="button" onClick={() => removeCreatePayment(index)}>Удалить</button></div>
@@ -362,7 +355,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                     ))}
                   </div>
-                )}
               </section>    
               <section className="order-step-card">
                 <div className="order-step-head">
