@@ -28,7 +28,7 @@ jobs:
           ! grep -Fq 'orders_db_branch2' wrangler.jsonc
           test -n "$CLOUDFLARE_ACCOUNT_ID" && test -n "$CLOUDFLARE_API_TOKEN"
       - run: npm ci
-      - name: SELECT exact order, lines, SKU and reservation facts (read-only)
+      - name: Verify exact unisex conversion and preserved unresolved reservation rows (read-only)
         shell: bash
         run: |
           set -euo pipefail
