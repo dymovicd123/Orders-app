@@ -15,6 +15,7 @@ export class WorkshopSettlementError extends Error {
 
 type SettlementInput = { requestId?: unknown; amount?: unknown; method?: unknown; comment?: unknown }
 type ReversalInput = { reason?: unknown }
+type ActivationInput = { openingDebt?: unknown }
 type PaymentRow = {
   id: number; event_key: string; amount_delta: number; payment_method: string | null;
   comment: string | null; actor_user_id: number | null; related_event_id: number | null;
@@ -73,6 +74,48 @@ function assertExistingPayment(row: PaymentRow, amount: number, method: string, 
     || Number(row.actor_user_id) !== actorId) {
     throw new WorkshopSettlementError('Этот идентификатор уже использован для другой выплаты.', 409, 'idempotency_conflict')
   }
+}
+
+// One-time launch: preserve the immutable ledger and do not backfill old ready items.
+export async function activateWorkshopSettlements(db:D1Database,input:ActivationInput,actorId:number) {
+  requireActor(actorId)
+  const debt=input.openingDebt
+  if(typeof debt!=='number'||!Number.isSafeInteger(debt)||debt<0||debt>1_000_000_000_000)
+    throw new WorkshopSettlementError('Введите начальный долг в целых тенге (можно 0).',400,'invalid_opening_debt')
+  const enabled=await assertWorkshopSettlementSchema(db)
+  const key='workshop:opening-balance:v1'
+  const existing=await db.prepare("SELECT amount_delta FROM workshop_settlement_events WHERE event_key=? AND event_type='opening_balance'")
+    .bind(key).first<{amount_delta:number}>()
+  if(enabled){
+    if(existing&&Number(existing.amount_delta)===debt)return {ok:true,openingDebt:debt,replayed:true}
+    throw new WorkshopSettlementError('Учёт уже включён. Повторная установка начального долга недоступна.',409,'already_activated')
+  }
+  if(await db.prepare('SELECT id FROM workshop_settlement_events LIMIT 1').first())
+    throw new WorkshopSettlementError('В журнале уже есть операции. Сверьте их до запуска, чтобы не удвоить долг.',409,'nonempty_settlement_ledger')
+
+  // Cloudflare D1 batch runs in a single transaction. Guard both statements for races.
+  await db.batch([
+    db.prepare(`INSERT INTO workshop_settlement_events
+      (event_key,event_type,business_date,occurred_at,amount_delta,actor_user_id,comment)
+      SELECT ?,'opening_balance',date('now','+5 hours'),
+        strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,'Начальный долг при запуске учёта'
+      WHERE (SELECT enabled FROM workshop_settlement_capture_control WHERE id=1)=0
+        AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events)`).bind(key,debt,actorId),
+    db.prepare(`UPDATE workshop_settlement_capture_control SET enabled=1,
+      activated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE id=1 AND enabled=0
+        AND (SELECT COUNT(*) FROM workshop_settlement_events)=1
+        AND EXISTS(SELECT 1 FROM workshop_settlement_events
+          WHERE event_key=? AND event_type='opening_balance' AND amount_delta=?)`).bind(key,debt),
+  ])
+  const [active,recorded]=await Promise.all([
+    assertWorkshopSettlementSchema(db),
+    db.prepare("SELECT amount_delta FROM workshop_settlement_events WHERE event_key=? AND event_type='opening_balance'")
+      .bind(key).first<{amount_delta:number}>(),
+  ])
+  if(!active||!recorded||Number(recorded.amount_delta)!==debt)
+    throw new WorkshopSettlementError('Запуск не подтверждён. Обновите страницу и проверьте долг.',409,'activation_conflict')
+  return {ok:true,openingDebt:debt,replayed:false}
 }
 
 export async function postWorkshopSettlementPayment(
@@ -190,6 +233,7 @@ export async function readWorkshopSettlementSummary(db: D1Database) {
   const [totals, latest] = await Promise.all([
     db.prepare(`
       SELECT COALESCE(SUM(amount_delta),0) AS balance,
+        COUNT(*) AS eventCount,
         COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
           AND event_type='completion' THEN amount_delta ELSE 0 END),0) AS completedToday,
         COALESCE(SUM(CASE WHEN business_date=date('now','+5 hours')
@@ -224,6 +268,7 @@ export async function readWorkshopSettlementSummary(db: D1Database) {
   const balance=Number(totals?.balance||0)
   return {
     ok:true, captureEnabled:enabled,
+    canInitialize:!enabled&&Number(totals?.eventCount||0)===0,
     confirmedDebt:Math.max(0,balance), correctionCredit:Math.max(0,-balance),
     unresolvedPrices:Number(totals?.unresolvedPrices||0),
     today:{
