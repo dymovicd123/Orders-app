@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {updateOrderCritical} from '../worker/domains/orders-write.ts'
+import {projectOrderOperationalState} from '../src/app/orderOperationalProjection.ts'
 
 const project=readFileSync('src/app/orderOperationalProjection.ts','utf8')
 const table=readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
@@ -13,6 +14,18 @@ const worker=readFileSync('worker/domains/orders-write.ts','utf8')
 const router=readFileSync('worker/index.ts','utf8')
 const metadata=readFileSync('scripts/test-safe-order-metadata-edit-20261017.mjs','utf8')
 const price=readFileSync('scripts/test-order-recorded-price-correction-r1.mjs','utf8')
+const ordinary={order_status:'active',shipping_status:'not_sent',items:[
+ {sourceType:'warehouse',quantity:1}],received_amount:1000,total_amount:2000,
+ debt_amount:1000,return_amount:0,committed_exchange_count:0,committed_return_count:0}
+assert.equal(projectOrderOperationalState(ordinary,{isAdmin:true}).canEdit,true)
+assert.equal(projectOrderOperationalState(ordinary,{isAdmin:false}).canEdit,false)
+assert.equal(projectOrderOperationalState({...ordinary,shipping_status:'sent'},{isAdmin:true}).canEdit,true,
+  'Admin may inspect/edit shipped order metadata while server protects physical re-rewrite')
+assert.equal(projectOrderOperationalState({...ordinary,shipping_status:'sent'},{isAdmin:false}).canEdit,false)
+assert.equal(projectOrderOperationalState({...ordinary,committed_exchange_count:1},{isAdmin:true}).canEdit,false,
+  'Completed Exchange still requires isolated price/metadata instead of unsafe composition rewrite')
+assert.equal(projectOrderOperationalState({...ordinary,order_status:'archived'},{isAdmin:true}).canEdit,false)
+
 assert(project.includes('canEdit: mutableWorkingOrder && !hasCommittedDownstreamOperation && simpleAdmin'),
   'Complete order editor must require admin in one shared projection')
 assert(table.includes('projectOrderOperationalState(order, { isAdmin })'))
