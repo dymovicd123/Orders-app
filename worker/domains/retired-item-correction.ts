@@ -91,8 +91,8 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
  if(delta!==0&&!safePrice(r))error('В этом старом заказе цена не совпадает с финансовыми итогами. Исправьте товар без смены цены либо обратитесь к администратору.');
  if(nextTotal<n(r.received_amount))error('Новая цена меньше уже оплаченной суммы. Менеджер не может менять платежи.');
  const target=(await options(db,r)).find(x=>x.variantId===newVariantId);
- if(!target||!target.stockId||target.free<quantity)
-  error('Свободного остатка выбранного исполнения недостаточно. Выберите другой вариант либо исправьте склад штатной операцией.');
+ if(!target)
+  error('Выбранное исполнение больше не доступно. Обновите каталог.');
  const source=normalizeSourceType(r.source_type), now=new Date().toISOString();
  const originalLineTotal=n(r.line_total);
  if(originalLineTotal<0)error('Неверная историческая сумма позиции. Требуется администратор.');
@@ -116,14 +116,24 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    JOIN catalog_variants newer ON newer.id=? AND newer.product_id=oi.product_id AND newer.is_active=1
    JOIN catalog_products cp ON cp.id=newer.product_id AND cp.is_active=1
    JOIN catalog_stock_positions nsp ON nsp.id=newer.stock_position_id AND nsp.is_active=1
-   JOIN inventory_stock stock ON stock.variant_id=newer.id AND stock.inventory_source=oi.source_type
    WHERE oi.id=? AND oi.order_id=? AND oi.variant_id=? AND oi.quantity=? AND oi.unit_price=?
    AND (?=0 OR oi.line_total=oi.unit_price*oi.quantity) AND oi.is_workshop=0
    AND oi.stock_writeoff_status='catalog_retired' AND (old.is_active=0 OR osp.is_active=0)
    AND o.total_amount=? AND o.received_amount<=?
    AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')=''
    AND COALESCE(o.shipping_status,'not_sent')<>'sent'
-   AND stock.quantity-stock.reserved_quantity>=oi.quantity
+   AND (SELECT COUNT(*) FROM inventory_stock t
+        WHERE t.inventory_source=oi.source_type AND t.variant_id=newer.id)<=1
+   -- Snapshot-based legacy unique stock index must not silently bind a
+   -- different variant to the same stock row.
+   AND NOT EXISTS(SELECT 1 FROM inventory_stock t
+     WHERE t.inventory_source=oi.source_type AND t.product_name_snapshot=cp.name
+       AND COALESCE(t.gender_snapshot,'')=COALESCE(newer.gender,'')
+       AND COALESCE(t.color_snapshot,'')=COALESCE(newer.color,'')
+       AND COALESCE(t.material_snapshot,'')=COALESCE(newer.material,'')
+       AND COALESCE(t.length_snapshot,'')=COALESCE(newer.length,'')
+       AND COALESCE(t.size_snapshot,'')=COALESCE(newer.size_label,'')
+       AND COALESCE(t.variant_id,0)<>newer.id)
    AND NOT EXISTS(SELECT 1 FROM retired_order_item_issues i WHERE i.order_item_id=oi.id)
    AND NOT EXISTS(SELECT 1 FROM inventory_reservations ir WHERE ir.order_item_id=oi.id AND ir.status<>'released')
    AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled')
@@ -131,11 +141,29 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    AND NOT EXISTS(SELECT 1 FROM inventory_reservations used WHERE used.order_id=o.id AND used.status='fulfilled')
   `).bind(newVariantId,newPrice,oldTotal,nextTotal,snapshotOld,snapshotNew,actor,now,newVariantId,
    itemId,orderId,oldVariantId,quantity,oldPrice,delta,oldTotal,nextTotal),
-  db.prepare(`UPDATE inventory_stock SET reserved_quantity=reserved_quantity+?,
-    last_action='Резерв после исправления удалённого товара',last_source_ref=?,updated_at=?
-    WHERE id=? AND quantity-reserved_quantity>=? AND EXISTS
-    (SELECT 1 FROM retired_order_item_corrections j WHERE j.order_item_id=? AND j.status='pending')`
-  ).bind(quantity,'order-item:'+itemId,now,target.stockId,quantity,itemId),
+  // Match ordinary order creation: reserve even when physical stock is
+  // temporarily reported as zero. Do NOT fabricate any physical quantity.
+  // The operation only inserts the missing zero-balance stock row.
+  db.prepare(`INSERT OR IGNORE INTO inventory_stock(
+    inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,
+    color_snapshot,material_snapshot,length_snapshot,size_snapshot,
+    quantity,reserved_quantity,last_action,last_source_ref,created_at,updated_at)
+    SELECT ?,?,?,?,?,?,?,?,?,0,0,?,?,?,?
+    WHERE NOT EXISTS (SELECT 1 FROM inventory_stock existing
+                      WHERE existing.inventory_source=? AND existing.variant_id=?)
+      AND EXISTS (SELECT 1 FROM retired_order_item_corrections j
+                  WHERE j.order_item_id=? AND j.status='pending')`
+  ).bind(source,target.productId,newVariantId,target.productName,target.gender,target.color,
+    target.material,target.length,target.size,'Создана позиция для резерва',
+    'order-item:'+itemId,now,now,source,newVariantId,itemId),
+  db.prepare(`UPDATE inventory_stock
+    SET reserved_quantity=COALESCE(reserved_quantity,0)+?,
+        last_action='Резерв после исправления удалённого товара',
+        last_source_ref=?,updated_at=?
+    WHERE inventory_source=? AND variant_id=?
+      AND EXISTS (SELECT 1 FROM retired_order_item_corrections j
+                  WHERE j.order_item_id=? AND j.status='pending')`
+  ).bind(quantity,'order-item:'+itemId,now,source,newVariantId,itemId),
   db.prepare(`UPDATE inventory_reservations SET
      inventory_source=?,product_id=?,variant_id=?,quantity=?,status='active',
      released_at=NULL,unresolved_reason=NULL,updated_at=?
@@ -166,10 +194,10 @@ export async function correctRetiredItem(db:D1Database,input:Input) {
    WHERE order_item_id=? AND status='pending'`).bind(itemId)
  ]);
  if(toInt(changes[0]?.meta?.changes,0)!==1
-   ||toInt(changes[1]?.meta?.changes,0)!==1
-   ||toInt(changes[2]?.meta?.changes,0)+toInt(changes[3]?.meta?.changes,0)!==1
-   ||toInt(changes[4]?.meta?.changes,0)!==1
-   ||toInt(changes[5]?.meta?.changes,0)!==1||toInt(changes[6]?.meta?.changes,0)!==1)
+   ||toInt(changes[2]?.meta?.changes,0)!==1
+   ||toInt(changes[3]?.meta?.changes,0)+toInt(changes[4]?.meta?.changes,0)!==1
+   ||toInt(changes[5]?.meta?.changes,0)!==1
+   ||toInt(changes[6]?.meta?.changes,0)!==1||toInt(changes[7]?.meta?.changes,0)!==1)
     error('Не все шаги исправления завершились. Проверьте журнал и обновите заказ.');
  return {ok:true,alreadyCorrected:false,orderItemId:itemId,
   totalAmount:nextTotal,debtAmount:nextTotal-toInt(r.received_amount,0)};

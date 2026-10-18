@@ -48,7 +48,20 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   const [retiredChoice, setRetiredChoice] = useState<'choose' | 'another' | 'same'>('choose')
   const [retiredCorrection, setRetiredCorrection] = useState<RetiredLineCorrection | null>(null)
   const [replacementVariantId, setReplacementVariantId] = useState('')
+  const [replacementMaterial, setReplacementMaterial] = useState('')
+  const [replacementColor, setReplacementColor] = useState('')
+  const [replacementSize, setReplacementSize] = useState('')
   const [replacementPrice, setReplacementPrice] = useState('')
+  const availableMaterials = [...new Set((retiredCorrection?.variants || []).map(v => v.material))]
+  const colorVariants = (retiredCorrection?.variants || []).filter(v => v.material === replacementMaterial)
+  const availableColors = [...new Set(colorVariants.map(v => v.color))]
+  const sizeVariants = colorVariants.filter(v => v.color === replacementColor)
+  const availableSizes = [...new Set(sizeVariants.map(v => v.size))]
+  const possibleReplacements = sizeVariants.filter(v => v.size === replacementSize)
+  const chosenReplacement = possibleReplacements.length === 1
+    ? possibleReplacements[0]
+    : possibleReplacements.find(v => String(v.variantId) === replacementVariantId)
+
   const [classified, setClassified] = useState(false)
   const [confirmed, setConfirmed] = useState<Partial<Record<Field, boolean>>>({})
   const [legacy, setLegacy] = useState(false)
@@ -98,7 +111,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       setItem(first); setContext(data); setDraft(initialDraft(first, data)); setChoices(data.products || [])
       setProgress(previous => ({ total: previous.total || Number(review.count || review.items.length), remaining: Number(review.count || review.items.length) }))
       setConfirmed({}); setClassified(false); setLegacy(false); setEditing(null); setAnswer(''); setCreatingReference(null); setCompoundOverride(null)
-      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false); setRetiredChoice('choose'); setRetiredCorrection(null); setReplacementVariantId(''); setReplacementPrice('')
+      setSearchOpen(false); setSearch(''); setAdvancedOpen(false); setVariantQuery(''); setNeedsRecheck(false); setRetiredChoice('choose'); setRetiredCorrection(null); setReplacementVariantId(''); setReplacementMaterial(''); setReplacementColor(''); setReplacementSize(''); setReplacementPrice('')
       return false
     } finally { if (ticket === generation.current) setBusy(false) }
   }
@@ -212,6 +225,15 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       if(ticket!==generation.current)return
       setRetiredCorrection(preview)
       setReplacementVariantId('')
+      const materials = [...new Set(preview.variants.map(v => v.material))]
+      const defaultMaterial = materials.length === 1 ? materials[0] : ''
+      const defaultColor = defaultMaterial && preview.variants.some(v => v.material === defaultMaterial && v.color === item.color)
+        ? item.color : ''
+      const defaultSize = defaultColor && preview.variants.some(v => v.material === defaultMaterial && v.color === defaultColor && v.size === item.size)
+        ? item.size : ''
+      setReplacementMaterial(defaultMaterial)
+      setReplacementColor(defaultColor)
+      setReplacementSize(defaultSize)
       setReplacementPrice(String(preview.oldPrice))
     }catch(reason){
       if(ticket===generation.current)setError(reason instanceof Error?reason.message:'Не удалось проверить позиции склада.')
@@ -219,18 +241,15 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   }
   const applyRetiredCorrection = async () => {
     if(!order||!item||!retiredCorrection||resolving||busy||mutationPending.current)return
-    const variantId=Number(replacementVariantId),price=Number(replacementPrice)
-    const option=retiredCorrection.variants.find(v=>v.variantId===variantId)
-    if(!option||option.free<retiredCorrection.quantity)return setError('Выберите исполнение с достаточным свободным остатком.')
+    const option=chosenReplacement
+    const variantId=option?.variantId || 0,price=Number(replacementPrice)
+    if(!option)return setError('Укажите материал, цвет и размер нужного исполнения.')
     if(!replacementPrice.trim()||!Number.isSafeInteger(price)||price<0)return setError('Укажите целую цену продажи от 0.')
     if(!retiredCorrection.canEditPrice&&price!==retiredCorrection.oldPrice)
       return setError('Цена этого старого заказа требует проверки. Оставьте прежнюю цену.')
     const after=retiredCorrection.oldTotal+(price-retiredCorrection.oldPrice)*retiredCorrection.quantity
     if(!Number.isSafeInteger(after)||after<retiredCorrection.received)
       return setError('Новая сумма не может быть ниже уже полученных оплат.')
-    if(!window.confirm('Исправить только эту позицию заказа?\n'+
-      item.productName+' · '+item.material+' → '+option.material+' · '+option.color+' · '+option.size+
-      '\nЦена: '+price.toLocaleString('ru-RU')+' ₸. Резерв будет закреплён за новым вариантом.'))return
     const owner=session.current,ticket=generation.current
     mutationPending.current=true;setResolving(true);setError('')
     try{
@@ -395,20 +414,46 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         {retiredChoice === 'another' ? <div className="resolution-admin-required">
           <p>Исправьте одну ошибочно выбранную позицию. Доступны только действующие исполнения этого товара. Остальные товары и оплаты не меняются.</p>
           {retiredCorrection ? <>
-            <label>Фактически выдаваемое исполнение
-              <select value={replacementVariantId} onChange={event=>setReplacementVariantId(event.target.value)} disabled={disabled}>
-                <option value="">Выберите действующий вариант</option>
-                {retiredCorrection.variants.map(variant=><option key={variant.variantId} value={variant.variantId} disabled={variant.free<retiredCorrection.quantity}>
-                  {[variant.material,variant.length,variant.color,variant.size].filter(Boolean).join(' · ')} — свободно {variant.free}
-                </option>)}
+            <label>Материал
+              <select value={replacementMaterial} disabled={disabled} onChange={event=>{
+                setReplacementMaterial(event.target.value);setReplacementColor('');setReplacementSize('');setReplacementVariantId('')
+              }}>
+                <option value="">Выберите материал</option>
+                {availableMaterials.map(value=><option key={value} value={value}>{value}</option>)}
               </select>
             </label>
-            {!retiredCorrection.variants.some(variant=>variant.free>=retiredCorrection.quantity)
-              ? <div>
-                <p>На складе нет подходящего доступного исполнения. Исправьте остатки штатным приходом или ревизией.</p>
-                {isAdmin && onEditOrder ? <button type="button" className="secondary-button" disabled={disabled}
-                  onClick={() => void onEditOrder(order)}>Нестандартный случай: редактор администратора</button> : null}
-              </div> : null}
+            <label>Цвет
+              <select value={replacementColor} disabled={disabled||!replacementMaterial} onChange={event=>{
+                setReplacementColor(event.target.value);setReplacementSize('');setReplacementVariantId('')
+              }}>
+                <option value="">Выберите цвет</option>
+                {availableColors.map(value=><option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label>Размер
+              <select value={replacementSize} disabled={disabled||!replacementColor} onChange={event=>{
+                setReplacementSize(event.target.value);setReplacementVariantId('')
+              }}>
+                <option value="">Выберите размер</option>
+                {availableSizes.map(value=><option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            {possibleReplacements.length > 1 ? <label>Длина или исполнение
+              <select value={replacementVariantId} disabled={disabled} onChange={event=>setReplacementVariantId(event.target.value)}>
+                <option value="">Уточните исполнение</option>
+                {possibleReplacements.map(variant=><option key={variant.variantId} value={variant.variantId}>
+                  {[variant.gender,variant.length].filter(Boolean).join(' · ')}
+                </option>)}
+              </select>
+            </label> : null}
+            {chosenReplacement ? <p>По учёту свободно: {chosenReplacement.free} шт.
+              {chosenReplacement.free < retiredCorrection.quantity
+                ? ' Это не препятствует исправлению заказа; физический остаток не увеличится.' : ''}
+            </p> : null}
+            {!retiredCorrection.variants.length && isAdmin && onEditOrder
+              ? <button type="button" className="secondary-button" disabled={disabled}
+                  onClick={() => void onEditOrder(order)}>Нет активных исполнений — редактор администратора</button>
+              : null}
             <label>Цена за штуку (₸)
               <input type="number" min="0" step="1" inputMode="numeric" value={replacementPrice}
                 disabled={disabled||!retiredCorrection.canEditPrice}
@@ -421,7 +466,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
                 ? (retiredCorrection.oldTotal+(Number(replacementPrice)-retiredCorrection.oldPrice)*retiredCorrection.quantity).toLocaleString('ru-RU')+' ₸'
                 : '—'
               }.</p>
-            <button type="button" className="primary-button" disabled={disabled||!replacementVariantId}
+            <button type="button" className="primary-button" disabled={disabled||!chosenReplacement}
               onClick={()=>void applyRetiredCorrection()}>{resolving?'Сохраняю…':'Исправить товар и резерв'}</button>
           </> : <p>Загружаю доступные варианты…</p>}
           <button type="button" className="secondary-button" disabled={disabled} onClick={()=>{setRetiredChoice('choose');setRetiredCorrection(null)}}>Назад</button>
