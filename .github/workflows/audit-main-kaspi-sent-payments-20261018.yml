@@ -122,3 +122,53 @@ jobs:
             AND oi.quantity>0 AND o.order_date>='2026-10-01'
             ORDER BY o.order_date,oi.id LIMIT 80"
           echo 'MALE_VARIANT_DIAGNOSTICS_READ_ONLY_COMPLETE'
+
+      - name: Attribute-level SKU drift and shipped-at-zero patterns (SELECT only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json | jq -c '.[0].results'
+          }
+          echo '=== PRODUCT_351_AND_1787_PRIOR_MOVEMENTS ==='
+          query "SELECT v.id AS variant_id,v.gender,v.color,v.material,v.length,v.size_label,
+            m.inventory_source,m.id AS movement_id,m.movement_type,m.quantity_delta,m.quantity_after,
+            m.reference_type,m.reference_id,m.created_at
+            FROM catalog_variants v LEFT JOIN inventory_movements m ON m.variant_id=v.id
+            WHERE v.id IN (351,1787,1828,1829,953)
+            ORDER BY v.id,m.created_at,m.id LIMIT 250"
+          echo '=== SNAPSHOT_GENDER_VARIANT_GENDER_MISMATCH_COUNT ==='
+          query "SELECT COALESCE(oi.gender_snapshot,'(none)') AS order_gender,
+            COALESCE(v.gender,'(none)') AS catalog_gender,p.name AS product,
+            COUNT(*) AS order_items,SUM(CASE WHEN COALESCE(o.shipping_status,'')='sent' THEN 1 ELSE 0 END) AS shipped,
+            MIN(o.order_date) AS earliest,MAX(o.order_date) AS latest
+            FROM order_items oi JOIN catalog_variants v ON v.id=oi.variant_id
+            JOIN catalog_products p ON p.id=v.product_id JOIN orders o ON o.id=oi.order_id
+            WHERE oi.quantity>0 AND COALESCE(oi.gender_snapshot,'')<>''
+            AND COALESCE(v.gender,'')<>'' AND UPPER(TRIM(oi.gender_snapshot))<>UPPER(TRIM(v.gender))
+            GROUP BY oi.gender_snapshot,v.gender,p.name ORDER BY order_items DESC LIMIT 60"
+          echo '=== ALL_UNEXPLAINED_OUTBOUND_BY_MONTH ==='
+          query "SELECT SUBSTR(occurred_at,1,7) AS month,inventory_source,operation_type,
+            COUNT(*) AS lines,COUNT(DISTINCT variant_id) AS affected_skus,
+            SUM(unexplained_quantity) AS unexplained_units,
+            SUM(confirmed_operation_quantity) AS confirmed_units
+            FROM inventory_operation_evidence
+            GROUP BY SUBSTR(occurred_at,1,7),inventory_source,operation_type
+            ORDER BY month DESC,unexplained_units DESC LIMIT 90"
+          echo '=== OCTOBER_ZERO_INITIAL_SKU_ORDERS_WITHOUT_INBOUND ==='
+          query "WITH fresh AS (
+            SELECT r.inventory_source AS source,r.variant_id,
+              SUM(r.quantity) AS reserved_units,COUNT(DISTINCT r.order_id) AS orders
+            FROM inventory_reservations r JOIN orders o ON o.id=r.order_id
+            WHERE r.status='active' AND r.variant_id IS NOT NULL AND o.order_date>='2026-10-01'
+            GROUP BY r.inventory_source,r.variant_id
+          )
+          SELECT COUNT(*) AS sku_sources_with_oct_active_res,
+            SUM(CASE WHEN COALESCE(s.quantity,0)=0 THEN 1 ELSE 0 END) AS zero_physical,
+            SUM(CASE WHEN COALESCE(s.quantity,0)=0 AND NOT EXISTS (
+              SELECT 1 FROM inventory_movements m WHERE m.variant_id=fresh.variant_id
+              AND m.inventory_source=fresh.source AND m.quantity_delta>0
+            ) THEN 1 ELSE 0 END) AS zero_and_no_positive_movement
+          FROM fresh LEFT JOIN inventory_stock s ON s.variant_id=fresh.variant_id AND s.inventory_source=fresh.source"
+          echo 'STOCK_ATTRIBUTION_READONLY_COMPLETE'
