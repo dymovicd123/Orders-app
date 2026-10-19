@@ -79,3 +79,46 @@ jobs:
           path: male-sku-provenance-20261019.json
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Check female-equivalent stock for male SKU and exact order 1773 (SELECT only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          query() {
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$1" --json | jq -c '.[0].results'
+          }
+          echo '=== RELATED_SKU_SAME_COLOR_SIZE_OTHER_GENDER ==='
+          query "WITH males AS (
+            SELECT v.* FROM catalog_variants v WHERE v.id IN (1828,1829)
+          )
+          SELECT a.id AS male_variant_id,b.id AS related_variant_id,
+            b.is_active,b.gender,b.color,b.material,b.length,b.size_label,
+            s.inventory_source AS source,s.quantity AS physical,s.reserved_quantity AS reserved,
+            s.last_action,s.updated_at
+          FROM males a JOIN catalog_variants b ON b.product_id=a.product_id
+            AND COALESCE(b.color,'')=COALESCE(a.color,'')
+            AND COALESCE(b.size_label,'')=COALESCE(a.size_label,'')
+          LEFT JOIN inventory_stock s ON s.variant_id=b.id
+          ORDER BY a.id,b.gender,b.material,b.length,b.id,s.inventory_source LIMIT 100"
+          echo '=== ORDER_1773_FULL_ITEM_SNAPSHOTS ==='
+          query "SELECT o.id,o.order_date,o.created_at,o.shipping_status,o.shipping_date,o.manager_id,
+            oi.id AS item_id,oi.product_name_snapshot,oi.gender_snapshot,oi.color_snapshot,
+            oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,oi.quantity,oi.source_type,
+            oi.variant_id,oi.stock_writeoff_status
+            FROM orders o JOIN order_items oi ON oi.order_id=o.id WHERE o.id=1773 ORDER BY oi.id"
+          echo '=== ORDER_1773_ACTIVITIES ==='
+          query "SELECT id,event_type,entity_type,entity_id,created_at
+            FROM activity_log WHERE order_id=1773 ORDER BY created_at,id LIMIT 100"
+          echo '=== UNRESOLVED_MALE_AI_NAZIK_ORDERS_AND_PAYMENTS ==='
+          query "SELECT o.id,o.order_date,o.shipping_status,o.order_payment_method,o.received_amount,
+            o.debt_amount,oi.id AS item_id,oi.variant_id,oi.gender_snapshot,oi.size_snapshot,
+            oi.source_type,oi.quantity,r.id AS reserve_id,r.status AS reserve_status,
+            r.unresolved_reason,r.created_at AS reserved_at
+            FROM orders o JOIN order_items oi ON oi.order_id=o.id
+            LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+            WHERE UPPER(COALESCE(oi.product_name_snapshot,'')) LIKE '%НӘЗІК%'
+            AND UPPER(COALESCE(oi.gender_snapshot,''))='МУЖ'
+            AND oi.quantity>0 AND o.order_date>='2026-10-01'
+            ORDER BY o.order_date,oi.id LIMIT 80"
+          echo 'MALE_VARIANT_DIAGNOSTICS_READ_ONLY_COMPLETE'
