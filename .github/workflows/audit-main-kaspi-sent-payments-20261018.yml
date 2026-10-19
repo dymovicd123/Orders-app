@@ -67,3 +67,15 @@ jobs:
           fi
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
           echo 'PRODUCTION KASPI SELECT-ONLY AUDIT COMPLETE (NO WRITES)'
+
+      - name: Entire production Warehouse/Boutique SKU zero-reserve forensic (PR only SELECT)
+        if: github.event_name == 'pull_request'
+        run: node scripts/ops/readonly-stock-reserve-forensic-phase1-20261019.mjs
+      - name: Export full SKU forensic results
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-zero-reserve-forensic-20261019
+          path: stock-forensic-phase1.json
+          if-no-files-found: ignore
+          retention-days: 14
