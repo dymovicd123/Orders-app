@@ -67,3 +67,15 @@ jobs:
           fi
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
           echo 'PRODUCTION KASPI SELECT-ONLY AUDIT COMPLETE (NO WRITES)'
+
+      - name: Production read-only gender/SKU warehouse provenance audit
+        if: github.event_name == 'pull_request'
+        run: node scripts/ops/readonly-male-bayan-ainazik-provenance-20261019.mjs
+      - name: Preserve variant, stock, attempt and ledger evidence
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: male-bayan-ainazik-provenance-20261019
+          path: male-sku-provenance-20261019.json
+          if-no-files-found: ignore
+          retention-days: 14
