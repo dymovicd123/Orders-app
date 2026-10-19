@@ -67,3 +67,213 @@ jobs:
           fi
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
           echo 'PRODUCTION KASPI SELECT-ONLY AUDIT COMPLETE (NO WRITES)'
+ 
+      - name: Auditing Asiya open orders by real item source (production SELECT ONLY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          read_only() {
+            local query="$1"
+            if printf '%s' "$query" | grep -Eiq '(^|[^a-zA-Z])(INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE|CREATE|PRAGMA|ATTACH|DETACH)([^a-zA-Z]|$)'; then
+              echo 'Unsafe statement in Asiya audit; refusing database access' >&2
+              exit 79
+            fi
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$query" --json | jq -c '.[0].results'
+          }
+          echo '========== ASIA MATCHED MANAGER IDENTITIES =========='
+          SQL=$(cat <<'SQL'
+          SELECT m.id AS manager_id,m.name AS manager_name, COUNT(o.id) AS all_linked_orders,
+           SUM(CASE WHEN COALESCE(o.order_status,'active') NOT IN ('deleted','archived') AND COALESCE(o.archived_at,'')='' THEN 1 ELSE 0 END) AS not_archived
+           FROM managers m LEFT JOIN orders o ON o.manager_id=m.id
+           WHERE COALESCE(m.name,'') LIKE '%Асия%' OR COALESCE(m.name,'') LIKE '%АСИЯ%'
+           OR COALESCE(m.name,'') LIKE '%асия%' OR COALESCE(m.name,'') LIKE '%Әсия%'
+           OR COALESCE(m.name,'') LIKE '%ӘСИЯ%'
+           OR UPPER(COALESCE(m.name,'')) LIKE '%ASIYA%'
+           OR UPPER(COALESCE(m.name,'')) LIKE '%ASSIYA%'
+           GROUP BY m.id,m.name ORDER BY m.id;
+          SQL
+          )
+          read_only "$SQL"
+          echo '========== ASIA ACTIVE ORDERS BY SHIPPING PAYMENT AND ITEM SOURCES =========='
+          SQL=$(cat <<'SQL'
+          WITH matched AS (
+            SELECT o.*, COALESCE(m.name,o.manager_snapshot_name,'') AS current_manager,
+              COALESCE((SELECT SUM(p.amount) FROM payments p
+                WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0) AS paid_rows,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=0
+                  AND COALESCE(oi.source_type,o.source_type)='warehouse'),0) AS warehouse_units,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=0
+                  AND COALESCE(oi.source_type,o.source_type)='boutique'),0) AS boutique_units,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=1),0) AS workshop_units
+            FROM orders o LEFT JOIN managers m ON m.id=o.manager_id
+            WHERE (
+            COALESCE(m.name,'') LIKE '%Асия%' OR COALESCE(m.name,'') LIKE '%АСИЯ%'
+            OR COALESCE(m.name,'') LIKE '%асия%' OR COALESCE(m.name,'') LIKE '%Әсия%'
+            OR COALESCE(m.name,'') LIKE '%ӘСИЯ%' OR UPPER(COALESCE(m.name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(m.name,'')) LIKE '%ASSIYA%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%АСИЯ%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Әсия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%ӘСИЯ%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASSIYA%'
+          )
+          ), active AS (
+           SELECT *, MAX(0,COALESCE(total_amount,0)-COALESCE(paid_rows,0)) AS unpaid_by_payments,
+             CASE WHEN COALESCE(shipping_status,'')='sent' THEN 'sent' ELSE 'not_sent' END AS shipping,
+             CASE WHEN warehouse_units>0 AND boutique_units>0 THEN 'warehouse+boutique'
+                  WHEN warehouse_units>0 THEN 'warehouse'
+                  WHEN boutique_units>0 THEN 'boutique'
+                  WHEN workshop_units>0 THEN 'workshop_only' ELSE 'unclassified' END AS item_sources
+           FROM matched
+           WHERE COALESCE(order_status,'active') NOT IN ('deleted','archived')
+             AND COALESCE(archived_at,'')=''
+          )
+           SELECT current_manager,item_sources,shipping,COALESCE(order_status,'active') AS order_status,
+             COUNT(*) AS orders, SUM(warehouse_units) AS warehouse_units,
+             SUM(boutique_units) AS boutique_units,SUM(workshop_units) AS workshop_units,
+             SUM(CASE WHEN COALESCE(debt_amount,0)>0 THEN 1 ELSE 0 END) AS has_recorded_debt,
+             SUM(CASE WHEN unpaid_by_payments>0 THEN 1 ELSE 0 END) AS unpaid_by_payment_rows,
+             SUM(COALESCE(debt_amount,0)) AS recorded_debt_tenge,
+             SUM(unpaid_by_payments) AS missing_payment_tenge,
+             SUM(CASE WHEN COALESCE(received_amount,0)<>COALESCE(paid_rows,0)
+                 OR COALESCE(debt_amount,0)<>unpaid_by_payments THEN 1 ELSE 0 END) AS payment_row_mismatches
+           FROM active GROUP BY current_manager,item_sources,shipping,COALESCE(order_status,'active')
+           ORDER BY item_sources,shipping,current_manager;
+          SQL
+          )
+          read_only "$SQL"
+          echo '========== ASIA WAREHOUSE OR BOUTIQUE UNSENT AND/OR UNPAID ORDER IDS WITH ITEMS =========='
+          SQL=$(cat <<'SQL'
+          WITH matched AS (
+            SELECT o.*, COALESCE(m.name,o.manager_snapshot_name,'') AS current_manager,
+              COALESCE((SELECT SUM(p.amount) FROM payments p
+                WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0) AS paid_rows,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=0
+                  AND COALESCE(oi.source_type,o.source_type)='warehouse'),0) AS warehouse_units,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=0
+                  AND COALESCE(oi.source_type,o.source_type)='boutique'),0) AS boutique_units,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=1),0) AS workshop_units
+            FROM orders o LEFT JOIN managers m ON m.id=o.manager_id
+            WHERE (
+            COALESCE(m.name,'') LIKE '%Асия%' OR COALESCE(m.name,'') LIKE '%АСИЯ%'
+            OR COALESCE(m.name,'') LIKE '%асия%' OR COALESCE(m.name,'') LIKE '%Әсия%'
+            OR COALESCE(m.name,'') LIKE '%ӘСИЯ%' OR UPPER(COALESCE(m.name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(m.name,'')) LIKE '%ASSIYA%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%АСИЯ%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Әсия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%ӘСИЯ%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASSIYA%'
+          )
+          ), active AS (
+           SELECT *, MAX(0,COALESCE(total_amount,0)-COALESCE(paid_rows,0)) AS unpaid_by_payments,
+             CASE WHEN COALESCE(shipping_status,'')='sent' THEN 'sent' ELSE 'not_sent' END AS shipping,
+             CASE WHEN warehouse_units>0 AND boutique_units>0 THEN 'warehouse+boutique'
+                  WHEN warehouse_units>0 THEN 'warehouse'
+                  WHEN boutique_units>0 THEN 'boutique'
+                  WHEN workshop_units>0 THEN 'workshop_only' ELSE 'unclassified' END AS item_sources
+           FROM matched
+           WHERE COALESCE(order_status,'active') NOT IN ('deleted','archived')
+             AND COALESCE(archived_at,'')=''
+          )
+           SELECT id,external_id,order_date,current_manager,
+             order_status,shipping,order_payment_method,source_type,
+             warehouse_units,boutique_units,workshop_units,
+             total_amount,received_amount,debt_amount,paid_rows,unpaid_by_payments,
+             (SELECT GROUP_CONCAT(
+               CASE WHEN COALESCE(oi.is_workshop,0)=1 THEN 'workshop' ELSE COALESCE(oi.source_type,active.source_type,'unknown') END
+               || ': ' || COALESCE(oi.product_name_snapshot,'?') || ' ×' || COALESCE(oi.quantity,0)
+               || CASE WHEN COALESCE(oi.size_snapshot,'')<>'' THEN ' ('||oi.size_snapshot||')' ELSE '' END,' | ')
+              FROM order_items oi WHERE oi.order_id=active.id AND COALESCE(oi.quantity,0)>0) AS items
+           FROM active
+           WHERE (warehouse_units>0 OR boutique_units>0)
+             AND (shipping='not_sent' OR COALESCE(debt_amount,0)>0 OR unpaid_by_payments>0)
+           ORDER BY CASE WHEN shipping='not_sent' THEN 0 ELSE 1 END,
+             CASE WHEN debt_amount>0 OR unpaid_by_payments>0 THEN 0 ELSE 1 END,
+             order_date DESC,id DESC LIMIT 200;
+          SQL
+          )
+          read_only "$SQL"
+          echo '========== ASIA ALL OTHER UNSENT OR UNPAID ORDER IDS (WORKSHOP ETC) =========='
+          SQL=$(cat <<'SQL'
+          WITH matched AS (
+            SELECT o.*, COALESCE(m.name,o.manager_snapshot_name,'') AS current_manager,
+              COALESCE((SELECT SUM(p.amount) FROM payments p
+                WHERE p.order_id=o.id AND COALESCE(p.amount,0)>0),0) AS paid_rows,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=0
+                  AND COALESCE(oi.source_type,o.source_type)='warehouse'),0) AS warehouse_units,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=0
+                  AND COALESCE(oi.source_type,o.source_type)='boutique'),0) AS boutique_units,
+              COALESCE((SELECT SUM(oi.quantity) FROM order_items oi
+                WHERE oi.order_id=o.id AND COALESCE(oi.is_workshop,0)=1),0) AS workshop_units
+            FROM orders o LEFT JOIN managers m ON m.id=o.manager_id
+            WHERE (
+            COALESCE(m.name,'') LIKE '%Асия%' OR COALESCE(m.name,'') LIKE '%АСИЯ%'
+            OR COALESCE(m.name,'') LIKE '%асия%' OR COALESCE(m.name,'') LIKE '%Әсия%'
+            OR COALESCE(m.name,'') LIKE '%ӘСИЯ%' OR UPPER(COALESCE(m.name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(m.name,'')) LIKE '%ASSIYA%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%АСИЯ%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Әсия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%ӘСИЯ%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASSIYA%'
+          )
+          ), active AS (
+           SELECT *, MAX(0,COALESCE(total_amount,0)-COALESCE(paid_rows,0)) AS unpaid_by_payments,
+             CASE WHEN COALESCE(shipping_status,'')='sent' THEN 'sent' ELSE 'not_sent' END AS shipping,
+             CASE WHEN warehouse_units>0 AND boutique_units>0 THEN 'warehouse+boutique'
+                  WHEN warehouse_units>0 THEN 'warehouse'
+                  WHEN boutique_units>0 THEN 'boutique'
+                  WHEN workshop_units>0 THEN 'workshop_only' ELSE 'unclassified' END AS item_sources
+           FROM matched
+           WHERE COALESCE(order_status,'active') NOT IN ('deleted','archived')
+             AND COALESCE(archived_at,'')=''
+          )
+           SELECT id,external_id,order_date,current_manager,
+             item_sources,order_status,shipping,order_payment_method,source_type,
+             warehouse_units,boutique_units,workshop_units,total_amount,received_amount,
+             debt_amount,paid_rows,unpaid_by_payments
+           FROM active
+           WHERE warehouse_units=0 AND boutique_units=0
+             AND (shipping='not_sent' OR COALESCE(debt_amount,0)>0 OR unpaid_by_payments>0)
+           ORDER BY order_date DESC,id DESC LIMIT 150;
+          SQL
+          )
+          read_only "$SQL"
+          echo '========== ASIA ARCHIVED OR DELETED ORDER COUNTS (EXCLUDED FROM CURRENT) =========='
+          SQL=$(cat <<'SQL'
+          SELECT COALESCE(o.order_status,'active') AS order_status,COALESCE(o.shipping_status,'') AS shipping,
+           COUNT(*) AS orders,SUM(COALESCE(o.debt_amount,0)) AS historical_debt
+           FROM orders o LEFT JOIN managers m ON m.id=o.manager_id WHERE (
+            COALESCE(m.name,'') LIKE '%Асия%' OR COALESCE(m.name,'') LIKE '%АСИЯ%'
+            OR COALESCE(m.name,'') LIKE '%асия%' OR COALESCE(m.name,'') LIKE '%Әсия%'
+            OR COALESCE(m.name,'') LIKE '%ӘСИЯ%' OR UPPER(COALESCE(m.name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(m.name,'')) LIKE '%ASSIYA%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%АСИЯ%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%асия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%Әсия%'
+            OR COALESCE(o.manager_snapshot_name,'') LIKE '%ӘСИЯ%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASIYA%'
+            OR UPPER(COALESCE(o.manager_snapshot_name,'')) LIKE '%ASSIYA%'
+          )
+           AND (COALESCE(o.order_status,'active') IN ('deleted','archived') OR COALESCE(o.archived_at,'')<>'')
+           GROUP BY 1,2 ORDER BY 1,2;
+          SQL
+          )
+          read_only "$SQL"
+          echo 'ASIA PRODUCTION AUDIT FINISHED — READ ONLY, NO CONTACT OR CUSTOMER INFORMATION'
