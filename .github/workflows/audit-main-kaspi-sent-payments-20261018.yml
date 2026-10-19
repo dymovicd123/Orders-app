@@ -122,3 +122,29 @@ jobs:
             ORDER BY r.order_id,r.id,ri.id LIMIT 150"
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
           echo 'FORENSIC_RETURN_LINK_SELECT_ONLY_COMPLETE'
+
+      - name: Cross-check any still-active reserve for completed returned order items
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT ir.order_id,ir.order_item_id,ir.inventory_source AS reserved_source,
+            ir.variant_id,ir.quantity AS reserved_qty,
+            ret.id AS return_id,ret.return_date,ri.id AS return_item_id,
+            ri.quantity AS returned_qty,ri.inventory_source AS return_source,
+            ri.restocked,ri.physical_tracking,ri.physical_received_at,
+            COALESCE(s.quantity,0) AS physical_now,COALESCE(s.reserved_quantity,0) AS cached_reserve_now
+            FROM inventory_reservations ir
+            JOIN return_items ri ON ri.order_item_id=ir.order_item_id AND COALESCE(ri.quantity,0)>0
+            JOIN returns ret ON ret.id=ri.return_id AND COALESCE(ret.status,'completed')<>'cancelled'
+            LEFT JOIN inventory_stock s ON s.inventory_source=ir.inventory_source AND s.variant_id=ir.variant_id
+            WHERE ir.status='active' AND ir.variant_id IS NOT NULL
+            ORDER BY CASE WHEN COALESCE(s.quantity,0)<=0 THEN 0 ELSE 1 END,ir.order_id,ri.id LIMIT 150"
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
+          sql="SELECT inventory_source,variant_id,id,movement_type,quantity_delta,quantity_after,
+            reference_type,reference_id,created_at FROM inventory_movements
+            WHERE variant_id IN (212,1084,207,231,871,1789) AND inventory_source IN ('warehouse','boutique')
+            AND created_at>='2026-09-01'
+            ORDER BY variant_id,created_at,id LIMIT 180"
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
+          echo 'FORENSIC_RETURN_RESERVE_GLOBAL_AND_CROSS_SOURCE_COMPLETE'
