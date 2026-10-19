@@ -1,0 +1,45 @@
+name: Production stock zero/negative with active reserves: full SELECT-only investigation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/read-only-stock-reserves-forensic-20261019.yml'
+      - 'scripts/ops/readonly-stock-reserve-forensic-phase1-20261019.mjs'
+      - 'scripts/ops/readonly-stock-reserve-forensic-phase2-20261019.mjs'
+permissions:
+  contents: read
+jobs:
+  audit:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Production binding guard — branch2 prohibited
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          ! grep -Eiq 'db\.prepare\(\x27(UPDATE|DELETE|INSERT|ALTER|DROP|CREATE|REPLACE)' scripts/ops/readonly-stock-reserve-forensic-phase1-20261019.mjs
+      - run: npm ci
+      - name: Audit every stock SKU and linked active reserve (SELECT only)
+        run: node scripts/ops/readonly-stock-reserve-forensic-phase1-20261019.mjs
+      - name: Upload exact read-only findings for detailed analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-forensic-20261019-phase1
+          path: stock-forensic-phase1.json
+          if-no-files-found: ignore
+          retention-days: 14
