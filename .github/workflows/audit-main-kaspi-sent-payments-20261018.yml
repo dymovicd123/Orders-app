@@ -102,3 +102,23 @@ jobs:
             ORDER BY order_id,created_at,id LIMIT 500"
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
           echo 'FORENSIC_ACTIVITY_TIMELINE_SELECT_ONLY_COMPLETE'
+
+      - name: Trace return item link to affected reserved SKU (SELECT-only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT r.order_id,r.id AS return_id,r.status,r.return_date,
+            ri.id AS return_item_id,ri.order_item_id,ri.quantity AS return_qty,
+            ri.inventory_source AS return_source,ri.restocked,ri.physical_tracking,ri.physical_received_at,
+            oi.variant_id AS item_vid,oi.product_name_snapshot AS product,oi.source_type AS original_source,
+            oi.quantity AS current_item_qty,
+            res.status AS reservation_status,res.quantity AS reservation_qty,
+            res.inventory_source AS reservation_source,res.variant_id AS reservation_vid
+            FROM returns r JOIN return_items ri ON ri.return_id=r.id
+            LEFT JOIN order_items oi ON oi.id=ri.order_item_id
+            LEFT JOIN inventory_reservations res ON res.order_item_id=ri.order_item_id
+            WHERE r.order_id IN (943,1540,1563,1972,1118)
+            ORDER BY r.order_id,r.id,ri.id LIMIT 150"
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
+          echo 'FORENSIC_RETURN_LINK_SELECT_ONLY_COMPLETE'
