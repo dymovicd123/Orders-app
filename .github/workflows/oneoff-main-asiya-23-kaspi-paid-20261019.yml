@@ -1,0 +1,112 @@
+name: One-off Asiya 23 Kaspi historical paid flags (production guarded)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-main-asiya-23-kaspi-paid-20261019.yml'
+      - 'scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql'
+      - 'scripts/ops/asiya-23-kaspi-legacy-paid-preflight-20261019.sql'
+      - 'scripts/test-asiya-23-kaspi-paid-20261019.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-main-asiya-23-kaspi-paid-20261019.yml'
+      - 'scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql'
+      - 'scripts/ops/asiya-23-kaspi-legacy-paid-preflight-20261019.sql'
+      - 'scripts/test-asiya-23-kaspi-paid-20261019.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asiya-kaspi-23-paid-main-only
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Exact cohort and rerun safety on isolated SQLite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --experimental-strip-types scripts/test-asiya-23-kaspi-paid-20261019.mjs
+
+  production:
+    name: Audit current production; apply only on merged main; verify
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Assert the exact production binding and immutable cohort source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test "$(grep -oE '\([0-9]+,[0-9]+\)' scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql | wc -l)" -eq 23
+          ! grep -Eiq '^\s*(UPDATE|DELETE|ALTER|DROP|INSERT)\b' scripts/ops/asiya-23-kaspi-legacy-paid-preflight-20261019.sql
+          ! grep -Eiq '^\s*(DELETE|DROP|ALTER|CREATE|REPLACE)\b' scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            [[ "$GITHUB_REF_NAME" == "main" ]]
+          fi
+      - run: npm ci
+      - name: SELECT-only exact live Asiya cohort preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          preflight="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$(cat scripts/ops/asiya-23-kaspi-legacy-paid-preflight-20261019.sql)" --json)"
+          jq -c '.[0].results[0]' <<<"$preflight"
+          jq -e '.[0].results[0] |
+            .target_count==23 and .target_total==678500
+            and .eligible_count==23 and .eligible_total==678500
+            and .stock_or_boutique_orders==6 and .workshop_only_orders==17
+            and .existing_payment_rows==0
+            and .existing_tagged_payments==0 and .existing_tagged_events==0' <<<"$preflight"
+          echo 'ASIYA 23-KASPI PRODUCTION PREFLIGHT PASSED: ALL 23 UNPAID AND UNSENT'
+      - name: Apply exactly one guarded historical payment batch on main only
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql
+          echo 'EXACT ONE-TIME ASIYA PAYMENTS SCRIPT EXECUTED'
+      - name: Verify 23 payments and 23 immutable journal events, unchanged shipping
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+              (SELECT COUNT(*) FROM payments WHERE comment='kaspi_asiya_unshipped_assumed_paid_20261019') AS payment_count,
+              (SELECT COALESCE(SUM(amount),0) FROM payments WHERE comment='kaspi_asiya_unshipped_assumed_paid_20261019') AS payment_total,
+              (SELECT COUNT(*) FROM financial_events WHERE reason='kaspi_asiya_legacy_assumed_paid' AND is_backfill=1) AS event_count,
+              (SELECT COALESCE(SUM(amount_delta),0) FROM financial_events WHERE reason='kaspi_asiya_legacy_assumed_paid' AND is_backfill=1) AS event_total,
+              (SELECT COUNT(*) FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.comment='kaspi_asiya_unshipped_assumed_paid_20261019'
+                AND o.manager_id=436 AND COALESCE(o.order_status,'active')='active'
+                AND COALESCE(o.shipping_status,'not_sent')='not_sent'
+                AND COALESCE(o.received_amount,0)=COALESCE(o.total_amount,0)
+                AND COALESCE(o.debt_amount,-1)=0) AS paid_unshipped_orders,
+              (SELECT COUNT(*) FROM orders o JOIN payments p ON p.order_id=o.id WHERE p.comment='kaspi_asiya_unshipped_assumed_paid_20261019'
+                AND COALESCE(o.return_amount,0)<>0) AS unexpected_returns;
+          " --json)"
+          jq -c '.[0].results[0]' <<<"$result"
+          jq -e '.[0].results[0] |
+            .payment_count==23 and .payment_total==678500
+            and .event_count==23 and .event_total==678500
+            and .paid_unshipped_orders==23 and .unexpected_returns==0' <<<"$result"
+          echo 'ASIYA_KASPI_23_PAID_PRODUCTION_VERIFIED_NO_SHIPPING_OR_STOCK_CHANGE'
