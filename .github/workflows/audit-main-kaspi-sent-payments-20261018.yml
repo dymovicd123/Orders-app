@@ -79,3 +79,15 @@ jobs:
           path: stock-forensic-phase1.json
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Reconstruct entire historical trail for 16 negative-availability SKUs (PR only SELECT)
+        if: github.event_name == 'pull_request'
+        run: node scripts/ops/readonly-stock-reserve-forensic-phase2-20261019.mjs
+      - name: Export detailed movements, stocktakes, reservations, and merges
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-full-history-forensic-20261019
+          path: stock-forensic-phase2.json
+          if-no-files-found: ignore
+          retention-days: 14
