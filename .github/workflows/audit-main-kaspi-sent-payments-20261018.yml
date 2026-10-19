@@ -91,3 +91,14 @@ jobs:
           path: stock-forensic-phase2.json
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Reconstruct old-order reserve reactivation timeline from audit events
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql="SELECT order_id,event_type,entity_type,entity_id,created_at FROM activity_log
+            WHERE order_id IN (1118,1540,1977,1955,1958,2038,2045,2039,1887,1771,1775,1930,1972,1563,943,1417,1900)
+            ORDER BY order_id,created_at,id LIMIT 500"
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
+          echo 'FORENSIC_ACTIVITY_TIMELINE_SELECT_ONLY_COMPLETE'
