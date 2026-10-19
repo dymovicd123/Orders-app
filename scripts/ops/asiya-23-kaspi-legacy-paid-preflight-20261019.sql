@@ -1,4 +1,3 @@
--- SELECT only. Production checkpoint for exactly the 23 Asiya orders.
 WITH t AS (SELECT * FROM orders WHERE id IN (1877,1887,1888,1889,1890,1891,1893,1894,1895,1896,1897,1898,1899,1900,1920,1921,1922,1923,1924,1925,1926,1927,1928)), a AS (
  SELECT o.*, (SELECT COUNT(*) FROM payments p WHERE p.order_id=o.id) AS payment_count,
  (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id=o.id
