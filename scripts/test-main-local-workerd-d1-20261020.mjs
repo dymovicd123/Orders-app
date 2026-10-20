@@ -82,11 +82,32 @@ try {
     console.error('LOCAL_WORKERD_D1_STALE_MANAGER_REFERENCES: '+JSON.stringify(orphanReferences))
     throw new Error('Fresh D1 migrations retain references to dropped managers_step126_old; stop before business mutations')
   }
+  // Preserve production-exact schema definitions in versioned FRESH-ONLY SQL,
+  // rather than silently patching a live D1. This fixture never accepts real
+  // database IDs, and requires zero operational rows before any parity SQL.
+  const initialOrders=await db.prepare('SELECT COUNT(*) AS n FROM orders').first()
+  assert.equal(Number(initialOrders?.n),0,'Fresh schema parity MUST NOT run after real orders exist')
+  const readFreshSql=filename=>readFileSync(join('scripts/schema',filename),'utf8')
+    .split(/\r?\n/).filter(x=>!x.trimStart().startsWith('--')).join(' ')
+    .replace(/\s+/g,' ').trim()
   const hasSnapshot=await db.prepare("SELECT 1 AS present FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").first()
   if(!hasSnapshot) {
-    console.warn('LOCAL_WORKERD_D1_SCHEMA_GAP: fresh repo migrations missing manager_snapshot_name, test-only compatibility field applied')
-    await db.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
+    console.warn('LOCAL_WORKERD_D1_SCHEMA_GAP: replay lacks orders.manager_snapshot_name; apply production-exact FRESH-ONLY schema supplement')
+    await db.exec(readFreshSql('fresh-only-orders-manager-snapshot-20261020.sql'))
   }
+  const existingAudit=await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='order_manager_audit'").first()
+  if(!existingAudit) {
+    console.warn('LOCAL_WORKERD_D1_AUDIT_SCHEMA_GAP: replay lacks order_manager_audit; apply production-exact FRESH-ONLY audit DDL/indexes')
+    await db.exec(readFreshSql('fresh-only-order-manager-audit-20261020.sql'))
+  }
+  const auditCols=(await db.prepare("SELECT name FROM pragma_table_info('order_manager_audit') ORDER BY cid").all()).results.map(x=>x.name)
+  assert.deepEqual(auditCols,['id','order_id','external_id','previous_manager_id','previous_manager_name',
+    'new_manager_id','new_manager_name','action','source','actor_role','actor_label','details','created_at'])
+  const auditIndexes=(await db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='order_manager_audit' ORDER BY name").all()).results.map(x=>x.name)
+  assert.deepEqual(auditIndexes,['idx_order_manager_audit_external','idx_order_manager_audit_order'])
+  const managerFk=(await db.prepare("SELECT \"table\" AS target FROM pragma_foreign_key_list('app_users')").all()).results
+  assert(managerFk.some(x=>x.target==='managers'),'Fresh manager authentication FK points to canonical managers')
+
   const env={DB:db,ADMIN_MODE_LOGIN:'admin',ADMIN_MODE_PASSWORD:'disposable-local-only'}
   const root='https://local-workerd.invalid'
   let cookie=''
@@ -145,6 +166,12 @@ try {
   const created=await call('/api/orders','POST',orderPayload,201,'workerd-order')
   const orderId=Number(created.data.orderId)
   assert(orderId>0)
+  const creationAudit=await db.prepare(
+    "SELECT id,action,source FROM order_manager_audit WHERE order_id=? ORDER BY id"
+  ).bind(orderId).all()
+  assert.equal(creationAudit.results.length,1,'Real Worker must write one manager created audit on fresh schema')
+  assert.equal(creationAudit.results[0].action,'created')
+  assert.equal(creationAudit.results[0].source,'order_create')
   assert.equal(Number((await stock()).reserved_quantity),2)
   assert.equal(Number((await stock()).quantity),3)
   await call('/api/orders','POST',orderPayload,201,'workerd-order')
