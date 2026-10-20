@@ -31,3 +31,5 @@ jobs:
         run: npm run build
       - name: Run fully isolated API, finance and reservation acceptance
         run: node --experimental-strip-types scripts/test-main-foundation-worker-sqlite-20261020.mjs
+      - name: Run local Cloudflare workerd-backed D1 acceptance (dummy binding)
+        run: node --experimental-strip-types scripts/test-main-local-workerd-d1-20261020.mjs
