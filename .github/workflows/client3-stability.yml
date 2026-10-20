@@ -22,7 +22,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Empty D1 equivalent: all migrations, FK, zero customer data and protected binding
+      - name: "Empty D1 equivalent: all migrations, FK, zero customer data and protected binding"
         run: node scripts/client3/test-fresh.mjs
       - name: Resolver, exchanges, returns, payments, stock and auth regressions
         run: node scripts/client3/stability-gate.mjs
