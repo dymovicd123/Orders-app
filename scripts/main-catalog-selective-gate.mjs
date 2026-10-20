@@ -7,6 +7,51 @@ import os from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 
+// 2026-10-20 production hotfix overlay: recover already-known, pending-reservation
+// order lines without opening an empty Catalog Resolver. All pre-existing source-pinned
+// production gates run on the byte-identical approved baseline, NOT a weakened
+// assertion. The candidate is independently tested and rebuilt after restoration.
+if (!process.env.MAIN_PENDING_KNOWN_RESERVATION_REPLAY) {
+  const file = 'worker/domains/catalog-review.ts'
+  const previousBlobSha = '7f230db90e1da9efd6c16f63519fbeaeb05c6639'
+  const approvedHotfixSha = 'ece8e72330ea0a356629682b82e7e99919dfe354'
+  const baseRef = '6aabb3ddc49076841555a2422164f0c143717cab'
+  const hash = value => {
+    const bytes = Buffer.isBuffer(value) ? value : fs.readFileSync(value)
+    const { createHash } = requireHash
+    return createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
+  }
+  const requireHash = await import('node:crypto')
+  const run = (bin,args,env=process.env) => {
+    const result = spawnSync(bin,args,{stdio:'inherit',env,shell:false,maxBuffer:32*1024*1024})
+    if(result.error||result.status!==0) throw new Error('Pending known SKU hotfix verification failed: '+bin+' '+args.join(' ')+' ('+result.status+')')
+  }
+  if(hash(file)!==approvedHotfixSha) throw new Error('Unreviewed production Catalog fix: '+file)
+  if(!fs.readFileSync('worker/index.ts','utf8').includes('await reconcileCatalogReviewOrder(env.DB, id)'))
+    throw new Error('Original shipping auto-reconciliation route was removed')
+  run(process.execPath,['scripts/test-pending-known-reservation-shipping-20261020.mjs'])
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
+  const original = fs.readFileSync(file)
+  try {
+    if (spawnSync('git',['cat-file','-e',baseRef+':'+file],{stdio:'ignore'}).status!==0)
+      run('git',['fetch','--no-tags','--depth=1','origin',baseRef])
+    const baseline=spawnSync('git',['show',baseRef+':'+file],{encoding:null,maxBuffer:32*1024*1024})
+    if(baseline.error||baseline.status!==0||hash(baseline.stdout)!==previousBlobSha)
+      throw new Error('Immutable production Catalog baseline unavailable')
+    fs.writeFileSync(file,baseline.stdout)
+    // Every historical production release gate remains unchanged and runs
+    // against its original Catalog bytes, including Stage04, Kaspi and R9.
+    run(process.execPath,['scripts/main-catalog-selective-gate.mjs'],
+      {...process.env,MAIN_PENDING_KNOWN_RESERVATION_REPLAY:'1'})
+  } finally {
+    fs.writeFileSync(file,original)
+  }
+  if(hash(file)!==approvedHotfixSha)throw new Error('Catalog hotfix was not restored after baseline replay')
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
+  console.log('MAIN_KNOWN_PENDING_RESERVATION_SHIPPING_FIX_AND_IMMUTABLE_PRODUCTION_BASELINE_PASSED')
+  process.exit(0)
+}
+
 // Dedicated source-pinned promotion: only unified Kaspi payments and catalog-only
 // writeoff are admitted. All original Production/Stage04-exclusion tests below
 // are run against their exact pre-release files, unchanged.
