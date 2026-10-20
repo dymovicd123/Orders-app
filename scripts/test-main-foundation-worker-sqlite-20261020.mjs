@@ -19,6 +19,16 @@ for (const migration of migrations) {
   }
 }
 
+// The historical production DB already carries certain columns not represented
+// by the checked-in migration sequence. Do NOT silently call the fixture fully
+// production-equivalent. Record this reproducibility gap and ONLY for this
+// disposable test add the missing compatibility column so downstream API
+// acceptance can independently continue. The production schema is untouched.
+if (!sqlite.prepare("SELECT 1 AS present FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").get()) {
+  console.warn('SCHEMA_GAP_REQUIRES_RECONCILIATION: all repo migrations lack orders.manager_snapshot_name, but current Worker writes it.')
+  sqlite.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
+}
+
 // All SQL executes against the same ephemeral in-memory SQLite handle;
 // batch is a real transactional savepoint, NOT a mocked successful write.
 function wrap(query, args = []) {
