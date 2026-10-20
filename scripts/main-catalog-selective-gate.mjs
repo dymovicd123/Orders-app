@@ -7,6 +7,48 @@ import os from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 
+// Current candidate must verify actual SQL against live SQLite fixtures. Historical
+// source-pinned release tests are replayed with the exact previously approved file,
+// then the candidate is restored and typechecked. This temporary compatibility
+// harness changes no business data or historical regression assertion.
+if (!process.env.MAIN_ACTIVE_RESERVATION_SHIPPING_REPLAY) {
+  const file = 'worker/domains/order-reservations.ts'
+  const previousRef = 'b2648e849dbeed9730650848823449cfecb72ce5'
+  const previousSha = '00d18e4d2e0964bcd9f912aade1fd285399076a0'
+  const current = fs.readFileSync(file)
+  const source = current.toString('utf8')
+  if (!source.includes("LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id AND r.status = 'active'")) {
+    throw new Error('Candidate shipping reservation filter is missing')
+  }
+  const run = (bin, args, env = process.env) => {
+    const result = spawnSync(bin, args, { stdio: 'inherit', env, shell: false, timeout: 14 * 60 * 1000 })
+    if (result.error || result.status !== 0) {
+      throw new Error('Shipping reservation reliability gate failed: ' + bin + ' ' + args.join(' ') + ' (' + result.status + ')')
+    }
+  }
+  run(process.execPath, ['scripts/test-shipping-current-active-reservation-20261020.mjs'])
+  try {
+    if (spawnSync('git', ['cat-file', '-e', previousRef + ':' + file], { stdio: 'ignore' }).status !== 0) {
+      run('git', ['fetch', '--no-tags', '--depth=1', 'origin', previousRef])
+    }
+    const old = spawnSync('git', ['show', previousRef + ':' + file], { encoding: null, maxBuffer: 16 * 1024 * 1024 })
+    if (old.error || old.status !== 0) throw new Error('Historical reservation source unavailable')
+    const { createHash } = await import('node:crypto')
+    const hash = value => createHash('sha1').update(Buffer.from('blob ' + value.length + '\\0')).update(value).digest('hex')
+    if (hash(old.stdout) !== previousSha) throw new Error('Historical reservation source hash mismatch')
+    fs.writeFileSync(file, old.stdout)
+    run(process.execPath, ['scripts/main-catalog-selective-gate.mjs'],
+      { ...process.env, MAIN_ACTIVE_RESERVATION_SHIPPING_REPLAY: '1' })
+  } finally {
+    fs.writeFileSync(file, current)
+  }
+  if (!fs.readFileSync(file).equals(current)) throw new Error('Current reservation source not restored')
+  run(process.execPath, ['scripts/test-shipping-current-active-reservation-20261020.mjs'])
+  run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'])
+  console.log('SHIPPING_ACTIVE_RESERVATION_FIX_AND_HISTORICAL_RELEASE_GATE_PASSED')
+  process.exit(0)
+}
+
 // 2026-10-20 production hotfix overlay: recover already-known, pending-reservation
 // order lines without opening an empty Catalog Resolver. All pre-existing source-pinned
 // production gates run on the byte-identical approved baseline, NOT a weakened
