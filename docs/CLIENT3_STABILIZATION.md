@@ -24,7 +24,7 @@
 | P1 | Exchange / return / shipment coupled to reservations | Return #1563 with active reservation for completed returned lines; older linked-order and post-stocktake incidents | After real item return, no stale active reserve for returned qty; no double restock; repeated/cancel requests idempotent |
 | P1 | Money integrity across exchange, refund, debt | Orders 1734/1974 duplicate and cascaded exchange-history incident | Payments sum and debt consistent; no double payment or refund; admin delete previews effects |
 | P1 | Stale stock and mixed-source orders | Past source-switch cache, stock 0 with active reserve, issue vs revision | Counts update across warehouse/boutique; stock and reserves don't silently change on order read |
-| P1 | Database fresh install from many historical migrations | 112 migration files, including feature additions and journals | Full empty-schema migration simulation and integration smoke; no failed migration |
+| P1 | Database fresh install from many historical migrations | 112 historical migration files, compiled offline into a single clean initial D1 baseline | Offline full-schema reconstruction + D1-safe consolidated baseline + local Worker/D1 acceptance; no failed migration |
 | P2 | Operational complexity / long incident handling | Old production has extensive admin tools and customizations | Remove only objectively unused views; new client gets a short operating manual |
 | P2 | E2E blind spots | Many source-level assertions, but they don't prove complete live flows | Exercise real Worker + new D1 with fixture orders before handoff |
 
@@ -35,7 +35,7 @@
 1. Check out `client3/isolated-stabilization-20261020` (do **not** deploy `main` or `branch2`).
 2. Run `npm ci`, `node scripts/client3/test-fresh.mjs`, `node scripts/client3/stability-gate.mjs`, `npm run typecheck`, `npm run build`.
 3. Create a **brand-new** Cloudflare D1 database named `orders_db_client3_old_client`, and record its newly assigned UUID. Do not restore or clone another D1.
-4. Run `node scripts/client3/prepare.mjs --prepare-migrations` (this generates separate .client3-migrations, not the protected root migration history).
+4. Run `node scripts/client3/prepare.mjs --prepare-migrations` (this generates one consolidated clean baseline in .client3-migrations; historical main migrations remain untouched).
 5. Run `node scripts/client3/prepare.mjs --configure orders-app-client3-old-client orders_db_client3_old_client <NEW_D1_UUID>`.
 6. Run `node scripts/client3/prepare.mjs --validate`. Confirm a single DB binding and a brand new UUID distinct from main/branch2.
 7. Apply **only** the isolated migrations with `npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.client3.json`. Run SELECT-only checks of empty business tables, foreign keys and expected reference counts before public access.
