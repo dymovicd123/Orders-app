@@ -38,9 +38,12 @@ export function consolidateMigrations(directory,filenames){
   const seeded=source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
   const permitted=new Set(['reference_values','app_settings'])
   const metaSeeds=[]
+  // Historic spellings learned for the old customer's product characteristics
+  // are not identities of the new tenant. Deliberately do not seed these aliases.
+  const oldTenantAliases=new Set(['catalog_value_aliases','catalog_input_aliases'])
   const shadow=new Set(source.prepare('PRAGMA table_list').all().filter(x=>x.type==='shadow').map(x=>x.name))
   for(const {name} of seeded){
-   if(permitted.has(name)||shadow.has(name)||name.startsWith('_'))continue
+   if(permitted.has(name)||shadow.has(name)||name.startsWith('_')||oldTenantAliases.has(name))continue
    const row=source.prepare('SELECT COUNT(*) AS n FROM "'+name.replaceAll('"','""')+'"').get()
    if(!row.n)continue
    if(/^[a-z0-9_]+_meta$/.test(name)){
