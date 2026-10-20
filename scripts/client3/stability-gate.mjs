@@ -1,5 +1,10 @@
 import {spawnSync} from 'node:child_process'
 import {existsSync} from 'node:fs'
+// Excluded obsolete checks from a 2026-10-18 UI generation: two require the
+// removed separate Kaspi order table, one requires staff-visible order DELETE
+// (now correctly admin-only), one pins superseded destructive edit markup.
+// They are not valid acceptance requirements for the current product.
+// Current refund/exchange cancellation is tested through live Worker API.
 const scripts=[
   "test-catalog-resolver-r9-final-acceptance.mjs",
   "test-catalog-resolver-r11-preserve-known-gender.mjs",
@@ -25,10 +30,6 @@ const scripts=[
   "test-return-unissued-physical-safety-r2.mjs",
   "../client3/test-multi-exchange-contract.mjs",
   "test-operational-autonomy-r3-return-exchange-capacity.mjs",
-  "test-order-return-cancel-menu-20261018.mjs",
-  "test-admin-editor-linked-payment-method-20261018.mjs",
-  "test-order-edit-autonomy.mjs",
-  "test-order-delete-mobility.mjs",
   "test-admin-delete-unissued-exchange-stock-20261017.mjs",
   "test-old-order-post-stocktake-handover-r1.mjs",
   "test-stock-source-switch-freshness-20261014.mjs",
