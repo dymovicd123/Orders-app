@@ -787,6 +787,151 @@ try {
   assert.equal(sql('SELECT shipping_status FROM orders WHERE id=?',historicOrderId).shipping_status,'not_sent')
   assert.equal(sql('SELECT status FROM inventory_reservations WHERE order_item_id=?',historicItemId).status,'active')
   console.log('MAIN_RETURN_RESERVATION_SHIPMENT_CONFLICT_BLOCKED: completed Return with active line reserve cannot issue same item a second time')
+
+  // Administrator/manager editor contract: isolate safe metadata and price
+  // corrections; stale snapshots must refuse without touching money or stock.
+  // Every order below is a synthetic API-created record in the disposable DB.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-editor-stock',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:4}],
+  })
+  const editorPayload={
+    ...orderPayload,requestId:'stability-editor-create',customerPhone:'77010000901',
+    items:[{...orderPayload.items[0],quantity:1}],
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:2000}],
+  }
+  const editorCreated=(await api('/api/orders','POST',editorPayload,{
+    expectedStatus:201,requestId:editorPayload.requestId,
+  })).data
+  const editorId=Number(editorCreated.orderId)
+  const editorRecord=()=>sql('SELECT order_date,customer_phone,customer_name,city,delivery_type,comment,total_amount,received_amount,debt_amount,return_amount,shipping_status,order_status FROM orders WHERE id=?',editorId)
+  const snapshot=editorRecord()
+  const originalReserved=Number(stock().reserved_quantity)
+  const originalPhysical=Number(stock().quantity)
+  const expectedMetadata={
+    orderDate:String(snapshot.order_date||''),customerPhone:String(snapshot.customer_phone||''),
+    customerName:String(snapshot.customer_name||''),city:String(snapshot.city||''),
+    deliveryType:String(snapshot.delivery_type||''),comment:String(snapshot.comment||''),
+  }
+  const metadataPatch={metadataCorrection:{
+    expected:expectedMetadata,
+    next:{...expectedMetadata,city:'АСТАНА',comment:'Изолированный тест изменения реквизитов'},
+    expectedState:{
+      totalAmount:Number(snapshot.total_amount),receivedAmount:Number(snapshot.received_amount),
+      debtAmount:Number(snapshot.debt_amount),returnAmount:Number(snapshot.return_amount),
+      shippingStatus:String(snapshot.shipping_status),orderStatus:String(snapshot.order_status),
+    },
+  }}
+  const metadataUpdated=await api('/api/orders/'+editorId,'PATCH',metadataPatch,{
+    expectedStatus:200,requestId:'stability-metadata-update',
+  })
+  assert(metadataUpdated.data.ok)
+  assert.equal(editorRecord().city,'АСТАНА')
+  assert.equal(editorRecord().comment,'Изолированный тест изменения реквизитов')
+  assert.equal(Number(stock().quantity),originalPhysical)
+  assert.equal(Number(stock().reserved_quantity),originalReserved)
+  assert.equal(editorRecord().received_amount,2000)
+  await api('/api/orders/'+editorId,'PATCH',metadataPatch,{
+    expectedStatus:200,requestId:'stability-metadata-update',
+  })
+  const staleMetadata=await api('/api/orders/'+editorId,'PATCH',metadataPatch,{
+    expectedStatus:409,requestId:'stability-metadata-stale-other-employee',
+  })
+  assert.equal(staleMetadata.data.ok,false)
+  assert.equal(editorRecord().city,'АСТАНА')
+  assert.equal(count('payments','order_id='+editorId),1)
+  console.log('MAIN_EDITOR_METADATA_CAS_PASSED: admin safe details edit, retry, stale cross-staff guard and zero inventory/payment drift')
+
+  // Price correction has its own original-value CAS and updates booked total,
+  // not historical cash, exact SKU, order quantity or warehouse Physical.
+  const editorItem=sql('SELECT id,unit_price,line_total,catalog_price_snapshot,quantity FROM order_items WHERE order_id=?',editorId)
+  assert.equal(Number(editorItem.unit_price),10000)
+  const pricePatch={itemPriceCorrections:[{
+    orderItemId:editorItem.id,unitPrice:11000,
+    expectedUnitPrice:Number(editorItem.unit_price),
+    expectedLineTotal:Number(editorItem.line_total),
+    expectedQuantity:Number(editorItem.quantity),
+    expectedCatalogPriceSnapshot:editorItem.catalog_price_snapshot,
+  }]}
+  const changedPrice=await api('/api/orders/'+editorId,'PATCH',pricePatch,{
+    expectedStatus:200,requestId:'stability-price-fix',
+  })
+  assert(changedPrice.data.ok)
+  assert.equal(Number(sql('SELECT unit_price FROM order_items WHERE id=?',editorItem.id).unit_price),11000)
+  assert.equal(Number(editorRecord().total_amount),11000)
+  assert.equal(Number(editorRecord().received_amount),2000)
+  assert.equal(Number(editorRecord().debt_amount),9000)
+  assert.equal(Number(stock().quantity),originalPhysical)
+  assert.equal(Number(stock().reserved_quantity),originalReserved)
+  await api('/api/orders/'+editorId,'PATCH',pricePatch,{expectedStatus:200,requestId:'stability-price-fix'})
+  const stalePrice=await api('/api/orders/'+editorId,'PATCH',pricePatch,{
+    expectedStatus:409,requestId:'stability-price-stale',
+  })
+  assert.equal(stalePrice.data.ok,false)
+  assert.equal(Number(editorRecord().total_amount),11000)
+  assert.equal(count('payments','order_id='+editorId),1)
+  console.log('MAIN_EDITOR_PRICE_CAS_PASSED: recorded item price update, repeat idempotent, stale price rejected and exact inventory/cash preserved')
+
+  // No user, not even admin, may bypass impact preview by PATCHing a deleted
+  // status in the full editor; DELETE requires the current fingerprint.
+  await api('/api/orders/'+editorId,'PATCH',{orderStatus:'deleted'},{
+    expectedStatus:409,requestId:'stability-editor-illegal-delete',
+  })
+  const beforeDelete=await api('/api/orders/'+editorId+'/delete-preview')
+  assert(beforeDelete.data.ok)
+  assert.equal(beforeDelete.data.preview.canAttemptDelete,true)
+  const deleteFingerprint=beforeDelete.data.preview.chainPlan.snapshotFingerprint
+  assert.match(deleteFingerprint,/^[0-9a-f]{64}$/)
+  await api('/api/orders/'+editorId+'/delete','POST',{
+    requestId:'stability-delete-no-snapshot',
+  },{expectedStatus:409,requestId:'stability-delete-no-snapshot'})
+  assert.equal(editorRecord().order_status,'active')
+  assert.equal(Number(stock().reserved_quantity),originalReserved)
+  const deleted=await api('/api/orders/'+editorId+'/delete','POST',{
+    requestId:'stability-delete-with-preview',
+    expectedSnapshot:deleteFingerprint,
+    comment:'Тест безопасного удаления невыданного заказа',
+  },{expectedStatus:200,requestId:'stability-delete-with-preview'})
+  assert(deleted.data.ok)
+  assert.equal(editorRecord().order_status,'deleted')
+  assert.equal(Number(stock().quantity),originalPhysical,'Deleting unissued order must preserve physical')
+  assert.equal(Number(stock().reserved_quantity),originalReserved-1,'Unissued order reserve must be released once')
+  await api('/api/orders/'+editorId+'/delete','POST',{
+    requestId:'stability-delete-with-preview',
+    expectedSnapshot:deleteFingerprint,
+  },{expectedStatus:200,requestId:'stability-delete-with-preview'})
+  assert.equal(Number(stock().reserved_quantity),originalReserved-1)
+  assert.equal(Number(stock().quantity),originalPhysical)
+  console.log('MAIN_DELETE_UNISSUED_PREVIEW_PASSED: no delete without current snapshot, paid order deleted, exact reserve freed once, Physical untouched')
+
+  // A money-only Return is a separate completed linked operation. Direct
+  // Delete may never silently erase this Return and its refund: admin must
+  // use the previewed chain workflow and account for each cancellation.
+  const linkedPayload={
+    ...editorPayload,requestId:'stability-linked-return-create',customerPhone:'77010000902',
+  }
+  const linked=(await api('/api/orders','POST',linkedPayload,{
+    expectedStatus:201,requestId:linkedPayload.requestId,
+  })).data
+  const linkedId=Number(linked.orderId)
+  const linkedRefund=(await api('/api/returns','POST',{
+    orderId:linkedId,returnDate:'2026-10-20',amount:1000,
+    paymentMethod:'НАЛИЧКА',items:[],
+  },{expectedStatus:201,requestId:'stability-linked-return-refund'})).data
+  assert(Number(linkedRefund.returnId)>0)
+  const activeLinked=await api('/api/orders/'+linkedId+'/delete-preview')
+  assert(activeLinked.data.preview.activeReturns.includes(Number(linkedRefund.returnId)))
+  assert.equal(activeLinked.data.preview.canAttemptDelete,false)
+  const linkedBefore=sql('SELECT received_amount,return_amount,order_status FROM orders WHERE id=?',linkedId)
+  await api('/api/orders/'+linkedId+'/delete','POST',{
+    expectedSnapshot:activeLinked.data.preview.chainPlan.snapshotFingerprint,
+    requestId:'stability-delete-linked-return-unsafe',
+  },{expectedStatus:409,requestId:'stability-delete-linked-return-unsafe'})
+  const linkedAfter=sql('SELECT received_amount,return_amount,order_status FROM orders WHERE id=?',linkedId)
+  assert.deepEqual(linkedAfter,linkedBefore)
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',Number(linkedRefund.returnId)).status,'completed')
+  console.log('MAIN_DELETE_LINKED_RETURN_GUARD_PASSED: active Return/refund forces previewed chain, direct deletion cannot silently erase money')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
