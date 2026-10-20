@@ -658,6 +658,51 @@ try {
   assert.equal(Number(stock().quantity),physicalOldBeforeShip-1)
   assert.equal(Number(newStock().quantity),physicalNewBeforeShip)
   console.log('MAIN_LEGACY_UNISSUED_PARTIAL_THEN_SHIP_PASSED: residual active 1 -> fulfilled 1, original Physical -1, exchanged SKU not double issued')
+  // Legacy historical inconsistency: the row says physically issued, but
+  // its exact SKU reservation is STILL ACTIVE (production forensic #510 showed
+  // such a completed-return-vs-live-reservation class of conflict).
+  // A new physical intake must fail closed instead of silently adding Physical
+  // while leaving an active reservation that later shipping might consume.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-inconsistent-return-arrival',inventorySource:'warehouse',
+    movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:1}],
+  })
+  const inconsistentPayload={
+    ...orderPayload,requestId:'stability-inconsistent-return-order',
+    customerPhone:'77010000008',items:[{...orderPayload.items[0],quantity:1}],
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:2000}],
+  }
+  const inconsistentCreated=await api('/api/orders','POST',inconsistentPayload,{
+    expectedStatus:201,requestId:inconsistentPayload.requestId,
+  })
+  const inconsistentOrderId=Number(inconsistentCreated.data.orderId)
+  const inconsistentLineId=Number(sql('SELECT id FROM order_items WHERE order_id=?',inconsistentOrderId).id)
+  assert.equal(sql('SELECT status FROM inventory_reservations WHERE order_item_id=?',inconsistentLineId).status,'active')
+  const inconsistentPhysical=Number(stock().quantity)
+  const inconsistentReserved=Number(stock().reserved_quantity)
+  // Simulate an already-broken historical row; this is TEST-ONLY data and
+  // is not produced by or run against live order data.
+  sqlite.prepare("UPDATE order_items SET stock_writeoff_status='written_off' WHERE id=?").run(inconsistentLineId)
+  const refused=await api('/api/returns','POST',{
+    orderId:inconsistentOrderId,returnDate:'2026-10-20',amount:0,
+    items:[{orderItemId:inconsistentLineId,quantity:1,physicalState:'warehouse',restock:true}],
+  },{expectedStatus:409,requestId:'stability-contradictory-issued-reserve-return'})
+  assert.equal(refused.data.ok,false)
+  assert.match(String(refused.data.message||''),/резерв|выдач/i)
+  assert.equal(count('returns','order_id='+inconsistentOrderId),0,'Conflicting return must not create a return')
+  assert.equal(Number(stock().quantity),inconsistentPhysical,'Conflicting return must not add physical')
+  assert.equal(Number(stock().reserved_quantity),inconsistentReserved)
+  // Money-only refund stays intentionally available even if physical evidence
+  // is contradictory. It cannot touch stock or reservations.
+  const moneyOnly=await api('/api/returns','POST',{
+    orderId:inconsistentOrderId,returnDate:'2026-10-20',amount:1000,paymentMethod:'НАЛИЧКА',items:[],
+  },{expectedStatus:201,requestId:'stability-contradictory-money-only'})
+  assert(Number(moneyOnly.data.returnId)>0)
+  assert.equal(Number(stock().quantity),inconsistentPhysical)
+  assert.equal(Number(stock().reserved_quantity),inconsistentReserved)
+  console.log('MAIN_RETURN_ACTIVE_RESERVATION_CONFLICT_PASSED: unissued active reserve cannot be physically returned twice, money-only refund remains possible')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
