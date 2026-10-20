@@ -291,6 +291,70 @@ try {
   assert.equal(Number(newStock().quantity),2,'Set cancellation replay must not touch new SKU again')
   assert.equal(sql('SELECT status FROM exchanges WHERE id=?',exchangeId).status,'cancelled')
   console.log('MAIN_EXCHANGE_SET_WORKER_SQLITE_PASSED: 1-for-1 canonical variant swap, exact Physical, preserved money, create replay, cancellation and replay')
+  // LEGACY HISTORICAL ORDER: intentionally has ONLY an order-level total.
+  // We must not invent a unit price while exchanging or undoing it.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-legacy-arrival',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  const legacyCreatePayload={
+    requestId:'stability-legacy-order',orderDate:'2026-10-20',managerId,
+    customerPhone:'77010000003',city:'АЛМАТЫ',
+    pricingMode:'legacy_manual_total',orderTotal:12000,
+    workshopStatus:'ready',orderStatus:'active',
+    items:[{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1}],
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:5000}],
+  }
+  const legacyCreated=await api('/api/orders','POST',legacyCreatePayload,{expectedStatus:201,requestId:legacyCreatePayload.requestId})
+  const legacyId=Number(legacyCreated.data.orderId)
+  assert(legacyId>0)
+  const legacyInitial=sql('SELECT pricing_mode,total_amount,received_amount,debt_amount FROM orders WHERE id=?',legacyId)
+  assert.equal(legacyInitial.pricing_mode,'legacy_manual_total')
+  assert.equal(Number(legacyInitial.total_amount),12000)
+  assert.equal(Number(legacyInitial.debt_amount),7000)
+  const legacyOld=sql('SELECT id,variant_id FROM order_items WHERE order_id=?',legacyId)
+  assert.equal(Number(legacyOld.variant_id),variantId)
+  await api('/api/orders/'+legacyId+'/shipping','PATCH',ship)
+  const legacyPhysicalBefore=Number(stock().quantity)
+  const legacyReplacementBefore=Number(newStock().quantity)
+  const legacyExchangePayload={
+    orderId:legacyId,exchangeDate:'2026-10-20',oldItemId:legacyOld.id,oldQuantity:1,
+    oldPhysicalState:'warehouse',oldReturnSource:'warehouse',
+    newItem:{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:newColor,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1},
+    financialAction:'none',financialAmount:0,paymentMethod:'',comment:'Тест совместимого обмена',
+  }
+  const legacySwap=await api('/api/exchanges','POST',legacyExchangePayload,{
+    expectedStatus:201,requestId:'stability-legacy-swap-once',
+  })
+  const legacyExchangeId=Number(legacySwap.data.exchangeId)
+  assert(legacyExchangeId>0)
+  assert.equal(Number(stock().quantity),legacyPhysicalBefore+1,'Legacy old received SKU must add one')
+  assert.equal(Number(newStock().quantity),legacyReplacementBefore-1,'Legacy replacement must issue exactly one')
+  assert.equal(sql('SELECT total_amount FROM orders WHERE id=?',legacyId).total_amount,12000)
+  await api('/api/exchanges','POST',legacyExchangePayload,{
+    expectedStatus:201,requestId:'stability-legacy-swap-once',
+  })
+  assert.equal(Number(stock().quantity),legacyPhysicalBefore+1,'Legacy exchange retry cannot double count old SKU')
+  assert.equal(Number(newStock().quantity),legacyReplacementBefore-1,'Legacy exchange retry cannot double issue new SKU')
+  await api('/api/exchanges/'+legacyExchangeId+'/cancel','PATCH',{
+    comment:'Синтетическая отмена старого обмена',
+  },{requestId:'stability-legacy-cancel'})
+  assert.equal(Number(stock().quantity),legacyPhysicalBefore,'Legacy cancellation returns old physical to initial value')
+  assert.equal(Number(newStock().quantity),legacyReplacementBefore,'Legacy cancellation restores replaced physical')
+  await api('/api/exchanges/'+legacyExchangeId+'/cancel','PATCH',{
+    comment:'Синтетическая отмена старого обмена',
+  },{requestId:'stability-legacy-cancel'})
+  assert.equal(Number(stock().quantity),legacyPhysicalBefore,'Legacy cancellation replay cannot change physical')
+  assert.equal(Number(newStock().quantity),legacyReplacementBefore,'Legacy cancellation replay cannot change new SKU')
+  const legacyFinal=sql('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?',legacyId)
+  assert.equal(Number(legacyFinal.total_amount),12000,'Legacy order total must remain immutable')
+  assert.equal(Number(legacyFinal.received_amount),5000)
+  assert.equal(Number(legacyFinal.debt_amount),7000)
+  assert.equal(sql('SELECT status FROM exchanges WHERE id=?',legacyExchangeId).status,'cancelled')
+  console.log('MAIN_LEGACY_EXCHANGE_WORKER_SQLITE_PASSED: old manual total, concrete SKU exchange, no invented unit price, retries and cancellation reconcile')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
