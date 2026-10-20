@@ -30,6 +30,22 @@
 
 **Important:** Production user incidents are not necessarily reproducible on an empty DB, but the same code paths are included. Empty data by itself does **not** fix logic defects. Do not claim the third installation is stable until the E2E acceptance matrix below is green.
 
+## Verified acceptance checkpoint — 20 October 2026
+
+- GitHub Actions **39421576623** passed after [Client3 candidate #514](https://github.com/dymovicd123/Orders-app/pull/514) was tested without deploying it.
+- Exactly **112 historical migrations** were transformed into a **single fresh D1-safe baseline**. Real `wrangler d1 migrations apply --local` succeeded; fresh business tables and all core foreign keys validated; 127 generic reference values are seeded; **zero legacy managers, products, orders, customers, payments, variants, reserves or physical stock**.
+- Full suite: **31 current high-risk regression checks**, plus database safety and the CI build/typecheck/dependency audits.
+- Real Worker + disposable isolated D1 passed: unauthenticated APIs return 401, weak original bootstrap credential rejected, unique first admin created, duplicate setup blocked, authenticated reads work.
+- Real API finance: paid order created, idempotent repeat; money-only refund and replay; unpaid order + partial payment and replay; exact total 10,000 / received 3,500 / debt 6,500; successful refund reversal without false payment.
+- Real API exchange: itemized Workshop replacement with no extra money, retry-safe; exchange cancellation restored original item and unchanged debt.
+- Real API warehouse: arrival **3 → 3** on replay; order reserve **1** without altering Physical; shipment **3 → 2** and reserve **1 → 0**; repeated shipment no second subtraction; physical Return **2 → 3** exactly once.
+- Real API shortage: order for 4 with physical 3; shipping blocked with exact `stock_resolution_required`; after explicit operation-scoped possession confirmation shipping succeeded with physical **0 (never negative)** and no active reserve; replay was a no-op.
+- Real API unknown SKU: unresolved order could be recorded but not shipped; order-scoped catalog review returned the actual problem item, avoiding the earlier empty resolver dialog.
+
+Four **obsolete historical UI assertions** were excluded from the Client3 gate because they contradicted **current approved behavior**: the separate Kaspi order table was removed and order deletion is administrator-only. A fifth H9C assertion referred to an old full-shelf-count field intentionally replaced with issue-scoped stock confirmation; the current contract test replaces it. Current Return/Exchange cancel APIs are exercised live. This is an explicit compatibility reconciliation, not permission to skip new failing tests.
+
+**Remaining release risks (not yet proven by this suite):** end-to-end batch exchange with multiple old/new SKUs; real concurrent multi-browser load and lost network acknowledgement; historic linked Return/Exchange chains; all navigation/mobile UI; full stocktake under simultaneous sales; third Cloudflare account/remote Worker binding and prod-like D1 performance. An empty tenant avoids old damaged customer records, **not all potential application bugs**. Do not promise a bug-free release.
+
 ## Independent installation procedure (explicit human-approved execution only)
 
 1. Check out `client3/isolated-stabilization-20261020` (do **not** deploy `main` or `branch2`).
