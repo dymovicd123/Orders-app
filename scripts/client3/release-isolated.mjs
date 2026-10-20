@@ -64,7 +64,7 @@ function main(){
     'Client3 config/migrations already exist: refusing to overwrite or reuse.')
   console.log('Checking fresh Client3 schema and building this isolated checkout...')
   run(process.execPath,['scripts/client3/test-fresh.mjs'],{inherit:true})
-  run(npx,['run','build'],{inherit:true})
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build'],{inherit:true})
   const before=remoteDatabases()
   assert(!before.some(x=>namedDb(x)===DATABASE),
     'Third D1 name already exists. Refusing to reuse any database.')
@@ -80,7 +80,7 @@ function main(){
   prepareMigrations(MIGRATIONS)
   fs.writeFileSync(CONFIG,renderConfig(WORKER,DATABASE,id),{flag:'wx',mode:0o600})
   console.log('Applying only Client3 migrations to '+DATABASE+' ('+id+')...')
-  wrangler(['d1','migrations','apply',DATABASE,'--remote','--config',CONFIG,'--yes'],
+  wrangler(['d1','migrations','apply',DATABASE,'--remote','--config',CONFIG],
     {inherit:true,timeout:900000})
   verifyFreshRemote()
   console.log('Deploying independent Worker '+WORKER+'...')
