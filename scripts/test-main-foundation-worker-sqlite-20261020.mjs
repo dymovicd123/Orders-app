@@ -1056,6 +1056,56 @@ try {
   console.log('MAIN_DELETE_LEGACY_EXCHANGE_RETURN_MANUAL_GUARD_PASSED: manual-review dependency and unsupported physical reversal remain blocked, even after not-issued assertion')
 
 
+  // Supported modern Exchange Set V2 (old item not issued, new SKU recorded
+  // via real Worker) plus independent refund: test whether a normal admin can
+  // actually proceed, not only that unsafe legacy deletes are rejected.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-set-delete-newstock',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',color:newColor,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:3}],
+  })
+  const setDeletePayload={
+    ...editorPayload,requestId:'stability-set-delete-order',customerPhone:'77010000905',
+  }
+  const setDeleteId=Number((await api('/api/orders','POST',setDeletePayload,{
+    expectedStatus:201,requestId:setDeletePayload.requestId,
+  })).data.orderId)
+  const setDeleteOld=sql('SELECT id,quantity,unit_price,line_total,catalog_price_snapshot FROM order_items WHERE order_id=?',setDeleteId)
+  const setDeleteExchange=(await api('/api/exchanges/set','POST',{
+    orderId:setDeleteId,exchangeDate:'2026-10-20',expectedOrderTotal:10000,
+    oldItems:[{
+      orderItemId:setDeleteOld.id,quantity:1,physicalState:'not_issued',
+      expectedActiveQuantity:Number(setDeleteOld.quantity),
+      expectedUnitPrice:Number(setDeleteOld.unit_price),expectedLineTotal:Number(setDeleteOld.line_total),
+      expectedCatalogPriceSnapshot:setDeleteOld.catalog_price_snapshot,
+    }],
+    newItems:[{...setDeletePayload.items[0],color:newColor,quantity:1}],
+    paymentAmount:0,paymentMethod:'',refundMethod:'',
+    comment:'Set V2: случайно заменили товар до выдачи',
+  },{expectedStatus:201,requestId:'stability-set-delete-exchange'})).data
+  const setDeleteExchangeId=Number(setDeleteExchange.exchangeId)
+  const setDeleteReturnId=Number((await api('/api/returns','POST',{
+    orderId:setDeleteId,returnDate:'2026-10-20',amount:1000,
+    paymentMethod:'НАЛИЧКА',items:[],
+  },{expectedStatus:201,requestId:'stability-set-delete-refund'})).data.returnId)
+  const setDeletePreview=(await api('/api/orders/'+setDeleteId+'/delete-preview')).data.preview
+  assert(setDeletePreview.activeExchanges.includes(setDeleteExchangeId))
+  assert(setDeletePreview.activeReturns.includes(setDeleteReturnId))
+  console.log('MAIN_SET_V2_DELETE_PREVIEW_DIAGNOSTIC: '+JSON.stringify({
+    requiresPhysicalFact:setDeletePreview.requiresPhysicalFact,
+    canStartChain:setDeletePreview.canStartChain,
+    canPreparePhysicalCorrection:setDeletePreview.canPreparePhysicalCorrection,
+    reasons:setDeletePreview.reasons,
+    appliedStockReview:setDeletePreview.appliedStockReview,
+    manualReviewRequired:setDeletePreview.chainPlan.manualReviewRequired,
+    steps:setDeletePreview.chainPlan.steps,
+  }))
+  assert.equal(setDeletePreview.chainPlan.manualReviewRequired,false,
+    'Modern Set V2 dependency must not be misclassified as unsupported legacy')
+  assert(setDeletePreview.canStartChain || setDeletePreview.canPreparePhysicalCorrection,
+    'Modern unissued Set V2 plus money-only Return should offer an actionable, safe delete path')
+  console.log('MAIN_SET_V2_DELETE_PREVIEW_ACTIONABLE_PASSED: unissued modern exchange and refund has a safe admin deletion path')
+
   // Real manager session must have *narrow* correction authority, never
   // administrative deletion or the full editor. Test real auth cookies/roles,
   // not forged X-Access-Role headers.
