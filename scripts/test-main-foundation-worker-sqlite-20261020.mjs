@@ -31,6 +31,9 @@ if (!sqlite.prepare("SELECT 1 AS present FROM pragma_table_info('orders') WHERE 
 
 // All SQL executes against the same ephemeral in-memory SQLite handle;
 // batch is a real transactional savepoint, NOT a mocked successful write.
+// An opt-in one-shot SQL failure lets us prove how committed intermediate
+// stages recover without faking a successful business mutation.
+let failNextSqlWriteContaining = null
 function wrap(query, args = []) {
   const stmt = sqlite.prepare(query)
   return {
@@ -41,6 +44,10 @@ function wrap(query, args = []) {
       return typeof column === 'string' ? row?.[column] ?? null : row
     },
     async run() {
+      if (failNextSqlWriteContaining && query.includes(failNextSqlWriteContaining)) {
+        failNextSqlWriteContaining = null
+        throw new Error('INJECTED_NETWORK_OR_DB_FAILURE_BEFORE_WRITE')
+      }
       const outcome = stmt.columns().length > 0 ? { rows: stmt.all(...args), changes: 0, lastInsertRowid: 0 } : stmt.run(...args)
       return { success: true, results: outcome.rows || [], meta: { changes: outcome.changes || 0, last_row_id: Number(outcome.lastInsertRowid || 0) } }
     },
@@ -434,6 +441,55 @@ try {
   assert.equal(Number(finalMulti.received_amount),20000)
   assert.equal(Number(finalMulti.debt_amount),10000)
   console.log('MAIN_LEGACY_MULTI_PAIR_WORKER_SQLITE_PASSED: failed transport/retry between pairs, final-only cash, two reverse cancellations, exact SKU & money restored')
+  // Fail AFTER the Return header and refund money event were committed,
+  // BEFORE its first return_item. Retry the exact operation ID must recover
+  // and avoid double-refund / double-restocking.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-failpoint-arrival',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:1}],
+  })
+  const failedReturnOrderPayload={
+    ...orderPayload,requestId:'stability-failpoint-create',customerPhone:'77010000005',
+    items:[{...orderPayload.items[0],quantity:1}],
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:7000}],
+  }
+  const failedOrder=await api('/api/orders','POST',failedReturnOrderPayload,{
+    expectedStatus:201,requestId:failedReturnOrderPayload.requestId,
+  })
+  const failedId=Number(failedOrder.data.orderId)
+  assert(failedId>0)
+  const failedItemId=Number(sql('SELECT id FROM order_items WHERE order_id=?',failedId).id)
+  await api('/api/orders/'+failedId+'/shipping','PATCH',ship)
+  const failedReturnPayload={
+    orderId:failedId,returnDate:'2026-10-20',amount:1000,paymentMethod:'НАЛИЧКА',
+    items:[{orderItemId:failedItemId,quantity:1,restock:true,physicalState:'warehouse'}],
+  }
+  failNextSqlWriteContaining='INSERT INTO return_items'
+  const injected=await api('/api/returns','POST',failedReturnPayload,{
+    expectedStatus:500,requestId:'stability-recover-mid-return',
+  })
+  assert.equal(injected.data.ok,false)
+  assert.equal(count('returns','order_id='+failedId),1,'Return header committed before injected failure')
+  assert.equal(Number(stock().quantity),0,'Uncompleted Return must not restock physical')
+  const recovered=await api('/api/returns','POST',failedReturnPayload,{
+    expectedStatus:201,requestId:'stability-recover-mid-return',
+  })
+  const recoveredReturnId=Number(recovered.data.returnId)
+  assert(recoveredReturnId>0,'Partial Return must recover under original requestId')
+  assert.equal(count('returns','order_id='+failedId),1,'Retry cannot create duplicate refund header')
+  assert.equal(count('return_items','return_id='+recoveredReturnId),1,'Retry must create exactly one return item')
+  assert.equal(Number(stock().quantity),1,'Recovered Return must restock exactly one')
+  assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',failedId).return_amount),1000)
+  await api('/api/returns','POST',failedReturnPayload,{
+    expectedStatus:201,requestId:'stability-recover-mid-return',
+  })
+  assert.equal(Number(stock().quantity),1,'Completed Return replay must be idempotent')
+  await api('/api/returns/'+recoveredReturnId+'/cancel','PATCH',{},{
+    requestId:'stability-recover-mid-return-cancel',
+  })
+  assert.equal(Number(stock().quantity),0,'Recovered-and-cancelled Return must restore physical')
+  assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',failedId).return_amount),0)
+  console.log('MAIN_RETURN_INJECTED_FAILURE_RECOVERY_PASSED: committed header/refund before failed item, request replay preserves exactly one money/stock event and cancels safely')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
