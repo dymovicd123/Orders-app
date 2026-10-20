@@ -1100,6 +1100,32 @@ try {
     manualReviewRequired:setDeletePreview.chainPlan.manualReviewRequired,
     steps:setDeletePreview.chainPlan.steps,
   }))
+  console.log('MAIN_SET_V2_DELETE_EVENT_DIAGNOSTIC: '+JSON.stringify(sql(
+    `SELECT le.id AS event_id,le.order_item_id,le.operation_id,le.operation_type,
+       le.event_type,le.direction,le.quantity,le.variant_id,le.inventory_source,
+       le.movement_id,le.applied_at,
+       ex.status AS ex_status,ei.id AS exchange_item_id,ei.role AS exchange_role,
+       ei.quantity AS exchange_qty,ei.physical_tracking,ei.physical_received_at,
+       oi.quantity AS active_qty,oi.stock_writeoff_status,
+       r.id AS reserve_id,r.status AS reserve_status,r.quantity AS reserve_qty,
+       r.variant_id AS reserve_variant_id,r.inventory_source AS reserve_source,r.fulfilled_at,
+       m.quantity_delta AS movement_delta,m.quantity_after AS movement_after,
+       m.movement_type AS movement_type,m.reference_type AS movement_reference_type,
+       m.reference_id AS movement_reference_id,
+       (SELECT COUNT(*) FROM inventory_movements newer WHERE newer.variant_id=le.variant_id
+         AND newer.inventory_source=le.inventory_source AND newer.id>le.movement_id) AS later_movements,
+       (SELECT st.quantity FROM inventory_stock st WHERE st.variant_id=le.variant_id
+         AND st.inventory_source=le.inventory_source LIMIT 1) AS current_physical,
+       (SELECT st.reserved_quantity FROM inventory_stock st WHERE st.variant_id=le.variant_id
+         AND st.inventory_source=le.inventory_source LIMIT 1) AS current_reserved
+     FROM inventory_lifecycle_events le
+     LEFT JOIN exchanges ex ON ex.id=le.operation_id AND ex.order_id=le.order_id
+     LEFT JOIN exchange_items ei ON ei.id=le.operation_item_id AND ei.exchange_id=ex.id
+     LEFT JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=le.order_id
+     LEFT JOIN inventory_reservations r ON r.order_item_id=le.order_item_id AND r.order_id=le.order_id
+     LEFT JOIN inventory_movements m ON m.id=le.movement_id
+     WHERE le.order_id=? AND le.status='applied' LIMIT 1`,setDeleteId
+  )))
   assert.equal(setDeletePreview.chainPlan.manualReviewRequired,false,
     'Modern Set V2 dependency must not be misclassified as unsupported legacy')
   assert(setDeletePreview.canStartChain || setDeletePreview.canPreparePhysicalCorrection,
