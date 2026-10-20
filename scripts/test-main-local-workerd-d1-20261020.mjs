@@ -36,11 +36,34 @@ try {
     const flat=source.split(/\r?\n/).map(line=>
       line.trimStart().startsWith('--') ? '' : line.replace(/\s+--[^\n]*$/, '')
     ).join(' ').replace(/\s+/g,' ').trim()
+    // Fresh-install-only rewrite of historical manager rebuild. The original
+    // ALTER managers -> managers_step126_old causes SQLite/D1 to retarget ALL
+    // other tables' FKs to the temporary name, then DROP leaves dangling FKs.
+    // Instead create the replacement under a new name, COPY, DROP old manager
+    // table, and RENAME replacement to the canonical name. Every referencing
+    // table keeps its original REFERENCES managers FK throughout.
+    // Never apply this override to an existing user database or historical data.
+    let migrated=flat
+    if(file==='0035_v72_team_identity_colors.sql') {
+      const before=await db.prepare("SELECT COUNT(*) AS n FROM orders").first()
+      assert.equal(Number(before?.n),0,'Manager fresh-install strategy is NOT safe on databases holding real orders')
+      assert(migrated.includes('ALTER TABLE managers RENAME TO managers_step126_old;'))
+      assert(migrated.includes('CREATE TABLE managers ('))
+      assert(migrated.includes('FROM managers_step126_old old;'))
+      assert(migrated.includes('DROP TABLE managers_step126_old;'))
+      migrated=migrated
+        .replace('ALTER TABLE managers RENAME TO managers_step126_old;', '')
+        .replace('CREATE TABLE managers (','CREATE TABLE managers_step126_new (')
+        .replace('FROM managers_step126_old old;','FROM managers old;')
+        .replace('DROP TABLE managers_step126_old;',
+          'DROP TABLE managers; ALTER TABLE managers_step126_new RENAME TO managers;')
+      console.warn('LOCAL_WORKERD_D1_FRESH_MANAGER_REBUILD: preserving canonical manager FK target; NOT a migration replacement/deployment')
+    }
     // Historical migrations contain explicit transaction control from ordinary
     // SQLite. D1 explicitly forbids BEGIN/COMMIT through its Worker API. Seed
     // the disposable fixture without these wrappers ONLY, and flag this
     // migration-parity gap; never rewrite the checked-in SQL migrations.
-    const withoutTransactions=flat.replace(/\bBEGIN\s+TRANSACTION\s*;/gi,'').replace(/\bCOMMIT\s*;/gi,'')
+    const withoutTransactions=migrated.replace(/\bBEGIN\s+TRANSACTION\s*;/gi,'').replace(/\bCOMMIT\s*;/gi,'')
     if(withoutTransactions!==flat) console.warn('LOCAL_WORKERD_D1_TRANSACTION_GAP: '+file+' needs D1-aware transaction migration review')
     // Cloudflare D1 Worker API disallows SQLite TEMP-schema creation. Historical
     // migration scratch tables are dropped before their migration completes;
