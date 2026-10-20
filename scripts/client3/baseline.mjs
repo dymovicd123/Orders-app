@@ -30,6 +30,12 @@ export function consolidateMigrations(directory,filenames){
    const body=fs.readFileSync(path.join(directory,filename),'utf8')
    try{source.exec(body)}catch(e){throw Error('Offline baseline source '+filename+' failed: '+e)}
   }
+  // Current production reads historical manager snapshots, but this column was
+  // introduced operationally outside the archived migration set. It must exist
+  // on every NEW tenant as well, otherwise GET /api/orders returns HTTP 500.
+  const orderColumns=source.prepare('PRAGMA table_info(orders)').all().map(x=>x.name)
+  if(!orderColumns.includes('manager_snapshot_name'))
+    source.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
   const bad=source.prepare('PRAGMA foreign_key_check').all()
   if(bad.length)throw Error('Historical schema itself has '+bad.length+' FK errors')
   const o=ownObjects(source)
