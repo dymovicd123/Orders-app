@@ -71,3 +71,7 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Client3 real Worker plus ephemeral local D1 API smoke
+        if: ${{ startsWith(github.head_ref, 'client3/') }}
+        run: node scripts/client3/test-runtime-local.mjs
