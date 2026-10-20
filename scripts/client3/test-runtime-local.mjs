@@ -162,6 +162,46 @@ try{
  assert.equal(activeItems.length,1,'Exchange did not replace one active line exactly once: '+JSON.stringify(activeItems).slice(0,550))
  assert.equal(activeItems[0].productName||activeItems[0].product_name_snapshot,'CLIENT3_SMOKE_REPLACEMENT','Exchange did not install replacement item')
  console.log('CLIENT3_REAL_WORKER_EXCHANGE_NO_MONEY_AND_REPLAY_PASSED: correct active item and debt preserved')
+ // Cancel the exchange and verify exact restoration of the old item, settled money
+ // and the Workshop task. Repeating cancellation must not revive extra quantities.
+ const exchangePlan=await get('/api/orders/'+debtOrderId+'/exchange-cancel-chain',authenticated)
+ assert.equal(exchangePlan.status,200,'Exchange cancel preview failed: '+exchangePlan.body.slice(0,900))
+ const activeExchanges=JSON.parse(exchangePlan.body).availableExchangeIds||[]
+ assert.equal(activeExchanges.length,1,'Expected one active exchange to cancel')
+ const cancelExchangeBody={requestId:'ac19d0ce-2026-40be-9000-000000000a40',comment:'client3 isolated cancellation fixture'}
+ const undoExchange=()=>get('/api/exchanges/'+activeExchanges[0]+'/cancel',{method:'PATCH',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':cancelExchangeBody.requestId},
+   body:JSON.stringify(cancelExchangeBody)})
+ const exchangeCancelled=await undoExchange()
+ assert.equal(exchangeCancelled.status,200,'Exchange cancellation failed: '+exchangeCancelled.body.slice(0,1100)+' logs '+log.slice(-1800))
+ const exchangeCancelReplay=await undoExchange()
+ assert.equal(exchangeCancelReplay.status,200,'Exchange cancellation retry failed: '+exchangeCancelReplay.body.slice(0,800))
+ const restoredOrder=JSON.parse((await get('/api/orders/'+debtOrderId,authenticated)).body).order
+ const restoredItems=(restoredOrder.items||[]).filter(x=>Number(x.quantity)>0)
+ assert.equal(restoredItems.length,1,'Exchange cancellation failed to restore exactly one original item')
+ assert.equal(Number(restoredItems[0].id),Number(oldLine.id),'Exchange cancellation restored wrong item')
+ assert.equal(Number(restoredOrder.total_amount),10000,'Cancellation corrupted total')
+ assert.equal(Number(restoredOrder.received_amount),3500,'Cancellation corrupted inbound funds')
+ assert.equal(Number(restoredOrder.debt_amount),6500,'Cancellation corrupted debt')
+ console.log('CLIENT3_REAL_WORKER_EXCHANGE_CANCEL_AND_REPLAY_PASSED: original item restored, money unchanged')
+ // Cancel a money-only return. The refund reversal must be reflected in history,
+ // without a new payment or a stock movement.
+ const returnOptions=await get('/api/orders/'+orderId+'/return-cancel-choices',authenticated)
+ assert.equal(returnOptions.status,200,'Return cancel choices failed: '+returnOptions.body.slice(0,800))
+ const returnChoice=(JSON.parse(returnOptions.body).choices||[]).find(x=>Number(x.amount)===2500)
+ assert(returnChoice?.id>0,'Money-only return ID missing from order history')
+ const cancelReturnBody={requestId:'ac19d0ce-2026-40be-9000-000000000a41',comment:'client3 isolated refund reversal fixture'}
+ const undoReturn=()=>get('/api/returns/'+returnChoice.id+'/cancel',{method:'PATCH',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':cancelReturnBody.requestId},
+   body:JSON.stringify(cancelReturnBody)})
+ const returnCancelled=await undoReturn()
+ assert.equal(returnCancelled.status,200,'Return cancel failed: '+returnCancelled.body.slice(0,1100)+' logs '+log.slice(-1800))
+ const returnCancelRetry=await undoReturn()
+ assert.equal(returnCancelRetry.status,200,'Return cancel retry failed: '+returnCancelRetry.body.slice(0,850))
+ const unrefunded=JSON.parse((await get('/api/orders/'+orderId,authenticated)).body).order
+ assert.equal(Number(unrefunded.return_amount),0,'Refund cancellation left return amount')
+ assert.equal(Number(unrefunded.received_amount),10000,'Refund cancellation forged a new incoming payment')
+ console.log('CLIENT3_REAL_WORKER_RETURN_CANCEL_AND_REPLAY_PASSED: money-only refund reversed exactly once')
  // Exercise real Warehouse physical stock, canonical SKU, reservations, shipping,
  // repeated shipping, return-to-stock and repeated return on the local third D1.
  const stockName='CLIENT3_SMOKE_WAREHOUSE_SKU'
