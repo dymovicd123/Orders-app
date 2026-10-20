@@ -179,7 +179,7 @@ try{
  assert([200,201].includes(secondArrival.status),'Arrival retry failed: '+secondArrival.body.slice(0,800))
  const inventory=async()=>JSON.parse((await get('/api/inventory?source=warehouse',authenticated)).body)
  const readStock=async()=>{const result=await inventory()
-   const found=(result.items||[]).filter(x=>x.productName===stockName&&x.source==='warehouse')
+   const found=(result.items||[]).filter(x=>x.productName===stockName&&x.inventorySource==='warehouse')
    assert.equal(found.length,1,'Expected exactly one stock row for '+stockName+': '+JSON.stringify((result.items||[]).slice(0,5)))
    return found[0]}
  const stocked=await readStock()
