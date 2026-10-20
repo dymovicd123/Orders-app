@@ -443,7 +443,28 @@ try {
   assert.equal(Number(refunded.n),1,'Two independent refunds cannot both succeed: '+JSON.stringify(concurrentReturnResults))
   assert.equal(Number(refunded.amount),10000,'Total refund must not exceed paid money')
   assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',refundOrderId)).return_amount),10000)
-  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_MONEY_REFUND_PASSED: independent simultaneous refunds cannot exceed received funds')
+  assert.equal(concurrentReturnResults.filter(x=>x.status===201).length,1,'Exactly one money Return must succeed')
+  assert(concurrentReturnResults.some(x=>[409,503].includes(x.status)),'Second Return must be rejected cleanly')
+  const winningRefund=concurrentReturnResults.find(x=>x.status===201)
+  const winningRefundId=Number(winningRefund.data.returnId)
+  const refundedByA=concurrentReturnResults[0].status===201
+  const retryWinner=await concurrentRefund(refundedByA?'workerd-refund-staff-a':'workerd-refund-staff-b')
+  assert.equal(retryWinner.status,201)
+  assert.equal(Number(retryWinner.data.returnId),winningRefundId)
+  const retryLoser=await concurrentRefund(refundedByA?'workerd-refund-staff-b':'workerd-refund-staff-a')
+  assert.equal(retryLoser.status,409,'Repeated distinct refund must remain rejected while funds unavailable')
+  const moneyEvents=(await db.prepare(
+    "SELECT event_type,amount_delta FROM financial_events WHERE order_id=? AND event_type='order_refund'"
+  ).bind(refundOrderId).all()).results
+  assert.equal(moneyEvents.length,1,'Only one completed Return should create an outgoing money event')
+  assert.equal(Number(moneyEvents[0].amount_delta),-10000)
+  await call('/api/returns/'+winningRefundId+'/cancel','PATCH',{},200,'workerd-refund-cancel-winner')
+  assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',refundOrderId)).return_amount),0)
+  const afterCancel=await concurrentRefund(refundedByA?'workerd-refund-staff-b':'workerd-refund-staff-a')
+  assert.equal(afterCancel.status,201,'After cancelling first refund remaining paid funds may be refunded by second request')
+  assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',refundOrderId)).return_amount),10000)
+  assert.equal(Number((await sql("SELECT COUNT(*) AS n FROM returns WHERE order_id=? AND status<>'cancelled'",refundOrderId)).n),1)
+  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_MONEY_REFUND_PASSED: 1/2 simultaneous money Return, one finance event, safe replay/retry, cancellation restores refund capacity')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
