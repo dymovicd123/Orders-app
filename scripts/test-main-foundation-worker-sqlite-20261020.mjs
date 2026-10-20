@@ -490,6 +490,74 @@ try {
   assert.equal(Number(stock().quantity),0,'Recovered-and-cancelled Return must restore physical')
   assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',failedId).return_amount),0)
   console.log('MAIN_RETURN_INJECTED_FAILURE_RECOVERY_PASSED: committed header/refund before failed item, request replay preserves exactly one money/stock event and cancels safely')
+  // REGRESSION: partial LEGACY exchange of an UNISSUED old line (quantity 2).
+  // It must free ONE unit of that line's reserve, never the other unissued unit.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-legacy-unissued-stock',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,material:'СТАНДАРТ',
+      length:'СТАНДАРТ',size,quantity:4}],
+  })
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-legacy-unissued-replacement',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',color:newColor,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  const unissuedPayload={
+    ...legacyCreatePayload,requestId:'stability-unissued-two-old',customerPhone:'77010000006',
+    orderTotal:20000,
+    items:[{...legacyCreatePayload.items[0],quantity:2}],payments:[],
+  }
+  const unissuedOrder=await api('/api/orders','POST',unissuedPayload,{
+    expectedStatus:201,requestId:unissuedPayload.requestId,
+  })
+  const unissuedId=Number(unissuedOrder.data.orderId)
+  const unissuedItem=sql('SELECT id,quantity FROM order_items WHERE order_id=?',unissuedId)
+  const oldReservation=()=>sql('SELECT id,quantity,status FROM inventory_reservations WHERE order_item_id=?',unissuedItem.id)
+  const beforeOldPhysical=Number(stock().quantity)
+  const beforeReplacementPhysical=Number(newStock().quantity)
+  const beforeOldReserved=Number(stock().reserved_quantity)
+  assert.equal(oldReservation().status,'active')
+  assert.equal(Number(oldReservation().quantity),2)
+  assert(beforeOldReserved>=2)
+  const partialLegacyInput={
+    orderId:unissuedId,exchangeDate:'2026-10-20',
+    oldItemId:unissuedItem.id,oldQuantity:1,
+    oldPhysicalState:'not_issued',oldReturnSource:'none',
+    newItem:{...legacyCreatePayload.items[0],color:newColor,quantity:1},
+    financialAction:'none',financialAmount:0,paymentMethod:'',
+    comment:'Частичный обмен невыданной вещи: 2 старые, одна заменяется',
+  }
+  const partial=await api('/api/exchanges','POST',partialLegacyInput,{
+    expectedStatus:201,requestId:'stability-unissued-partial-one',
+  })
+  const partialExchangeId=Number(partial.data.exchangeId)
+  assert(partialExchangeId>0)
+  assert.equal(Number(sql('SELECT quantity FROM order_items WHERE id=?',unissuedItem.id).quantity),1)
+  assert.equal(Number(stock().quantity),beforeOldPhysical,'Unissued old item must not alter Physical')
+  assert.equal(Number(newStock().quantity),beforeReplacementPhysical-1,'New item consumes one exact SKU')
+  assert.equal(oldReservation().status,'active','Remaining old unit MUST retain active reservation')
+  assert.equal(Number(oldReservation().quantity),1,'Remaining old unit MUST retain exact quantity 1')
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved-1,'Only one reserved old unit must be freed')
+  await api('/api/exchanges','POST',partialLegacyInput,{
+    expectedStatus:201,requestId:'stability-unissued-partial-one',
+  })
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved-1,'Retry must not release twice')
+  assert.equal(Number(oldReservation().quantity),1)
+  const undonePartial=await api('/api/exchanges/'+partialExchangeId+'/cancel','PATCH',{},{
+    requestId:'stability-unissued-partial-undo',
+  })
+  assert(undonePartial.data.ok)
+  assert.equal(Number(sql('SELECT quantity FROM order_items WHERE id=?',unissuedItem.id).quantity),2)
+  assert.equal(oldReservation().status,'active')
+  assert.equal(Number(oldReservation().quantity),2)
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved)
+  assert.equal(Number(stock().quantity),beforeOldPhysical)
+  assert.equal(Number(newStock().quantity),beforeReplacementPhysical)
+  await api('/api/exchanges/'+partialExchangeId+'/cancel','PATCH',{},{
+    requestId:'stability-unissued-partial-undo',
+  })
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved)
+  console.log('MAIN_LEGACY_PARTIAL_UNISSUED_RESERVE_PASSED: 2->1 active reserve, no old physical writeoff, full cancel 1->2, retries harmless')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
