@@ -206,6 +206,37 @@ try {
   assert.equal(Number(stock().reserved_quantity),0,'Post-check shipping must close exactly one active reservation')
   await api('/api/orders/'+secondId+'/shipping','PATCH',ship)
   assert.equal(Number(stock().quantity),0,'Post-check shipment replay must be idempotent')
+  // REAL standalone return: already-shipped SKU, exact received-back stock,
+  // money refund and full cancellation. Replays must never duplicate +1 or -1.
+  const returnPayload = {
+    orderId, returnDate:'2026-10-20', amount:1000,
+    paymentMethod:'НАЛИЧКА', comment:'Изолированный возврат, проверка отмены',
+    items:[{orderItemId:item.id,quantity:1,restock:true,physicalState:'warehouse'}],
+  }
+  const returned = await api('/api/returns','POST',returnPayload,{expectedStatus:201,requestId:'stability-return-one'})
+  const returnId=Number(returned.data.returnId)
+  assert(returnId>0,'Return ID required')
+  assert.equal(Number(stock().quantity),1,'Returning one physically received SKU adds exactly one')
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',returnId).status,'completed')
+  assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',orderId).return_amount),1000)
+  await api('/api/returns','POST',returnPayload,{expectedStatus:201,requestId:'stability-return-one'})
+  assert.equal(Number(stock().quantity),1,'Return replay may not duplicate arrival')
+  assert.equal(count('returns','order_id='+orderId+' AND status=\'completed\''),1)
+  const cancellation=await api('/api/returns/'+returnId+'/cancel','PATCH',{
+    comment:'Проверка отката на синтетическом товаре',
+  },{requestId:'stability-return-cancel'})
+  assert(cancellation.data.ok,'Return cancellation failed')
+  assert.equal(Number(stock().quantity),0,'Cancelled physical Return must reverse stock exactly once')
+  assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',orderId).return_amount),0,'Return cancellation must restore refunded amount')
+  await api('/api/returns/'+returnId+'/cancel','PATCH',{
+    comment:'Проверка отката на синтетическом товаре',
+  },{requestId:'stability-return-cancel'})
+  assert.equal(Number(stock().quantity),0,'Return cancellation replay may not decrement again')
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',returnId).status,'cancelled')
+  assert.equal(actualOrder().total_amount,20000)
+  assert.equal(actualOrder().received_amount,5000)
+  assert.equal(actualOrder().debt_amount,15000)
+  console.log('MAIN_RETURN_CANCEL_WORKER_SQLITE_PASSED: physical +1 then -1, cash refund/reversal, duplicate create/cancel, original total/payment/debt preserved')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
