@@ -31,7 +31,7 @@ if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
   // Both independent PR CI jobs ALWAYS execute the live SQLite/D1 acceptance
   // on the actual candidate; a historical trimmed-schema replay must not
   // mislabel this expected missing migration as a product failure.
-  const migrationCount=fs.readdirSync('migrations').filter(x=>/^\\d+.*\\.sql$/.test(x)).length
+  const migrationCount=fs.readdirSync('migrations').filter(x=>/^\d+.*\.sql$/.test(x)).length
   if(migrationCount>=110) {
     run(process.execPath,['--experimental-strip-types','scripts/test-main-foundation-worker-sqlite-20261020.mjs'])
     run(process.execPath,['--experimental-strip-types','scripts/test-main-local-workerd-d1-20261020.mjs'])
