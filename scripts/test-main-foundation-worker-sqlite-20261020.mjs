@@ -969,6 +969,68 @@ try {
   assert.equal(count('returns','id='+Number(linkedRefund.returnId)),1)
   console.log('MAIN_DELETE_RETURN_CHAIN_SAGA_PASSED: canceled completed money-only Return, finalized parent order, released exact reserve, repeat-safe across multiple HTTP calls')
 
+  // Complex deletion boundary: an unissued item can be exchanged in the
+  // system before a client actually receives its replacement. The Exchange
+  // records an outbound Physical movement. A later standalone refund makes
+  // this a two-dependency chain. NEVER silently reverse either operation
+  // without the administrator reconciling the handover marker.
+  const complexPayload={
+    ...editorPayload,requestId:'stability-complex-order-create',customerPhone:'77010000904',
+  }
+  const complexCreated=(await api('/api/orders','POST',complexPayload,{
+    expectedStatus:201,requestId:complexPayload.requestId,
+  })).data
+  const complexId=Number(complexCreated.orderId)
+  const complexLine=sql('SELECT id,quantity FROM order_items WHERE order_id=?',complexId)
+  const complexExchange=(await api('/api/exchanges','POST',{
+    orderId:complexId,exchangeDate:'2026-10-20',
+    oldItemId:complexLine.id,oldQuantity:1,oldPhysicalState:'not_issued',oldReturnSource:'none',
+    newItem:{...complexPayload.items[0],color:newColor,quantity:1},
+    financialAction:'none',financialAmount:0,paymentMethod:'',
+    comment:'До передачи клиенту ошибочно зарегистрировали замену',
+  },{expectedStatus:201,requestId:'stability-complex-exchange'})).data
+  const complexExchangeId=Number(complexExchange.exchangeId)
+  assert(complexExchangeId>0)
+  const complexRefund=(await api('/api/returns','POST',{
+    orderId:complexId,returnDate:'2026-10-20',amount:1000,
+    paymentMethod:'НАЛИЧКА',items:[],
+  },{expectedStatus:201,requestId:'stability-complex-money-return'})).data
+  const complexReturnId=Number(complexRefund.returnId)
+  assert(complexReturnId>0)
+  const complexPreview=(await api('/api/orders/'+complexId+'/delete-preview')).data.preview
+  assert(complexPreview.activeExchanges.includes(complexExchangeId))
+  assert(complexPreview.activeReturns.includes(complexReturnId))
+  assert.equal(complexPreview.canAttemptDelete,false)
+  assert.equal(complexPreview.canStartChain,false,'Recorded exchange outbound requires physical reconciliation first')
+  const complexBefore={
+    oldPhysical:Number(stock().quantity),newPhysical:Number(newStock().quantity),
+    oldReserved:Number(stock().reserved_quantity),newReserved:Number(newStock().reserved_quantity),
+    paid:Number(sql('SELECT received_amount FROM orders WHERE id=?',complexId).received_amount),
+    refunded:Number(sql('SELECT return_amount FROM orders WHERE id=?',complexId).return_amount),
+    financialEventCount:count('financial_events','order_id='+complexId),
+  }
+  const invalidDeleteRequest={
+    expectedSnapshot:complexPreview.chainPlan.snapshotFingerprint,
+    requestId:'stability-complex-direct-delete-block',
+  }
+  await api('/api/orders/'+complexId+'/delete','POST',invalidDeleteRequest,{
+    expectedStatus:409,requestId:invalidDeleteRequest.requestId,
+  })
+  await api('/api/orders/'+complexId+'/delete-chain','POST',{
+    ...invalidDeleteRequest,requestId:'stability-complex-unreviewed-chain',
+  },{expectedStatus:409,requestId:'stability-complex-unreviewed-chain'})
+  assert.equal(sql('SELECT order_status FROM orders WHERE id=?',complexId).order_status,'active')
+  assert.equal(sql('SELECT status FROM exchanges WHERE id=?',complexExchangeId).status,'completed')
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',complexReturnId).status,'completed')
+  assert.deepEqual({
+    oldPhysical:Number(stock().quantity),newPhysical:Number(newStock().quantity),
+    oldReserved:Number(stock().reserved_quantity),newReserved:Number(newStock().reserved_quantity),
+    paid:Number(sql('SELECT received_amount FROM orders WHERE id=?',complexId).received_amount),
+    refunded:Number(sql('SELECT return_amount FROM orders WHERE id=?',complexId).return_amount),
+    financialEventCount:count('financial_events','order_id='+complexId),
+  },complexBefore,'Unsafe deletion attempts must not change physical/reservations/money')
+  console.log('MAIN_DELETE_EXCHANGE_AND_RETURN_GUARD_PASSED: linked Exchange and money Return both preserved; unreviewed delete/chain denied without stock or money drift')
+
   // Real manager session must have *narrow* correction authority, never
   // administrative deletion or the full editor. Test real auth cookies/roles,
   // not forged X-Access-Role headers.
