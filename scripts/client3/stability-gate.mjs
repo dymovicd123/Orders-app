@@ -37,12 +37,14 @@ const scripts=[
   "test-finance-f6-release-audit.mjs",
   "test-stage01-return-exchange-downstream-semantics-r19.mjs"
 ]
+const failures=[]
 for(const script of scripts){
  const path=script.startsWith('../client3/') ? 'scripts/client3/'+script.split('/').at(-1) : 'scripts/'+script
- if(!existsSync(path))throw Error('Missing high-risk regression: '+path)
+ if(!existsSync(path)){failures.push('missing '+path);continue}
  const r=spawnSync(process.execPath,[path],{stdio:'inherit',encoding:'utf8',maxBuffer:24*1024*1024})
- if(r.error||r.status!==0)throw Error('Client3 high-risk regression failed: '+path+' (exit '+r.status+')')
+ if(r.error||r.status!==0)failures.push(path+' (exit '+r.status+')')
 }
+if(failures.length)throw Error('Client3 high-risk regressions failed ('+failures.length+'): '+failures.join(', '))
 const extra=spawnSync(process.execPath,['scripts/verify-database-safety.mjs'],{stdio:'inherit'})
 if(extra.error||extra.status!==0)throw Error('Client3 database guard failed')
 console.log('CLIENT3_STABILITY_GATE_PASSED — '+scripts.length+' resolver/exchange/payment/stock/auth regressions + DB safety')
