@@ -182,6 +182,36 @@ try {
   assert.equal(Number((await stock()).quantity),1)
   assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',orderId)).return_amount),0)
 
+  // Delayed physical intake: a Return was registered while correctly
+  // fulfilled, but its reservation becomes wrongly active before later
+  // warehouse receipt. Guard must re-evaluate at RECEIVE, not only CREATE.
+  const deferred=(await call('/api/returns','POST',{
+    orderId,returnDate:'2026-10-20',amount:0,
+    items:[{orderItemId:firstLine.id,quantity:1,physicalState:'pending',restock:false}],
+  },201,'workerd-late-return-register')).data
+  const deferredId=Number(deferred.returnId)
+  assert(deferredId>0)
+  const deferredLine=await sql('SELECT id,physical_received_at FROM return_items WHERE return_id=?',deferredId)
+  assert(deferredLine.id && !deferredLine.physical_received_at)
+  const originalReservation=await sql('SELECT id,status FROM inventory_reservations WHERE order_item_id=?',firstLine.id)
+  assert.equal(originalReservation.status,'fulfilled')
+  await db.prepare("UPDATE inventory_reservations SET status='active',fulfilled_at=NULL WHERE id=?").bind(originalReservation.id).run()
+  await db.prepare("UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE inventory_source='warehouse' AND variant_id=?").bind(variantId).run()
+  const physicalBeforeDelayed=Number((await stock()).quantity)
+  const reservedBeforeDelayed=Number((await stock()).reserved_quantity)
+  await call('/api/returned-items/receive','POST',{
+    operationType:'return',operationId:deferredId,operationItemId:deferredLine.id,
+    destination:'warehouse',requestId:'workerd-late-return-receive',
+  },409)
+  assert.equal(Number((await stock()).quantity),physicalBeforeDelayed,'Late inconsistent intake cannot credit Physical')
+  assert.equal(Number((await stock()).reserved_quantity),reservedBeforeDelayed)
+  assert.equal((await sql('SELECT physical_received_at FROM return_items WHERE id=?',deferredLine.id)).physical_received_at,null)
+  // Restore only this artificial test fixture before unrelated follow-up tests.
+  await db.prepare("UPDATE inventory_reservations SET status='fulfilled',fulfilled_at='2026-10-20T00:00:00.000Z' WHERE id=?").bind(originalReservation.id).run()
+  await db.prepare("UPDATE inventory_stock SET reserved_quantity=reserved_quantity-1 WHERE inventory_source='warehouse' AND variant_id=?").bind(variantId).run()
+  assert.equal(Number((await stock()).reserved_quantity),0)
+  console.log('MAIN_LOCAL_WORKERD_D1_LATE_RECEIPT_GUARDED: pre-existing pending physical Return refused if a live reservation later reappears')
+
   // Partial legacy unissued swap on actual D1: 2->1 active reserve, cancel
   // restores 2. A second exact SKU must depart and return only once.
   const colorNew='БЕЛЫЙ'
