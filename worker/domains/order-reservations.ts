@@ -2605,7 +2605,31 @@ export async function fulfillOrderReservationsV2(
     ).bind(options.shippingDate, timestamp, orderId));
   }
 
-  const results = statements.length ? await db.batch(statements) : [];
+  let results: D1Result<unknown>[] = [];
+  try {
+    results = statements.length ? await db.batch(statements) : [];
+  } catch (error) {
+    if (stockConfirmationOperation === 'handover' && handoverOrderItemId) {
+      // Two employees may both see the same active reservation before the
+      // first commits. Our inside-batch conflict guard intentionally rolls
+      // the second write back. If the exact reservation is now fulfilled,
+      // report a normal stale-action conflict, not a technical HTTP 500.
+      // Only reclassify AFTER checking committed current truth; leave genuine
+      // D1 failures untouched.
+      const current = await db.prepare(
+        `SELECT status FROM inventory_reservations
+         WHERE order_id = ? AND order_item_id = ?
+         ORDER BY id DESC LIMIT 1`
+      ).bind(orderId, handoverOrderItemId).first<{ status: string }>();
+      if (cleanText(current?.status) === 'fulfilled') {
+        const conflict = new Error('Эту вещь уже выдал другой сотрудник. Остаток повторно не списан. Обновите заказ.') as Error & { status: number; code: string };
+        conflict.status = 409;
+        conflict.code = 'order_item_already_issued';
+        throw conflict;
+      }
+    }
+    throw error;
+  }
   const shippingCommitted = shippingStatementIndex >= 0 && toInt(results[shippingStatementIndex]?.meta?.changes, 0) > 0;
   return {
     fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,
