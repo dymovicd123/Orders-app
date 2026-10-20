@@ -1,6 +1,16 @@
 # Client3 / former client — clean, isolated, support-light release
 
-**State (2026-10-20):** stabilization candidate in the `client3/isolated-stabilization-20261020` branch. **Not deployed and not approved for handoff**. Do not merge this tenant-specific auth change into active customer `main`.
+**State (2026-10-20):** third Cloudflare installation **deployed with a NEW empty D1** from isolated branch `client3/isolated-stabilization-20261020`; **first-admin bootstrap remains LOCKED until a unique Cloudflare Worker secret is provided**. Not yet approved for customer handoff. Never merge tenant-specific code into the active customer's `main`.
+
+## Actual third-tenant deployment (2026-10-20)
+
+- Cloudflare Worker: `orders-app-client3-old-client` at https://orders-app-client3-old-client.orders-clothes.workers.dev
+- Newly created Cloudflare D1: `orders_db_client3_old_client` (not a clone of production or branch2).
+- [Remote install and zero-business-data / FK verification](https://github.com/dymovicd123/Orders-app/actions/runs/39426811326): successful, including consolidated D1 migration, isolated Worker deployment, 31 regression checks and live local API flows.
+- [Real public smoke](https://github.com/dymovicd123/Orders-app/actions/runs/39427236205): successful HTTP 200 for site and health; anonymous Orders/Payments/Catalog rejected with HTTP 401.
+- `main` and `branch2` were not deployed or mutated by Client3 installation.
+- **Outstanding before first-admin setup:** add a NEW Cloudflare Worker secret `ADMIN_MODE_PASSWORD`, at least 16 strong characters, scoped ONLY to `orders-app-client3-old-client`. Do not copy existing tenants' credentials, store secrets in GitHub code/artifacts/logs or enable public admin APIs.
+- **Outstanding before handoff:** create first admin, validate actual browser login and admin/manager controls, complete real remote-tenant fixture E2E, then ensure every fixture is removed or recreate only the third database. No claim of bug-free or fully accepted release.
 
 ## Scope and rules
 - **Existing customer main:** Worker `orders-app` / D1 `orders_db_prod`. **Do not touch its data or configuration.**
@@ -46,7 +56,7 @@ Four **obsolete historical UI assertions** were excluded from the Client3 gate b
 
 **Remaining release risks (not yet proven by this suite):** end-to-end batch exchange with multiple old/new SKUs; real concurrent multi-browser load and lost network acknowledgement; historic linked Return/Exchange chains; all navigation/mobile UI; full stocktake under simultaneous sales; third Cloudflare account/remote Worker binding and prod-like D1 performance. An empty tenant avoids old damaged customer records, **not all potential application bugs**. Do not promise a bug-free release.
 
-## Independent installation procedure (explicit human-approved execution only)
+## Independent installation procedure (historical first-install guide; installation now complete)
 
 1. Check out `client3/isolated-stabilization-20261020` (do **not** deploy `main` or `branch2`).
 2. Run `npm ci`, `node scripts/client3/test-fresh.mjs`, `node scripts/client3/stability-gate.mjs`, `npm run typecheck`, `npm run build`.
