@@ -12,10 +12,11 @@ import {spawnSync} from 'node:child_process'
 // Worker domain. All old gates execute against exact original MAIN bytes.
 // Candidate must separately pass real API/D1 behavior, typecheck and build.
 if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
-  const filename='worker/domains/returns-exchanges.ts'
+  const files=[
+    ['worker/domains/returns-exchanges.ts','c10b1e68928efe742940499e5b4c9b4375ece72e','eaa17e1e8518b2cf92b62bdd456b3b98bf1e40f1'],
+    ['worker/domains/order-reservations.ts','00d18e4d2e0964bcd9f912aade1fd285399076a0','14a8445bd28dc4d293ad93411887c381083afc80'],
+  ]
   const approvedMain='b2648e849dbeed9730650848823449cfecb72ce5'
-  const oldBlob='c10b1e68928efe742940499e5b4c9b4375ece72e'
-  const candidateBlob='eaa17e1e8518b2cf92b62bdd456b3b98bf1e40f1'
   const {createHash}=await import('node:crypto')
   const gitHash=bytes=>createHash('sha1')
     .update(Buffer.from('blob '+bytes.length+'\0'))
@@ -24,8 +25,11 @@ if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
     const x=spawnSync(binary,args,{stdio:'inherit',shell:false,env,maxBuffer:32*1024*1024})
     if(x.error||x.status!==0) throw new Error('Stability audit gate failed: '+binary+' '+args.join(' ')+' code='+x.status)
   }
-  const candidate=fs.readFileSync(filename)
-  if(gitHash(candidate)!==candidateBlob)throw new Error('Unreviewed order Return/Exchange runtime: '+filename)
+  const candidates=new Map(files.map(([name,,sha])=>{
+    const bytes=fs.readFileSync(name)
+    if(gitHash(bytes)!==sha)throw new Error('Unreviewed order Return/Reservation runtime: '+name)
+    return [name,bytes]
+  }))
   // Stage04's original historical gate temporarily hides old schema files.
   // A fresh 112-migration fixture is meaningful only with the complete tree.
   // Both independent PR CI jobs ALWAYS execute the live SQLite/D1 acceptance
@@ -41,19 +45,22 @@ if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
   run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
   run(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
   try {
-    if(spawnSync('git',['cat-file','-e',approvedMain+':'+filename],{stdio:'ignore'}).status!==0)
+    if(spawnSync('git',['cat-file','-e',approvedMain+':worker/domains/returns-exchanges.ts'],{stdio:'ignore'}).status!==0)
       run('git',['fetch','--no-tags','--depth=1','origin',approvedMain])
-    const previous=spawnSync('git',['show',approvedMain+':'+filename],{encoding:null,maxBuffer:32*1024*1024})
-    if(previous.error||previous.status!==0||gitHash(previous.stdout)!==oldBlob)
-      throw new Error('Exact previous main Return/Exchange module unavailable')
-    fs.writeFileSync(filename,previous.stdout)
+    for (const [name,oldSha] of files) {
+      const previous=spawnSync('git',['show',approvedMain+':'+name],{encoding:null,maxBuffer:32*1024*1024})
+      if(previous.error||previous.status!==0||gitHash(previous.stdout)!==oldSha)
+        throw new Error('Exact previous main domain module unavailable: '+name)
+      fs.writeFileSync(name,previous.stdout)
+    }
     run(process.execPath,['scripts/main-catalog-selective-gate.mjs'],
       {...process.env,MAIN_RETURN_RESERVATION_STABILITY_REPLAY:'1'})
   } finally {
-    fs.writeFileSync(filename,candidate)
+    for(const [name,bytes] of candidates)fs.writeFileSync(name,bytes)
   }
-  if(gitHash(fs.readFileSync(filename))!==candidateBlob)
-    throw new Error('Stability audit candidate not restored after immutable history replay')
+  for(const [name,,sha] of files)
+    if(gitHash(fs.readFileSync(name))!==sha)
+      throw new Error('Stability audit candidate not restored after immutable history replay: '+name)
   console.log('MAIN_RETURN_RESERVATION_STABILITY_AND_IMMUTABLE_HISTORICAL_GATES_PASSED')
   process.exit(0)
 }
