@@ -326,6 +326,44 @@ try {
   assert.equal(Number((await stock()).reserved_quantity),historyReserved)
   assert.equal((await sql('SELECT shipping_status FROM orders WHERE id=?',historyOrderId)).shipping_status,'not_sent')
   console.log('MAIN_LOCAL_WORKERD_D1_HISTORY_SHIPPING_CONFLICT_BLOCKED: completed Return with still-active old reservation cannot be shipped or handed over again')
+
+  // Two independent employees may press "Выдать готовые товары" on the
+  // same never-issued line at almost the same moment. D1 must atomically
+  // allow only one physical decrement/fulfillment even if both preflight
+  // requests saw the original active reservation.
+  await call('/api/inventory/movements','POST',{
+    requestId:'workerd-concurrent-arrival',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:3}],
+  },201)
+  const concurrentPayload={
+    ...oldOrder,requestId:'workerd-concurrent-order',customerPhone:'77010000555',
+    items:[{...oldOrder.items[0],quantity:1}],
+  }
+  const createdConcurrent=(await call('/api/orders','POST',concurrentPayload,201,'workerd-concurrent-order')).data
+  const concurrentOrderId=Number(createdConcurrent.orderId)
+  const concurrentItem=await sql('SELECT id FROM order_items WHERE order_id=?',concurrentOrderId)
+  const beforeConcurrentPhysical=Number((await stock()).quantity)
+  const concurrentIssue=async(label)=>{
+    const req=new Request(root+'/api/orders/'+concurrentOrderId+'/stock-handover',{
+      method:'PATCH',headers:{cookie,'content-type':'application/json','X-Idempotency-Key':label},
+      body:JSON.stringify({action:'issue_now',orderItemId:concurrentItem.id}),
+    })
+    const response=await worker.fetch(req,env)
+    const data=await response.json()
+    return {status:response.status,data}
+  }
+  const paired=await Promise.all([concurrentIssue('workerd-employee-a'),concurrentIssue('workerd-employee-b')])
+  assert(paired.some(row=>row.status===200 && row.data.ok),'At least one independent employee should issue the unit')
+  assert(paired.every(row=>[200,409,503].includes(row.status)),'Unexpected concurrent handover response '+JSON.stringify(paired))
+  assert.equal(Number((await stock()).quantity),beforeConcurrentPhysical-1,'Two employees cannot double-deduct a single physical item')
+  const currentConcurrent=await sql('SELECT status,quantity FROM inventory_reservations WHERE order_item_id=?',concurrentItem.id)
+  assert.equal(currentConcurrent.status,'fulfilled')
+  assert.equal(Number(currentConcurrent.quantity),1)
+  const afterConcurrentPhysical=Number((await stock()).quantity)
+  await concurrentIssue('workerd-employee-a-replay')
+  assert.equal(Number((await stock()).quantity),afterConcurrentPhysical)
+  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_ISSUE_PASSED: two simultaneous independent requests, only one Physical deduction, one fulfilled reservation')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
