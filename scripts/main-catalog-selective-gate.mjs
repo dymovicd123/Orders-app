@@ -14,7 +14,7 @@ import {spawnSync} from 'node:child_process'
 if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
   const files=[
     ['worker/domains/returns-exchanges.ts','c10b1e68928efe742940499e5b4c9b4375ece72e','eaa17e1e8518b2cf92b62bdd456b3b98bf1e40f1'],
-    ['worker/domains/order-reservations.ts','00d18e4d2e0964bcd9f912aade1fd285399076a0','14a8445bd28dc4d293ad93411887c381083afc80'],
+    ['worker/domains/order-reservations.ts','00d18e4d2e0964bcd9f912aade1fd285399076a0','a83918767f054eca5fe108216c58ba45e7a13ad4'],
   ]
   const approvedMain='b2648e849dbeed9730650848823449cfecb72ce5'
   const {createHash}=await import('node:crypto')
