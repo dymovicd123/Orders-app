@@ -18,7 +18,7 @@ if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
   const candidateBlob='eaa17e1e8518b2cf92b62bdd456b3b98bf1e40f1'
   const {createHash}=await import('node:crypto')
   const gitHash=bytes=>createHash('sha1')
-    .update(Buffer.from('blob '+bytes.length+'\\0'))
+    .update(Buffer.from('blob '+bytes.length+'\0'))
     .update(bytes).digest('hex')
   const run=(binary,args,env=process.env)=>{
     const x=spawnSync(binary,args,{stdio:'inherit',shell:false,env,maxBuffer:32*1024*1024})
