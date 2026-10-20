@@ -515,7 +515,7 @@ const reviewedExchangePriceFiles={
   'migrations/0112_v72_order_client_name_override.sql':reviewedClientNameFix.migration,
   'worker/domains/admin-delete-saga.ts':'73346aaebdb8bbf7b29669cf04d1f73dfd06de48',
   'worker/domains/admin-delete-real-driver.ts':'232e376b69c5d65ed733ecc044141504a525fea6',
-  'worker/domains/admin-delete-physical.ts':'23a31cbdfd11875d22975caeaab1411b89998929',
+  'worker/domains/admin-delete-physical.ts':'f90ae43714aa53959ef1f0457fb5223b128963bd',
   'scripts/test-admin-delete-compensated-lifecycle-20261017.mjs':'7e87937176ce7da383dcea8b185e99a4845e72da',
   'scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs':'68b77488d329c89211e7ed88943b809dcb7a14e6',
   'worker/domains/admin-delete-impact.ts':'eb5461a761519e21c700c65cabe2d97e3cf96988',
