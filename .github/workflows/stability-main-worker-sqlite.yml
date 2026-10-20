@@ -25,5 +25,9 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      - name: Typecheck current candidate Worker and client modules
+        run: npm run typecheck
+      - name: Build current candidate application
+        run: npm run build
       - name: Run fully isolated API, finance and reservation acceptance
         run: node --experimental-strip-types scripts/test-main-foundation-worker-sqlite-20261020.mjs
