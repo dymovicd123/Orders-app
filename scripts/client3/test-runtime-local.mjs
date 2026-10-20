@@ -55,6 +55,39 @@ try{
    const r=await get(urlPath,authenticated)
    assert.equal(r.status,200,'Authorized initial '+urlPath+' did not work: '+r.body.slice(0,350)+' | Worker logs: '+log.slice(-5000))
  }
+ // The actual Worker must complete a REAL business write on the isolated local D1;
+ // source-text assertions or empty GET endpoints are not sufficient.
+ const addPerson=await get('/api/team/employees',{
+   method:'POST',headers:{...headers,...authenticated.headers},
+   body:JSON.stringify({name:'CLIENT3_SMOKE_MANAGER',role:'менеджер'})
+ })
+ assert.equal(addPerson.status,201,'Creating the first staff member failed: '+addPerson.body.slice(0,400)+' logs '+log.slice(-2300))
+ const employee=JSON.parse(addPerson.body)
+ const managerId=Number(employee.employeeId||employee.employee?.id)
+ assert(managerId>0,'Employee ID missing')
+ const createPayload={
+   requestId:'f38c622e-7db6-4ba1-b00a-11dce3000123',
+   orderDate:'2026-10-20',managerId,managerName:'CLIENT3_SMOKE_MANAGER',
+   sourceType:'warehouse',workshopStatus:'in_workshop',pricingMode:'itemized_v1',
+   orderPaymentMethod:'НАЛИЧКА',
+   items:[{productName:'CLIENT3_SMOKE_PRODUCT',gender:'ЖЕН',color:'БЕЖЕВЫЙ',
+     material:'СТАНДАРТ',length:'СТАНДАРТ',size:'48',sourceType:'workshop',
+     isWorkshop:true,quantity:1,unitPrice:10000}],
+   payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',amount:10000,paymentKind:'primary'}]
+ }
+ const create=()=>get('/api/orders',{method:'POST',headers:{...headers,...authenticated.headers,'X-Idempotency-Key':createPayload.requestId},body:JSON.stringify(createPayload)})
+ const createdOrder=await create()
+ assert.equal(createdOrder.status,201,'Creating a paid workshop order failed: '+createdOrder.body.slice(0,700)+' logs '+log.slice(-2500))
+ const saved=JSON.parse(createdOrder.body)
+ const orderId=Number(saved.order?.id||saved.id||saved.orderId)
+ assert(orderId>0,'Created order id missing: '+createdOrder.body.slice(0,700))
+ const exact=await get('/api/orders/'+orderId,authenticated)
+ assert.equal(exact.status,200,'Reading newly created order failed: '+exact.body.slice(0,600)+' logs '+log.slice(-2400))
+ const second=await create()
+ assert([200,201].includes(second.status),'Idempotent replay errored: '+second.status+' '+second.body.slice(0,400))
+ const list=await get('/api/orders',authenticated)
+ assert.equal(list.status,200,'Listing order after creation failed: '+list.body.slice(0,400))
+ console.log('CLIENT3_REAL_WORKER_ORDER_CREATE_PAYMENT_READ_AND_RETRY_PASSED: order '+orderId)
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
  console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: consolidated Client3 baseline, admin bootstrap guarded, authenticated APIs healthy')
