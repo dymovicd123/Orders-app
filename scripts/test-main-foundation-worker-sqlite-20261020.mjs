@@ -741,6 +741,46 @@ try {
   assert.equal(sql('SELECT physical_received_at FROM return_items WHERE id=?',pendingReturnItem.id).physical_received_at,null)
   assert.equal(sql('SELECT COUNT(*) AS n FROM inventory_lifecycle_events WHERE operation_type=\'return\' AND operation_id=?',pendingReturnId).n,0)
   console.log('MAIN_LATE_RETURN_RECEIPT_ACTIVE_RESERVE_BLOCKED: historical pending Return cannot receive physical item while original SKU reservation is active')
+
+  // Production #1563 class: order still UNSENT, active reservation still holds,
+  // yet a standalone completed Return has already named the same order_item.
+  // Historical import had mixed actual physical intake, so shipment cannot
+  // silently deduct that item again just because Physical is >0.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-legacy-return-shipping-arrival',inventorySource:'warehouse',
+    movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  const historicConflictPayload={
+    ...orderPayload,requestId:'stability-historic-return-ship-order',
+    customerPhone:'77010000009',items:[{...orderPayload.items[0],quantity:1}],
+    payments:[],
+  }
+  const histOrder=(await api('/api/orders','POST',historicConflictPayload,{
+    expectedStatus:201,requestId:historicConflictPayload.requestId,
+  })).data
+  const historicOrderId=Number(histOrder.orderId)
+  const historicItemId=Number(sql('SELECT id FROM order_items WHERE order_id=?',historicOrderId).id)
+  assert.equal(sql('SELECT status FROM inventory_reservations WHERE order_item_id=?',historicItemId).status,'active')
+  const insertReturn=sqlite.prepare(
+    "INSERT INTO returns (order_id,manager_id,return_date,amount,comment,status,created_at) VALUES (?,?,?,?,?,'completed',?)"
+  ).run(historicOrderId,managerId,'2026-10-20',0,'Synthetic historical orphaned Return','2026-10-20T00:00:00Z')
+  const historicalReturnId=Number(insertReturn.lastInsertRowid)
+  sqlite.prepare(
+    'INSERT INTO return_items (return_id,order_item_id,product_name_snapshot,quantity,amount,inventory_source,restocked,physical_tracking,physical_received_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run(historicalReturnId,historicItemId,name,1,0,'warehouse',1,1,'2026-10-20T00:00:00Z','2026-10-20T00:00:00Z')
+  const physicalBeforeContradictoryShip=Number(stock().quantity)
+  const reserveBeforeContradictoryShip=Number(stock().reserved_quantity)
+  const stopped=await api('/api/orders/'+historicOrderId+'/shipping','PATCH',ship,{
+    expectedStatus:409,requestId:'stability-historic-return-shipping-block',
+  })
+  assert.equal(stopped.data.code,'return_reservation_conflict')
+  assert.equal(Number(stock().quantity),physicalBeforeContradictoryShip)
+  assert.equal(Number(stock().reserved_quantity),reserveBeforeContradictoryShip)
+  assert.equal(sql('SELECT shipping_status FROM orders WHERE id=?',historicOrderId).shipping_status,'not_sent')
+  assert.equal(sql('SELECT status FROM inventory_reservations WHERE order_item_id=?',historicItemId).status,'active')
+  console.log('MAIN_RETURN_RESERVATION_SHIPMENT_CONFLICT_BLOCKED: completed Return with active line reserve cannot issue same item a second time')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
