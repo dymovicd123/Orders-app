@@ -397,7 +397,22 @@ try {
   assert.equal(paidTotal,10000,'Concurrent repayment cannot exceed original debt')
   assert.equal(Number((await sql('SELECT received_amount FROM orders WHERE id=?',moneyOrderId)).received_amount),10000)
   assert.equal(Number((await sql('SELECT debt_amount FROM orders WHERE id=?',moneyOrderId)).debt_amount),0)
-  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_DEBT_PAYMENT_PASSED: separate staff requests cannot overpay one outstanding debt')
+  assert.equal(paid.filter(x=>x.status===201).length,1,'Exactly one independent request must succeed: '+JSON.stringify(paid))
+  assert(paid.some(x=>x.status===409||x.status===503),'Second independent payment must be refused: '+JSON.stringify(paid))
+  const winnerKey=paid[0].status===201?'workerd-staff-payment-1':'workerd-staff-payment-2'
+  const loserKey=paid[0].status===201?'workerd-staff-payment-2':'workerd-staff-payment-1'
+  const replayWinner=await concurrentPayment(winnerKey)
+  assert.equal(replayWinner.status,201)
+  assert.equal(replayWinner.data.replayed,true)
+  const retryLoser=await concurrentPayment(loserKey)
+  assert.equal(retryLoser.status,409,'A distinct rejected payment stays rejected after debt is closed')
+  assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM payments WHERE order_id=?',moneyOrderId)).n),1)
+  const financialEvents=await db.prepare(
+    "SELECT event_type,amount_delta FROM financial_events WHERE order_id=? AND source_type='payment' AND amount_delta>0"
+  ).bind(moneyOrderId).all()
+  assert.equal(financialEvents.results.length,1,'One payment must produce exactly one positive financial event')
+  assert.equal(Number(financialEvents.results[0].amount_delta),10000)
+  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_DEBT_PAYMENT_PASSED: 1/2 concurrent success, loser rejected and retried, successful request replay idempotent, exactly one cash event and no overpayment')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
