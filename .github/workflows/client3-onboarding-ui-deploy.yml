@@ -52,6 +52,7 @@ jobs:
           npm run typecheck
           npm run build
           grep -Fq 'Код первого запуска' src/App.tsx
+          grep -Fq 'Неверный код первого запуска' worker/domains/auth.ts
           grep -Fq "bootstrapLogin: 'admin'" src/App.tsx
       - name: Generate guarded configuration for exact existing third D1
         shell: bash
