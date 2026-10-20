@@ -54,6 +54,7 @@ try {
       migrated=migrated
         .replace('ALTER TABLE managers RENAME TO managers_step126_old;', '')
         .replace('CREATE TABLE managers (','CREATE TABLE managers_step126_new (')
+        .replace('INSERT INTO managers (','INSERT INTO managers_step126_new (')
         .replace('FROM managers_step126_old old;','FROM managers old;')
         .replace('DROP TABLE managers_step126_old;',
           'DROP TABLE managers; ALTER TABLE managers_step126_new RENAME TO managers;')
