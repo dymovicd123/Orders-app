@@ -776,6 +776,12 @@ try {
     expectedStatus:409,requestId:'stability-historic-return-shipping-block',
   })
   assert.equal(stopped.data.code,'return_reservation_conflict')
+  // The same safeguard MUST cover the "Выдать готовые товары" / issue_now
+  // endpoint, not only full-order shipment.
+  const perItemBlocked=await api('/api/orders/'+historicOrderId+'/stock-handover','PATCH',{
+    action:'issue_now',orderItemId:historicItemId,
+  },{expectedStatus:409,requestId:'stability-historic-return-early-issue-block'})
+  assert.equal(perItemBlocked.data.code,'return_reservation_conflict')
   assert.equal(Number(stock().quantity),physicalBeforeContradictoryShip)
   assert.equal(Number(stock().reserved_quantity),reserveBeforeContradictoryShip)
   assert.equal(sql('SELECT shipping_status FROM orders WHERE id=?',historicOrderId).shipping_status,'not_sent')
