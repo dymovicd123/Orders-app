@@ -37,11 +37,20 @@ export function consolidateMigrations(directory,filenames){
   const settings=source.prepare('SELECT key,value FROM app_settings ORDER BY key').all()
   const seeded=source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
   const permitted=new Set(['reference_values','app_settings'])
+  const metaSeeds=[]
   const shadow=new Set(source.prepare('PRAGMA table_list').all().filter(x=>x.type==='shadow').map(x=>x.name))
   for(const {name} of seeded){
    if(permitted.has(name)||shadow.has(name)||name.startsWith('_'))continue
    const row=source.prepare('SELECT COUNT(*) AS n FROM "'+name.replaceAll('"','""')+'"').get()
-   if(row.n)throw Error('Unexpected customer/business seed in fresh migration '+name+': '+row.n)
+   if(!row.n)continue
+   if(/^[a-z0-9_]+_meta$/.test(name)){
+     const fields=source.prepare('PRAGMA table_info("'+name+'")').all().map(x=>x.name)
+     if(JSON.stringify(fields.slice(0,3))!==JSON.stringify(['key','value','updated_at']) || row.n>50)
+       throw Error('Unexpected populated feature metadata layout: '+name)
+     metaSeeds.push({name,rows:source.prepare('SELECT key,value,updated_at FROM "'+name+'" ORDER BY key').all()})
+     continue
+   }
+   throw Error('Unexpected customer/business seed in fresh migration '+name+': '+row.n)
   }
   if(!ref.length)throw Error('Reference dropdowns are missing')
   const ddl=[
@@ -58,6 +67,10 @@ export function consolidateMigrations(directory,filenames){
    ref.map(x=>'  ('+[quote(x.kind),quote(x.value),Number(x.is_active),Number(x.sort_order)].join(',')+')').join(',\n')+';',
    'INSERT INTO app_settings(key,value) VALUES',
    settings.map(x=>'  ('+[quote(x.key),quote(x.value)].join(',')+')').join(',\n')+';',
+   ...metaSeeds.flatMap(({name,rows})=>[
+     'INSERT INTO "'+name+'"(key,value,updated_at) VALUES',
+     rows.map(x=>'  ('+[quote(x.key),quote(x.value),quote(x.updated_at)].join(',')+')').join(',\n')+';'
+   ]),
    ''
   ].join('\n')
   if(/\b(?:BEGIN|COMMIT|ROLLBACK)\s+(?:TRANSACTION|WORK)\b|\bPRAGMA\s+(?:foreign_keys\s*=\s*OFF|legacy_alter_table)/i.test(ddl))
@@ -74,6 +87,10 @@ export function consolidateMigrations(directory,filenames){
    throw Error('Consolidated Client3 dropdown references changed')
   if(rebuilt.prepare('SELECT COUNT(*) AS n FROM app_settings').get().n!==settings.length)
    throw Error('Consolidated Client3 generic settings changed')
+  for(const {name,rows} of metaSeeds){
+    const count=rebuilt.prepare('SELECT COUNT(*) AS n FROM "'+name+'"').get().n
+    if(count!==rows.length)throw Error('Consolidated feature flag metadata changed for '+name)
+  }
   const baseline='0001_client3_clean_baseline.sql'
   for(const name of filenames)fs.rmSync(path.join(directory,name))
   fs.writeFileSync(path.join(directory,baseline),ddl,{flag:'wx'})
