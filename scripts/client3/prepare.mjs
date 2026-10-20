@@ -10,6 +10,7 @@ export const PROTECTED_DATABASE_IDS=new Set([
 ])
 const MIGRATION_PATTERN=/^\d{4}.*\.sql$/
 const KNOWN_OLD_MANAGERS=['СЫМБАТ','АСЕЛЬ','ГАЗИЗА','ГУЛНУР','ЖАНЕРКЕ','МАКПАЛ','САИДА']
+const PRODUCTS_SEED=/INSERT\s+INTO\s+catalog_products\s*\(name,\s*category,\s*is_active,\s*created_at,\s*updated_at\)\s*VALUES[\s\S]*?ON\s+CONFLICT\s*\(name\)\s*DO\s+UPDATE\s+SET[\s\S]*?updated_at\s*=\s*excluded\.updated_at\s*;/gi
 const SEED=/INSERT\s+INTO\s+managers\s*\(name,\s*is_active,\s*created_at,\s*updated_at\)\s*VALUES[\s\S]*?ON\s+CONFLICT\s*\(name\)\s*DO\s+UPDATE\s+SET[\s\S]*?updated_at\s*=\s*excluded\.updated_at\s*;/gi
 
 export function prepareMigrations(directory,root=ROOT){
@@ -26,16 +27,20 @@ export function prepareMigrations(directory,root=ROOT){
      const matches=[...body.matchAll(SEED)]
      if(matches.length!==1)throw Error('Initial manager seed changed: manual review required.')
      if(KNOWN_OLD_MANAGERS.some(name=>!matches[0][0].includes("'"+name+"'")))throw Error('Old manager seed identity unexpectedly changed.')
-     copy=body.replace(SEED,'-- Client3: omitted old-customer manager roster. New staff are added after first admin login.')
-     patched++
+     const productMatches=[...body.matchAll(PRODUCTS_SEED)]
+     if(productMatches.length!==1 || !productMatches[0][0].includes("'БАЯН СҰЛУ ШАПАН'"))
+       throw Error('Default old-customer catalog seed has changed: manual review required.')
+     copy=body.replace(SEED,'-- Client3: old-customer manager roster omitted; staff are added by admin.')
+       .replace(PRODUCTS_SEED,'-- Client3: old-customer product catalog omitted; products are added by admin.')
+     patched+=2
    }else if(/\bINSERT\s+(?:OR\s+\w+\s+)?INTO\s+managers\s*\([^)]*\)\s*VALUES\b/i.test(body)){
      throw Error('Another migration now seeds managers: '+filename)
    }
    fs.writeFileSync(path.join(directory,filename),copy)
  }
- if(patched!==1)throw Error('Legacy manager seed must be removed once.')
+ if(patched!==2)throw Error('Legacy manager and product seeds must each be removed once.')
  const after=fs.readFileSync(path.join(directory,'0002_reference_values.sql'),'utf8')
- if(KNOWN_OLD_MANAGERS.some(name=>after.includes("'"+name+"'")))throw Error('Old-customer manager names leaked to clean migrations.')
+ if(KNOWN_OLD_MANAGERS.some(name=>after.includes("'"+name+"'"))||after.includes("'БАЯН СҰЛУ ШАПАН'"))throw Error('Old-customer business data leaked to clean migrations.')
  return files
 }
 
