@@ -40,8 +40,14 @@ try {
     // SQLite. D1 explicitly forbids BEGIN/COMMIT through its Worker API. Seed
     // the disposable fixture without these wrappers ONLY, and flag this
     // migration-parity gap; never rewrite the checked-in SQL migrations.
-    const adapted=flat.replace(/\bBEGIN\s+TRANSACTION\s*;/gi,'').replace(/\bCOMMIT\s*;/gi,'')
-    if(adapted!==flat) console.warn('LOCAL_WORKERD_D1_TRANSACTION_GAP: '+file+' needs D1-aware transaction migration review')
+    const withoutTransactions=flat.replace(/\bBEGIN\s+TRANSACTION\s*;/gi,'').replace(/\bCOMMIT\s*;/gi,'')
+    if(withoutTransactions!==flat) console.warn('LOCAL_WORKERD_D1_TRANSACTION_GAP: '+file+' needs D1-aware transaction migration review')
+    // Cloudflare D1 Worker API disallows SQLite TEMP-schema creation. Historical
+    // migration scratch tables are dropped before their migration completes;
+    // using ordinary disposable scratch tables only in this fresh test DB
+    // preserves their SQL effects without touching checked-in migrations.
+    const adapted=withoutTransactions.replace(/\bCREATE\s+TEMP(?:ORARY)?\s+TABLE\b/gi,'CREATE TABLE')
+    if(adapted!==withoutTransactions) console.warn('LOCAL_WORKERD_D1_TEMP_SCHEMA_GAP: '+file+' historical CREATE TEMP TABLE not supported by D1 Worker API')
     try { await db.exec(adapted) }
     catch(error) {throw new Error('Local workerd D1 failed migration '+file+': '+String(error),{cause:error})}
   }
