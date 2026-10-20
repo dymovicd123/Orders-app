@@ -19,7 +19,7 @@ if (!process.env.MAIN_PENDING_KNOWN_RESERVATION_REPLAY) {
   const hash = value => {
     const bytes = Buffer.isBuffer(value) ? value : fs.readFileSync(value)
     const { createHash } = requireHash
-    return createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\\0')).update(bytes).digest('hex')
+    return createHash('sha1').update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
   }
   const requireHash = await import('node:crypto')
   const run = (bin,args,env=process.env) => {
