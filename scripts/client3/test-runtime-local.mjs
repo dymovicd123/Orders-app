@@ -232,9 +232,9 @@ try{
  const batchPair=(oldLine,newProduct,newPrice)=>({
    oldItemId:oldLine.id,oldQuantity:1,oldPhysicalState:'not_issued',
    expectedOldActiveQuantity:Number(oldLine.quantity),
-   expectedOldUnitPrice:Number(oldLine.unit_price),
-   expectedOldLineTotal:Number(oldLine.line_total),
-   expectedOldCatalogPriceSnapshot:oldLine.catalog_price_snapshot??null,
+   expectedOldUnitPrice:Number(oldLine.unitPrice),
+   expectedOldLineTotal:Number(oldLine.lineTotal),
+   expectedOldCatalogPriceSnapshot:oldLine.catalogPriceSnapshot??null,
    newItem:{productName:newProduct,gender:'ЖЕН',color:'БЕЛЫЙ',
      material:'СТАНДАРТ',length:'СТАНДАРТ',size:'48',sourceType:'workshop',
      isWorkshop:true,quantity:1,unitPrice:newPrice,catalogPriceSnapshot:null}
