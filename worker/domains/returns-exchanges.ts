@@ -783,6 +783,25 @@ export async function receiveReturnedItem(
       throw new CriticalOperationConflictError('Это старая запись: физическое получение по ней раньше не отслеживалось. Автоматически менять остаток нельзя.');
     }
     const isWorkshop = Boolean(toInt(item.is_workshop, 0));
+    // A Return may have been registered days before physical receipt. Re-check
+    // the original SKU's active obligation at the moment of intake, not only
+    // at Return creation. Historical rows can carry both a completed Return
+    // and an active order reserve (cf. order #1563). Adding Physical would
+    // duplicate stock truth while the old reservation remains shippable.
+    // A previously received item is left on its idempotent replay path.
+    if (operationType === 'return' && !isWorkshop && !cleanText(item.physical_received_at)) {
+      const activeReservation = await db.prepare(
+        `SELECT id, quantity, status
+         FROM inventory_reservations
+         WHERE order_item_id = ? AND status IN ('active', 'unresolved')
+         ORDER BY id DESC LIMIT 1`
+      ).bind(toInt(item.order_item_id, 0)).first<{ id: number; quantity: number; status: string }>();
+      if (activeReservation?.id) {
+        throw new CriticalOperationConflictError(
+          `Нельзя принять позицию «${cleanText(item.product_name_snapshot)}»: по ней ещё открыт резерв ${Math.max(0, toInt(activeReservation.quantity, 0))} шт. Уточните фактическую выдачу этой позиции в заказе. Приёмка остановлена без изменения склада.`
+        );
+      }
+    }
 
     const persistedDestination = () => {
       const source = cleanText(item?.inventory_source);
