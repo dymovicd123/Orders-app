@@ -263,7 +263,6 @@ function App() {
   const [authLogin, setAuthLogin] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authDisplayName, setAuthDisplayName] = useState('')
-  const [authBootstrapLogin, setAuthBootstrapLogin] = useState('admin')
   const [authBootstrapPassword, setAuthBootstrapPassword] = useState('')
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false)
   const [passwordChangeBusy, setPasswordChangeBusy] = useState(false)
@@ -426,7 +425,7 @@ function App() {
           login: authLogin,
           password: authPassword,
           displayName: authDisplayName || 'Администратор',
-          bootstrapLogin: authBootstrapLogin,
+          bootstrapLogin: 'admin',
           bootstrapPassword: authBootstrapPassword,
         }),
       })
@@ -459,7 +458,7 @@ function App() {
     } finally {
       setAuthBusy(false)
     }
-  }, [authBootstrapLogin, authBootstrapPassword, authDisplayName, authHasUsers, authLogin, authPassword])
+  }, [authBootstrapPassword, authDisplayName, authHasUsers, authLogin, authPassword])
 
   const logout = useCallback(async () => {
     setError(null)
@@ -8301,19 +8300,15 @@ function removeDebtPayment(index: number) {
             <p>
               {authHasUsers
                 ? 'Введите логин и пароль своего аккаунта.'
-                : 'Подтвердите текущий админ-доступ и создайте первый персональный аккаунт администратора.'}
+                : 'Введите код первого запуска и придумайте собственный логин и пароль. Это единственная регистрация первого администратора.'}
             </p>
           </div>
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
           {!authHasUsers ? (
             <>
               <label>
-                <span>Текущий админ-логин</span>
-                <input id="auth-bootstrap-username" name="bootstrap-username" value={authBootstrapLogin} onChange={(event) => setAuthBootstrapLogin(event.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} required />
-              </label>
-              <label>
-                <span>Текущий админ-пароль</span>
-                <input id="auth-bootstrap-password" name="bootstrap-password" value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="current-password" required />
+                <span>Код первого запуска</span>
+                <input id="auth-bootstrap-password" name="bootstrap-password" value={authBootstrapPassword} onChange={(event) => setAuthBootstrapPassword(event.target.value)} type="password" autoComplete="off" placeholder="Код, полученный от владельца системы" required />
               </label>
               <label>
                 <span>Имя администратора</span>
