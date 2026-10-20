@@ -291,6 +291,41 @@ try {
   assert.equal(Number((await stock()).reserved_quantity),stableReserve)
   assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM returns WHERE order_id=?',badId)).n),0)
   console.log('MAIN_LOCAL_WORKERD_D1_RETURN_EXCHANGE_PASSED: idempotent physical Return/cancel, legacy 2->1->2 reserve with cancellation, conflicting physical Return rejected')
+
+  // Production #1563 class: completed standalone Return on an UNSENT active
+  // reservation, with physical intake already recorded. Neither whole-order
+  // shipping nor "issue_now" may deduct that same SKU a second time.
+  const legacyHistoryPayload={
+    ...oldOrder,requestId:'workerd-return-shipping-history',customerPhone:'77010000666',
+    items:[{...oldOrder.items[0],quantity:1}],
+  }
+  const legacyHistory=(await call('/api/orders','POST',legacyHistoryPayload,201,'workerd-return-shipping-history')).data
+  const historyOrderId=Number(legacyHistory.orderId)
+  const historyItemId=Number((await sql('SELECT id FROM order_items WHERE order_id=?',historyOrderId)).id)
+  const currentHistoryReserve=await sql('SELECT status FROM inventory_reservations WHERE order_item_id=?',historyItemId)
+  assert.equal(currentHistoryReserve.status,'active')
+  const historyReturn=await db.prepare(
+    "INSERT INTO returns (order_id,manager_id,return_date,amount,comment,status,created_at) VALUES (?,?,?,?,?,'completed',?)"
+  ).bind(historyOrderId,managerId,'2026-10-20',0,'Synthetic legacy Return','2026-10-20T00:00:00Z').run()
+  const historyReturnId=Number(historyReturn.meta.last_row_id)
+  assert(historyReturnId>0)
+  await db.prepare(
+    'INSERT INTO return_items (return_id,order_item_id,product_name_snapshot,quantity,amount,inventory_source,restocked,physical_tracking,physical_received_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).bind(historyReturnId,historyItemId,name,1,0,'warehouse',1,1,'2026-10-20T00:00:00Z','2026-10-20T00:00:00Z').run()
+  const historyPhysical=Number((await stock()).quantity)
+  const historyReserved=Number((await stock()).reserved_quantity)
+  const fullBlocked=await call('/api/orders/'+historyOrderId+'/shipping','PATCH',{
+    shippingStatus:'sent',shippingDate:'2026-10-20',
+  },409,'workerd-history-shipping-block')
+  assert.equal(fullBlocked.data.code,'return_reservation_conflict')
+  const earlyBlocked=await call('/api/orders/'+historyOrderId+'/stock-handover','PATCH',{
+    action:'issue_now',orderItemId:historyItemId,
+  },409,'workerd-history-early-handover-block')
+  assert.equal(earlyBlocked.data.code,'return_reservation_conflict')
+  assert.equal(Number((await stock()).quantity),historyPhysical)
+  assert.equal(Number((await stock()).reserved_quantity),historyReserved)
+  assert.equal((await sql('SELECT shipping_status FROM orders WHERE id=?',historyOrderId)).shipping_status,'not_sent')
+  console.log('MAIN_LOCAL_WORKERD_D1_HISTORY_SHIPPING_CONFLICT_BLOCKED: completed Return with still-active old reservation cannot be shipped or handed over again')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
