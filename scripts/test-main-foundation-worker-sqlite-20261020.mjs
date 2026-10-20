@@ -932,6 +932,42 @@ try {
   assert.deepEqual(linkedAfter,linkedBefore)
   assert.equal(sql('SELECT status FROM returns WHERE id=?',Number(linkedRefund.returnId)).status,'completed')
   console.log('MAIN_DELETE_LINKED_RETURN_GUARD_PASSED: active Return/refund forces previewed chain, direct deletion cannot silently erase money')
+
+  // Execute the admin's actual dependency-aware delete saga, one HTTP step
+  // per request. The same requestId must resume across Return cancellation
+  // and final order deletion, with no double refund or reserve adjustment.
+  const sagaFingerprint=activeLinked.data.preview.chainPlan.snapshotFingerprint
+  assert.equal(activeLinked.data.preview.canStartChain,true,'Money-only Return on never-issued line must have resolvable safe cancellation chain')
+  const sagaId='stability-saga-linked-return-delete'
+  const sagaBase={
+    requestId:sagaId,
+    expectedSnapshot:sagaFingerprint,
+  }
+  const beforeSagaPhysical=Number(stock().quantity)
+  const beforeSagaReserved=Number(stock().reserved_quantity)
+  let progress=null
+  for(let step=0;step<6;step++){
+    const next=await api('/api/orders/'+linkedId+'/delete-chain','POST',sagaBase,{
+      expectedStatus:200,requestId:sagaId,
+    })
+    assert(next.data.ok)
+    progress=next.data.progress
+    if(progress.status==='completed')break
+    assert(['planned','running','ready_for_final_delete'].includes(progress.status))
+  }
+  assert.equal(progress?.status,'completed','Delete saga must reach final commit without manual stock guessing')
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',Number(linkedRefund.returnId)).status,'cancelled')
+  assert.equal(sql('SELECT order_status FROM orders WHERE id=?',linkedId).order_status,'deleted')
+  assert.equal(Number(stock().quantity),beforeSagaPhysical)
+  assert.equal(Number(stock().reserved_quantity),beforeSagaReserved-1)
+  const sagaReplay=await api('/api/orders/'+linkedId+'/delete-chain','POST',sagaBase,{
+    expectedStatus:200,requestId:sagaId,
+  })
+  assert.equal(sagaReplay.data.progress.status,'completed')
+  assert.equal(Number(stock().quantity),beforeSagaPhysical)
+  assert.equal(Number(stock().reserved_quantity),beforeSagaReserved-1)
+  assert.equal(count('returns','id='+Number(linkedRefund.returnId)),1)
+  console.log('MAIN_DELETE_RETURN_CHAIN_SAGA_PASSED: canceled completed money-only Return, finalized parent order, released exact reserve, repeat-safe across multiple HTTP calls')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
