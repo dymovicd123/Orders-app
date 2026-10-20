@@ -53,7 +53,7 @@ try{
  const authenticated={headers:{Cookie:created.cookie.split(';')[0]}}
  for(const urlPath of ['/api/orders','/api/catalog','/api/reference-data']){
    const r=await get(urlPath,authenticated)
-   assert.equal(r.status,200,'Authorized initial '+urlPath+' did not work: '+r.body.slice(0,350))
+   assert.equal(r.status,200,'Authorized initial '+urlPath+' did not work: '+r.body.slice(0,350)+' | Worker logs: '+log.slice(-5000))
  }
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
