@@ -130,7 +130,7 @@ try {
     requestId:'workerd-arrival',inventorySource:'warehouse',movementType:'arrival',
     items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
       material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:3}],
-  },200)
+  },201)
   const stock=async()=>await sql("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?",variantId)
   assert.equal(Number((await stock()).quantity),3)
   const managerId=Number((await sql("SELECT id FROM managers WHERE is_active=1 ORDER BY id LIMIT 1"))?.id)
