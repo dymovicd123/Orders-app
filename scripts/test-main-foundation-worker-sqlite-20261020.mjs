@@ -968,6 +968,96 @@ try {
   assert.equal(Number(stock().reserved_quantity),beforeSagaReserved-1)
   assert.equal(count('returns','id='+Number(linkedRefund.returnId)),1)
   console.log('MAIN_DELETE_RETURN_CHAIN_SAGA_PASSED: canceled completed money-only Return, finalized parent order, released exact reserve, repeat-safe across multiple HTTP calls')
+
+  // Real manager session must have *narrow* correction authority, never
+  // administrative deletion or the full editor. Test real auth cookies/roles,
+  // not forged X-Access-Role headers.
+  const managerPassword='disposable-manager-password-2026'
+  const managerAccount=(await api('/api/auth/users','POST',{
+    login:'stability-manager',password:managerPassword,role:'manager',
+    managerId,displayName:'Тестовый менеджер',
+  },{expectedStatus:201})).data
+  const accountId=Number(managerAccount.id)
+  assert(accountId>0)
+  await api('/api/auth/users/'+accountId,'PATCH',{
+    mustChangePassword:false,
+  },{expectedStatus:200})
+  const managerEditorPayload={
+    ...editorPayload,requestId:'stability-manager-editor-create',customerPhone:'77010000903',
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:1000}],
+  }
+  const managerCreated=(await api('/api/orders','POST',managerEditorPayload,{
+    expectedStatus:201,requestId:managerEditorPayload.requestId,
+  })).data
+  const managerEditorId=Number(managerCreated.orderId)
+  const rowForManager=()=>sql(
+    "SELECT o.order_date,c.phone_normalized AS customer_phone,COALESCE(o.customer_name_override,c.display_name,'') AS customer_name,o.city,o.delivery_type,o.comment,o.total_amount,o.received_amount,o.debt_amount,o.return_amount,o.shipping_status,o.order_status FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?",
+    managerEditorId,
+  )
+  const itemForManager=()=>sql('SELECT id,quantity,unit_price,line_total,catalog_price_snapshot FROM order_items WHERE order_id=?',managerEditorId)
+  const cashBeforeManager=count('payments','order_id='+managerEditorId)
+  const stockBeforeManager=Number(stock().quantity)
+  const reserveBeforeManager=Number(stock().reserved_quantity)
+  const adminSessionCookie=cookie
+  const loggedManager=await api('/api/auth/login','POST',{
+    login:'stability-manager',password:managerPassword,
+  },{expectedStatus:200})
+  assert.equal(loggedManager.data.user.role,'manager')
+  cookie=(loggedManager.response.headers.get('set-cookie')||'').split(';')[0]
+  assert(cookie.startsWith('orders_session='))
+  await api('/api/orders/'+managerEditorId+'/delete-preview','GET',undefined,{expectedStatus:403})
+  await api('/api/orders/'+managerEditorId+'/delete','POST',{
+    expectedSnapshot:'0'.repeat(64),requestId:'stability-manager-illegal-delete',
+  },{expectedStatus:403})
+  await api('/api/orders/'+managerEditorId,'PATCH',{city:'НЕЛЕГАЛЬНАЯ ПРАВКА'},{
+    expectedStatus:409,requestId:'stability-manager-full-editor-denied',
+  })
+  const managerOld=rowForManager()
+  const managerOriginal={
+    orderDate:String(managerOld.order_date||''),customerPhone:String(managerOld.customer_phone||''),
+    customerName:String(managerOld.customer_name||''),city:String(managerOld.city||''),
+    deliveryType:String(managerOld.delivery_type||''),comment:String(managerOld.comment||''),
+  }
+  const managerState={
+    totalAmount:Number(managerOld.total_amount),receivedAmount:Number(managerOld.received_amount),
+    debtAmount:Number(managerOld.debt_amount),returnAmount:Number(managerOld.return_amount),
+    shippingStatus:String(managerOld.shipping_status),orderStatus:String(managerOld.order_status),
+  }
+  await api('/api/orders/'+managerEditorId,'PATCH',{
+    metadataCorrection:{
+      expected:managerOriginal,
+      next:{...managerOriginal,comment:'Проверка ограниченной роли менеджера'},
+      expectedState:managerState,
+    },
+  },{expectedStatus:200,requestId:'stability-manager-narrow-metadata'})
+  assert.equal(rowForManager().comment,'Проверка ограниченной роли менеджера')
+  await api('/api/orders/'+managerEditorId,'PATCH',{
+    metadataCorrection:{
+      expected:{...managerOriginal,comment:'Проверка ограниченной роли менеджера'},
+      next:{...managerOriginal,comment:'Проверка ограниченной роли менеджера',orderDate:'2026-10-19'},
+      expectedState:managerState,
+    },
+  },{expectedStatus:409,requestId:'stability-manager-illegal-date'})
+  const managerLine=itemForManager()
+  await api('/api/orders/'+managerEditorId,'PATCH',{
+    itemPriceCorrections:[{
+      orderItemId:managerLine.id,unitPrice:10500,
+      expectedUnitPrice:Number(managerLine.unit_price),
+      expectedLineTotal:Number(managerLine.line_total),
+      expectedQuantity:Number(managerLine.quantity),
+      expectedCatalogPriceSnapshot:managerLine.catalog_price_snapshot,
+    }],
+  },{expectedStatus:200,requestId:'stability-manager-narrow-price'})
+  assert.equal(Number(itemForManager().unit_price),10500)
+  assert.equal(Number(rowForManager().received_amount),1000)
+  assert.equal(Number(rowForManager().debt_amount),9500)
+  assert.equal(count('payments','order_id='+managerEditorId),cashBeforeManager)
+  assert.equal(Number(stock().quantity),stockBeforeManager)
+  assert.equal(Number(stock().reserved_quantity),reserveBeforeManager)
+  assert.equal(rowForManager().order_status,'active')
+  cookie=adminSessionCookie
+  assert.equal((await api('/api/auth/me')).data.user.role,'admin')
+  console.log('MAIN_MANAGER_ROLE_EDITOR_SECURITY_PASSED: authentic manager cannot full-edit, delete, or change order date; narrow metadata and price edits maintain cash and stock')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
