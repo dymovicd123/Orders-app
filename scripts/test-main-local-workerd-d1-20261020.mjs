@@ -413,6 +413,37 @@ try {
   assert.equal(financialEvents.results.length,1,'One payment must produce exactly one positive financial event')
   assert.equal(Number(financialEvents.results[0].amount_delta),10000)
   console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_DEBT_PAYMENT_PASSED: 1/2 concurrent success, loser rejected and retried, successful request replay idempotent, exactly one cash event and no overpayment')
+
+  // Two separate simultaneous money-only Returns against the same 10k paid
+  // order must never both refund 10k (retry key alone cannot guard this).
+  const refundOrderPayload={
+    ...moneyOnlyOrderPayload,requestId:'workerd-concurrent-refund-order',customerPhone:'77010000333',
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:10000}],
+  }
+  const refundOrder=(await call('/api/orders','POST',refundOrderPayload,201,'workerd-concurrent-refund-order')).data
+  const refundOrderId=Number(refundOrder.orderId)
+  const concurrentRefund=async(key)=>{
+    const req=new Request(root+'/api/returns',{
+      method:'POST',headers:{cookie,'content-type':'application/json','X-Idempotency-Key':key},
+      body:JSON.stringify({
+        orderId:refundOrderId,returnDate:'2026-10-20',
+        amount:10000,paymentMethod:'НАЛИЧКА',items:[],requestId:key,
+      }),
+    })
+    const res=await worker.fetch(req,env)
+    return {status:res.status,data:await res.json()}
+  }
+  const concurrentReturnResults=await Promise.all([
+    concurrentRefund('workerd-refund-staff-a'),
+    concurrentRefund('workerd-refund-staff-b'),
+  ])
+  const refunded=await sql(
+    "SELECT COUNT(*) AS n,COALESCE(SUM(amount),0) AS amount FROM returns WHERE order_id=? AND status<>'cancelled'",refundOrderId
+  )
+  assert.equal(Number(refunded.n),1,'Two independent refunds cannot both succeed: '+JSON.stringify(concurrentReturnResults))
+  assert.equal(Number(refunded.amount),10000,'Total refund must not exceed paid money')
+  assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',refundOrderId)).return_amount),10000)
+  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_MONEY_REFUND_PASSED: independent simultaneous refunds cannot exceed received funds')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
