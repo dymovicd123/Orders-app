@@ -355,6 +355,85 @@ try {
   assert.equal(Number(legacyFinal.debt_amount),7000)
   assert.equal(sql('SELECT status FROM exchanges WHERE id=?',legacyExchangeId).status,'cancelled')
   console.log('MAIN_LEGACY_EXCHANGE_WORKER_SQLITE_PASSED: old manual total, concrete SKU exchange, no invented unit price, retries and cancellation reconcile')
+  // LEGACY MULTI-PAIR visit: the existing UI does sequential critical
+  // operations, not one transaction. Simulate a network cut AFTER pair 1,
+  // replay that request, then finish pair 2 with the ONLY extra payment.
+  const twoLinePayload={
+    ...legacyCreatePayload,requestId:'stability-legacy-two-line',customerPhone:'77010000004',
+    orderTotal:30000,
+    items:[
+      {...legacyCreatePayload.items[0]},
+      {...legacyCreatePayload.items[0],color:newColor},
+    ],
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:20000}],
+  }
+  const mult=await api('/api/orders','POST',twoLinePayload,{expectedStatus:201,requestId:twoLinePayload.requestId})
+  const multiId=Number(mult.data.orderId)
+  const multiOld=sqlite.prepare('SELECT id,variant_id,quantity FROM order_items WHERE order_id=? ORDER BY id').all(multiId)
+  assert.equal(multiOld.length,2)
+  assert.deepEqual(multiOld.map(x=>Number(x.variant_id)),[variantId,newVariantId])
+  await api('/api/orders/'+multiId+'/shipping','PATCH',ship)
+  const beforeMultiOld=Number(stock().quantity)
+  const beforeMultiNew=Number(newStock().quantity)
+  const pair1={
+    orderId:multiId,exchangeDate:'2026-10-20',
+    oldItemId:multiOld[0].id,oldQuantity:1,oldPhysicalState:'warehouse',oldReturnSource:'warehouse',
+    newItem:{...legacyCreatePayload.items[0],color:newColor},
+    financialAction:'none',financialAmount:0,paymentMethod:'',comment:'Первый из двух обменов',
+  }
+  const first=await api('/api/exchanges','POST',pair1,{
+    expectedStatus:201,requestId:'stability-legacy-multi-first',
+  })
+  assert(Number(first.data.exchangeId)>0)
+  assert.equal(Number(stock().quantity),beforeMultiOld+1)
+  assert.equal(Number(newStock().quantity),beforeMultiNew-1)
+  assert.equal(sql('SELECT total_amount FROM orders WHERE id=?',multiId).total_amount,30000)
+  assert.equal(sql('SELECT received_amount FROM orders WHERE id=?',multiId).received_amount,20000)
+  // Cut transport, lose client response, repeat the exact first payload and ID.
+  await api('/api/exchanges','POST',pair1,{
+    expectedStatus:201,requestId:'stability-legacy-multi-first',
+  })
+  assert.equal(count('exchanges','order_id='+multiId+' AND status=\'completed\''),1)
+  assert.equal(Number(stock().quantity),beforeMultiOld+1)
+  assert.equal(Number(newStock().quantity),beforeMultiNew-1)
+  const pair2={
+    ...pair1,oldItemId:multiOld[1].id,newItem:{...legacyCreatePayload.items[0]},
+    financialAction:'extra_payment',financialAmount:1000,paymentMethod:'НАЛИЧКА',
+    comment:'Второй обмен — единственная доплата',
+  }
+  const secondSwap=await api('/api/exchanges','POST',pair2,{
+    expectedStatus:201,requestId:'stability-legacy-multi-second',
+  })
+  assert(Number(secondSwap.data.exchangeId)>0)
+  assert.equal(count('exchanges','order_id='+multiId+' AND status=\'completed\''),2)
+  assert.equal(Number(stock().quantity),beforeMultiOld)
+  assert.equal(Number(newStock().quantity),beforeMultiNew)
+  const afterMulti=sql('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?',multiId)
+  assert.equal(Number(afterMulti.total_amount),31000)
+  assert.equal(Number(afterMulti.received_amount),21000)
+  assert.equal(Number(afterMulti.debt_amount),10000)
+  await api('/api/exchanges','POST',pair2,{
+    expectedStatus:201,requestId:'stability-legacy-multi-second',
+  })
+  assert.equal(count('payments','order_id='+multiId),2,'Extra payment must not be duplicated by retry')
+  assert.equal(Number(sql('SELECT received_amount FROM orders WHERE id=?',multiId).received_amount),21000)
+  assert.equal(Number(stock().quantity),beforeMultiOld)
+  assert.equal(Number(newStock().quantity),beforeMultiNew)
+  // Undo in reverse chronological order; original historical total and
+  // both exact SKU physical counts must be restored without guesswork.
+  for(const [id,key] of [
+    [Number(secondSwap.data.exchangeId),'stability-legacy-multi-cancel2'],
+    [Number(first.data.exchangeId),'stability-legacy-multi-cancel1'],
+  ]) await api('/api/exchanges/'+id+'/cancel','PATCH',{
+    comment:'Отмена двухпарного теста',
+  },{requestId:key})
+  assert.equal(Number(stock().quantity),beforeMultiOld)
+  assert.equal(Number(newStock().quantity),beforeMultiNew)
+  const finalMulti=sql('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?',multiId)
+  assert.equal(Number(finalMulti.total_amount),30000)
+  assert.equal(Number(finalMulti.received_amount),20000)
+  assert.equal(Number(finalMulti.debt_amount),10000)
+  console.log('MAIN_LEGACY_MULTI_PAIR_WORKER_SQLITE_PASSED: failed transport/retry between pairs, final-only cash, two reverse cancellations, exact SKU & money restored')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
