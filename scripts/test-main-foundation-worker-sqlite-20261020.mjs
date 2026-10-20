@@ -985,6 +985,8 @@ try {
   const complexExchange=(await api('/api/exchanges','POST',{
     orderId:complexId,exchangeDate:'2026-10-20',
     oldItemId:complexLine.id,oldQuantity:1,oldPhysicalState:'not_issued',oldReturnSource:'none',
+    expectedOrderTotal:10000,expectedOldActiveQuantity:1,expectedOldUnitPrice:10000,
+    expectedOldLineTotal:10000,expectedOldCatalogPriceSnapshot:null,
     newItem:{...complexPayload.items[0],color:newColor,quantity:1},
     financialAction:'none',financialAmount:0,paymentMethod:'',
     comment:'До передачи клиенту ошибочно зарегистрировали замену',
