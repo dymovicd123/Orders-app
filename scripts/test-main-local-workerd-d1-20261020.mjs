@@ -364,6 +364,40 @@ try {
   await concurrentIssue('workerd-employee-a-replay')
   assert.equal(Number((await stock()).quantity),afterConcurrentPhysical)
   console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_ISSUE_PASSED: two simultaneous independent requests, only one Physical deduction, one fulfilled reservation')
+
+  // Two DIFFERENT authenticated requests to close one debt. Unlike retrying
+  // the same requestId, these are independent concurrent payment operations.
+  // Both must not commit based on the same stale debt preflight.
+  const moneyOnlyOrderPayload={
+    ...oldOrder,requestId:'workerd-racing-money-order',customerPhone:'77010000444',
+    orderTotal:10000,items:[{...oldOrder.items[0],quantity:1}],payments:[],
+  }
+  const moneyOrder=(await call('/api/orders','POST',moneyOnlyOrderPayload,201,'workerd-racing-money-order')).data
+  const moneyOrderId=Number(moneyOrder.orderId)
+  assert.equal(Number((await sql('SELECT debt_amount FROM orders WHERE id=?',moneyOrderId)).debt_amount),10000)
+  const concurrentPayment=async(key)=>{
+    const req=new Request(root+'/api/payments',{
+      method:'POST',
+      headers:{cookie,'content-type':'application/json','X-Idempotency-Key':key},
+      body:JSON.stringify({
+        orderId:moneyOrderId,paymentDate:'2026-10-20',method:'НАЛИЧКА',
+        amount:10000,paymentKind:'debt_close',requestId:key,
+      }),
+    })
+    const resp=await worker.fetch(req,env)
+    return {status:resp.status,data:await resp.json()}
+  }
+  const paid=await Promise.all([
+    concurrentPayment('workerd-staff-payment-1'),
+    concurrentPayment('workerd-staff-payment-2'),
+  ])
+  const moneyRecords=Number((await sql('SELECT COUNT(*) AS n FROM payments WHERE order_id=?',moneyOrderId)).n)
+  const paidTotal=Number((await sql('SELECT COALESCE(SUM(amount),0) AS n FROM payments WHERE order_id=?',moneyOrderId)).n)
+  assert.equal(moneyRecords,1,'Two independent staff cannot both insert a full debt payment: '+JSON.stringify(paid))
+  assert.equal(paidTotal,10000,'Concurrent repayment cannot exceed original debt')
+  assert.equal(Number((await sql('SELECT received_amount FROM orders WHERE id=?',moneyOrderId)).received_amount),10000)
+  assert.equal(Number((await sql('SELECT debt_amount FROM orders WHERE id=?',moneyOrderId)).debt_amount),0)
+  console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_DEBT_PAYMENT_PASSED: separate staff requests cannot overpay one outstanding debt')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
