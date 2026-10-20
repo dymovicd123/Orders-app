@@ -202,6 +202,95 @@ try{
  assert.equal(Number(unrefunded.return_amount),0,'Refund cancellation left return amount')
  assert.equal(Number(unrefunded.received_amount),10000,'Refund cancellation forged a new incoming payment')
  console.log('CLIENT3_REAL_WORKER_RETURN_CANCEL_AND_REPLAY_PASSED: money-only refund reversed exactly once')
+ // Multi-position workshop exchange runs through the ACTUAL HTTP API, not
+ // merely a source-level contract. Opposite price deltas force ordered child
+ // commits; a replay and two cancellations must neither duplicate items nor
+ // change the order's money ledger.
+ const multiOrderPayload={...createPayload,
+   requestId:'ac19d0ce-2026-40be-9000-000000000b01',
+   items:[
+     {...createPayload.items[0],productName:'CLIENT3_BATCH_OLD_A',unitPrice:8000},
+     {...createPayload.items[0],productName:'CLIENT3_BATCH_OLD_B',unitPrice:12000}
+   ],
+   payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',amount:5000,paymentKind:'primary'}]
+ }
+ const multiCreate=await get('/api/orders',{method:'POST',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':multiOrderPayload.requestId},
+   body:JSON.stringify(multiOrderPayload)})
+ assert.equal(multiCreate.status,201,'Multi-item order creation failed: '+multiCreate.body.slice(0,1000))
+ const multiOrderId=Number(JSON.parse(multiCreate.body).order?.id||JSON.parse(multiCreate.body).orderId||JSON.parse(multiCreate.body).id)
+ assert(multiOrderId>0,'Multi-item order ID missing')
+ const multiBeforeResp=await get('/api/orders/'+multiOrderId,authenticated)
+ assert.equal(multiBeforeResp.status,200,'Multi-item order read failed')
+ const multiBefore=JSON.parse(multiBeforeResp.body).order
+ assert.equal(Number(multiBefore.total_amount),20000,'Two initial workshop lines must total 20,000')
+ assert.equal(Number(multiBefore.received_amount),5000,'Multi-item initial payment mismatch')
+ assert.equal(Number(multiBefore.debt_amount),15000,'Multi-item initial debt mismatch')
+ const oldA=(multiBefore.items||[]).find(x=>x.productName==='CLIENT3_BATCH_OLD_A'||x.product_name_snapshot==='CLIENT3_BATCH_OLD_A')
+ const oldB=(multiBefore.items||[]).find(x=>x.productName==='CLIENT3_BATCH_OLD_B'||x.product_name_snapshot==='CLIENT3_BATCH_OLD_B')
+ assert(oldA?.id>0&&oldB?.id>0,'Both old batch lines must exist')
+ const batchPair=(oldLine,newProduct,newPrice)=>({
+   oldItemId:oldLine.id,oldQuantity:1,oldPhysicalState:'not_issued',
+   expectedOldActiveQuantity:Number(oldLine.quantity),
+   expectedOldUnitPrice:Number(oldLine.unit_price),
+   expectedOldLineTotal:Number(oldLine.line_total),
+   expectedOldCatalogPriceSnapshot:oldLine.catalog_price_snapshot??null,
+   newItem:{productName:newProduct,gender:'ЖЕН',color:'БЕЛЫЙ',
+     material:'СТАНДАРТ',length:'СТАНДАРТ',size:'48',sourceType:'workshop',
+     isWorkshop:true,quantity:1,unitPrice:newPrice,catalogPriceSnapshot:null}
+ })
+ const batchPayload={
+   requestId:'ac19d0ce-2026-40be-9000-000000000b02',orderId:multiOrderId,
+   exchangeDate:'2026-10-20',expectedOrderTotal:20000,
+   pairs:[batchPair(oldA,'CLIENT3_BATCH_NEW_A',9000),batchPair(oldB,'CLIENT3_BATCH_NEW_B',11000)],
+   financialAction:'none',financialAmount:0,comment:'client3 2-line batch regression'
+ }
+ const runBatch=()=>get('/api/exchanges/batch',{method:'POST',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':batchPayload.requestId},
+   body:JSON.stringify(batchPayload)})
+ const batchFirst=await runBatch()
+ assert.equal(batchFirst.status,201,'Real two-line batch exchange failed: '+batchFirst.body.slice(0,1400)+' log '+log.slice(-2000))
+ const batchResult=JSON.parse(batchFirst.body)
+ assert.equal(batchResult.exchangeCount,2,'Exactly two exchanges expected in the batch')
+ assert.equal(batchResult.exchangeIds?.length,2,'Both child exchange IDs must be returned')
+ assert.equal(Number(batchResult.finalTotalAmount),20000,'Batch delta did not net to zero')
+ const batchReplay=await runBatch()
+ assert.equal(batchReplay.status,201,'Batch idempotent retry failed: '+batchReplay.body.slice(0,1000))
+ const replayResult=JSON.parse(batchReplay.body)
+ assert.deepEqual(replayResult.exchangeIds,batchResult.exchangeIds,'Replay must reuse exactly the same exchanges')
+ const batchAfter=JSON.parse((await get('/api/orders/'+multiOrderId,authenticated)).body).order
+ const activeBatchItems=(batchAfter.items||[]).filter(x=>Number(x.quantity)>0)
+ assert.equal(activeBatchItems.length,2,'Batch must leave exactly two active order items')
+ assert.deepEqual(activeBatchItems.map(x=>x.productName||x.product_name_snapshot).sort(),
+   ['CLIENT3_BATCH_NEW_A','CLIENT3_BATCH_NEW_B'],'Batch installed wrong replacement items')
+ assert.equal(Number(batchAfter.total_amount),20000,'Batch altered final total')
+ assert.equal(Number(batchAfter.received_amount),5000,'Batch forged inbound payment')
+ assert.equal(Number(batchAfter.debt_amount),15000,'Batch altered debt')
+ const batchCancelPlan=await get('/api/orders/'+multiOrderId+'/exchange-cancel-chain',authenticated)
+ assert.equal(batchCancelPlan.status,200,'Batch cancellation plan unavailable')
+ assert.equal(JSON.parse(batchCancelPlan.body).availableExchangeIds?.length,2,'Batch replay duplicated exchange history')
+ for(const [i,exchangeId] of [...batchResult.exchangeIds].reverse().entries()){
+   const cancel={requestId:'ac19d0ce-2026-40be-9000-000000000b0'+(i+3),
+     comment:'client3 two-line batch cancellation'}
+   const undo=()=>get('/api/exchanges/'+exchangeId+'/cancel',{method:'PATCH',
+     headers:{...headers,...authenticated.headers,'X-Idempotency-Key':cancel.requestId},
+     body:JSON.stringify(cancel)})
+   const once=await undo()
+   assert.equal(once.status,200,'Batch child cancellation failed: '+once.body.slice(0,1200))
+   const twice=await undo()
+   assert.equal(twice.status,200,'Batch child cancellation replay failed: '+twice.body.slice(0,850))
+ }
+ const multiRestored=JSON.parse((await get('/api/orders/'+multiOrderId,authenticated)).body).order
+ const activeRestored=(multiRestored.items||[]).filter(x=>Number(x.quantity)>0)
+ assert.equal(activeRestored.length,2,'Batch cancel left extra active lines')
+ assert.deepEqual(activeRestored.map(x=>x.productName||x.product_name_snapshot).sort(),
+   ['CLIENT3_BATCH_OLD_A','CLIENT3_BATCH_OLD_B'],'Batch cancellation did not restore original items')
+ assert.equal(Number(multiRestored.total_amount),20000,'Batch cancellation changed original total')
+ assert.equal(Number(multiRestored.received_amount),5000,'Batch cancellation altered incoming payment')
+ assert.equal(Number(multiRestored.debt_amount),15000,'Batch cancellation altered original debt')
+ const noBatchExchanges=await get('/api/orders/'+multiOrderId+'/exchange-cancel-chain',authenticated)
+ assert.equal(JSON.parse(noBatchExchanges.body).availableExchangeIds?.length,0,'Cancelled batch exchanges remain active')
+ console.log('CLIENT3_REAL_WORKER_TWO_LINE_BATCH_REPLAY_AND_CANCEL_PASSED: 2 replacements, zero net delta, original 2 lines and 15,000 debt restored')
  // Exercise real Warehouse physical stock, canonical SKU, reservations, shipping,
  // repeated shipping, return-to-stock and repeated return on the local third D1.
  const stockName='CLIENT3_SMOKE_WAREHOUSE_SKU'
