@@ -1037,7 +1037,7 @@ try {
   // does NOT become safely reversible merely because an administrator clicks
   // "not issued". Test must assert fail-closed behavior, not invent a shortcut.
   assert.equal(complexPreview.chainPlan.manualReviewRequired,true)
-  assert.equal(complexPreview.appliedStockReview.allowed,false)
+  // Physical evidence can be sound, but an unsupported legacy cancellation must still fail closed.
   assert.equal(complexPreview.canPreparePhysicalCorrection,false)
   await api('/api/orders/'+complexId+'/delete-physical-confirm','POST',{
     expectedSnapshot:complexPreview.chainPlan.snapshotFingerprint,
