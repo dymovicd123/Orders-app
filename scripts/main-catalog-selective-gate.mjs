@@ -34,7 +34,7 @@ if (!process.env.MAIN_ACTIVE_RESERVATION_SHIPPING_REPLAY) {
     const old = spawnSync('git', ['show', previousRef + ':' + file], { encoding: null, maxBuffer: 16 * 1024 * 1024 })
     if (old.error || old.status !== 0) throw new Error('Historical reservation source unavailable')
     const { createHash } = await import('node:crypto')
-    const hash = value => createHash('sha1').update(Buffer.from('blob ' + value.length + '\\0')).update(value).digest('hex')
+    const hash = value => createHash('sha1').update(Buffer.from('blob ' + value.length + '\0')).update(value).digest('hex')
     if (hash(old.stdout) !== previousSha) throw new Error('Historical reservation source hash mismatch')
     fs.writeFileSync(file, old.stdout)
     run(process.execPath, ['scripts/main-catalog-selective-gate.mjs'],
