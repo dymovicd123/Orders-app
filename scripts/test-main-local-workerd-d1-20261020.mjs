@@ -28,7 +28,15 @@ try {
   const migrations=readdirSync('migrations').filter(f=>/^\d+.*\.sql$/.test(f)).sort()
   assert(migrations.length>=110)
   for(const file of migrations) {
-    try { await db.exec(readFileSync(join('migrations',file),'utf8')) }
+    // Local D1Database.exec splits multi-line SQL differently from SQLite's
+    // exec(). Flatten statement continuations while discarding SQL line
+    // comments; keep semicolons, trigger bodies and migration order intact.
+    // The source files are read-only and never rewritten.
+    const source=readFileSync(join('migrations',file),'utf8')
+    const flat=source.split(/\r?\n/).map(line=>
+      line.trimStart().startsWith('--') ? '' : line.replace(/\s+--[^\n]*$/, '')
+    ).join(' ').replace(/\s+/g,' ').trim()
+    try { await db.exec(flat) }
     catch(error) {throw new Error('Local workerd D1 failed migration '+file+': '+String(error),{cause:error})}
   }
   const hasSnapshot=await db.prepare("SELECT 1 AS present FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").first()
