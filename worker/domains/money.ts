@@ -2,7 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { cleanText, normalizeDate, normalizeOrderStatus, toInt, upperText } from '../core/text.ts'
 import type { PaymentKind } from '../core/types.ts'
-import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, criticalOperationEntityId, CriticalOperationConflictError, failCriticalOperation, parseCriticalContext } from './critical.ts'
+import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext } from './critical.ts'
 
 export function normalizePaymentKind(value: unknown) {
   const kind = cleanText(value).toLowerCase();
@@ -467,52 +467,50 @@ export async function createManualOrderPaymentCritical(
     }
 
     let paymentId = toInt(context.paymentId, 0);
-    if (criticalOperation.row.step === 'validated') {
-      // A preflight debt read is not sufficient: two employees can both read
-      // the same outstanding debt and insert separate payments. Recheck the
-      // actual live paid balance INSIDE the atomic D1 batch that inserts the
-      // payment and its retry mapping. A losing request inserts no payment.
-      const alreadyMapped = await criticalOperationEntityId(
-        db, criticalOperation.requestId, 'payment', 'manual_order_payment',
-      );
-      if (alreadyMapped) {
-        paymentId = alreadyMapped;
-      } else {
-        const [inserted] = await db.batch([
+    if (criticalOperation.row.step === 'validated') {      // The preflight debt read is stale when two staff requests overlap.
+      // Keep the payment + durable requestId mapping in the SAME D1 batch
+      // (via insertCriticalMappedEntity), but validate the CURRENT balance
+      // within the payment INSERT itself. An invalid payment explicitly hits
+      // payments.amount NOT NULL, rolling the whole batch back; no orphaned
+      // payment or stale last_insert_rowid mapping may be created.
+      let mapped;
+      try {
+        mapped = await insertCriticalMappedEntity(
+          db,
+          criticalOperation,
+          'payment',
+          'manual_order_payment',
           db.prepare(
             `INSERT INTO payments (order_id, payment_date, method, amount, payment_kind, comment, created_at)
-             SELECT o.id, ?, ?, ?, ?, ?, ?
-             FROM orders o
-             WHERE o.id = ?
-               AND o.order_status NOT IN ('deleted', 'archived')
-               AND o.archived_at IS NULL
-               AND ? <= MAX(0, COALESCE(o.total_amount, 0) - COALESCE((
-                 SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
-                 FROM payments p WHERE p.order_id = o.id
-               ), 0))`
+             VALUES (?, ?, ?,
+               CASE WHEN EXISTS (
+                 SELECT 1 FROM orders o
+                 WHERE o.id = ?
+                   AND o.order_status NOT IN ('deleted', 'archived')
+                   AND o.archived_at IS NULL
+                   AND ? <= MAX(0, COALESCE(o.total_amount, 0) - COALESCE((
+                     SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
+                     FROM payments p WHERE p.order_id = o.id
+                   ), 0))
+               ) THEN ? ELSE NULL END,
+               ?, ?, ?)`
           ).bind(
-            plan.paymentDate, plan.method, plan.amount, plan.paymentKind,
-            plan.comment || null, plan.timestamp, plan.orderId, plan.amount,
+            plan.orderId, plan.paymentDate, plan.method,
+            plan.orderId, plan.amount, plan.amount,
+            plan.paymentKind, plan.comment || null, plan.timestamp,
           ),
-          db.prepare(
-            `INSERT OR IGNORE INTO critical_operation_entities
-               (request_id, entity_type, entity_key, entity_id, created_at)
-             SELECT ?, 'payment', 'manual_order_payment', last_insert_rowid(), ?
-             WHERE changes() = 1`
-          ).bind(criticalOperation.requestId, plan.timestamp),
-        ]);
-        if (toInt(inserted.meta?.changes, 0) !== 1) {
+        );
+      } catch (error) {
+        const failure = cleanText(error instanceof Error ? error.message : error);
+        if (/not null constraint failed:\\s*payments\\.amount/i.test(failure)) {
           throw new CriticalOperationConflictError(
             'Долг по заказу уже изменился или закрыт другим сотрудником. Оплата не добавлена. Обновите заказ.',
           );
         }
-        paymentId = await criticalOperationEntityId(
-          db, criticalOperation.requestId, 'payment', 'manual_order_payment',
-        ) || toInt(inserted.meta?.last_row_id, 0);
-        if (!paymentId) {
-          throw new Error('Оплата записана, но её привязка не получена. Повторите тот же запрос.');
-        }
+        throw error;
       }
+      paymentId = mapped.id;
+
       context = { ...context, paymentId };
       await advanceCriticalOperation(db, criticalOperation, 'payment_written', {
         targetType: 'payment',
