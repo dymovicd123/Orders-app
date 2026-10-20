@@ -615,6 +615,49 @@ try {
   assert.equal(Number(oldReservation().quantity),2,'Recovered cancellation replay cannot inflate reserve')
   console.log('MAIN_LEGACY_UNISSUED_SEQUENTIAL_AND_FAILCANCEL_PASSED: 2->1->0, undo 0->1->2, injected partial cancellation recovered')
   console.log('MAIN_LEGACY_PARTIAL_UNISSUED_RESERVE_PASSED: 2->1 active reserve, no old physical writeoff, full cancel 1->2, retries harmless')
+  // Partial never-issued legacy exchange must NOT strand the remaining unit.
+  // After the 2->1 reserve split, shipping the still-active old line must consume
+  // exactly one Physical; the already-exchanged new item must not be sent twice.
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-unissued-then-ship-old',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:3}],
+  })
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-unissued-then-ship-new',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',color:newColor,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  const shipAfterSwapPayload={
+    ...unissuedPayload,requestId:'stability-unissued-then-ship',customerPhone:'77010000007',
+  }
+  const shipAfterSwap=await api('/api/orders','POST',shipAfterSwapPayload,{
+    expectedStatus:201,requestId:shipAfterSwapPayload.requestId,
+  })
+  const remainingOrderId=Number(shipAfterSwap.data.orderId)
+  const remainingOldItem=sql('SELECT id FROM order_items WHERE order_id=?',remainingOrderId)
+  const afterSwapPayload={
+    ...partialLegacyInput,orderId:remainingOrderId,oldItemId:remainingOldItem.id,
+  }
+  const swapOnce=await api('/api/exchanges','POST',afterSwapPayload,{
+    expectedStatus:201,requestId:'stability-unissued-then-ship-swap',
+  })
+  assert(swapOnce.data.ok)
+  const activeBeforeShip=sql('SELECT status,quantity FROM inventory_reservations WHERE order_item_id=?',remainingOldItem.id)
+  assert.equal(activeBeforeShip.status,'active')
+  assert.equal(Number(activeBeforeShip.quantity),1)
+  const physicalOldBeforeShip=Number(stock().quantity)
+  const physicalNewBeforeShip=Number(newStock().quantity)
+  await api('/api/orders/'+remainingOrderId+'/shipping','PATCH',ship)
+  const fulfilledAfterShip=sql('SELECT status,quantity FROM inventory_reservations WHERE order_item_id=?',remainingOldItem.id)
+  assert.equal(fulfilledAfterShip.status,'fulfilled','Remaining old item must be physically issued exactly once')
+  assert.equal(Number(fulfilledAfterShip.quantity),1)
+  assert.equal(Number(stock().quantity),physicalOldBeforeShip-1)
+  assert.equal(Number(newStock().quantity),physicalNewBeforeShip,'Already-issued exchanged new SKU cannot be sent twice')
+  await api('/api/orders/'+remainingOrderId+'/shipping','PATCH',ship)
+  assert.equal(Number(stock().quantity),physicalOldBeforeShip-1)
+  assert.equal(Number(newStock().quantity),physicalNewBeforeShip)
+  console.log('MAIN_LEGACY_UNISSUED_PARTIAL_THEN_SHIP_PASSED: residual active 1 -> fulfilled 1, original Physical -1, exchanged SKU not double issued')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
