@@ -2886,7 +2886,9 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
             NULL AS required_quantity,
             NULL AS physical_quantity
      FROM order_items oi
-     LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id
+     -- Historical released/fulfilled rows are audit history, not current blockers.
+     -- Only the active reservation can satisfy an unsent order item.
+     LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id AND r.status = 'active'
      LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
      LEFT JOIN catalog_products variant_product ON variant_product.id = order_variant.product_id
      LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id
@@ -2896,7 +2898,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
        AND COALESCE(oi.is_workshop, 0) = 0
        AND oi.quantity > 0
        AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'retired_physically_issued', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
-       AND (r.id IS NULL OR r.status <> 'active' OR r.variant_id IS NULL OR stock.id IS NULL)
+       AND (r.id IS NULL OR r.variant_id IS NULL OR stock.id IS NULL)
      ORDER BY oi.id ASC
      LIMIT 20`
   ).bind(orderId).all<Record<string, unknown>>();
