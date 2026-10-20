@@ -557,6 +557,63 @@ try {
     requestId:'stability-unissued-partial-undo',
   })
   assert.equal(Number(stock().reserved_quantity),beforeOldReserved)
+  // Two independent partial exchanges of one never-issued 2-unit line:
+  // 2->1 active, 1->0 released, cancel last 0->1, cancel first 1->2.
+  const seq1=await api('/api/exchanges','POST',partialLegacyInput,{
+    expectedStatus:201,requestId:'stability-unissued-sequential-first',
+  })
+  assert.equal(oldReservation().status,'active')
+  assert.equal(Number(oldReservation().quantity),1)
+  const seq2=await api('/api/exchanges','POST',partialLegacyInput,{
+    expectedStatus:201,requestId:'stability-unissued-sequential-second',
+  })
+  assert(Number(seq1.data.exchangeId)>0 && Number(seq2.data.exchangeId)>0)
+  assert.equal(Number(sql('SELECT quantity FROM order_items WHERE id=?',unissuedItem.id).quantity),0)
+  assert.equal(oldReservation().status,'released')
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved-2)
+  assert.equal(Number(stock().quantity),beforeOldPhysical,'Two unissued swaps never remove old physical')
+  assert.equal(Number(newStock().quantity),beforeReplacementPhysical-2,'Two replacement units leave physical')
+  await api('/api/exchanges/'+Number(seq2.data.exchangeId)+'/cancel','PATCH',{},{
+    requestId:'stability-unissued-sequential-undo-last',
+  })
+  assert.equal(oldReservation().status,'active')
+  assert.equal(Number(oldReservation().quantity),1)
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved-1)
+  await api('/api/exchanges/'+Number(seq1.data.exchangeId)+'/cancel','PATCH',{},{
+    requestId:'stability-unissued-sequential-undo-first',
+  })
+  assert.equal(oldReservation().status,'active')
+  assert.equal(Number(oldReservation().quantity),2)
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved)
+  assert.equal(Number(newStock().quantity),beforeReplacementPhysical)
+
+  // Interrupt cancellation AFTER restoring order item/new stock but BEFORE
+  // restoring the partial old reservation: same requestId must complete once.
+  const failCancelSwap=await api('/api/exchanges','POST',partialLegacyInput,{
+    expectedStatus:201,requestId:'stability-unissued-failcancel-create',
+  })
+  const failCancelId=Number(failCancelSwap.data.exchangeId)
+  assert.equal(Number(oldReservation().quantity),1)
+  failNextSqlWriteContaining='SET quantity = ?, status = ?, released_at = NULL, updated_at = ?'
+  const cancelledHalf=await api('/api/exchanges/'+failCancelId+'/cancel','PATCH',{},{
+    expectedStatus:500,requestId:'stability-unissued-failcancel-undo',
+  })
+  assert.equal(cancelledHalf.data.ok,false,'Injected cancellation must actually fail')
+  assert.equal(Number(oldReservation().quantity),1,'Before retry reserve must not have changed')
+  const recoveredCancel=await api('/api/exchanges/'+failCancelId+'/cancel','PATCH',{},{
+    requestId:'stability-unissued-failcancel-undo',
+  })
+  assert(recoveredCancel.data.ok)
+  assert.equal(oldReservation().status,'active')
+  assert.equal(Number(oldReservation().quantity),2)
+  assert.equal(Number(stock().reserved_quantity),beforeOldReserved)
+  assert.equal(Number(stock().quantity),beforeOldPhysical)
+  assert.equal(Number(newStock().quantity),beforeReplacementPhysical)
+  await api('/api/exchanges/'+failCancelId+'/cancel','PATCH',{},{
+    requestId:'stability-unissued-failcancel-undo',
+  })
+  assert.equal(Number(oldReservation().quantity),2,'Recovered cancellation replay cannot inflate reserve')
+  console.log('MAIN_LEGACY_UNISSUED_SEQUENTIAL_AND_FAILCANCEL_PASSED: 2->1->0, undo 0->1->2, injected partial cancellation recovered')
   console.log('MAIN_LEGACY_PARTIAL_UNISSUED_RESERVE_PASSED: 2->1 active reserve, no old physical writeoff, full cancel 1->2, retries harmless')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
