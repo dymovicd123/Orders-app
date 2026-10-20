@@ -358,6 +358,24 @@ export async function createReturn(
     const stockStatus = cleanText(orderItem.stock_writeoff_status);
     const sentFallback = cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus);
     const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback;
+    // A historical item can claim to be issued while its original stock obligation
+    // still has an active/unresolved reservation. Crediting a physical return in
+    // that contradictory state would leave the same SKU both returned and reserved,
+    // allowing a later shipment to deduct it again. Fail closed BEFORE creating
+    // the Return, refund event, or any stock movement; money-only refunds remain valid.
+    if (!isWorkshop && issuedToClient) {
+      const dangling = await db.prepare(
+        `SELECT id, status, quantity
+         FROM inventory_reservations
+         WHERE order_item_id = ? AND status IN ('active', 'unresolved')
+         ORDER BY id DESC LIMIT 1`
+      ).bind(selected.orderItemId).first<{ id: number; status: string; quantity: number }>();
+      if (dangling?.id) {
+        throw new CriticalOperationConflictError(
+          `Позиция «${cleanText(orderItem.product_name_snapshot)}» отмечена как выданная, но по ней ещё действует резерв ${Math.max(0, toInt(dangling.quantity, 0))} шт. Физический возврат остановлен без изменения склада и денег. Сначала уточните фактическую выдачу этой позиции в заказе; возврат только денег доступен отдельно.`
+        );
+      }
+    }
     const physicalState = selected.physicalState;
     const physicalTracking = physicalState !== null;
     const trackedInventorySource = physicalState === 'warehouse' || physicalState === 'boutique' ? physicalState : null;
@@ -396,8 +414,26 @@ export async function createReturn(
     const createStatements: D1PreparedStatement[] = [
       db.prepare(
         `INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)`
-      ).bind(orderId, managerRow?.manager_id ?? null, returnDate, amount, amount > 0 ? paymentMethod : null, comment || null, createdAt),
+         VALUES (?, ?, ?,
+           CASE WHEN ? = 0 OR EXISTS (
+             SELECT 1 FROM orders o
+             WHERE o.id = ? AND o.order_status NOT IN ('deleted', 'archived')
+               AND o.archived_at IS NULL
+               AND ? <= MAX(0, COALESCE((
+                 SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
+                 FROM payments p WHERE p.order_id = o.id
+               ), 0) - COALESCE((
+                 SELECT SUM(CASE WHEN ret.amount > 0 THEN ret.amount ELSE 0 END)
+                 FROM returns ret WHERE ret.order_id = o.id
+                   AND COALESCE(ret.status, 'completed') <> 'cancelled'
+               ), 0))
+           ) THEN ? ELSE NULL END,
+           ?, ?, 'completed', ?)`
+      ).bind(
+        orderId, managerRow?.manager_id ?? null, returnDate,
+        amount, orderId, amount, amount,
+        amount > 0 ? paymentMethod : null, comment || null, createdAt,
+      ),
       db.prepare(
         `UPDATE critical_operations
          SET target_type = 'return', target_id = last_insert_rowid(), target_ref = ?, step = 'return_created',
@@ -419,7 +455,22 @@ export async function createReturn(
         comment: comment || null,
       }));
     }
-    const [insertReturn] = await db.batch(createStatements);
+    // The refund limit must be enforced atomically with Return creation.
+    // If two employees both read the same refundable amount, the losing batch
+    // intentionally fails returns.amount NOT NULL before recording money,
+    // stock obligations or the critical operation's target.
+    let insertReturn: D1Result<unknown>;
+    try {
+      [insertReturn] = await db.batch(createStatements);
+    } catch (error) {
+      const raw = cleanText(error instanceof Error ? error.message : error);
+      if (/not null constraint failed:\s*returns\.amount/i.test(raw)) {
+        throw new CriticalOperationConflictError(
+          'Доступная сумма возврата изменилась: другой сотрудник уже оформил возврат денег. Ничего не списано. Обновите заказ.',
+        );
+      }
+      throw error;
+    }
     returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
     returnId = toInt(criticalOperation.row.target_id, 0) || returnId;
@@ -765,6 +816,25 @@ export async function receiveReturnedItem(
       throw new CriticalOperationConflictError('Это старая запись: физическое получение по ней раньше не отслеживалось. Автоматически менять остаток нельзя.');
     }
     const isWorkshop = Boolean(toInt(item.is_workshop, 0));
+    // A Return may have been registered days before physical receipt. Re-check
+    // the original SKU's active obligation at the moment of intake, not only
+    // at Return creation. Historical rows can carry both a completed Return
+    // and an active order reserve (cf. order #1563). Adding Physical would
+    // duplicate stock truth while the old reservation remains shippable.
+    // A previously received item is left on its idempotent replay path.
+    if (operationType === 'return' && !isWorkshop && !cleanText(item.physical_received_at)) {
+      const activeReservation = await db.prepare(
+        `SELECT id, quantity, status
+         FROM inventory_reservations
+         WHERE order_item_id = ? AND status IN ('active', 'unresolved')
+         ORDER BY id DESC LIMIT 1`
+      ).bind(toInt(item.order_item_id, 0)).first<{ id: number; quantity: number; status: string }>();
+      if (activeReservation?.id) {
+        throw new CriticalOperationConflictError(
+          `Нельзя принять позицию «${cleanText(item.product_name_snapshot)}»: по ней ещё открыт резерв ${Math.max(0, toInt(activeReservation.quantity, 0))} шт. Уточните фактическую выдачу этой позиции в заказе. Приёмка остановлена без изменения склада.`
+        );
+      }
+    }
 
     const persistedDestination = () => {
       const source = cleanText(item?.inventory_source);
@@ -1382,12 +1452,33 @@ export async function createExchange(
   }
 
   if (!operationContext.baselineCaptured && humanInventoryModelEnabled && !oldItemIsWorkshop && oldWasNotIssued) {
-    await releaseOrderReservationV2(
-      db,
-      oldItemId,
-      timestamp,
-      `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
-    );
+    if (oldQuantity < rawOldQuantity) {
+      // Historical pair exchanges must preserve the reservation of the unexchanged remainder.
+      // Persist the BEFORE snapshot ahead of any stock mutation so a retry after a lost
+      // response does not subtract reserved_quantity twice.
+      let snapshot = operationContext.legacyPartialReservationSnapshot as ReservationSnapshot | undefined;
+      if (!snapshot) {
+        snapshot = await loadReservationSnapshot(db, oldItemId, oldQuantity, rawOldQuantity) || undefined;
+        if (!snapshot) {
+          throw new CriticalOperationConflictError('У оставшегося невыданного товара нет действующего резерва. Обмен остановлен без изменений.');
+        }
+        operationContext = { ...operationContext, legacyPartialReservationSnapshot: snapshot };
+        await advanceCriticalOperation(db, criticalOperation, 'legacy_partial_reservation_validated', { context: operationContext });
+      }
+      await applyNotIssuedReservationReduction(
+        db,
+        { orderItemId: oldItemId, quantity: oldQuantity, reservationSnapshot: snapshot },
+        timestamp,
+        cleanText((existing as any).external_id),
+      );
+    } else {
+      await releaseOrderReservationV2(
+        db,
+        oldItemId,
+        timestamp,
+        `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
+      );
+    }
   }
 
   // Legacy recovery path: if the operator explicitly says that the customer has/returned the item
@@ -2753,16 +2844,47 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   ).run();
 
   if (exchangeOldWasNotIssued && !Boolean(toInt(oldItem.is_workshop, 0))) {
-    const reactivated = await reactivateReleasedOrderReservationV2(
-      db,
-      toInt(exchange.old_order_item_id, 0),
-      timestamp,
-      `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
-    );
-    if (!reactivated) {
-      throw new CriticalOperationConflictError(
-        'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+    // For a partial never-issued legacy exchange, the original reservation
+    // remains active but smaller. Re-activating it is insufficient: restore
+    // exactly the exchanged quantity using the persisted creation snapshot.
+    const creator = await db.prepare(
+      `SELECT context_json FROM critical_operations
+       WHERE operation_type = 'exchange_create' AND target_type = 'exchange' AND target_id = ?
+       ORDER BY created_at DESC LIMIT 1`
+    ).bind(exchangeId).first<{ context_json: string | null }>();
+    let savedPartial: ReservationSnapshot | null = null;
+    if (creator?.context_json) {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(creator.context_json) as Record<string, unknown>;
+      } catch {
+        throw new CriticalOperationConflictError('Снимок исходного обмена повреждён. Отмена остановлена без дальнейшего изменения резерва.');
+      }
+      savedPartial = (parsed.legacyPartialReservationSnapshot as ReservationSnapshot | null) || null;
+    }
+    if (savedPartial) {
+      if (savedPartial.quantity !== restoredOldQuantity || savedPartial.targetQuantity !== restoredOldQuantity - oldQuantity) {
+        throw new CriticalOperationConflictError('Количество исходного резерва не совпадает с отменяемым обменом.');
+      }
+      await restoreNotIssuedReservation(
+        db,
+        { orderItemId: toInt(exchange.old_order_item_id, 0), quantity: oldQuantity, reservationSnapshot: savedPartial },
+        timestamp,
+        exchangeId,
       );
+    } else {
+      // Existing fully released/historical exchanges preserve their original path.
+      const reactivated = await reactivateReleasedOrderReservationV2(
+        db,
+        toInt(exchange.old_order_item_id, 0),
+        timestamp,
+        `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
+      );
+      if (!reactivated) {
+        throw new CriticalOperationConflictError(
+          'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+        );
+      }
     }
   }
 
@@ -3051,7 +3173,7 @@ async function loadReservationSnapshot(
 
 async function applyNotIssuedReservationReduction(
   db: D1Database,
-  plan: ExchangeSetOldPlan,
+  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
   timestamp: string,
   externalOrderId: string,
 ) {
@@ -3114,7 +3236,7 @@ async function applyNotIssuedReservationReduction(
 
 async function restoreNotIssuedReservation(
   db: D1Database,
-  plan: ExchangeSetOldPlan,
+  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
   timestamp: string,
   exchangeId: number,
 ) {

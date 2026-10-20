@@ -13,8 +13,8 @@
     "worker/domains/auth.ts": {
       "beforeGitBlob": "9dc58fef53901c21cc0539c2e2dbec7bbf159143",
       "beforeLines": 647,
-      "afterGitBlob": "d7bbf4e7dc5d5c86ac1b0b4abaa410e9e7caa9a2",
-      "afterLines": 974,
+      "afterGitBlob": "7be85b1a8ad9843b6e383b48d500db0996a4c45c",
+      "afterLines": 979,
       "baselineFixture": "scripts/fixtures/auth-production-port/worker/domains/auth.ts"
     },
     "worker/domains/team.ts": {

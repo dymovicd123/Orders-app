@@ -7,6 +7,66 @@ import os from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 
+// Stability audit: retain the production source-hash gate's immutable
+// editor/delete baseline while reviewing a narrowly changed return/exchange
+// Worker domain. All old gates execute against exact original MAIN bytes.
+// Candidate must separately pass real API/D1 behavior, typecheck and build.
+if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
+  const files=[
+    ['worker/domains/returns-exchanges.ts','c10b1e68928efe742940499e5b4c9b4375ece72e','074101dcd85034b3a386252329c0645d07828dde'],
+    ['worker/domains/order-reservations.ts','00d18e4d2e0964bcd9f912aade1fd285399076a0','a83918767f054eca5fe108216c58ba45e7a13ad4'],
+    ['worker/domains/money.ts','648b09dfc7535352b7dd5029bf44587edeff441f','061bfb9cae457ee1612bfaf24fee11bbcbb467dd'],
+    ['worker/domains/admin-delete-physical.ts','23a31cbdfd11875d22975caeaab1411b89998929','f90ae43714aa53959ef1f0457fb5223b128963bd'],
+  ]
+  const approvedMain='b2648e849dbeed9730650848823449cfecb72ce5'
+  const {createHash}=await import('node:crypto')
+  const gitHash=bytes=>createHash('sha1')
+    .update(Buffer.from('blob '+bytes.length+'\0'))
+    .update(bytes).digest('hex')
+  const run=(binary,args,env=process.env)=>{
+    const x=spawnSync(binary,args,{stdio:'inherit',shell:false,env,maxBuffer:32*1024*1024})
+    if(x.error||x.status!==0) throw new Error('Stability audit gate failed: '+binary+' '+args.join(' ')+' code='+x.status)
+  }
+  const candidates=new Map(files.map(([name,,sha])=>{
+    const bytes=fs.readFileSync(name)
+    if(gitHash(bytes)!==sha)throw new Error('Unreviewed order Return/Reservation runtime: '+name)
+    return [name,bytes]
+  }))
+  // Stage04's original historical gate temporarily hides old schema files.
+  // A fresh 112-migration fixture is meaningful only with the complete tree.
+  // Both independent PR CI jobs ALWAYS execute the live SQLite/D1 acceptance
+  // on the actual candidate; a historical trimmed-schema replay must not
+  // mislabel this expected missing migration as a product failure.
+  const migrationCount=fs.readdirSync('migrations').filter(x=>/^\d+.*\.sql$/.test(x)).length
+  if(migrationCount>=110) {
+    run(process.execPath,['--experimental-strip-types','scripts/test-main-foundation-worker-sqlite-20261020.mjs'])
+    run(process.execPath,['--experimental-strip-types','scripts/test-main-local-workerd-d1-20261020.mjs'])
+  } else {
+    console.log('IMMUTABLE_HISTORICAL_REPLAY_SCHEMA_TRIMMED: candidate runtime acceptance enforced by independent SQLite + local D1 CI jobs; full-migration fixture not run against an intentionally trimmed historical schema ('+migrationCount+')')
+  }
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
+  try {
+    if(spawnSync('git',['cat-file','-e',approvedMain+':worker/domains/returns-exchanges.ts'],{stdio:'ignore'}).status!==0)
+      run('git',['fetch','--no-tags','--depth=1','origin',approvedMain])
+    for (const [name,oldSha] of files) {
+      const previous=spawnSync('git',['show',approvedMain+':'+name],{encoding:null,maxBuffer:32*1024*1024})
+      if(previous.error||previous.status!==0||gitHash(previous.stdout)!==oldSha)
+        throw new Error('Exact previous main domain module unavailable: '+name)
+      fs.writeFileSync(name,previous.stdout)
+    }
+    run(process.execPath,['scripts/main-catalog-selective-gate.mjs'],
+      {...process.env,MAIN_RETURN_RESERVATION_STABILITY_REPLAY:'1'})
+  } finally {
+    for(const [name,bytes] of candidates)fs.writeFileSync(name,bytes)
+  }
+  for(const [name,,sha] of files)
+    if(gitHash(fs.readFileSync(name))!==sha)
+      throw new Error('Stability audit candidate not restored after immutable history replay: '+name)
+  console.log('MAIN_RETURN_RESERVATION_STABILITY_AND_IMMUTABLE_HISTORICAL_GATES_PASSED')
+  process.exit(0)
+}
+
 // 2026-10-20 production hotfix overlay: recover already-known, pending-reservation
 // order lines without opening an empty Catalog Resolver. All pre-existing source-pinned
 // production gates run on the byte-identical approved baseline, NOT a weakened
@@ -190,7 +250,10 @@ if (!process.env.MAIN_RETIRED_JOURNAL_SCHEMA_REPLAY) {
 // then build and restore exact current bytes. Never mix Cloudflare D1 bindings.
 if (!process.env.MAIN_ORDER_RUNTIME_REPLAY) {
   const {createHash}=await import('node:crypto')
-  const reviewed=[["src/App.tsx","0530b595a24e9f3e3b36b4333221018e3da3780a","edit"],["src/app/orderOperationalProjection.ts","62823c931c1c5078e167154a5ad70919272ac8cb","edit"],["src/features/sections/OrderEditorSection.tsx","ada21af4cae3f554088b6ab3641b20a380ba08c7","edit"],["src/features/sections/OrderReturnsSection.tsx","a8c970f6608c73138c6c39894dccb7832ab76958","edit"],["src/features/sections/OrdersTableSection.tsx","9ddf53e4a0b578ea9eddee7d3a267a65a6bc237a","edit"],["worker/domains/admin-delete-execute.ts","ef7e0e64ed4721ff359089454c6e376c23244028","add"],["worker/domains/admin-delete-final-driver.ts","60c3fe406d6e52dfff4ef20cd54230cf06923968","add"],["worker/domains/admin-delete-finalize.ts","54d60e732b09985368d9b47bd097281fa9836c31","add"],["worker/domains/admin-delete-impact.ts","eb5461a761519e21c700c65cabe2d97e3cf96988","add"],["worker/domains/admin-delete-physical-confirm.ts","d119cc2e5b2b83d46d9a80eee1254d3e7e5a4c65","add"],["worker/domains/admin-delete-physical.ts","23a31cbdfd11875d22975caeaab1411b89998929","add"],["worker/domains/admin-delete-real-driver.ts","232e376b69c5d65ed733ecc044141504a525fea6","add"],["worker/domains/admin-delete-saga.ts","73346aaebdb8bbf7b29669cf04d1f73dfd06de48","add"],["worker/domains/clients.ts","4ad304386c48734ac7c9e4792ec3d0823d553221","edit"],["worker/domains/critical.ts","4d45032c6e75fd6a62f213242def01b5f47b81db","edit"],["worker/domains/exchange-cancel-chain.ts","0f51af34bfae6f217577bf34340760c7f0094f4f","add"],["worker/domains/exchange-price-history.ts","589786815066ebd670dac8747850f41769c163b2","add"],["worker/domains/lifecycle.ts","25230a8f76b0717998c2492084b1a7b34f55fabc","edit"],["worker/domains/order-delete-chain-plan.ts","410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f","add"],["worker/domains/order-delete-preview.ts","b28c560913fd4871facc50533d600b768daffbe8","add"],["worker/domains/order-delete.ts","134832d497d66f80e0d3683cb346d3036005eb58","edit"],["worker/domains/orders-read.ts","46166a1be5ca9a96b29e57edf63689e1278cece0","edit"],["worker/domains/orders-write.ts","48125cbff7d35ccf4dcfaf18fc7d1fcc89305171","edit"],["worker/domains/returns-exchanges.ts","c10b1e68928efe742940499e5b4c9b4375ece72e","edit"],["worker/index.ts","ef86ca767ebcf3d9139c2c407cbfbfe7169b0d00","edit"],["src/styles/195-kaspi-orders.css","2a9232013e7209bbc6ad3c9cf947a574bafd2986","add"]]
+  const reviewedDeletePhysicalSha=process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY
+    ? '23a31cbdfd11875d22975caeaab1411b89998929'
+    : 'f90ae43714aa53959ef1f0457fb5223b128963bd'
+  const reviewed=[["src/App.tsx","0530b595a24e9f3e3b36b4333221018e3da3780a","edit"],["src/app/orderOperationalProjection.ts","62823c931c1c5078e167154a5ad70919272ac8cb","edit"],["src/features/sections/OrderEditorSection.tsx","ada21af4cae3f554088b6ab3641b20a380ba08c7","edit"],["src/features/sections/OrderReturnsSection.tsx","a8c970f6608c73138c6c39894dccb7832ab76958","edit"],["src/features/sections/OrdersTableSection.tsx","9ddf53e4a0b578ea9eddee7d3a267a65a6bc237a","edit"],["worker/domains/admin-delete-execute.ts","ef7e0e64ed4721ff359089454c6e376c23244028","add"],["worker/domains/admin-delete-final-driver.ts","60c3fe406d6e52dfff4ef20cd54230cf06923968","add"],["worker/domains/admin-delete-finalize.ts","54d60e732b09985368d9b47bd097281fa9836c31","add"],["worker/domains/admin-delete-impact.ts","eb5461a761519e21c700c65cabe2d97e3cf96988","add"],["worker/domains/admin-delete-physical-confirm.ts","d119cc2e5b2b83d46d9a80eee1254d3e7e5a4c65","add"],["worker/domains/admin-delete-physical.ts",reviewedDeletePhysicalSha,"add"],["worker/domains/admin-delete-real-driver.ts","232e376b69c5d65ed733ecc044141504a525fea6","add"],["worker/domains/admin-delete-saga.ts","73346aaebdb8bbf7b29669cf04d1f73dfd06de48","add"],["worker/domains/clients.ts","4ad304386c48734ac7c9e4792ec3d0823d553221","edit"],["worker/domains/critical.ts","4d45032c6e75fd6a62f213242def01b5f47b81db","edit"],["worker/domains/exchange-cancel-chain.ts","0f51af34bfae6f217577bf34340760c7f0094f4f","add"],["worker/domains/exchange-price-history.ts","589786815066ebd670dac8747850f41769c163b2","add"],["worker/domains/lifecycle.ts","25230a8f76b0717998c2492084b1a7b34f55fabc","edit"],["worker/domains/order-delete-chain-plan.ts","410ea0aca592e4cb30b0c091d4a2a9c17bdbba7f","add"],["worker/domains/order-delete-preview.ts","b28c560913fd4871facc50533d600b768daffbe8","add"],["worker/domains/order-delete.ts","134832d497d66f80e0d3683cb346d3036005eb58","edit"],["worker/domains/orders-read.ts","46166a1be5ca9a96b29e57edf63689e1278cece0","edit"],["worker/domains/orders-write.ts","48125cbff7d35ccf4dcfaf18fc7d1fcc89305171","edit"],["worker/domains/returns-exchanges.ts","c10b1e68928efe742940499e5b4c9b4375ece72e","edit"],["worker/index.ts","ef86ca767ebcf3d9139c2c407cbfbfe7169b0d00","edit"],["src/styles/195-kaspi-orders.css","2a9232013e7209bbc6ad3c9cf947a574bafd2986","add"]]
   const tests=[["scripts/test-admin-delete-physical-confirm-dialog-20261018.mjs","bf30af9e94d06723c5d2f7a1fcb9b0cc83a43147"],["scripts/test-admin-delete-real-driver-r1.mjs","1651c1fb03f7dd5f4572ea1d080bf607ca09774a"],["scripts/test-admin-delete-resumable-saga-r1.mjs","64c6ac71e1a17d80e48ae867e62b2b6c25abe495"],["scripts/test-admin-delete-unissued-exchange-stock-20261017.mjs","68b77488d329c89211e7ed88943b809dcb7a14e6"],["scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs","44859bb83e970b63cf808dbad0f7aada8bf00761"],["scripts/test-admin-editor-linked-payment-method-20261018.mjs","86a69330d4c775659ea852b2dba84e69a03b74a6"],["scripts/test-admin-full-editor-role-performance-20261018.mjs","beed85b9b01514b5e8d22e6bb90b419123b56f42"],["scripts/test-order-exchange-bulk-cancellation-20261018.mjs","dece747acaa4352ae72246886b6756b7d8de8053"],["scripts/test-order-metadata-client-name-snapshot-20261017.mjs","73be07b2041138b3a17c1cc15d4811eeb5a3ddc5"],["scripts/test-order-recorded-price-correction-r1.mjs","d9bbad87f2bea2a71a8f98a9a0c744bf10e5989d"],["scripts/test-order-return-cancel-menu-20261018.mjs","6e82869c8b5848faef6315c0e51bb327053e24e2"],["scripts/test-safe-order-metadata-edit-20261017.mjs","16f98d6e752995bfe6a458caa0042f8c9e72dccd"]]
   const base='12ca76d0735047854a810dbd964cea7a9764013c'
   const hash=(bytes)=>createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
@@ -465,8 +528,23 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     fs.renameSync(file,staged)
     hiddenNew.push({file,expected,staged})
   }
+  // This 2026-10-13 frozen gate also pins the original admin deletion
+  // module. It must see exact approved MAIN bytes, never this audit's
+  // independently tested candidate. The frozen gate source is untouched.
+  const deletionPhysicalPath='worker/domains/admin-delete-physical.ts'
+  const deletionCandidate=fs.readFileSync(deletionPhysicalPath)
+  assert(['f90ae43714aa53959ef1f0457fb5223b128963bd',
+    '23a31cbdfd11875d22975caeaab1411b89998929'].includes(hash(deletionCandidate)),
+    'Unknown admin deletion source in historical replay')
+  const deletionBaselineRef='b2648e849dbeed9730650848823449cfecb72ce5'
+  if(git(['cat-file','-e',deletionBaselineRef+':'+deletionPhysicalPath],true).status!==0)
+    git(['fetch','--no-tags','--depth=1','origin',deletionBaselineRef])
+  const deletionOriginal=git(['show',deletionBaselineRef+':'+deletionPhysicalPath]).stdout
+  assert(hash(deletionOriginal)==='23a31cbdfd11875d22975caeaab1411b89998929',
+    'Original admin delete physical module changed; historical replay refused')
   let historicalTestFailed=false
   try{
+    fs.writeFileSync(deletionPhysicalPath,deletionOriginal)
     for(const entry of saved){
       const blob=git(['show',(entry.sourceRef||baseline)+':'+entry.relative]).stdout
       assert(hash(blob)===entry.before,'Pre-fix Production baseline changed: '+entry.relative)
@@ -479,6 +557,9 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     })
     if(oldRun.error||oldRun.status!==0)historicalTestFailed=true
   }finally{
+    fs.writeFileSync(deletionPhysicalPath,deletionCandidate)
+    assert(hash(fs.readFileSync(deletionPhysicalPath))===hash(deletionCandidate),
+      'Admin delete physical candidate not restored after frozen history')
     fs.renameSync(hiddenSchema,newSchema)
     assert(hash(fs.readFileSync(newSchema))===hash(schemaBytes),'0109 schema not restored after historical replay')
     for(const item of hiddenNew.reverse()){

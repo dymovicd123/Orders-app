@@ -1,0 +1,34 @@
+name: SELECT-only old Return 43 vs reserve forensic
+on:
+  push:
+    branches:
+      - 'audit/main-order-lifecycle-live-*'
+    paths:
+      - 'scripts/ops/readonly-return-reserve-order1563-20261020.mjs'
+      - '.github/workflows/audit-old-return1563-readonly.yml'
+permissions:
+  contents: read
+jobs:
+  read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Confirm production-only SELECT binding, reject mutation SQL
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+      - run: npm ci
+      - name: Read legacy order and Return reserve chronology (SELECT only)
+        run: node scripts/ops/readonly-return-reserve-order1563-20261020.mjs

@@ -1,0 +1,34 @@
+name: Main foundation Worker and SQLite acceptance (isolated)
+on:
+  push:
+    branches:
+      - 'audit/main-order-lifecycle-live-*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'scripts/test-main-foundation-worker-sqlite-20261020.mjs'
+      - '.github/workflows/stability-main-worker-sqlite.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  main-worker-api:
+    name: Main business lifecycle — isolated full schema + real Worker API
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Typecheck current candidate Worker and client modules
+        run: npm run typecheck
+      - name: Build current candidate application
+        run: npm run build
+      - name: Run fully isolated API, finance and reservation acceptance
+        run: node --experimental-strip-types scripts/test-main-foundation-worker-sqlite-20261020.mjs
+

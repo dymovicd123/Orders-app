@@ -2112,6 +2112,49 @@ export async function fulfillOrderReservationsV2(
      ORDER BY r.id ASC`
   ).bind(...reservationBindings).all<Record<string, unknown>>();
   const reservations = rows.results || [];
+  // A legacy Return may be marked completed while the original order still
+  // owns an ACTIVE SKU reservation (production order #1563). Never issue that
+  // physical item again until its handover/return history is reconciled.
+  // Check at the shared fulfillment boundary: both full shipping and
+  // per-item early handover use this function. Do not count refund-only
+  // Returns or exchange-linked financial Returns as a physical item return.
+  if (reservations.some(row => cleanText(row.status) === 'active')) {
+    const conflictingReturn = await db.prepare(
+      `SELECT ri.order_item_id, ret.id AS return_id,
+              oi.product_name_snapshot, r.quantity AS reserved_quantity
+       FROM inventory_reservations r
+       JOIN order_items oi ON oi.id = r.order_item_id
+       JOIN return_items ri ON ri.order_item_id = oi.id AND ri.quantity > 0
+       JOIN returns ret ON ret.id = ri.return_id
+         AND ret.order_id = r.order_id
+         AND COALESCE(ret.status, 'completed') <> 'cancelled'
+       WHERE r.order_id = ? AND r.status = 'active'${scopeSql}
+         AND COALESCE(oi.is_workshop, 0) = 0
+         AND oi.quantity > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM exchanges e
+           WHERE e.refund_return_id = ret.id
+             AND COALESCE(e.status, 'completed') <> 'cancelled'
+         )
+       ORDER BY ri.order_item_id ASC, ret.id DESC
+       LIMIT 1`
+    ).bind(...reservationBindings).first<{
+      order_item_id: number;
+      return_id: number;
+      product_name_snapshot: string;
+      reserved_quantity: number;
+    }>();
+    if (conflictingReturn?.order_item_id) {
+      const productName = cleanText(conflictingReturn.product_name_snapshot)
+        || `позиция #${toInt(conflictingReturn.order_item_id, 0)}`;
+      const error = new Error(
+        `Нельзя выдать «${productName}»: по этой позиции уже оформлен возврат №${toInt(conflictingReturn.return_id, 0)}, но её резерв ещё активен (${Math.max(1, toInt(conflictingReturn.reserved_quantity, 1))} шт.). Уточните фактическую выдачу и приём товара. Склад и деньги не изменены.`
+      ) as Error & { status: number; code: string };
+      error.status = 409;
+      error.code = 'return_reservation_conflict';
+      throw error;
+    }
+  }
   const unresolved = reservations.filter((row) => cleanText(row.status) === 'unresolved' || !toInt(row.variant_id, 0));
   if (unresolved.length) {
     // Shipping remains all-or-nothing. Never issue the known siblings of an unresolved line.
@@ -2562,7 +2605,31 @@ export async function fulfillOrderReservationsV2(
     ).bind(options.shippingDate, timestamp, orderId));
   }
 
-  const results = statements.length ? await db.batch(statements) : [];
+  let results: D1Result<unknown>[] = [];
+  try {
+    results = statements.length ? await db.batch(statements) : [];
+  } catch (error) {
+    if (stockConfirmationOperation === 'handover' && handoverOrderItemId) {
+      // Two employees may both see the same active reservation before the
+      // first commits. Our inside-batch conflict guard intentionally rolls
+      // the second write back. If the exact reservation is now fulfilled,
+      // report a normal stale-action conflict, not a technical HTTP 500.
+      // Only reclassify AFTER checking committed current truth; leave genuine
+      // D1 failures untouched.
+      const current = await db.prepare(
+        `SELECT status FROM inventory_reservations
+         WHERE order_id = ? AND order_item_id = ?
+         ORDER BY id DESC LIMIT 1`
+      ).bind(orderId, handoverOrderItemId).first<{ status: string }>();
+      if (cleanText(current?.status) === 'fulfilled') {
+        const conflict = new Error('Эту вещь уже выдал другой сотрудник. Остаток повторно не списан. Обновите заказ.') as Error & { status: number; code: string };
+        conflict.status = 409;
+        conflict.code = 'order_item_already_issued';
+        throw conflict;
+      }
+    }
+    throw error;
+  }
   const shippingCommitted = shippingStatementIndex >= 0 && toInt(results[shippingStatementIndex]?.meta?.changes, 0) > 0;
   return {
     fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,

@@ -963,7 +963,12 @@ export async function deleteAuthUser(db: D1Database, userId: number, currentUser
 
 export function withAuthenticatedHeaders(request: Request, user: AuthUser) {
   const headers = new Headers(request.headers);
-  const actor = user.displayName || user.managerName || user.login;
+  // HTTP Headers are ByteString values. Cyrillic user/manager display names
+  // cannot be encoded by the Web Headers API and previously turned every
+  // authenticated API call into HTTP 500. Keep the Unicode name in auth/session
+  // data; use the stable ASCII login only for the legacy audit header.
+  const displayActor = user.displayName || user.managerName || user.login;
+  const actor = /^[\x20-\x7E]+$/.test(displayActor) ? displayActor : user.login;
   headers.set('X-Access-Role', user.role);
   headers.set('X-Access-Login', user.login);
   headers.delete('X-Access-Email');

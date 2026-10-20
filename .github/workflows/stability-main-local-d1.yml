@@ -1,0 +1,28 @@
+name: Main local Cloudflare D1 migration and lifecycle acceptance
+on:
+  push:
+    branches:
+      - 'audit/main-order-lifecycle-live-*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'migrations/**'
+      - 'worker/**'
+      - 'scripts/test-main-local-workerd-d1-20261020.mjs'
+      - '.github/workflows/stability-main-local-d1.yml'
+permissions:
+  contents: read
+jobs:
+  local-d1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Replay migrations and smoke actual disposable local Cloudflare D1
+        run: node --experimental-strip-types scripts/test-main-local-workerd-d1-20261020.mjs
