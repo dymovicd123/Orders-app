@@ -65,6 +65,36 @@ try{
  const employee=JSON.parse(addPerson.body)
  const managerId=Number(employee.employeeId||employee.employee?.id)
  assert(managerId>0,'Employee ID missing')
+ // Role isolation on the real Worker: manager accounts must be scoped to
+ // staff, require a password reset, and NEVER gain administrator privileges.
+ const managerUserPayload={login:'client3smokemanager',
+   password:'TemporaryClient3ManagerPassword2026!',role:'manager',managerId,
+   displayName:'Client3 limited manager'}
+ const addManagerAccount=await get('/api/auth/users',{method:'POST',
+   headers:{...headers,...authenticated.headers},body:JSON.stringify(managerUserPayload)})
+ assert.equal(addManagerAccount.status,201,
+   'Admin could not create scoped manager account: '+addManagerAccount.body.slice(0,900))
+ const managerLogin=await get('/api/auth/login',{method:'POST',headers,
+   body:JSON.stringify({login:managerUserPayload.login,password:managerUserPayload.password})})
+ assert.equal(managerLogin.status,200,'Manager login failed: '+managerLogin.body.slice(0,850))
+ assert(managerLogin.cookie.includes('orders_session'),'Manager login missing session cookie')
+ const managerAuth={headers:{Cookie:managerLogin.cookie.split(';')[0]}}
+ const requiresChange=await get('/api/orders',managerAuth)
+ assert.equal(requiresChange.status,403,'Temporary manager credentials must require password change')
+ assert.equal(JSON.parse(requiresChange.body).code,'PASSWORD_CHANGE_REQUIRED','Password change gate missing')
+ const nextManagerPassword='Client3ManagerChanged2026-ForLocalSmoke!'
+ const changed=await get('/api/auth/change-password',{method:'POST',
+   headers:{...headers,...managerAuth.headers},
+   body:JSON.stringify({currentPassword:managerUserPayload.password,newPassword:nextManagerPassword})})
+ assert.equal(changed.status,200,'Manager initial password change failed: '+changed.body.slice(0,850))
+ assert.equal((await get('/api/orders',managerAuth)).status,200,'Manager cannot access regular orders')
+ assert.equal((await get('/api/auth/users',managerAuth)).status,403,'Manager can list admin accounts')
+ assert.equal((await get('/api/admin/storage',managerAuth)).status,403,'Manager can view protected admin storage')
+ const unauthorizedManagerCreate=await get('/api/auth/users',{method:'POST',
+   headers:{...headers,...managerAuth.headers},
+   body:JSON.stringify({...managerUserPayload,login:'client3illicitadmin',role:'admin'})})
+ assert.equal(unauthorizedManagerCreate.status,403,'Manager can create administrator account')
+ console.log('CLIENT3_REAL_WORKER_MANAGER_ROLE_AND_FIRST_PASSWORD_CHANGE_PASSED: manager orders allowed; admin-only reads and writes blocked')
  const createPayload={
    requestId:'f38c622e-7db6-4ba1-b00a-11dce3000123',
    orderDate:'2026-10-20',managerId,managerName:'CLIENT3_SMOKE_MANAGER',
