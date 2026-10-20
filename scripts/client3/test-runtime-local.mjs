@@ -88,6 +88,44 @@ try{
  const list=await get('/api/orders',authenticated)
  assert.equal(list.status,200,'Listing order after creation failed: '+list.body.slice(0,400))
  console.log('CLIENT3_REAL_WORKER_ORDER_CREATE_PAYMENT_READ_AND_RETRY_PASSED: order '+orderId)
+ // Money-only return on an unshipped workshop order: no phantom stock is created,
+ // and replay must not apply a second refund.
+ const returnedPayload={requestId:'ac19d0ce-2026-40be-9000-000000000a31',orderId,
+   returnDate:'2026-10-20',amount:2500,paymentMethod:'НАЛИЧКА',items:[],comment:'client3 fixture money-only refund'}
+ const refund=()=>get('/api/returns',{method:'POST',headers:{...headers,...authenticated.headers,'X-Idempotency-Key':returnedPayload.requestId},
+   body:JSON.stringify(returnedPayload)})
+ const firstRefund=await refund()
+ assert.equal(firstRefund.status,201,'Money-only return failed: '+firstRefund.body.slice(0,800)+' logs '+log.slice(-2300))
+ const replayRefund=await refund()
+ assert.equal(replayRefund.status,201,'Money-only return idempotent retry failed: '+replayRefund.body.slice(0,800))
+ const afterRefund=await get('/api/orders/'+orderId,authenticated)
+ assert.equal(afterRefund.status,200,'Order read after refund failed: '+afterRefund.body.slice(0,450))
+ const afterRefundOrder=JSON.parse(afterRefund.body).order
+ assert.equal(Number(afterRefundOrder.return_amount),2500,'Money-only refund was duplicated or lost')
+ assert.equal(Number(afterRefundOrder.received_amount),10000,'Money-only refund mutated inbound payments')
+ console.log('CLIENT3_REAL_WORKER_MONEY_ONLY_RETURN_AND_REPLAY_PASSED: refund 2500 exactly once')
+ // A separately created unpaid order must accept a partial debt payment exactly once.
+ const debtPayload={...createPayload,requestId:'ac19d0ce-2026-40be-9000-000000000a32',payments:[]}
+ const debtCreate=await get('/api/orders',{method:'POST',headers:{...headers,...authenticated.headers,
+   'X-Idempotency-Key':debtPayload.requestId},body:JSON.stringify(debtPayload)})
+ assert.equal(debtCreate.status,201,'Unpaid order create failed: '+debtCreate.body.slice(0,600))
+ const debtOrderId=Number(JSON.parse(debtCreate.body).order?.id||JSON.parse(debtCreate.body).orderId||JSON.parse(debtCreate.body).id)
+ assert(debtOrderId>0,'Debt order ID missing')
+ const payment={requestId:'ac19d0ce-2026-40be-9000-000000000a33',orderId:debtOrderId,
+   paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'debt_close',amount:3500}
+ const pay=()=>get('/api/payments',{method:'POST',headers:{...headers,...authenticated.headers,
+   'X-Idempotency-Key':payment.requestId},body:JSON.stringify(payment)})
+ const firstPay=await pay()
+ assert.equal(firstPay.status,201,'Debt payment failed: '+firstPay.body.slice(0,650))
+ const secondPay=await pay()
+ assert.equal(secondPay.status,201,'Debt payment idempotent retry failed: '+secondPay.body.slice(0,650))
+ const afterPay=await get('/api/orders/'+debtOrderId,authenticated)
+ assert.equal(afterPay.status,200,'Debt order read after payment failed')
+ const debtOrder=JSON.parse(afterPay.body).order
+ assert.equal(Number(debtOrder.total_amount),10000,'Debt order total changed unexpectedly')
+ assert.equal(Number(debtOrder.received_amount),3500,'Debt payment not exactly once')
+ assert.equal(Number(debtOrder.debt_amount),6500,'Debt balance inconsistent after retry')
+ console.log('CLIENT3_REAL_WORKER_PARTIAL_PAYMENT_LEDGER_AND_REPLAY_PASSED: paid 3500/debt 6500')
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
  console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: consolidated Client3 baseline, admin bootstrap guarded, authenticated APIs healthy')
