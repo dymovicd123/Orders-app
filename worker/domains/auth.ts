@@ -604,7 +604,9 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
   if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
   if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
   if (bootstrapLogin !== getAdminModeLogin(env) || !(await verifySimpleAdminPassword(db, env, bootstrapPassword))) {
-    return json({ ok: false, message: 'Неверный логин или пароль текущего администратора.' }, { status: 401 });
+    return json({ ok: false, message: cleanText(env.CLIENT3_INSTALLATION) === '1'
+      ? 'Неверный код первого запуска. Проверьте код, полученный от владельца системы.'
+      : 'Неверный логин или пароль текущего администратора.' }, { status: 401 });
   }
   const passwordHash = await hashPassword(password);
   const now = new Date().toISOString();
