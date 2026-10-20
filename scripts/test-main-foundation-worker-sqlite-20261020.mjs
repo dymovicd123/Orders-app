@@ -723,9 +723,16 @@ try {
   sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE inventory_source='warehouse' AND variant_id=?").run(variantId)
   const beforeLateIntake=Number(stock().quantity)
   const beforeLateReserved=Number(stock().reserved_quantity)
+  // Earlier scenario performed a quick stock-check; at one-second SQLite
+  // datetime precision it can fall inside the receipt freshness window.
+  // Reproduce the explicit user freshness choice iff the check actually exists,
+  // so the independent active-reservation guard is tested deterministically.
+  const receiptRegisteredAt=sql('SELECT created_at FROM return_items WHERE id=?',pendingReturnItem.id).created_at
+  const newerCheck=sql("SELECT id FROM inventory_stock_checks WHERE inventory_source='warehouse' AND variant_id=? AND datetime(checked_at)>=datetime(?) LIMIT 1",variantId,receiptRegisteredAt)
   const delayedAttempt=await api('/api/returned-items/receive','POST',{
     operationType:'return',operationId:pendingReturnId,operationItemId:pendingReturnItem.id,
     destination:'warehouse',requestId:'stability-late-intake-conflict',
+    ...(newerCheck?{freshnessDecision:'arrived_after_check'}:{}),
   },{expectedStatus:409})
   assert.equal(delayedAttempt.data.ok,false)
   assert.match(String(delayedAttempt.data.message||''),/резерв|выдач/i)
