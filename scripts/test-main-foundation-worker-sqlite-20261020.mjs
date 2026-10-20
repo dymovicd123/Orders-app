@@ -805,7 +805,7 @@ try {
     expectedStatus:201,requestId:editorPayload.requestId,
   })).data
   const editorId=Number(editorCreated.orderId)
-  const editorRecord=()=>sql('SELECT order_date,customer_phone,customer_name,city,delivery_type,comment,total_amount,received_amount,debt_amount,return_amount,shipping_status,order_status FROM orders WHERE id=?',editorId)
+  const editorRecord=()=>sql("SELECT o.order_date,c.phone_normalized AS customer_phone,COALESCE(o.customer_name_override,c.display_name,'') AS customer_name,o.city,o.delivery_type,o.comment,o.total_amount,o.received_amount,o.debt_amount,o.return_amount,o.shipping_status,o.order_status FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?",editorId)
   const snapshot=editorRecord()
   const originalReserved=Number(stock().reserved_quantity)
   const originalPhysical=Number(stock().quantity)
