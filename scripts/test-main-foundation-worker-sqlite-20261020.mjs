@@ -237,6 +237,60 @@ try {
   assert.equal(actualOrder().received_amount,5000)
   assert.equal(actualOrder().debt_amount,15000)
   console.log('MAIN_RETURN_CANCEL_WORKER_SQLITE_PASSED: physical +1 then -1, cash refund/reversal, duplicate create/cancel, original total/payment/debt preserved')
+  // NEW itemized Exchange Set V2: 1 issued old SKU is physically accepted
+  // back, and 1 new SKU leaves. Money is unchanged for equal-priced swap.
+  const newColor='БЕЛЫЙ'
+  const replacement=(await api('/api/catalog/variants','POST',{
+    productId,category:'adult',gender:'ЖЕН',color:newColor,
+    material:'СТАНДАРТ',length:'СТАНДАРТ',sizeLabel:size,
+  },{expectedStatus:201})).data
+  const newVariantId=Number(replacement.id)
+  assert(newVariantId>0 && newVariantId!==variantId)
+  await api('/api/inventory/movements','POST',{
+    requestId:'stability-replacement-arrival', inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',color:newColor,material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  })
+  const newStock=()=>sql("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?",newVariantId)
+  assert.equal(Number(newStock().quantity),2)
+  const exchangeSetPayload={
+    orderId,exchangeDate:'2026-10-20',expectedOrderTotal:20000,
+    oldItems:[{orderItemId:item.id,quantity:1,physicalState:'warehouse',
+      expectedActiveQuantity:2,expectedUnitPrice:10000,expectedLineTotal:20000,expectedCatalogPriceSnapshot:null}],
+    newItems:[{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:newColor,material:'СТАНДАРТ',
+      length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,unitPrice:10000,catalogPriceSnapshot:null}],
+    paymentAmount:0,paymentMethod:'',refundMethod:'',comment:'Тест равного обмена',
+  }
+  const switched=await api('/api/exchanges/set','POST',exchangeSetPayload,{expectedStatus:201,requestId:'stability-set-swap-once'})
+  const exchangeId=Number(switched.data.exchangeId)
+  assert(exchangeId>0,'Exchange Set must have ID')
+  assert.equal(Number(stock().quantity),1,'One physically returned old SKU must increase stock by one')
+  assert.equal(Number(newStock().quantity),1,'One new SKU must leave Physical exactly once')
+  assert.equal(actualOrder().total_amount,20000,'Equal-priced Set exchange must preserve total')
+  assert.equal(actualOrder().received_amount,5000,'Set exchange must preserve paid amount')
+  assert.equal(actualOrder().debt_amount,15000,'Set exchange must preserve existing debt')
+  assert.equal(Number(sql('SELECT quantity FROM order_items WHERE id=?',item.id).quantity),1,'Old order line must shrink')
+  const newLine=sql('SELECT id,variant_id,quantity FROM order_items WHERE order_id=? AND variant_id=?',orderId,newVariantId)
+  assert(newLine?.id && Number(newLine.quantity)===1,'New order line must have the exact white canonical SKU')
+  await api('/api/exchanges/set','POST',exchangeSetPayload,{expectedStatus:201,requestId:'stability-set-swap-once'})
+  assert.equal(Number(stock().quantity),1,'Exchange replay must not re-add old stock')
+  assert.equal(Number(newStock().quantity),1,'Exchange replay must not re-issue new stock')
+  assert.equal(count('exchanges','order_id='+orderId+' AND status=\'completed\''),1)
+  const undone=await api('/api/exchanges/'+exchangeId+'/cancel','PATCH',{
+    comment:'Тест полной отмены обмена',
+  },{requestId:'stability-set-cancel-once'})
+  assert(undone.data.ok,'Set exchange cancellation failed')
+  assert.equal(Number(stock().quantity),0,'Cancelled Set must undo returned stock')
+  assert.equal(Number(newStock().quantity),2,'Cancelled Set must restore the issued new SKU')
+  assert.equal(actualOrder().total_amount,20000)
+  assert.equal(actualOrder().received_amount,5000)
+  assert.equal(actualOrder().debt_amount,15000)
+  await api('/api/exchanges/'+exchangeId+'/cancel','PATCH',{
+    comment:'Тест полной отмены обмена',
+  },{requestId:'stability-set-cancel-once'})
+  assert.equal(Number(stock().quantity),0,'Set cancellation replay must not touch old SKU again')
+  assert.equal(Number(newStock().quantity),2,'Set cancellation replay must not touch new SKU again')
+  assert.equal(sql('SELECT status FROM exchanges WHERE id=?',exchangeId).status,'cancelled')
+  console.log('MAIN_EXCHANGE_SET_WORKER_SQLITE_PASSED: 1-for-1 canonical variant swap, exact Physical, preserved money, create replay, cancellation and replay')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
