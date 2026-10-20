@@ -201,6 +201,12 @@ export async function handleSimpleAdminStatus(env: Env, request: Request) {
 
 
 export async function verifySimpleAdminPassword(db: D1Database, env: Env, password: string) {
+  // The isolated Client3 deployment must never allow the legacy admin/admin bootstrap.
+  // Its own secret must be configured before the first account can be created.
+  if (cleanText(env.CLIENT3_INSTALLATION) === '1') {
+    const secret = cleanText(env.ADMIN_MODE_PASSWORD);
+    if (secret.length < 16 || secret.toLowerCase() === 'admin' || secret.toLowerCase() === 'password') return false;
+  }
   const storedHash = await getAppSetting(db, SIMPLE_ADMIN_PASSWORD_HASH_SETTING, '');
   if (storedHash) {
     if (passwordHashNeedsEdgeReset(storedHash)) return false;
