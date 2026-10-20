@@ -51,7 +51,19 @@ jobs:
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
 
-      - name: Run cumulative regression gate
+      # Client3 has a deliberate, separately guarded bootstrap implementation.
+      # The source-SHA-pinned main release gate intentionally rejects this fork.
+      # Run the independent third-tenant empty-schema and high-risk gates instead.
+      - name: Client3 fresh empty database, authentication and tenant isolation
+        if: ${{ startsWith(github.head_ref, 'client3/') }}
+        run: node scripts/client3/test-fresh.mjs
+
+      - name: Client3 resolver, exchanges, payments, returns and stock regression gate
+        if: ${{ startsWith(github.head_ref, 'client3/') }}
+        run: node scripts/client3/stability-gate.mjs
+
+      - name: Run unchanged main cumulative regression gate
+        if: ${{ !startsWith(github.head_ref, 'client3/') }}
         run: npm run release:check
 
       - name: Verify physical stock and reserved sizes are visible
