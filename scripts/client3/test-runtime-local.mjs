@@ -226,6 +226,55 @@ try{
  assert.equal(Number(returned.quantity),3,'Physical return double-counted or lost stock')
  assert.equal(Number(returned.reservedQuantity),0,'Physical return revived reservation')
  console.log('CLIENT3_REAL_WORKER_ARRIVAL_RESERVE_SHIP_AND_RESTOCK_RETRY_PASSED: exactly 3 -> 2 -> 3 physical, 1 -> 0 reserved')
+ // A valid canonical SKU may be sold while its physical stock is insufficient.
+ // Shipping must demand a precise human possession confirmation, not fabricate
+ // a prior arrival, and must retain shortage evidence without negative physical.
+ const shortageOrderPayload={...stockOrderPayload,requestId:'ac19d0ce-2026-40be-9000-000000000a38',
+   items:[{...stockAttrs,sourceType:'warehouse',quantity:4,unitPrice:12000,catalogPriceSnapshot:null}],
+   payments:[]}
+ const shortageCreate=await get('/api/orders',{method:'POST',headers:{...headers,...authenticated.headers,
+   'X-Idempotency-Key':shortageOrderPayload.requestId},body:JSON.stringify(shortageOrderPayload)})
+ assert.equal(shortageCreate.status,201,'Shortage order creation should not invent stock or reject a real sale: '+shortageCreate.body.slice(0,800))
+ const shortageId=Number(JSON.parse(shortageCreate.body).order?.id||JSON.parse(shortageCreate.body).orderId||JSON.parse(shortageCreate.body).id)
+ assert(shortageId>0,'Shortage order ID missing')
+ const shortageBefore=await readStock()
+ assert.equal(Number(shortageBefore.quantity),3,'Shortage order modified tracked physical before shipping')
+ assert.equal(Number(shortageBefore.reservedQuantity),4,'Shortage order missing 4 active reserved units')
+ const shortageShippingPayload={shippingStatus:'sent',shippingDate:'2026-10-20'}
+ const shortageSend=payload=>get('/api/orders/'+shortageId+'/shipping',{method:'PATCH',
+   headers:{...headers,...authenticated.headers},body:JSON.stringify(payload)})
+ const blockedShortage=await shortageSend(shortageShippingPayload)
+ assert.equal(blockedShortage.status,409,'Shortage send without physical confirmation must block: '+blockedShortage.body.slice(0,1000))
+ const required=JSON.parse(blockedShortage.body)
+ assert.equal(required.code,'stock_resolution_required','Shortage must open exact possession resolver')
+ const confirmedShortage=await shortageSend({...shortageShippingPayload,stockConfirmations:[{
+   source:'warehouse',variantId:stocked.variantId,expectedQuantity:3,operationQuantity:4
+ }]})
+ assert.equal(confirmedShortage.status,200,'Exact confirmed shortage send failed: '+confirmedShortage.body.slice(0,1200)+' log '+log.slice(-2000))
+ const replayShortage=await shortageSend(shortageShippingPayload)
+ assert.equal(replayShortage.status,200,'Repeated confirmed shortage send failed: '+replayShortage.body.slice(0,850))
+ const shortageAfter=await readStock()
+ assert.equal(Number(shortageAfter.quantity),0,'Confirmed shortage invented or made physical stock negative')
+ assert.equal(Number(shortageAfter.reservedQuantity),0,'Confirmed shortage did not fulfill active reserve')
+ console.log('CLIENT3_REAL_WORKER_EXACT_SHORTAGE_RESOLVER_PASSED: 4 units physically confirmed, 3 tracked; physical floor zero')
+ // Unknown variants must remain unresolved without creating an arbitrary SKU.
+ // Shipping should point to a NONEMPTY order-scoped resolver.
+ const unknownPayload={...stockOrderPayload,requestId:'ac19d0ce-2026-40be-9000-000000000a39',
+   items:[{...stockAttrs,productName:'CLIENT3_NEVER_ARRIVED_VARIANT',
+     color:'ФИОЛЕТОВЫЙ',quantity:1,unitPrice:9000,catalogPriceSnapshot:null}],payments:[]}
+ const unknownCreate=await get('/api/orders',{method:'POST',headers:{...headers,...authenticated.headers,
+   'X-Idempotency-Key':unknownPayload.requestId},body:JSON.stringify(unknownPayload)})
+ assert.equal(unknownCreate.status,201,'Unknown item order not accepted: '+unknownCreate.body.slice(0,1000))
+ const unknownId=Number(JSON.parse(unknownCreate.body).order?.id||JSON.parse(unknownCreate.body).orderId||JSON.parse(unknownCreate.body).id)
+ const unresolvedShipping=await get('/api/orders/'+unknownId+'/shipping',{method:'PATCH',
+   headers:{...headers,...authenticated.headers},body:JSON.stringify({shippingStatus:'sent',shippingDate:'2026-10-20'})})
+ assert.equal(unresolvedShipping.status,409,'Unknown SKU must block unauthorized physical fulfillment: '+unresolvedShipping.body.slice(0,1000))
+ const review=await get('/api/orders/'+unknownId+'/catalog-review',authenticated)
+ assert.equal(review.status,200,'Order catalog resolver API failed: '+review.body.slice(0,850))
+ const missing=JSON.parse(review.body)
+ assert((missing.items||[]).some(x=>x.productName==='CLIENT3_NEVER_ARRIVED_VARIANT'),
+   'Unknown SKU must not open empty catalog resolver: '+review.body.slice(0,1100))
+ console.log('CLIENT3_REAL_WORKER_UNKNOWN_SKU_SHIPPING_BLOCK_AND_NONEMPTY_RESOLVER_PASSED')
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
  console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: consolidated Client3 baseline, admin bootstrap guarded, authenticated APIs healthy')
