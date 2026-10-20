@@ -179,6 +179,12 @@ try {
   assert(secondId>0 && secondId!==orderId)
   assert.equal(Number(stock().quantity),1)
   assert.equal(Number(stock().reserved_quantity),1)
+  // Make this a deterministic historical-order fixture: a real order/reservation
+  // created by the API, then aged in the isolated test DB before the later check.
+  const oldOrigin='2026-10-19T09:00:00.000Z'
+  sqlite.prepare("UPDATE orders SET created_at=?,order_date='2026-10-19' WHERE id=?").run(oldOrigin,secondId)
+  sqlite.prepare("UPDATE order_items SET created_at=?,inventory_obligation_origin_at=? WHERE order_id=?").run(oldOrigin,oldOrigin,secondId)
+  sqlite.prepare("UPDATE inventory_reservations SET created_at=? WHERE order_id=?").run(oldOrigin,secondId)
   const reviewCheck=await api('/api/inventory/stocktakes/quick','POST',{
     source:'warehouse',variantId,expectedQuantity:1,countedQuantity:1,
   })
