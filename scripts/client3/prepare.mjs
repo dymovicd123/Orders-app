@@ -57,6 +57,7 @@ export function renderConfig(worker,database,id) {
    main:'worker/index.ts',
    compatibility_date:'2026-07-06',
    compatibility_flags:['nodejs_compat'],
+   vars:{CLIENT3_INSTALLATION:'1'},
    d1_databases:[{binding:'DB',database_name:database,database_id:id,migrations_dir:'.client3-migrations'}],
    assets:{directory:'./dist/client',not_found_handling:'single-page-application',run_worker_first:['/api/*']},
    observability:{enabled:true},
