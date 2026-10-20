@@ -158,7 +158,110 @@ try {
     shippingStatus:'sent',shippingDate:'2026-10-20',
   },200,'workerd-ship')
   assert.equal(Number((await stock()).quantity),1)
-  console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' exact repo migrations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
+
+  // Assert all references resolve BEFORE inserting operational rows.
+  const fkRows=(await db.prepare('PRAGMA foreign_key_check').all()).results||[]
+  assert.equal(fkRows.length,0,'Fresh local D1 has invalid foreign-key links: '+JSON.stringify(fkRows.slice(0,6)))
+
+  // Return a physically issued item, then cancel the Return. Real D1 must
+  // reverse one physical unit and one refund, without double writes.
+  const firstLine=await sql('SELECT id FROM order_items WHERE order_id=?',orderId)
+  const returnData={
+    orderId,returnDate:'2026-10-20',amount:1000,paymentMethod:'НАЛИЧКА',
+    items:[{orderItemId:firstLine.id,quantity:1,restock:true,physicalState:'warehouse'}],
+  }
+  const ret=(await call('/api/returns','POST',returnData,201,'workerd-return-once')).data
+  const retId=Number(ret.returnId)
+  assert(retId>0)
+  assert.equal(Number((await stock()).quantity),2)
+  await call('/api/returns','POST',returnData,201,'workerd-return-once')
+  assert.equal(Number((await stock()).quantity),2)
+  await call('/api/returns/'+retId+'/cancel','PATCH',{},200,'workerd-return-cancel')
+  assert.equal(Number((await stock()).quantity),1)
+  await call('/api/returns/'+retId+'/cancel','PATCH',{},200,'workerd-return-cancel')
+  assert.equal(Number((await stock()).quantity),1)
+  assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',orderId)).return_amount),0)
+
+  // Partial legacy unissued swap on actual D1: 2->1 active reserve, cancel
+  // restores 2. A second exact SKU must depart and return only once.
+  const colorNew='БЕЛЫЙ'
+  const secondVariant=(await call('/api/catalog/variants','POST',{
+    productId,category:'adult',gender:'ЖЕН',color:colorNew,
+    material:'СТАНДАРТ',length:'СТАНДАРТ',sizeLabel:size,
+  },201)).data
+  const newVariantId=Number(secondVariant.id)
+  assert(newVariantId>0 && newVariantId!==variantId)
+  await call('/api/inventory/movements','POST',{
+    requestId:'workerd-legacy-old-arrival',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId,productName:name,gender:'ЖЕН',color,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:3}],
+  },201)
+  await call('/api/inventory/movements','POST',{
+    requestId:'workerd-legacy-new-arrival',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',color:colorNew,
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:2}],
+  },201)
+  const originalStock=Number((await stock()).quantity)
+  const newStock=async()=>await sql(
+    "SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?",newVariantId
+  )
+  const oldOrder={
+    requestId:'workerd-legacy-order',orderDate:'2026-10-20',managerId,
+    customerPhone:'77010000888',pricingMode:'legacy_manual_total',orderTotal:20000,
+    workshopStatus:'ready',orderStatus:'active',
+    items:[{...orderPayload.items[0],quantity:2,unitPrice:undefined}],
+    payments:[],
+  }
+  const legacy=(await call('/api/orders','POST',oldOrder,201,'workerd-legacy-order')).data
+  const legacyId=Number(legacy.orderId)
+  const oldLine=await sql('SELECT id FROM order_items WHERE order_id=?',legacyId)
+  assert.equal(Number((await sql('SELECT quantity FROM inventory_reservations WHERE order_item_id=?',oldLine.id)).quantity),2)
+  const swapPayload={
+    orderId:legacyId,exchangeDate:'2026-10-20',oldItemId:oldLine.id,oldQuantity:1,
+    oldPhysicalState:'not_issued',oldReturnSource:'none',
+    newItem:{...oldOrder.items[0],color:colorNew,quantity:1},
+    financialAction:'none',financialAmount:0,paymentMethod:'',
+  }
+  const swap=(await call('/api/exchanges','POST',swapPayload,201,'workerd-partial-exchange')).data
+  const exchId=Number(swap.exchangeId)
+  assert(exchId>0)
+  const afterReserve=await sql('SELECT status,quantity FROM inventory_reservations WHERE order_item_id=?',oldLine.id)
+  assert.equal(afterReserve.status,'active')
+  assert.equal(Number(afterReserve.quantity),1)
+  assert.equal(Number((await stock()).quantity),originalStock,'Unissued old physical cannot move')
+  assert.equal(Number((await newStock()).quantity),1)
+  await call('/api/exchanges','POST',swapPayload,201,'workerd-partial-exchange')
+  assert.equal(Number((await stock()).reserved_quantity),1)
+  await call('/api/exchanges/'+exchId+'/cancel','PATCH',{},200,'workerd-partial-exchange-cancel')
+  const restoredReserve=await sql('SELECT status,quantity FROM inventory_reservations WHERE order_item_id=?',oldLine.id)
+  assert.equal(restoredReserve.status,'active')
+  assert.equal(Number(restoredReserve.quantity),2)
+  assert.equal(Number((await stock()).reserved_quantity),2)
+  assert.equal(Number((await newStock()).quantity),2)
+  await call('/api/exchanges/'+exchId+'/cancel','PATCH',{},200,'workerd-partial-exchange-cancel')
+  assert.equal(Number((await stock()).reserved_quantity),2)
+
+  // Contradictory legacy history: marked physically issued despite LIVE
+  // reservation. Physical return must fail before any Return/stock/refund write.
+  const contradictory={
+    ...oldOrder,requestId:'workerd-contradiction',customerPhone:'77010000777',
+    items:[{...oldOrder.items[0],quantity:1}],
+  }
+  const conflicted=(await call('/api/orders','POST',contradictory,201,'workerd-contradiction')).data
+  const badId=Number(conflicted.orderId)
+  const badLine=await sql('SELECT id FROM order_items WHERE order_id=?',badId)
+  await db.prepare("UPDATE order_items SET stock_writeoff_status='written_off' WHERE id=?").bind(badLine.id).run()
+  const stableOld=Number((await stock()).quantity)
+  const stableReserve=Number((await stock()).reserved_quantity)
+  await call('/api/returns','POST',{
+    orderId:badId,returnDate:'2026-10-20',amount:0,
+    items:[{orderItemId:badLine.id,quantity:1,restock:true,physicalState:'warehouse'}],
+  },409,'workerd-conflict-physical-return')
+  assert.equal(Number((await stock()).quantity),stableOld)
+  assert.equal(Number((await stock()).reserved_quantity),stableReserve)
+  assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM returns WHERE order_id=?',badId)).n),0)
+  console.log('MAIN_LOCAL_WORKERD_D1_RETURN_EXCHANGE_PASSED: idempotent physical Return/cancel, legacy 2->1->2 reserve with cancellation, conflicting physical Return rejected')
+  console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
   rmSync(sandbox,{recursive:true,force:true})
