@@ -23,7 +23,7 @@ const scripts=[
   "test-auth-r7-login-reliability.mjs",
   "test-catalog-resolver-r9-2b-shipping-replay-safety.mjs",
   "test-return-unissued-physical-safety-r2.mjs",
-  "test-stage03-h9c-production-multi-exchange.mjs",
+  "../client3/test-multi-exchange-contract.mjs",
   "test-operational-autonomy-r3-return-exchange-capacity.mjs",
   "test-order-return-cancel-menu-20261018.mjs",
   "test-admin-editor-linked-payment-method-20261018.mjs",
@@ -38,7 +38,7 @@ const scripts=[
   "test-stage01-return-exchange-downstream-semantics-r19.mjs"
 ]
 for(const script of scripts){
- const path='scripts/'+script
+ const path=script.startsWith('../client3/') ? 'scripts/client3/'+script.split('/').at(-1) : 'scripts/'+script
  if(!existsSync(path))throw Error('Missing high-risk regression: '+path)
  const r=spawnSync(process.execPath,[path],{stdio:'inherit',encoding:'utf8',maxBuffer:24*1024*1024})
  if(r.error||r.status!==0)throw Error('Client3 high-risk regression failed: '+path+' (exit '+r.status+')')
