@@ -126,6 +126,42 @@ try{
  assert.equal(Number(debtOrder.received_amount),3500,'Debt payment not exactly once')
  assert.equal(Number(debtOrder.debt_amount),6500,'Debt balance inconsistent after retry')
  console.log('CLIENT3_REAL_WORKER_PARTIAL_PAYMENT_LEDGER_AND_REPLAY_PASSED: paid 3500/debt 6500')
+ // Perform an actual itemized workshop exchange against the indebted order,
+ // with no stock handover and no money adjustment. Exact price snapshots prevent
+ // unintended price changes while the old task is replaced by a new one.
+ const oldLine=debtOrder.items?.[0]
+ assert(oldLine?.id>0,'Created workshop item not available for exchange')
+ const exchangePayload={
+   requestId:'ac19d0ce-2026-40be-9000-000000000a34',
+   orderId:debtOrderId,exchangeDate:'2026-10-20',
+   oldItemId:oldLine.id,oldQuantity:1,oldPhysicalState:'not_issued',
+   expectedOrderTotal:10000,expectedOldActiveQuantity:1,
+   expectedOldUnitPrice:10000,expectedOldLineTotal:10000,
+   expectedOldCatalogPriceSnapshot:null,
+   financialAction:'none',financialAmount:0,
+   newItem:{
+     productName:'CLIENT3_SMOKE_REPLACEMENT',gender:'ЖЕН',color:'БЕЛЫЙ',
+     material:'СТАНДАРТ',length:'СТАНДАРТ',size:'48',sourceType:'workshop',
+     quantity:1,unitPrice:10000,catalogPriceSnapshot:null
+   }
+ }
+ const exchange=()=>get('/api/exchanges',{method:'POST',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':exchangePayload.requestId},
+   body:JSON.stringify(exchangePayload)})
+ const firstExchange=await exchange()
+ assert.equal(firstExchange.status,201,'Workshop exchange failed: '+firstExchange.body.slice(0,1100)+' logs '+log.slice(-3000))
+ const retryExchange=await exchange()
+ assert.equal(retryExchange.status,201,'Workshop exchange replay failed: '+retryExchange.body.slice(0,800))
+ const updatedExchangeOrder=await get('/api/orders/'+debtOrderId,authenticated)
+ assert.equal(updatedExchangeOrder.status,200,'Reading order after exchange failed')
+ const exchangeOrder=JSON.parse(updatedExchangeOrder.body).order
+ assert.equal(Number(exchangeOrder.total_amount),10000,'No-money exchange changed total')
+ assert.equal(Number(exchangeOrder.received_amount),3500,'No-money exchange changed received payments')
+ assert.equal(Number(exchangeOrder.debt_amount),6500,'No-money exchange changed debt')
+ const activeItems=(exchangeOrder.items||[]).filter(x=>Number(x.quantity)>0)
+ assert.equal(activeItems.length,1,'Exchange did not replace one active line exactly once: '+JSON.stringify(activeItems).slice(0,550))
+ assert.equal(activeItems[0].productName||activeItems[0].product_name_snapshot,'CLIENT3_SMOKE_REPLACEMENT','Exchange did not install replacement item')
+ console.log('CLIENT3_REAL_WORKER_EXCHANGE_NO_MONEY_AND_REPLAY_PASSED: correct active item and debt preserved')
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
  console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: consolidated Client3 baseline, admin bootstrap guarded, authenticated APIs healthy')
