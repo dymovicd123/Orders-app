@@ -57,7 +57,7 @@ try{
  }
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
- console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: 112 clean migrations, admin bootstrap guarded, authenticated APIs healthy')
+ console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: consolidated Client3 baseline, admin bootstrap guarded, authenticated APIs healthy')
 }finally{
  if(dev){
    try{if(process.platform==='win32')dev.kill('SIGTERM');else process.kill(-dev.pid,'SIGTERM')}catch{}
