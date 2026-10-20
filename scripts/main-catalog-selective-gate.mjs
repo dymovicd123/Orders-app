@@ -7,6 +7,47 @@ import os from 'node:os'
 import path from 'node:path'
 import {spawnSync} from 'node:child_process'
 
+// Stability audit: retain the production source-hash gate's immutable
+// editor/delete baseline while reviewing a narrowly changed return/exchange
+// Worker domain. All old gates execute against exact original MAIN bytes.
+// Candidate must separately pass real API/D1 behavior, typecheck and build.
+if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
+  const filename='worker/domains/returns-exchanges.ts'
+  const approvedMain='b2648e849dbeed9730650848823449cfecb72ce5'
+  const oldBlob='c10b1e68928efe742940499e5b4c9b4375ece72e'
+  const candidateBlob='eaa17e1e8518b2cf92b62bdd456b3b98bf1e40f1'
+  const {createHash}=await import('node:crypto')
+  const gitHash=bytes=>createHash('sha1')
+    .update(Buffer.from('blob '+bytes.length+'\\0'))
+    .update(bytes).digest('hex')
+  const run=(binary,args,env=process.env)=>{
+    const x=spawnSync(binary,args,{stdio:'inherit',shell:false,env,maxBuffer:32*1024*1024})
+    if(x.error||x.status!==0) throw new Error('Stability audit gate failed: '+binary+' '+args.join(' ')+' code='+x.status)
+  }
+  const candidate=fs.readFileSync(filename)
+  if(gitHash(candidate)!==candidateBlob)throw new Error('Unreviewed order Return/Exchange runtime: '+filename)
+  run(process.execPath,['--experimental-strip-types','scripts/test-main-foundation-worker-sqlite-20261020.mjs'])
+  run(process.execPath,['--experimental-strip-types','scripts/test-main-local-workerd-d1-20261020.mjs'])
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
+  run(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
+  try {
+    if(spawnSync('git',['cat-file','-e',approvedMain+':'+filename],{stdio:'ignore'}).status!==0)
+      run('git',['fetch','--no-tags','--depth=1','origin',approvedMain])
+    const previous=spawnSync('git',['show',approvedMain+':'+filename],{encoding:null,maxBuffer:32*1024*1024})
+    if(previous.error||previous.status!==0||gitHash(previous.stdout)!==oldBlob)
+      throw new Error('Exact previous main Return/Exchange module unavailable')
+    fs.writeFileSync(filename,previous.stdout)
+    run(process.execPath,['scripts/main-catalog-selective-gate.mjs'],
+      {...process.env,MAIN_RETURN_RESERVATION_STABILITY_REPLAY:'1'})
+  } finally {
+    fs.writeFileSync(filename,candidate)
+  }
+  if(gitHash(fs.readFileSync(filename))!==candidateBlob)
+    throw new Error('Stability audit candidate not restored after immutable history replay')
+  console.log('MAIN_RETURN_RESERVATION_STABILITY_AND_IMMUTABLE_HISTORICAL_GATES_PASSED')
+  process.exit(0)
+}
+
 // 2026-10-20 production hotfix overlay: recover already-known, pending-reservation
 // order lines without opening an empty Catalog Resolver. All pre-existing source-pinned
 // production gates run on the byte-identical approved baseline, NOT a weakened
