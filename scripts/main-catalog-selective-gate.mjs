@@ -15,6 +15,7 @@ if (!process.env.MAIN_RETURN_RESERVATION_STABILITY_REPLAY) {
   const files=[
     ['worker/domains/returns-exchanges.ts','c10b1e68928efe742940499e5b4c9b4375ece72e','eaa17e1e8518b2cf92b62bdd456b3b98bf1e40f1'],
     ['worker/domains/order-reservations.ts','00d18e4d2e0964bcd9f912aade1fd285399076a0','a83918767f054eca5fe108216c58ba45e7a13ad4'],
+    ['worker/domains/money.ts','648b09dfc7535352b7dd5029bf44587edeff441f','061bfb9cae457ee1612bfaf24fee11bbcbb467dd'],
   ]
   const approvedMain='b2648e849dbeed9730650848823449cfecb72ce5'
   const {createHash}=await import('node:crypto')
