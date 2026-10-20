@@ -173,6 +173,19 @@ export async function reviewAdminDeleteAppliedStock(
       &&cleanText(x.stock_writeoff_status)==='reserved'
       &&toInt(x.current_reserved,-1)>=reserveQty
     )
+    // Modern Exchange Set V2 can book the replacement as fulfilled immediately,
+    // even while its parent order is unsent. This is NOT evidence that a
+    // customer physically received it. Only a separately confirmed admin
+    // not-issued correction may reopen and reverse the exact last outbound.
+    // The saga itself still refuses a fulfilled reservation, so this state
+    // never enables unconfirmed chain deletion.
+    const negativeBookedFulfillment=Boolean(
+      delta===-qty
+      &&cleanText(x.reservation_status)==='fulfilled'
+      &&Boolean(cleanText(x.fulfilled_at))
+      &&cleanText(x.stock_writeoff_status)==='fulfilled'
+      &&toInt(x.current_reserved,-1)>=0
+    )
     const valid=Boolean(
       eventId>0&&exchangeId>0&&orderItemId>0&&variantId>0&&qty>0
       &&cleanText(x.operation_type)==='exchange'
@@ -185,7 +198,7 @@ export async function reviewAdminDeleteAppliedStock(
       &&toInt(x.physical_tracking,1)===0
       &&!cleanText(x.physical_received_at)
       &&toInt(x.current_item_quantity,0)===qty
-      &&(zeroBookedFulfillment||negativeBookedReserve)
+      &&(zeroBookedFulfillment||negativeBookedReserve||negativeBookedFulfillment)
       &&toInt(x.reservation_id,0)>0
       &&toInt(x.reservation_variant_id,0)===variantId
       &&cleanText(x.reservation_source)===source
