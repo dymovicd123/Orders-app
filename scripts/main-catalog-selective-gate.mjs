@@ -524,8 +524,22 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     fs.renameSync(file,staged)
     hiddenNew.push({file,expected,staged})
   }
+  // This 2026-10-13 frozen gate also pins the original admin deletion
+  // module. It must see exact approved MAIN bytes, never this audit's
+  // independently tested candidate. The frozen gate source is untouched.
+  const deletionPhysicalPath='worker/domains/admin-delete-physical.ts'
+  const deletionCandidate=fs.readFileSync(deletionPhysicalPath)
+  assert(hash(deletionCandidate)==='f90ae43714aa53959ef1f0457fb5223b128963bd',
+    'Unreviewed admin deletion candidate in historical replay')
+  const deletionBaselineRef='b2648e849dbeed9730650848823449cfecb72ce5'
+  if(git(['cat-file','-e',deletionBaselineRef+':'+deletionPhysicalPath],true).status!==0)
+    git(['fetch','--no-tags','--depth=1','origin',deletionBaselineRef])
+  const deletionOriginal=git(['show',deletionBaselineRef+':'+deletionPhysicalPath]).stdout
+  assert(hash(deletionOriginal)==='23a31cbdfd11875d22975caeaab1411b89998929',
+    'Original admin delete physical module changed; historical replay refused')
   let historicalTestFailed=false
   try{
+    fs.writeFileSync(deletionPhysicalPath,deletionOriginal)
     for(const entry of saved){
       const blob=git(['show',(entry.sourceRef||baseline)+':'+entry.relative]).stdout
       assert(hash(blob)===entry.before,'Pre-fix Production baseline changed: '+entry.relative)
@@ -538,6 +552,9 @@ if (!process.env.MAIN_EXCHANGE_LEGACY_REPLAY) {
     })
     if(oldRun.error||oldRun.status!==0)historicalTestFailed=true
   }finally{
+    fs.writeFileSync(deletionPhysicalPath,deletionCandidate)
+    assert(hash(fs.readFileSync(deletionPhysicalPath))===hash(deletionCandidate),
+      'Admin delete physical candidate not restored after frozen history')
     fs.renameSync(hiddenSchema,newSchema)
     assert(hash(fs.readFileSync(newSchema))===hash(schemaBytes),'0109 schema not restored after historical replay')
     for(const item of hiddenNew.reverse()){
