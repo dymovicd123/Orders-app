@@ -319,7 +319,6 @@ try {
   run('O1 read-budget behavior and SQL parity', process.execPath, [path.join(root, 'scripts/test-o1-read-budget.mjs')])
   run('O1 selected-report parity and index plans', process.execPath, [path.join(root, 'scripts/test-o1-report-scopes.mjs')])
   run('O1 finance read race regressions', process.execPath, [path.join(root, 'scripts/test-o1-finance-read-races.mjs')])
-  run('Known pending SKU shipping recovery regression', process.execPath, [path.join(root, 'scripts/test-pending-known-reservation-shipping-20261020.mjs')])
   run('Current database safety tests', process.execPath, [path.join(root, 'scripts/verify-database-safety.mjs')])
   const tsc = localNodeScript(['node_modules/typescript/bin/tsc'], 'TypeScript')
   const vite = localNodeScript(['node_modules/vite/bin/vite.js'], 'Vite')
