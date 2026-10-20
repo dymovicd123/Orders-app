@@ -465,6 +465,38 @@ try {
   assert.equal(Number((await sql('SELECT return_amount FROM orders WHERE id=?',refundOrderId)).return_amount),10000)
   assert.equal(Number((await sql("SELECT COUNT(*) AS n FROM returns WHERE order_id=? AND status<>'cancelled'",refundOrderId)).n),1)
   console.log('MAIN_LOCAL_WORKERD_D1_CONCURRENT_MONEY_REFUND_PASSED: 1/2 simultaneous money Return, one finance event, safe replay/retry, cancellation restores refund capacity')
+
+  // Independent *partial* payments race against 10k outstanding: only one 6k
+  // may commit. Later the remaining 4k must still be payable exactly once.
+  const partialOrderPayload={
+    ...moneyOnlyOrderPayload,requestId:'workerd-partial-payment-order',
+    customerPhone:'77010000222',
+  }
+  const partialCreated=(await call('/api/orders','POST',partialOrderPayload,201,partialOrderPayload.requestId)).data
+  const partialOrderId=Number(partialCreated.orderId)
+  const partialPay=async(key,amount)=>{
+    const req=new Request(root+'/api/payments',{
+      method:'POST',headers:{cookie,'content-type':'application/json','X-Idempotency-Key':key},
+      body:JSON.stringify({orderId:partialOrderId,paymentDate:'2026-10-20',method:'НАЛИЧКА',
+        amount,paymentKind:'debt_close',requestId:key}),
+    })
+    const res=await worker.fetch(req,env)
+    return {status:res.status,data:await res.json()}
+  }
+  const pairedPartial=await Promise.all([
+    partialPay('workerd-partial-six-a',6000),
+    partialPay('workerd-partial-six-b',6000),
+  ])
+  assert.equal(pairedPartial.filter(x=>x.status===201).length,1,'At most one 6k can fit same 10k debt: '+JSON.stringify(pairedPartial))
+  assert.equal(Number((await sql('SELECT received_amount FROM orders WHERE id=?',partialOrderId)).received_amount),6000)
+  assert.equal(Number((await sql('SELECT debt_amount FROM orders WHERE id=?',partialOrderId)).debt_amount),4000)
+  const rest=await partialPay('workerd-partial-rest-four',4000)
+  assert.equal(rest.status,201)
+  assert.equal(Number((await sql('SELECT received_amount FROM orders WHERE id=?',partialOrderId)).received_amount),10000)
+  assert.equal(Number((await sql('SELECT debt_amount FROM orders WHERE id=?',partialOrderId)).debt_amount),0)
+  assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM payments WHERE order_id=?',partialOrderId)).n),2)
+  assert.equal((await partialPay('workerd-partial-rest-four',4000)).data.replayed,true)
+  console.log('MAIN_LOCAL_WORKERD_D1_PARTIAL_PAYMENT_RACE_PASSED: 6k+6k on 10k admits one, next 4k closes exactly, replay safe')
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
