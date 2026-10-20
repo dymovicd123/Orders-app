@@ -1382,12 +1382,33 @@ export async function createExchange(
   }
 
   if (!operationContext.baselineCaptured && humanInventoryModelEnabled && !oldItemIsWorkshop && oldWasNotIssued) {
-    await releaseOrderReservationV2(
-      db,
-      oldItemId,
-      timestamp,
-      `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
-    );
+    if (oldQuantity < rawOldQuantity) {
+      // Historical pair exchanges must preserve the reservation of the unexchanged remainder.
+      // Persist the BEFORE snapshot ahead of any stock mutation so a retry after a lost
+      // response does not subtract reserved_quantity twice.
+      let snapshot = operationContext.legacyPartialReservationSnapshot as ReservationSnapshot | undefined;
+      if (!snapshot) {
+        snapshot = await loadReservationSnapshot(db, oldItemId, oldQuantity, rawOldQuantity) || undefined;
+        if (!snapshot) {
+          throw new CriticalOperationConflictError('У оставшегося невыданного товара нет действующего резерва. Обмен остановлен без изменений.');
+        }
+        operationContext = { ...operationContext, legacyPartialReservationSnapshot: snapshot };
+        await advanceCriticalOperation(db, criticalOperation, 'legacy_partial_reservation_validated', { context: operationContext });
+      }
+      await applyNotIssuedReservationReduction(
+        db,
+        { orderItemId: oldItemId, quantity: oldQuantity, reservationSnapshot: snapshot },
+        timestamp,
+        cleanText((existing as any).external_id),
+      );
+    } else {
+      await releaseOrderReservationV2(
+        db,
+        oldItemId,
+        timestamp,
+        `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
+      );
+    }
   }
 
   // Legacy recovery path: if the operator explicitly says that the customer has/returned the item
@@ -2753,16 +2774,47 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   ).run();
 
   if (exchangeOldWasNotIssued && !Boolean(toInt(oldItem.is_workshop, 0))) {
-    const reactivated = await reactivateReleasedOrderReservationV2(
-      db,
-      toInt(exchange.old_order_item_id, 0),
-      timestamp,
-      `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
-    );
-    if (!reactivated) {
-      throw new CriticalOperationConflictError(
-        'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+    // For a partial never-issued legacy exchange, the original reservation
+    // remains active but smaller. Re-activating it is insufficient: restore
+    // exactly the exchanged quantity using the persisted creation snapshot.
+    const creator = await db.prepare(
+      `SELECT context_json FROM critical_operations
+       WHERE operation_type = 'exchange_create' AND target_type = 'exchange' AND target_id = ?
+       ORDER BY created_at DESC LIMIT 1`
+    ).bind(exchangeId).first<{ context_json: string | null }>();
+    let savedPartial: ReservationSnapshot | null = null;
+    if (creator?.context_json) {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(creator.context_json) as Record<string, unknown>;
+      } catch {
+        throw new CriticalOperationConflictError('Снимок исходного обмена повреждён. Отмена остановлена без дальнейшего изменения резерва.');
+      }
+      savedPartial = (parsed.legacyPartialReservationSnapshot as ReservationSnapshot | null) || null;
+    }
+    if (savedPartial) {
+      if (savedPartial.quantity !== restoredOldQuantity || savedPartial.targetQuantity !== restoredOldQuantity - oldQuantity) {
+        throw new CriticalOperationConflictError('Количество исходного резерва не совпадает с отменяемым обменом.');
+      }
+      await restoreNotIssuedReservation(
+        db,
+        { orderItemId: toInt(exchange.old_order_item_id, 0), quantity: oldQuantity, reservationSnapshot: savedPartial },
+        timestamp,
+        exchangeId,
       );
+    } else {
+      // Existing fully released/historical exchanges preserve their original path.
+      const reactivated = await reactivateReleasedOrderReservationV2(
+        db,
+        toInt(exchange.old_order_item_id, 0),
+        timestamp,
+        `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
+      );
+      if (!reactivated) {
+        throw new CriticalOperationConflictError(
+          'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+        );
+      }
     }
   }
 
@@ -3051,7 +3103,7 @@ async function loadReservationSnapshot(
 
 async function applyNotIssuedReservationReduction(
   db: D1Database,
-  plan: ExchangeSetOldPlan,
+  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
   timestamp: string,
   externalOrderId: string,
 ) {
@@ -3114,7 +3166,7 @@ async function applyNotIssuedReservationReduction(
 
 async function restoreNotIssuedReservation(
   db: D1Database,
-  plan: ExchangeSetOldPlan,
+  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
   timestamp: string,
   exchangeId: number,
 ) {
