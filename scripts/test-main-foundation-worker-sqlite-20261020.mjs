@@ -1033,6 +1033,62 @@ try {
   },complexBefore,'Unsafe deletion attempts must not change physical/reservations/money')
   console.log('MAIN_DELETE_EXCHANGE_AND_RETURN_GUARD_PASSED: linked Exchange and money Return both preserved; unreviewed delete/chain denied without stock or money drift')
 
+  // The admin now explicitly confirms that the exchanged replacement never
+  // physically left the shop. This is an independent, fingerprint-guarded
+  // reconciliation followed by a NEW preview and the existing deletion saga.
+  // Do not use a stale preview or assume a recorded outbound is real handover.
+  assert.equal(complexPreview.canPreparePhysicalCorrection,true,
+    'Issued exchange movement must demand a dedicated physical verification first')
+  const corrected=await api('/api/orders/'+complexId+'/delete-physical-confirm','POST',{
+    expectedSnapshot:complexPreview.chainPlan.snapshotFingerprint,
+    physicalOutcome:'not_issued',
+  },{expectedStatus:200,requestId:'stability-complex-physical-confirm'})
+  assert.equal(corrected.data.ok,true)
+  const checkedAgain=corrected.data.preview
+  assert.equal(checkedAgain.canStartChain,true,
+    'After physical confirmation, both dependencies must have a safe cancellation plan')
+  assert.equal(checkedAgain.requiresPhysicalFact,false)
+  assert(checkedAgain.activeExchanges.includes(complexExchangeId))
+  assert(checkedAgain.activeReturns.includes(complexReturnId))
+  const complexSagaId='stability-complex-exchange-return-delete'
+  const complexSagaRequest={
+    requestId:complexSagaId,expectedSnapshot:checkedAgain.chainPlan.snapshotFingerprint,
+    physicalOutcome:'not_issued',
+  }
+  let complexProgress
+  for(let step=0;step<10;step++){
+    const next=await api('/api/orders/'+complexId+'/delete-chain','POST',complexSagaRequest,{
+      expectedStatus:200,requestId:complexSagaId,
+    })
+    assert(next.data.ok)
+    complexProgress=next.data.progress
+    if(complexProgress.status==='completed')break
+    assert(['planned','running','ready_for_final_delete'].includes(complexProgress.status))
+  }
+  assert.equal(complexProgress?.status,'completed','Return -> Exchange -> order delete saga must finish')
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',complexReturnId).status,'cancelled')
+  assert.equal(sql('SELECT status FROM exchanges WHERE id=?',complexExchangeId).status,'cancelled')
+  assert.equal(sql('SELECT order_status FROM orders WHERE id=?',complexId).order_status,'deleted')
+  assert.equal(Number(stock().quantity),complexBefore.oldPhysical,'Never-issued original must not create or remove Physical')
+  assert.equal(Number(newStock().quantity),complexBefore.newPhysical+1,'Cancelled synthetic replacement restores only its true 1-unit outbound')
+  assert.equal(Number(stock().reserved_quantity),complexBefore.oldReserved,'Original freed reserve cannot leak after deletion')
+  assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',complexId).return_amount),0)
+  const complexAfter={
+    oldPhysical:Number(stock().quantity),newPhysical:Number(newStock().quantity),
+    oldReserved:Number(stock().reserved_quantity),newReserved:Number(newStock().reserved_quantity),
+    eventCount:count('financial_events','order_id='+complexId),
+  }
+  const complexSagaReplay=await api('/api/orders/'+complexId+'/delete-chain','POST',complexSagaRequest,{
+    expectedStatus:200,requestId:complexSagaId,
+  })
+  assert.equal(complexSagaReplay.data.progress.status,'completed')
+  assert.deepEqual({
+    oldPhysical:Number(stock().quantity),newPhysical:Number(newStock().quantity),
+    oldReserved:Number(stock().reserved_quantity),newReserved:Number(newStock().reserved_quantity),
+    eventCount:count('financial_events','order_id='+complexId),
+  },complexAfter,'Repeated deletion saga must not replay stock or finance')
+  console.log('MAIN_DELETE_EXCHANGE_AND_RETURN_CHAIN_PASSED: verified not-issued handover, cancelled money Return and real-stock Exchange, deleted order; no double stock/money on replay')
+
   // Real manager session must have *narrow* correction authority, never
   // administrative deletion or the full editor. Test real auth cookies/roles,
   // not forged X-Access-Role headers.
