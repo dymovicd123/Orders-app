@@ -124,8 +124,17 @@ assert.match(ui,/if\(view==='home'\)return/)
 assert.match(ui,/Выплатили полностью/)
 assert.match(ui,/Выплатили часть/)
 assert.match(ui,/Подтвердить выплату/)
-assert.match(ui,/Дополнительно \(необязательно\)/)
-assert.match(ui,/Не указывать/)
+// The original Stage04 optional-method UI is tested in frozen historical
+// replays. The current approved payout screen intentionally has no payment
+// method chooser: only amount and optional comment. Both must be explicit.
+if (ui.includes('Дополнительно (необязательно)')) {
+  assert.match(ui,/Не указывать/,'Historical optional-method selector disappeared')
+} else {
+  assert.match(ui,/Сумма выплаты, тенге/,'Current simple payout must retain its amount field')
+  assert.match(ui,/const body=\{amount:amountValue,comment:comment\.trim\(\)\}/,
+    'Current payout must not send a payment-method choice')
+  assert.doesNotMatch(ui,/ws-payment-method/,'Current payout must not restore the removed payment-method selector')
+}
 assert.match(ui,/costConfirmed/)
 assert.match(ui,/Уточнена стоимость/)
 assert.match(ui,/Подтвердить начисление/)

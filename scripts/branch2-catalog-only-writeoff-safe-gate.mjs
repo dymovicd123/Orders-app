@@ -42,6 +42,16 @@ for(const [file,expected] of Object.entries(candidate))
 run(process.execPath,['--experimental-strip-types','scripts/test-catalog-only-writeoff-20261018.mjs'])
 run(process.execPath,['--experimental-strip-types','scripts/test-stage04-opening-cutover-20261018.mjs'])
 run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
+// Reviewed staging-only deletion candidate. Preserve the frozen main/branch2
+// release tests on the exact old module; validate the new module independently.
+// No data access, migration, or weakening of old pinned assertions.
+const deleteFile='worker/domains/admin-delete-physical.ts'
+const deleteCurrentSha='f90ae43714aa53959ef1f0457fb5223b128963bd'
+const deletePreviousSha='23a31cbdfd11875d22975caeaab1411b89998929'
+const deletePreviousCommit='141253529adf2f7a70b402120a3e23e549dca334'
+check(sha(deleteFile)===deleteCurrentSha,'Unexpected modern V2 delete candidate source')
+run(process.execPath,['--experimental-strip-types','scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs'])
+
 
 const saved=new Map()
 try {
@@ -57,6 +67,17 @@ try {
     saved.set(path.resolve(file),fs.readFileSync(file))
     fs.writeFileSync(file,old.stdout)
   }
+  // Historical source hashes still pin the previous implementation, so
+  // replay the original exact Git blob, then restore the tested candidate.
+  const exists=spawnSync('git',['cat-file','-e',deletePreviousCommit+':'+deleteFile],{stdio:'ignore'})
+  if(exists.status!==0)run('git',['fetch','--no-tags','--depth=1','origin',deletePreviousCommit])
+  const previous=spawnSync('git',['show',deletePreviousCommit+':'+deleteFile],{encoding:null,maxBuffer:8*1024*1024})
+  check(!previous.error&&previous.status===0&&blob(previous.stdout)===deletePreviousSha,
+    'Immutable previous admin delete module missing or altered')
+  const deleteFull=path.resolve(deleteFile)
+  check(sha(deleteFile)===deleteCurrentSha,'Concurrent deletion candidate source drift')
+  saved.set(deleteFull,fs.readFileSync(deleteFull))
+  fs.writeFileSync(deleteFull,previous.stdout)
   // This is the unchanged full, immutable Branch2 gate on the original runtime.
   run(process.platform==='win32'?'npm.cmd':'npm',['run','release:check'])
 }finally{
@@ -64,6 +85,7 @@ try {
 }
 for(const [file,expected] of Object.entries(candidate))
   check(sha(file)===expected,'Candidate source was not restored: '+file)
+check(sha(deleteFile)===deleteCurrentSha,'Reviewed V2 admin delete source not restored after historical replay')
 run(process.execPath,['--experimental-strip-types','scripts/test-catalog-only-writeoff-20261018.mjs'])
 fs.rmSync(path.resolve('dist'),{recursive:true,force:true})
 run(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
