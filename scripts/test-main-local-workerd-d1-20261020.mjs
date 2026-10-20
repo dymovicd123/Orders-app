@@ -587,6 +587,48 @@ try {
   assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM financial_events WHERE order_id=?',safeV2OrderId)).n),eventsBeforeReplay)
   console.log('MAIN_LOCAL_WORKERD_D1_SET_REFUND_DELETE_PASSED: explicit physical correction, independent refund cancel, V2 cancel, final order deletion, replay-safe stock and ledger')
 
+  // Negative control: the same normal V2 exchange is no longer automatically
+  // reversible if someone has since booked an independent movement on the
+  // replacement SKU. Confirmation alone cannot infer current shelf truth.
+  const laterOrder={
+    ...safeV2Order,requestId:'workerd-delete-later-order',
+    customerPhone:'77010000445',
+  }
+  const laterOrderId=Number((await call('/api/orders','POST',laterOrder,201,laterOrder.requestId)).data.orderId)
+  const laterOld=await sql('SELECT id,quantity,unit_price,line_total,catalog_price_snapshot FROM order_items WHERE order_id=?',laterOrderId)
+  const laterExchangeId=Number((await call('/api/exchanges/set','POST',{
+    orderId:laterOrderId,exchangeDate:'2026-10-20',expectedOrderTotal:10000,
+    oldItems:[{orderItemId:laterOld.id,quantity:1,physicalState:'not_issued',
+      expectedActiveQuantity:Number(laterOld.quantity),
+      expectedUnitPrice:Number(laterOld.unit_price),expectedLineTotal:Number(laterOld.line_total),
+      expectedCatalogPriceSnapshot:laterOld.catalog_price_snapshot}],
+    newItems:[{...laterOrder.items[0],color:colorNew,quantity:1}],
+    paymentAmount:0,paymentMethod:'',refundMethod:'',
+  },201,'workerd-delete-later-exchange')).data.exchangeId)
+  await call('/api/inventory/movements','POST',{
+    requestId:'workerd-delete-later-independent-arrival',inventorySource:'warehouse',movementType:'arrival',
+    items:[{productId,variantId:newVariantId,productName:name,gender:'ЖЕН',
+      color:colorNew,material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity:1}],
+  },201)
+  const laterPreview=(await call('/api/orders/'+laterOrderId+'/delete-preview')).data.preview
+  assert.equal(laterPreview.chainPlan.manualReviewRequired,false)
+  assert.equal(laterPreview.canPreparePhysicalCorrection,false)
+  assert.equal(laterPreview.canStartChain,false)
+  assert(laterPreview.reasons.some(x=>/движен|истори|сверк/.test(x)),
+    'Admin must be told why later SKU movement blocks automatic reversal')
+  const laterStable={physical:Number((await newStock()).quantity),
+    reserved:Number((await newStock()).reserved_quantity),
+    events:Number((await sql('SELECT COUNT(*) AS n FROM financial_events WHERE order_id=?',laterOrderId)).n)}
+  await call('/api/orders/'+laterOrderId+'/delete-physical-confirm','POST',{
+    expectedSnapshot:laterPreview.chainPlan.snapshotFingerprint,physicalOutcome:'not_issued',
+  },409,'workerd-delete-later-confirm-denied')
+  assert.equal(Number((await newStock()).quantity),laterStable.physical)
+  assert.equal(Number((await newStock()).reserved_quantity),laterStable.reserved)
+  assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM financial_events WHERE order_id=?',laterOrderId)).n),laterStable.events)
+  assert.equal((await sql('SELECT status FROM exchanges WHERE id=?',laterExchangeId)).status,'completed')
+  assert.equal((await sql('SELECT order_status FROM orders WHERE id=?',laterOrderId)).order_status,'active')
+  console.log('MAIN_LOCAL_WORKERD_D1_LATER_MOVEMENT_DELETE_GUARD_PASSED: recorded subsequent SKU movement blocks auto-reversal without touching physical/finance')
+
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
