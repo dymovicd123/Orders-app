@@ -467,7 +467,8 @@ export async function createManualOrderPaymentCritical(
     }
 
     let paymentId = toInt(context.paymentId, 0);
-    if (criticalOperation.row.step === 'validated') {      // The preflight debt read is stale when two staff requests overlap.
+    if (criticalOperation.row.step === 'validated') {
+      // The preflight debt read is stale when two staff requests overlap.
       // Keep the payment + durable requestId mapping in the SAME D1 batch
       // (via insertCriticalMappedEntity), but validate the CURRENT balance
       // within the payment INSERT itself. An invalid payment explicitly hits
@@ -502,7 +503,7 @@ export async function createManualOrderPaymentCritical(
         );
       } catch (error) {
         const failure = cleanText(error instanceof Error ? error.message : error);
-        if (/not null constraint failed:\\s*payments\\.amount/i.test(failure)) {
+        if (/not null constraint failed:\s*payments\.amount/i.test(failure)) {
           throw new CriticalOperationConflictError(
             'Долг по заказу уже изменился или закрыт другим сотрудником. Оплата не добавлена. Обновите заказ.',
           );
