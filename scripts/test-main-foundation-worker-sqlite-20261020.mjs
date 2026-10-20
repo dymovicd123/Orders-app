@@ -1038,7 +1038,7 @@ try {
   // reconciliation followed by a NEW preview and the existing deletion saga.
   // Do not use a stale preview or assume a recorded outbound is real handover.
   assert.equal(complexPreview.canPreparePhysicalCorrection,true,
-    'Issued exchange movement must demand a dedicated physical verification first')
+    'Issued exchange movement diagnostic: '+JSON.stringify({requiresPhysicalFact:complexPreview.requiresPhysicalFact,reasons:complexPreview.reasons,appliedStockReview:complexPreview.appliedStockReview,chainPlan:complexPreview.chainPlan,canPreparePhysicalCorrection:complexPreview.canPreparePhysicalCorrection}))
   const corrected=await api('/api/orders/'+complexId+'/delete-physical-confirm','POST',{
     expectedSnapshot:complexPreview.chainPlan.snapshotFingerprint,
     physicalOutcome:'not_issued',
