@@ -703,6 +703,37 @@ try {
   assert.equal(Number(stock().quantity),inconsistentPhysical)
   assert.equal(Number(stock().reserved_quantity),inconsistentReserved)
   console.log('MAIN_RETURN_ACTIVE_RESERVATION_CONFLICT_PASSED: unissued active reserve cannot be physically returned twice, money-only refund remains possible')
+
+  // Delayed physical return intake can occur days AFTER the Return was
+  // registered. A newly active reserve must be checked again on actual intake
+  // (reproduction of order 1563 / return 43 category, no live writes).
+  const pendingReturn=(await api('/api/returns','POST',{
+    orderId,returnDate:'2026-10-20',amount:0,
+    items:[{orderItemId:item.id,quantity:1,physicalState:'pending',restock:false}],
+  },{expectedStatus:201,requestId:'stability-late-intake-create'})).data
+  const pendingReturnId=Number(pendingReturn.returnId)
+  assert(pendingReturnId>0)
+  const pendingReturnItem=sql('SELECT id,physical_received_at FROM return_items WHERE return_id=?',pendingReturnId)
+  assert(pendingReturnItem?.id && !pendingReturnItem.physical_received_at)
+  const oldReservationRow=sql('SELECT id,status,quantity FROM inventory_reservations WHERE order_item_id=?',item.id)
+  assert.equal(oldReservationRow.status,'fulfilled')
+  // This injects a historical inconsistency ONLY in the disposable test DB:
+  // reservation has been improperly reopened between Return and intake.
+  sqlite.prepare("UPDATE inventory_reservations SET status='active',fulfilled_at=NULL,released_at=NULL WHERE id=?").run(oldReservationRow.id)
+  sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE inventory_source='warehouse' AND variant_id=?").run(variantId)
+  const beforeLateIntake=Number(stock().quantity)
+  const beforeLateReserved=Number(stock().reserved_quantity)
+  const delayedAttempt=await api('/api/returned-items/receive','POST',{
+    operationType:'return',operationId:pendingReturnId,operationItemId:pendingReturnItem.id,
+    destination:'warehouse',requestId:'stability-late-intake-conflict',
+  },{expectedStatus:409})
+  assert.equal(delayedAttempt.data.ok,false)
+  assert.match(String(delayedAttempt.data.message||''),/резерв|выдач/i)
+  assert.equal(Number(stock().quantity),beforeLateIntake,'Conflicting late intake cannot credit physical')
+  assert.equal(Number(stock().reserved_quantity),beforeLateReserved,'Intake cannot drop unrelated active reserve')
+  assert.equal(sql('SELECT physical_received_at FROM return_items WHERE id=?',pendingReturnItem.id).physical_received_at,null)
+  assert.equal(sql('SELECT COUNT(*) AS n FROM inventory_lifecycle_events WHERE operation_type=\'return\' AND operation_id=?',pendingReturnId).n,0)
+  console.log('MAIN_LATE_RETURN_RECEIPT_ACTIVE_RESERVE_BLOCKED: historical pending Return cannot receive physical item while original SKU reservation is active')
   console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
 
 } finally {
