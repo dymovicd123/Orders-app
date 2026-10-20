@@ -524,6 +524,69 @@ try {
   assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM payments WHERE order_id=?',partialOrderId)).n),2)
   assert.equal((await partialPay('workerd-partial-rest-four',4000)).data.replayed,true)
   console.log('MAIN_LOCAL_WORKERD_D1_PARTIAL_PAYMENT_RACE_PASSED: 6k+6k on 10k admits one, next 4k closes exactly, replay safe')
+  // Verify successful *full* admin deletion on real disposable workerd D1:
+  // an unsent V2 exchange immediately records a fulfilled replacement and
+  // exact -1 Physical; the admin must explicitly correct "not issued" before
+  // cancelling a separate money-only Return, V2 Exchange and parent order.
+  const safeV2Order={
+    ...orderPayload,requestId:'workerd-delete-v2-order',
+    customerPhone:'77010000444',
+    items:[{...orderPayload.items[0],quantity:1}],
+    payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',paymentKind:'primary',amount:2000}],
+  }
+  const safeV2OrderId=Number((await call('/api/orders','POST',safeV2Order,201,safeV2Order.requestId)).data.orderId)
+  const safeV2Item=await sql('SELECT id,quantity,unit_price,line_total,catalog_price_snapshot FROM order_items WHERE order_id=?',safeV2OrderId)
+  const safeV2ExchangeId=Number((await call('/api/exchanges/set','POST',{
+    orderId:safeV2OrderId,exchangeDate:'2026-10-20',expectedOrderTotal:10000,
+    oldItems:[{orderItemId:safeV2Item.id,quantity:1,physicalState:'not_issued',
+      expectedActiveQuantity:Number(safeV2Item.quantity),
+      expectedUnitPrice:Number(safeV2Item.unit_price),
+      expectedLineTotal:Number(safeV2Item.line_total),
+      expectedCatalogPriceSnapshot:safeV2Item.catalog_price_snapshot}],
+    newItems:[{...safeV2Order.items[0],color:colorNew,quantity:1}],
+    paymentAmount:0,paymentMethod:'',refundMethod:'',
+  },201,'workerd-delete-v2-exchange')).data.exchangeId)
+  const safeV2ReturnId=Number((await call('/api/returns','POST',{
+    orderId:safeV2OrderId,returnDate:'2026-10-20',amount:1000,
+    paymentMethod:'НАЛИЧКА',items:[],
+  },201,'workerd-delete-v2-return')).data.returnId)
+  const preV2Preview=(await call('/api/orders/'+safeV2OrderId+'/delete-preview')).data.preview
+  assert(preV2Preview.activeExchanges.includes(safeV2ExchangeId))
+  assert(preV2Preview.activeReturns.includes(safeV2ReturnId))
+  assert.equal(preV2Preview.canStartChain,false)
+  assert.equal(preV2Preview.canPreparePhysicalCorrection,true,
+    'Real D1: ordinary unissued V2 exchange must allow explicit admin handover correction')
+  const beforeSafeV2={old:Number((await stock()).quantity),oldReserve:Number((await stock()).reserved_quantity),
+    next:Number((await newStock()).quantity),nextReserve:Number((await newStock()).reserved_quantity)}
+  const physicalApproved=(await call('/api/orders/'+safeV2OrderId+'/delete-physical-confirm','POST',{
+    expectedSnapshot:preV2Preview.chainPlan.snapshotFingerprint,physicalOutcome:'not_issued',
+  },200,'workerd-delete-v2-confirm')).data
+  assert.equal(physicalApproved.ok,true)
+  const afterCorrection=(await call('/api/orders/'+safeV2OrderId+'/delete-preview')).data.preview
+  assert.equal(afterCorrection.canStartChain,true)
+  assert.equal(Number((await newStock()).quantity),beforeSafeV2.next+1)
+  const sagaId='workerd-delete-v2-refund-chain'
+  const sagaBody={requestId:sagaId,expectedSnapshot:afterCorrection.chainPlan.snapshotFingerprint,
+    physicalOutcome:'not_issued'}
+  let lastProgress
+  for(let step=0;step<10;step++){
+    lastProgress=(await call('/api/orders/'+safeV2OrderId+'/delete-chain','POST',sagaBody,200,sagaId)).data.progress
+    if(lastProgress.status==='completed')break
+  }
+  assert.equal(lastProgress?.status,'completed','Real D1: refund -> V2 cancel -> final deletion must complete')
+  assert.equal((await sql('SELECT status FROM exchanges WHERE id=?',safeV2ExchangeId)).status,'cancelled')
+  assert.equal((await sql('SELECT status FROM returns WHERE id=?',safeV2ReturnId)).status,'cancelled')
+  assert.equal((await sql('SELECT order_status FROM orders WHERE id=?',safeV2OrderId)).order_status,'deleted')
+  assert.equal(Number((await stock()).quantity),beforeSafeV2.old)
+  assert.equal(Number((await stock()).reserved_quantity),beforeSafeV2.oldReserve)
+  assert.equal(Number((await newStock()).quantity),beforeSafeV2.next+1)
+  assert.equal(Number((await newStock()).reserved_quantity),beforeSafeV2.nextReserve)
+  const eventsBeforeReplay=Number((await sql('SELECT COUNT(*) AS n FROM financial_events WHERE order_id=?',safeV2OrderId)).n)
+  assert.equal((await call('/api/orders/'+safeV2OrderId+'/delete-chain','POST',sagaBody,200,sagaId)).data.progress.status,'completed')
+  assert.equal(Number((await newStock()).quantity),beforeSafeV2.next+1)
+  assert.equal(Number((await sql('SELECT COUNT(*) AS n FROM financial_events WHERE order_id=?',safeV2OrderId)).n),eventsBeforeReplay)
+  console.log('MAIN_LOCAL_WORKERD_D1_SET_REFUND_DELETE_PASSED: explicit physical correction, independent refund cancel, V2 cancel, final order deletion, replay-safe stock and ledger')
+
   console.log('MAIN_LOCAL_WORKERD_D1_ACCEPTANCE_PASSED: '+migrations.length+' source-derived migrations with explicit local D1 adaptations, real local D1 storage, Cyrillic auth, Catalog SKU, arrival, itemized order/payment/reserve, idempotent shipping; no production identifiers')
 } finally {
   if(proxy)await proxy.dispose()
