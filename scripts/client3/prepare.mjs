@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { consolidateMigrations } from './baseline.mjs'
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..')
 export const PROTECTED_DATABASE_IDS=new Set([
@@ -41,7 +42,7 @@ export function prepareMigrations(directory,root=ROOT){
  if(patched!==2)throw Error('Legacy manager and product seeds must each be removed once.')
  const after=fs.readFileSync(path.join(directory,'0002_reference_values.sql'),'utf8')
  if(KNOWN_OLD_MANAGERS.some(name=>after.includes("'"+name+"'"))||after.includes("'БАЯН СҰЛУ ШАПАН'"))throw Error('Old-customer business data leaked to clean migrations.')
- return files
+ return consolidateMigrations(directory,files)
 }
 
 export function validateConfigInput(worker,database,id) {
@@ -75,7 +76,7 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  if(mode==='--prepare-migrations'){
    const output=path.join(ROOT,'.client3-migrations')
    const files=prepareMigrations(output)
-   console.log('Prepared '+files.length+' client3 schema migrations, excluding old staff seeds. No D1 access.')
+   console.log('Prepared '+files.length+' Client3 consolidated clean schema migration(s), excluding old staff and products. No D1 access.')
  }else if(mode==='--configure'){
    if(!worker||!database||!id)throw Error('Usage: node scripts/client3/prepare.mjs --configure <worker-name> <db-name> <new-d1-uuid>')
    const config=renderConfig(worker,database,id)
