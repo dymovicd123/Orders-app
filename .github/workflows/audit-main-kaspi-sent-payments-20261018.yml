@@ -67,3 +67,29 @@ jobs:
           fi
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
           echo 'PRODUCTION KASPI SELECT-ONLY AUDIT COMPLETE (NO WRITES)'
+
+      - name: Investigate exact Oct 7 catalog/shipping contradictory order (SELECT ONLY)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="SELECT o.id AS order_id,o.external_id,o.order_status,o.archived_at,o.shipping_status,
+            oi.id AS item_id,oi.product_name_snapshot,oi.quantity,oi.is_workshop,oi.product_id AS item_product,
+            oi.variant_id AS item_variant,oi.stock_writeoff_status,oi.source_type,
+            oi.gender_snapshot,oi.color_snapshot,oi.material_snapshot,oi.length_snapshot,oi.size_snapshot,
+            r.id AS reservation_id,r.status AS reservation_status,r.inventory_source AS res_source,
+            r.variant_id AS res_variant,r.quantity AS res_qty,r.unresolved_reason,
+            s.id AS stock_id,s.quantity AS physical,s.reserved_quantity AS stock_cached_reserved,
+            v.is_active AS item_sku_active,p.is_active AS item_product_active,
+            (SELECT COUNT(*) FROM return_items ri JOIN returns ret ON ret.id=ri.return_id
+             WHERE ri.order_item_id=oi.id AND COALESCE(ret.status,'completed')<>'cancelled') AS return_rows
+            FROM orders o JOIN order_items oi ON oi.order_id=o.id
+            LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+            LEFT JOIN inventory_stock s ON s.variant_id=r.variant_id AND s.inventory_source=r.inventory_source
+            LEFT JOIN catalog_variants v ON v.id=oi.variant_id
+            LEFT JOIN catalog_products p ON p.id=v.product_id
+            WHERE o.external_id LIKE 'ORD-20261007131952%'
+            ORDER BY oi.id,r.id"
+          [[ "$SQL" == SELECT* ]]
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "$SQL" --json | jq -c '.[0].results'
+          echo 'EXACT_ORDER_READ_ONLY_COMPLETE'
