@@ -28,7 +28,7 @@ export function prepareMigrations(directory,root=ROOT){
      if(KNOWN_OLD_MANAGERS.some(name=>!matches[0][0].includes("'"+name+"'")))throw Error('Old manager seed identity unexpectedly changed.')
      copy=body.replace(SEED,'-- Client3: omitted old-customer manager roster. New staff are added after first admin login.')
      patched++
-   }else if(/\bINSERT\s+(?:OR\s+\w+\s+)?INTO\s+managers\b/i.test(body)){
+   }else if(/\bINSERT\s+(?:OR\s+\w+\s+)?INTO\s+managers\s*\([^)]*\)\s*VALUES\b/i.test(body)){
      throw Error('Another migration now seeds managers: '+filename)
    }
    fs.writeFileSync(path.join(directory,filename),copy)
