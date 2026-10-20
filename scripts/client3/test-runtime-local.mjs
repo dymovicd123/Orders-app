@@ -162,6 +162,70 @@ try{
  assert.equal(activeItems.length,1,'Exchange did not replace one active line exactly once: '+JSON.stringify(activeItems).slice(0,550))
  assert.equal(activeItems[0].productName||activeItems[0].product_name_snapshot,'CLIENT3_SMOKE_REPLACEMENT','Exchange did not install replacement item')
  console.log('CLIENT3_REAL_WORKER_EXCHANGE_NO_MONEY_AND_REPLAY_PASSED: correct active item and debt preserved')
+ // Exercise real Warehouse physical stock, canonical SKU, reservations, shipping,
+ // repeated shipping, return-to-stock and repeated return on the local third D1.
+ const stockName='CLIENT3_SMOKE_WAREHOUSE_SKU'
+ const stockAttrs={productName:stockName,gender:'ЖЕН',color:'БЕЖЕВЫЙ',
+   material:'ЗАМША ВЕЛЮР',length:'СТАНДАРТ',size:'48'}
+ const arrivalBody={requestId:'ac19d0ce-2026-40be-9000-000000000a35',inventorySource:'warehouse',
+   movementType:'arrival',comment:'client3 isolated stock smoke',
+   items:[{...stockAttrs,quantity:3}]}
+ const arrival=()=>get('/api/inventory/movements?returnInventory=0',{method:'POST',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':arrivalBody.requestId},
+   body:JSON.stringify(arrivalBody)})
+ const firstArrival=await arrival()
+ assert.equal(firstArrival.status,201,'Warehouse arrival failed: '+firstArrival.body.slice(0,1200)+' logs '+log.slice(-2200))
+ const secondArrival=await arrival()
+ assert([200,201].includes(secondArrival.status),'Arrival retry failed: '+secondArrival.body.slice(0,800))
+ const inventory=async()=>JSON.parse((await get('/api/inventory?source=warehouse',authenticated)).body)
+ const readStock=async()=>{const result=await inventory()
+   const found=(result.items||[]).filter(x=>x.productName===stockName&&x.source==='warehouse')
+   assert.equal(found.length,1,'Expected exactly one stock row for '+stockName+': '+JSON.stringify((result.items||[]).slice(0,5)))
+   return found[0]}
+ const stocked=await readStock()
+ assert.equal(Number(stocked.quantity),3,'Arrival replay duplicated stock')
+ assert(stocked.variantId>0,'Arrival did not create canonical SKU')
+ const stockOrderPayload={...createPayload,requestId:'ac19d0ce-2026-40be-9000-000000000a36',
+   items:[{...stockAttrs,sourceType:'warehouse',quantity:1,unitPrice:12000,catalogPriceSnapshot:null}],
+   payments:[{paymentDate:'2026-10-20',method:'НАЛИЧКА',amount:12000,paymentKind:'primary'}]}
+ const warehouseOrderRes=await get('/api/orders',{method:'POST',headers:{...headers,...authenticated.headers,
+   'X-Idempotency-Key':stockOrderPayload.requestId},body:JSON.stringify(stockOrderPayload)})
+ assert.equal(warehouseOrderRes.status,201,'Warehouse order create failed: '+warehouseOrderRes.body.slice(0,1200))
+ const warehouseOrderId=Number(JSON.parse(warehouseOrderRes.body).order?.id||JSON.parse(warehouseOrderRes.body).orderId||JSON.parse(warehouseOrderRes.body).id)
+ assert(warehouseOrderId>0,'Warehouse order ID missing')
+ const reserveStock=await readStock()
+ assert.equal(Number(reserveStock.quantity),3,'Reservation subtracted physical stock too early')
+ assert.equal(Number(reserveStock.reservedQuantity),1,'Expected 1 active reserved unit')
+ const send=()=>get('/api/orders/'+warehouseOrderId+'/shipping',{method:'PATCH',
+   headers:{...headers,...authenticated.headers},body:JSON.stringify({shippingStatus:'sent',shippingDate:'2026-10-20'})})
+ const ship=await send()
+ assert.equal(ship.status,200,'Warehouse shipping failed: '+ship.body.slice(0,1200)+' log '+log.slice(-2000))
+ const again=await send()
+ assert.equal(again.status,200,'Repeated shipping failed: '+again.body.slice(0,1200))
+ const shipped=await readStock()
+ assert.equal(Number(shipped.quantity),2,'Shipping did not subtract exactly one physical unit')
+ assert.equal(Number(shipped.reservedQuantity),0,'Shipping did not clear active reservation')
+ const issuedOrderRes=await get('/api/orders/'+warehouseOrderId,authenticated)
+ assert.equal(issuedOrderRes.status,200,'Reading shipped order failed')
+ const issuedOrder=JSON.parse(issuedOrderRes.body).order
+ assert.equal(issuedOrder.shipping_status,'sent','Order shipping status not committed')
+ assert.equal(Number(issuedOrder.received_amount),12000,'Shipping changed received funds')
+ const issuedItem=(issuedOrder.items||[]).find(x=>Number(x.quantity)>0)
+ assert(issuedItem?.id>0,'Issued item ID unavailable for return')
+ const restock={requestId:'ac19d0ce-2026-40be-9000-000000000a37',
+   orderId:warehouseOrderId,returnDate:'2026-10-20',amount:0,
+   items:[{orderItemId:issuedItem.id,quantity:1,amount:0,restock:true,physicalState:'warehouse'}]}
+ const receiveBack=()=>get('/api/returns',{method:'POST',
+   headers:{...headers,...authenticated.headers,'X-Idempotency-Key':restock.requestId},
+   body:JSON.stringify(restock)})
+ const firstBack=await receiveBack()
+ assert.equal(firstBack.status,201,'Physical return failed: '+firstBack.body.slice(0,1200)+' log '+log.slice(-2200))
+ const secondBack=await receiveBack()
+ assert.equal(secondBack.status,201,'Physical return replay failed: '+secondBack.body.slice(0,1200))
+ const returned=await readStock()
+ assert.equal(Number(returned.quantity),3,'Physical return double-counted or lost stock')
+ assert.equal(Number(returned.reservedQuantity),0,'Physical return revived reservation')
+ console.log('CLIENT3_REAL_WORKER_ARRIVAL_RESERVE_SHIP_AND_RESTOCK_RETRY_PASSED: exactly 3 -> 2 -> 3 physical, 1 -> 0 reserved')
  const denied=await get('/api/orders',{method:'POST',headers,body:'{}'})
  assert.equal(denied.status,401,'Anonymous new order must never be permitted')
  console.log('CLIENT3_LOCAL_D1_LIVE_WORKER_AUTH_AND_FRESH_READS_PASSED: consolidated Client3 baseline, admin bootstrap guarded, authenticated APIs healthy')
