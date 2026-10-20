@@ -451,8 +451,8 @@ try {
   const retryWinner=await concurrentRefund(refundedByA?'workerd-refund-staff-a':'workerd-refund-staff-b')
   assert.equal(retryWinner.status,201)
   assert.equal(Number(retryWinner.data.returnId),winningRefundId)
-  const retryLoser=await concurrentRefund(refundedByA?'workerd-refund-staff-b':'workerd-refund-staff-a')
-  assert.equal(retryLoser.status,409,'Repeated distinct refund must remain rejected while funds unavailable')
+  const retryRejectedRefund=await concurrentRefund(refundedByA?'workerd-refund-staff-b':'workerd-refund-staff-a')
+  assert.equal(retryRejectedRefund.status,409,'Repeated distinct refund must remain rejected while funds unavailable')
   const moneyEvents=(await db.prepare(
     "SELECT event_type,amount_delta FROM financial_events WHERE order_id=? AND event_type='order_refund'"
   ).bind(refundOrderId).all()).results
