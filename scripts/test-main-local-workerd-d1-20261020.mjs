@@ -51,6 +51,13 @@ try {
     try { await db.exec(adapted) }
     catch(error) {throw new Error('Local workerd D1 failed migration '+file+': '+String(error),{cause:error})}
   }
+  const orphanReferences=(await db.prepare(
+    "SELECT type,name,substr(sql,1,650) AS sql FROM sqlite_master WHERE sql LIKE '%managers_step126_old%' ORDER BY type,name"
+  ).all()).results||[]
+  if(orphanReferences.length){
+    console.error('LOCAL_WORKERD_D1_STALE_MANAGER_REFERENCES: '+JSON.stringify(orphanReferences))
+    throw new Error('Fresh D1 migrations retain references to dropped managers_step126_old; stop before business mutations')
+  }
   const hasSnapshot=await db.prepare("SELECT 1 AS present FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").first()
   if(!hasSnapshot) {
     console.warn('LOCAL_WORKERD_D1_SCHEMA_GAP: fresh repo migrations missing manager_snapshot_name, test-only compatibility field applied')
