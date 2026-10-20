@@ -49,6 +49,8 @@ jobs:
         run: node scripts/client3/test-fresh.mjs
       - name: Run resolver, finance, exchange and warehouse regressions
         run: node scripts/client3/stability-gate.mjs
+      - name: Build SPA assets required by local Worker and remote deployment
+        run: npm run build
       - name: Run real local Worker and disposable D1 scenarios
         run: node scripts/client3/test-runtime-local.mjs
       - name: Create independent remote D1, verify its empty data, and deploy only Client3 Worker
