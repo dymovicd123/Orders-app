@@ -38,6 +38,7 @@ export function consolidateMigrations(directory,filenames){
   const seeded=source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
   const permitted=new Set(['reference_values','app_settings'])
   const metaSeeds=[]
+  let workshopCaptureSeed=null
   // Historic spellings learned for the old customer's product characteristics
   // are not identities of the new tenant. Deliberately do not seed these aliases.
   const oldTenantAliases=new Set(['catalog_value_aliases','catalog_input_aliases'])
@@ -46,6 +47,13 @@ export function consolidateMigrations(directory,filenames){
    if(permitted.has(name)||shadow.has(name)||name.startsWith('_')||oldTenantAliases.has(name))continue
    const row=source.prepare('SELECT COUNT(*) AS n FROM "'+name.replaceAll('"','""')+'"').get()
    if(!row.n)continue
+   if(name==='workshop_settlement_capture_control'){
+     const control=source.prepare('SELECT id, enabled FROM workshop_settlement_capture_control').all()
+     if(control.length!==1 || Number(control[0].id)!==1 || Number(control[0].enabled)!==0)
+       throw Error('Fresh Client3 must not activate Workshop payment accrual.')
+     workshopCaptureSeed=control
+     continue
+   }
    if(/^[a-z0-9_]+_meta$/.test(name)){
      const fields=source.prepare('PRAGMA table_info("'+name+'")').all().map(x=>x.name)
      if(JSON.stringify(fields.slice(0,3))!==JSON.stringify(['key','value','updated_at']) || row.n>50)
@@ -70,6 +78,7 @@ export function consolidateMigrations(directory,filenames){
    ref.map(x=>'  ('+[quote(x.kind),quote(x.value),Number(x.is_active),Number(x.sort_order)].join(',')+')').join(',\n')+';',
    'INSERT INTO app_settings(key,value) VALUES',
    settings.map(x=>'  ('+[quote(x.key),quote(x.value)].join(',')+')').join(',\n')+';',
+   ...(workshopCaptureSeed?['INSERT INTO workshop_settlement_capture_control(id,enabled) VALUES (1,0);']:[]),
    ...metaSeeds.flatMap(({name,rows})=>[
      'INSERT INTO "'+name+'"(key,value,updated_at) VALUES',
      rows.map(x=>'  ('+[quote(x.key),quote(x.value),quote(x.updated_at)].join(',')+')').join(',\n')+';'
@@ -90,6 +99,8 @@ export function consolidateMigrations(directory,filenames){
    throw Error('Consolidated Client3 dropdown references changed')
   if(rebuilt.prepare('SELECT COUNT(*) AS n FROM app_settings').get().n!==settings.length)
    throw Error('Consolidated Client3 generic settings changed')
+  if(workshopCaptureSeed && (rebuilt.prepare('SELECT enabled FROM workshop_settlement_capture_control WHERE id=1').get()?.enabled)!==0)
+    throw Error('Client3 Workshop capture control baseline changed.')
   for(const {name,rows} of metaSeeds){
     const count=rebuilt.prepare('SELECT COUNT(*) AS n FROM "'+name+'"').get().n
     if(count!==rows.length)throw Error('Consolidated feature flag metadata changed for '+name)
