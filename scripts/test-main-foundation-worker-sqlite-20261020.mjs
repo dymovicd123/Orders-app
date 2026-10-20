@@ -166,7 +166,42 @@ try {
   assert.equal(actualOrder().received_amount,5000)
   assert.equal(actualOrder().debt_amount,15000)
 
-  console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: full '+migrations.length+' migrations, auth bootstrap, exact Catalog SKU, Arrival, itemized order+payment, active reservation, duplicate create, ship and duplicate ship. ZERO remote D1.')
+  // A second real order remains reserved when an exact short stock-check is
+  // completed AFTER its creation. The server MUST stop final shipment and ask
+  // for the review rather than silently double-decrementing physical stock.
+  const orderAfterCheck = {
+    ...orderPayload, requestId:'stability-create-review-after-check', customerPhone:'77010000002',
+    items:[{...orderPayload.items[0],quantity:1}],
+    payments:[],
+  }
+  const second = await api('/api/orders','POST',orderAfterCheck,{expectedStatus:201,requestId:orderAfterCheck.requestId})
+  const secondId = Number(second.data.orderId)
+  assert(secondId>0 && secondId!==orderId)
+  assert.equal(Number(stock().quantity),1)
+  assert.equal(Number(stock().reserved_quantity),1)
+  const reviewCheck=await api('/api/inventory/stocktakes/quick','POST',{
+    source:'warehouse',variantId,expectedQuantity:1,countedQuantity:1,
+  })
+  assert(reviewCheck.data.ok,'Exact physical check must commit')
+  assert.equal(Number(stock().quantity),1,'Exact unchanged count must not change Physical')
+  const blocked=await api('/api/orders/'+secondId+'/shipping','PATCH',ship,{expectedStatus:409})
+  assert.equal(blocked.data.code,'stock_handover_review_required','Old-order/post-check handover prompt must occur before shipping')
+  const state=(await api('/api/orders/'+secondId+'/stock-handover')).data
+  const secondItem=state.items.find(v=>v.variantId===variantId)
+  assert(secondItem?.reviewNeeded,'Actual latest post-order SKU check must appear as review-needed')
+  const reviewed=await api('/api/orders/'+secondId+'/stock-handover','PATCH',{
+    action:'still_here',orderItemId:secondItem.orderItemId,
+    checkpointId:secondItem.checkpointId,checkpointAt:secondItem.checkpointAt,
+  })
+  assert(reviewed.data.ok,'Concrete checkpoint confirmation failed')
+  assert.equal(Number(stock().quantity),1,'Still-here confirmation must not itself decrement Physical')
+  await api('/api/orders/'+secondId+'/shipping','PATCH',ship)
+  assert.equal(Number(stock().quantity),0,'Post-check shipping must decrement exactly once')
+  assert.equal(Number(stock().reserved_quantity),0,'Post-check shipping must close exactly one active reservation')
+  await api('/api/orders/'+secondId+'/shipping','PATCH',ship)
+  assert.equal(Number(stock().quantity),0,'Post-check shipment replay must be idempotent')
+  console.log('MAIN_FOUNDATION_WORKER_SQLITE_PASSED: '+migrations.length+' migrations, auth, Catalog SKU, Arrival, itemized order/payment, reserve/replay, shipping/replay, exact stock check, checkpoint review, still-here decision, no double physical outbound; ZERO remote D1.')
+
 } finally {
   sqlite.close()
 }
