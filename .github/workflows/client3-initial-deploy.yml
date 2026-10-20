@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   initial-install:
-    if: github.event.head_commit.message == 'Client3: APPROVED first isolated Cloudflare deployment 2026-10-20'
+    if: "${{ github.event.head_commit.message == 'Client3: APPROVED first isolated Cloudflare deployment 2026-10-20' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
