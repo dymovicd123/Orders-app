@@ -54,7 +54,7 @@ try {
  assert(router.includes('getCurrentAuthUser(env.DB, request)'),'New client should not expose orders without login')
  assert(router.includes("if (!authUser) return json({ ok: false, message: 'Войдите в систему.' }, { status: 401 });"))
  assert(router.includes("url.pathname === '/api/auth/setup'"),'New empty instance must allow secure initial admin setup')
- console.log('CLIENT3_EMPTY_FRESH_SCHEMA_PASSED: '+migrations.length+' clean migrations; core tables empty; '+refCount+' generic reference values; FK ok; main/branch2 isolation and authentication confirmed')
+ console.log('CLIENT3_EMPTY_FRESH_SCHEMA_PASSED: '+migrations.length+' consolidated clean migrations; core tables empty; '+refCount+' generic reference values; FK ok; main/branch2 isolation and authentication confirmed')
 }finally {
  db?.close()
  fs.rmSync(temp,{recursive:true,force:true})
