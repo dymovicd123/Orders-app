@@ -1132,6 +1132,80 @@ try {
     'Modern unissued Set V2 plus money-only Return should offer an actionable, safe delete path')
   console.log('MAIN_SET_V2_DELETE_PREVIEW_ACTIONABLE_PASSED: unissued modern exchange and refund has a safe admin deletion path')
 
+  // Admin explicitly confirms no client handover; the exact posted -1 of
+  // the replacement is reversed once, its still-possessed SKU is reserved,
+  // and a fresh snapshot is mandatory before the dependency-aware delete.
+  const preConfirmV2={
+    oldPhysical:Number(stock().quantity),oldReserved:Number(stock().reserved_quantity),
+    newPhysical:Number(newStock().quantity),newReserved:Number(newStock().reserved_quantity),
+  }
+  assert.equal(setDeletePreview.canPreparePhysicalCorrection,true,
+    'Modern fulfilled replacement must require explicit admin not-issued proof')
+  const setPhysical=await api('/api/orders/'+setDeleteId+'/delete-physical-confirm','POST',{
+    expectedSnapshot:setDeletePreview.chainPlan.snapshotFingerprint,
+    physicalOutcome:'not_issued',
+  },{expectedStatus:200,requestId:'stability-set-delete-confirm-not-issued'})
+  assert(setPhysical.data.ok)
+  const postConfirmV2=(await api('/api/orders/'+setDeleteId+'/delete-preview')).data.preview
+  console.log('MAIN_SET_V2_DELETE_AFTER_CONFIRM_DIAGNOSTIC: '+JSON.stringify({
+    correction:setPhysical.data.correction,
+    reasons:postConfirmV2.reasons,canStartChain:postConfirmV2.canStartChain,
+    canPreparePhysicalCorrection:postConfirmV2.canPreparePhysicalCorrection,
+    requiresPhysicalFact:postConfirmV2.requiresPhysicalFact,
+    steps:postConfirmV2.chainPlan.steps,
+  }))
+  assert.equal(postConfirmV2.canStartChain,true,
+    'After exact Physical correction, Set V2 and Return chain must be actionable')
+  assert.equal(Number(newStock().quantity),preConfirmV2.newPhysical+1,
+    'Proven -1 exchange outbound is corrected exactly once after no-handover confirmation')
+  assert.equal(Number(newStock().reserved_quantity),preConfirmV2.newReserved+1,
+    'Replacement remains reserved until exchange cancellation')
+  // The first preview fingerprint is stale after the correction.
+  await api('/api/orders/'+setDeleteId+'/delete-chain','POST',{
+    requestId:'stability-set-delete-stale-saga',
+    expectedSnapshot:setDeletePreview.chainPlan.snapshotFingerprint,
+    physicalOutcome:'not_issued',
+  },{expectedStatus:409,requestId:'stability-set-delete-stale-saga'})
+  const setSagaId='stability-set-refund-delete-saga'
+  const setSagaBody={
+    requestId:setSagaId,expectedSnapshot:postConfirmV2.chainPlan.snapshotFingerprint,
+    physicalOutcome:'not_issued',
+  }
+  let setSagaProgress
+  for(let step=0;step<10;step++){
+    const next=await api('/api/orders/'+setDeleteId+'/delete-chain','POST',setSagaBody,{
+      expectedStatus:200,requestId:setSagaId,
+    })
+    assert(next.data.ok)
+    setSagaProgress=next.data.progress
+    if(setSagaProgress.status==='completed')break
+    assert(['planned','running','ready_for_final_delete'].includes(setSagaProgress.status))
+  }
+  assert.equal(setSagaProgress?.status,'completed','Verified Set V2 + standalone money Return must complete')
+  assert.equal(sql('SELECT status FROM returns WHERE id=?',setDeleteReturnId).status,'cancelled')
+  assert.equal(sql('SELECT status FROM exchanges WHERE id=?',setDeleteExchangeId).status,'cancelled')
+  assert.equal(sql('SELECT order_status FROM orders WHERE id=?',setDeleteId).order_status,'deleted')
+  assert.equal(Number(stock().quantity),preConfirmV2.oldPhysical)
+  assert.equal(Number(stock().reserved_quantity),preConfirmV2.oldReserved)
+  assert.equal(Number(newStock().quantity),preConfirmV2.newPhysical+1)
+  assert.equal(Number(newStock().reserved_quantity),preConfirmV2.newReserved)
+  assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',setDeleteId).return_amount),0)
+  const setAfter={
+    oldPhysical:Number(stock().quantity),oldReserved:Number(stock().reserved_quantity),
+    newPhysical:Number(newStock().quantity),newReserved:Number(newStock().reserved_quantity),
+    eventCount:count('financial_events','order_id='+setDeleteId),
+  }
+  const setReplay=await api('/api/orders/'+setDeleteId+'/delete-chain','POST',setSagaBody,{
+    expectedStatus:200,requestId:setSagaId,
+  })
+  assert.equal(setReplay.data.progress.status,'completed')
+  assert.deepEqual({
+    oldPhysical:Number(stock().quantity),oldReserved:Number(stock().reserved_quantity),
+    newPhysical:Number(newStock().quantity),newReserved:Number(newStock().reserved_quantity),
+    eventCount:count('financial_events','order_id='+setDeleteId),
+  },setAfter,'Set V2 delete-chain replay must not duplicate physical, reserves, or cash')
+  console.log('MAIN_SET_V2_RETURN_DELETE_CHAIN_COMPLETE_PASSED: explicit not-issued correction, refund first, Set V2 cancellation, final delete, zero duplicate Physical/money on replay')
+
   // Real manager session must have *narrow* correction authority, never
   // administrative deletion or the full editor. Test real auth cookies/roles,
   // not forged X-Access-Role headers.
