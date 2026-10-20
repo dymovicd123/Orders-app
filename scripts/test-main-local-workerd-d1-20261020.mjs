@@ -36,7 +36,13 @@ try {
     const flat=source.split(/\r?\n/).map(line=>
       line.trimStart().startsWith('--') ? '' : line.replace(/\s+--[^\n]*$/, '')
     ).join(' ').replace(/\s+/g,' ').trim()
-    try { await db.exec(flat) }
+    // Historical migrations contain explicit transaction control from ordinary
+    // SQLite. D1 explicitly forbids BEGIN/COMMIT through its Worker API. Seed
+    // the disposable fixture without these wrappers ONLY, and flag this
+    // migration-parity gap; never rewrite the checked-in SQL migrations.
+    const adapted=flat.replace(/\bBEGIN\s+TRANSACTION\s*;/gi,'').replace(/\bCOMMIT\s*;/gi,'')
+    if(adapted!==flat) console.warn('LOCAL_WORKERD_D1_TRANSACTION_GAP: '+file+' needs D1-aware transaction migration review')
+    try { await db.exec(adapted) }
     catch(error) {throw new Error('Local workerd D1 failed migration '+file+': '+String(error),{cause:error})}
   }
   const hasSnapshot=await db.prepare("SELECT 1 AS present FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").first()
