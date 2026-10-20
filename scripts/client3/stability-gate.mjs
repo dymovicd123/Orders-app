@@ -20,7 +20,22 @@ const scripts=[
   "test-stage01-finance-correction-reliability-r4.mjs",
   "test-stocktake-functional-acceptance.mjs",
   "test-auth-production-hardening.mjs",
-  "test-auth-r7-login-reliability.mjs"
+  "test-auth-r7-login-reliability.mjs",
+  "test-catalog-resolver-r9-2b-shipping-replay-safety.mjs",
+  "test-return-unissued-physical-safety-r2.mjs",
+  "test-stage03-h9c-production-multi-exchange.mjs",
+  "test-operational-autonomy-r3-return-exchange-capacity.mjs",
+  "test-order-return-cancel-menu-20261018.mjs",
+  "test-admin-editor-linked-payment-method-20261018.mjs",
+  "test-order-edit-autonomy.mjs",
+  "test-order-delete-mobility.mjs",
+  "test-admin-delete-unissued-exchange-stock-20261017.mjs",
+  "test-old-order-post-stocktake-handover-r1.mjs",
+  "test-stock-source-switch-freshness-20261014.mjs",
+  "test-stock-snapshot-authority-20261014.mjs",
+  "test-stage04-opening-cutover-20261018.mjs",
+  "test-finance-f6-release-audit.mjs",
+  "test-stage01-return-exchange-downstream-semantics-r19.mjs"
 ]
 for(const script of scripts){
  const path='scripts/'+script
