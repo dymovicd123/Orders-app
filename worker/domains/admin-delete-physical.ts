@@ -97,6 +97,10 @@ export async function reviewAdminDeleteAppliedStock(
           r.quantity AS reservation_quantity,r.variant_id AS reservation_variant_id,
           r.inventory_source AS reservation_source,r.fulfilled_at,
           m.quantity_delta AS movement_delta,m.quantity_after AS movement_quantity_after,
+          (SELECT prev.quantity_after FROM inventory_movements prev
+            WHERE prev.inventory_source=le.inventory_source
+              AND prev.variant_id=le.variant_id AND prev.id<le.movement_id
+            ORDER BY prev.id DESC LIMIT 1) AS previous_movement_quantity_after,
           m.movement_type AS movement_type,m.reference_type AS movement_reference_type,
           m.reference_id AS movement_reference_id,
           (SELECT COUNT(*) FROM inventory_movements newer
@@ -173,6 +177,26 @@ export async function reviewAdminDeleteAppliedStock(
       &&cleanText(x.stock_writeoff_status)==='reserved'
       &&toInt(x.current_reserved,-1)>=reserveQty
     )
+    // Modern Exchange Set V2 can book the replacement as fulfilled immediately,
+    // even while its parent order is unsent. This is NOT evidence that a
+    // customer physically received it. Only a separately confirmed admin
+    // not-issued correction may reopen and reverse the exact last outbound.
+    // The saga itself still refuses a fulfilled reservation, so this state
+    // never enables unconfirmed chain deletion.
+    const negativeBookedFulfillment=Boolean(
+      delta===-qty
+      &&cleanText(x.reservation_status)==='fulfilled'
+      &&Boolean(cleanText(x.fulfilled_at))
+      &&cleanText(x.stock_writeoff_status)==='fulfilled'
+      &&toInt(x.current_reserved,-1)>=0
+      // A negative debit cannot be inferred from a zero-booked or orphan
+      // legacy event. Require a prior independent physical movement and an
+      // exact arithmetic chain (before - issued = after). Absent history
+      // stays manual-review-only, never a source of invented stock.
+      &&x.previous_movement_quantity_after!=null
+      &&toInt(x.previous_movement_quantity_after,-1)>=qty
+      &&toInt(x.previous_movement_quantity_after,-1) + delta === toInt(x.movement_quantity_after,-2)
+    )
     const valid=Boolean(
       eventId>0&&exchangeId>0&&orderItemId>0&&variantId>0&&qty>0
       &&cleanText(x.operation_type)==='exchange'
@@ -185,7 +209,7 @@ export async function reviewAdminDeleteAppliedStock(
       &&toInt(x.physical_tracking,1)===0
       &&!cleanText(x.physical_received_at)
       &&toInt(x.current_item_quantity,0)===qty
-      &&(zeroBookedFulfillment||negativeBookedReserve)
+      &&(zeroBookedFulfillment||negativeBookedReserve||negativeBookedFulfillment)
       &&toInt(x.reservation_id,0)>0
       &&toInt(x.reservation_variant_id,0)===variantId
       &&cleanText(x.reservation_source)===source
