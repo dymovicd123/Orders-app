@@ -30,6 +30,8 @@ jobs:
         run: npm run typecheck
       - name: Production-equivalent SPA Worker build
         run: npm run build
+      - name: Real isolated Worker and disposable D1 — two-line batch exchange, retries, cancellation and stock
+        run: node scripts/client3/test-runtime-local.mjs
       - name: No checkout/build artifact contains protected production D1 config as tenant binding
         shell: bash
         run: |
