@@ -23,10 +23,10 @@ for(const token of [
  '"database_name": "orders_db_branch2"',
  '40065052-854e-44b8-bcd5-251bdd488301',
  "if grep -Fq 'orders_db_prod' wrangler.jsonc",
- '"[[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]',
+ '[[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]',
  'npm run release:check',
  'npm run deploy',
  'scripts/verify-branch2-live-ui.mjs',
-]) assert(yaml.includes(token.replaceAll('"[[','[[').replaceAll(']]" ',']] ')), 'Required isolation/release guard missing: '+token)
+]) assert(yaml.includes(token), 'Required isolation/release guard missing: '+token)
 assert(yaml.includes('timeout-minutes: 25'),'Direct deploy timeout unexpectedly changed')
 console.log('BRANCH2_CLOUDFLARE_HUNG_NATIVE_FALLBACK_SCOPE_AND_IMMUTABLE_MAIN_PASSED')
