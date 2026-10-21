@@ -99,6 +99,13 @@ try {
     saved.set(full,fs.readFileSync(full))
     fs.writeFileSync(full,historic.stdout)
   }
+  // Historical modularization inventory must not count this NEW candidate
+  // helper while replaying the frozen baseline. Restore its exact bytes.
+  const deleteReasonHelper='worker/domains/order-delete-return-blocker.ts'
+  check(sha(deleteReasonHelper)==='ac0d7ac7747bb4ffe421b3faf9a13a676fd68a63',
+    'Unknown admin delete blocker helper source')
+  saved.set(path.resolve(deleteReasonHelper),fs.readFileSync(deleteReasonHelper))
+  fs.rmSync(deleteReasonHelper)
   // This is the unchanged full, immutable Branch2 gate on the original runtime.
   run(process.platform==='win32'?'npm.cmd':'npm',['run','release:check'])
 }finally{
@@ -107,6 +114,7 @@ try {
 for(const [file,expected] of Object.entries(candidate))
   check(sha(file)===expected,'Candidate source was not restored: '+file)
 check(sha(deleteFile)===deleteCurrentSha,'Reviewed V2 admin delete source not restored after historical replay')
+check(sha('worker/domains/order-delete-return-blocker.ts')==='ac0d7ac7747bb4ffe421b3faf9a13a676fd68a63','Delete reason helper was not restored')
 for(const [file,[,candidateSha]] of Object.entries(reviewedDeleteReasonFiles))
   check(sha(file)===candidateSha,'Reviewed delete reason source not restored: '+file)
 run(process.execPath,['--experimental-strip-types','scripts/test-catalog-only-writeoff-20261018.mjs'])
