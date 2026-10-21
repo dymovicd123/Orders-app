@@ -53,11 +53,17 @@ check(sha(deleteFile)===deleteCurrentSha,'Unexpected modern V2 delete candidate 
 run(process.execPath,['--experimental-strip-types','scripts/test-admin-delete-zero-booked-fulfilled-20261018.mjs'])
 const reviewedDeleteReasonFiles={
   'worker/domains/order-delete-preview.ts':['b28c560913fd4871facc50533d600b768daffbe8','6f3743bd23e0e8cd2f99497c5b10094ef9ec8a3f'],
-  'worker/domains/returns-exchanges.ts':['c10b1e68928efe742940499e5b4c9b4375ece72e','6688ec659c1ab9d6fd0d935dfb772ae67c473b99'],
+  'worker/domains/returns-exchanges.ts':['c10b1e68928efe742940499e5b4c9b4375ece72e','75992cf750cdba656c29c952cbe89fffe6b4df83'],
 }
 for(const [file,[,candidateSha]] of Object.entries(reviewedDeleteReasonFiles))
   check(sha(file)===candidateSha,'Unreviewed admin delete reason source: '+file)
 run(process.execPath,['--experimental-strip-types','scripts/test-admin-delete-standalone-return-reason-20261021.mjs'])
+const reviewedP0ReserveFiles={
+  'worker/domains/order-reservations.ts':['00d18e4d2e0964bcd9f912aade1fd285399076a0','14a8445bd28dc4d293ad93411887c381083afc80'],
+}
+for(const [file,[,candidateSha]] of Object.entries(reviewedP0ReserveFiles))
+  check(sha(file)===candidateSha,'Unexpected P0 shipping reserve preflight source: '+file)
+run(process.execPath,['--experimental-strip-types','scripts/test-return-active-reserve-p0-20261021.mjs'])
 
 
 const saved=new Map()
@@ -99,6 +105,17 @@ try {
     saved.set(full,fs.readFileSync(full))
     fs.writeFileSync(full,historic.stdout)
   }
+  // Replay frozen shipment handler exactly on approved pre-P0 bytes.
+  // The current Return handler is already included in reviewedDeleteReasonFiles.
+  for(const [file,[historicalSha,candidateSha]] of Object.entries(reviewedP0ReserveFiles)){
+    check(sha(file)===candidateSha,'Unexpected P0 shipping candidate before frozen history: '+file)
+    const historic=spawnSync('git',['show',priorBranch2+':'+file],{encoding:null,maxBuffer:16*1024*1024})
+    check(!historic.error&&historic.status===0&&blob(historic.stdout)===historicalSha,
+      'Frozen pre-P0 reservation module has changed: '+file)
+    const full=path.resolve(file)
+    saved.set(full,fs.readFileSync(full))
+    fs.writeFileSync(full,historic.stdout)
+  }
   // Historical modularization inventory must not count this NEW candidate
   // helper while replaying the frozen baseline. Restore its exact bytes.
   const deleteReasonHelper='worker/domains/order-delete-return-blocker.ts'
@@ -117,6 +134,9 @@ check(sha(deleteFile)===deleteCurrentSha,'Reviewed V2 admin delete source not re
 check(sha('worker/domains/order-delete-return-blocker.ts')==='ac0d7ac7747bb4ffe421b3faf9a13a676fd68a63','Delete reason helper was not restored')
 for(const [file,[,candidateSha]] of Object.entries(reviewedDeleteReasonFiles))
   check(sha(file)===candidateSha,'Reviewed delete reason source not restored: '+file)
+for(const [file,[,candidateSha]] of Object.entries(reviewedP0ReserveFiles))
+  check(sha(file)===candidateSha,'Reviewed P0 shipping source not restored: '+file)
+run(process.execPath,['--experimental-strip-types','scripts/test-return-active-reserve-p0-20261021.mjs'])
 run(process.execPath,['--experimental-strip-types','scripts/test-catalog-only-writeoff-20261018.mjs'])
 fs.rmSync(path.resolve('dist'),{recursive:true,force:true})
 run(process.platform==='win32'?'npm.cmd':'npm',['run','build'])
