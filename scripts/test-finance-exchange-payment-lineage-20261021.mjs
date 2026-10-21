@@ -5,10 +5,10 @@ import {readFileSync} from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {matchExchangePaymentLineage} from '../worker/domains/finance-reports.ts'
 const src=readFileSync('worker/domains/finance-reports.ts','utf8')
-const anchor="\`SELECT p.id,\n              p.order_id,"
+const anchor="`SELECT p.id,\n              p.order_id,"
 const at=src.indexOf(anchor)
 assert(at>=0,'Expected real payment-operations SQL query')
-const end=src.indexOf('\`',at+1)
+const end=src.indexOf('`',at+1)
 assert(end>at)
 const query=src.slice(at+1,end)
 assert.match(query,/AS active_exchange_id/)
@@ -16,7 +16,7 @@ assert.match(query,/COALESCE\(e.status, 'completed'\) <> 'cancelled'/)
 assert.match(src,/eventLineageStatus = 'exchange_id'/)
 assert.match(src,/else if \(exchangeCandidates.length > 1\)/)
 const sql=new DatabaseSync(':memory:')
-sql.exec(\`
+sql.exec(`
  CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_date TEXT,created_at TEXT,
   manager_id INTEGER,manager_snapshot_name TEXT,city TEXT,customer_id INTEGER,order_status TEXT);
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,
@@ -27,7 +27,7 @@ sql.exec(\`
  INSERT INTO orders VALUES(1,'TEST-FIN-1','2026-10-14','2026-10-14T10:00:00Z',NULL,NULL,'АЛМАТЫ',NULL,'active');
  INSERT INTO payments VALUES(9,1,'2026-10-21','ТЕРМИНАЛ',500,'extra','Коррекция', '2026-10-15T10:00:00Z');
  INSERT INTO exchanges VALUES(7,1,9,'completed','extra_payment');
-\`)
+`)
 const queryRow=()=>sql.prepare(query).all('2026-10-21','2026-10-21')[0]
 let row=queryRow()
 assert.equal(row.active_exchange_id,7)
