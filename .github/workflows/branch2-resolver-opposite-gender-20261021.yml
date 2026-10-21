@@ -1,0 +1,27 @@
+name: Branch2 Resolver opposite-gender exact SKU
+on:
+  push:
+    branches:
+      - fix/branch2-resolver-opposite-gender-20261021
+  pull_request:
+    branches:
+      - branch2
+    paths:
+      - 'worker/domains/catalog.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
+      - 'scripts/test-branch2-resolver-opposite-gender-20261021.mjs'
+      - '.github/workflows/branch2-resolver-opposite-gender-20261021.yml'
+jobs:
+  actual-sql-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node --experimental-strip-types scripts/test-branch2-resolver-opposite-gender-20261021.mjs
+      - run: npm run typecheck
+      - run: npm run build
