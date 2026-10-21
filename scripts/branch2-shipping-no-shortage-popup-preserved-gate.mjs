@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 const baseline = 'aca09fdc8dda87370504f3033845d3e87392597d'
 const current = {
   "worker/index.ts": "ba5fd71331815f1073410c8aae9a28c28663c5e1",
-  "worker/domains/order-reservations.ts": "d8ab3fc31c004024e62872619739aa12ebe697e1",
+  "worker/domains/order-reservations.ts": "031b97e0de3ed5df5e55d1646b2b5b016784d458",
   "worker/domains/orders-write.ts": "041fdff0a9c44219d8eadcd674a54cc3d1b42359",
   "worker/domains/warehouse-attention.ts": "bbe3b56b54625a612fdc68dd290b67552d1cd83a",
   "shared/api-contracts.ts": "cb8fb5260885d021bfa685ea1ad428e61cb8f50b",
@@ -15,7 +15,7 @@ const current = {
   "src/features/sections/OrdersHeaderSection.tsx": "7cb3c013ab4f584f48d9d67907e9a7e3a0ff05b2",
   "src/features/inventory/views/renderInventoryAttentionPanel.tsx": "f69d7aab98fec1d361940efe05190084cafe429f",
   "src/features/sections/InventorySection.tsx": "ccc00bdaac4599ea6e67206b80199fc1056192e8",
-  "scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs": "09a41d96d69f8f1b7a7401b2122a5092beeb9df1"
+  "scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs": "6f597acbcd2e834591cd6d4eb9c1343471609d7b"
 }
 const historical = {
   "worker/index.ts": "1511ecd841a31c86ab9fc352b84bd5bc0e6f9e06",
