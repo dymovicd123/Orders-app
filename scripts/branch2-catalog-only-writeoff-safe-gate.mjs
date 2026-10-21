@@ -64,6 +64,12 @@ const reviewedP0ReserveFiles={
 for(const [file,[,candidateSha]] of Object.entries(reviewedP0ReserveFiles))
   check(sha(file)===candidateSha,'Unexpected P0 shipping reserve preflight source: '+file)
 run(process.execPath,['--experimental-strip-types','scripts/test-return-active-reserve-p0-20261021.mjs'])
+const reviewedFinanceReportFiles={
+  'worker/domains/finance-reports.ts':['731c40de473b00a353fc58e987626d16d7671186','4e2df4d0a1611a0bf5a2194e632e8f01e2f3fa60'],
+}
+for(const [file,[,candidateSha]] of Object.entries(reviewedFinanceReportFiles))
+  check(sha(file)===candidateSha,'Unexpected current Finance report source: '+file)
+run(process.execPath,['--experimental-strip-types','scripts/test-finance-exchange-payment-lineage-20261021.mjs'])
 
 
 const saved=new Map()
@@ -116,6 +122,18 @@ try {
     saved.set(full,fs.readFileSync(full))
     fs.writeFileSync(full,historic.stdout)
   }
+  // Existing historical finance manifests pin the pre-correction report byte
+  // for immutable replay. Test current matching first; restore exact original
+  // only inside the frozen gate, then recheck and build the current candidate.
+  for(const [file,[historicalSha,candidateSha]] of Object.entries(reviewedFinanceReportFiles)){
+    check(sha(file)===candidateSha,'Current Finance report changed before frozen history: '+file)
+    const historic=spawnSync('git',['show',priorBranch2+':'+file],{encoding:null,maxBuffer:16*1024*1024})
+    check(!historic.error&&historic.status===0&&blob(historic.stdout)===historicalSha,
+      'Frozen Finance report source has changed: '+file)
+    const full=path.resolve(file)
+    saved.set(full,fs.readFileSync(full))
+    fs.writeFileSync(full,historic.stdout)
+  }
   // Historical modularization inventory must not count this NEW candidate
   // helper while replaying the frozen baseline. Restore its exact bytes.
   const deleteReasonHelper='worker/domains/order-delete-return-blocker.ts'
@@ -136,6 +154,9 @@ for(const [file,[,candidateSha]] of Object.entries(reviewedDeleteReasonFiles))
   check(sha(file)===candidateSha,'Reviewed delete reason source not restored: '+file)
 for(const [file,[,candidateSha]] of Object.entries(reviewedP0ReserveFiles))
   check(sha(file)===candidateSha,'Reviewed P0 shipping source not restored: '+file)
+for(const [file,[,candidateSha]] of Object.entries(reviewedFinanceReportFiles))
+  check(sha(file)===candidateSha,'Reviewed Finance report not restored: '+file)
+run(process.execPath,['--experimental-strip-types','scripts/test-finance-exchange-payment-lineage-20261021.mjs'])
 run(process.execPath,['--experimental-strip-types','scripts/test-return-active-reserve-p0-20261021.mjs'])
 run(process.execPath,['--experimental-strip-types','scripts/test-catalog-only-writeoff-20261018.mjs'])
 fs.rmSync(path.resolve('dist'),{recursive:true,force:true})
