@@ -37,7 +37,7 @@ const revised=report()
 assert.equal(revised[0].total_received,10000)
 assert.equal(revised[0].total_returns,0,
   'Live report is intentionally current-state and retroactively removes cancelled Return')
-const journalByDate=db.prepare('SELECT event_date,SUM(amount_delta) AS net FROM financial_events GROUP BY event_date ORDER BY event_date').all()
+const journalByDate=db.prepare('SELECT event_date,SUM(amount_delta) AS net FROM financial_events GROUP BY event_date ORDER BY event_date').all().map(row=>({event_date:String(row.event_date),net:Number(row.net)}))
 assert.deepEqual(journalByDate,[
   {event_date:'2026-10-20',net:9000},
   {event_date:'2026-10-21',net:1000},
