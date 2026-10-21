@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 
-const baseline = '3c8f01124b9d0585d784275c3f410f657f8c9638'
+const baseline = '1de7392cf951019535fbafada3acf34c70a75d22'
 const current = {
  'worker/domains/catalog.ts':'69aa179efc7403d2452199ebc882771a3788ded3',
  'worker/domains/order-reservations.ts':'d8300a40e2beec2dd38b214a6e3a33fb2836a994',
