@@ -7052,6 +7052,9 @@ function removeDebtPayment(index: number) {
       // Shipping is now the physical stock event. Invalidate cached physical/reserved/available values.
       invalidateInventoryStockCaches(true)
       invalidateFinanceReadCaches()
+      // Read the persisted shortage evidence on the Orders page immediately
+      // after successful shipping; manager does not need to visit Warehouse.
+      void loadWarehouseAttention(false, true)
       setMessage(`Заказ ${order.external_id} отмечен как отправленный клиенту.`)
       return true
     } catch (err) {
