@@ -1,0 +1,34 @@
+name: Return active reserve P0 safety
+on:
+  pull_request:
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'scripts/test-return-active-reserve-p0-20261021.mjs'
+      - 'scripts/branch2-catalog-only-writeoff-safe-gate.mjs'
+      - '.github/workflows/test-return-active-reserve-p0.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'scripts/test-return-active-reserve-p0-20261021.mjs'
+      - '.github/workflows/test-return-active-reserve-p0.yml'
+permissions:
+  contents: read
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check actual Return, late intake and shipment SQL on isolated SQLite
+        run: node --experimental-strip-types scripts/test-return-active-reserve-p0-20261021.mjs
+      - name: Verify TypeScript contracts
+        run: npm run typecheck
+      - name: Verify Worker and frontend build
+        run: npm run build
