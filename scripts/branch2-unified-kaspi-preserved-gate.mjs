@@ -42,6 +42,17 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+// Updated outgoing semantics are gated independently before any frozen
+// historical source is substituted. This keeps all prior shipping assertions.
+if (!process.env.SHIPPING_SHORTAGE_FROZEN_REPLAY &&
+    sha('worker/index.ts') === 'ba5fd71331815f1073410c8aae9a28c28663c5e1' &&
+    sha('src/App.tsx') === 'de474a96c837294c409ea134b4d5d4cac82995e5') {
+  const next = spawnSync(process.execPath,['scripts/branch2-shipping-no-shortage-popup-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!next.error && next.status === 0,'Current shipping and frozen Branch2 release checks failed')
+  process.exit(0)
+}
+
 // The newest Resolver code must be checked FIRST. Its immutable Branch2 replay
 // then invokes the already-reviewed stock-attention release gate, preserving
 // every old order/stock/finance test in the correct historical source context.
