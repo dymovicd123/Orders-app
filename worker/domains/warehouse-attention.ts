@@ -177,6 +177,15 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
          FROM inventory_reservations
          WHERE status = 'active' AND variant_id IS NOT NULL
          GROUP BY inventory_source, variant_id
+       ), latest_order_context AS (
+         SELECT r.inventory_source, r.variant_id, oi.order_id, o.external_id, o.order_date,
+                ROW_NUMBER() OVER (PARTITION BY r.inventory_source, r.variant_id ORDER BY o.order_date DESC, oi.id DESC) AS row_rank
+         FROM inventory_reservations r
+         JOIN order_items oi ON oi.id = r.order_item_id AND oi.order_id = r.order_id
+         JOIN orders o ON o.id = oi.order_id
+         WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+           AND COALESCE(o.order_status, 'active') NOT IN ('deleted', 'archived')
+           AND COALESCE(o.archived_at, '') = ''
        ), problem_keys AS (
          SELECT inventory_source, variant_id FROM inventory_stock WHERE quantity < 0 AND variant_id IS NOT NULL
          UNION
@@ -195,10 +204,14 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
               COALESCE(NULLIF(v.length, ''), NULLIF(s.length_snapshot, ''), 'СТАНДАРТ') AS length,
               COALESCE(v.size_label, s.size_snapshot, '') AS size_label,
               COALESCE(s.quantity, 0) AS physical,
-              COALESCE(rt.reserved, 0) AS reserved
+              COALESCE(rt.reserved, 0) AS reserved,
+              context.order_id AS latest_order_id, context.external_id AS latest_external_id,
+              context.order_date AS latest_order_date
        FROM problem_keys pk
        LEFT JOIN inventory_stock s ON s.inventory_source = pk.inventory_source AND s.variant_id = pk.variant_id
        LEFT JOIN reservation_totals rt ON rt.inventory_source = pk.inventory_source AND rt.variant_id = pk.variant_id
+       LEFT JOIN latest_order_context context ON context.inventory_source = pk.inventory_source
+         AND context.variant_id = pk.variant_id AND context.row_rank = 1
        LEFT JOIN catalog_variants v ON v.id = pk.variant_id
        LEFT JOIN catalog_products p ON p.id = v.product_id
        ORDER BY (COALESCE(rt.reserved, 0) - COALESCE(s.quantity, 0)) DESC,
@@ -345,6 +358,9 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     return {
       source,
       variantId,
+      orderId: toInt(row.latest_order_id, 0) || null,
+      externalId: cleanText(row.latest_external_id),
+      orderDate: cleanText(row.latest_order_date),
       productId: toInt(row.product_id, 0),
       productName: cleanText(row.product_name),
       category: normalizeAudienceCategory(row.category, row.size_label),
