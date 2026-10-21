@@ -13,7 +13,7 @@ const current = {
   "shared/api-contracts.ts": "cb8fb5260885d021bfa685ea1ad428e61cb8f50b",
   "src/App.tsx": "de474a96c837294c409ea134b4d5d4cac82995e5",
   "src/features/sections/OrdersHeaderSection.tsx": "7cb3c013ab4f584f48d9d67907e9a7e3a0ff05b2",
-  "src/features/inventory/views/renderInventoryAttentionPanel.tsx": "06bdf0536f75101ea282ec00c77599c762ab1ba2",
+  "src/features/inventory/views/renderInventoryAttentionPanel.tsx": "f69d7aab98fec1d361940efe05190084cafe429f",
   "src/features/sections/InventorySection.tsx": "ccc00bdaac4599ea6e67206b80199fc1056192e8",
   "scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs": "09a41d96d69f8f1b7a7401b2122a5092beeb9df1"
 }
