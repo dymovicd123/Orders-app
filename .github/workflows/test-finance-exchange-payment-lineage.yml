@@ -1,0 +1,32 @@
+name: Finance exact exchange payment lineage
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/finance-reports.ts'
+      - 'scripts/test-finance-exchange-payment-lineage-20261021.mjs'
+      - '.github/workflows/test-finance-exchange-payment-lineage.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/finance-reports.ts'
+      - 'scripts/test-finance-exchange-payment-lineage-20261021.mjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify exact exchange-linked finance event lineage
+        run: node --experimental-strip-types scripts/test-finance-exchange-payment-lineage-20261021.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
