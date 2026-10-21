@@ -392,9 +392,8 @@ export async function resolveCatalogProductAndVariantV2(
   let gender = enteredGender;
   const productGenderScope = await getCatalogProductGenderScope(db, product.id);
   const fixedProductGender = catalogGenderForProductScope(productGenderScope);
-  if (enteredGender && fixedProductGender && enteredGender !== fixedProductGender) {
-    return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
-  }
+  // Exact human-selected gender wins over a product-level default, including
+  // newly supplied opposite-gender combinations. Unknown genders still fail below.
   if (!gender) {
     gender = fixedProductGender;
     if (!gender) {
