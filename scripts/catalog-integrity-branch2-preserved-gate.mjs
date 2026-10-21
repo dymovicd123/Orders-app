@@ -12,6 +12,17 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// The Resolver's new opposite-gender SKU policy is checked on this CURRENT
+// source before replaying the fully tested Branch2 stock and earlier releases.
+if (!process.env.RESOLVER_GENDER_FROZEN_REPLAY &&
+    gitBlob(fs.readFileSync('worker/domains/catalog.ts')) === '69aa179efc7403d2452199ebc882771a3788ded3' &&
+    gitBlob(fs.readFileSync('worker/domains/order-reservations.ts')) === 'd8300a40e2beec2dd38b214a6e3a33fb2836a994') {
+  const run = spawnSync(process.execPath,['scripts/branch2-resolver-gender-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!run.error && run.status === 0,'Resolver exact SKU and original Branch2 release checks failed')
+  process.exit(0)
+}
+
 // Narrow stock-attention candidate is independently tested before replaying the
 // byte-identical previous Branch2 business files and all historical assertions.
 if (!process.env.STOCK_ATTENTION_FROZEN_REPLAY &&

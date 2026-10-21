@@ -231,12 +231,12 @@ export function assertCatalogGenderAllowedForScope(
 ) {
   const scope = normalizeCatalogProductGenderScope(scopeInput);
   const gender = normalizeCatalogCombinationGender(genderInput);
-  const fixed = catalogGenderForProductScope(scope);
-  if (fixed && (gender === 'ЖЕН' || gender === 'МУЖ') && gender !== fixed) {
+  // Product scope is the default only. An explicitly confirmed concrete gender
+  // is part of SKU identity; an opposite-gender combination is not a catalog anomaly.
+  // Do not invent or merge stock for either gender.
+  if (gender && gender !== 'ЖЕН' && gender !== 'МУЖ') {
     const productLabel = cleanText(productName) ? ` «${cleanText(productName)}»` : '';
-    const scopeLabel = scope === 'female' ? 'женский' : 'мужской';
-    const attemptedLabel = gender === 'ЖЕН' ? 'женскую' : 'мужскую';
-    throw new Error(`Товар${productLabel} задан как ${scopeLabel}. Нельзя создать или сохранить для него ${attemptedLabel} рабочую позицию. Если товар действительно подходит обоим полам, сначала измените назначение товара на «Унисекс».`);
+    throw new Error(`Неизвестный пол варианта товара${productLabel}. Выберите «ЖЕН» или «МУЖ».`);
   }
   return { scope, gender };
 }
@@ -555,6 +555,7 @@ export async function createCatalogCombinationV3(
   if (!liveExecution?.id) {
     throw new Error('Нельзя создать позицию у удалённого исполнения или товара. Добавьте исполнение заново через Каталог.');
   }
+  if (gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Не указан пол конкретного варианта товара. Выберите «ЖЕН» или «МУЖ».');
   await assertCatalogGenderAllowedForProduct(db, input.productId, gender);
   const duplicate = await findCatalogCombinationV3(db, input.executionId, category, gender, color, sizeLabel);
   if (duplicate?.id) return { id: toInt(duplicate.id, 0), created: false };

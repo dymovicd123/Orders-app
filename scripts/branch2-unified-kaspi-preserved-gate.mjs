@@ -42,6 +42,20 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+// The newest Resolver code must be checked FIRST. Its immutable Branch2 replay
+// then invokes the already-reviewed stock-attention release gate, preserving
+// every old order/stock/finance test in the correct historical source context.
+if (!process.env.RESOLVER_GENDER_FROZEN_REPLAY &&
+    sha('worker/domains/catalog.ts') === '69aa179efc7403d2452199ebc882771a3788ded3' &&
+    sha('worker/domains/order-reservations.ts') === 'd8300a40e2beec2dd38b214a6e3a33fb2836a994' &&
+    sha('src/App.tsx') === 'bec55aa26cdcb38f284cdf47daa7ccceae9ea9b2') {
+  const next = spawnSync(process.execPath, ['scripts/branch2-resolver-gender-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!next.error && next.status === 0,
+    'Current Resolver and previously accepted Branch2 release checks failed')
+  process.exit(0)
+}
+
 if (!process.env.STOCK_ATTENTION_FROZEN_REPLAY &&
     sha('src/App.tsx') === 'bec55aa26cdcb38f284cdf47daa7ccceae9ea9b2') {
   const next = spawnSync(process.execPath,['scripts/branch2-stock-attention-preserved-gate.mjs'],
