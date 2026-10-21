@@ -30,12 +30,23 @@ for(const [file,[,candidate]] of Object.entries(versions))
 run(process.execPath,['--experimental-strip-types','scripts/test-return-active-reserve-p0-20261021.mjs'])
 run(npm,['run','typecheck'])
 run(npm,['run','build'])
+const originalPackageSha='9867683a1a5733244ff70abfd4b8a2881fca94dd'
+const currentPackageSha='37023f33f1588fb7d0f3ab1370a49c3602e0f3ec'
+const pkg='package.json'
+check(sha(pkg)===currentPackageSha,'Unreviewed main release script mapping')
 const saved=new Map()
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'orders-main-p0-frozen-'))
 const newTest='scripts/test-return-active-reserve-p0-20261021.mjs'
 try{
  let exists=spawnSync('git',['cat-file','-e',baseline+':worker/domains/returns-exchanges.ts'],{stdio:'ignore'})
  if(exists.status!==0)run('git',['fetch','--no-tags','--depth=1','origin',baseline])
+ // Current Cloudflare release:check points here. For the old unchanged
+ // historical gate, restore the original package script and modules.
+ const priorPkg=spawnSync('git',['show',baseline+':'+pkg],{encoding:null,maxBuffer:2*1024*1024})
+ check(!priorPkg.error&&priorPkg.status===0&&blob(priorPkg.stdout)===originalPackageSha,
+   'Original main package release script drift')
+ saved.set(pkg,fs.readFileSync(pkg))
+ fs.writeFileSync(pkg,priorPkg.stdout)
  for(const [file,[historic,candidate]] of Object.entries(versions)){
    check(sha(file)===candidate,'Candidate changed before frozen replay: '+file)
    const old=spawnSync('git',['show',baseline+':'+file],{encoding:null,maxBuffer:32*1024*1024})
@@ -47,7 +58,9 @@ try{
  const moved=path.join(root,'new-p0-test.mjs')
  fs.renameSync(newTest,moved)
  saved.set(newTest,moved)
- run(npm,['run','release:check'])
+ // Direct invocation makes the historical entry explicit and prevents
+ // recursive dispatch into the current P0 release wrapper.
+ run(process.execPath,['scripts/main-stage04-safe-release-gate.mjs'])
 }finally{
  for(const [file,bytes] of saved){
    if(typeof bytes==='string'){if(fs.existsSync(bytes))fs.renameSync(bytes,file)}
@@ -58,6 +71,7 @@ try{
 for(const [file,[,candidate]] of Object.entries(versions))
  check(sha(file)===candidate,'P0 candidate not restored after frozen main replay: '+file)
 check(fs.existsSync(newTest),'P0 test script not restored')
+check(sha(pkg)===currentPackageSha,'Current main build/release script not restored')
 run(process.execPath,['--experimental-strip-types',newTest])
 run(npm,['run','build'])
 console.log('MAIN_P0_RETURN_RESERVATION_PREVENTION_AND_IMMUTABLE_HISTORICAL_RELEASE_PASSED')
