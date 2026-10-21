@@ -2532,7 +2532,10 @@ export async function fulfillOrderReservationsV2(
          WHERE x.confirmed_operation_quantity IS NOT NULL
            AND x.confirmed_operation_quantity > x.current_quantity
            AND ${orderStillUnsentSql}`
-      ).bind(...payloadChunk, timestamp, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId));
+      )// A shipment's SKU evidence key must include the ORDER, never the shared
+      // timestamp: two different orders can hand over the same SKU in one tick.
+      // The atomic unsent guard still prevents retrying a committed order.
+      .bind(...payloadChunk, externalId, externalId, cleanText(options.checkedBy) || null, timestamp, timestamp, orderId));
     }
 
     statements.push(db.prepare(
