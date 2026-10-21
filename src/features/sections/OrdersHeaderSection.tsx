@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import '../../styles/order-stock-attention-banner.css'
 type SectionContext = Record<string, any>
 
 export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
@@ -8,11 +9,15 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
     orderPanelOptions,
     returnHistorySummary,
     exchangeHistorySummary,
+    warehouseAttention,
+    openInventoryStockAttention,
     sectorStyle,
     setEditorOpen,
     setOrderPanel,
     workspaceSector = 'orders',
   } = ctx
+
+  const stockConcerns = Number(warehouseAttention?.counts?.shortage || 0)
 
   return (
     <article className={`card wide sector-${workspaceSector} orders-workspace-header`} id={kaspiMode ? 'kaspi-orders-tabs' : 'orders-tabs'} style={sectorStyle(workspaceSector)}>
@@ -40,6 +45,15 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
           ))}
         </div>
       )}
+      {!kaspiMode && stockConcerns > 0 ? (
+        <div className="orders-stock-attention" role="status">
+          <div>
+            <strong>Проверить остатки: {stockConcerns} вариантов</strong>
+            <span>Есть активные резервы сверх учтённого остатка. Это не ошибка каталога и не повод запускать Resolver.</span>
+          </div>
+          <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Посмотреть заказы и действия</button>
+        </div>
+      ) : null}
     </article>
   )
 }
