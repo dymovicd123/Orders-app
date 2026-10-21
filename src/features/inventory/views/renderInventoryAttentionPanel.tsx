@@ -1,5 +1,6 @@
 import type { InventoryRenderContext } from './types'
 import '../../../styles/w8-3-daily-surfaces.css'
+import '../../../styles/stock-attention-human-friendly.css'
 
 type AttentionCategory = 'shortage' | 'handover' | 'intake' | 'identify'
 
