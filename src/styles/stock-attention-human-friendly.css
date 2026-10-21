@@ -1,0 +1,17 @@
+/* Human-first inventory attention: make the issue, next action and optional facts easy to scan. */
+.inventory-attention-group.is-shortage .inventory-attention-list article.inventory-attention-task,
+.inventory-attention-group.is-shipped-untracked .inventory-attention-list article.inventory-attention-task{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:20px;padding:18px 20px}
+.inventory-attention-task .inventory-attention-main{gap:7px}
+.inventory-attention-task .inventory-attention-main>strong{font-size:16px;line-height:1.35;color:var(--text)}
+.inventory-attention-task .inventory-attention-task-kind{display:inline-flex;align-items:center;justify-self:start;padding:4px 9px;border-radius:999px;background:rgba(184,121,29,.11);color:var(--text);font-size:11px;font-weight:650}
+.inventory-attention-task .inventory-attention-task-kind.is-shipped{background:rgba(70,112,177,.10)}
+.inventory-attention-task .inventory-attention-task-reason{margin:3px 0 0;color:var(--text);font-size:14px;line-height:1.55}
+.inventory-attention-task .inventory-attention-task-reason strong{font-weight:750}
+.inventory-attention-task .inventory-attention-task-help{margin:0;max-width:780px;font-size:13px;line-height:1.55;color:var(--muted)}
+.inventory-attention-task .inventory-attention-task-help strong{color:var(--text)}
+.inventory-attention-task .inventory-attention-facts{margin-top:3px;font-size:12px;color:var(--muted)}
+.inventory-attention-task .inventory-attention-facts summary{display:list-item;cursor:pointer;max-width:max-content;text-decoration:underline;text-underline-offset:3px}
+.inventory-attention-task .inventory-attention-facts>span{display:block;margin-top:6px}
+.inventory-attention-task .inventory-attention-actions{max-width:385px}
+.inventory-attention-task .inventory-attention-actions small{flex-basis:100%;text-align:right}
+@media(max-width:900px){.inventory-attention-group.is-shortage .inventory-attention-list article.inventory-attention-task,.inventory-attention-group.is-shipped-untracked .inventory-attention-list article.inventory-attention-task{grid-template-columns:1fr}.inventory-attention-task .inventory-attention-actions{max-width:none;justify-content:flex-start}.inventory-attention-task .inventory-attention-actions small{text-align:left}}
