@@ -6,6 +6,25 @@ import { normalizeManagerColor, parseReportDateRange } from './activity.ts'
 import { isOrderPricingFoundationEnabled } from './orders-relations.ts'
 import { listCallCentreRecords, listLeadRecords, listPlans, listTeamEmployees } from './team.ts'
 
+// An exchange cash correction records the immutable event under exchange.id,
+// but its retained payment row is keyed by payment.id. Match by their proven
+// active relationship, not by a guessed amount or creation timestamp.
+export function matchExchangePaymentLineage(
+  events: Array<Record<string, unknown>>,
+  payment: { exchangeId: number; orderId: number; paymentDate: string; amount: number; method: string; operationType: string },
+): Array<Record<string, unknown>> {
+  if (payment.operationType !== 'exchange_extra' || payment.exchangeId <= 0) return [];
+  return events.filter(event =>
+    cleanText(event.source_type) === 'exchange'
+    && toInt(event.source_id, 0) === payment.exchangeId
+    && toInt(event.order_id, 0) === payment.orderId
+    && cleanText(event.event_type) === payment.operationType
+    && cleanText(event.event_date) === payment.paymentDate
+    && Number(event.amount_delta || 0) === payment.amount
+    && canonicalPaymentMethodName(event.payment_method) === payment.method
+  );
+}
+
 export async function listFinanceReports(db: D1Database, url: URL) {
   const runD1Bounded = async (tasks: Array<() => Promise<any>>) => {
     const results: any[] = [];
@@ -265,6 +284,11 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(m.color_key, '#475569') AS manager_color,
               COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
               COALESCE(o.city, '') AS city,
+              (SELECT e.id FROM exchanges e
+               WHERE e.payment_id = p.id
+                 AND COALESCE(e.status, 'completed') <> 'cancelled'
+                 AND e.financial_action = 'extra_payment'
+               ORDER BY e.id DESC LIMIT 1) AS active_exchange_id,
               CASE
                 WHEN EXISTS (
                   SELECT 1 FROM exchanges e
@@ -563,6 +587,7 @@ export async function listFinanceReports(db: D1Database, url: URL) {
 
   const paymentEvents = mapSqlRows(paymentEventRows) as any[];
   const paymentEventsBySourceId = new Map<number, any[]>();
+  const paymentEventsByExchangeId = new Map<number, any[]>();
   const paymentEventsByFingerprint = new Map<string, any[]>();
   const financeDateOffset = (left: string, right: string) => {
     const leftDate = /^\d{4}-\d{2}-\d{2}$/.test(left) ? Date.parse(`${left}T00:00:00.000Z`) : Number.NaN;
@@ -583,6 +608,11 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       const current = paymentEventsBySourceId.get(sourceId) || [];
       current.push(event);
       paymentEventsBySourceId.set(sourceId, current);
+    }
+    if (cleanText(event.source_type) === 'exchange' && sourceId) {
+      const current = paymentEventsByExchangeId.get(sourceId) || [];
+      current.push(event);
+      paymentEventsByExchangeId.set(sourceId, current);
     }
     const fingerprint = financeEventFingerprint(
       toInt(event.order_id, 0),
@@ -633,12 +663,21 @@ export async function listFinanceReports(db: D1Database, url: URL) {
       createdAt,
     )) || [];
 
+    const exchangeCandidates = matchExchangePaymentLineage(
+      paymentEventsByExchangeId.get(toInt(row.active_exchange_id, 0)) || [],
+      { exchangeId: toInt(row.active_exchange_id, 0), orderId, paymentDate, amount, method, operationType },
+    );
     let lineageEvent: any = null;
     let eventLineageStatus = 'missing';
     if (sourceCandidates.length === 1) {
       lineageEvent = sourceCandidates[0];
       eventLineageStatus = 'source_id';
     } else if (sourceCandidates.length > 1) {
+      eventLineageStatus = 'ambiguous';
+    } else if (exchangeCandidates.length === 1) {
+      lineageEvent = exchangeCandidates[0];
+      eventLineageStatus = 'exchange_id';
+    } else if (exchangeCandidates.length > 1) {
       eventLineageStatus = 'ambiguous';
     } else if (fingerprintCandidates.length === 1) {
       lineageEvent = fingerprintCandidates[0];
