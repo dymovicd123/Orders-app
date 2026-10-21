@@ -26,6 +26,8 @@ jobs:
       - name: Verify real SQL cash/debt/refund/exchange semantics
         run: node --experimental-strip-types scripts/test-financial-lifecycle-reconciliation-20261021.mjs
 
+      - name: Characterize refund cancellation and cross-period reporting
+        run: node --experimental-strip-types scripts/test-finance-report-cancellation-timeline-20261021.mjs
       - name: Regression existing itemized and post-return debt semantics
         run: |
           node scripts/test-stage03-h1-itemized-money-calculator.mjs
