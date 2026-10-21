@@ -1,6 +1,6 @@
 // Step 190.6A: Worker composition root. Domain logic lives under worker/core and worker/domains.
 import { json, measuredJsonRead, measuredResponseRead, publicApiError, readJson } from './core/http.ts'
-import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from './core/text.ts'
+import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, toInt, upperText } from './core/text.ts'
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
