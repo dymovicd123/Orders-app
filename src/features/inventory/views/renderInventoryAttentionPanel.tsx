@@ -66,7 +66,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
   const items = warehouseAttention?.items
   const counts = warehouseAttention?.counts
   const categoryCounts: Record<AttentionCategory, number> = {
-    shortage: Number(counts?.shortage || 0),
+    shortage: Number(counts?.shortage || 0) + Number(counts?.shippedUntracked || 0),
     handover: Number(counts?.handover || 0),
     intake: Number(counts?.intake || 0),
     identify: Number(counts?.lifecycle || 0) + Number(counts?.catalog || 0) + Number(counts?.found || 0),
@@ -88,7 +88,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
           <p>{isIntake
             ? 'Товар уже известен. Если вещь действительно уже у вас, можно завершить приёмку.'
             : isShortage
-              ? 'Система знает товар, но физического остатка не хватает на активные резервы. Это не ошибка каталога: проверьте наличие и поступление.'
+              ? 'Показываем нехватки активных резервов и уже отправленные товары, которых не было в учтённом физическом остатке. Отправка из-за этого не блокируется.'
               : 'Здесь только вопросы о том, какой это товар или что действительно выдали.'}</p>
         </div>
         <button className="secondary compact" type="button" onClick={refreshWarehouseAttention} disabled={attentionLoading}>{attentionLoading ? 'Обновляю…' : 'Обновить'}</button>
@@ -97,14 +97,14 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
       {attentionError ? <div className="inventory-attention-error">{attentionError}</div> : null}
       {attentionLoading && !items ? <div className="empty-state">Загружаю складские вопросы…</div> : null}
       {warehouseAttention && !isIntake && !isShortage && clarificationTotal === 0 ? <div className="inventory-attention-clear"><strong>Уточнять ничего не нужно</strong><span>Можно продолжать обычную работу.</span></div> : null}
-      {warehouseAttention && isShortage && categoryCounts.shortage === 0 ? <div className="inventory-attention-clear"><strong>Нехваток по активным резервам нет</strong><span>Это не заменяет физический пересчёт товара.</span></div> : null}
+      {warehouseAttention && isShortage && categoryCounts.shortage === 0 ? <div className="inventory-attention-clear"><strong>Нет складских расхождений по этим проверкам</strong><span>Это не заменяет физический пересчёт товара.</span></div> : null}
       {warehouseAttention && isIntake && categoryCounts.intake === 0 ? <div className="inventory-attention-clear"><strong>Сейчас ничего не ждёт приёмки</strong><span>Если такая вещь появится, она будет показана здесь отдельно от вопросов по данным.</span></div> : null}
 
       {warehouseAttention && !isIntake && categoryCounts.shortage + clarificationTotal > 0 ? (
         <>
           <div className="inventory-attention-summary">
             <strong>Складские вопросы: {categoryCounts.shortage + clarificationTotal}</strong>
-            <span>{categoryCounts.shortage} — нехватка по активным резервам; {clarificationTotal} — требуется уточнить товар или выдачу. Нехватка сама по себе не запускает Resolver.</span>
+            <span>{Number(counts?.shortage || 0)} — нехватка по резервам; {Number(counts?.shippedUntracked || 0)} — уже отправлено без учтённого остатка; {clarificationTotal} — уточнить товар или выдачу. Отправка при известном SKU не блокируется.</span>
           </div>
           <div className="inventory-attention-tabs" role="tablist" aria-label="Что нужно уточнить">
             {tabs.map((tab) => (
@@ -127,7 +127,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
         <section className="inventory-attention-group is-shortage">
           <div className="inventory-attention-group-head">
             <div><strong>Нехватка учтённого товара</strong><span>Список меняется по фактическим данным, а не по отметкам «прочитано». Кнопки открывают проверку, но сами не изменяют склад.</span></div>
-            <b>{categoryCounts.shortage}</b>
+            <b>{Number(counts?.shortage || 0)}</b>
           </div>
           {(items.shortages || []).length ? (
             <div className="inventory-attention-list">
@@ -150,7 +150,38 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
               ))}
             </div>
           ) : <div className="empty-state">Нехваток по резервам сейчас нет.</div>}
-          {categoryCounts.shortage > (items.shortages || []).length ? <p className="inventory-attention-hint">Показаны первые {items.shortages.length} из {categoryCounts.shortage} случаев. Обновите список после проверки.</p> : null}
+          {Number(counts?.shortage || 0) > (items.shortages || []).length ? <p className="inventory-attention-hint">Показаны первые {items.shortages.length} из {Number(counts?.shortage || 0)} случаев. Обновите список после проверки.</p> : null}
+        </section>
+      ) : null}
+
+      {items && attentionCategory === 'shortage' ? (
+        <section className="inventory-attention-group is-shipped-untracked">
+          <div className="inventory-attention-group-head">
+            <div>
+              <strong>Уже отправлено без учтённого остатка</strong>
+              <span>Заказ отправлен — дополнительного подтверждения или фиктивного прихода не требуется. Сохраняем причину расхождения для последующей проверки; запись не исчезает после закрытия резерва.</span>
+            </div>
+            <b>{Number(counts?.shippedUntracked || 0)}</b>
+          </div>
+          {(items.shippedUntracked || []).length ? <div className="inventory-attention-list">
+            {items.shippedUntracked!.map((item) => (
+              <article key={`untracked-shipment-${item.evidenceId}`}>
+                <div className="inventory-attention-main">
+                  <strong>{item.productName}</strong>
+                  <span>{detailLine(item)} · {sourceLabel(item.source)}</span>
+                  <small>Отправлено по заказу {item.externalId || item.orderId} от {formatDateShort(item.orderDate)} · выдача {formatDateTime(item.occurredAt)}</small>
+                  <small><strong>До отправки на месте по системе: {item.trackedPhysicalBefore} шт.; передано: {item.shippedQuantity} шт.; не объяснено учётом: {item.untrackedQuantity} шт.</strong></small>
+                  <small>Проверьте, не забыли ли приход и верно ли указан вариант. Если нужно исправить количество — выполните ревизию. Эти действия не являются условием отправки.</small>
+                </div>
+                <div className="inventory-attention-actions">
+                  {item.orderId ? <button className="secondary compact" type="button" onClick={() => openAttentionOrder(item)}>Открыть заказ</button> : null}
+                  {isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionArrival(item)}>Оформить приход</button> : null}
+                  <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
+                </div>
+              </article>
+            ))}
+          </div> : <div className="empty-state">Неподтверждённых учётом отправок пока нет.</div>}
+          {Number(counts?.shippedUntracked || 0) > (items.shippedUntracked || []).length ? <p className="inventory-attention-hint">Показаны последние {(items.shippedUntracked || []).length} случаев из {Number(counts?.shippedUntracked || 0)}. Исторические события сохраняются.</p> : null}
         </section>
       ) : null}
 
