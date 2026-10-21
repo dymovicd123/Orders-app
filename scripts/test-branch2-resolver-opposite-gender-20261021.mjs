@@ -5,6 +5,7 @@ import {
   createCatalogCombinationV3, assertCatalogGenderAllowedForScope,
   resolveCatalogGenderForProduct,
 } from '../worker/domains/catalog.ts'
+import { resolveCatalogProductAndVariantV2 } from '../worker/domains/order-reservations.ts'
 
 // Actual domain SQL against a disposable SQLite database, not a source-string
 // substitute. One product scope is a default; concrete opposite-gender SKUs
@@ -78,6 +79,43 @@ assert.equal(sql.prepare('SELECT gender_scope FROM catalog_products WHERE id=11'
   'Do not silently rewrite product catalog metadata or historical meaning')
 sql.exec('UPDATE catalog_stock_positions SET is_active=0 WHERE id=21')
 await assert.rejects(createCatalogCombinationV3(db,{...input,color:'ЧЕРНЫЙ'},timestamp),/удалённого исполнения/)
+// Exercise the actual order-to-catalog automatic Resolver, not only low-level
+// SKU INSERT. An opposite-gender order must create/reuse one exact SKU, while
+// blank/unknown dimensions stay unresolved and cannot create phantom stock.
+sql.exec(`
+ALTER TABLE catalog_products ADD COLUMN category TEXT DEFAULT 'adult';
+ALTER TABLE catalog_products ADD COLUMN external_id TEXT;
+ALTER TABLE catalog_stock_positions ADD COLUMN material TEXT DEFAULT 'СТАНДАРТ';
+ALTER TABLE catalog_stock_positions ADD COLUMN length TEXT DEFAULT 'СТАНДАРТ';
+CREATE TABLE catalog_identity_meta(key TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE reference_values(id INTEGER PRIMARY KEY,kind TEXT,value TEXT,is_active INTEGER);
+INSERT INTO catalog_identity_meta VALUES('catalog_identity_v3','active');
+INSERT INTO reference_values(kind,value,is_active)
+ VALUES('material','СТАНДАРТ',1),('length','СТАНДАРТ',1),
+       ('color','ОРАНЖЕВЫЙ',1),('size','52',1);
+`)
+const maleKnown={
+ productName:'АЙ НАЗЫК ЖИЛЕТЫ',category:'adult',gender:'МУЖ',
+ material:'СТАНДАРТ',length:'СТАНДАРТ',color:'ОРАНЖЕВЫЙ',size:'52'
+}
+const firstResolved=await resolveCatalogProductAndVariantV2(db,maleKnown,{timestamp})
+assert.equal(firstResolved.matchStatus,'created_combination')
+assert(firstResolved.variantId > 0)
+assert.equal(sql.prepare('SELECT gender FROM catalog_variants WHERE id=?').get(firstResolved.variantId).gender,'МУЖ')
+const secondResolved=await resolveCatalogProductAndVariantV2(db,maleKnown,{timestamp})
+assert.equal(secondResolved.variantId,firstResolved.variantId)
+assert.equal(secondResolved.matchStatus,'matched')
+const countBefore=sql.prepare('SELECT COUNT(*) AS n FROM catalog_variants').get().n
+const unknown=await resolveCatalogProductAndVariantV2(db,{...maleKnown,color:'НЕИЗВЕСТНЫЙ ЦВЕТ'},{timestamp})
+assert.equal(unknown.matchStatus,'unresolved_attribute')
+const missingSize=await resolveCatalogProductAndVariantV2(db,{...maleKnown,size:''},{timestamp})
+assert.equal(missingSize.matchStatus,'unresolved_attribute')
+const unisexMissingGender=await resolveCatalogProductAndVariantV2(db,{...maleKnown,productName:'САРДАР ШАПАН',gender:''},{timestamp})
+assert.equal(unisexMissingGender.matchStatus,'unresolved_attribute')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM catalog_variants').get().n,countBefore)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_stock').get().n,0)
+assert.equal(sql.prepare('SELECT gender_scope FROM catalog_products WHERE id=12').get().gender_scope,'female')
+
 sql.close()
 
 const orderResolver=readFileSync('worker/domains/order-reservations.ts','utf8')
