@@ -5,6 +5,7 @@ import { cleanText, toInt } from '../core/text.ts'
 import { previewAdminOrderDeleteChain, type AdminDeleteChainPlan } from './order-delete-chain-plan.ts'
 import { previewAdminDeleteImpact, type AdminDeleteImpact } from './admin-delete-impact.ts'
 import { reviewAdminDeleteAppliedStock, type AdminDeleteAppliedStockReview } from './admin-delete-physical.ts'
+import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
 
 export type AdminOrderDeletePreview = {
   orderId:number;externalId:string;orderStatus:string;shippingStatus:string;
@@ -72,6 +73,12 @@ export async function previewAdminOrderDeletion(
     &&toInt(fulfilled?.issued_count,0)===appliedStockReview.bookkeepingFulfilledCount
   const requiresPhysicalFact=shipping==='sent'
     ||(toInt(fulfilled?.issued_count,0)>0&&!bookedOnlyFulfilled)
+  // Show a concrete blocker before the administrator presses Delete.
+  // This does not alter money/stock or loosen any existing safeguards.
+  if(hasChain&&requiresPhysicalFact){
+    const itemReturn=await readStandaloneItemReturnBlocker(db,orderId)
+    if(itemReturn)reasons.push(itemReturn.message)
+  }
   const recordedRefunds=(returns.results||[]).reduce((sum,x)=>sum+Math.max(0,toInt(x.amount,0)),0)
   const registeredPayments=Math.max(0,toInt(payments?.positive_amount,0))
   for(const blocker of chainPlan.blockers)reasons.push(blocker)
