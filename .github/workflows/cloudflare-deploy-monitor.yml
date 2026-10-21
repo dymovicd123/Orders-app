@@ -122,6 +122,15 @@ jobs:
               if [[ "$status" == "stopped" ]]; then
                 break
               fi
+              # A native Branch2 build can stay "running" indefinitely. Do not
+              # mistake that for a successful deploy and do not modify main.
+              # The fallback below independently checks the exact SHA, Branch2
+              # Worker/D1 binding, full release gate and served public frontend.
+              if [[ "$GITHUB_REF_NAME" == "branch2" && "$attempt" -ge 20 ]]; then
+                echo "fallback_required=true" >> "$GITHUB_OUTPUT"
+                echo "Native Cloudflare build for Branch2 stayed $status for over 3 minutes; running the existing guarded Branch2-only direct deploy."
+                exit 0
+              fi
             else
               echo "Waiting for Cloudflare build for $GITHUB_SHA (attempt $attempt/48)..."
               if [[ "$GITHUB_REF_NAME" == "branch2" && "$attempt" -ge 12 ]]; then
