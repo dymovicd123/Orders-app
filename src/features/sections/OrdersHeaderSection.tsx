@@ -48,10 +48,10 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
       {!kaspiMode && stockConcerns > 0 ? (
         <div className="orders-stock-attention" role="status">
           <div>
-            <strong>Проверить складские расхождения: {stockConcerns}</strong>
-            <span>Нехватка по резервам или отправленные без учтённого остатка товары. Отправка не блокируется; проверьте причины.</span>
+            <strong>Нужно проверить товары: {stockConcerns}</strong>
+            <span>По некоторым заказам количество на складе не совпадает с данными системы. Посмотрите, какие товары требуют проверки.</span>
           </div>
-          <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Посмотреть заказы и действия</button>
+          <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Посмотреть список</button>
         </div>
       ) : null}
     </article>
