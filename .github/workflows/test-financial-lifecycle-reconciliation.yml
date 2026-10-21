@@ -25,3 +25,13 @@ jobs:
       - run: npm ci
       - name: Verify real SQL cash/debt/refund/exchange semantics
         run: node --experimental-strip-types scripts/test-financial-lifecycle-reconciliation-20261021.mjs
+
+      - name: Regression existing itemized and post-return debt semantics
+        run: |
+          node scripts/test-stage03-h1-itemized-money-calculator.mjs
+          node scripts/test-operational-autonomy-a3-post-return-debt-close.mjs
+          node scripts/test-operational-autonomy-a5-exchange-financial-correction.mjs
+          node scripts/test-order-standalone-return-price-correction-r2.mjs
+          node scripts/test-finance-f4-money-journal.mjs
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+
