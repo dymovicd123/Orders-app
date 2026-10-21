@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 const baseline = 'aca09fdc8dda87370504f3033845d3e87392597d'
 const current = {
   "worker/index.ts": "ba5fd71331815f1073410c8aae9a28c28663c5e1",
-  "worker/domains/order-reservations.ts": "031b97e0de3ed5df5e55d1646b2b5b016784d458",
+  "worker/domains/order-reservations.ts": "da314c1fe1c6c42d49f15c8e39c0344e1c368d4f",
   "worker/domains/orders-write.ts": "041fdff0a9c44219d8eadcd674a54cc3d1b42359",
   "worker/domains/warehouse-attention.ts": "bbe3b56b54625a612fdc68dd290b67552d1cd83a",
   "shared/api-contracts.ts": "cb8fb5260885d021bfa685ea1ad428e61cb8f50b",
