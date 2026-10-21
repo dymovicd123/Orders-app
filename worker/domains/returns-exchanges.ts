@@ -18,6 +18,7 @@ import { correctMistakenOrderHandover, fulfillOrderReservationsV2, reactivateRel
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
+import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
 
 export async function correctMistakenOrderHandoverWithCurrentExchange(
   db: D1Database,
@@ -29,29 +30,20 @@ export async function correctMistakenOrderHandoverWithCurrentExchange(
     throw new Error('Снять отметку «Отправлен» можно только после подтверждения, что текущий товар фактически НЕ передавался клиенту.');
   }
 
-  const downstream = await db.prepare(
-    `SELECT
-       EXISTS(
-         SELECT 1
-         FROM returns r
-         JOIN return_items ri ON ri.return_id = r.id AND COALESCE(ri.quantity, 0) > 0
-         WHERE r.order_id = ?
-           AND COALESCE(r.status, 'completed') <> 'cancelled'
-           AND NOT EXISTS (
-             SELECT 1 FROM exchanges linked_exchange
-             WHERE linked_exchange.refund_return_id = r.id
-               AND COALESCE(linked_exchange.status, 'completed') <> 'cancelled'
-           )
-       ) AS has_item_return,
-       EXISTS(
-         SELECT 1 FROM exchanges e
-         WHERE e.order_id = ? AND COALESCE(e.status, 'completed') <> 'cancelled'
-       ) AS has_exchange`
-  ).bind(orderId, orderId).first<{ has_item_return: number; has_exchange: number }>();
+  // Do not silently rewrite physical handover when a separate item Return
+  // still exists. Explain the exact Return instead of returning a generic 500.
+  // A pure money Return and an exchange-owned refund are not blockers.
+  const standaloneItemReturn=await readStandaloneItemReturnBlocker(db,orderId)
+  if(standaloneItemReturn)
+    throw new CriticalOperationConflictError(standaloneItemReturn.message)
 
-  if (toInt(downstream?.has_item_return, 0)) {
-    throw new Error('По текущему товару уже проведён отдельный возврат. Сначала исправьте сам возврат: он изменил физическую историю и не должен переписываться снятием отметки отправки.');
-  }
+  const downstream=await db.prepare(
+    `SELECT EXISTS(
+      SELECT 1 FROM exchanges e
+      WHERE e.order_id=? AND COALESCE(e.status,'completed')<>'cancelled'
+    ) AS has_exchange`
+  ).bind(orderId).first<{has_exchange:number}>()
+
   if (!toInt(downstream?.has_exchange, 0)) {
     return await correctMistakenOrderHandover(db, orderId, input);
   }
