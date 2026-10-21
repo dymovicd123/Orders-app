@@ -171,11 +171,10 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                   <span>{detailLine(item)} · {sourceLabel(item.source)}</span>
                   <small>Отправлено по заказу {item.externalId || item.orderId} от {formatDateShort(item.orderDate)} · выдача {formatDateTime(item.occurredAt)}</small>
                   <small><strong>До отправки на месте по системе: {item.trackedPhysicalBefore} шт.; передано: {item.shippedQuantity} шт.; не объяснено учётом: {item.untrackedQuantity} шт.</strong></small>
-                  <small>Проверьте, не забыли ли приход и верно ли указан вариант. Если нужно исправить количество — выполните ревизию. Эти действия не являются условием отправки.</small>
+                  <small>Проверьте историю прихода и правильность варианта. Если товар уже выдан, не добавляйте его на склад фиктивным приходом. Для текущего физического количества используйте ревизию.</small>
                 </div>
                 <div className="inventory-attention-actions">
                   {item.orderId ? <button className="secondary compact" type="button" onClick={() => openAttentionOrder(item)}>Открыть заказ</button> : null}
-                  {isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionArrival(item)}>Оформить приход</button> : null}
                   <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
                 </div>
               </article>
