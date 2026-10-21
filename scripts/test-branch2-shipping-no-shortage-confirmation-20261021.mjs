@@ -69,6 +69,21 @@ const normal=await fulfillOrderReservationsV2(db,202,'ORD-POS',now,{shippingDate
 assert.equal(normal.shippingCommitted,true)
 assert.equal(q.prepare('SELECT quantity FROM inventory_stock WHERE id=402').get().quantity,1)
 assert.equal(q.prepare('SELECT COUNT(*) n FROM inventory_operation_evidence').get().n,1)
+// Early handover is a different, per-item action. Its possession guard stays
+// intact rather than being weakened by the ordinary «Отправлен» change.
+q.exec([
+ "INSERT INTO orders VALUES(203,'ORD-HANDOVER','2026-10-21','active','','not_sent',NULL,NULL)",
+ "INSERT INTO order_items VALUES(303,203,11,'БАЯН СҰЛУ ШАПАН','boutique','adult','МУЖ','ОРАНЖЕВЫЙ','СТАНДАРТ','СТАНДАРТ','52','reserved',1,0,NULL,NULL)",
+ "UPDATE inventory_stock SET reserved_quantity=1 WHERE id=401",
+ "INSERT INTO inventory_reservations VALUES(503,203,303,'boutique',1829,'active',1,'order','ORD-HANDOVER',NULL,NULL)"
+].join(';')+';')
+await assert.rejects(
+ fulfillOrderReservationsV2(db,203,'ORD-HANDOVER',now,{stockConfirmationOperation:'handover',orderItemIds:[303]}),
+ /нужно отдельно подтвердить/
+)
+assert.equal(q.prepare("SELECT status FROM inventory_reservations WHERE id=503").get().status,'active')
+assert.equal(q.prepare('SELECT COUNT(*) n FROM inventory_operation_evidence').get().n,1)
+
 const attention=readFileSync('worker/domains/warehouse-attention.ts','utf8')
 const tick=String.fromCharCode(96)
 const marker='SELECT COUNT(*) AS count\n       FROM inventory_operation_evidence evidence'
