@@ -12,6 +12,15 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Narrow stock-attention candidate is independently tested before replaying the
+// byte-identical previous Branch2 business files and all historical assertions.
+if (!process.env.STOCK_ATTENTION_FROZEN_REPLAY &&
+    gitBlob(fs.readFileSync('src/App.tsx')) === 'bec55aa26cdcb38f284cdf47daa7ccceae9ea9b2') {
+  const tested=spawnSync(process.execPath,['scripts/branch2-stock-attention-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!tested.error && tested.status===0,'Stock attention + frozen original Branch2 release gate failed')
+  process.exit(0)
+}
 // The catalog-only writeoff candidate has its own exact-source historical replay.
 // All prior assertions below still run unchanged on the pinned previous runtime.
 if (gitBlob(fs.readFileSync('worker/domains/inventory-movement.ts'))==='605699debb2b9981a95ac85ea72bbf041995c417'

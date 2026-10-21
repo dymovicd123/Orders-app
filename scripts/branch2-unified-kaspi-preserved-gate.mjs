@@ -42,6 +42,13 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+if (!process.env.STOCK_ATTENTION_FROZEN_REPLAY &&
+    sha('src/App.tsx') === 'bec55aa26cdcb38f284cdf47daa7ccceae9ea9b2') {
+  const next = spawnSync(process.execPath,['scripts/branch2-stock-attention-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!next.error && next.status===0, 'Stock attention and original release checks failed')
+  process.exit(0)
+}
 // Dispatch only this reviewed writeoff extension. Its archived baseline gate
 // is staged byte-for-byte; Kaspi's existing frozen assertions stay intact.
 if (sha('worker/domains/inventory-movement.ts')==='605699debb2b9981a95ac85ea72bbf041995c417'

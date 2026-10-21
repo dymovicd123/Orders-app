@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-type AttentionCategory = 'handover' | 'intake' | 'identify'
+type AttentionCategory = 'shortage' | 'handover' | 'intake' | 'identify'
 
 type InventoryAttentionActionsInput = {
   activeSector: string
@@ -51,7 +51,7 @@ export function useInventoryAttentionActions(input: InventoryAttentionActionsInp
   } = input
   const [attentionLoading, setAttentionLoading] = useState(false)
   const [attentionError, setAttentionError] = useState('')
-  const [attentionCategory, setAttentionCategory] = useState<AttentionCategory>('handover')
+  const [attentionCategory, setAttentionCategory] = useState<AttentionCategory>('shortage')
   const [attentionIntakeBusyId, setAttentionIntakeBusyId] = useState<number | null>(null)
 
   async function applyQuickStocktake(countedOverride?: number) {

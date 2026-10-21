@@ -1811,6 +1811,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     openOrderStockHandoverById,
   })
 
+  const warehouseShortageCount = Number(warehouseAttention?.counts?.shortage || 0)
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
   const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
     + Number(warehouseAttention?.counts?.lifecycle || 0)
@@ -2255,8 +2256,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     </button>
                   ))}
                 </div>
-                {(warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
+                {(warehouseShortageCount > 0 || warehousePendingIntakeCount > 0 || warehouseClarificationCount > 0) ? (
                   <div className="warehouse-w2-secondary">
+                    {warehouseShortageCount > 0 ? <button type="button" className={`warehouse-w2-recovery ${inventoryPanel === 'attention' && attentionCategory === 'shortage' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('shortage'); openInventoryPanel('attention') }} title="Активные резервы превышают учтённый физический остаток">
+                      <span>Проверить остаток</span><b>{warehouseShortageCount}</b>
+                    </button> : null}
                     {warehousePendingIntakeCount > 0 ? <button type="button" className={`warehouse-w2-recovery warehouse-w3-intake ${inventoryPanel === 'attention' && attentionCategory === 'intake' ? 'is-active' : ''}`} onClick={() => { setAttentionCategory('intake'); openInventoryPanel('attention') }} title="Вещи, которые приехали или едут обратно и ждут приёмки">
                       <span>Ожидают приёма</span><b>{warehousePendingIntakeCount}</b>
                     </button> : null}
@@ -2280,6 +2284,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openAttentionIntake,
         openAttentionLifecycle,
         openAttentionFoundCatalog: openFoundInventoryCatalog,
+        openAttentionOrder: (item: any) => void openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate }),
+        openAttentionArrival: (item: any) => { if (isAdmin) { setInventoryDraft((draft: any) => ({ ...draft, source: item.source, movementType: 'arrival' })); openInventoryPanel('movement') } },
+        openAttentionStocktake: (item: any) => { setStocktakeSource(item.source); openInventoryPanel('stocktake') },
         reconcileFoundInventoryStock: resolveFoundInventoryStock,
         refreshWarehouseAttention,
         setAttentionCategory,

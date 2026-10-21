@@ -27,6 +27,10 @@ export type CatalogResolutionFacts = {
 export type WarehouseAttentionShortageItem = {
   source: InventorySource
   variantId: number
+  // Last linked active-reservation order; not evidence of a physical receipt.
+  orderId?: number | null
+  externalId?: string
+  orderDate?: string
   productId: number
   productName: string
   category: AudienceCategory

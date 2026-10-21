@@ -1,0 +1,30 @@
+name: Branch2 stock attention order context
+on:
+  push:
+    branches:
+      - fix/branch2-actionable-stock-attention-20261021
+  pull_request:
+    branches:
+      - branch2
+    paths:
+      - 'worker/domains/warehouse-attention.ts'
+      - 'shared/api-contracts.ts'
+      - 'src/features/inventory/**'
+      - 'src/features/sections/OrdersHeaderSection.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/App.tsx'
+      - 'scripts/test-branch2-stock-attention-context-20261021.mjs'
+      - '.github/workflows/branch2-stock-attention-context-20261021.yml'
+jobs:
+  live-sql-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/test-branch2-stock-attention-context-20261021.mjs
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
