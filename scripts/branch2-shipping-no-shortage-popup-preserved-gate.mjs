@@ -12,10 +12,10 @@ const current = {
   "worker/domains/warehouse-attention.ts": "bbe3b56b54625a612fdc68dd290b67552d1cd83a",
   "shared/api-contracts.ts": "cb8fb5260885d021bfa685ea1ad428e61cb8f50b",
   "src/App.tsx": "de474a96c837294c409ea134b4d5d4cac82995e5",
-  "src/features/sections/OrdersHeaderSection.tsx": "7cb3c013ab4f584f48d9d67907e9a7e3a0ff05b2",
-  "src/features/inventory/views/renderInventoryAttentionPanel.tsx": "f69d7aab98fec1d361940efe05190084cafe429f",
+  "src/features/sections/OrdersHeaderSection.tsx": "bff682de3e7fa5033d2f5502f1aadcc828eecd77",
+  "src/features/inventory/views/renderInventoryAttentionPanel.tsx": "14a3832d47e278964245c445f116074f76f212ae",
   "src/features/sections/InventorySection.tsx": "ccc00bdaac4599ea6e67206b80199fc1056192e8",
-  "scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs": "6f597acbcd2e834591cd6d4eb9c1343471609d7b"
+  "scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs": "fd984479a19d70982bb9f891491fce7448f8f412"
 }
 const historical = {
   "worker/index.ts": "1511ecd841a31c86ab9fc352b84bd5bc0e6f9e06",
