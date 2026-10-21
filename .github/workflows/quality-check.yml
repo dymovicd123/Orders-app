@@ -51,6 +51,9 @@ jobs:
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
 
+      - name: Check actionable admin delete item-return reasons
+        run: node --experimental-strip-types scripts/test-admin-delete-standalone-return-reason-20261021.mjs
+
       - name: Run cumulative regression gate
         run: npm run release:check
 
