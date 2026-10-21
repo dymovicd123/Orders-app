@@ -2272,7 +2272,7 @@ export async function fulfillOrderReservationsV2(
     if (stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation) {
       throw new Error(`Для операции с «${requirement.productName}» нужно отдельно подтвердить, что ${requirement.required} шт. физически находятся у сотрудника.`);
     }
-    const effectiveQuantity = observation ? observation.countedQuantity : quantity;
+    const effectiveQuantity = Math.max(0, observation ? observation.countedQuantity : quantity);
     // Shortage confirmation proves possession only of the concrete units being shipped.
     // It never becomes a full SKU count; tracked Physical is still bounded at zero.
     stockByKey.set(key, {
@@ -2524,9 +2524,9 @@ export async function fulfillOrderReservationsV2(
            confirmed_by, occurred_at, created_at
          )
          SELECT 'shipping:' || ? || ':' || x.source || ':' || x.variant_id,
-                x.source, x.variant_id, 'shipping', ?, x.current_quantity, x.confirmed_operation_quantity,
-                MIN(x.current_quantity, x.confirmed_operation_quantity),
-                MAX(0, x.confirmed_operation_quantity - x.current_quantity),
+                x.source, x.variant_id, 'shipping', ?, MAX(0, x.current_quantity), x.confirmed_operation_quantity,
+                MIN(MAX(0, x.current_quantity), x.confirmed_operation_quantity),
+                MAX(0, x.confirmed_operation_quantity - MAX(0, x.current_quantity)),
                 ?, ?, ?
          FROM x
          WHERE x.confirmed_operation_quantity IS NOT NULL
