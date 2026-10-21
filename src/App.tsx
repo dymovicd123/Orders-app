@@ -7011,8 +7011,10 @@ function removeDebtPayment(index: number) {
     setMessage(null)
     try {
       const today = formatLocalDateInput()
-      const submitShipping = async (stockConfirmations?: Array<{ source: InventorySourceKey; variantId: number; expectedQuantity: number; operationQuantity: number }>) => {
-        const shippingPayload = { shippingStatus: 'sent', shippingDate: today, stockConfirmations }
+      const submitShipping = async () => {
+        // The explicit «Отправлен» action is the entire outgoing authorization.
+        // Do not prompt twice for the same known-SKU shortage.
+        const shippingPayload = { shippingStatus: 'sent', shippingDate: today }
         const criticalKey = `order-shipping:${order.id}`
         const critical = prepareCriticalRequest(criticalKey, shippingPayload)
         const response = await apiFetch(`/api/orders/${order.id}/shipping`, {
@@ -7035,30 +7037,6 @@ function removeDebtPayment(index: number) {
         setMessage(result.message || 'Перед отправкой нужно уточнить складской товар. Окно уточнения открыто прямо в заказах.')
         return false
       }
-      if (!response.ok && result.code === 'stock_resolution_required' && result.operationType === 'shipping' && Array.isArray(result.items) && result.items.length) {
-        const confirmed = await askStockResolution({
-          title: 'Товара по учёту меньше, чем нужно для отправки',
-          intro: 'Система не меняет общий остаток наугад. Подтвердите только фактическую передачу этих вещей.',
-          actionLabel: 'Да, отправляю клиенту',
-          items: result.items.map((resolutionItem) => ({
-            productName: resolutionItem.productName || `variant #${resolutionItem.variantId || ''}`,
-            tracked: Math.max(0, Number(resolutionItem.trackedPhysicalQuantity || 0)),
-            needed: Math.max(1, Number(resolutionItem.operationQuantity || 1)),
-          })),
-          note: 'Это подтверждение одной отправки, а не пересчёт всего склада или бутика.',
-        })
-        if (!confirmed) {
-          setMessage('Отправка остановлена. Остатки не изменялись.')
-          return false
-        }
-        const stockConfirmations = result.items.map((item) => ({
-          source: item.source === 'boutique' ? 'boutique' as const : 'warehouse' as const,
-          variantId: Number(item.variantId || 0),
-          expectedQuantity: Math.max(0, Number(item.trackedPhysicalQuantity || 0)),
-          operationQuantity: Math.max(1, Number(item.operationQuantity || 1)),
-        }))
-        ;({ response, result } = await submitShipping(stockConfirmations))
-      }
       if (!response.ok) {
         throw new Error(result.message || `Shipping failed: ${response.status}`)
       }
@@ -7074,6 +7052,9 @@ function removeDebtPayment(index: number) {
       // Shipping is now the physical stock event. Invalidate cached physical/reserved/available values.
       invalidateInventoryStockCaches(true)
       invalidateFinanceReadCaches()
+      // Read the persisted shortage evidence on the Orders page immediately
+      // after successful shipping; manager does not need to visit Warehouse.
+      void loadWarehouseAttention(false, true)
       setMessage(`Заказ ${order.external_id} отмечен как отправленный клиенту.`)
       return true
     } catch (err) {

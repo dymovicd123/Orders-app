@@ -46,6 +46,29 @@ export type WarehouseAttentionShortageItem = {
   free: number
 }
 
+// Auditable delivery with unregistered Physical. Unlike a reserve shortage,
+// this persists after the order is shipped; it cannot be dismissed as read.
+export type WarehouseAttentionShippedUntrackedItem = {
+  evidenceId: number
+  source: InventorySource
+  variantId: number
+  orderId: number | null
+  externalId: string
+  orderDate: string
+  productId: number
+  productName: string
+  category: AudienceCategory
+  gender: string
+  color: string
+  material: string
+  length: string
+  size: string
+  trackedPhysicalBefore: number
+  shippedQuantity: number
+  untrackedQuantity: number
+  occurredAt: string
+}
+
 export type WarehouseAttentionLifecycleItem = {
   id: number
   eventType: string
@@ -137,6 +160,7 @@ export type WarehouseAttentionSummaryResponse = ApiOkResponse & {
   total: number
   counts: {
     shortage: number
+    shippedUntracked?: number
     intake: number
     lifecycle: number
     catalog: number
@@ -146,6 +170,7 @@ export type WarehouseAttentionSummaryResponse = ApiOkResponse & {
   }
   items?: {
     shortages: WarehouseAttentionShortageItem[]
+    shippedUntracked?: WarehouseAttentionShippedUntrackedItem[]
     intake: WarehouseAttentionLifecycleItem[]
     lifecycle: WarehouseAttentionLifecycleItem[]
     catalog: WarehouseAttentionCatalogItem[]

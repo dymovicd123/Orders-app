@@ -1934,7 +1934,11 @@ export async function updateOrderCritical(
           }
         } else {
           const blockers = await getOrderShipmentInventoryBlockers(db, id);
-          if (blockers.length) throw new CriticalOperationConflictError(orderShipmentInventoryBlockerMessage(blockers));
+          // A known SKU can be issued even if its tracked physical quantity is
+          // insufficient. The shared fulfillment writes bounded stock and evidence.
+          // Unknown identity / missing active reservation remain real blockers.
+          const unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
+          if (unresolvedBlockers.length) throw new CriticalOperationConflictError(orderShipmentInventoryBlockerMessage(unresolvedBlockers));
         }
       }
       if (!nextItems.length) throw new OrderInputValidationError('В заказе должна быть хотя бы одна позиция.');

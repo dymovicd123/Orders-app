@@ -17,7 +17,7 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
     workspaceSector = 'orders',
   } = ctx
 
-  const stockConcerns = Number(warehouseAttention?.counts?.shortage || 0)
+  const stockConcerns = Number(warehouseAttention?.counts?.shortage || 0) + Number(warehouseAttention?.counts?.shippedUntracked || 0)
 
   return (
     <article className={`card wide sector-${workspaceSector} orders-workspace-header`} id={kaspiMode ? 'kaspi-orders-tabs' : 'orders-tabs'} style={sectorStyle(workspaceSector)}>
@@ -48,8 +48,8 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
       {!kaspiMode && stockConcerns > 0 ? (
         <div className="orders-stock-attention" role="status">
           <div>
-            <strong>Проверить остатки: {stockConcerns} вариантов</strong>
-            <span>Есть активные резервы сверх учтённого остатка. Это не ошибка каталога и не повод запускать Resolver.</span>
+            <strong>Проверить складские расхождения: {stockConcerns}</strong>
+            <span>Нехватка по резервам или отправленные без учтённого остатка товары. Отправка не блокируется; проверьте причины.</span>
           </div>
           <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Посмотреть заказы и действия</button>
         </div>

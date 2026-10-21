@@ -1,0 +1,32 @@
+name: Branch2 shipping without duplicate shortage confirmation
+on:
+  push:
+    branches:
+      - fix/branch2-shipping-without-shortage-popup-20261021
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/domains/orders-write.ts'
+      - 'worker/domains/warehouse-attention.ts'
+      - 'worker/index.ts'
+      - 'src/App.tsx'
+      - 'src/features/inventory/**'
+      - 'src/features/sections/OrdersHeaderSection.tsx'
+      - 'shared/api-contracts.ts'
+      - 'scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs'
+      - '.github/workflows/branch2-shipping-shortage-nonblocking-20261021.yml'
+jobs:
+  current-sql-ui-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node --experimental-strip-types scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs
+      - run: npm run typecheck
+      - run: npm run release:check
+      - run: npm run build

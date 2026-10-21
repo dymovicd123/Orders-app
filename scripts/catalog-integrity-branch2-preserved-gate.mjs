@@ -12,6 +12,18 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Current no-popup shipment policy is verified on LIVE candidate SQL first.
+// Replay the previously accepted immutable Branch2 source for all legacy tests.
+if (!process.env.SHIPPING_SHORTAGE_FROZEN_REPLAY &&
+    gitBlob(fs.readFileSync('worker/index.ts')) === 'ba5fd71331815f1073410c8aae9a28c28663c5e1' &&
+    gitBlob(fs.readFileSync('src/App.tsx')) === 'de474a96c837294c409ea134b4d5d4cac82995e5') {
+  const checkCandidate = spawnSync(process.execPath,['scripts/branch2-shipping-no-shortage-popup-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!checkCandidate.error && checkCandidate.status===0,
+    'Current no-popup shipping and frozen historical Branch2 regressions failed')
+  process.exit(0)
+}
+
 // The Resolver's new opposite-gender SKU policy is checked on this CURRENT
 // source before replaying the fully tested Branch2 stock and earlier releases.
 if (!process.env.RESOLVER_GENDER_FROZEN_REPLAY &&

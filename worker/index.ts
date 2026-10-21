@@ -1,6 +1,6 @@
 // Step 190.6A: Worker composition root. Domain logic lives under worker/core and worker/domains.
 import { json, measuredJsonRead, measuredResponseRead, publicApiError, readJson } from './core/http.ts'
-import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from './core/text.ts'
+import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, toInt, upperText } from './core/text.ts'
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
@@ -1777,24 +1777,9 @@ export default {
           if (unresolvedBlockers.length) {
             return json({ ok: false, code: 'catalog_review_required', reviewOrderId: id, message: orderShipmentInventoryBlockerMessage(unresolvedBlockers) }, { status: 409 });
           }
-          const shortageBlockers = blockers.filter((row) => cleanText(row.blocker_reason) === 'insufficient_physical');
-          const uncoveredShortages = shortageBlockers.filter((row) => {
-            const source = normalizeSourceType(row.inventory_source);
-            const variantId = toInt(row.reservation_variant_id, 0);
-            const required = Math.max(1, toInt(row.required_quantity, 1));
-            const physical = Math.max(0, toInt(row.physical_quantity, 0));
-            const confirmation = normalizedStockConfirmations.find((candidate) => candidate.source === source && candidate.variantId === variantId);
-            return !confirmation || confirmation.expectedQuantity !== physical || confirmation.operationQuantity !== required;
-          });
-          if (uncoveredShortages.length) {
-            return json(buildStockResolutionRequired('shipping', uncoveredShortages.map((row) => ({
-              source: normalizeSourceType(row.inventory_source),
-              variantId: toInt(row.reservation_variant_id, 0),
-              productName: cleanText(row.product_name_snapshot),
-              trackedPhysicalQuantity: Math.max(0, toInt(row.physical_quantity, 0)),
-              operationQuantity: Math.max(1, toInt(row.required_quantity, 1)),
-            }))), { status: 409 });
-          }
+          // Identified SKU shortages do not block an actual outgoing shipment.
+          // The atomic fulfillment journals unexplained physical units instead.
+          // Unknown SKU / review-needed / returned-item guards above stay active.
         }
         const timestamp = new Date().toISOString();
         const nextShippingDate = normalizeDate(input.shippingDate || timestamp);
