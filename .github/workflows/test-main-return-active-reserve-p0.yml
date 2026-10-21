@@ -1,0 +1,34 @@
+name: Main selective Return reserve P0 gate
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'scripts/test-main-return-reserve-p0-release-20261021.mjs'
+      - 'scripts/test-return-active-reserve-p0-20261021.mjs'
+      - '.github/workflows/test-main-return-active-reserve-p0.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'scripts/test-main-return-reserve-p0-release-20261021.mjs'
+      - 'scripts/test-return-active-reserve-p0-20261021.mjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Current main P0 + immutable historical Production acceptance + final build
+        run: node scripts/test-main-return-reserve-p0-release-20261021.mjs
