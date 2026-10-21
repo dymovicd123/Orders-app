@@ -111,5 +111,21 @@ assert(readFileSync('src/features/inventory/views/renderInventoryAttentionPanel.
 assert(readFileSync('src/features/sections/OrdersHeaderSection.tsx','utf8').includes('shippedUntracked'))
 assert(readFileSync('worker/domains/order-reservations.ts','utf8').includes("stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation"))
 assert(readFileSync('worker/domains/orders-write.ts','utf8').includes("blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical')"))
+// A historical negative Physical must not cause a failed evidence CHECK or
+// a synthetic positive 'sale' movement when the book value is clamped to zero.
+q.exec([
+ "INSERT INTO orders VALUES(204,'ORD-NEGATIVE','2026-10-21','active','','not_sent',NULL,NULL)",
+ "INSERT INTO order_items VALUES(304,204,11,'БАЯН СҰЛУ ШАПАН','boutique','adult','МУЖ','ОРАНЖЕВЫЙ','СТАНДАРТ','СТАНДАРТ','52','reserved',1,0,NULL,NULL)",
+ "UPDATE inventory_stock SET quantity=-2,reserved_quantity=2 WHERE id=401",
+ "INSERT INTO inventory_reservations VALUES(504,204,304,'boutique',1829,'active',1,'order','ORD-NEGATIVE',NULL,NULL)"
+].join(';')+';')
+const negative=await fulfillOrderReservationsV2(db,204,'ORD-NEGATIVE',now,{shippingDate:'2026-10-21',checkedBy:'test-manager'})
+assert.equal(negative.shippingCommitted,true)
+const negEvidence=q.prepare("SELECT * FROM inventory_operation_evidence WHERE operation_reference='ORD-NEGATIVE'").get()
+assert.equal(negEvidence.tracked_physical_before,0)
+assert.equal(negEvidence.explained_quantity,0)
+assert.equal(negEvidence.unexplained_quantity,1)
+assert.equal(q.prepare("SELECT quantity FROM inventory_stock WHERE id=401").get().quantity,0)
+assert.equal(q.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_id='ORD-NEGATIVE' AND movement_type='sale'").get().quantity_delta,0)
 q.close()
 console.log('BRANCH2_SHIPPING_LIVE_SQL_BOUNDED_STOCK_IDEMPOTENCE_EVIDENCE_LIST_PASSED')
