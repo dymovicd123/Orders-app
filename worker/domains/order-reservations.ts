@@ -2266,7 +2266,10 @@ export async function fulfillOrderReservationsV2(
       throw new Error(`Остаток или количество «${requirement.productName}» изменились после подтверждения. Обновите заказ и повторите операцию.`);
     }
     const bounded = boundedOutboundStock(quantity, requirement.required);
-    if (bounded.requiresResolution && !stockConfirmation) {
+    // The action «Отправлен» itself authorizes this specific outgoing quantity.
+    // Stock stays clamped to zero; unexplained units are journaled separately.
+    // Early handover is a different workflow and still requires its own confirmation.
+    if (stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation) {
       throw new Error(`Для операции с «${requirement.productName}» нужно отдельно подтвердить, что ${requirement.required} шт. физически находятся у сотрудника.`);
     }
     const effectiveQuantity = observation ? observation.countedQuantity : quantity;
@@ -2324,7 +2327,12 @@ export async function fulfillOrderReservationsV2(
     length: state.canonical.length,
     size: state.canonical.size,
     observed: state.observation ? state.observation.countedQuantity : null,
-    confirmedOperationQuantity: state.stockConfirmation ? state.stockConfirmation.operationQuantity : null,
+    // Automatically journal unexplained shipment units even without a second
+    // possession modal. This is evidence of delivery, NOT a stocktake or arrival.
+    confirmedOperationQuantity: state.stockConfirmation
+      ? state.stockConfirmation.operationQuantity
+      : (stockConfirmationOperation === 'shipping' && boundedOutboundStock(state.quantity, state.required).requiresResolution
+        ? state.required : null),
   }));
 
   const activeReservationPayloads: string[] = [];
