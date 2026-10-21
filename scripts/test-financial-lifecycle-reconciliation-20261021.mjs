@@ -3,7 +3,7 @@
 // A Return is a customer-facing refund, not automatically a newly payable debt.
 import assert from 'node:assert/strict'
 import {DatabaseSync} from 'node:sqlite'
-import {readOrderFinancialLedger,syncOrderFinancialLedger} from '../worker/domains/money.ts'
+import {readOrderFinancialLedger,syncOrderFinancialLedger,refundMoneyEventStatement,refundReversalMoneyEventStatement,financialEventStatement} from '../worker/domains/money.ts'
 import {deriveExchangeSetSettlement} from '../worker/domains/returns-exchanges.ts'
 
 const sqlite=new DatabaseSync(':memory:')
@@ -79,4 +79,47 @@ exec("UPDATE returns SET status='cancelled' WHERE id=1")
 exec('UPDATE orders SET total_amount=10000 WHERE id=12')
 assert.deepEqual(await view(12),{totalAmount:10000,receivedAmount:10000,returnAmount:0,debtAmount:0})
 assert.deepEqual(await view(12),{totalAmount:10000,receivedAmount:10000,returnAmount:0,debtAmount:0})
+// The immutable cash journal must be balanced and idempotent after a refund
+// cancellation; do not rely on displayed order.debt_amount as cash movement.
+sqlite.exec(`
+ CREATE TABLE financial_events(
+  event_key TEXT UNIQUE,order_id INTEGER,external_order_id TEXT,event_date TEXT,
+  event_at TEXT,event_type TEXT,related_type TEXT,amount_delta INTEGER,
+  payment_method TEXT,source_type TEXT,source_id INTEGER,source_ref TEXT,
+  reason TEXT,comment TEXT,is_backfill INTEGER,created_at TEXT
+ );
+`)
+const logCommon={orderId:12,externalOrderId:'TEST-12',timestamp:'2026-10-21T12:15:00Z',paymentMethod:'НАЛИЧКА'}
+await financialEventStatement(db,{
+  eventKey:'test-order-payment',orderId:12,externalOrderId:'TEST-12',
+  eventDate:'2026-10-21',eventAt:logCommon.timestamp,eventType:'order_payment',
+  amountDelta:10000,sourceType:'payment',sourceId:4,paymentMethod:logCommon.paymentMethod,
+}).run()
+await refundMoneyEventStatement(db,{
+ ...logCommon,eventKey:'test-exchange-refund',returnDate:'2026-10-21',amount:1000,
+ eventType:'exchange_refund',sourceId:1
+}).run()
+await refundMoneyEventStatement(db,{
+ ...logCommon,eventKey:'test-separate-return',returnDate:'2026-10-21',amount:1000,
+ eventType:'order_refund',sourceId:2
+}).run()
+const sumJournal=()=>sqlite.prepare('SELECT COALESCE(SUM(amount_delta),0) AS amount FROM financial_events WHERE order_id=12').get().amount
+assert.equal(sumJournal(),8000)
+await refundReversalMoneyEventStatement(db,{
+ ...logCommon,eventKey:'test-separate-refund-reversal',amount:1000,
+ relatedType:'order_refund',reason:'return_cancel',sourceId:2
+}).run()
+assert.equal(sumJournal(),9000)
+await refundReversalMoneyEventStatement(db,{
+ ...logCommon,eventKey:'test-exchange-refund-reversal',amount:1000,
+ relatedType:'exchange_refund',reason:'exchange_cancel',sourceId:1
+}).run()
+assert.equal(sumJournal(),10000)
+await refundReversalMoneyEventStatement(db,{
+ ...logCommon,eventKey:'test-exchange-refund-reversal',amount:1000,
+ relatedType:'exchange_refund',reason:'exchange_cancel',sourceId:1
+}).run()
+assert.equal(sumJournal(),10000,'Replayed cancellation must not double-credit cash')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS count FROM financial_events').get().count,5)
+console.log('FINANCIAL_EVENT_REVERSAL_REPLAY_PASSED: both kinds of refunds reverse precisely once and match gross receipts')
 console.log('FINANCIAL_LIFECYCLE_GROSS_DEBT_AND_NET_SETTLEMENT_PASSED: real ledger SQL + exchange settlement, partial payment, extra payment, linked/standalone refunds, cancellation and replay')
