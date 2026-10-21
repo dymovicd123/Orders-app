@@ -1,0 +1,27 @@
+name: Financial lifecycle reconciliation
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-financial-lifecycle-reconciliation-20261021.mjs'
+      - '.github/workflows/test-financial-lifecycle-reconciliation.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-financial-lifecycle-reconciliation-20261021.mjs'
+      - '.github/workflows/test-financial-lifecycle-reconciliation.yml'
+permissions:
+  contents: read
+jobs:
+  ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Verify real SQL cash/debt/refund/exchange semantics
+        run: node --experimental-strip-types scripts/test-financial-lifecycle-reconciliation-20261021.mjs
