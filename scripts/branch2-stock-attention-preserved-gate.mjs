@@ -15,7 +15,7 @@ const current = {
   'src/features/sections/InventorySection.tsx': '42aa1f07c507193e79406d5b11fa7102527b4b84',
   'src/styles/192b2a-warehouse-attention-actions.css': '01393ee48907d28adab80f0a92434f2194d41a7c',
 }
-const historicalFiles = [...Object.keys(current), 'scripts/branch2-unified-kaspi-preserved-gate.mjs']
+const historicalFiles = [...Object.keys(current), 'scripts/branch2-unified-kaspi-preserved-gate.mjs', 'scripts/catalog-integrity-branch2-preserved-gate.mjs']
 const sha = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const requireOk = (value, explanation) => { if (!value) throw new Error(explanation) }
