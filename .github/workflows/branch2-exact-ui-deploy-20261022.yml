@@ -1,0 +1,84 @@
+name: One-off exact Branch2 stock task UI publication
+on:
+  push:
+    branches:
+      - ops/branch2-exact-ui-deploy-20261022
+    paths:
+      - .github/workflows/branch2-exact-ui-deploy-20261022.yml
+permissions:
+  contents: read
+concurrency:
+  group: exact-branch2-stock-ui-20261022
+  cancel-in-progress: false
+jobs:
+  publish-exact-branch2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1c4eea157a0c35ba0aa629476978867ffe5a7e0e
+          fetch-depth: 1
+      - name: Fail closed if Branch2 moved, code or target differs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ops/branch2-exact-ui-deploy-20261022'
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$(git rev-parse HEAD)" = '1c4eea157a0c35ba0aa629476978867ffe5a7e0e'
+          test "$(git ls-remote origin refs/heads/branch2 | cut -f1)" = '1c4eea157a0c35ba0aa629476978867ffe5a7e0e'
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify current shipping and stock task UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs
+          npm run build
+          grep -RFq 'Как проверить эти товары' dist/client/assets
+          ! grep -RFq 'не добавляйте его повторно на склад' dist/client/assets
+      - name: Publish exact Branch2 Worker without any D1 commands
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test "$(git rev-parse HEAD)" = '1c4eea157a0c35ba0aa629476978867ffe5a7e0e'
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Verify actual public Branch2 frontend has new task guidance
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-branch2-live-ui.mjs
+          node --input-type=module <<'NODE'
+          const base='https://orders-app-branch2.orders-clothes.workers.dev'
+          async function text(url){
+            const r=await fetch(url,{cache:'no-store',headers:{'Cache-Control':'no-cache'}})
+            if(!r.ok)throw Error('HTTP '+r.status+' at '+url)
+            return r.text()
+          }
+          for(let attempt=0;attempt<3;attempt++){
+            const html=await text(base+'/?branch2-exact-stock-ui='+Date.now()+'-'+attempt)
+            const src=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)?.[1]
+            if(!src)throw Error('Missing public entry JS')
+            const entry=await text(base+src)
+            const chunk=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)?.[0]
+            if(!chunk)throw Error('Missing InventorySection JS')
+            const inventory=await text(base+'/assets/'+chunk)
+            if(!inventory.includes('Как проверить эти товары'))throw Error('PUBLIC UI STILL OLD: shared task instructions missing')
+            if(inventory.includes('не добавляйте его повторно на склад'))throw Error('PUBLIC UI STILL OLD: vague instruction present')
+            console.log('New Branch2 stock task UI verified: pass',attempt+1,chunk)
+            if(attempt<2)await new Promise(r=>setTimeout(r,3500))
+          }
+          NODE
