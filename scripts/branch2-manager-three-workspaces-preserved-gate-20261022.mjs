@@ -9,12 +9,16 @@ const appPath = 'src/App.tsx'
 const candidateApp = 'ba551623ff7ea49bf25dd6e6db964d300e9a8315'
 const baselineApp = 'de474a96c837294c409ea134b4d5d4cac82995e5'
 const helperSha = '37db94598dfeec57a3f9eea8058f9955256a51aa'
+const teamPath = 'src/features/sections/TeamSection.tsx'
+const oldTeamSha = 'c8d330aff9cd45468a448eb8c70e24d55cf1d198'
+const newTeamSha = '92f5bdf6cdf2ccd12c1d2454648c434b0f8876b9'
 const blob = bytes => crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
 const assert = (pass,message) => {if(!pass)throw Error(message)}
 const readSha = path => blob(fs.readFileSync(path))
 const verifyCandidate=()=>{
  assert(readSha(appPath)===candidateApp,'Unreviewed App source in manager workspace gate')
  assert(readSha('src/app/managerWorkspaceAccess.ts')===helperSha,'Unreviewed manager access policy')
+ assert(readSha(teamPath)===newTeamSha,'Unreviewed timesheet text modification')
 }
 const run=(command,args)=>{
  const p=spawnSync(command,args,{stdio:'inherit',shell:false,maxBuffer:16*1024*1024,timeout:40*60*1000,env:process.env})
@@ -26,6 +30,7 @@ run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
 const helperPath='src/app/managerWorkspaceAccess.ts'
 const candidateBytes=fs.readFileSync(appPath)
 const newHelperBytes=fs.readFileSync(helperPath)
+const newTeamBytes=fs.readFileSync(teamPath)
 try{
  if(spawnSync('git',['cat-file','-e',baseline+':'+appPath],{stdio:'ignore'}).status!==0)
    run('git',['fetch','--no-tags','--depth=1','origin',baseline])
@@ -37,10 +42,15 @@ try{
  // replaying the pristine historical src tree; legacy dead-code checks
  // would otherwise report a false unused module.
  fs.unlinkSync(helperPath)
+ const previousTeam=spawnSync('git',['show',baseline+':'+teamPath],{encoding:null,maxBuffer:16*1024*1024})
+ assert(!previousTeam.error && previousTeam.status===0 && blob(previousTeam.stdout)===oldTeamSha,
+  'Old timesheet source unavailable for frozen release')
+ fs.writeFileSync(teamPath,previousTeam.stdout)
  run(process.execPath,['scripts/branch2-unified-kaspi-preserved-gate.mjs'])
 }finally{
  fs.writeFileSync(appPath,candidateBytes)
  fs.writeFileSync(helperPath,newHelperBytes)
+ fs.writeFileSync(teamPath,newTeamBytes)
 }
 verifyCandidate()
 run(process.execPath,['--experimental-strip-types','scripts/test-manager-three-workspaces-20261022.mjs'])
