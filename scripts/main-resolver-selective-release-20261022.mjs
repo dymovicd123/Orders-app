@@ -26,7 +26,7 @@ function current(){
  ])run(process.execPath,['--experimental-strip-types',file])
  // Production shortage confirmation policy is intentionally untouched.
  const w=fs.readFileSync('worker/index.ts','utf8')
- check(w.includes("const uncoveredShortages = shortageBlockers.filter"),'Main's existing stock shortage gate was removed')
+ check(w.includes("const uncoveredShortages = shortageBlockers.filter"),'Production stock shortage gate was removed')
  check(!fs.readFileSync('worker/domains/order-reservations.ts','utf8').includes('enteredGender !== fixedProductGender'),'Opposite gender still blocked')
  check(w.includes("code: 'inventory_reservation_inconsistent'"),'Empty Resolver still possible')
 }
