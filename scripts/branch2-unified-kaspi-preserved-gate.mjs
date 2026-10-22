@@ -45,7 +45,7 @@ const check = (test, message) => { if (!test) throw new Error(message) }
 // New manager navigation is an isolated UI-only change. Prove the new
 // policy against live source, then replay every previous release on the exact
 // accepted App blob instead of weakening any historical SHA assertions.
-if (sha('src/App.tsx') === '9a1d001f14768bfacb3ce8b07e90a45b4ca098d2') {
+if (sha('src/App.tsx') === 'ba551623ff7ea49bf25dd6e6db964d300e9a8315') {
   const test=spawnSync(process.execPath,['scripts/branch2-manager-three-workspaces-preserved-gate-20261022.mjs'],
     {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
   check(!test.error && test.status===0, 'Manager workspace policy or frozen release gate failed')
