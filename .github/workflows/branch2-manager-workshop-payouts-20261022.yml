@@ -1,0 +1,42 @@
+name: Branch2 Manager Workshop Payouts
+on:
+  push:
+    branches: [fix/branch2-manager-workshop-payouts-20261022]
+    paths:
+      - '.github/workflows/branch2-manager-workshop-payouts-20261022.yml'
+      - 'scripts/branch2-workshop-manager-payouts-gate-20261022.mjs'
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/index.ts'
+      - 'worker/domains/workshop-settlements.ts'
+      - 'src/features/sections/WorkshopSection.tsx'
+      - 'src/features/workshop/WorkshopSettlementsPanel.tsx'
+      - 'scripts/test-workshop-manager-payouts-20261022.mjs'
+      - 'scripts/branch2-workshop-manager-payouts-gate-20261022.mjs'
+      - '.github/workflows/branch2-manager-workshop-payouts-20261022.yml'
+permissions:
+  contents: read
+jobs:
+  manager-payout-and-frozen-branch2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 42
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Assert test Worker and correct DB binding (no database calls)
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+      - run: npm ci
+      - name: Actor and payment safety plus immutable entire Branch2 release
+        run: npm run release:check
