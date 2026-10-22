@@ -5,10 +5,22 @@ import crypto from 'node:crypto'
 import {spawnSync} from 'node:child_process'
 const baseline='40841bdac8c872beb06fff4624bcf48f3b7dd4af'
 const pinned={
-  "worker/domains/catalog.ts": "b08d41b2880166e448d6f53f5626d33e56eeb737",
-  "worker/domains/order-reservations.ts": "c68ce9ea0c7deb50b0e1fa367443632b80b7db14",
-  "worker/index.ts": "b656ee65ed5278bcd5b21e7e77396452170c08d0",
-  "src/features/orders/OrderCatalogResolutionModal.tsx": "60664b42ad523429c294726af28a3d2f6dc9eb50"
+  "worker/domains/catalog.ts": [
+    "b08d41b2880166e448d6f53f5626d33e56eeb737",
+    "6cad58ed7d7e9b81ccfdb4b4a6018783eb4c3d5f"
+  ],
+  "worker/domains/order-reservations.ts": [
+    "c68ce9ea0c7deb50b0e1fa367443632b80b7db14",
+    "14a8445bd28dc4d293ad93411887c381083afc80"
+  ],
+  "worker/index.ts": [
+    "b656ee65ed5278bcd5b21e7e77396452170c08d0",
+    "c03ca7fb506a4cfe0ec8a0e41422c251bc095098"
+  ],
+  "src/features/orders/OrderCatalogResolutionModal.tsx": [
+    "60664b42ad523429c294726af28a3d2f6dc9eb50",
+    "39dae332b8e0a50aa320f4dd3265a49d197185ff"
+  ]
 }
 const hash=bytes=>crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
 const check=(good,msg)=>{if(!good)throw Error(msg)}
