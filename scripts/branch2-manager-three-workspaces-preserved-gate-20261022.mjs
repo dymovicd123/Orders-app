@@ -23,7 +23,9 @@ const run=(command,args)=>{
 verifyCandidate()
 run(process.execPath,['--experimental-strip-types','scripts/test-manager-three-workspaces-20261022.mjs'])
 run(process.platform==='win32'?'npm.cmd':'npm',['run','typecheck'])
+const helperPath='src/app/managerWorkspaceAccess.ts'
 const candidateBytes=fs.readFileSync(appPath)
+const newHelperBytes=fs.readFileSync(helperPath)
 try{
  if(spawnSync('git',['cat-file','-e',baseline+':'+appPath],{stdio:'ignore'}).status!==0)
    run('git',['fetch','--no-tags','--depth=1','origin',baseline])
@@ -31,9 +33,14 @@ try{
  assert(!previous.error && previous.status===0 && blob(previous.stdout)===baselineApp,
    'Exact historical Branch2 App missing; refuse unchecked regression')
  fs.writeFileSync(appPath,previous.stdout)
+ // The old App does not import this new helper. Remove it ONLY while
+ // replaying the pristine historical src tree; legacy dead-code checks
+ // would otherwise report a false unused module.
+ fs.unlinkSync(helperPath)
  run(process.execPath,['scripts/branch2-unified-kaspi-preserved-gate.mjs'])
 }finally{
  fs.writeFileSync(appPath,candidateBytes)
+ fs.writeFileSync(helperPath,newHelperBytes)
 }
 verifyCandidate()
 run(process.execPath,['--experimental-strip-types','scripts/test-manager-three-workspaces-20261022.mjs'])
