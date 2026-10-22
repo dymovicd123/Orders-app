@@ -55,7 +55,7 @@ jobs:
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test "$(git rev-parse HEAD)" = '1c4eea157a0c35ba0aa629476978867ffe5a7e0e'
-          npx wrangler deploy --config wrangler.jsonc
+          npm run deploy
       - name: Verify actual public Branch2 frontend has new task guidance
         shell: bash
         run: |
