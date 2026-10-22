@@ -17,6 +17,10 @@ for (const module of workspaceModules) {
   assert(canSeeWorkspaceMenuItem('admin', module.id), 'Admin sidebar missing '+module.id)
 }
 
+const team = readFileSync('src/features/sections/TeamSection.tsx','utf8')
+assert(team.includes('<h3>Табель</h3>'), 'Timesheet heading must remain visible')
+assert(!team.includes('Сымбат и администраторы не назначаются в табель'), 'Obsolete personalized timesheet notice returned')
+assert(!team.includes('Выбери дни в календаре, сотрудников и время работы'), 'Obsolete timesheet instructions returned')
 const app = readFileSync('src/App.tsx','utf8')
 const gate = app.slice(app.indexOf('const syncSectorFromHash = () => {'), app.indexOf('window.addEventListener(\'hashchange\', syncSectorFromHash)'))
 assert(gate.includes('!canOpenWorkspaceSector(authUser.role, nextSector)'), 'Deep links are not checked against authenticated role')
