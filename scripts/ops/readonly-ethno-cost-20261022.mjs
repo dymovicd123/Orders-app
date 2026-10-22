@@ -49,6 +49,9 @@ const variantQuery=`SELECT p.name AS product,v.material,v.length,v.category,COUN
  WHERE ${productWhere}
  GROUP BY p.name,v.material,v.length,v.category ORDER BY p.name,v.material,v.length,v.category LIMIT 60`
 const tableQuery="SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE '%price%' OR name LIKE '%cost%' OR name LIKE '%audit%') ORDER BY name LIMIT 70"
+const coverageQuery="SELECT COUNT(*) AS all_price_rows,COALESCE(SUM(CASE WHEN cost_price IS NOT NULL THEN 1 ELSE 0 END),0) AS priced_cost_rows,COALESCE(SUM(CASE WHEN sale_price IS NOT NULL THEN 1 ELSE 0 END),0) AS priced_sale_rows,COALESCE(SUM(CASE WHEN cost_price IS NULL AND sale_price IS NULL THEN 1 ELSE 0 END),0) AS empty_both_rows FROM catalog_execution_prices"
+const woolCoverageQuery="SELECT COUNT(*) AS wool_price_rows,COALESCE(SUM(CASE WHEN ep.cost_price IS NOT NULL THEN 1 ELSE 0 END),0) AS wool_cost_rows FROM catalog_execution_prices ep JOIN catalog_stock_positions sp ON sp.id=ep.stock_position_id WHERE sp.material='ШЕРСТЬ'"
+const productPriceCoverageQuery="SELECT COUNT(DISTINCT p.id) AS products_with_any_price,COUNT(DISTINCT ep.stock_position_id) AS executions_with_price FROM catalog_execution_prices ep JOIN catalog_stock_positions sp ON sp.id=ep.stock_position_id JOIN catalog_products p ON p.id=sp.product_id"
 const oldPriceBackupCheck="SELECT name FROM sqlite_master WHERE type='table' AND name='_branch2_catalog_price_backup_20260926'"
 const backupQuery="SELECT product_name,material,length,category,cost_price,sale_price,created_at,updated_at FROM _branch2_catalog_price_backup_20260926 WHERE product_name LIKE '%ЭТНО%' AND product_name LIKE '%КАРДИГАН%' ORDER BY material,length,category LIMIT 60"
 
@@ -60,6 +63,9 @@ for (const [label,db,cfg] of [
   console.log('PRICE_ROWS='+JSON.stringify(readOnly(db,cfg,priceQuery)))
   console.log('VARIANT_SUMMARY='+JSON.stringify(readOnly(db,cfg,variantQuery)))
   console.log('PRICE_OR_AUDIT_TABLE_NAMES='+JSON.stringify(readOnly(db,cfg,tableQuery)))
+  console.log('CATALOG_PRICE_COVERAGE='+JSON.stringify(readOnly(db,cfg,coverageQuery)))
+  console.log('WOOL_PRICE_COVERAGE='+JSON.stringify(readOnly(db,cfg,woolCoverageQuery)))
+  console.log('PRICED_CATALOG_SCOPE='+JSON.stringify(readOnly(db,cfg,productPriceCoverageQuery)))
   const hasBackup=readOnly(db,cfg,oldPriceBackupCheck).length>0
   console.log('SEPTEMBER_26_PRICE_BACKUP_EXISTS='+hasBackup)
   if (hasBackup) console.log('SEPTEMBER_26_PRICE_BACKUP_ROWS='+JSON.stringify(readOnly(db,cfg,backupQuery)))
