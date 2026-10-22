@@ -798,7 +798,6 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                     <div className="reports-filter-header">
                       <div>
                         <h3>Табель</h3>
-                        <div className="muted-note">Сымбат и администраторы не назначаются в табель. Выбери дни в календаре, сотрудников и время работы.</div>
                       </div>
                       <div className="reports-period-buttons timesheet-month-switcher">
                         <button className="secondary compact" type="button" onClick={() => shiftTimesheetMonth(-1)}>←</button>
