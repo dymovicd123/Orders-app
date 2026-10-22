@@ -108,6 +108,13 @@ const fn=app.slice(app.indexOf('async function markOrderSentToClient'),app.index
 assert(!fn.includes('await askStockResolution({'))
 assert(fn.includes('void loadWarehouseAttention(false, true)'))
 assert(readFileSync('src/features/inventory/views/renderInventoryAttentionPanel.tsx','utf8').includes('Заказ уже отправлен — проверить причину'))
+const stockAttentionUI = readFileSync('src/features/inventory/views/renderInventoryAttentionPanel.tsx','utf8')
+assert.equal((stockAttentionUI.match(/className="inventory-attention-guide"/g) || []).length, 1, 'Active shortage section has one common guide')
+assert.equal((stockAttentionUI.match(/className="inventory-attention-guide is-shipped"/g) || []).length, 1, 'Shipped shortage section has one common guide')
+assert(!stockAttentionUI.includes('inventory-attention-task-help'), 'No repeated instruction in each item card')
+assert(!stockAttentionUI.includes('не добавляйте его повторно на склад'), 'Avoid vague historical-shipment instruction')
+assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Проверить количество'), 'Keep existing stock actions')
+
 assert(readFileSync('src/features/sections/OrdersHeaderSection.tsx','utf8').includes('shippedUntracked'))
 assert(readFileSync('worker/domains/order-reservations.ts','utf8').includes("stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation"))
 assert(readFileSync('worker/domains/orders-write.ts','utf8').includes("blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical')"))

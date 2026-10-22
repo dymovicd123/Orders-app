@@ -127,20 +127,25 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
       {items && attentionCategory === 'shortage' ? (
         <section className="inventory-attention-group is-shortage">
           <div className="inventory-attention-group-head">
-            <div><strong>Не хватает товара по заказам</strong><span>Товар указан в заказе, но по данным системы его недостаточно. Проверьте, всё ли правильно записано на складе.</span></div>
+            <div><strong>Не хватает товара по заказам</strong><span>В этих заказах товара по системе меньше, чем нужно.</span></div>
             <b>{Number(counts?.shortage || 0)}</b>
+          </div>
+          <div className="inventory-attention-guide" role="note">
+            <strong>Как проверить эти товары</strong>
+            <div className="inventory-attention-guide-steps">
+              <div><b>Товар поступил, но не записан?</b><span>Оформите приход. Это действие доступно администратору.</span></div>
+              <div><b>Количество в системе неправильное?</b><span>Откройте «Проверить количество» и сверьте остаток.</span></div>
+            </div>
           </div>
           {(items.shortages || []).length ? (
             <div className="inventory-attention-list">
               {items.shortages.map((item: any) => (
                 <article className="inventory-attention-task" key={`attention-shortage-${item.source}-${item.variantId}`}>
                   <div className="inventory-attention-main">
-                    <span className="inventory-attention-task-kind">Проверить остаток</span>
                     <strong>{item.productName}</strong>
                     <span>{detailLine(item) || 'Характеристики не указаны'} · {sourceLabel(item.source)}</span>
                     <small>{item.orderId ? `Заказ ${item.externalId || item.orderId} · ${formatDateShort(item.orderDate)}` : 'Заказ не найден — проверьте историю товара'}</small>
-                    <p className="inventory-attention-task-reason">Для заказов на этот товар по системе не хватает <strong>{Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</strong></p>
-                    <p className="inventory-attention-task-help"><strong>Что сделать?</strong> Если товар поступил, но его не внесли — оформите приход. Если количество в системе неверное — проверьте остаток. Это поможет избежать таких расхождений в следующих заказах.</p>
+                    <p className="inventory-attention-task-reason"><strong>Не хватает {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</strong> по данным системы</p>
                     <details className="inventory-attention-facts">
                       <summary>Посмотреть данные учёта</summary>
                       <span>В наличии по системе: {item.physical} шт. · Зарезервировано: {item.reserved} шт. · Не хватает: {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</span>
@@ -150,7 +155,6 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                     {item.orderId ? <button className="secondary compact" type="button" onClick={() => openAttentionOrder(item)}>Открыть заказ</button> : null}
                     {isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionArrival(item)}>Оформить приход</button> : null}
                     <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
-                    {!isAdmin ? <small>Поступления оформляет администратор</small> : null}
                   </div>
                 </article>
               ))}
@@ -165,20 +169,22 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
           <div className="inventory-attention-group-head">
             <div>
               <strong>Заказ уже отправлен — проверить причину</strong>
-              <span>Эти заказы уже отправлены. Проверьте, почему количества в системе не хватало. Повторно отправлять или подтверждать ничего не нужно.</span>
+              <span>Отправка завершена. В списке сохранены случаи, когда по системе товара не хватало. Повторных действий с отправкой не требуется.</span>
             </div>
             <b>{Number(counts?.shippedUntracked || 0)}</b>
+          </div>
+          <div className="inventory-attention-guide is-shipped" role="note">
+            <strong>Что проверить</strong>
+            <p>Сверьте товар и его вариант с заказом и историей поступлений. Если текущий остаток записан неверно, нажмите «Проверить количество».</p>
           </div>
           {(items.shippedUntracked || []).length ? <div className="inventory-attention-list">
             {items.shippedUntracked!.map((item) => (
               <article className="inventory-attention-task" key={`untracked-shipment-${item.evidenceId}`}>
                 <div className="inventory-attention-main">
-                  <span className="inventory-attention-task-kind is-shipped">Заказ отправлен</span>
                   <strong>{item.productName}</strong>
                   <span>{detailLine(item) || 'Характеристики не указаны'} · {sourceLabel(item.source)}</span>
                   <small>Заказ {item.externalId || item.orderId} · {formatDateShort(item.orderDate)} · отправлен {formatDateTime(item.occurredAt)}</small>
-                  <p className="inventory-attention-task-reason">Заказ отправлен, но при выдаче в системе не хватало <strong>{item.untrackedQuantity} шт.</strong> этого товара.</p>
-                  <p className="inventory-attention-task-help"><strong>Что сделать?</strong> Проверьте, почему товара не было в учёте: возможно, забыли оформить поступление или выбрали другой вариант. Если товар уже выдан клиенту, не добавляйте его повторно на склад.</p>
+                  <p className="inventory-attention-task-reason"><strong>При отправке не хватало {item.untrackedQuantity} шт.</strong> по данным системы</p>
                   <details className="inventory-attention-facts">
                     <summary>Посмотреть данные отправки</summary>
                     <span>В наличии по системе до отправки: {item.trackedPhysicalBefore} шт. · Отправлено: {item.shippedQuantity} шт. · Не хватало в учёте: {item.untrackedQuantity} шт.</span>
