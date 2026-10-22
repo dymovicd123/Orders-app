@@ -42,6 +42,15 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+// New payout permission is tested on a real SQLite ledger first; all prior
+// source-pinned contract tests replay against the immutable Branch2 baseline.
+if (sha('worker/index.ts') === 'a7ef327eb4fe7a79696470bc048324ca92858e6a') {
+  const test=spawnSync(process.execPath,['scripts/branch2-workshop-manager-payouts-gate-20261022.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:32*1024*1024,env:process.env})
+  check(!test.error&&test.status===0,'Workshop manager payout permissions or historic release failed')
+  process.exit(0)
+}
+
 // New manager navigation is an isolated UI-only change. Prove the new
 // policy against live source, then replay every previous release on the exact
 // accepted App blob instead of weakening any historical SHA assertions.
