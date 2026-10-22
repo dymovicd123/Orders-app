@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import {spawnSync} from 'node:child_process'
 const baseline = 'bc5a0b4dd73e8ba1961fea34793dba5610380735'
 const appPath = 'src/App.tsx'
-const candidateApp = '9a1d001f14768bfacb3ce8b07e90a45b4ca098d2'
+const candidateApp = 'ba551623ff7ea49bf25dd6e6db964d300e9a8315'
 const baselineApp = 'de474a96c837294c409ea134b4d5d4cac82995e5'
 const helperSha = '37db94598dfeec57a3f9eea8058f9955256a51aa'
 const blob = bytes => crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
