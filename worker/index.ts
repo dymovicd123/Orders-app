@@ -712,20 +712,16 @@ export default {
         const input = await readJson<{ openingDebt?: unknown }>(request);
         return json(await activateWorkshopSettlements(env.DB, input, (authUser as AuthUser).id), { status: 201 });
       }
-      // Stage04-C: settlement payments are admin-only; worker remains inert until Stage04 cutover.
+      // Stage04: authenticated managers and administrators may read debt and
+      // record payouts. Session/password checks run above for every /api route.
+      // Activation, cost confirmation and payment reversal remain admin-only.
       if (url.pathname === '/api/workshop/settlements/summary' && request.method === 'GET') {
-        const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
-        if (denied) return denied;
         return json(await readWorkshopSettlementSummary(env.DB));
       }
       if (url.pathname === '/api/workshop/settlements' && request.method === 'GET') {
-        const denied = requireAdminUser(authUser, 'Расчёты с цехом доступны только администратору.');
-        if (denied) return denied;
         return json(await readWorkshopSettlementLedger(env.DB, url));
       }
       if (url.pathname === '/api/workshop/settlements/payments' && request.method === 'POST') {
-        const denied = requireAdminUser(authUser, 'Выплаты цеху доступны только администратору.');
-        if (denied) return denied;
         const input = await readJson<{ requestId?: unknown; amount?: unknown; method?: unknown; comment?: unknown }>(request);
         input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key'));
         return json(await postWorkshopSettlementPayment(env.DB, input, (authUser as AuthUser).id), { status: 201 });

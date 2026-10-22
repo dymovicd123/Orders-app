@@ -40,9 +40,10 @@ function paymentIdempotency(body:string):string {
 }
 function clearPaymentId(){try{sessionStorage.removeItem(requestKey)}catch{ /* optional */ }}
 
-export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice}:{
+export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountChange,openCatalogPrice,isAdmin}:{
   openUnpricedRequest:number;onUnpricedCountChange:(count:number)=>void;
   openCatalogPrice:(productId:number|null,name:string)=>void;
+  isAdmin:boolean;
 }) {
   const today=todayKz()
   const [view,setView]=useState<View>('home')
@@ -86,7 +87,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     const generation=++detailGeneration.current
     setDetailLoading(true)
     try {
-      if(view==='unpriced'){
+      if(view==='unpriced' && isAdmin){
         setUnpriced(null)
         const result=await api<UnpricedResponse>('/api/workshop/settlements/unpriced')
         if(generation!==detailGeneration.current)return
@@ -104,11 +105,11 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     }finally{
       if(generation===detailGeneration.current)setDetailLoading(false)
     }
-  },[view,period,onUnpricedCountChange])
+  },[view,period,onUnpricedCountChange,isAdmin])
 
   useEffect(()=>{void refreshSummary();return()=>{summaryGeneration.current++}},[refreshSummary])
   useEffect(()=>{void loadDetails();return()=>{detailGeneration.current++}},[loadDetails])
-  useEffect(()=>{if(openUnpricedRequest>0)setView('unpriced')},[openUnpricedRequest])
+  useEffect(()=>{if(isAdmin&&openUnpricedRequest>0)setView('unpriced')},[openUnpricedRequest,isAdmin])
 
   const activated=Boolean(summary?.captureEnabled)
   const debt=Number(summary?.confirmedDebt||0)
@@ -116,7 +117,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
   const validAmount=Number.isSafeInteger(amountValue)&&amountValue>0&&amountValue<=debt
   const maySave=activated&&!busy&&!summaryLoading&&validAmount
   const openingAmount=Number(openingDebtDraft)
-  const mayActivate=Boolean(summary?.canInitialize)&&!busy&&!summaryLoading
+  const mayActivate=isAdmin&&Boolean(summary?.canInitialize)&&!busy&&!summaryLoading
     &&openingConfirmed&&openingDebtDraft.trim()!==''
     &&Number.isSafeInteger(openingAmount)&&openingAmount>=0&&openingAmount<=1_000_000_000_000
   const days=useMemo(()=>{
@@ -167,7 +168,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     }finally{writeLocked.current=false;setBusy(false)}
   }
   const reversePayment=async(event:LedgerEvent)=>{
-    if(writeLocked.current||!activated)return
+    if(!isAdmin||writeLocked.current||!activated)return
     const reason=window.prompt('Причина отмены выплаты (сохранится в истории):')
     if(reason===null)return
     if(reason.trim().length<5){setError('Укажите причину отмены не короче 5 символов.');return}
@@ -181,7 +182,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     finally{writeLocked.current=false;setBusy(false)}
   }
   const resolveCost=async(item:Unpriced)=>{
-    if(writeLocked.current||!activated||item.availableUnitCost===null)return
+    if(!isAdmin||writeLocked.current||!activated||item.availableUnitCost===null)return
     if(!window.confirm('Подтвердить начисление '+money(item.availableUnitCost*item.quantity)+
       ' за «'+item.productName+'» ('+item.quantity+' шт.)?'))return
     writeLocked.current=true;setBusy(true);setError('')
@@ -238,7 +239,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
     </div>
     {summary&&!activated&&<div className="ws-settlements-startup" role="status">
       <strong>Учёт пока не запущен</strong>
-      {summary.canInitialize?<form className="ws-opening-form" onSubmit={e=>void activate(e)}>
+      {isAdmin&&summary.canInitialize?<form className="ws-opening-form" onSubmit={e=>void activate(e)}>
         <p>Укажите фактическую задолженность перед цехом на момент запуска. Работа, отмеченная готовой раньше, повторно не начислится.</p>
         <label htmlFor="ws-opening-debt">Начальный долг, ₸
           <input id="ws-opening-debt" type="number" min="0" max="1000000000000" step="1"
@@ -252,7 +253,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
         <button className="primary compact" type="submit" disabled={!mayActivate}>
           {busy?'Включаю…':'Сохранить долг и включить учёт'}
         </button>
-      </form>:<p>В журнале уже есть операции. Начальный долг повторно не устанавливается; проверьте состояние учёта перед запуском.</p>}
+      </form>:<p>{isAdmin?'В журнале уже есть операции. Начальный долг повторно не устанавливается; проверьте состояние учёта перед запуском.':'Начальный долг и запуск учёта устанавливает администратор.'}</p>}
     </div>}
     <div className="ws-fast-overview">
       <div className="ws-fast-debt">
@@ -311,9 +312,9 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
       <button type="button" className={view==='work'?'is-active':''} onClick={()=>openView('work')}>Начисления</button>
       <button type="button" className={view==='history'?'is-active':''} onClick={()=>openView('history')}>История операций</button>
       <button type="button" className={view==='days'?'is-active':''} onClick={()=>openView('days')}>По дням</button>
-      <button type="button" className={view==='unpriced'?'is-active':''} onClick={()=>openView('unpriced')}>
+      {isAdmin&&<button type="button" className={view==='unpriced'?'is-active':''} onClick={()=>openView('unpriced')}>
         Без себестоимости{summary?.unresolvedPrices?' · '+summary.unresolvedPrices:''}
-      </button>
+      </button>}
     </nav>
     {view==='home'&&<div className="ws-fast-recent">
       <div className="ws-fast-section-title"><strong>Последние операции</strong><button type="button" className="secondary compact" onClick={()=>openView('history')}>Вся история →</button></div>
@@ -353,7 +354,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
             {event.event_type==='payment_reversal'&&event.comment&&<small>Причина отмены: {event.comment}</small>}
           </div>
           <div className="ws-fast-event-side"><strong>{event.amount_delta===null?'Цена не указана':money(event.amount_delta)}</strong>
-            {event.event_type==='payment'&&!event.isReversed&&activated&&<button type="button" className="secondary compact" disabled={busy}
+            {isAdmin&&event.event_type==='payment'&&!event.isReversed&&activated&&<button type="button" className="secondary compact" disabled={busy}
               onClick={()=>void reversePayment(event)}>Отменить выплату</button>}
           </div>
         </div>)}
@@ -364,7 +365,7 @@ export function WorkshopSettlementsPanel({openUnpricedRequest,onUnpricedCountCha
       </div>}
       {view==='days'&&<p className="ws-settlements-footnote">Долг до начала периода: {money(details?.range.openingBalance)}. Уточнения стоимости показываются на дату подтверждения, а не дату выполнения работы.</p>}
     </div>}
-    {view==='unpriced'&&<div className="ws-fast-detail">
+    {isAdmin&&view==='unpriced'&&<div className="ws-fast-detail">
       <div className="ws-fast-section-title">
         <div><strong>Без себестоимости{unpriced?.total?' · '+unpriced.total:''}</strong>
           <p className="ws-settlements-footnote">Стоимость назначает администратор в каталоге. После этого подтвердите начисление.</p>
