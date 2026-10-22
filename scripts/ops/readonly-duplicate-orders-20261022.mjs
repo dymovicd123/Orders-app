@@ -7,7 +7,7 @@ if(process.env.GITHUB_REF_NAME!==expected||process.env.GITHUB_REPOSITORY!=='dymo
 const cfg=readFileSync('wrangler.jsonc','utf8')
 if(!cfg.includes('"name": "orders-app"')||!cfg.includes('"database_name": "orders_db_prod"')||!cfg.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"')||cfg.includes('orders_db_branch2'))throw Error('Production identity mismatch')
 function query(sql){
- if(!/^\s*SELECT\s/i.test(sql)||/;|\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|REPLACE|ATTACH|DETACH|VACUUM|EXECUTE)\b/i.test(sql))throw Error('NOT A FIXED READ-ONLY SELECT')
+ if(!/^\s*SELECT\s/i.test(sql)||/;|\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|ATTACH|DETACH|VACUUM|EXECUTE)\b/i.test(sql))throw Error('NOT A FIXED READ-ONLY SELECT')
  const raw=execFileSync('npx',['wrangler','d1','execute','orders_db_prod','--remote','--config','wrangler.jsonc','--command='+sql,'--json'],{encoding:'utf8',timeout:90000,maxBuffer:5*1024*1024})
  const data=JSON.parse(raw);if(!Array.isArray(data)||data[0]?.success!==true)throw Error('Failed production read')
  return data[0].results||[]
