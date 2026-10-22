@@ -28,6 +28,7 @@ import './styles/189d-team-activity-cleanup.css'
 import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeDraft, ExchangeHistoryEntry, ExchangeHistoryResponse, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnDraft, ReturnHistoryEntry, ReturnHistoryResponse, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
+import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
 import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
@@ -793,12 +794,25 @@ function App() {
 
 
   useEffect(() => {
+    if (!authUser || authUser.mustChangePassword) return
     const syncSectorFromHash = () => {
       const rawHash = window.location.hash.replace('#', '').toLowerCase()
       const nextSector = sectorFromHash(window.location.hash)
+      if (!canOpenWorkspaceSector(authUser.role, nextSector)) {
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#orders`)
+        setActiveSector('orders')
+        return
+      }
       if (nextSector === 'inventory') {
-        if (rawHash === 'catalog' || rawHash === 'products') setInventoryPanel('catalog')
-        if (rawHash === 'more' || rawHash === 'tools' || rawHash === 'technical') setInventoryPanel('settings')
+        const isCatalogLink = rawHash === 'catalog' || rawHash === 'products'
+        const isSettingsLink = rawHash === 'more' || rawHash === 'tools' || rawHash === 'technical'
+        if (authUser.role === 'admin') {
+          if (isCatalogLink) setInventoryPanel('catalog')
+          if (isSettingsLink) setInventoryPanel('settings')
+        } else if (isCatalogLink || isSettingsLink) {
+          setInventoryPanel('overview')
+          window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#inventory`)
+        }
       }
       setActiveSector(nextSector)
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
@@ -807,7 +821,7 @@ function App() {
     syncSectorFromHash()
     window.addEventListener('hashchange', syncSectorFromHash)
     return () => window.removeEventListener('hashchange', syncSectorFromHash)
-  }, [])
+  }, [authUser?.id, authUser?.role, authUser?.mustChangePassword])
 
 
   useEffect(() => {
@@ -8374,6 +8388,10 @@ function removeDebtPayment(index: number) {
     )
   }
 
+  if (!canOpenWorkspaceSector(accessRole, activeSector)) {
+    return <main className="auth-shell" role="status">Открываем раздел «Заказы»…</main>
+  }
+
   return (
     <main className="erp-shell" data-sector={activeSector}>
       <TableDragScrollManager />
@@ -8444,7 +8462,7 @@ function removeDebtPayment(index: number) {
         </div>
 
         <nav className="erp-primary-nav" id="primary-workspace-navigation" aria-label="Основные разделы">
-          {workspaceModules.map((module) => (
+          {workspaceModules.filter((module) => canSeeWorkspaceMenuItem(accessRole, module.id)).map((module) => (
             <a
               key={module.id}
               className={`erp-primary-nav-button ${module.status === 'planned' ? 'is-planned' : ''} ${(module.id === 'dashboard' ? activeSector === 'overview' : module.id === activeSector) ? 'is-current' : ''}`}
@@ -8459,7 +8477,7 @@ function removeDebtPayment(index: number) {
         </nav>
 
         <div className="erp-sidebar-footer">
-          Рабочая панель: активные списки, склад, цех, клиенты и отчёты разделены по задачам.
+          {isAdmin ? 'Рабочая панель: разделы управления и аналитики.' : 'Рабочая панель: заказы, цех и склад.'}
         </div>
         </div>
       </aside>
