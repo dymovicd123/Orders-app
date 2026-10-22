@@ -47,7 +47,7 @@ function validatedText(value: unknown, label: string, maxLength: number, require
 
 function requireActor(actorId: number): void {
   if (!Number.isSafeInteger(actorId) || actorId <= 0) {
-    throw new WorkshopSettlementError('Не удалось определить администратора.', 403, 'admin_required')
+    throw new WorkshopSettlementError('Не удалось определить сотрудника.', 403, 'actor_required')
   }
 }
 

@@ -40,13 +40,15 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
 
   const [workshopChannel, setWorkshopChannel] = useState<WorkshopChannel>(workshopInvoiceIsKaspi ? 'kaspi' : 'regular')
   const [workshopPanel, setWorkshopPanel] = useState<WorkshopPanel>(workshopFilters.view === 'invoice' ? 'invoice' : 'orders')
-  const canSeeSettlements = Boolean(ctx.isAdmin)
-  // Persistent admin-only attention; status changes and returning from Catalog refresh it.
+  // Both authenticated roles may review the debt and record workshop payouts.
+  const canSeeSettlements = true
+  const canReviewUnpriced = Boolean(ctx.isAdmin)
+  // Pricing and cost confirmation remain administrative.
   const [unpricedCount, setUnpricedCount] = useState<number | null>(null)
   const [unpricedReadError, setUnpricedReadError] = useState(false)
   const [openUnpricedRequest, setOpenUnpricedRequest] = useState(0)
   const refreshUnpricedCount = useCallback(async () => {
-    if (!canSeeSettlements) return
+    if (!canReviewUnpriced) return
     try {
       const response = await fetch('/api/workshop/settlements/unpriced/count', { credentials: 'include', cache: 'no-store' })
       const data = await response.json() as { ok?: boolean; total?: number }
@@ -56,9 +58,9 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
     } catch {
       setUnpricedReadError(true)
     }
-  }, [canSeeSettlements])
+  }, [canReviewUnpriced])
   useEffect(() => {
-    if (!canSeeSettlements) return
+    if (!canReviewUnpriced) return
     void refreshUnpricedCount()
     const recheck = () => { if (document.visibilityState === 'visible') void refreshUnpricedCount() }
     window.addEventListener('focus', recheck)
@@ -69,7 +71,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
       document.removeEventListener('visibilitychange', recheck)
       window.clearInterval(timer)
     }
-  }, [canSeeSettlements, refreshUnpricedCount])
+  }, [canReviewUnpriced, refreshUnpricedCount])
   const showUnpricedQueue = () => {
     setOpenUnpricedRequest(current => current + 1)
     setWorkshopChannel('settlements')
@@ -219,7 +221,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
         </button>}
       </div>
 
-      {canSeeSettlements && unpricedCount !== null && unpricedCount > 0 ? (
+      {canReviewUnpriced && unpricedCount !== null && unpricedCount > 0 ? (
         <div className="ws-unpriced-attention" role="status">
           <div>
             <strong>Не определена себестоимость: {unpricedCount} {unpricedCount === 1 ? 'позиция' : 'позиций'}</strong>
@@ -228,7 +230,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
           <button className="secondary compact" type="button" onClick={showUnpricedQueue}>Разобрать позиции →</button>
         </div>
       ) : null}
-      {canSeeSettlements && unpricedReadError ? (
+      {canReviewUnpriced && unpricedReadError ? (
         <div className="ws-unpriced-check-error" role="status">
           Не удалось проверить готовые изделия без себестоимости.
           <button className="secondary compact" type="button" onClick={() => void refreshUnpricedCount()}>Повторить</button>
@@ -238,7 +240,7 @@ export function WorkshopSection({ ctx }: { ctx: SectionContext }) {
       {workshopChannel === 'settlements' && canSeeSettlements ? (
         <WorkshopSettlementsPanel openUnpricedRequest={openUnpricedRequest}
           onUnpricedCountChange={setUnpricedCount}
-          openCatalogPrice={ctx.openWorkshopCatalogPrice}/>
+          openCatalogPrice={ctx.openWorkshopCatalogPrice} isAdmin={Boolean(ctx.isAdmin)}/>
       ) : <>
       <div className="workshop-section-tabs" role="tablist" aria-label="Раздел цеха">
         <button type="button" className={workshopPanel === 'orders' ? 'is-active' : ''} onClick={openOrders}>Заказы</button>

@@ -3,6 +3,17 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import {spawnSync} from 'node:child_process'
+// The new Stage04 manager payout permission is verified separately before
+// any frozen production regression. The replay restores exact pre-permission
+// Worker and settlement files, so this branch is not taken recursively.
+const workshopBytes=fs.readFileSync('worker/index.ts')
+const workshopSha=crypto.createHash('sha1').update(Buffer.from('blob '+workshopBytes.length+'\0')).update(workshopBytes).digest('hex')
+if(workshopSha==='86de6fdc9fddecbd1df206abdad9944301cd1096'){
+ const test=spawnSync(process.execPath,['scripts/main-workshop-manager-payouts-gate-20261022.mjs'],
+   {stdio:'inherit',shell:false,maxBuffer:32*1024*1024,env:process.env,timeout:45*60*1000})
+ if(test.error||test.status!==0)throw Error('Main Workshop payout permissions/frozen release failed: '+test.status)
+ process.exit(0)
+}
 // Scope the new UI-only change before the pinned original Main release;
 // replay executes this file on the accepted original App, so no recursion.
 const currentAppBytes=fs.readFileSync('src/App.tsx')
