@@ -1775,6 +1775,26 @@ export default {
             unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           }
           if (unresolvedBlockers.length) {
+            // A broken/missing stock row or active reservation is not necessarily an
+            // unidentified product. Never open an empty Catalog Resolver.
+            // Read the EXACT order-scoped review queue that the modal itself loads.
+            const reviewUrl = new URL(request.url);
+            reviewUrl.searchParams.set('orderId', String(id));
+            reviewUrl.searchParams.set('limit', '10');
+            const actionableReview = await listCatalogReviewQueue(env.DB, reviewUrl);
+            if (!actionableReview.count || !actionableReview.items?.length) {
+              const first = unresolvedBlockers[0];
+              const name = cleanText(first.product_name_snapshot) || `позиция #${toInt(first.id, 0)}`;
+              const missingStock = toInt(first.reservation_variant_id, 0) > 0 && !toInt(first.inventory_stock_id, 0);
+              const reason = missingStock
+                ? 'отсутствует складская запись для действующего резерва'
+                : 'нет исправного действующего резерва';
+              return json({
+                ok: false,
+                code: 'inventory_reservation_inconsistent',
+                message: `Заказ не отправлен: у «${name}» ${reason}. Повторно выбирать товар в каталоге не нужно. Обновите заказ и повторите отправку. Если ошибка остаётся, требуется проверка учёта администратором.`,
+              }, { status: 409 });
+            }
             return json({ ok: false, code: 'catalog_review_required', reviewOrderId: id, message: orderShipmentInventoryBlockerMessage(unresolvedBlockers) }, { status: 409 });
           }
           // Identified SKU shortages do not block an actual outgoing shipment.
