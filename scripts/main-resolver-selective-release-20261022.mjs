@@ -20,6 +20,10 @@ const pinned={
   "src/features/orders/OrderCatalogResolutionModal.tsx": [
     "60664b42ad523429c294726af28a3d2f6dc9eb50",
     "39dae332b8e0a50aa320f4dd3265a49d197185ff"
+  ],
+  "package.json": [
+    "ef7fe14e3cc4cc9c3b2ff79fa208e166ac1d45a8",
+    "b14a2f629b201687aad9ba1a96b0d10fff1911fd"
   ]
 }
 const hash=bytes=>crypto.createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')
@@ -41,6 +45,7 @@ function current(){
  check(w.includes("const uncoveredShortages = shortageBlockers.filter"),'Production stock shortage gate was removed')
  check(!fs.readFileSync('worker/domains/order-reservations.ts','utf8').includes('enteredGender !== fixedProductGender'),'Opposite gender still blocked')
  check(w.includes("code: 'inventory_reservation_inconsistent'"),'Empty Resolver still possible')
+ check(JSON.parse(fs.readFileSync('package.json','utf8')).scripts['release:check']==='node scripts/main-resolver-selective-release-20261022.mjs','New production release route not active')
 }
 current()
 run(npm,['run','typecheck'])
