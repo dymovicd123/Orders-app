@@ -3,6 +3,16 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import {spawnSync} from 'node:child_process'
+// Scope the new UI-only change before the pinned original Main release;
+// replay executes this file on the accepted original App, so no recursion.
+const currentAppBytes=fs.readFileSync('src/App.tsx')
+const uiSha=crypto.createHash('sha1').update(Buffer.from('blob '+currentAppBytes.length+'\\0'.replace('\\0','\0'))).update(currentAppBytes).digest('hex')
+if(uiSha==='56e40249a7fc03d2bfdb6b7723382c703cc108c8'){
+ const next=spawnSync(process.execPath,['scripts/main-manager-three-workspaces-release-20261022.mjs'],
+   {stdio:'inherit',shell:false,maxBuffer:32*1024*1024,env:process.env,timeout:45*60*1000})
+ if(next.error||next.status!==0)throw Error('Main manager navigation/frozen production release gate failed: '+next.status)
+ process.exit(0)
+}
 const baseline='40841bdac8c872beb06fff4624bcf48f3b7dd4af'
 const pinned={
   "worker/domains/catalog.ts": [
