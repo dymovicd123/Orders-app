@@ -806,8 +806,17 @@ function App() {
         return
       }
       if (nextSector === 'inventory') {
-        if (rawHash === 'catalog' || rawHash === 'products') setInventoryPanel('catalog')
-        if (rawHash === 'more' || rawHash === 'tools' || rawHash === 'technical') setInventoryPanel('settings')
+        const isCatalogLink = rawHash === 'catalog' || rawHash === 'products'
+        const isSettingsLink = rawHash === 'more' || rawHash === 'tools' || rawHash === 'technical'
+        if (authUser.role === 'admin') {
+          if (isCatalogLink) setInventoryPanel('catalog')
+          if (isSettingsLink) setInventoryPanel('settings')
+        } else if (isCatalogLink || isSettingsLink) {
+          // Warehouse is a manager workspace, but Catalog and technical
+          // settings inside it remain administrator-only.
+          setInventoryPanel('overview')
+          window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#inventory`)
+        }
       }
       setActiveSector(nextSector)
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
