@@ -1,4 +1,4 @@
-name: Main selective Resolver only: exact real SQLite and frozen production release
+name: Main selective Resolver exact real SQLite frozen production release
 on:
   push:
     branches: [fix/main-resolver-selective-20261022]
