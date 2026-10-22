@@ -1,0 +1,39 @@
+name: Branch2 Resolver known-SKU false-blocker regression
+on:
+  pull_request:
+    branches:
+      - branch2
+    paths:
+      - 'worker/domains/catalog-review.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'scripts/test-branch2-resolver-known-pending-20261022.mjs'
+      - 'scripts/test-branch2-resolver-historic-reserve-20261022.mjs'
+      - 'scripts/branch2-resolver-known-sku-preserved-gate.mjs'
+      - 'scripts/branch2-unified-kaspi-preserved-gate.mjs'
+      - '.github/workflows/branch2-resolver-known-sku-20261022.yml'
+permissions:
+  contents: read
+jobs:
+  exact-known-sku-and-historic-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify branch2-only binding (no D1 access or writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+      - name: Two live SQLite false-blocker regressions + all immutable prior checks + build
+        run: npm run release:check

@@ -65,6 +65,26 @@ export function catalogReviewBasePredicate(oi = 'oi', o = 'o') {
 }
 
 
+// A known active SKU may be recorded on an unsent order even if the original
+// reservation was never committed. Recovery is order-scoped, never global.
+// Do not reactivate historical reservations, issued/returned lines or stock.
+export function catalogReviewPendingKnownReservationPredicate(oi = 'oi', o = 'o') {
+  return `${oi}.quantity > 0
+    AND COALESCE(${oi}.is_workshop, 0) = 0
+    AND ${oi}.product_id IS NOT NULL AND ${oi}.variant_id IS NOT NULL
+    AND COALESCE(${oi}.stock_writeoff_status, '') = 'pending_reservation'
+    AND COALESCE(${o}.shipping_status, 'not_sent') <> 'sent'
+    AND COALESCE(${o}.order_status, 'active') = 'active'
+    AND COALESCE(${o}.archived_at, '') = ''
+    AND NOT EXISTS (SELECT 1 FROM inventory_reservations r
+      WHERE r.order_item_id = ${oi}.id)
+    AND NOT EXISTS (
+      SELECT 1 FROM return_items ri JOIN returns ret ON ret.id = ri.return_id
+      WHERE ri.order_item_id = ${oi}.id
+        AND COALESCE(ret.status, 'completed') <> 'cancelled'
+    )`;
+}
+
 export function catalogReviewRecentEntryPredicate(oi = 'oi', o = 'o') {
   return `datetime(COALESCE(NULLIF(${oi}.created_at, ''), NULLIF(${o}.created_at, ''), ${o}.order_date || 'T00:00:00Z')) >= datetime('now', '-${CATALOG_REVIEW_RECENT_DAYS} days')`;
 }
@@ -108,7 +128,10 @@ export function catalogReviewOrderScopePredicate(oi = 'oi', o = 'o') {
 
 
 export async function fetchCatalogReviewRows(db: D1Database, limit: number, orderId = 0) {
-  const base = catalogReviewBasePredicate('oi', 'o');
+  const catalogBase = catalogReviewBasePredicate('oi', 'o');
+  const base = orderId > 0
+    ? `(${catalogBase} OR (${catalogReviewPendingKnownReservationPredicate('oi', 'o')}))`
+    : catalogBase;
   const scope = orderId > 0 ? `${catalogReviewOrderScopePredicate('oi', 'o')} AND oi.order_id = ?` : catalogReviewOperationalPredicate('oi', 'o');
   const statement = db.prepare(
     `SELECT oi.id AS order_item_id, oi.id, oi.order_id, o.external_id, o.order_date, o.shipping_status, o.shipping_date,
@@ -1057,7 +1080,10 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
 export async function listCatalogReviewQueue(db: D1Database, url: URL) {
   const limit = Math.min(50, Math.max(10, toInt(url.searchParams.get('limit'), 24)));
   const orderId = Math.max(0, toInt(url.searchParams.get('orderId'), 0));
-  const base = catalogReviewBasePredicate('oi', 'o');
+  const catalogBase = catalogReviewBasePredicate('oi', 'o');
+  const base = orderId > 0
+    ? `(${catalogBase} OR (${catalogReviewPendingKnownReservationPredicate('oi', 'o')}))`
+    : catalogBase;
   const scope = orderId > 0
     ? `${catalogReviewOrderScopePredicate('oi', 'o')} AND oi.order_id = ${orderId}`
     : catalogReviewOperationalPredicate('oi', 'o');
