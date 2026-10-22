@@ -1,0 +1,42 @@
+name: Main selective Resolver exact real SQLite frozen production release
+on:
+  push:
+    branches: [fix/main-resolver-selective-20261022]
+    paths:
+      - '.github/workflows/main-resolver-selective-20261022.yml'
+      - 'scripts/main-resolver-selective-release-20261022.mjs'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/catalog.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/index.ts'
+      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
+      - 'scripts/test-main-resolver-*'
+      - 'scripts/main-resolver-selective-release-20261022.mjs'
+      - '.github/workflows/main-resolver-selective-20261022.yml'
+permissions:
+  contents: read
+jobs:
+  main-isolated-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 38
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Guard exact production configuration without accessing D1
+        run: |
+          set -euo pipefail
+          if test "$GITHUB_EVENT_NAME" = "pull_request"; then test "$GITHUB_BASE_REF" = "main"; else test "$GITHUB_REF_NAME" = "fix/main-resolver-selective-20261022"; fi
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - run: npm ci
+      - name: Resolver-only current SQL plus immutable full production gates
+        run: node scripts/main-resolver-selective-release-20261022.mjs
