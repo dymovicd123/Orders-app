@@ -1,5 +1,7 @@
 # Warehouse current context — canonical continuation
 
+> **NEW PRODUCT DECISION — 2026-10-22:** Full warehouse UX redesign is agreed. Read [WAREHOUSE_COMPLETE_PRODUCT_REDESIGN_PLAN_20261022.md](./WAREHOUSE_COMPLETE_PRODUCT_REDESIGN_PLAN_20261022.md) first for current product direction, urgent Stage05 SKU/color/size report, the unified stock-check/correction experience, humane stock history, and the user's explicit lifting of the old Arrival UI freeze. Earlier “Arrival frozen” and W9-only notes below are historical UX constraints; existing backend stock/money/D1 safety invariants remain in force.
+
 > **STATUS UPDATE — 2026-09-26:** Stage02 transactional stock truth is complete, reviewed and promoted to Production through PR #145. Phase2C, Phase2D, Phase2E and the post-review fixes are **not pending work** anymore. Any older checkpoint below that says “current Phase2C/2D/2E” is historical only. The stock-truth semantics remain authoritative. W9 is only an optional future product/UX audit after real usage, not an unfinished Stage02 phase. Current cross-project status lives in `PROJECT_CONTINUATION.md`.
 
 
