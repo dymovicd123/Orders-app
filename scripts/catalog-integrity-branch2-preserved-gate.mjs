@@ -12,6 +12,16 @@ const gitBlob = (value) => {
   return crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex')
 }
 const check=(condition,message)=>{if(!condition)throw new Error(message)}
+// Gate current actionable-only Resolver behavior before invoking any legacy
+// source-pinned Catalog checks. The wrapper replays every original accepted file.
+if (!process.env.BRANCH2_RESOLVER_ACTIONABLE_BASELINE_REPLAY &&
+    gitBlob(fs.readFileSync('worker/index.ts')) === '1aa17956a79249c1346fcbbd577ab0edb2db2851') {
+  const result=spawnSync(process.execPath,['scripts/branch2-resolver-actionable-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!result.error&&result.status===0,'Actionable-only Resolver and original Catalog safety checks failed')
+  process.exit(0)
+}
+
 // Current no-popup shipment policy is verified on LIVE candidate SQL first.
 // Replay the previously accepted immutable Branch2 source for all legacy tests.
 if (!process.env.SHIPPING_SHORTAGE_FROZEN_REPLAY &&
