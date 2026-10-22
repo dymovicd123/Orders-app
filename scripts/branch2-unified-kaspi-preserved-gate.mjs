@@ -42,6 +42,19 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+// Only an actionable order-scoped review may open Catalog Resolver.
+// Verify current SQL routing; replay the entire previously accepted release on its
+// byte-identical Worker entrypoint before building the candidate.
+if (!process.env.BRANCH2_RESOLVER_ACTIONABLE_BASELINE_REPLAY &&
+    sha('worker/index.ts') === '1aa17956a79249c1346fcbbd577ab0edb2db2851' &&
+    sha('worker/domains/catalog-review.ts') === 'd005822b7d2eba6dbc170f5101e1a39dc173b1aa' &&
+    sha('worker/domains/order-reservations.ts') === 'ae3fca346c8ac92e8bb6e8feef27c80214e1e0ae') {
+  const next=spawnSync(process.execPath,['scripts/branch2-resolver-actionable-preserved-gate.mjs'],
+    {stdio:'inherit',shell:false,maxBuffer:16*1024*1024,env:process.env})
+  check(!next.error&&next.status===0,'Resolver actionable review and frozen historic safety failed')
+  process.exit(0)
+}
+
 // The new narrow known-SKU guard is independently proved before replaying the
 // previous accepted Branch2 source. The wrapper alone updates the two files;
 // historic tests and the Cloudflare/D1 environment remain untouched.
