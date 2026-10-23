@@ -73,8 +73,14 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
           isAdmin={ctx.isAdmin}
           newVariantWorkspace={ctx.arrivalWorkspace}
           extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
-          onMode={(next) => ctx.selectInventoryOperationMode(next)}
-          onSource={(next) => ctx.changeInventoryOperationSource(next)}
+          onMode={(next) => {
+            ctx.resetInventoryArrivalForm()
+            ctx.selectInventoryOperationMode(next)
+          }}
+          onSource={(next) => {
+            ctx.resetInventoryArrivalForm()
+            ctx.changeInventoryOperationSource(next)
+          }}
           onReason={(value) => ctx.setInventoryDraft((current: any) => ({ ...current, comment: value }))}
           onQuantity={(row, value) => mode === 'manual_set'
             ? ctx.setInventoryCorrectionValue(row, value)
