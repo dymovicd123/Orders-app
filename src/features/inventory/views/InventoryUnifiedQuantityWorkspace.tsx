@@ -5,9 +5,12 @@ import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeShare
 import '../../../styles/193-unified-inventory-operations.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
-type Row = { id?: number; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
+type Row = { id?: number; draftKey?:string; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
 type Group = { key: string; productName: string; rows: Row[] }
-type Draft = { variantId?: number | string; quantity?: number; touched?: boolean }
+type Draft = { variantId?: number | string; draftKey?:string; createMissingVariant?:boolean;
+  productId?:number|string;productName?:string;category?:'adult'|'child';gender?:string;
+  material?:string;length?:string;color?:string;size?:string;
+  quantity?: number; touched?: boolean }
 type Props = {
   mode: Mode; source: 'warehouse' | 'boutique'; targetSource: 'warehouse' | 'boutique'
   targetQuantity: (variantId: string | number) => number; onSwap: () => void
@@ -17,6 +20,7 @@ type Props = {
   newVariantWorkspace: ReactNode; extraArrival: { rows: number; totalQuantity: number }
   colorSuggestions: string[]; sizeSuggestions: string[]; childAgeSuggestions: string[]
   onInlineArrivalVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>void
+  onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>void
   onMode: (mode: Mode | 'transfer') => void
   onSource: (source: 'warehouse' | 'boutique') => void
   onReason: (value: string) => void
@@ -50,7 +54,19 @@ function positions(rows: Row[]) {
 }
 
 export function InventoryUnifiedQuantityWorkspace(p: Props) {
-  const { mode, source, targetSource, groups, draft, busy, loading, error, saveError, blockedTransferSource, reason, isAdmin, newVariantWorkspace, extraArrival } = p
+  const { mode, source, targetSource, groups: baseGroups, draft, busy, loading, error, saveError, blockedTransferSource, reason, isAdmin, newVariantWorkspace, extraArrival } = p
+  const groups=useMemo(()=>baseGroups.map(group=>({
+    ...group,
+    rows:[...group.rows,...(mode==='manual_set' ? draft.filter(item=>
+      item.createMissingVariant && item.draftKey
+      && String(item.productId)===String(group.rows[0]?.productId)).map(item=>({
+        variantId:item.draftKey!,draftKey:item.draftKey,productId:item.productId!,
+        productName:item.productName||group.productName,
+        audienceType:item.category||'adult',gender:item.gender||'',
+        material:item.material||'СТАНДАРТ',length:item.length||'СТАНДАРТ',
+        color:item.color||'',size:item.size||'',quantity:0,reservedQuantity:0,
+      })) : [])],
+  })),[baseGroups,draft,mode])
   const [startSearch, setStartSearch] = useState('')
   // Keep selections and the stage for each location, matching the non-destructive
   // source switching behavior of the stocktake screen.
@@ -72,12 +88,12 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const chosen = useMemo(() => selected.map(key => groups.find(group => group.key === key))
     .filter((g): g is Group => Boolean(g)), [selected, groups])
   const activeGroup = chosen.find(g => g.key === current) || chosen[0] || null
-  const draftMap = useMemo(() => new Map(draft.filter(item => item.variantId)
-    .map(item => [String(item.variantId), item])), [draft])
+  const draftMap = useMemo(() => new Map(draft.filter(item => item.variantId || item.draftKey)
+    .map(item => [String(item.draftKey || item.variantId), item])), [draft])
   const allRows = useMemo(() => new Map(groups.flatMap(g => g.rows.map(r => [String(r.variantId), r] as const))), [groups])
-  const entries = useMemo(() => draft.filter(item => item.variantId &&
+  const entries = useMemo(() => draft.filter(item => (item.variantId || item.draftKey) &&
     (mode === 'manual_set' ? item.touched : int(item.quantity) > 0))
-    .map(item => ({ row: allRows.get(String(item.variantId)), quantity: int(item.quantity) }))
+    .map(item => ({ row: allRows.get(String(item.draftKey || item.variantId)), quantity: int(item.quantity) }))
     .filter((item): item is { row: Row; quantity: number } => Boolean(item.row)), [draft, allRows, mode])
   const changed = entries.length + (mode === 'arrival' ? extraArrival.rows : 0)
   const unselected = useMemo(() => groups.filter(g => g.productName.toLocaleLowerCase('ru').includes(startSearch.toLocaleLowerCase('ru').trim())).slice(0,180),[groups,startSearch])
@@ -115,22 +131,25 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }
   function addInlineVariant(sample:Row) {
     if(!inline)return
-    if(mode!=='arrival'){setNotice('Новые варианты создаются при приходе. Корректировка может изменять только уже учтённые варианты.');return}
-    const color=inline.color.trim(),size=inline.size.trim(),quantity=Number(inline.quantity)
-    if(!color||!size||!Number.isInteger(quantity)||quantity<1||quantity>999999){
-      setNotice('Выберите цвет, размер и положительное целое количество.');return
+    if(mode!=='arrival'&&mode!=='manual_set')return
+    const color=inline.color==='БЕЗ ЦВЕТА'?'':inline.color.trim()
+    const size=inline.size.trim(),quantity=Number(inline.quantity)
+    if((inline.kind==='color'&&!color)||!size||inline.quantity.trim()===''||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
+      setNotice('Выберите цвет, размер и целое количество от '+(mode==='manual_set'?'0':'1')+' до 999999.');return
     }
     if(activeGroup?.rows.some(row=>positionKey(row)===inline.positionKey &&
       (row.color||'').trim().toLocaleLowerCase('ru')===color.toLocaleLowerCase('ru') &&
       (row.size||'').trim().toLocaleLowerCase('ru')===size.toLocaleLowerCase('ru'))){
       setNotice('Такой вариант уже есть выше. Введите количество в его ячейку.');return
     }
-    p.onInlineArrivalVariant({
+    const seed={
       productId:sample.productId, productName:sample.productName,
-      category:sample.audienceType==='child'?'child':'adult', gender:sample.gender||'',
+      category:(sample.audienceType==='child'?'child':'adult') as 'child'|'adult', gender:sample.gender||'',
       material:sample.material||'СТАНДАРТ', length:sample.length||'СТАНДАРТ',
       color,size,quantity,
-    })
+    }
+    if(mode==='manual_set')p.onInlineCorrectionVariant(seed)
+    else p.onInlineArrivalVariant(seed)
     setInline(null);setNotice('')
   }
   function review() {
@@ -256,7 +275,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           onClick={review}>Проверить результат</button>
       </div>
       {mode==='manual_set'&&<div className="w8-correction-hint">
-        Изменяйте существующие размеры и цвета. Отсутствующий вариант нужно сначала оформить через приход — корректировка не создаёт новые складские записи.
+        Как в выборочной ревизии: «+ размер» и «+ цвет» добавляют отсутствующие варианты. Их количество — итоговый фактический остаток. Пустая ячейка ничего не меняет.
       </div>}
       <div className="stocktake-counting-rule">{mode === 'arrival'
         ? 'Впишите, сколько поступило. По системе указан текущий остаток. Пустые поля ничего не меняют.'
@@ -328,39 +347,39 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                             {value!==''&&shortage>0&&<span className="w6-stocktake-shortage">Резерв {int(row.reservedQuantity)} · не хватит {shortage}</span>}
                           </StocktakeSizeCountCell>
                         })}
-                      {mode === 'arrival' &&
+                      {(mode === 'arrival' || mode==='manual_set') &&
                         <button type="button" className="stocktake-inline-add-trigger"
                           onClick={()=>{setNotice('');setInline(inline?.kind==='size'&&inline.positionKey===position.key&&inline.color===color?null:
-                            {positionKey:position.key,color,kind:'size',size:'',quantity:'1'})}}>+ {rows[0]?.audienceType==='child'?'возраст':'размер'}</button>}
+                            {positionKey:position.key,color,kind:'size',size:'',quantity:mode==='manual_set'?'':'1'})}}>+ {rows[0]?.audienceType==='child'?'возраст':'размер'}</button>}
                       </div>
                       {inline?.kind==='size'&&inline.positionKey===position.key&&inline.color===color&&
                         <div className="stocktake-inline-add-panel w7-inline-arrival">
                           <div className="stocktake-inline-add-head"><strong>{mode==='arrival'?'Добавить размер при приходе':'Добавить новый размер'}</strong>
                             <button type="button" className="ghost compact" onClick={()=>setInline(null)}>×</button></div>
-                          {mode==='arrival'? <>
+                          <>
                             <label>Размер
                               <select value={inline.size} onChange={e=>setInline(v=>v&&({...v,size:e.target.value}))}>
                                 <option value="">Выберите размер</option>
                                 {(rows[0]?.audienceType==='child'?p.childAgeSuggestions:p.sizeSuggestions)
                                   .filter(v=>!rows.some(r=>r.size===v)).map(v=><option key={v} value={v}>{v}</option>)}
                               </select></label>
-                            <label>Количество <input type="number" min="1" max="999999" value={inline.quantity}
+                            <label>{mode==='manual_set'?'Фактический остаток':'Количество'} <input type="number" min={mode==='manual_set'?'0':'1'} max="999999" value={inline.quantity}
                               onChange={e=>setInline(v=>v&&({...v,quantity:e.target.value}))}/></label>
-                            <button type="button" className="primary compact" onClick={()=>addInlineVariant(rows[0])}>Добавить к приходу</button>
-                          </>:<p>У корректировки нет права создавать отсутствующую складскую запись. Новый размер оформляется приходом; существующие варианты изменяйте в ячейках выше.</p>}
+                            <button type="button" className="primary compact" onClick={()=>addInlineVariant(rows[0])}>{mode==='manual_set'?'Добавить в корректировку':'Добавить к приходу'}</button>
+                          </>
                         </div>}
                       </div>
                     </div>)}
                   </div>
-                  {mode==='arrival'&&
+                  {(mode==='arrival'||mode==='manual_set')&&
                     <div className="stocktake-inline-position-footer">
                       <button type="button" className="ghost compact stocktake-inline-color-trigger"
                         onClick={()=>{setNotice('');setInline(inline?.kind==='color'&&inline.positionKey===position.key?null:
-                          {positionKey:position.key,color:'',kind:'color',size:'',quantity:'1'})}}>+ цвет</button>
+                          {positionKey:position.key,color:'',kind:'color',size:'',quantity:mode==='manual_set'?'':'1'})}}>+ цвет</button>
                       {inline?.kind==='color'&&inline.positionKey===position.key&&<div className="stocktake-inline-add-panel w7-inline-arrival">
                         <div className="stocktake-inline-add-head"><strong>Добавить новый цвет</strong>
                           <button type="button" className="ghost compact" onClick={()=>setInline(null)}>×</button></div>
-                        {mode==='arrival'?<>
+                        <>
                           <label>Цвет <select value={inline.color} onChange={e=>setInline(v=>v&&({...v,color:e.target.value}))}>
                             <option value="">Выберите цвет</option>{p.colorSuggestions
                               .filter(v=>!colors.has(v)).map(v=><option key={v} value={v}>{v}</option>)}
@@ -369,10 +388,10 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                             <option value="">Выберите размер</option>{(position.rows[0]?.audienceType==='child'?p.childAgeSuggestions:p.sizeSuggestions)
                               .map(v=><option key={v} value={v}>{v}</option>)}
                           </select></label>
-                          <label>Количество <input type="number" min="1" max="999999" value={inline.quantity}
+                          <label>{mode==='manual_set'?'Фактический остаток':'Количество'} <input type="number" min={mode==='manual_set'?'0':'1'} max="999999" value={inline.quantity}
                             onChange={e=>setInline(v=>v&&({...v,quantity:e.target.value}))}/></label>
-                          <button type="button" className="primary compact" onClick={()=>addInlineVariant(position.rows[0])}>Добавить к приходу</button>
-                        </>:<p>Новый цвет и новый размер сначала заводятся через приход, чтобы не создавать складскую запись без подтверждённой поставки.</p>}
+                          <button type="button" className="primary compact" onClick={()=>addInlineVariant(position.rows[0])}>{mode==='manual_set'?'Добавить в корректировку':'Добавить к приходу'}</button>
+                        </>
                       </div>}
                     </div>}
                 </section>

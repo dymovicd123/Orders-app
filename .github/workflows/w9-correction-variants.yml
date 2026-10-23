@@ -1,0 +1,42 @@
+name: W9 Correction Inline Variants
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/app/types.ts'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+      - 'worker/domains/inventory-movement.ts'
+      - 'scripts/test-w9-correction-inline-variants.mjs'
+      - '.github/workflows/w9-correction-variants.yml'
+permissions:
+  contents: read
+jobs:
+  safety:
+    name: W9 exact correction, old arrivals and stocktake
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: W9 size/color correction contracts
+        run: node --experimental-strip-types scripts/test-w9-correction-inline-variants.mjs
+      - name: W8 errors and stocktake-style operations
+        run: |
+          node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+          node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+      - name: Existing arrival creation and stocktake behavior
+        run: |
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-variant-integrity-r2.mjs
+          node scripts/test-arrival-merged-sku-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build

@@ -53,7 +53,7 @@ assert.ok(panel.includes('ctx.clearInventoryMovementError()'),'Changing input cl
 assert.ok(view.includes('w8-operation-save-error') && view.includes('Обновить актуальные остатки'),'Actionable error local to review')
 assert.ok(view.includes("const limit=mode==='transfer'?60:100"),'Respect transfer-specific 60-variant server limit')
 assert.ok(view.includes('if(changed>limit)'), 'Count existing and new SKU lines')
-assert.ok(view.includes("{mode === 'arrival' &&"),'Do not offer dead add-size control in correction')
+assert.ok(view.includes("(mode === 'arrival' || mode==='manual_set')"),'Correction can now add a new size using shared picker')
 assert.ok(!view.includes("{mode !== 'writeoff' && mode !== 'transfer' &&"),'Dead correction + size removed')
 assert.ok(view.includes("mode==='transfer'?'Комментарий к перемещению (необязательно)'"),'Correct transfer comment label')
 assert.ok(stylesheet.includes('w8-operation-save-error'),'Scoped error styling')
