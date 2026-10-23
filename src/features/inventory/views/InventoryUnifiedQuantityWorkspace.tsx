@@ -13,6 +13,7 @@ type Props = {
   targetQuantity: (variantId: string | number) => number; onSwap: () => void
   groups: Group[]; draft: Draft[]
   busy: boolean; loading: boolean; error: string; saveError: string; reason: string; isAdmin: boolean
+  blockedTransferSource: 'warehouse'|'boutique'|null; onOpenStocktake:(source:'warehouse'|'boutique')=>void
   newVariantWorkspace: ReactNode; extraArrival: { rows: number; totalQuantity: number }
   colorSuggestions: string[]; sizeSuggestions: string[]; childAgeSuggestions: string[]
   onInlineArrivalVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>void
@@ -49,7 +50,7 @@ function positions(rows: Row[]) {
 }
 
 export function InventoryUnifiedQuantityWorkspace(p: Props) {
-  const { mode, source, targetSource, groups, draft, busy, loading, error, saveError, reason, isAdmin, newVariantWorkspace, extraArrival } = p
+  const { mode, source, targetSource, groups, draft, busy, loading, error, saveError, blockedTransferSource, reason, isAdmin, newVariantWorkspace, extraArrival } = p
   const [startSearch, setStartSearch] = useState('')
   // Keep selections and the stage for each location, matching the non-destructive
   // source switching behavior of the stocktake screen.
@@ -170,6 +171,12 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         <button type="button" className="secondary compact" disabled={busy} onClick={()=>{if(changed&&!window.confirm('Сменить направление? Введённые количества перемещения будут очищены.'))return;p.onSwap()}}>⇄ Поменять направление</button>
       </div>}
     </div>
+    {mode==='transfer'&&blockedTransferSource&&<div className="w8-transfer-stocktake-lock" role="alert">
+      <div><strong>Перемещение временно недоступно</strong>
+        <p>В точке «{sourceName(blockedTransferSource)}» идёт ревизия. Чтобы результаты пересчёта оставались точными, сначала завершите или отмените её.</p>
+        <small>Ваш выбранный товар и введённые числа останутся в форме, пока вы не измените направление или операцию.</small></div>
+      <button className="secondary compact" type="button" onClick={()=>p.onOpenStocktake(blockedTransferSource)}>Открыть проверку</button>
+    </div>}
     {loading && <div className="stocktake-inline-notice" role="status">Обновляю варианты и остатки выбранной точки…</div>}
     {error && <div className="stocktake-inline-notice w6-notice-error" role="alert">{error}
       <button className="secondary compact" type="button" onClick={p.onRefresh}>Обновить список</button></div>}
@@ -433,7 +440,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         </button>
       </div>}
       <div className="stocktake-e-review-actions"><button className="primary stocktake-finish-button" type="button"
-        disabled={busy||!ready} onClick={()=>void p.onSave()}>{busy?'Сохраняю…':names[mode].action}</button>
+        disabled={busy||!ready||(mode==='transfer'&&Boolean(blockedTransferSource))} onClick={()=>void p.onSave()}>{busy?'Сохраняю…':names[mode].action}</button>
         <button className="secondary" type="button" disabled={busy} onClick={()=>setStage(chosen.length?'quantities':'select')}>Вернуться к вводу</button></div>
     </>)}
   </div>
