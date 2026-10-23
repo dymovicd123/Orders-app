@@ -12,7 +12,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'createEmptyInventoryItem' | 'resetInventoryArrivalForm'
   | 'resetInventoryOperationSelection' | 'setMovementSourceRefreshToken'
   | 'suggestionValues'
-> & { onInlineArrivalVariant: (seed: {
+> & Record<string,unknown> & { onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
 }) => void }
