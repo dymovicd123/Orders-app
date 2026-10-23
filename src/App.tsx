@@ -259,6 +259,7 @@ function App() {
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [authHasUsers, setAuthHasUsers] = useState(true)
+  const [authSetupReady, setAuthSetupReady] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
   const [authLogin, setAuthLogin] = useState('')
   const [authPassword, setAuthPassword] = useState('')
@@ -372,6 +373,7 @@ function App() {
       })
       const data = await readJsonResponse<AuthStatusResponse>(response, 'Проверка авторизации')
       setAuthHasUsers(Boolean(data.hasUsers))
+      setAuthSetupReady(data.setupReady !== false)
       setAuthUser(data.user || null)
     } catch (error) {
       console.error(error)
@@ -8303,6 +8305,12 @@ function removeDebtPayment(index: number) {
                 : 'Введите код первого запуска и придумайте собственный логин и пароль. Это единственная регистрация первого администратора.'}
             </p>
           </div>
+          {!authHasUsers && !authSetupReady ? (
+            <div className="app-alert error" role="alert">
+              <span>Первоначальная настройка сервера ещё не завершена: владелец должен добавить код первого запуска в настройках Worker. Пока создавать администратора нельзя.</span>
+              <button type="button" onClick={() => { void refreshAuth() }}>Проверить снова</button>
+            </div>
+          ) : null}
           {error ? <div className="app-alert error"><span>{error}</span><button type="button" onClick={() => setError(null)}>×</button></div> : null}
           {!authHasUsers ? (
             <>
@@ -8324,7 +8332,7 @@ function removeDebtPayment(index: number) {
             <span>{authHasUsers ? 'Пароль' : 'Новый пароль'}</span>
             <input id="auth-password" name="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} type="password" autoComplete={authHasUsers ? 'current-password' : 'new-password'} required minLength={8} placeholder="Минимум 8 символов" />
           </label>
-          <button className="primary" type="submit" disabled={authBusy}>
+          <button className="primary" type="submit" disabled={authBusy || (!authHasUsers && !authSetupReady)}>
             {authBusy ? 'Проверяю...' : authHasUsers ? 'Войти' : 'Создать администратора'}
           </button>
         </form>
