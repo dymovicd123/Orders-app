@@ -41,9 +41,12 @@ WITH returns_by_item AS (
   FROM order_items oi
   JOIN orders o ON o.id = oi.order_id
   LEFT JOIN returns_by_item rb ON rb.order_item_id = oi.id
-  WHERE o.shipping_status = 'sent'
-    AND o.order_status <> 'deleted'
-    AND SUBSTR(o.shipping_date, 1, 10) BETWEEN ? AND ?
+  WHERE o.order_status <> 'deleted'
+    AND (
+      (? = 'orders' AND o.order_date BETWEEN ? AND ?)
+      OR (? = 'shipped' AND o.shipping_status = 'sent'
+        AND SUBSTR(o.shipping_date, 1, 10) BETWEEN ? AND ?)
+    )
     AND oi.quantity > 0
     AND COALESCE(oi.stock_writeoff_status, '') NOT IN
       ('cancelled', 'replaced_edit', 'reversed_delete')
@@ -90,6 +93,9 @@ export async function listWarehouseDemand(db: D1Database, url: URL) {
   if (Date.parse(end) - Date.parse(start) > 366 * 86400000)
     return { ok: false, message: 'Выберите период не более одного года.' };
 
+  const scope = url.searchParams.get('scope') === 'shipped' ? 'shipped' : 'orders';
+  const binds: [string, string, string, string, string, string, string] = [end, scope, start, end, scope, start, end];
+
   if (url.searchParams.get('mode') === 'orders') {
     const fields = ['product', 'color', 'size', 'material', 'length', 'gender', 'category', 'source'] as const;
     const values = fields.map(key => txt(url.searchParams.get(key)));
@@ -99,7 +105,7 @@ export async function listWarehouseDemand(db: D1Database, url: URL) {
     if (!Number.isSafeInteger(rawOffset) || rawOffset < 0 || rawOffset > 10000)
       return { ok: false, message: 'Некорректная страница списка заказов.' };
     const result = await db.prepare(warehouseDemandOrdersSql)
-      .bind(end, start, end, ...values, rawOffset).all<DemandRow>();
+      .bind(...binds, ...values, rawOffset).all<DemandRow>();
     const rows = result.results || [];
     return { ok: true, mode: 'orders', hasMore: rows.length > 50, nextOffset: rawOffset + 50,
       orders: rows.slice(0, 50).map(row => ({
@@ -115,7 +121,13 @@ export async function listWarehouseDemand(db: D1Database, url: URL) {
       })) };
   }
 
-  const result = await db.prepare(warehouseDemandSql).bind(end, start, end).all<DemandRow>();
+  const [result, counters] = await Promise.all([
+    db.prepare(warehouseDemandSql).bind(...binds).all<DemandRow>(),
+    db.prepare(`SELECT COUNT(*) AS all_orders,
+      COALESCE(SUM(CASE WHEN shipping_status = 'sent' THEN 1 ELSE 0 END), 0) AS sent_orders
+      FROM orders WHERE order_date BETWEEN ? AND ? AND order_status <> 'deleted'`)
+      .bind(start, end).first<{ all_orders: number; sent_orders: number }>(),
+  ]);
   const raw = result.results || [];
   const truncated = raw.length > 6000;
   const rows = truncated ? [] : raw.map(row => ({
@@ -128,7 +140,11 @@ export async function listWarehouseDemand(db: D1Database, url: URL) {
     minPrice: row.min_price === null ? null : num(row.min_price),
     maxPrice: row.max_price === null ? null : num(row.max_price),
   }));
-  return { ok: true, mode: 'summary', start, end, truncated, rows,
-    method: 'shipped_order_cohort_current_items',
-    note: 'По дате отправки заказов, в текущем составе позиций. Обмены после отправки могут изменять прошлые периоды. Возвраты учитываются до конца выбранного периода. Цена берётся из сохранённой unit_price; для старых строк ноль без подтверждения считается неизвестным. Сумма позиций — не сумма поступивших оплат.' };
+  return { ok: true, mode: 'summary', scope, start, end, truncated, rows,
+    periodOrderCount: num(counters?.all_orders),
+    periodShippedOrderCount: num(counters?.sent_orders),
+    method: scope === 'orders' ? 'created_order_cohort_current_items' : 'shipped_order_cohort_current_items',
+    note: scope === 'orders'
+      ? 'Спрос по дате оформления: включены все не удалённые заказы, в том числе ещё не отправленные. Эти количества нельзя называть фактическими продажами. Обмены меняют текущий состав заказов. Сумма по сохранённым ценам позиций — не оплата и не прибыль.'
+      : 'Выданные товары по дате отправки. Обмены, внесённые позднее, могут изменить прошлый период. Возвраты учитываются до конца выбранного периода. Цена берётся из сохранённой unit_price, сумма — не поступление денег.' };
 }
