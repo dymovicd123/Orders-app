@@ -12,7 +12,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'createEmptyInventoryItem' | 'resetInventoryArrivalForm'
   | 'resetInventoryOperationSelection' | 'setMovementSourceRefreshToken'
   | 'suggestionValues'
-> & Record<string,unknown> & { clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
+> & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
 }) => void }
@@ -39,6 +39,10 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       loading={ctx.movementSourceLoading}
       error={ctx.movementSourceLoadError || ''}
       saveError={ctx.inventoryMovementError || ''}
+      blockedTransferSource={mode==='transfer'
+        ? ([source,target].find(key=>ctx.stocktakeActiveSources.includes(key)) as 'warehouse'|'boutique'|undefined) || null
+        : null}
+      onOpenStocktake={ctx.openStocktakeForOperation}
       reason={ctx.inventoryDraft.comment || ''}
       isAdmin={ctx.isAdmin}
       newVariantWorkspace={ctx.arrivalWorkspace}
@@ -70,7 +74,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
         ctx.resetInventoryArrivalForm()
         ctx.resetInventoryOperationSelection()
       }}
-      onRefresh={()=>ctx.setMovementSourceRefreshToken((value:number)=>value+1)}
+      onRefresh={()=>{ctx.setMovementSourceRefreshToken((value:number)=>value+1);void ctx.refreshActiveStocktakes()}}
     />
   </div>
 }
