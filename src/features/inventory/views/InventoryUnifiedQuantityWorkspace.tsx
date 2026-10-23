@@ -365,7 +365,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                             <label>{mode==='manual_set'?'Фактический остаток':'Количество'} <input type="number" min={mode==='manual_set'?'0':'1'} max="999999" value={inline.quantity}
                               onChange={e=>setInline(v=>v&&({...v,quantity:e.target.value}))}/></label>
                             <button type="button" className="primary compact" onClick={()=>addInlineVariant(rows[0])}>{mode==='manual_set'?'Добавить в корректировку':'Добавить к приходу'}</button>
-                          </>}
+                          </>
                         </div>}
                       </div>
                     </div>)}
