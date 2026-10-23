@@ -79,19 +79,37 @@ jobs:
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
+          import {readdirSync,readFileSync} from 'node:fs'
+          import {join} from 'node:path'
           const host='https://orders-app-branch2.orders-clothes.workers.dev'
+          // Inventory styles are code-split: the inventory CSS is NOT linked in
+          // the initial HTML, so verify the exact hashed asset built and deployed.
+          const root='dist/client/assets'
+          const cssFiles=readdirSync(root).filter(name=>name.endsWith('.css'))
+          const candidates=cssFiles.filter(name=>{
+            const css=readFileSync(join(root,name),'utf8')
+            return /stocktake-size-system[^}]*font-size:\s*11px/.test(css)
+              && /stocktake-size-system[^}]*color:\s*#64748b/.test(css)
+          })
+          if(!candidates.length)throw Error('Local production build missing revised warehouse CSS')
           let ok=false
-          for(let i=0;i<7;i++){
+          for(let attempt=0;attempt<7;attempt++){
             try {
-              const html=await (await fetch(host+'/?w10='+Date.now(),{cache:'no-store'})).text()
-              const files=[...html.matchAll(/(?:href|src)=["'](\/assets\/[^"']+\.(?:css|js))["']/g)].map(x=>x[1])
-              let css=[]
-              for(const name of files.filter(x=>x.endsWith('.css')))css.push(await (await fetch(host+name,{cache:'no-store'})).text())
-              if(css.some(s=>/stocktake-size-system[^}]*font-size:\s*11px/.test(s)&&/stocktake-size-system[^}]*color:\s*#64748b/.test(s))){
-                ok=true;console.log('W10_LIVE_CSS_VERIFIED');break
+              for(const name of candidates){
+                const response=await fetch(host+'/assets/'+name+'?w10='+Date.now(),{cache:'no-store'})
+                if(!response.ok)throw Error('CSS '+name+' HTTP '+response.status)
+                const css=await response.text()
+                if(/stocktake-size-system[^}]*font-size:\s*11px/.test(css)
+                  && /stocktake-size-system[^}]*color:\s*#64748b/.test(css)){
+                  ok=true;console.log('W10_LIVE_CSS_VERIFIED',name);break
+                }
               }
-              throw Error('New warehouse label CSS not yet in published assets')
-            }catch(error){console.warn(String(error));if(i<6)await new Promise(done=>setTimeout(done,5000))}
+              if(ok)break
+              throw Error('Cloudflare has not served the newly built inventory asset')
+            }catch(error){
+              console.warn('CSS verification attempt '+(attempt+1),String(error))
+              if(attempt<6)await new Promise(done=>setTimeout(done,5000))
+            }
           }
-          if(!ok)throw Error('W10 public asset check failed')
+          if(!ok)throw Error('W10 published inventory stylesheet not confirmed')
           NODE
