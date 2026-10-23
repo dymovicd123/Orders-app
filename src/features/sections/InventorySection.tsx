@@ -92,6 +92,8 @@ type SectionContext = Record<string, any> & {
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
     onInlineArrivalVariant,
+    inventoryMovementError,
+    clearInventoryMovementError,
     activeSector,
     applyPendingInventoryWriteoffs,
     buildInventoryMatrix,
@@ -742,9 +744,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
-    if (inventoryPanel !== 'stocktake') return
+    if (activeSector !== 'inventory' || (inventoryPanel !== 'stocktake' && inventoryPanel !== 'movement')) return
+    // The operation form must know before submission if the source/destination
+    // is currently under a stocktake. No inventory writes are triggered.
     void refreshActiveStocktakes()
-  }, [inventoryPanel])
+  }, [activeSector, inventoryPanel])
 
   useEffect(() => {
     if (activeSector !== 'inventory') return
@@ -1821,7 +1825,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
-    if (activeSector !== 'inventory' || inventoryPanel !== 'movement' || inventoryDraft.movementType === 'arrival') return
+    if (activeSector !== 'inventory' || inventoryPanel !== 'movement') return
 
     const requestId = ++movementSourceRequestRef.current
     const sources = inventoryDraft.movementType === 'transfer'
@@ -2687,6 +2691,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     
               {renderInventoryMovementPanel({
         onInlineArrivalVariant,
+        inventoryMovementError,
+        clearInventoryMovementError,
+        stocktakeActiveSources: stocktakeActiveSessions.map(session=>session.source),
+        openStocktakeForOperation: (source: 'warehouse'|'boutique') => {setStocktakeSource(source);openInventoryPanel('stocktake')},
+        refreshActiveStocktakes,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,

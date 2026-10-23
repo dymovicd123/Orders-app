@@ -615,6 +615,7 @@ function App() {
   const [inventoryControlSettings, setInventoryControlSettings] = useState<InventoryControlSettings | null>(null)
   const [inventoryControlBusy, setInventoryControlBusy] = useState(false)
   const [inventoryMovementBusy, setInventoryMovementBusy] = useState(false)
+  const [inventoryMovementError, setInventoryMovementError] = useState('')
   const [arrivalRecoveryPrompt, setArrivalRecoveryPrompt] = useState<ArrivalRecoveryPrompt | null>(null)
   const [arrivalRecoveryError, setArrivalRecoveryError] = useState('')
   const arrivalRecoveryContinueRef = useRef<(() => Promise<void>) | null>(null)
@@ -5235,6 +5236,7 @@ function App() {
   async function saveInventoryMovement() {
     if (inventoryMovementBusy) return
     setInventoryMovementBusy(true)
+    setInventoryMovementError('')
     setError(null)
     setMessage(null)
     try {
@@ -5383,6 +5385,7 @@ function App() {
           ? ' Внимание: операция записана, но отображение актуального остатка не подтверждено. Не оформляйте приход повторно — проверьте историю операции и нажмите «Обновить».'
           : ''
         const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
+        setInventoryMovementError('')
         setMessage(isTransfer
           ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
           : inventoryDraft.movementType === 'arrival'
@@ -5469,7 +5472,10 @@ function App() {
 
       await finishMovement(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      // Keep the original draft and review visible so users can inspect the same
+      // variants instead of starting over. A failed response is not proof that
+      // no movement committed; do not generate a fresh request ID here.
+      setInventoryMovementError(err instanceof Error ? err.message : 'Не удалось сохранить складскую операцию. Проверьте историю.')
     } finally {
       setInventoryMovementBusy(false)
     }
@@ -8804,7 +8810,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
+        <InventorySection ctx={{ inventoryMovementError, clearInventoryMovementError: () => setInventoryMovementError(''), onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
           setInventoryArrivalPositions((current) => [
             ...current.filter(position => Boolean(position.productName) ||
               position.sizes.some(line => Boolean(line.color || line.size))),

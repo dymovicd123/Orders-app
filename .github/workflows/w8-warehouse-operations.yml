@@ -1,0 +1,41 @@
+name: W8 Warehouse Operations Safety
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - 'src/styles/193-unified-inventory-operations.css'
+      - 'worker/index.ts'
+      - 'worker/domains/warehouse-operation-feedback.ts'
+      - 'scripts/test-w8-warehouse-operation-integrity.mjs'
+      - '.github/workflows/w8-warehouse-operations.yml'
+permissions:
+  contents: read
+jobs:
+  w8:
+    name: W8 warehouse errors, transfer and stocktake
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: W8 exact failures and diagnostics
+        run: node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+      - name: W7 stocktake-derived UI and draft contracts
+        run: node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+      - name: Transfer SQL runtime test (isolated in-memory SQLite)
+        run: node scripts/test-step191d-transfer-runtime-safety.mjs
+      - name: Arrival and revision regression tests
+        run: |
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-variant-integrity-r2.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build

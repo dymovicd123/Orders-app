@@ -2,7 +2,7 @@ import type { InventoryRenderContext } from './types'
 import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWorkspace'
 
 type PanelContext = Pick<InventoryRenderContext,
-  | 'inventoryPanelStyle' | 'inventoryDraft' | 'inventoryMovementBusy'
+  | 'inventoryPanelStyle' | 'inventoryDraft' | 'inventoryMovementBusy' | 'inventoryMovementError'
   | 'movementSourceLoading' | 'movementSourceLoadError' | 'isAdmin'
   | 'arrivalWorkspace' | 'inventoryArrivalSummary' | 'inventoryOperationAllProductGroups'
   | 'selectInventoryOperationMode' | 'changeInventoryOperationSource'
@@ -12,7 +12,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'createEmptyInventoryItem' | 'resetInventoryArrivalForm'
   | 'resetInventoryOperationSelection' | 'setMovementSourceRefreshToken'
   | 'suggestionValues'
-> & Record<string,unknown> & { onInlineArrivalVariant: (seed: {
+> & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
 }) => void }
@@ -29,6 +29,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       targetSource={target}
       targetQuantity={variantId => Number(ctx.getStockQuantityForVariant(target, variantId) || 0)}
       onSwap={() => {
+        ctx.clearInventoryMovementError()
         if(ctx.inventoryArrivalSummary.rows > 0 && mode==='arrival')return
         ctx.swapInventoryTransferDirection()
       }}
@@ -37,6 +38,11 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       busy={ctx.inventoryMovementBusy}
       loading={ctx.movementSourceLoading}
       error={ctx.movementSourceLoadError || ''}
+      saveError={ctx.inventoryMovementError || ''}
+      blockedTransferSource={mode==='transfer'
+        ? ([source,target].find(key=>ctx.stocktakeActiveSources.includes(key)) as 'warehouse'|'boutique'|undefined) || null
+        : null}
+      onOpenStocktake={ctx.openStocktakeForOperation}
       reason={ctx.inventoryDraft.comment || ''}
       isAdmin={ctx.isAdmin}
       newVariantWorkspace={ctx.arrivalWorkspace}
@@ -46,24 +52,29 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       onInlineArrivalVariant={ctx.onInlineArrivalVariant}
       extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
       onMode={next => {
+        ctx.clearInventoryMovementError()
         ctx.resetInventoryArrivalForm()
         ctx.selectInventoryOperationMode(next)
       }}
       onSource={next => {
+        ctx.clearInventoryMovementError()
         if(mode==='arrival'&&ctx.inventoryArrivalSummary.rows > 0)ctx.resetInventoryArrivalForm()
         ctx.changeInventoryOperationSource(next)
       }}
-      onReason={value=>ctx.setInventoryDraft((current:any)=>({...current,comment:value}))}
-      onQuantity={(row,value)=>mode==='manual_set'
-        ? ctx.setInventoryCorrectionValue(row,value)
-        : ctx.setInventoryVariantOperationQuantity(row,Number(value||0))}
+      onReason={value=>{ctx.clearInventoryMovementError();ctx.setInventoryDraft((current:any)=>({...current,comment:value}))}}
+      onQuantity={(row,value)=>{
+        ctx.clearInventoryMovementError()
+        if(mode==='manual_set')ctx.setInventoryCorrectionValue(row,value)
+        else ctx.setInventoryVariantOperationQuantity(row,Number(value||0))
+      }}
       onSave={()=>ctx.saveInventoryMovement()}
       onClear={()=>{
+        ctx.clearInventoryMovementError()
         ctx.setInventoryDraft((current:any)=>({...current,items:[ctx.createEmptyInventoryItem()],comment:''}))
         ctx.resetInventoryArrivalForm()
         ctx.resetInventoryOperationSelection()
       }}
-      onRefresh={()=>ctx.setMovementSourceRefreshToken((value:number)=>value+1)}
+      onRefresh={()=>{ctx.setMovementSourceRefreshToken((value:number)=>value+1);void ctx.refreshActiveStocktakes()}}
     />
   </div>
 }

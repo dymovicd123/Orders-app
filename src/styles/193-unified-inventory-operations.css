@@ -136,3 +136,26 @@
 .stocktake-reused-operations .w7-inline-arrival>p{font-size:12px;line-height:1.5;color:#7c3e19}
 .stocktake-reused-operations .stocktake-inline-position-footer{margin:2px 0 6px}
 .stocktake-reused-operations .stocktake-color-group:has(.w7-inline-arrival){align-items:start}
+
+/* W8: local save failure instead of an unhelpful full-screen/global error */
+.stocktake-reused-operations .w8-operation-save-error{
+  display:grid;gap:7px;margin:6px 14px;
+  background:#fff7ed;border:1px solid #fdba74;border-radius:10px;
+  padding:13px 15px;color:#9a3412;line-height:1.45;
+}
+.stocktake-reused-operations .w8-operation-save-error>p{margin:0;overflow-wrap:anywhere;font-size:13px}
+.stocktake-reused-operations .w8-operation-save-error>button{justify-self:start}
+.stocktake-reused-operations .w8-correction-hint{
+  margin:1px 10px;padding:9px 13px;border:1px solid #dbe5f1;border-radius:8px;
+  background:#f8fafc;color:#52667f;font-size:12px;line-height:1.5;
+}
+
+.stocktake-reused-operations .w8-transfer-stocktake-lock{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:12px 15px;margin:3px 4px;
+  border:1px solid #f9c98d;border-radius:10px;background:#fff9ee;color:#89470d;
+}
+.stocktake-reused-operations .w8-transfer-stocktake-lock>div{display:grid;gap:4px;flex:1 1 350px}
+.stocktake-reused-operations .w8-transfer-stocktake-lock strong{font-size:13px}
+.stocktake-reused-operations .w8-transfer-stocktake-lock p{margin:0;font-size:12px;line-height:1.45}
+.stocktake-reused-operations .w8-transfer-stocktake-lock small{color:#8a6940;font-size:11px}
