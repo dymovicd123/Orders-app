@@ -12,7 +12,7 @@ type Props = {
   mode: Mode; source: 'warehouse' | 'boutique'; targetSource: 'warehouse' | 'boutique'
   targetQuantity: (variantId: string | number) => number; onSwap: () => void
   groups: Group[]; draft: Draft[]
-  busy: boolean; loading: boolean; error: string; reason: string; isAdmin: boolean
+  busy: boolean; loading: boolean; error: string; saveError: string; reason: string; isAdmin: boolean
   newVariantWorkspace: ReactNode; extraArrival: { rows: number; totalQuantity: number }
   colorSuggestions: string[]; sizeSuggestions: string[]; childAgeSuggestions: string[]
   onInlineArrivalVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>void
@@ -49,7 +49,7 @@ function positions(rows: Row[]) {
 }
 
 export function InventoryUnifiedQuantityWorkspace(p: Props) {
-  const { mode, source, targetSource, groups, draft, busy, loading, error, reason, isAdmin, newVariantWorkspace, extraArrival } = p
+  const { mode, source, targetSource, groups, draft, busy, loading, error, saveError, reason, isAdmin, newVariantWorkspace, extraArrival } = p
   const [startSearch, setStartSearch] = useState('')
   // Keep selections and the stage for each location, matching the non-destructive
   // source switching behavior of the stocktake screen.
@@ -134,7 +134,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }
   function review() {
     if(!changed){setNotice('Введите количество хотя бы в одной ячейке.');return}
-    if(entries.length > 100){setNotice('В одну операцию допускается не более 100 вариантов.');return}
+    const limit=mode==='transfer'?60:100
+    if(changed>limit){setNotice('В одну '+(mode==='transfer'?'перемещение':'операцию')+' допускается не более '+limit+' вариантов. Разделите список.');return}
     if(mode !== 'arrival' && mode !== 'transfer' && !reason.trim()){setNotice('Укажите причину операции.');return}
     setNotice('');setStage('review')
   }
@@ -247,6 +248,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         <button className="primary compact stocktake-review-button" type="button" disabled={!changed||busy}
           onClick={review}>Проверить результат</button>
       </div>
+      {mode==='manual_set'&&<div className="w8-correction-hint">
+        Изменяйте существующие размеры и цвета. Отсутствующий вариант нужно сначала оформить через приход — корректировка не создаёт новые складские записи.
+      </div>}
       <div className="stocktake-counting-rule">{mode === 'arrival'
         ? 'Впишите, сколько поступило. По системе указан текущий остаток. Пустые поля ничего не меняют.'
         : mode === 'writeoff'
@@ -317,7 +321,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                             {value!==''&&shortage>0&&<span className="w6-stocktake-shortage">Резерв {int(row.reservedQuantity)} · не хватит {shortage}</span>}
                           </StocktakeSizeCountCell>
                         })}
-                      {mode !== 'writeoff' && mode !== 'transfer' &&
+                      {mode === 'arrival' &&
                         <button type="button" className="stocktake-inline-add-trigger"
                           onClick={()=>{setNotice('');setInline(inline?.kind==='size'&&inline.positionKey===position.key&&inline.color===color?null:
                             {positionKey:position.key,color,kind:'size',size:'',quantity:'1'})}}>+ {rows[0]?.audienceType==='child'?'возраст':'размер'}</button>}
@@ -341,7 +345,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                       </div>
                     </div>)}
                   </div>
-                  {mode!=='writeoff'&&mode!=='transfer'&&
+                  {mode==='arrival'&&
                     <div className="stocktake-inline-position-footer">
                       <button type="button" className="ghost compact stocktake-inline-color-trigger"
                         onClick={()=>{setNotice('');setInline(inline?.kind==='color'&&inline.positionKey===position.key?null:
@@ -417,10 +421,17 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           <div className="stocktake-e-review-quantity"><strong>+{extraArrival.totalQuantity} шт.</strong></div>
         </div>}
       </div>
-      <label className="w6-stocktake-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)':'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
+      <label className="w6-stocktake-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)':mode==='transfer'?'Комментарий к перемещению (необязательно)':'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
         <input value={reason} onChange={e=>p.onReason(e.target.value)} placeholder="Что произошло с товаром?" />
       </label>
       {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}
+      {saveError&&<div className="stocktake-inline-notice w6-notice-error w8-operation-save-error" role="alert">
+        <strong>Не удалось подтвердить операцию</strong>
+        <p>{saveError}</p>
+        <button type="button" className="secondary compact" disabled={busy} onClick={p.onRefresh}>
+          Обновить актуальные остатки
+        </button>
+      </div>}
       <div className="stocktake-e-review-actions"><button className="primary stocktake-finish-button" type="button"
         disabled={busy||!ready} onClick={()=>void p.onSave()}>{busy?'Сохраняю…':names[mode].action}</button>
         <button className="secondary" type="button" disabled={busy} onClick={()=>setStage(chosen.length?'quantities':'select')}>Вернуться к вводу</button></div>
