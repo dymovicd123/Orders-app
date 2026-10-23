@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "branch2"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          baseline="6e3b6a1e3e38eed4780913e521a4dc92bfbc2470"
+          baseline="9cda305c805310b9983a7528366f4210b7d5f8a1"
           git cat-file -e "$baseline^{commit}"
           diff="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
           test -n "$diff"
@@ -38,6 +38,8 @@ jobs:
               src/App.tsx|\
               src/app/controllers/useOperationalViewModel.ts|\
               src/features/inventory/views/renderInventoryMovementPanel.tsx|\
+              src/features/inventory/views/renderInventoryStocktakePanel.tsx|\
+              src/features/inventory/views/StocktakeSharedInputs.tsx|\
               src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\
               src/features/inventory/unifiedOperationMath.ts|\
               src/styles/193-unified-inventory-operations.css|\
@@ -56,7 +58,8 @@ jobs:
             exit 12
           fi
           git diff --name-only "$baseline" "$GITHUB_SHA" | grep -Fq "InventoryUnifiedQuantityWorkspace.tsx"
-          git diff --name-only "$baseline" "$GITHUB_SHA" | grep -Fq "unifiedOperationMath.ts"
+          git diff --name-only "$baseline" "$GITHUB_SHA" | grep -Fq "StocktakeSharedInputs.tsx"
+          git diff --name-only "$baseline" "$GITHUB_SHA" | grep -Fq "renderInventoryStocktakePanel.tsx"
       - run: npm ci
       - name: W6 quantity, no-op, SKU and source safety
         run: node --experimental-strip-types scripts/test-w6-unified-operations.mjs
