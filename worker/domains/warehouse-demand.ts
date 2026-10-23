@@ -18,6 +18,7 @@ WITH returns_by_item AS (
   SELECT
     oi.id AS item_id, o.id AS order_id, o.external_id AS external_id,
     SUBSTR(o.shipping_date, 1, 10) AS shipped_at,
+    o.order_date AS ordered_at,
     o.total_amount AS order_total,
     COALESCE(NULLIF(TRIM(oi.product_name_snapshot), ''), 'Без названия') AS product,
     COALESCE(NULLIF(TRIM(oi.color_snapshot), ''), 'Не указан') AS color,
@@ -68,7 +69,7 @@ ORDER BY sold DESC, product ASC, color ASC, size ASC
 LIMIT 6001
 `;
 export const warehouseDemandOrdersSql = demandBaseSql + String.raw`
-SELECT item_id, order_id, external_id, shipped_at, product, color, size, material,
+SELECT item_id, order_id, external_id, shipped_at, ordered_at, product, color, size, material,
        length, gender, category, source, sold, returned, sold - returned AS net,
        recorded_price, price_discrepancy, order_total
 FROM sale_lines
@@ -111,6 +112,7 @@ export async function listWarehouseDemand(db: D1Database, url: URL) {
       orders: rows.slice(0, 50).map(row => ({
         itemId: num(row.item_id), orderId: num(row.order_id),
         externalId: txt(row.external_id), shippedAt: txt(row.shipped_at),
+        orderedAt: txt(row.ordered_at),
         product: txt(row.product), color: txt(row.color), size: txt(row.size),
         material: txt(row.material), length: txt(row.length), gender: txt(row.gender),
         category: txt(row.category), source: txt(row.source),
