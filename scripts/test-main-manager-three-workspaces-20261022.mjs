@@ -4,12 +4,12 @@ import { workspaceModules } from '../src/app/constants.ts'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from '../src/app/managerWorkspaceAccess.ts'
 
 const managerIds = workspaceModules.filter(item => canSeeWorkspaceMenuItem('manager', item.id)).map(item => item.id)
-assert.deepEqual(managerIds, ['orders', 'workshop', 'inventory'], 'Managers must see only Orders, Workshop and Inventory')
+assert.deepEqual(managerIds, ['orders', 'workshop', 'inventory', 'reports'], 'Managers must see only Orders, Workshop, Inventory and Reports')
 assert.equal(workspaceModules.filter(item => canSeeWorkspaceMenuItem('admin', item.id)).length, workspaceModules.length, 'Admin navigation must remain complete')
-for (const sector of ['orders', 'workshop', 'inventory']) {
+for (const sector of ['orders', 'workshop', 'inventory', 'reports']) {
   assert(canOpenWorkspaceSector('manager', sector), 'Manager lost an operational workspace: '+sector)
 }
-for (const sector of ['overview', 'clients', 'finance', 'references', 'reports', 'leads', 'plan', 'team', 'kaspi']) {
+for (const sector of ['overview', 'clients', 'finance', 'references', 'leads', 'plan', 'team', 'kaspi']) {
   assert(!canOpenWorkspaceSector('manager', sector), 'Forbidden workspace reachable: '+sector)
   assert(canOpenWorkspaceSector('admin', sector), 'Administrator lost workspace: '+sector)
 }
@@ -33,7 +33,8 @@ assert(gate.includes("setInventoryPanel('overview')") && gate.includes('#invento
 assert(app.includes('<DeferredSection active={activeSector === \'orders\'} label="Заказы">'), 'Orders still render')
 assert(app.includes('<DeferredSection active={activeSector === \'workshop\'} label="Цех">'), 'Workshop still renders')
 assert(app.includes('<DeferredSection active={activeSector === \'inventory\'} label="Склад">'), 'Warehouse still renders')
+assert(app.includes('<DeferredSection active={activeSector === \'reports\'} label="Отчёты">'), 'Reports section must render for managers')
 assert(app.includes('authUser?.role === \'manager\''), 'Manager session handling must stay active')
 assert(!app.includes('setActiveSector(\'finance\')'), 'Manager business flow may not bypass role guard by direct state set')
 // This change does not alter server roles, stock, finance, master-data or D1.
-console.log('MANAGER_THREE_WORKSPACES_PASSED: role/menu, deep link, first-render and admin parity')
+console.log('MANAGER_FOUR_WORKSPACES_PASSED: role/menu, deep link, first-render and admin parity')
