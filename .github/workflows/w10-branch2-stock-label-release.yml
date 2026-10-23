@@ -1,0 +1,97 @@
+name: Branch2 W10 Readable Warehouse Balance Labels
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/styles/188e4-stocktake-usability.css'
+      - 'scripts/test-w10-stock-label-legibility.mjs'
+      - '.github/workflows/w10-branch2-stock-label-release.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w10-branch2-stock-label-release.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: W10 shared stock cell CSS and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/test-w10-stock-label-legibility.mjs
+      - run: node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+      - run: npm run build
+  publish-branch2:
+    name: W10 only branch2 CSS release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Assert only reviewed CSS and test; no production database
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "branch2"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="7c61d59447970d0368d00d2abb19fc258e2eb3e8"
+          git cat-file -e "$baseline^{commit}"
+          changed="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changed"
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            case "$path" in
+              src/styles/188e4-stocktake-usability.css|\
+              scripts/test-w10-stock-label-legibility.mjs|\
+              .github/workflows/w10-branch2-stock-label-release.yml) ;;
+              *) echo "Out-of-scope file: $path" >&2; exit 11 ;;
+            esac
+          done <<< "$changed"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production D1 binding forbidden' >&2; exit 12
+          fi
+      - run: npm ci
+      - run: node scripts/test-w10-stock-label-legibility.mjs
+      - run: npm run build
+      - name: Publish branch2 without migrations
+        run: npx wrangler deploy
+      - name: Confirm published CSS rule in active static assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const host='https://orders-app-branch2.orders-clothes.workers.dev'
+          let ok=false
+          for(let i=0;i<7;i++){
+            try {
+              const html=await (await fetch(host+'/?w10='+Date.now(),{cache:'no-store'})).text()
+              const files=[...html.matchAll(/(?:href|src)=["'](\/assets\/[^"']+\.(?:css|js))["']/g)].map(x=>x[1])
+              let css=[]
+              for(const name of files.filter(x=>x.endsWith('.css')))css.push(await (await fetch(host+name,{cache:'no-store'})).text())
+              if(css.some(s=>/stocktake-size-system[^}]*font-size:\s*11px/.test(s)&&/stocktake-size-system[^}]*color:\s*#64748b/.test(s))){
+                ok=true;console.log('W10_LIVE_CSS_VERIFIED');break
+              }
+              throw Error('New warehouse label CSS not yet in published assets')
+            }catch(error){console.warn(String(error));if(i<6)await new Promise(done=>setTimeout(done,5000))}
+          }
+          if(!ok)throw Error('W10 public asset check failed')
+          NODE
