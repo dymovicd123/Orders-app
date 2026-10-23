@@ -744,9 +744,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
-    if (inventoryPanel !== 'stocktake') return
+    if (activeSector !== 'inventory' || (inventoryPanel !== 'stocktake' && inventoryPanel !== 'movement')) return
+    // The operation form must know before submission if the source/destination
+    // is currently under a stocktake. No inventory writes are triggered.
     void refreshActiveStocktakes()
-  }, [inventoryPanel])
+  }, [activeSector, inventoryPanel])
 
   useEffect(() => {
     if (activeSector !== 'inventory') return
@@ -2691,6 +2693,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         onInlineArrivalVariant,
         inventoryMovementError,
         clearInventoryMovementError,
+        stocktakeActiveSources: stocktakeActiveSessions.map(session=>session.source),
+        openStocktakeForOperation: (source: 'warehouse'|'boutique') => {setStocktakeSource(source);openInventoryPanel('stocktake')},
+        refreshActiveStocktakes,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,
