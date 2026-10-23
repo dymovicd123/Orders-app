@@ -267,7 +267,13 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       <div className="stocktake-sticky-progress">
         <div className="stocktake-sticky-progress-main">
           <strong>Заполнено {entries.length} из {chosen.reduce((n,g)=>n+g.rows.length,0)} вариантов</strong>
-          <span>Пустые поля оставят остаток неизменным. Число 0 в корректировке установит остаток в ноль.</span>
+          <span>{mode==='manual_set'
+            ? 'Пустые поля ничего не меняют. Введённый 0 устанавливает остаток в ноль.'
+            : mode==='arrival'
+              ? 'Пустые поля ничего не меняют. Введите количество поступивших вещей.'
+              : mode==='writeoff'
+                ? 'Пустые поля ничего не меняют. Введите количество выбывших вещей.'
+                : 'Пустые поля ничего не меняют. Введите число вещей, переносимых в другую точку.'}</span>
         </div>
         <div className="stocktake-sticky-progress-bar"><i style={{width:
           (chosen.reduce((n,g)=>n+g.rows.length,0) ? Math.round(entries.length/chosen.reduce((n,g)=>n+g.rows.length,0)*100) : 0)+'%'}}/></div>
@@ -281,7 +287,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
         ? 'Впишите, сколько поступило. По системе указан текущий остаток. Пустые поля ничего не меняют.'
         : mode === 'writeoff'
           ? 'Впишите, сколько нужно списать. По системе указан текущий остаток. Пустые поля ничего не меняют.'
-          : 'Впишите фактический остаток, как в ревизии. Пустое поле ничего не меняет, введённый 0 обнуляет остаток.'}
+          : mode==='transfer'
+            ? 'Впишите, сколько вещей перемещаете. Система покажет остатки в обеих точках; пустое поле ничего не меняет.'
+            : 'Впишите фактический остаток, как в ревизии. Пустое поле ничего не меняет, введённый 0 обнуляет остаток.'}
         {' '}После ввода показываем, сколько будет в точке.</div>
       <div className="stocktake-counting-shell">
         <aside className="stocktake-counting-sidebar">
