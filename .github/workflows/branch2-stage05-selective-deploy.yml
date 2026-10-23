@@ -35,25 +35,19 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "branch2"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          baseline="21dd21894161b60ab46eac0a136547747779e5df"
+          baseline="22a6f2643d596667e5d6a300117a2d6bed3fb83a"
           git cat-file -e "$baseline^{commit}"
           changed="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             case "$file" in
-              worker/domains/warehouse-demand.ts|\
               src/features/inventory/views/InventoryDemandStatistics.tsx|\
-              src/features/inventory/views/inventory-demand-statistics.css|\
-              scripts/test-stage05-warehouse-demand.mjs|\
               scripts/test-stage05-navigation-20261023.mjs|\
-              scripts/verify-stage05-branch2-live.mjs|\
               .github/workflows/branch2-stage05-selective-deploy.yml) ;;
               *) echo "Refuse Stage05-only release: unreviewed file $file" >&2; exit 11 ;;
             esac
           done <<< "$changed"
-          test "$(printf '%s\n' "$changed" | grep -c 'worker/domains/warehouse-demand.ts')" -eq 1
           test "$(printf '%s\n' "$changed" | grep -c 'src/features/inventory/views/InventoryDemandStatistics.tsx')" -eq 1
-          test "$(printf '%s\n' "$changed" | grep -c 'src/features/inventory/views/inventory-demand-statistics.css')" -eq 1
           grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
           grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
           grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
