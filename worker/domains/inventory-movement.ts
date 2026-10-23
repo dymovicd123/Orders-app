@@ -877,7 +877,7 @@ export async function applyInventoryMovement(
     }
 
     if (movementType === 'manual_set') {
-      if (raw.createMissingVariant) {
+      if ((raw as typeof raw & {createMissingVariant?:boolean}).createMissingVariant) {
         if (raw.productId <= 0 || !raw.productName || !raw.size || !raw.color || raw.expectedQuantity !== 0) {
           throw new Error('Для нового размера корректировки выберите активный товар, цвет и размер. Начальный учтённый остаток должен быть 0.');
         }
