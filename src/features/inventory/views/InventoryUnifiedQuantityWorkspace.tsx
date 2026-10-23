@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import '../../../styles/193-unified-inventory-operations.css'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
+import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
+import '../../../styles/193-unified-inventory-operations.css'
 
 type Mode = UnifiedQuantityMode
 type Row = { id?: number; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
@@ -18,168 +19,316 @@ type Props = {
   onSave: () => Promise<unknown>; onClear: () => void; onRefresh: () => void
 }
 const names = {
-  arrival: { title: 'Приход', action: 'Оформить приход', input: 'Поступило', detail: 'Добавляем введённое количество к текущему остатку.' },
-  writeoff: { title: 'Списание', action: 'Списать товары', input: 'Списать', detail: 'Вычитаем введённое количество из текущего остатка.' },
-  manual_set: { title: 'Корректировка', action: 'Исправить остатки', input: 'Фактически', detail: 'Устанавливаем введённое фактическое количество, как в ревизии.' },
+  arrival: { title: 'Приход', action: 'Оформить приход', input: 'Пришло', detail: 'Введите количество поступивших вещей: оно прибавится к остатку.' },
+  writeoff: { title: 'Списание', action: 'Подтвердить списание', input: 'Списать', detail: 'Введите количество списываемых вещей: оно вычтется из остатка.' },
+  manual_set: { title: 'Корректировка', action: 'Сохранить корректировку', input: 'Фактически', detail: 'Введите итоговый остаток, как в выборочной ревизии.' },
 } as const
 const int = (value: unknown) => Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0
 const sourceName = (s: string) => s === 'boutique' ? 'Бутик' : 'Склад'
-function grouped(rows: Row[]) {
-  const map = new Map<string, { title: string; colors: Map<string, Row[]> }>()
-  for (const row of rows) {
-    const key = [row.audienceType, row.gender, row.material, row.length].join('|')
-    if (!map.has(key)) map.set(key, {
-      title: [row.audienceType === 'child' ? 'Детский' : 'Взрослый', row.gender, row.material, row.length]
-        .filter(v => v && v !== 'СТАНДАРТ').join(' · ') || 'Стандартный вариант',
-      colors: new Map(),
-    })
-    const group = map.get(key)!
-    const color = row.color || 'Без цвета'
-    group.colors.set(color, [...(group.colors.get(color) || []), row])
-  }
-  return [...map].map(([key, value]) => ({
-    key, title: value.title,
-    colors: [...value.colors].map(([color, variants]) => ({
-      color, variants: variants.sort((a, b) => (a.size || '').localeCompare(b.size || '', 'ru', { numeric: true })),
-    })),
-  }))
+function positionKey(row: Row) { return [row.material || 'СТАНДАРТ', row.length || 'СТАНДАРТ', row.audienceType || 'adult', row.gender || ''].join('::') }
+function positionLabel(row: Row) {
+  const parts = [row.material, row.length].filter(v => v && v !== 'СТАНДАРТ')
+  const audience = [row.audienceType === 'child' ? 'Детский' : '', row.gender].filter(Boolean)
+  return [...parts, ...audience].join(' · ') || 'Стандартное исполнение'
 }
-export function InventoryUnifiedQuantityWorkspace(p: Props) {
-  const {mode,source,groups,draft,busy,loading,error,reason,isAdmin,newVariantWorkspace,extraArrival}=p
-  const [query,setQuery]=useState('')
-  const [selected,setSelected]=useState<string[]>([])
-  const [current,setCurrent]=useState('')
-  const [stage,setStage]=useState<'select'|'quantities'|'review'>('select')
-  const [newVariant,setNewVariant]=useState(false)
-  const [notice,setNotice]=useState('')
-  const selectedGroups=useMemo(()=>selected.map(key=>groups.find(group=>group.key===key)).filter((g):g is Group=>Boolean(g)),[selected,groups])
-  const group=selectedGroups.find(g=>g.key===current)||selectedGroups[0]
-  const draftMap=useMemo(()=>new Map(draft.filter(item=>item.variantId).map(item=>[String(item.variantId),item])),[draft])
-  const allRows=useMemo(()=>new Map(groups.flatMap(g=>g.rows.map(r=>[String(r.variantId),r] as const))),[groups])
-  const entries=useMemo(()=>draft.filter(item=>item.variantId && (mode==='manual_set'?item.touched:int(item.quantity)>0))
-    .map(item=>({row:allRows.get(String(item.variantId)),quantity:int(item.quantity)}))
-    .filter((item):item is {row:Row;quantity:number}=>Boolean(item.row)),[draft,allRows,mode])
-  const changed=entries.length + (mode==='arrival'?extraArrival.rows:0)
-  const count=entries.reduce((n,e)=>n+(mode==='manual_set'?Math.abs(previewQuantity(mode,int(e.row.quantity),e.quantity)-int(e.row.quantity)):e.quantity),0)
-  const filtered=groups.filter(g=>g.productName.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru').trim())).slice(0,120)
-  useEffect(()=>{if(stage==='review'&&!busy&&!changed){setStage('select');setSelected([]);setCurrent('');setNotice('')}},[stage,busy,changed])
-  function changeSource(next: 'warehouse' | 'boutique') {
-    if(next===source)return
-    if(changed&&!window.confirm('Сменить точку? Несохранённые значения будут очищены.'))return
-    p.onSource(next);setStage('select');setSelected([]);setCurrent('');setQuery('');setNotice('')
+function positions(rows: Row[]) {
+  const map = new Map<string, { key: string; label: string; rows: Row[] }>()
+  for (const row of rows) {
+    const key = positionKey(row)
+    const current = map.get(key) || { key, label: positionLabel(row), rows: [] }
+    current.rows.push(row)
+    map.set(key,current)
   }
-  function select(key: string) {
-    if (selected.includes(key)) {
-      const removing = groups.find(g => g.key === key)
-      const edited = removing?.rows.filter(row => displayQuantityInput(mode,draftMap.get(String(row.variantId))) !== '') || []
-      if (edited.length && !window.confirm('Убрать товар и очистить ' + edited.length + ' введённых значений?')) return
-      for (const row of edited) p.onQuantity(row, '')
+  return [...map.values()]
+}
+
+export function InventoryUnifiedQuantityWorkspace(p: Props) {
+  const { mode, source, groups, draft, busy, loading, error, reason, isAdmin, newVariantWorkspace, extraArrival } = p
+  const [startSearch, setStartSearch] = useState('')
+  const [selected, setSelected] = useState<string[]>([])
+  const [current, setCurrent] = useState('')
+  const [productSearch, setProductSearch] = useState('')
+  const [stage, setStage] = useState<'select' | 'quantities' | 'review'>('select')
+  const [newVariant, setNewVariant] = useState(false)
+  const [notice, setNotice] = useState('')
+  const chosen = useMemo(() => selected.map(key => groups.find(group => group.key === key))
+    .filter((g): g is Group => Boolean(g)), [selected, groups])
+  const activeGroup = chosen.find(g => g.key === current) || chosen[0] || null
+  const draftMap = useMemo(() => new Map(draft.filter(item => item.variantId)
+    .map(item => [String(item.variantId), item])), [draft])
+  const allRows = useMemo(() => new Map(groups.flatMap(g => g.rows.map(r => [String(r.variantId), r] as const))), [groups])
+  const entries = useMemo(() => draft.filter(item => item.variantId &&
+    (mode === 'manual_set' ? item.touched : int(item.quantity) > 0))
+    .map(item => ({ row: allRows.get(String(item.variantId)), quantity: int(item.quantity) }))
+    .filter((item): item is { row: Row; quantity: number } => Boolean(item.row)), [draft, allRows, mode])
+  const changed = entries.length + (mode === 'arrival' ? extraArrival.rows : 0)
+  const unselected = useMemo(() => groups.filter(g => g.productName.toLocaleLowerCase('ru').includes(startSearch.toLocaleLowerCase('ru').trim())).slice(0,180),[groups,startSearch])
+  const searchableChosen = chosen.filter(g => g.productName.toLocaleLowerCase('ru').includes(productSearch.toLocaleLowerCase('ru').trim()))
+  const groupIndex = chosen.findIndex(g => g.key === activeGroup?.key)
+  const filledGroup = (g: Group) => g.rows.filter(r => displayQuantityInput(mode,draftMap.get(String(r.variantId))) !== '').length
+  const ready = changed > 0 && (mode === 'arrival' || Boolean(reason.trim()))
+  useEffect(() => {
+    if(stage === 'review' && !busy && !changed) {
+      setStage('select');setSelected([]);setCurrent('');setNotice('')
     }
-    setSelected(prev=>prev.includes(key)?prev.filter(id=>id!==key):[...prev,key])
-    setCurrent(key)
+  },[stage,busy,changed])
+
+  function toggleProduct(key: string) {
+    const remove = selected.includes(key)
+    if(remove) {
+      const g = groups.find(item => item.key === key)
+      const filled = (g?.rows || []).filter(row => displayQuantityInput(mode,draftMap.get(String(row.variantId))) !== '')
+      if(filled.length && !window.confirm('Убрать товар и очистить ' + filled.length + ' введённых значений?')) return
+      for(const row of filled) p.onQuantity(row,'')
+    }
+    setSelected(old => remove ? old.filter(k => k !== key) : [...old,key])
+    if(!remove) setCurrent(key)
+  }
+  function setSource(next: 'warehouse' | 'boutique') {
+    if(next === source)return
+    if(changed && !window.confirm('При смене точки введённые значения будут очищены. Продолжить?'))return
+    p.onSource(next);setStage('select');setSelected([]);setCurrent('');setNotice('')
+  }
+  function reset() {
+    if(changed && !window.confirm('Очистить все несохранённые количества?'))return
+    p.onClear();setStage('select');setSelected([]);setCurrent('');setProductSearch('');setStartSearch('');setNewVariant(false);setNotice('')
   }
   function review() {
     if(!changed){setNotice('Введите количество хотя бы в одной ячейке.');return}
-    if(entries.length>100){setNotice('Не более 100 вариантов за одну операцию.');return}
-    if(mode!=='arrival'&&!reason.trim()){setNotice('Укажите причину '+(mode==='writeoff'?'списания.':'корректировки.'));return}
+    if(entries.length > 100){setNotice('В одну операцию допускается не более 100 вариантов.');return}
+    if(mode !== 'arrival' && !reason.trim()){setNotice('Укажите причину операции.');return}
     setNotice('');setStage('review')
   }
-  function reset() {
-    if(changed&&!window.confirm('Очистить введённые значения?'))return
-    p.onClear();setSelected([]);setCurrent('');setStage('select');setQuery('');setNewVariant(false);setNotice('')
-  }
-  return <section className="w6-quantity" data-unified-operation={mode}>
-    <header className="w6-heading"><div><span>СКЛАДСКИЕ ОПЕРАЦИИ</span><h3>{names[mode].title} товаров</h3><p>{names[mode].detail}</p></div></header>
-    <div className="w6-modes" role="group" aria-label="Вид операции">
-      {([['arrival','Приход','Прибавить'],['writeoff','Списание','Вычесть'],['manual_set','Корректировка','Установить'],['transfer','Перемещение','Между точками']] as const)
-        .filter(([key])=>key!=='arrival'||isAdmin).map(([key,title,sub])=><button type="button" key={key}
-          className={mode===key?'is-active':''} disabled={busy}
-          onClick={()=>{if(key===mode)return;if(changed&&!window.confirm('Сменить операцию и очистить несохранённые значения?'))return;p.onMode(key)}}>
-          <strong>{title}</strong><small>{sub}</small></button>)}
+  return <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e stocktake-reused-operations"
+    data-unified-operation={mode}>
+    <div className="stocktake-e-head"><div><h3>{names[mode].title}</h3><p>{names[mode].detail}</p></div></div>
+    <div className="stocktake-e-start stocktake-e-start-v5 w6-operation-switch">
+      <div className="stocktake-start-modes stocktake-start-modes-v5">
+        {([['arrival','Приход','Прибавить к остатку'],['writeoff','Списание','Вычесть из остатка'],
+          ['manual_set','Корректировка','Установить фактический остаток'],['transfer','Перемещение','Между точками']] as const)
+          .filter(([key]) => key !== 'arrival' || isAdmin).map(([key,label,hint]) =>
+            <button type="button" key={key} className={'stocktake-start-mode '+(mode === key?'is-active':'')}
+              disabled={busy} onClick={() => {
+                if(key === mode)return
+                if(changed && !window.confirm('Сменить операцию и очистить несохранённые значения?'))return
+                p.onMode(key)
+              }}><strong>{label}</strong><span>{hint}</span></button>)}
+      </div>
     </div>
-    <div className="w6-source"><div><strong>{mode==='arrival'?'Куда поступает товар':'Где находится товар'}</strong><small>Остатки и варианты зависят от точки</small></div>
-      <div>{(['warehouse','boutique'] as const).map(value=><button type="button" key={value}
-        className={source===value?'is-active':''} disabled={busy} onClick={()=>changeSource(value)}>{sourceName(value)}</button>)}</div>
+
+    <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label="Место операции">
+      {(['warehouse','boutique'] as const).map(key => <button type="button" role="tab" key={key}
+        aria-selected={source === key} className={source === key?'is-active':''} disabled={busy}
+        onClick={() => setSource(key)}>{sourceName(key)}</button>)}
     </div>
-    {loading&&<div className="w6-message" role="status">Загружаю остатки и варианты выбранной точки…</div>}
-    {error&&<div className="w6-message is-error" role="alert">{error} <button type="button" onClick={p.onRefresh}>Повторить</button></div>}
-    {!loading&&!error&&<>
-      {stage==='select'&&<div className="w6-step"><header><span>ШАГ 1</span><h4>Выберите товары</h4><p>Как в выборочной ревизии: можно отметить несколько товаров за одну операцию.</p></header>
-        <label className="w6-search">Поиск товара <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Введите название…"/></label>
-        {!!selectedGroups.length&&<div className="w6-picked"><strong>Выбрано: {selectedGroups.length}</strong><div>{selectedGroups.map(g=><button key={g.key} type="button" onClick={()=>select(g.key)}>{g.productName} ×</button>)}</div></div>}
-        <div className="w6-pick-list">{filtered.map(g=><label key={g.key}><input type="checkbox" checked={selected.includes(g.key)} onChange={()=>select(g.key)}/>
-          <span><strong>{g.productName}</strong><small>{g.rows.length} вариантов</small></span></label>)}
-          {!filtered.length&&<p>По поиску товаров нет.</p>}</div>
-        {groups.length>filtered.length&&<p className="w6-hint">Показаны первые 120 подходящих товаров. Другие найдутся поиском.</p>}
-        {mode==='arrival'&&isAdmin&&<div className="w6-new-variant"><button type="button" onClick={()=>setNewVariant(!newVariant)}>
-          {newVariant?'− Скрыть новый вариант':'+ Товара или варианта ещё нет? Добавить при приходе'}</button>
-          {newVariant&&<div className="w6-new-form"><p>Новая комбинация появится в каталоге после подтверждения прихода. Существующие товары удобнее выбирать из списка.</p>{newVariantWorkspace}</div>}
+    {loading && <div className="stocktake-inline-notice" role="status">Обновляю варианты и остатки выбранной точки…</div>}
+    {error && <div className="stocktake-inline-notice w6-notice-error" role="alert">{error}
+      <button className="secondary compact" type="button" onClick={p.onRefresh}>Обновить список</button></div>}
+    {!loading && !error && (stage === 'select' ? <>
+      <section className="stocktake-e-start stocktake-e-start-v5">
+        <div className="stocktake-start-intro">
+          <span className="stocktake-step-kicker">Новая операция</span>
+          <h4>Какие товары хотите {mode === 'arrival'?'принять':mode === 'writeoff'?'списать':'исправить'}?</h4>
+          <p>Выберите один или несколько товаров, как в выборочной ревизии.</p>
+        </div>
+        <div className="stocktake-selective-picker stocktake-selective-picker-v5 stocktake-selective-picker-w5">
+          <div className="stocktake-selective-head">
+            <label><span>Найдите товар</span><input value={startSearch} onChange={e => setStartSearch(e.target.value)}
+              placeholder="Название товара…" /></label>
+            <div className="stocktake-selective-count">
+              <strong>{chosen.length ? chosen.length+' товаров выбрано' : 'Выберите товары'}</strong>
+              <span>{chosen.length ? chosen.reduce((n,g)=>n+g.rows.length,0)+' вариантов' : 'Можно выбрать несколько'}</span>
+            </div>
+          </div>
+          {!!chosen.length && <div className="stocktake-selective-queue">
+            <div className="stocktake-selective-queue-head"><div><strong>Вы будете изменять</strong>
+              <span>{chosen.length} товаров</span></div>
+              <button className="ghost compact" type="button" onClick={() => {
+                if(changed && !window.confirm('Очистить выбранные товары и числа?'))return
+                for(const g of chosen) for(const row of g.rows) if(displayQuantityInput(mode,draftMap.get(String(row.variantId)))!=='')p.onQuantity(row,'')
+                setSelected([]);setCurrent('')
+              }}>Очистить</button>
+            </div>
+            <div className="stocktake-selective-chips">
+              {chosen.map(g => <button type="button" className="stocktake-selective-chip" key={g.key}
+                title="Убрать товар" onClick={() => toggleProduct(g.key)}><span>{g.productName}</span><small>{g.rows.length} поз.</small><b aria-hidden="true">×</b></button>)}
+            </div>
+          </div>}
+          <div className="stocktake-selective-list stocktake-selective-list-v5">
+            {unselected.length ? unselected.map(g => <StocktakeProductChoice key={g.key}
+              name={g.productName} description={g.rows.length+' поз. '+(selected.includes(g.key)?'· выбрано':'')}
+              checked={selected.includes(g.key)} onToggle={() => toggleProduct(g.key)} />)
+              : <div className="stocktake-product-list-empty">По поиску ничего не найдено.</div>}
+          </div>
+          {groups.length > unselected.length && <small>Чтобы найти другие товары, уточните название в поиске.</small>}
+        </div>
+        {mode === 'arrival' && isAdmin && <div className="w6-stocktake-new">
+          <button className="secondary compact" type="button" onClick={()=>setNewVariant(!newVariant)}>
+            {newVariant?'− Скрыть создание варианта':'+ Нужного товара или варианта нет в каталоге'}
+          </button>
+          {newVariant && <div className="w6-stocktake-new-content">
+            <p>Создание нового варианта выполняется отдельно; для существующих выбирайте размеры в таблице ревизии.</p>
+            {newVariantWorkspace}
+          </div>}
         </div>}
-        {mode==='arrival'&&extraArrival.rows>0&&!selected.length&&<div className="w6-message">
-          Заполнено новых вариантов: {extraArrival.rows} · {extraArrival.totalQuantity} шт.
-          <button type="button" onClick={()=>{setNotice('');setStage('review')}}>Проверить приход новых вариантов →</button>
-        </div>}
-        <footer><span>{selected.length?selected.length+' товаров выбрано':'Выберите товары'}</span><button type="button" className="primary" disabled={!selected.length} onClick={()=>{setCurrent(selected[0]);setStage('quantities')}}>Перейти к вариантам →</button></footer>
+        <div className="stocktake-start-submit"><div>
+          {chosen.length ? chosen.length+' товаров выбрано' : mode === 'arrival' && extraArrival.rows>0 ? 'Можно принять только новые варианты' : 'Выберите хотя бы один товар'}
+        </div><button type="button" className="primary stocktake-e-start-button"
+          disabled={busy || (!chosen.length && !(mode === 'arrival' && extraArrival.rows>0))}
+          onClick={() => {setCurrent(chosen[0]?.key||'');setStage(chosen.length?'quantities':'review')}}>
+          {chosen.length?'Начать работу с выбранными товарами':'Проверить новые варианты прихода'}
+        </button></div>
+      </section>
+    </> : stage === 'quantities' ? <>
+      <section className="stocktake-e-active-head">
+        <div><span className="stocktake-step-kicker">{sourceName(source)}</span>
+          <h4>{names[mode].title} · {chosen.length} товаров</h4>
+          <p>{names[mode].detail}</p></div>
+        <div className="stocktake-e-head-actions">
+          <button className="secondary compact" type="button" onClick={() => setStage('select')}>Изменить выбор товаров</button>
+          <button className="secondary compact" type="button" onClick={reset} disabled={busy}>Очистить</button>
+        </div>
+      </section>
+      <div className="stocktake-sticky-progress">
+        <div className="stocktake-sticky-progress-main">
+          <strong>Заполнено {entries.length} из {chosen.reduce((n,g)=>n+g.rows.length,0)} вариантов</strong>
+          <span>Пустые поля оставят остаток неизменным. Число 0 в корректировке установит остаток в ноль.</span>
+        </div>
+        <div className="stocktake-sticky-progress-bar"><i style={{width:
+          (chosen.reduce((n,g)=>n+g.rows.length,0) ? Math.round(entries.length/chosen.reduce((n,g)=>n+g.rows.length,0)*100) : 0)+'%'}}/></div>
+        <button className="primary compact stocktake-review-button" type="button" disabled={!changed||busy}
+          onClick={review}>Проверить результат</button>
+      </div>
+      <div className="stocktake-counting-rule">{mode === 'arrival'
+        ? 'Впишите, сколько поступило. По системе указан текущий остаток. Пустые поля ничего не меняют.'
+        : mode === 'writeoff'
+          ? 'Впишите, сколько нужно списать. По системе указан текущий остаток. Пустые поля ничего не меняют.'
+          : 'Впишите фактический остаток, как в ревизии. Пустое поле ничего не меняет, введённый 0 обнуляет остаток.'}
+        {' '}После ввода показываем, сколько будет в точке.</div>
+      <div className="stocktake-counting-shell">
+        <aside className="stocktake-counting-sidebar">
+          <div className="stocktake-product-browser stocktake-product-browser-v5">
+            <div className="stocktake-product-browser-title"><strong>Товары</strong>
+              <span>{groupIndex+1} / {chosen.length}</span></div>
+            <label className="stocktake-product-filter stocktake-product-filter-v5">
+              <input value={productSearch} onChange={e=>setProductSearch(e.target.value)} placeholder="Найти товар…" />
+            </label>
+            <div className="stocktake-product-list stocktake-product-list-v5" role="listbox" aria-label="Товары текущей операции">
+              {searchableChosen.map(g=> <button type="button" role="option" key={g.key}
+                aria-selected={activeGroup?.key===g.key} className={activeGroup?.key===g.key?'is-active':''}
+                onClick={()=>setCurrent(g.key)}><span>{g.productName}</span>
+                <small>{filledGroup(g)?filledGroup(g)+' введено':g.rows.length+' поз.'}</small></button>)}
+            </div>
+          </div>
+        </aside>
+        <div className="stocktake-counting-main">
+          <label className="stocktake-mobile-product-select"><span>Текущий товар</span>
+            <select value={activeGroup?.key||''} onChange={e=>setCurrent(e.target.value)}>
+              {chosen.map(g=><option key={g.key} value={g.key}>{g.productName} · {filledGroup(g)} введено</option>)}
+            </select></label>
+          {activeGroup ? <section className="stocktake-e-work-card stocktake-e-work-card-calm">
+            <div className="stocktake-e-product-nav stocktake-e-product-nav-calm stocktake-e-product-nav-v5">
+              <div><span>Товар {groupIndex+1} из {chosen.length}</span><h4>{activeGroup.productName}</h4>
+                <small className="stocktake-current-product-status">{filledGroup(activeGroup)} из {activeGroup.rows.length} позиций заполнено</small></div>
+              <div className="stocktake-product-step-actions">
+                <button className="ghost compact" type="button" disabled={groupIndex<=0}
+                  onClick={()=>setCurrent(chosen[groupIndex-1].key)}>← <span>Пред.</span></button>
+                <button className="ghost compact" type="button" disabled={groupIndex>=chosen.length-1}
+                  onClick={()=>setCurrent(chosen[groupIndex+1].key)}><span>След.</span> →</button>
+              </div>
+            </div>
+            <div className="stocktake-e-positions stocktake-e-positions-compact">
+              {positions(activeGroup.rows).map(position=>{
+                const colors=new Map<string,Row[]>()
+                for(const row of position.rows) {
+                  const color=row.color || 'БЕЗ ЦВЕТА'
+                  colors.set(color,[...(colors.get(color)||[]),row])
+                }
+                const showTitle=positions(activeGroup.rows).length>1 || !['Стандартное исполнение','ЖЕН','МУЖ','Взрослый · ЖЕН','Взрослый · МУЖ'].includes(position.label)
+                return <section className={'stocktake-e-position stocktake-e-position-compact '+(!showTitle?'is-default-position':'')}
+                  key={position.key}>
+                  {showTitle && <div className="stocktake-e-position-title"><strong>{position.label}</strong></div>}
+                  <div className="stocktake-color-groups">
+                    {[...colors.entries()].map(([color,rows])=><div className="stocktake-color-group" key={position.key+color}>
+                      <div className="stocktake-color-group-head"><strong>{color}</strong></div>
+                      <div className="stocktake-color-group-body"><div className="stocktake-size-grid">
+                        {rows.slice().sort((a,b)=>(a.size||'').localeCompare(b.size||'','ru',{numeric:true})).map(row=>{
+                          const value=displayQuantityInput(mode,draftMap.get(String(row.variantId)))
+                          const currentQuantity=int(row.quantity)
+                          const after=value===''?currentQuantity:previewQuantity(mode,currentQuantity,int(value))
+                          const shortage=Math.max(0,int(row.reservedQuantity)-after)
+                          return <StocktakeSizeCountCell key={String(row.variantId)} cellId={row.variantId}
+                            size={row.size||'—'} currentQuantity={currentQuantity} value={value}
+                            disabled={busy}
+                            ariaLabel={activeGroup.productName+' '+color+' '+(row.size||'')+': '+names[mode].input}
+                            onChange={raw=>{if(raw!==''&&!/^\d{1,6}$/.test(raw))return;p.onQuantity(row,raw)}}
+                            onClear={()=>p.onQuantity(row,'')}>
+                            {value!==''&&<span className="w6-stocktake-after">Будет: <b>{after}</b></span>}
+                            {value!==''&&shortage>0&&<span className="w6-stocktake-shortage">Резерв {int(row.reservedQuantity)} · не хватит {shortage}</span>}
+                          </StocktakeSizeCountCell>
+                        })}
+                      </div></div>
+                    </div>)}
+                  </div>
+                </section>
+              })}
+            </div>
+            {mode==='arrival'&&isAdmin&&<div className="stocktake-current-product-actions stocktake-current-product-actions-v5">
+              <button className="secondary compact" type="button" onClick={()=>setNewVariant(!newVariant)}>
+                {newVariant?'− Скрыть добавление':' + Добавить новый вариант'}</button>
+              <span>Если варианта нет в каталоге, его можно создать через форму прихода.</span>
+            </div>}
+          </section>:<div className="empty-state">Не удалось найти выбранный товар. Вернитесь к выбору.</div>}
+        </div>
+      </div>
+      {mode==='arrival'&&isAdmin&&newVariant&&<div className="w6-stocktake-new-content">
+        {newVariantWorkspace}
       </div>}
-      {stage==='quantities'&&<div className="w6-step"><header><span>ШАГ 2</span><h4>{names[mode].input}: заполните нужные варианты</h4>
-        <p><b>Пустое поле не меняет остаток.</b> {mode==='manual_set'?'Ноль устанавливает фактический остаток 0.':'Ноль означает отсутствие движения.'} Изменённое количество видно сразу.</p></header>
-        <div className="w6-workspace"><aside><strong>Выбранные товары</strong>{selectedGroups.map(g=>{
-          const n=g.rows.filter(row=>displayQuantityInput(mode,draftMap.get(String(row.variantId)))!=='').length
-          return <button type="button" className={group?.key===g.key?'is-active':''} key={g.key} onClick={()=>setCurrent(g.key)}>
-            <span>{g.productName}</span><small>{n?n+' заполнено':g.rows.length+' вариантов'}</small></button>
-        })}<button className="w6-add-more" type="button" onClick={()=>setStage('select')}>+ Добавить другие товары</button></aside>
-        <div className="w6-work-main">{group?<>
-          <div className="w6-product-heading"><h4>{group.productName}</h4><strong>{group.rows.reduce((n,r)=>n+int(r.quantity),0)} шт. по системе</strong></div>
-          {grouped(group.rows).map(position=><section className="w6-position" key={position.key}><h5>{position.title}</h5>
-            {position.colors.map(color=><div className="w6-color" key={color.color}><strong>{color.color}</strong><div className="w6-cells">
-              {color.variants.map(row=>{
-                const value=displayQuantityInput(mode,draftMap.get(String(row.variantId)))
-                const before=int(row.quantity)
-                const after=value===''?before:previewQuantity(mode,before,int(value))
-                const reserved=int(row.reservedQuantity)
-                return <label key={String(row.variantId)} className={'w6-cell'+(value!==''?' is-changed':'')}>
-                  <b>{row.size||'Без размера'}</b><small>Сейчас: <strong>{before}</strong></small>
-                  <input type="number" inputMode="numeric" min="0" max="999999" step="1"
-                    aria-label={group.productName+' '+color.color+' '+(row.size||'')+': '+names[mode].input}
-                    placeholder="—" value={value} disabled={busy}
-                    onChange={e=>{if(e.target.value!==''&&!/^\d{1,6}$/.test(e.target.value))return;p.onQuantity(row,e.target.value)}}/>
-                  <small>Будет: <strong className={before!==after?'w6-difference':''}>{after}</strong></small>
-                  {value!==''&&after<reserved&&<small className="w6-warning">В заказах {reserved}. Нехватка {reserved-after}</small>}
-                </label>
-              })}</div></div>)}
-          </section>)}
-          <div className="w6-work-nav"><button type="button" disabled={selectedGroups[0]?.key===group.key}
-            onClick={()=>setCurrent(selectedGroups[Math.max(0,selectedGroups.findIndex(g=>g.key===group.key)-1)].key)}>← Предыдущий</button>
-            <button type="button" disabled={selectedGroups[selectedGroups.length-1]?.key===group.key}
-            onClick={()=>setCurrent(selectedGroups[Math.min(selectedGroups.length-1,selectedGroups.findIndex(g=>g.key===group.key)+1)].key)}>Следующий товар →</button></div>
-        </>:<p>Выберите товар слева.</p>}</div></div>
-        {mode==='arrival'&&isAdmin&&<div className="w6-new-variant"><button type="button" onClick={()=>setNewVariant(!newVariant)}>
-          {newVariant?'− Скрыть форму нового варианта':'+ Нет нужной комбинации? Добавить новый вариант'}</button>
-          {newVariant&&<div className="w6-new-form"><p>Только для вариантов, которых ещё нет в каталоге. Для существующих используйте ячейки выше.</p>{newVariantWorkspace}</div>}</div>}
-        <label className="w6-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)':'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
-          <input type="text" value={reason} onChange={e=>p.onReason(e.target.value)}
-            placeholder={mode==='arrival'?'Например, поставка':'Что произошло с товаром?'} /></label>
-        {notice&&<div className="w6-message is-error" role="alert">{notice}</div>}
-        <footer><span>{changed?changed+' вариантов · '+count+' шт. изменений':'Нет введённых изменений'}</span>
-          <button type="button" className="primary" disabled={!changed||busy} onClick={review}>Проверить перед сохранением →</button></footer>
-      </div>}
-      {stage==='review'&&<div className="w6-step"><header><span>ШАГ 3</span><h4>Проверка перед сохранением</h4><p>{sourceName(source)} · {names[mode].title}. Пока вы не подтвердили, ничего не изменится.</p></header>
-        <div className="w6-review-list">{entries.map(({row,quantity})=>{
+      <label className="w6-stocktake-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)': 'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
+        <input value={reason} onChange={e=>p.onReason(e.target.value)}
+          placeholder={mode==='arrival'?'Новая партия':'Например: физическая сверка / повреждение'} />
+      </label>
+      {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}
+      <div className="stocktake-e-footer stocktake-e-footer-v4">
+        <span>{changed ? changed+' вариантов введено' : 'Пока нет изменений'}</span>
+        <button className="primary compact stocktake-review-button" type="button" disabled={!changed||busy}
+          onClick={review}>Проверить результат</button>
+      </div>
+    </> : <>
+      <section className="stocktake-e-review-head">
+        <div><span className="stocktake-step-kicker">Проверка результата</span><h4>{names[mode].title} · {sourceName(source)}</h4>
+          <p>Проверьте числа до сохранения. Остатки пока не изменялись.</p></div>
+        <button className="secondary compact stocktake-review-back" type="button" disabled={busy}
+          onClick={()=>setStage(chosen.length?'quantities':'select')}>← Исправить</button>
+      </section>
+      <div className="stocktake-e-review-list">
+        {entries.map(({row,quantity})=>{
           const before=int(row.quantity),after=previewQuantity(mode,before,quantity)
           const reserved=int(row.reservedQuantity)
-          const overStock=mode==='writeoff'&&quantity>Math.max(0,before)
-          return <div key={String(row.variantId)}><span><strong>{row.productName}</strong><small>{[row.gender,row.material,row.length,row.color,row.size].filter(Boolean).join(' · ')}</small>
-            {overStock&&<small className="w6-warning">Списываем больше учтённого — система отдельно запросит подтверждение физического наличия.</small>}
-            {after<reserved&&<small className="w6-warning">После операции не хватит {reserved-after} шт. для резервов. Резервы не будут отменены.</small>}
-            </span><span>Сейчас <b>{before}</b></span><span>{names[mode].input} <b>{quantity}</b></span><span>Будет <b>{after}</b></span></div>
+          return <div className="stocktake-e-review-row" key={String(row.variantId)}>
+            <div className="stocktake-e-review-name"><strong>{row.productName}</strong>
+              <span>{[positionLabel(row),row.color,row.size].filter(Boolean).join(' · ')}</span></div>
+            <div className="stocktake-e-review-quantity"><span>По системе</span><strong>{before}</strong></div>
+            <div className="stocktake-e-review-quantity"><span>{names[mode].input}</span><strong>{quantity}</strong></div>
+            <div className="stocktake-e-review-quantity"><span>Будет</span><strong>{after}</strong>
+              {after<reserved&&<small className="w6-stocktake-shortage">Резерв: {reserved}, нехватка {reserved-after}</small>}
+              {mode==='writeoff'&&quantity>Math.max(0,before)&&<small className="w6-stocktake-shortage">Нужно подтвердить фактическую выдачу сверх учёта</small>}
+            </div>
+          </div>
         })}
-        {mode==='arrival'&&extraArrival.rows>0&&<div><span><strong>Новые варианты</strong><small>Будут созданы в каталоге при приходе</small></span>
-          <span>{extraArrival.rows} строк</span><span>+{extraArrival.totalQuantity} шт.</span></div>}</div>
-        {notice&&<div className="w6-message is-error" role="alert">{notice}</div>}
-        <footer><button type="button" disabled={busy} onClick={()=>setStage('quantities')}>← Исправить</button>
-          <button type="button" className="primary" disabled={busy||!changed} onClick={()=>void p.onSave()}>{busy?'Сохраняю…':names[mode].action}</button></footer>
-      </div>}
-      {stage!=='review'&&<div className="w6-clear"><button type="button" disabled={busy} onClick={reset}>Очистить форму</button><small>Изменения сохраняются в черновике при переходах между товарами.</small></div>}
-    </>}
-  </section>
+        {mode==='arrival'&&extraArrival.rows>0&&<div className="stocktake-e-review-row">
+          <div className="stocktake-e-review-name"><strong>Новые варианты</strong><span>Создание через форму прихода</span></div>
+          <div className="stocktake-e-review-quantity"><strong>{extraArrival.rows} вариантов</strong></div>
+          <div className="stocktake-e-review-quantity"><strong>+{extraArrival.totalQuantity} шт.</strong></div>
+        </div>}
+      </div>
+      <label className="w6-stocktake-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)':'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
+        <input value={reason} onChange={e=>p.onReason(e.target.value)} placeholder="Что произошло с товаром?" />
+      </label>
+      {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}
+      <div className="stocktake-e-review-actions"><button className="primary stocktake-finish-button" type="button"
+        disabled={busy||!ready} onClick={()=>void p.onSave()}>{busy?'Сохраняю…':names[mode].action}</button>
+        <button className="secondary" type="button" disabled={busy} onClick={()=>setStage(chosen.length?'quantities':'select')}>Вернуться к вводу</button></div>
+    </>)}
+  </div>
 }

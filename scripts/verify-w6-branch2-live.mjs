@@ -13,8 +13,9 @@ async function check() {
  const mod=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
  if(!mod)throw Error('Missing inventory module chunk')
  const js=await read('/assets/'+mod[0])
- const labels=['СКЛАДСКИЕ ОПЕРАЦИИ','ШАГ 1','Выберите товары','ШАГ 2','ШАГ 3',
-  'Пустое поле','Будет:','Добавить новый вариант','Списать товары','Корректировка']
+ const labels=['Введите количество поступивших вещей','Выберите один или несколько товаров',
+  'stocktake-counting-shell','Проверить результат','Будет:','Нужного товара или варианта нет',
+  'Приход','Списание','Корректировка']
  for(const label of labels)if(!js.includes(label))throw Error('Stale unified warehouse UI: '+label)
  console.log('W6_PUBLIC_WAREHOUSE_CHUNK_OK',mod[0])
 }
