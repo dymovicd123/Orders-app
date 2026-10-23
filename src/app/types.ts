@@ -1731,6 +1731,9 @@ export type InventoryDraftItem = {
   length: string
   size: string
   quantity: number
+  // W9: unsaved new correction combinations have no canonical variantId yet.
+  draftKey?: string
+  createMissingVariant?: boolean
   touched?: boolean
   expectedQuantity?: number
   observedPhysicalQuantity?: number | null
