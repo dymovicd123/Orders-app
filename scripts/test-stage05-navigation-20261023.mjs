@@ -20,4 +20,5 @@ assert.ok(sql.includes("url.searchParams.get('scope') === 'shipped'") && sql.inc
  'Backend must distinguish sent-only filtering from the ordered default')
 assert.ok(sql.includes("o.order_date BETWEEN") && sql.includes("o.shipping_status = 'sent'"), 'Use correct dates for each type')
 assert.ok(css.includes('.demand-scope') && css.includes('.demand-dialog'), 'Styles for prominent scope and drawer')
+assert.ok(!ui.includes('Скачать список моделей (CSV)') && !ui.includes('exportModels'), 'Incomplete CSV export must be absent')
 console.log('STAGE05_DEMAND_DASHBOARD_SCOPE_FILTERS_AND_CLEAR_DETAILS_PASSED')
