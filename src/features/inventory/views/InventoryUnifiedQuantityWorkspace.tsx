@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import '../../../styles/193-unified-inventory-operations.css'
+import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 
-type Mode = 'arrival' | 'writeoff' | 'manual_set'
+type Mode = UnifiedQuantityMode
 type Row = { id?: number; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
 type Group = { key: string; productName: string; rows: Row[] }
 type Draft = { variantId?: number | string; quantity?: number; touched?: boolean }
@@ -23,13 +24,6 @@ const names = {
 } as const
 const int = (value: unknown) => Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0
 const sourceName = (s: string) => s === 'boutique' ? 'Бутик' : 'Склад'
-export function inventoryOperationAfter(mode: Mode, before: number, entered: number) {
-  return mode === 'arrival' ? before + entered : mode === 'writeoff' ? Math.max(0, before - entered) : entered
-}
-export function inventoryOperationDisplay(mode: Mode, item: Draft | undefined) {
-  if (!item || (mode === 'manual_set' && !item.touched) || (mode !== 'manual_set' && !int(item.quantity))) return ''
-  return String(item.quantity ?? '')
-}
 function grouped(rows: Row[]) {
   const map = new Map<string, { title: string; colors: Map<string, Row[]> }>()
   for (const row of rows) {
@@ -66,7 +60,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     .map(item=>({row:allRows.get(String(item.variantId)),quantity:int(item.quantity)}))
     .filter((item):item is {row:Row;quantity:number}=>Boolean(item.row)),[draft,allRows,mode])
   const changed=entries.length + (mode==='arrival'?extraArrival.rows:0)
-  const count=entries.reduce((n,e)=>n+(mode==='manual_set'?Math.abs(inventoryOperationAfter(mode,int(e.row.quantity),e.quantity)-int(e.row.quantity)):e.quantity),0)
+  const count=entries.reduce((n,e)=>n+(mode==='manual_set'?Math.abs(previewQuantity(mode,int(e.row.quantity),e.quantity)-int(e.row.quantity)):e.quantity),0)
   const filtered=groups.filter(g=>g.productName.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru').trim())).slice(0,120)
   useEffect(()=>{if(stage==='review'&&!busy&&!changed){setStage('select');setSelected([]);setCurrent('');setNotice('')}},[stage,busy,changed])
   function changeSource(next: 'warehouse' | 'boutique') {
@@ -77,7 +71,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   function select(key: string) {
     if (selected.includes(key)) {
       const removing = groups.find(g => g.key === key)
-      const edited = removing?.rows.filter(row => inventoryOperationDisplay(mode,draftMap.get(String(row.variantId))) !== '') || []
+      const edited = removing?.rows.filter(row => displayQuantityInput(mode,draftMap.get(String(row.variantId))) !== '') || []
       if (edited.length && !window.confirm('Убрать товар и очистить ' + edited.length + ' введённых значений?')) return
       for (const row of edited) p.onQuantity(row, '')
     }
@@ -130,7 +124,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       {stage==='quantities'&&<div className="w6-step"><header><span>ШАГ 2</span><h4>{names[mode].input}: заполните нужные варианты</h4>
         <p><b>Пустое поле не меняет остаток.</b> {mode==='manual_set'?'Ноль устанавливает фактический остаток 0.':'Ноль означает отсутствие движения.'} Изменённое количество видно сразу.</p></header>
         <div className="w6-workspace"><aside><strong>Выбранные товары</strong>{selectedGroups.map(g=>{
-          const n=g.rows.filter(row=>inventoryOperationDisplay(mode,draftMap.get(String(row.variantId)))!=='').length
+          const n=g.rows.filter(row=>displayQuantityInput(mode,draftMap.get(String(row.variantId)))!=='').length
           return <button type="button" className={group?.key===g.key?'is-active':''} key={g.key} onClick={()=>setCurrent(g.key)}>
             <span>{g.productName}</span><small>{n?n+' заполнено':g.rows.length+' вариантов'}</small></button>
         })}<button className="w6-add-more" type="button" onClick={()=>setStage('select')}>+ Добавить другие товары</button></aside>
@@ -139,9 +133,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           {grouped(group.rows).map(position=><section className="w6-position" key={position.key}><h5>{position.title}</h5>
             {position.colors.map(color=><div className="w6-color" key={color.color}><strong>{color.color}</strong><div className="w6-cells">
               {color.variants.map(row=>{
-                const value=inventoryOperationDisplay(mode,draftMap.get(String(row.variantId)))
+                const value=displayQuantityInput(mode,draftMap.get(String(row.variantId)))
                 const before=int(row.quantity)
-                const after=value===''?before:inventoryOperationAfter(mode,before,int(value))
+                const after=value===''?before:previewQuantity(mode,before,int(value))
                 const reserved=int(row.reservedQuantity)
                 return <label key={String(row.variantId)} className={'w6-cell'+(value!==''?' is-changed':'')}>
                   <b>{row.size||'Без размера'}</b><small>Сейчас: <strong>{before}</strong></small>
@@ -171,7 +165,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       </div>}
       {stage==='review'&&<div className="w6-step"><header><span>ШАГ 3</span><h4>Проверка перед сохранением</h4><p>{sourceName(source)} · {names[mode].title}. Пока вы не подтвердили, ничего не изменится.</p></header>
         <div className="w6-review-list">{entries.map(({row,quantity})=>{
-          const before=int(row.quantity),after=inventoryOperationAfter(mode,before,quantity)
+          const before=int(row.quantity),after=previewQuantity(mode,before,quantity)
           return <div key={String(row.variantId)}><span><strong>{row.productName}</strong><small>{[row.gender,row.material,row.length,row.color,row.size].filter(Boolean).join(' · ')}</small></span>
             <span>Сейчас <b>{before}</b></span><span>{names[mode].input} <b>{quantity}</b></span><span>Будет <b>{after}</b></span></div>
         })}
