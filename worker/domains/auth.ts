@@ -200,6 +200,31 @@ export async function handleSimpleAdminStatus(env: Env, request: Request) {
 }
 
 
+// Client3 can be activated with a high-entropy one-time invite without placing its
+// plaintext in GitHub, Cloudflare config or logs. The verifier exists ONLY on the
+// exact isolated third Worker/D1 binding and never grants a session by itself.
+function client3InviteConfigured(env: Env): boolean {
+  return cleanText(env.CLIENT3_INSTALLATION) === '1' &&
+    /^[0-9a-f]{64}$/i.test(cleanText(env.CLIENT3_BOOTSTRAP_SHA256));
+}
+
+function client3SecretConfigured(env: Env): boolean {
+  const secret = cleanText(env.ADMIN_MODE_PASSWORD);
+  return secret.length >= 16 && !['admin', 'password'].includes(secret.toLowerCase());
+}
+
+async function verifyClient3Invite(env: Env, input: string): Promise<boolean> {
+  if (!client3InviteConfigured(env)) return false;
+  const code = cleanText(input).toUpperCase().replace(/[\s-]/g, '');
+  if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{24}$/.test(code)) return false;
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code)));
+  const actual = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  const expected = cleanText(env.CLIENT3_BOOTSTRAP_SHA256).toLowerCase();
+  let difference = 0;
+  for (let i = 0; i < 64; i++) difference |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+  return difference === 0;
+}
+
 export async function verifySimpleAdminPassword(db: D1Database, env: Env, password: string) {
   // The isolated Client3 deployment must never allow the legacy admin/admin bootstrap.
   // Its own secret must be configured before the first account can be created.
@@ -571,8 +596,7 @@ export async function createSession(db: D1Database, userId: number) {
 export async function handleAuthStatus(db: D1Database, env: Env, request: Request) {
   const [userCount, user] = await Promise.all([countAuthUsers(db), getCurrentAuthUser(db, request)]);
   const thirdSetup = cleanText(env.CLIENT3_INSTALLATION) === '1';
-  const configured = !thirdSetup || (cleanText(env.ADMIN_MODE_PASSWORD).length >= 16 &&
-    !['admin', 'password'].includes(cleanText(env.ADMIN_MODE_PASSWORD).toLowerCase()));
+  const configured = !thirdSetup || client3SecretConfigured(env) || client3InviteConfigured(env);
   const response = json({ ok: true, hasUsers: userCount > 0, authDisabled: false,
     setupReady: userCount > 0 || configured, user: user ? authUserPayload(user) : null });
   if (!user && readCookie(request, 'orders_session')) {
@@ -593,8 +617,7 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
     }, { status: 409 });
   }
   if (cleanText(env.CLIENT3_INSTALLATION) === '1' &&
-      (cleanText(env.ADMIN_MODE_PASSWORD).length < 16 ||
-       ['admin', 'password'].includes(cleanText(env.ADMIN_MODE_PASSWORD).toLowerCase()))) {
+      !client3SecretConfigured(env) && !client3InviteConfigured(env)) {
     return json({ ok: false, code: 'AUTH_BOOTSTRAP_NOT_CONFIGURED',
       message: 'Система ещё не активирована владельцем: код первого запуска не настроен на сервере. Обратитесь к владельцу системы.' }, { status: 503 });
   }
@@ -613,7 +636,9 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
   const loginError = authLoginError(login);
   if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
   if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
-  if (bootstrapLogin !== getAdminModeLogin(env) || !(await verifySimpleAdminPassword(db, env, bootstrapPassword))) {
+  if (bootstrapLogin !== getAdminModeLogin(env) ||
+      (!(await verifyClient3Invite(env, bootstrapPassword)) &&
+       !(await verifySimpleAdminPassword(db, env, bootstrapPassword)))) {
     return json({ ok: false, message: cleanText(env.CLIENT3_INSTALLATION) === '1'
       ? 'Неверный код первого запуска. Проверьте код, полученный от владельца системы.'
       : 'Неверный логин или пароль текущего администратора.' }, { status: 401 });
