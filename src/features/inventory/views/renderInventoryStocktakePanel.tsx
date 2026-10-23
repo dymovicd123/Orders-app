@@ -452,7 +452,7 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                                           const saving = stocktakeSavingIds.includes(Number(row.id))
                                                           const recount = row.status === 'recount_required'
                                                           return (
-                                                            <StocktakeSizeCountCell cellId={row.id} size={row.size || '—'}
+                                                            <StocktakeSizeCountCell stocktakeField cellId={row.id} size={row.size || '—'}
                                                               currentQuantity={Number(row.currentQuantity ?? row.baselineQuantity ?? 0)} value={raw}
                                                               stateClass={`${saving ? 'is-saving' : ''} ${recount ? 'needs-recount' : ''}`}
                                                               ariaLabel={`${currentStocktakeGroup.productName} ${color} ${row.size || ''}: фактическое количество`}
