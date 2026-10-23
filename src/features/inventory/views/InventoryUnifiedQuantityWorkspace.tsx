@@ -119,8 +119,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       setNotice('Выберите цвет, размер и положительное целое количество.');return
     }
     if(activeGroup?.rows.some(row=>positionKey(row)===inline.positionKey &&
-      row.color.trim().toLocaleLowerCase('ru')===color.toLocaleLowerCase('ru') &&
-      row.size.trim().toLocaleLowerCase('ru')===size.toLocaleLowerCase('ru'))){
+      (row.color||'').trim().toLocaleLowerCase('ru')===color.toLocaleLowerCase('ru') &&
+      (row.size||'').trim().toLocaleLowerCase('ru')===size.toLocaleLowerCase('ru'))){
       setNotice('Такой вариант уже есть выше. Введите количество в его ячейку.');return
     }
     p.onInlineArrivalVariant({
@@ -148,7 +148,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
             <button type="button" key={key} className={'stocktake-start-mode '+(mode === key?'is-active':'')}
               disabled={busy} onClick={() => {
                 if(key === mode)return
-                if(changed && !window.confirm('Сменить операцию и очистить несохранённые значения?'))return
+                if(changed && !window.confirm('Сменить операцию? Неотправленные данные этого режима будут очищены.'))return
                 p.onMode(key)
               }}><strong>{label}</strong><span>{hint}</span></button>)}
       </div>
@@ -160,12 +160,12 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist" aria-label={mode==='transfer'?'Откуда перемещаем':'Место операции'}>
         {(['warehouse','boutique'] as const).map(key => <button type="button" role="tab" key={key}
           aria-selected={source === key} className={source === key?'is-active':''} disabled={busy}
-          onClick={() => mode==='transfer' ? (key!==source&&p.onSwap()) : setSource(key)}>{sourceName(key)}</button>)}
+          onClick={() => mode==='transfer' ? (key!==source&&(!changed||window.confirm('Сменить направление? Введённые количества перемещения будут очищены.'))&&p.onSwap()) : setSource(key)}>{sourceName(key)}</button>)}
       </div>
       {mode==='transfer' && <div className="w7-transfer-target">
         <span aria-hidden="true">→</span>
         <strong>{sourceName(targetSource)}</strong>
-        <button type="button" className="secondary compact" disabled={busy} onClick={p.onSwap}>⇄ Поменять направление</button>
+        <button type="button" className="secondary compact" disabled={busy} onClick={()=>{if(changed&&!window.confirm('Сменить направление? Введённые количества перемещения будут очищены.'))return;p.onSwap()}}>⇄ Поменять направление</button>
       </div>}
     </div>
     {loading && <div className="stocktake-inline-notice" role="status">Обновляю варианты и остатки выбранной точки…</div>}
