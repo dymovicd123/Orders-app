@@ -16,11 +16,11 @@ export function StocktakeProductChoice({
 
 export function StocktakeSizeCountCell({
   cellId, size, currentQuantity, value, onChange, onClear,
-  disabled = false, stateClass = '', ariaLabel, onKeyDown, onBlur, children,
+  disabled = false, stateClass = '', ariaLabel, onKeyDown, onBlur, children, stocktakeField = false,
 }: {
   cellId: string | number; size: string; currentQuantity: number; value: string;
   onChange: (value: string) => void; onClear: () => void;
-  disabled?: boolean; stateClass?: string; ariaLabel: string;
+  disabled?: boolean; stateClass?: string; ariaLabel: string; stocktakeField?: boolean;
   onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
   onBlur?: () => void; children?: ReactNode;
 }) {
@@ -28,7 +28,7 @@ export function StocktakeSizeCountCell({
     <span className="stocktake-size-label">{size || '—'}
       <small className="stocktake-size-system">По системе: {currentQuantity}</small>
     </span>
-    <input data-stocktake-count-input="1" data-stocktake-item-id={cellId}
+    <input data-stocktake-count-input={stocktakeField ? "1" : undefined} data-stocktake-item-id={stocktakeField ? cellId : undefined}
       aria-label={ariaLabel} type="number" min="0" step="1" inputMode="numeric"
       value={value} disabled={disabled} onChange={event => onChange(event.target.value)}
       onKeyDown={onKeyDown} onBlur={onBlur} placeholder="—" />
