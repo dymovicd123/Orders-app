@@ -8810,7 +8810,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ inventoryMovementError, onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
+        <InventorySection ctx={{ inventoryMovementError, clearInventoryMovementError: () => setInventoryMovementError(''), onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
           setInventoryArrivalPositions((current) => [
             ...current.filter(position => Boolean(position.productName) ||
               position.sizes.some(line => Boolean(line.color || line.size))),
