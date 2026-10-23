@@ -9,401 +9,312 @@ type DemandRow = {
   knownRevenue: number; priceDiscrepancyQuantity: number
   minPrice: number | null; maxPrice: number | null
 }
-type DemandResponse = { ok: boolean; message?: string; note?: string; truncated?: boolean; rows?: DemandRow[] }
+type DemandResponse = {
+  ok: boolean; message?: string; truncated?: boolean; rows?: DemandRow[]
+  periodOrderCount?: number; periodShippedOrderCount?: number
+}
 type OrderLine = {
-  itemId: number; orderId: number; externalId: string; shippedAt: string; sold: number
-  returned: number; net: number; unitPrice: number | null; priceDiscrepancy: boolean; orderTotal: number
+  itemId: number; orderId: number; externalId: string; shippedAt: string; orderedAt: string
+  sold: number; returned: number; net: number
+  unitPrice: number | null; orderTotal: number; priceDiscrepancy: boolean
 }
 type OrdersResponse = { ok: boolean; message?: string; orders?: OrderLine[]; hasMore?: boolean }
-type Dimension = 'product' | 'color' | 'size' | 'material' | 'length' | 'gender' | 'variant'
-type Metric = 'net' | 'sold' | 'knownRevenue' | 'returned'
-type Aggregate = {
-  label: string; sold: number; returned: number; net: number; pricedQuantity: number
-  knownRevenue: number; priceDiscrepancyQuantity: number; minPrice: number | null; maxPrice: number | null
-}
-const dimensions: { value: Dimension; label: string }[] = [
-  { value: 'product', label: 'Модели' }, { value: 'color', label: 'Цвета' },
-  { value: 'size', label: 'Размеры' }, { value: 'material', label: 'Материалы' },
-  { value: 'length', label: 'Длина' }, { value: 'gender', label: 'Пол' },
-  { value: 'variant', label: 'Сочетания' },
-]
-const formatCount = (n: number) => new Intl.NumberFormat('ru-RU').format(n)
+type Dimension = 'product' | 'color' | 'size' | 'material' | 'length' | 'gender'
+type Scope = 'orders' | 'shipped'
+type Summary = { name: string; sold: number; net: number; returned: number; amount: number; priced: number }
+type Selection = { kind: Dimension; name: string }
+const count = (n: number) => new Intl.NumberFormat('ru-RU').format(n)
 const money = (n: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Math.round(n)) + ' ₸'
-const percent = (part: number, whole: number) => whole > 0 ? Math.round(part / whole * 100) + '%' : '—'
-function dateLocal(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate())
+const pct = (n: number, total: number) => total ? Math.round(n / total * 100) + '%' : '—'
+const fieldsForOrders = ['product','color','size','material','length','gender','category','source'] as const
+const sourceLabels: Record<string,string> = { warehouse:'Склад', boutique:'Бутик', workshop:'Цех' }
+const dimensionLabels: Record<Dimension,string> = {
+  product:'Модели', color:'Цвета', size:'Размеры', material:'Материалы', length:'Длина', gender:'Пол'
 }
-function currentMonth() { return dateLocal(new Date()).slice(0, 7) }
-function monthRange(value: string) {
-  const [year, month] = value.split('-').map(Number)
-  return { start: dateLocal(new Date(year, month - 1, 1)), end: dateLocal(new Date(year, month, 0)) }
+function day(date: Date) {
+  const p = (v: number) => String(v).padStart(2,'0')
+  return date.getFullYear() + '-' + p(date.getMonth()+1) + '-' + p(date.getDate())
 }
-function shiftMonth(value: string, delta: number) {
-  const [y, m] = value.split('-').map(Number)
-  return dateLocal(new Date(y, m - 1 + delta, 1)).slice(0, 7)
+function thisMonth() { return day(new Date()).slice(0,7) }
+function monthDates(value: string) {
+  const [year,month] = value.split('-').map(Number)
+  return { start:day(new Date(year,month-1,1)), end:day(new Date(year,month,0)) }
 }
-function variantLabel(row: DemandRow) {
-  return [row.product, row.material !== 'Не указан' ? row.material : '',
-    row.color !== 'Не указан' ? row.color : '', row.size !== 'Не указан' ? row.size : '',
-    row.length !== 'Не указана' ? row.length : ''].filter(Boolean).join(' · ')
+function moveMonth(value: string, delta: number) {
+  const [year,month] = value.split('-').map(Number)
+  return day(new Date(year,month-1+delta,1)).slice(0,7)
 }
-function keyByDimension(row: DemandRow, dimension: Dimension) {
-  return dimension === 'variant' ? variantLabel(row) : row[dimension]
+function prettyMonth(value: string) {
+  const [year,month] = value.split('-').map(Number)
+  return new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric'}).format(new Date(year,month-1,1))
 }
-function combine(rows: DemandRow[], key: (row: DemandRow) => string): Aggregate[] {
-  const map = new Map<string, Aggregate>()
-  for (const row of rows) {
-    const label = key(row)
-    const item = map.get(label) || {
-      label, sold: 0, returned: 0, net: 0, pricedQuantity: 0,
-      knownRevenue: 0, priceDiscrepancyQuantity: 0, minPrice: null, maxPrice: null,
-    }
-    item.sold += row.sold; item.returned += row.returned; item.net += row.net
-    item.pricedQuantity += row.pricedQuantity; item.knownRevenue += row.knownRevenue
-    item.priceDiscrepancyQuantity += row.priceDiscrepancyQuantity
-    if (row.minPrice !== null) item.minPrice = item.minPrice === null ? row.minPrice : Math.min(item.minPrice, row.minPrice)
-    if (row.maxPrice !== null) item.maxPrice = item.maxPrice === null ? row.maxPrice : Math.max(item.maxPrice, row.maxPrice)
-    map.set(label, item)
+function sum(rows: DemandRow[]): Summary {
+  return rows.reduce((a,r)=>({
+    name:'Всего',sold:a.sold+r.sold,net:a.net+r.net,returned:a.returned+r.returned,
+    amount:a.amount+r.knownRevenue,priced:a.priced+r.pricedQuantity,
+  }),{name:'Всего',sold:0,net:0,returned:0,amount:0,priced:0})
+}
+function rank(rows: DemandRow[], by: Dimension): Summary[] {
+  const map = new Map<string,DemandRow[]>()
+  for(const row of rows) {
+    const name = row[by]
+    map.set(name,[...(map.get(name)||[]),row])
   }
-  return [...map.values()]
+  return [...map].map(([name,items])=>({...sum(items),name}))
+    .sort((a,b)=>b.net-a.net || b.sold-a.sold || a.name.localeCompare(b.name,'ru'))
 }
-function rank(list: Aggregate[], metric: Metric) {
-  return [...list].sort((a, b) => b[metric] - a[metric] || a.label.localeCompare(b.label, 'ru'))
+function variantKey(row: DemandRow) { return fieldsForOrders.map(field=>row[field]).join('\u001f') }
+function priceSummary(row: Summary) {
+  return row.priced ? money(row.amount/row.priced) : 'Нет цены'
 }
-function priceCoverage(row: Aggregate) {
-  if (!row.pricedQuantity) return 'Цена неизвестна'
-  if (row.pricedQuantity < row.net) return 'Цены ' + formatCount(row.pricedQuantity) + ' из ' + formatCount(row.net) + ' шт.'
-  return row.minPrice !== null && row.maxPrice !== null && row.minPrice !== row.maxPrice
-    ? 'Диапазон ' + money(row.minPrice) + ' — ' + money(row.maxPrice)
-    : 'Цена сохранена'
-}
-function aggregateMetric(row: Aggregate, metric: Metric) {
-  return metric === 'knownRevenue' ? money(row.knownRevenue) : formatCount(row[metric]) + ' шт.'
-}
-const sourceNames: Record<string, string> = { warehouse: 'Склад', boutique: 'Бутик', workshop: 'Цех' }
-const filtersForOrders = ['product', 'color', 'size', 'material', 'length', 'gender', 'category', 'source'] as const
 
-export function InventoryDemandStatistics({ active }: { active: boolean }) {
-  const [month, setMonth] = useState(currentMonth)
-  const [custom, setCustom] = useState(false)
-  const [customStart, setCustomStart] = useState(() => monthRange(currentMonth()).start)
-  const [customEnd, setCustomEnd] = useState(() => dateLocal(new Date()))
-  const [period, setPeriod] = useState(() => monthRange(currentMonth()))
-  const [source, setSource] = useState('all')
-  const [category, setCategory] = useState('all')
-  const [search, setSearch] = useState('')
-  const [dimension, setDimension] = useState<Dimension>('product')
-  const [metric, setMetric] = useState<Metric>('net')
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
-  const [variant, setVariant] = useState<DemandRow | null>(null)
-  const [data, setData] = useState<DemandResponse | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [refresh, setRefresh] = useState(0)
-  const [orderLines, setOrderLines] = useState<OrderLine[]>([])
-  const [orderBusy, setOrderBusy] = useState(false)
-  const [orderError, setOrderError] = useState('')
-  const [orderPage, setOrderPage] = useState(0)
-  const [hasMore, setHasMore] = useState(false)
+export function InventoryDemandStatistics({active}:{active:boolean}) {
+  const [month,setMonth]=useState(thisMonth)
+  const [period,setPeriod]=useState(()=>monthDates(thisMonth()))
+  const [custom,setCustom]=useState(false)
+  const [customStart,setCustomStart]=useState(()=>monthDates(thisMonth()).start)
+  const [customEnd,setCustomEnd]=useState(()=>day(new Date()))
+  const [scope,setScope]=useState<Scope>('orders')
+  const [source,setSource]=useState('all')
+  const [category,setCategory]=useState('all')
+  const [query,setQuery]=useState('')
+  const [showAll,setShowAll]=useState<Dimension|null>(null)
+  const [selection,setSelection]=useState<Selection|null>(null)
+  const [pickedModel,setPickedModel]=useState<string|null>(null)
+  const [pickedVariant,setPickedVariant]=useState<DemandRow|null>(null)
+  const [response,setResponse]=useState<DemandResponse|null>(null)
+  const [loading,setLoading]=useState(false)
+  const [error,setError]=useState('')
+  const [refresh,setRefresh]=useState(0)
+  const [orders,setOrders]=useState<OrderLine[]>([])
+  const [orderPage,setOrderPage]=useState(0)
+  const [orderLoading,setOrderLoading]=useState(false)
+  const [orderError,setOrderError]=useState('')
+  const [orderMore,setOrderMore]=useState(false)
 
-  function clearDrilldown() {
-    setSelectedGroup(null); setSelectedProduct(null); setVariant(null)
-    setOrderPage(0); setOrderLines([]); setHasMore(false)
+  const isSent = scope==='shipped'
+  function clearDetail() {setSelection(null);setPickedModel(null);setPickedVariant(null);setOrders([]);setOrderPage(0)}
+  function chooseMonth(value:string) {setMonth(value);setPeriod(monthDates(value));setCustom(false);clearDetail()}
+  function openGroup(kind:Dimension,name:string) {
+    setSelection({kind,name});setPickedModel(null);setPickedVariant(null);setOrders([]);setOrderPage(0)
   }
-  function backInDemand() {
-    if (variant) {
-      setVariant(null); setOrderPage(0); setOrderLines([]); setHasMore(false)
-    } else if (selectedProduct !== null && dimension !== 'product' && models.length > 1) {
-      setSelectedProduct(null)
-    } else clearDrilldown()
-  }
-  function chooseMonth(value: string) {
-    setMonth(value); setCustom(false); setPeriod(monthRange(value)); clearDrilldown()
-  }
-  function applyCustom() {
-    if (customStart && customEnd && customStart <= customEnd) {
-      setPeriod({ start: customStart, end: customEnd }); clearDrilldown()
-    } else setError('Проверьте выбранные даты.')
+  function closeOneLevel() {
+    if(pickedVariant){setPickedVariant(null);setOrders([]);setOrderPage(0)}
+    else if(pickedModel!==null && selection?.kind!=='product')setPickedModel(null)
+    else clearDetail()
   }
 
-  useEffect(() => {
-    if (!active) return
-    const controller = new AbortController()
-    setBusy(true); setError(''); setData(null)
-    const params = new URLSearchParams({ start: period.start, end: period.end })
-    void fetch('/api/reports/warehouse-demand?' + params, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => {
-        const payload = await response.json() as DemandResponse
-        if (!response.ok || !payload.ok) throw Error(payload.message || 'Не удалось загрузить отчёт.')
-        return payload
-      }).then(setData).catch(err => {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Не удалось загрузить отчёт.')
-      }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
-    return () => controller.abort()
-  }, [active, period.start, period.end, refresh])
+  useEffect(()=>{
+    if(!active) return
+    const ctrl=new AbortController()
+    setLoading(true);setError('');setResponse(null)
+    const params=new URLSearchParams({start:period.start,end:period.end,scope})
+    void fetch('/api/reports/warehouse-demand?'+params,{credentials:'same-origin',cache:'no-store',signal:ctrl.signal})
+      .then(async r=>{const j=await r.json() as DemandResponse;if(!r.ok||!j.ok)throw Error(j.message||'Не удалось загрузить статистику.');return j})
+      .then(setResponse).catch(e=>{if(!ctrl.signal.aborted)setError(e instanceof Error?e.message:'Ошибка получения данных.')})
+      .finally(()=>{if(!ctrl.signal.aborted)setLoading(false)})
+    return ()=>ctrl.abort()
+  },[active,period.start,period.end,scope,refresh])
 
-  const filtered = useMemo(() => (data?.rows || []).filter(row =>
-    (source === 'all' || row.source === source) &&
-    (category === 'all' || row.category === category) &&
-    (!search.trim() || [row.product, row.color, row.size, row.material].some(value =>
-      value.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru'))))
-  ), [data, source, category, search])
+  const filtered=useMemo(()=>(response?.rows||[]).filter(row=>
+    (source==='all'||row.source===source) && (category==='all'||row.category===category)),
+    [response,source,category])
+  const totals=useMemo(()=>sum(filtered),[filtered])
+  const models=useMemo(()=>rank(filtered,'product'),[filtered])
+  const colors=useMemo(()=>rank(filtered,'color'),[filtered])
+  const sizes=useMemo(()=>rank(filtered,'size'),[filtered])
+  const materials=useMemo(()=>rank(filtered,'material'),[filtered])
+  const lengths=useMemo(()=>rank(filtered,'length'),[filtered])
+  const genders=useMemo(()=>rank(filtered,'gender'),[filtered])
+  const displayedModels=useMemo(()=>models.filter(m=>m.name.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))),[models,query])
+  const focusRows=useMemo(()=>!selection?[]:filtered.filter(row=>row[selection.kind]===selection.name),[filtered,selection])
+  const focusModels=useMemo(()=>rank(focusRows,'product'),[focusRows])
+  const detailModel=selection?.kind==='product'?selection.name : (pickedModel || (focusModels.length===1?focusModels[0].name:null))
+  const variants=useMemo(()=>detailModel===null?[]:focusRows.filter(row=>row.product===detailModel).sort((a,b)=>b.net-a.net || a.color.localeCompare(b.color,'ru')),[focusRows,detailModel])
+  const focusSummary=useMemo(()=>sum(focusRows),[focusRows])
+  const variantId=pickedVariant?variantKey(pickedVariant):''
 
-  const totals = useMemo(() => combine(filtered, () => 'Все')[0] || {
-    label: 'Все', sold: 0, returned: 0, net: 0, pricedQuantity: 0, knownRevenue: 0,
-    priceDiscrepancyQuantity: 0, minPrice: null, maxPrice: null,
-  }, [filtered])
-  const ranking = useMemo(() => rank(combine(filtered, row => keyByDimension(row, dimension)), metric), [filtered, dimension, metric])
-  const groupRows = useMemo(() => selectedGroup === null ? [] :
-    filtered.filter(row => keyByDimension(row, dimension) === selectedGroup), [filtered, dimension, selectedGroup])
-  const models = useMemo(() => rank(combine(groupRows, row => row.product), 'net'), [groupRows])
-  // Opening a model already identifies its product. For any other characteristic,
-  // skip the model picker too when only a single model contributed to the group.
-  const openedProduct = selectedGroup === null ? null
-    : dimension === 'product' ? selectedGroup
-      : (selectedProduct ?? (models.length === 1 ? models[0].label : null))
-  const variants = useMemo(() => openedProduct === null ? [] :
-    groupRows.filter(row => row.product === openedProduct)
-      .sort((a, b) => b.net - a.net || a.size.localeCompare(b.size, 'ru')),
-    [groupRows, openedProduct])
-  const selectedGroupSummary = ranking.find(row => row.label === selectedGroup)
-  const selectedModelSummary = models.find(row => row.label === openedProduct)
-  const selectedVariantKey = variant ? filtersForOrders.map(key => variant[key]).join('\u001f') : ''
+  useEffect(()=>{
+    if(!active||!pickedVariant)return
+    const ctrl=new AbortController()
+    const params=new URLSearchParams({start:period.start,end:period.end,scope,mode:'orders',offset:String(orderPage*50)})
+    for(const key of fieldsForOrders)params.set(key,pickedVariant[key])
+    setOrderLoading(true);setOrderError('')
+    if(orderPage===0)setOrders([])
+    void fetch('/api/reports/warehouse-demand?'+params,{credentials:'same-origin',signal:ctrl.signal,cache:'no-store'})
+      .then(async r=>{const j=await r.json() as OrdersResponse;if(!r.ok||!j.ok)throw Error(j.message||'Не удалось загрузить позиции.');return j})
+      .then(j=>{if(!ctrl.signal.aborted){setOrders(old=>orderPage?[...old,...(j.orders||[])]:j.orders||[]);setOrderMore(Boolean(j.hasMore))}})
+      .catch(e=>{if(!ctrl.signal.aborted)setOrderError(e instanceof Error?e.message:'Ошибка получения позиций.')})
+      .finally(()=>{if(!ctrl.signal.aborted)setOrderLoading(false)})
+    return ()=>ctrl.abort()
+  },[active,variantId,period.start,period.end,scope,orderPage])
 
-  useEffect(() => {
-    if (!active || !variant) return
-    const controller = new AbortController()
-    const params = new URLSearchParams({ start: period.start, end: period.end, mode: 'orders', offset: String(orderPage * 50) })
-    for (const field of filtersForOrders) params.set(field, variant[field])
-    setOrderBusy(true); setOrderError('')
-    if (orderPage === 0) setOrderLines([])
-    void fetch('/api/reports/warehouse-demand?' + params, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => {
-        const payload = await response.json() as OrdersResponse
-        if (!response.ok || !payload.ok) throw Error(payload.message || 'Не удалось загрузить заказы.')
-        return payload
-      }).then(payload => {
-        if (controller.signal.aborted) return
-        setOrderLines(current => orderPage ? [...current, ...(payload.orders || [])] : (payload.orders || []))
-        setHasMore(Boolean(payload.hasMore))
-      }).catch(err => {
-        if (!controller.signal.aborted) setOrderError(err instanceof Error ? err.message : 'Не удалось загрузить заказы.')
-      }).finally(() => { if (!controller.signal.aborted) setOrderBusy(false) })
-    return () => controller.abort()
-  }, [active, selectedVariantKey, orderPage, period.start, period.end])
-
-  function csvExport() {
-    const headers = ['Группа', 'Выдано', 'Возврат', 'Чистые продажи', 'Сумма по ценам позиций', 'Средняя цена', 'Кол-во с ценой']
-    const quote = (value: string | number) => '"' + String(value).replace(/"/g, '""') + '"'
-    const rows = ranking.map(row => [row.label, row.sold, row.returned, row.net, row.knownRevenue,
-      row.pricedQuantity ? (row.knownRevenue / row.pricedQuantity).toFixed(2) : '', row.pricedQuantity])
-    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(quote).join(';')).join('\r\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const link = document.createElement('a')
-    link.href = url; link.download = 'spros-' + dimension + '-' + period.start + '.csv'; link.click()
-    URL.revokeObjectURL(url)
+  function exportModels() {
+    const quote=(v:string|number)=>'"'+String(v).replace(/"/g,'""')+'"'
+    const data=[['Модель','Количество','Возврат','Количество без возвратов','Стоимость по ценам позиций','Средняя цена','С известной ценой'],
+      ...models.map(m=>[m.name,m.sold,m.returned,m.net,m.amount,m.priced?Number((m.amount/m.priced).toFixed(2)):'',m.priced])]
+    const csv='\uFEFF'+data.map(row=>row.map(quote).join(';')).join('\r\n')
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
+    const a=document.createElement('a');a.href=url;a.download='spros-modeli-'+period.start+'.csv';a.click();URL.revokeObjectURL(url)
   }
 
-  const max = Math.max(1, ...ranking.map(row => row[metric]))
-  return (
-    <section className="inventory-demand" aria-label="Статистика спроса">
-      <header className="inventory-demand-head">
-        <div>
-          <span className="inventory-demand-eyebrow">АНАЛИТИКА ПРОДАЖ</span>
-          <h2>Что покупают чаще всего</h2>
-          <p>Популярность моделей, цветов, размеров и цен на основании отправленных заказов — без ненадёжных остатков.</p>
-        </div>
-        <button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)} disabled={busy}>Обновить</button>
-      </header>
-
-      <div className="inventory-demand-period">
-        <div className="inventory-demand-period-actions">
-          <button type="button" className={!custom && month === currentMonth() ? 'is-active' : ''} onClick={() => chooseMonth(currentMonth())}>Этот месяц</button>
-          <button type="button" className={!custom && month === shiftMonth(currentMonth(), -1) ? 'is-active' : ''} onClick={() => chooseMonth(shiftMonth(currentMonth(), -1))}>Прошлый месяц</button>
-          <button type="button" className={custom ? 'is-active' : ''} onClick={() => { if (custom) { setCustom(false); setPeriod(monthRange(month)); clearDrilldown() } else setCustom(true) }}>Свой период</button>
-        </div>
-        {!custom ? <label className="inventory-demand-month">Месяц <input type="month" value={month} onChange={e => { if (e.target.value) chooseMonth(e.target.value) }} /></label> : (
-          <form className="inventory-demand-dates" onSubmit={event => { event.preventDefault(); applyCustom() }}>
-            <label>От <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} /></label>
-            <label>До <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} /></label>
-            <button type="submit">Показать</button>
-          </form>
-        )}
-        <div className="inventory-demand-period-label">Данные: {period.start} — {period.end}</div>
+  function analysisCard(kind:Dimension,items:Summary[],limit:number) {
+    const visible=showAll===kind?items:items.slice(0,limit)
+    const max=Math.max(1,...items.map(item=>item.net))
+    return <section className="demand-card" key={kind}>
+      <header className="demand-card-heading"><h3>{dimensionLabels[kind]}</h3>
+        <span>{items.length} {kind==='product'?'моделей':'значений'}</span></header>
+      <div className="demand-card-list">
+        {!visible.length?<p className="demand-empty">Данных за этот период нет</p>:visible.map((item,i)=><button type="button" key={item.name} className="demand-rank-row" onClick={()=>openGroup(kind,item.name)}>
+          <span className="demand-rank-id">{i+1}</span>
+          <span className="demand-rank-info">
+            <strong>{item.name}</strong>
+            <span className="demand-progress"><span style={{'--demand-width':Math.max(0,item.net)/max*100+'%'} as CSSProperties}/></span>
+            <small>{item.net} шт. · {pct(item.net,totals.net)} · {item.priced?'средняя '+priceSummary(item):'цена неизвестна'}</small>
+          </span>
+          <span className="demand-rank-action">Подробнее <span aria-hidden="true">→</span></span>
+        </button>)}
       </div>
-
-      <div className="inventory-demand-filters">
-        <label>Место продажи <select value={source} onChange={e => { setSource(e.target.value); clearDrilldown() }}>
-          <option value="all">Все источники</option><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option>
-        </select></label>
-        <label>Категория <select value={category} onChange={e => { setCategory(e.target.value); clearDrilldown() }}>
-          <option value="all">Все категории</option><option value="adult">Взрослые</option><option value="child">Детские</option><option value="unknown">Не указана</option>
-        </select></label>
-        <label className="inventory-demand-search">Поиск по модели или характеристике
-          <input type="search" value={search} onChange={e => { setSearch(e.target.value); clearDrilldown() }} placeholder="Например: кардиган, шерсть, 52…" />
-        </label>
-      </div>
-
-      {busy ? <div className="inventory-demand-notice" role="status">Загружаем статистику продаж…</div> : null}
-      {error ? <div className="inventory-demand-notice" role="alert">{error}</div> : null}
-      {data?.truncated ? <div className="inventory-demand-notice" role="alert">В периоде слишком много вариантов для корректного полного рейтинга. Выберите более короткий период.</div> : null}
-
-      {data && !data.truncated && !busy ? <>
-        <div className="inventory-demand-summary">
-          <div><small>Выдано</small><strong>{formatCount(totals.sold)} шт.</strong></div>
-          <div><small>Возвращено</small><strong>{formatCount(totals.returned)} шт.</strong></div>
-          <div><small>Чистые продажи</small><strong>{formatCount(totals.net)} шт.</strong></div>
-          <div><small>Сумма по ценам позиций</small><strong>{totals.pricedQuantity ? money(totals.knownRevenue) : 'Нет данных'}</strong></div>
-          <div><small>Средняя цена продажи</small><strong>{totals.pricedQuantity ? money(totals.knownRevenue / totals.pricedQuantity) : 'Нет данных'}</strong></div>
-        </div>
-
-        <div className="inventory-demand-quality">
-          <div><strong>Цены сохранены для {formatCount(totals.pricedQuantity)} из {formatCount(totals.net)} шт. ({percent(totals.pricedQuantity, totals.net)}).</strong>
-            {' '}{totals.pricedQuantity < totals.net ? 'Стоимость продаж может быть неполной: неизвестные цены не считаем нулевыми.' : 'Цена каждой учтённой единицы доступна.'}
-            {totals.priceDiscrepancyQuantity > 0 ? ' Для ' + formatCount(totals.priceDiscrepancyQuantity) + ' шт. цена позиции не совпадает со старой суммой строки — проверьте заказ.' : ''}
-          </div>
-          <details><summary>Как считаются показатели</summary>
-            <p>Количество — по отправленным заказам и их текущим товарным позициям, возвраты — до конца выбранного периода. Обмены, внесённые позднее, могут менять статистику прошлого месяца: это пока не неизменяемый журнал продаж.</p>
-            <p>Сумма = известная сохранённая цена позиции × чистое количество. Это не поступления денег, не прибыль и не общая стоимость заказов. В старых заказах без записанной цены покажем номер заказа и его полную сумму, но не присвоим её одной позиции, если там несколько товаров.</p>
-          </details>
-        </div>
-
-
-        {selectedGroup === null ? <>
-          <div className="inventory-demand-rank-head">
-            <div><h3>Популярность по характеристикам</h3><p>Выберите строку, чтобы изучить конкретные проданные варианты.</p></div>
-            <label>Ранжировать по <select value={metric} onChange={e => setMetric(e.target.value as Metric)}>
-              <option value="net">Чистые продажи</option><option value="sold">Выдано</option>
-              <option value="knownRevenue">Сумма по известным ценам</option><option value="returned">Возвраты</option>
-            </select></label>
-          </div>
-          <div className="inventory-demand-tabs" aria-label="Популярность">
-            {dimensions.map(item => <button type="button" key={item.value}
-              className={dimension === item.value ? 'is-active' : ''}
-              aria-pressed={dimension === item.value}
-              onClick={() => { setDimension(item.value); clearDrilldown() }}>{item.label}</button>)}
-          </div>
-
-          {!ranking.length ? <div className="inventory-demand-notice">По выбранным фильтрам отправленных позиций не найдено.</div> : (
-            <div className="inventory-demand-list">
-              <div className="inventory-demand-list-toolbar"><span>По популярности</span><button type="button" className="ghost compact" onClick={csvExport}>Экспорт CSV</button></div>
-              {ranking.slice(0, 100).map((row, index) => <button type="button" key={row.label}
-                className="inventory-demand-item"
-                onClick={() => { setSelectedGroup(row.label); setSelectedProduct(null); setVariant(null); setOrderPage(0); setOrderLines([]) }}>
-                <span className="inventory-demand-rank-number">{index + 1}</span>
-                <span className="inventory-demand-item-primary">
-                  <strong>{row.label}</strong>
-                  <span className="inventory-demand-bar"><span style={{ '--progress': (Math.max(0, row[metric]) / max * 100) + '%' } as CSSProperties} /></span>
-                  <small>{priceCoverage(row)}</small>
-                </span>
-                <span className="inventory-demand-item-stats">
-                  <strong>{aggregateMetric(row, metric)}</strong>
-                  <small>Продано {formatCount(row.sold)} · возврат {formatCount(row.returned)} · {percent(row.net, totals.net)} чистых продаж</small>
-                  <small>{row.pricedQuantity ? 'Сумма ' + money(row.knownRevenue) + ' · средняя ' + money(row.knownRevenue / row.pricedQuantity) : 'Денежные показатели неизвестны'}</small>
-                </span>
-                <span className="inventory-demand-chevron" aria-hidden="true">›</span>
-              </button>)}
-              {ranking.length > 100 ? <p className="inventory-demand-muted">Показаны 100 наиболее значимых групп из {ranking.length}. Уточните фильтры для остальных.</p> : null}
-            </div>
-          )}
-        </> : (
-          <section className="inventory-demand-detail" aria-label="Детализация статистики" id="inventory-demand-detail">
-            <nav className="inventory-demand-breadcrumbs" aria-label="Путь по статистике">
-              <button type="button" onClick={clearDrilldown}>← К рейтингу</button>
-              <span aria-hidden="true">/</span>
-              <span>{dimensions.find(item => item.value === dimension)?.label}</span>
-              <span aria-hidden="true">/</span>
-              <strong>{selectedGroup}</strong>
-              {openedProduct && dimension !== 'product' && <><span aria-hidden="true">/</span><span>{openedProduct}</span></>}
-              {variant && <><span aria-hidden="true">/</span><span>{variant.color} · {variant.size}</span></>}
-            </nav>
-
-            {variant ? (
-              <div className="inventory-demand-detail-content">
-                <div className="inventory-demand-detail-heading">
-                  <div>
-                    <span className="inventory-demand-eyebrow">ПОЗИЦИИ ЗАКАЗОВ</span>
-                    <h3>{variant.product} · {variant.color} · {variant.size}</h3>
-                    <p>Фактические позиции заказов, сохранённые цены и возвраты для выбранного варианта.</p>
-                  </div>
-                  <button type="button" className="secondary" onClick={backInDemand}>← К вариантам</button>
-                </div>
-                {orderError ? <div className="inventory-demand-notice" role="alert">{orderError}</div> : null}
-                {orderBusy && !orderLines.length ? <div className="inventory-demand-notice" role="status">Загружаем позиции заказов…</div> : null}
-                <div className="inventory-demand-orders">
-                  {orderLines.map(line => <div className="inventory-demand-order" key={line.itemId}>
-                    <div><strong>{line.externalId || 'Заказ #' + line.orderId}</strong><small>Отправка: {line.shippedAt}</small></div>
-                    <div><strong>{line.net} шт.</strong><small>{line.sold} выдано / {line.returned} возврат</small></div>
-                    <div><strong>{line.unitPrice === null ? 'Цена не записана' : money(line.unitPrice) + ' / шт.'}</strong>
-                      <small>{line.unitPrice === null ? 'Всего по заказу: ' + money(line.orderTotal) + ' (не цена этой позиции)' : 'Сумма позиции: ' + money(line.net * line.unitPrice)}</small>
-                      {line.priceDiscrepancy ? <small className="inventory-demand-warning">Сумма строки отличается от цены × количества</small> : null}
-                    </div>
-                  </div>)}
-                  {hasMore ? <button type="button" className="secondary" disabled={orderBusy} onClick={() => setOrderPage(page => page + 1)}>Показать ещё 50 позиций</button> : null}
-                  {orderBusy && orderLines.length ? <p className="inventory-demand-muted">Загружаем ещё…</p> : null}
-                </div>
-              </div>
-            ) : (
-              <div className="inventory-demand-detail-content">
-                <div className="inventory-demand-detail-heading">
-                  <div>
-                    <span className="inventory-demand-eyebrow">ДЕТАЛИ ПРОДАЖ</span>
-                    <h3>{openedProduct ?? selectedGroup}</h3>
-                    <p>{openedProduct === null ? 'Модели, которые сформировали спрос на эту характеристику.' : 'Все проданные варианты, их количество, сумма и средняя цена.'}</p>
-                  </div>
-                  <button type="button" className="secondary" onClick={backInDemand}>
-                    ← {selectedProduct !== null && dimension !== 'product' && models.length > 1 ? 'К моделям' : 'К рейтингу'}
-                  </button>
-                </div>
-                {selectedGroupSummary && <div className="inventory-demand-context-metrics">
-                  <span><b>{formatCount(selectedGroupSummary.net)} шт.</b> чистых продаж</span>
-                  <span><b>{formatCount(selectedGroupSummary.sold)}</b> выдано</span>
-                  <span><b>{formatCount(selectedGroupSummary.returned)}</b> возвратов</span>
-                  <span><b>{selectedGroupSummary.pricedQuantity ? money(selectedGroupSummary.knownRevenue) : '—'}</b> сумма продаж*</span>
-                </div>}
-                {openedProduct === null ? (
-                  <div className="inventory-demand-model-list">
-                    <div className="inventory-demand-section-title"><h4>Модели с этой характеристикой</h4><p>Откройте модель, чтобы увидеть её варианты.</p></div>
-                    {models.map(model => <button type="button" key={model.label} onClick={() => { setSelectedProduct(model.label); setVariant(null); setOrderPage(0) }}>
-                      <span><strong>{model.label}</strong><small>{formatCount(model.sold)} выдано · {formatCount(model.returned)} возвратов</small></span>
-                      <span><strong>{formatCount(model.net)} шт.</strong><small>{model.pricedQuantity ? money(model.knownRevenue / model.pricedQuantity) + ' средняя цена' : 'Цена неизвестна'}</small></span>
-                      <span aria-hidden="true">›</span>
-                    </button>)}
-                  </div>
-                ) : (
-                  <div className="inventory-demand-variants">
-                    <div className="inventory-demand-section-title">
-                      <h4>Проданные варианты{dimension !== 'product' ? ': ' + openedProduct : ''}</h4>
-                      <p>Выберите вариант, чтобы посмотреть исходные позиции заказов.</p>
-                      {selectedModelSummary && dimension !== 'product' && <p>Модель: {formatCount(selectedModelSummary.net)} шт. чистых продаж.</p>}
-                    </div>
-                    <div className="inventory-demand-variant-list">
-                      <div className="inventory-demand-variant-head" aria-hidden="true">
-                        <span>Цвет, размер и другие признаки</span><span>Продано</span><span>Сумма*</span><span>Средняя цена*</span><span></span>
-                      </div>
-                      {variants.map(row => <button type="button"
-                        key={[row.product,row.color,row.size,row.material,row.length,row.gender,row.category,row.source].join('|')}
-                        onClick={() => { setVariant(row); setOrderLines([]); setOrderPage(0); setHasMore(false) }}>
-                        <span className="inventory-demand-variant-name">
-                          <strong>{row.color} · {row.size}</strong>
-                          <small>{row.material} · {row.length} · {row.gender} · {sourceNames[row.source] || row.source}</small>
-                        </span>
-                        <span><strong>{formatCount(row.net)} шт.</strong><small>{formatCount(row.returned)} возвратов</small></span>
-                        <span>{row.pricedQuantity ? money(row.knownRevenue) : '—'}</span>
-                        <span>{row.pricedQuantity ? money(row.knownRevenue / row.pricedQuantity) : '—'}</span>
-                        <span className="inventory-demand-chevron" aria-hidden="true">›</span>
-                      </button>)}
-                    </div>
-                    <small className="inventory-demand-footnote">* Сумма и средняя цена рассчитаны только по позициям с известной ценой.</small>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-      </> : null}
+      {items.length>limit && <button type="button" className="demand-show-more" onClick={()=>setShowAll(showAll===kind?null:kind)}>
+        {showAll===kind?'Свернуть':'Показать все '+items.length} <span aria-hidden="true">↓</span>
+      </button>}
     </section>
-  )
+  }
+  return <section className="demand-page" aria-label="Статистика спроса">
+    <header className="demand-top"><div><span className="demand-eyebrow">СТАТИСТИКА ТОВАРОВ</span><h2>Какие товары пользуются спросом</h2>
+      <p>Посмотрите, какие модели, цвета и размеры выбирают покупатели.</p></div>
+      <button className="demand-refresh" type="button" onClick={()=>setRefresh(v=>v+1)} disabled={loading}>↻ Обновить</button>
+    </header>
+    <div className="demand-scope" aria-label="Что учитывается">
+      <button type="button" aria-pressed={!isSent} className={!isSent?'is-active':''} onClick={()=>{setScope('orders');clearDetail()}}>
+        <span className="demand-scope-title">Все оформленные заказы</span>
+        <span className="demand-scope-note">Показывает интерес покупателей, даже если товар ещё не отправлен</span>
+      </button>
+      <button type="button" aria-pressed={isSent} className={isSent?'is-active':''} onClick={()=>{setScope('shipped');clearDetail()}}>
+        <span className="demand-scope-title">Только отправленные товары</span>
+        <span className="demand-scope-note">Фактические выдачи клиентам — без ожидающих отправки</span>
+      </button>
+    </div>
+    <div className="demand-period">
+      <div className="demand-month">
+        <button type="button" onClick={()=>chooseMonth(moveMonth(month,-1))} aria-label="Предыдущий месяц">←</button>
+        <strong>{custom?'Выбранный период':prettyMonth(month)}</strong>
+        <button type="button" onClick={()=>chooseMonth(moveMonth(month,1))} aria-label="Следующий месяц">→</button>
+      </div>
+      <div className="demand-period-buttons">
+        <button type="button" onClick={()=>chooseMonth(thisMonth())}>Этот месяц</button>
+        <button type="button" className={custom?'is-current':''} onClick={()=>setCustom(v=>!v)}>Свой период</button>
+      </div>
+      {custom&&<form className="demand-custom-dates" onSubmit={e=>{e.preventDefault();if(customStart&&customEnd&&customStart<=customEnd){setPeriod({start:customStart,end:customEnd});clearDetail();setError('')}else setError('Проверьте даты периода.')}}><label>Начало <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}/></label><label>Конец <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}/></label><button type="submit">Применить</button></form>}
+      <span className="demand-date-caption">Данные с {period.start} по {period.end}</span>
+    </div>
+
+    {loading&&<div className="demand-notice" role="status">Загружаем данные…</div>}
+    {error&&<div className="demand-notice" role="alert">{error}</div>}
+    {response?.truncated&&<div className="demand-notice" role="alert">Слишком много сочетаний товаров — сократите период, чтобы рейтинг был полным.</div>}
+    {response&&!response.truncated&&!loading&&<>
+      <div className="demand-explain"><span className="demand-explain-dot" aria-hidden="true"/>
+        {isSent?'Считаем только товары из заказов, отмеченных «Отправлен», по дате отправки.':'Считаем товары из всех оформленных заказов по дате создания, включая ожидающие отправки.'}
+        {source==='all'&&category==='all'&&response.periodOrderCount!==undefined&&<span className="demand-explain-counter">За период оформлено {count(response.periodOrderCount)} заказов · отправлено {count(response.periodShippedOrderCount||0)}</span>}
+      </div>
+      <div className="demand-kpis">
+        <div><small>{isSent?'Отправлено товаров':'Заказано товаров'}</small><strong>{count(totals.sold)} шт.</strong></div>
+        <div><small>Без возвратов</small><strong>{count(totals.net)} шт.</strong></div>
+        <div><small>Стоимость по ценам позиций</small><strong>{totals.priced?money(totals.amount):'Нет данных'}</strong></div>
+        <div><small>Средняя цена товара</small><strong>{totals.priced?money(totals.amount/totals.priced):'Нет данных'}</strong></div>
+      </div>
+      <div className="demand-smallprint">
+        {totals.returned>0?'Возвращено: '+count(totals.returned)+' шт. · ':''}
+        Сохранённая цена есть для {count(totals.priced)} из {count(totals.net)} шт.
+        {totals.priced<totals.net?' Поэтому суммы могут быть неполными.':''}
+        {' '}<details><summary>Как рассчитываем?</summary><p>Сумма рассчитывается по сохранённым ценам каждой позиции — это не поступившие оплаты и не прибыль. Обмены могут менять текущий состав старого заказа, поэтому исторические данные пока не являются неизменяемым журналом событий.</p></details>
+      </div>
+      <details className="demand-filters">
+        <summary><strong>Уточнить выборку</strong> <span>Источник товара, взрослые/детские</span></summary>
+        <p>Эти два фильтра меняют все показатели, суммы и рейтинги на этой странице.</p>
+        <div className="demand-filter-fields">
+          <label>Откуда товар <select value={source} onChange={e=>{setSource(e.target.value);clearDetail()}}>
+            <option value="all">Все: склад, бутик и цех</option><option value="warehouse">Со склада</option>
+            <option value="boutique">Из бутика</option><option value="workshop">Из цеха</option>
+          </select></label>
+          <label>Для кого <select value={category} onChange={e=>{setCategory(e.target.value);clearDetail()}}>
+            <option value="all">Взрослые и детские</option><option value="adult">Только взрослые</option>
+            <option value="child">Только детские</option><option value="unknown">Без категории</option>
+          </select></label>
+          {(source!=='all'||category!=='all')&&<button type="button" onClick={()=>{setSource('all');setCategory('all');clearDetail()}}>Сбросить фильтры</button>}
+        </div>
+      </details>
+      <div className="demand-section-title">
+        <div><h3>{isSent?'Какие товары продали':'Что чаще всего заказывают'}</h3><p>Нажмите «Подробнее», чтобы увидеть конкретные варианты и позиции заказов.</p></div>
+        <button type="button" className="demand-download" onClick={exportModels}>↓ Скачать список моделей (CSV)</button>
+      </div>
+      <div className="demand-main-grid">
+        <div className="demand-main-left">
+          <label className="demand-model-search">Найти модель в рейтинге <input type="search" placeholder="Введите название товара" value={query} onChange={e=>setQuery(e.target.value)}/></label>
+          {analysisCard('product',displayedModels,10)}
+          <p className="demand-search-help">Поиск меняет только список моделей, а не общие цифры и остальные рейтинги.</p>
+        </div>
+        <div className="demand-secondary">
+          {analysisCard('color',colors,5)}
+          {analysisCard('size',sizes,5)}
+        </div>
+      </div>
+      <div className="demand-subsection"><h3>Другие характеристики товаров</h3><p>Материал, длина и пол — на каких вариантах сосредоточен спрос.</p></div>
+      <div className="demand-other-grid">
+        {analysisCard('material',materials,5)}
+        {analysisCard('length',lengths,5)}
+        {analysisCard('gender',genders,5)}
+      </div>
+    </>}
+    {selection&&<div className="demand-dialog-root">
+      <button className="demand-dialog-scrim" type="button" aria-label="Закрыть детали и вернуться к статистике" onClick={clearDetail}/>
+      <aside className="demand-dialog" role="dialog" aria-modal="true" aria-label="Подробности статистики">
+        <div className="demand-dialog-toolbar">
+          <button type="button" className="demand-back" onClick={closeOneLevel}>{pickedVariant?'← К вариантам':pickedModel!==null?'← К моделям':'← К статистике'}</button>
+          <button type="button" className="demand-close" aria-label="Закрыть подробности" onClick={clearDetail}>×</button>
+        </div>
+        <div className="demand-dialog-body">
+          {pickedVariant?<>
+            <span className="demand-eyebrow">ПОЗИЦИИ ЗАКАЗОВ</span>
+            <h2>{pickedVariant.product}</h2>
+            <p className="demand-dialog-sub">{pickedVariant.color} · {pickedVariant.size} · {pickedVariant.material} · {sourceLabels[pickedVariant.source]||pickedVariant.source}</p>
+            {orderError&&<p role="alert">{orderError}</p>}
+            {orderLoading&&!orders.length&&<p>Загружаем позиции…</p>}
+            {orders.map(item=><article className="demand-order" key={item.itemId}>
+              <strong>{item.externalId||'Заказ №'+item.orderId}</strong><small>{isSent?'Отправлен '+(item.shippedAt||'без даты'):'Оформлен '+(item.orderedAt||'без даты')}</small>
+              <div><b>{item.net} шт.</b><span>{item.unitPrice===null?'Цена позиции неизвестна':money(item.unitPrice)+' / шт.'}</span></div>
+              <small>{item.unitPrice===null?'Общая сумма заказа '+money(item.orderTotal)+' — не цена этого товара':'Стоимость позиции '+money(item.net*item.unitPrice)}</small>
+              {item.priceDiscrepancy&&<small className="demand-warning">Старая сумма строки отличается от цены за штуку</small>}
+            </article>)}
+            {orderMore&&<button type="button" onClick={()=>setOrderPage(p=>p+1)} disabled={orderLoading}>Показать ещё</button>}
+          </>:<>
+            <span className="demand-eyebrow">{dimensionLabels[selection.kind].toUpperCase()} · {isSent?'ОТПРАВЛЕННЫЕ':'ОФОРМЛЕННЫЕ ЗАКАЗЫ'}</span>
+            <h2>{detailModel||selection.name}</h2>
+            {selection.kind!=='product'&&<p className="demand-dialog-sub">Выбрано: {selection.name}{detailModel?' · модель '+detailModel:''}</p>}
+            <div className="demand-dialog-metrics"><span><b>{count(focusSummary.net)}</b> шт. без возвратов</span><span><b>{count(focusSummary.returned)}</b> возвратов</span><span><b>{focusSummary.priced?money(focusSummary.amount):'—'}</b> стоимость*</span></div>
+            {detailModel===null?<>
+              <h3>В каких моделях встречается {selection.name.toLowerCase()}?</h3>
+              <div className="demand-dialog-models">
+                {focusModels.map(model=><button type="button" key={model.name} onClick={()=>setPickedModel(model.name)}>
+                  <span><strong>{model.name}</strong><small>Средняя цена: {priceSummary(model)}</small></span>
+                  <b>{count(model.net)} шт. →</b>
+                </button>)}
+              </div>
+            </>:<>
+              <h3>Какие варианты выбирали</h3>
+              <p className="demand-dialog-hint">Выберите вариант, чтобы увидеть, в каких заказах он встречается.</p>
+              <div className="demand-dialog-variants">
+                {variants.map(row=><button type="button" key={variantKey(row)} onClick={()=>{setPickedVariant(row);setOrders([]);setOrderPage(0)}}>
+                  <span><strong>{row.color} · {row.size}</strong><small>{row.material} · {row.length} · {sourceLabels[row.source]||row.source}</small>
+                    <small>{row.pricedQuantity?'Средняя цена '+money(row.knownRevenue/row.pricedQuantity):'Цена неизвестна'}</small></span>
+                  <b>{count(row.net)} шт. <span aria-hidden="true">→</span></b>
+                </button>)}
+              </div>
+              <small className="demand-dialog-hint">* По известным ценам позиций, не по поступившим оплатам.</small>
+            </>}
+          </>}
+        </div>
+      </aside>
+    </div>}
+  </section>
 }
