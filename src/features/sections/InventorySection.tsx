@@ -91,6 +91,7 @@ type SectionContext = Record<string, any> & {
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
+    onInlineArrivalVariant,
     activeSector,
     applyPendingInventoryWriteoffs,
     buildInventoryMatrix,
@@ -2685,6 +2686,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        onInlineArrivalVariant,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,
