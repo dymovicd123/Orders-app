@@ -39,7 +39,7 @@ assert.ok(worker.includes("movementType === 'manual_set' ? 'manual_set'"),'Manua
 assert.ok(worker.includes("event:'warehouse_transfer_failed'"),'Server retains diagnostic log')
 assert.ok(worker.includes("event:'warehouse_movement_failed'"),'Manual operation retains diagnostic log')
 assert.ok(app.includes('setInventoryMovementError(err instanceof Error ? err.message'),'Keep a local error rather than generic global toast')
-assert.ok(app.includes('setInventoryMovementError(\\'\\')'),'Clear error on next operation')
+assert.ok(app.includes("setInventoryMovementError('')"),'Clear error on next operation')
 assert.ok(section.includes("inventoryPanel !== 'movement') return"),'Arrival also loads current inventory snapshot')
 assert.ok(section.includes("inventoryPanel !== 'stocktake' && inventoryPanel !== 'movement'"),'Check active stocktakes in operation tab before transfer')
 assert.ok(section.includes('stocktakeActiveSources: stocktakeActiveSessions.map'), 'Pass active stocktake locations into transfer')
