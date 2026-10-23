@@ -15,6 +15,7 @@ import { renderInventoryBoutiquePanel } from '../inventory/views/renderInventory
 import { renderInventoryCatalogPanel } from '../inventory/views/renderInventoryCatalogPanel'
 import { renderInventoryMovementPanel } from '../inventory/views/renderInventoryMovementPanel'
 import { renderInventoryHistoryPanel } from '../inventory/views/renderInventoryHistoryPanel'
+import { InventoryDemandStatistics } from '../inventory/views/InventoryDemandStatistics'
 import '../../styles/180-inventory-simple-stock.css'
 import '../../styles/181-inventory-stock-a2.css'
 import '../../styles/182-inventory-stocktake-human.css'
@@ -2223,6 +2224,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                     { value: 'movement' as const, label: 'Операции', hint: isAdmin ? 'Приход, списание и перемещение' : 'Списание и перемещение' },
                     { value: 'stocktake' as const, label: 'Проверка', hint: 'Физически пересчитать товар' },
                     { value: 'history' as const, label: 'История', hint: 'Что менялось на складе и в бутике' },
+                    { value: 'statistics' as const, label: 'Статистика', hint: 'Популярность товаров, цветов и размеров' },
                   ].map((entry) => (
                     <button key={entry.value} type="button" className={inventoryPanel === entry.value ? 'is-active' : ''} onClick={() => openInventoryPanel(entry.value)} title={entry.hint}>
                       <strong>{entry.label}</strong>
@@ -2240,6 +2242,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
                   </div>
                 ) : null}
               </div>
+
+              <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
 
               {renderInventoryAttentionPanel({
         attentionCategory,
