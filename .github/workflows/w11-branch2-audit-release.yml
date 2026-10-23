@@ -1,0 +1,87 @@
+name: W11 Branch2 Warehouse Audit Release
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w11-branch2-audit-release.yml'
+permissions:
+  contents: read
+jobs:
+  deploy:
+    name: W11 reviewed warehouse-only branch2
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Block out-of-scope changes and production D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "branch2"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="538d8929314173bbff4af9921e0afb88685ef85a"
+          git cat-file -e "$baseline^{commit}"
+          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changes"
+          while IFS= read -r file;do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/App.tsx|\
+              src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\
+              scripts/test-w11-manual-correction-runtime.mjs|\
+              .github/workflows/w11-inventory-runtime-audit.yml|\
+              .github/workflows/w11-branch2-audit-release.yml) ;;
+              *) echo "Unreviewed change: $file" >&2;exit 11 ;;
+            esac
+          done <<< "$changes"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then
+            echo "Production database binding is prohibited" >&2;exit 12
+          fi
+          if grep -Eq '^(migrations/|worker/|wrangler.jsonc|package.*json)' <<< "$changes";then
+            echo "Database schema, Worker and dependencies must remain unchanged" >&2;exit 13
+          fi
+      - run: npm ci
+      - name: Real correction SQL including mixed batches and failed partial operation
+        run: node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+      - name: Transfer and revision safeguards
+        run: |
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Compile full application
+        run: npm run build
+      - name: Publish branch2 (no migrations)
+        run: npx wrangler deploy
+      - name: Confirm updated warehouse UI chunk is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const host='https://orders-app-branch2.orders-clothes.workers.dev'
+          let verified=false
+          for(let i=0;i<7;i++){
+            try{
+              const html=await (await fetch(host+'/?w11='+Date.now(),{cache:'no-store'})).text()
+              const index=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
+              if(!index)throw Error('Entry script missing')
+              const entry=await (await fetch(host+index[1],{cache:'no-store'})).text()
+              const module=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
+              if(!module)throw Error('Inventory chunk missing')
+              const chunk=await (await fetch(host+'/assets/'+module[0],{cache:'no-store'})).text()
+              if(!chunk.includes('переносимых в другую точку'))throw Error('Stale operation instructions')
+              verified=true;console.log('W11_BRANCH2_OPERATION_UI_VERIFIED');break
+            }catch(error){console.warn('attempt '+(i+1),String(error));if(i<6)await new Promise(resolve=>setTimeout(resolve,5000))}
+          }
+          if(!verified)throw Error('Public W11 warehouse UI was not verified')
+          NODE

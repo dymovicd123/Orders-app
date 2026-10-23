@@ -8814,16 +8814,31 @@ function removeDebtPayment(index: number) {
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
         <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
           const draftKey=inventoryUiId('correction')
-          setInventoryDraft(current=>({
-            ...current,
-            items:[
-              ...current.items.filter(item=>item.variantId||item.productName),
-              {productId:String(seed.productId),variantId:'',draftKey,createMissingVariant:true,
-               productName:seed.productName,category:seed.category,gender:seed.gender,
-               material:seed.material,length:seed.length,color:seed.color,size:seed.size,
-               quantity:seed.quantity,expectedQuantity:0,touched:true}
-            ],
-          }))
+          setInventoryDraft(current=>{
+            // Two fast clicks on +размер/+цвет must never add the same SKU twice:
+            // manual_set is an absolute count, not two separate arrivals.
+            const same = (a: unknown, b: unknown) => normalizeSearchText(a) === normalizeSearchText(b)
+            const alreadyInDraft = current.items.some(item =>
+              item.createMissingVariant
+              && String(item.productId) === String(seed.productId)
+              && item.category === seed.category
+              && same(item.gender,seed.gender)
+              && same(item.material,seed.material)
+              && same(item.length,seed.length)
+              && same(item.color,seed.color)
+              && same(item.size,seed.size))
+            if(alreadyInDraft)return current
+            return {
+              ...current,
+              items:[
+                ...current.items.filter(item=>item.variantId||item.productName),
+                {productId:String(seed.productId),variantId:'',draftKey,createMissingVariant:true,
+                 productName:seed.productName,category:seed.category,gender:seed.gender,
+                 material:seed.material,length:seed.length,color:seed.color,size:seed.size,
+                 quantity:seed.quantity,expectedQuantity:0,touched:true}
+              ],
+            }
+          })
         }, inventoryMovementError, clearInventoryMovementError: () => setInventoryMovementError(''), onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
           setInventoryArrivalPositions((current) => [
             ...current.filter(position => Boolean(position.productName) ||

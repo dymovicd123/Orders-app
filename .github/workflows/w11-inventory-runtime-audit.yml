@@ -1,0 +1,37 @@
+name: W11 Inventory Runtime Audit
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-w11-manual-correction-runtime.mjs'
+      - 'src/App.tsx'
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - '.github/workflows/w11-inventory-runtime-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    name: W11 real correction SQL, transfer, stocktake, full build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Real SQL manual-set and idempotent replay
+        run: node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+      - name: Transfer SQL and warehouse operation contracts
+        run: |
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+          node --experimental-strip-types scripts/test-w9-correction-inline-variants.mjs
+      - name: Actual stocktake/arrival regressions
+        run: |
+          node scripts/test-stocktake-functional-acceptance.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-variant-integrity-r2.mjs
+      - name: Compile all frontend and Worker sources
+        run: npm run build
