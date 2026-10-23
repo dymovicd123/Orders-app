@@ -16,7 +16,8 @@ assert.ok(ui.includes("selection?.kind==='product'?selection.name"), 'Model shou
 assert.ok(ui.includes('Эти два фильтра меняют все показатели'), 'Make scope of filters clear')
 assert.ok(ui.includes('Поиск меняет только список моделей'), 'Make search scope clear')
 assert.ok(ui.includes('unitPrice') && ui.includes('orderTotal'), 'Show source item price and total clearly')
-assert.ok(sql.includes("scope === 'orders'") && sql.includes("scope === 'shipped'"), 'Backend must expose two explicit scopes')
+assert.ok(sql.includes("url.searchParams.get('scope') === 'shipped'") && sql.includes("scope === 'orders'") && sql.includes("o.shipping_status = 'sent'"),
+ 'Backend must distinguish sent-only filtering from the ordered default')
 assert.ok(sql.includes("o.order_date BETWEEN") && sql.includes("o.shipping_status = 'sent'"), 'Use correct dates for each type')
 assert.ok(css.includes('.demand-scope') && css.includes('.demand-dialog'), 'Styles for prominent scope and drawer')
 console.log('STAGE05_DEMAND_DASHBOARD_SCOPE_FILTERS_AND_CLEAR_DETAILS_PASSED')
