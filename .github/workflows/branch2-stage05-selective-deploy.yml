@@ -4,6 +4,11 @@ on:
     branches: [branch2]
     paths:
       - '.github/workflows/branch2-stage05-selective-deploy.yml'
+      - 'worker/domains/warehouse-demand.ts'
+      - 'src/features/inventory/views/InventoryDemandStatistics.tsx'
+      - 'src/features/inventory/views/inventory-demand-statistics.css'
+      - 'scripts/test-stage05-warehouse-demand.mjs'
+      - 'scripts/verify-stage05-branch2-live.mjs'
 permissions:
   contents: read
   statuses: write
@@ -29,19 +34,17 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "branch2"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          baseline="06f56bd3563774e5dcec8ed51c3914805163005b"
+          baseline="27611bcbd56f98e070b1a001e117ceb78c4cee46"
           git cat-file -e "$baseline^{commit}"
           changed="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
             case "$file" in
-              worker/domains/warehouse-demand.ts|worker/index.ts|src/app/types.ts|\
-              src/app/controllers/useOperationalViewModel.ts|src/features/sections/InventorySection.tsx|\
+              worker/domains/warehouse-demand.ts|\
               src/features/inventory/views/InventoryDemandStatistics.tsx|\
               src/features/inventory/views/inventory-demand-statistics.css|\
               scripts/test-stage05-warehouse-demand.mjs|\
               scripts/verify-stage05-branch2-live.mjs|\
-              .github/workflows/stage05-warehouse-demand.yml|\
               .github/workflows/branch2-stage05-selective-deploy.yml) ;;
               *) echo "Refuse Stage05-only release: unreviewed file $file" >&2; exit 11 ;;
             esac
@@ -54,7 +57,7 @@ jobs:
             echo 'Production D1 identity detected; refusing deploy' >&2
             exit 12
           fi
-          git diff "$baseline" "$GITHUB_SHA" -- worker/index.ts | grep -Fq '/api/reports/warehouse-demand'
+          grep -Fq "/api/reports/warehouse-demand" worker/index.ts
       - run: npm ci
       - name: Read-only demand SQL contract and regression
         run: node scripts/test-stage05-warehouse-demand.mjs
