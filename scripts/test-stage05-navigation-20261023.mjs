@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+const src=readFileSync(new URL('../src/features/inventory/views/InventoryDemandStatistics.tsx',import.meta.url),'utf8')
+const css=readFileSync(new URL('../src/features/inventory/views/inventory-demand-statistics.css',import.meta.url),'utf8')
+assert.match(src,/dimension === 'product' \? selectedGroup/, 'Model ranking must open that model directly')
+assert.match(src,/selectedProduct \?\? \(models\.length === 1 \? models\[0\]\.label : null\)/, 'Skip a pointless single-model picker')
+assert.match(src,/\{selectedGroup === null \? <>/, 'Ranking and detail must be separate screens')
+assert.match(src,/\{variant \? \(/, 'Orders must replace variant view')
+assert.match(src,/onClick=\{clearDrilldown\}>← К рейтингу/, 'Visible return to ranking')
+assert.match(src,/onClick=\{backInDemand\}>← К вариантам/, 'Orders return to variants')
+assert.match(src,/setSelectedProduct\(model\.label\)/, 'Other characteristic groups retain multi-model navigation')
+assert.ok(!src.includes('РАСШИФРОВКА'), 'Do not append giant disclosure underneath ranking')
+assert.match(css,/inventory-demand-breadcrumbs/, 'Breadcrumb styling must exist')
+assert.match(css,/inventory-demand-variant-list/, 'Compact variants view must exist')
+console.log('STAGE05_CLEAN_NAVIGATION_AND_NO_REDUNDANT_MODEL_CLICK_PASSED')
