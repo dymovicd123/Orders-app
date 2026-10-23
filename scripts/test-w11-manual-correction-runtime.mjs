@@ -92,4 +92,25 @@ await assert.rejects(()=>save('w11-stale-size',[{...normal,expectedQuantity:4,qu
 assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE variant_id=7")?.quantity,3)
 await assert.rejects(()=>save('w11-wrong-product',[item('60',3,{productId:999})]),/доступн|активн/i)
 assert.equal(db.get("SELECT count(*) n FROM catalog_variants WHERE size_label='60'")?.n,0)
-console.log('W11_REAL_SQL_CORRECTION_CREATE_ZERO_IDEMPOTENCY_STALE_PASSED')
+
+const mixed=await save('w11-multi-row',[
+ {...normal,expectedQuantity:3,quantity:5},
+ item('44',6),
+])
+assert.equal(mixed.ok,true)
+assert.equal(mixed.applied,2)
+const fresh=db.get("SELECT id FROM catalog_variants WHERE size_label='44' AND is_active=1")
+assert.ok(fresh?.id)
+assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE variant_id=7").quantity,5)
+assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE variant_id=?",fresh.id).quantity,6)
+assert.equal(db.get("SELECT count(*) AS n FROM inventory_movements WHERE reference_id='w11-multi-row'").n,2)
+assert.equal(db.get("SELECT count(*) AS n FROM inventory_stock_checks WHERE reference_id='w11-multi-row'").n,2)
+const multiReplay=await save('w11-multi-row',[{...normal,expectedQuantity:3,quantity:5},item('44',6)])
+assert.equal(multiReplay.duplicate,true)
+assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE variant_id=7").quantity,5)
+assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE variant_id=?",fresh.id).quantity,6)
+
+db.db.exec("INSERT INTO catalog_variants(id,external_id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active) VALUES(88,'RETIRED-46',1,2,'adult','МУЖ','БЕЖЕВЫЙ','ДРАП КАШЕМИР','СТАНДАРТ','46',0)")
+await assert.rejects(()=>save('w11-retired-size',[item('46',3)]),/удален|удалена|удалено|каталог/i)
+assert.equal(db.get("SELECT count(*) AS n FROM catalog_variants WHERE size_label='46' AND is_active=1").n,0)
+console.log('W11_REAL_SQL_CORRECTION_CREATE_ZERO_MULTIROW_REPLAY_RETIRED_PASSED')
