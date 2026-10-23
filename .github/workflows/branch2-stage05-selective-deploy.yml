@@ -1,0 +1,80 @@
+name: Branch2 Stage05 selective deployment
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-stage05-selective-deploy.yml'
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  guarded-stage05:
+    name: Stage05 read-only gate and Branch2 deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check the exact previously accepted Branch2 baseline and file allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "branch2"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="06f56bd3563774e5dcec8ed51c3914805163005b"
+          git cat-file -e "$baseline^{commit}"
+          changed="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              worker/domains/warehouse-demand.ts|worker/index.ts|src/app/types.ts|\
+              src/app/controllers/useOperationalViewModel.ts|src/features/sections/InventorySection.tsx|\
+              src/features/inventory/views/InventoryDemandStatistics.tsx|\
+              src/features/inventory/views/inventory-demand-statistics.css|\
+              scripts/test-stage05-warehouse-demand.mjs|\
+              scripts/verify-stage05-branch2-live.mjs|\
+              .github/workflows/stage05-warehouse-demand.yml|\
+              .github/workflows/branch2-stage05-selective-deploy.yml) ;;
+              *) echo "Refuse Stage05-only release: unreviewed file $file" >&2; exit 11 ;;
+            esac
+          done <<< "$changed"
+          test "$(printf '%s\n' "$changed" | grep -c 'worker/domains/warehouse-demand.ts')" -eq 1
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
+            echo 'Production D1 identity detected; refusing deploy' >&2
+            exit 12
+          fi
+          git diff "$baseline" "$GITHUB_SHA" -- worker/index.ts | grep -Fq '/api/reports/warehouse-demand'
+      - run: npm ci
+      - name: Read-only demand SQL contract and regression
+        run: node scripts/test-stage05-warehouse-demand.mjs
+      - name: Existing manager workspace access
+        run: node --experimental-strip-types scripts/test-manager-three-workspaces-20261022.mjs
+      - name: Typecheck and production build of exact Branch2 commit
+        run: npm run build
+      - name: Deploy only Branch2 Worker (no migration)
+        run: npx wrangler deploy
+      - name: Verify public Branch2 includes new Warehouse statistics
+        run: node scripts/verify-stage05-branch2-live.mjs
+      - name: Mark selective deployment success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg u "$run_url" '{state:"success",context:"stage05-branch2-deploy",description:"Stage05 SQL, build and live Branch2 UI verified",target_url:$u}')" >/dev/null
