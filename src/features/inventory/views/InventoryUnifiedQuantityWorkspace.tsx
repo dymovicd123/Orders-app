@@ -166,8 +166,12 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       {stage==='review'&&<div className="w6-step"><header><span>ШАГ 3</span><h4>Проверка перед сохранением</h4><p>{sourceName(source)} · {names[mode].title}. Пока вы не подтвердили, ничего не изменится.</p></header>
         <div className="w6-review-list">{entries.map(({row,quantity})=>{
           const before=int(row.quantity),after=previewQuantity(mode,before,quantity)
-          return <div key={String(row.variantId)}><span><strong>{row.productName}</strong><small>{[row.gender,row.material,row.length,row.color,row.size].filter(Boolean).join(' · ')}</small></span>
-            <span>Сейчас <b>{before}</b></span><span>{names[mode].input} <b>{quantity}</b></span><span>Будет <b>{after}</b></span></div>
+          const reserved=int(row.reservedQuantity)
+          const overStock=mode==='writeoff'&&quantity>Math.max(0,before)
+          return <div key={String(row.variantId)}><span><strong>{row.productName}</strong><small>{[row.gender,row.material,row.length,row.color,row.size].filter(Boolean).join(' · ')}</small>
+            {overStock&&<small className="w6-warning">Списываем больше учтённого — система отдельно запросит подтверждение физического наличия.</small>}
+            {after<reserved&&<small className="w6-warning">После операции не хватит {reserved-after} шт. для резервов. Резервы не будут отменены.</small>}
+            </span><span>Сейчас <b>{before}</b></span><span>{names[mode].input} <b>{quantity}</b></span><span>Будет <b>{after}</b></span></div>
         })}
         {mode==='arrival'&&extraArrival.rows>0&&<div><span><strong>Новые варианты</strong><small>Будут созданы в каталоге при приходе</small></span>
           <span>{extraArrival.rows} строк</span><span>+{extraArrival.totalQuantity} шт.</span></div>}</div>
