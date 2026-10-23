@@ -15,7 +15,7 @@ export function warehouseOperationFeedback(
   const base = publicApiError(error)
   const lower = raw.toLocaleLowerCase('ru')
   const reference = cleanText(requestId).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)
-  if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|больше нет на выбранной точке|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
+  if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
     return {
       status:409,code:'warehouse_stock_stale',
       message:'Остатки этого товара изменились после открытия формы. Ничего не подтверждайте повторно: обновите остатки и проверьте выбранные варианты. '+raw.slice(0,260),
