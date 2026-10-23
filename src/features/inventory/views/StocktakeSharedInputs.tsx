@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 /**
  * The exact selectable-product row and size/count cell used by the real stocktake.
@@ -21,7 +21,7 @@ export function StocktakeSizeCountCell({
   cellId: string | number; size: string; currentQuantity: number; value: string;
   onChange: (value: string) => void; onClear: () => void;
   disabled?: boolean; stateClass?: string; ariaLabel: string;
-  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
   onBlur?: () => void; children?: ReactNode;
 }) {
   return <label className={`stocktake-size-cell ${value !== '' ? 'is-filled' : ''} ${stateClass}`}>
