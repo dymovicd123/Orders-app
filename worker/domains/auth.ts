@@ -568,9 +568,13 @@ export async function createSession(db: D1Database, userId: number) {
 }
 
 
-export async function handleAuthStatus(db: D1Database, request: Request) {
+export async function handleAuthStatus(db: D1Database, env: Env, request: Request) {
   const [userCount, user] = await Promise.all([countAuthUsers(db), getCurrentAuthUser(db, request)]);
-  const response = json({ ok: true, hasUsers: userCount > 0, authDisabled: false, user: user ? authUserPayload(user) : null });
+  const thirdSetup = cleanText(env.CLIENT3_INSTALLATION) === '1';
+  const configured = !thirdSetup || (cleanText(env.ADMIN_MODE_PASSWORD).length >= 16 &&
+    !['admin', 'password'].includes(cleanText(env.ADMIN_MODE_PASSWORD).toLowerCase()));
+  const response = json({ ok: true, hasUsers: userCount > 0, authDisabled: false,
+    setupReady: userCount > 0 || configured, user: user ? authUserPayload(user) : null });
   if (!user && readCookie(request, 'orders_session')) {
     response.headers.append('Set-Cookie', makeSessionCookie(request, '', 0));
   }
@@ -587,6 +591,12 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
       hasUsers: true,
       message: 'Первый администратор уже создан.',
     }, { status: 409 });
+  }
+  if (cleanText(env.CLIENT3_INSTALLATION) === '1' &&
+      (cleanText(env.ADMIN_MODE_PASSWORD).length < 16 ||
+       ['admin', 'password'].includes(cleanText(env.ADMIN_MODE_PASSWORD).toLowerCase()))) {
+    return json({ ok: false, code: 'AUTH_BOOTSTRAP_NOT_CONFIGURED',
+      message: 'Система ещё не активирована владельцем: код первого запуска не настроен на сервере. Обратитесь к владельцу системы.' }, { status: 503 });
   }
   const input = await readJson<{
     login?: unknown;
