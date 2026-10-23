@@ -4,6 +4,7 @@ on:
     branches: [branch2]
     paths:
       - 'scripts/test-w11-manual-correction-runtime.mjs'
+      - 'src/App.tsx'
       - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
       - '.github/workflows/w11-inventory-runtime-audit.yml'
 permissions:
