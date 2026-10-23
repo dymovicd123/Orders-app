@@ -35,9 +35,11 @@ jobs:
           else
             echo 'CLIENT3_BOOTSTRAP_SECRET_PRESENT'
           fi
-          curl --fail-with-body --retry 2 --connect-timeout 12 --max-time 30 -fsS \
+          curl --retry 2 --connect-timeout 12 --max-time 30 -fsS \
             https://orders-app-client3-old-client.orders-clothes.workers.dev/api/auth/status \
             -o /tmp/client3-status.json
-          jq -e '.ok == true and .authDisabled == false' /tmp/client3-status.json >/dev/null
+          echo 'CLIENT3_PUBLIC_AUTH_STATUS_NON_SENSITIVE_FIELDS:'
+          jq '{ok, hasUsers, authDisabled, setupReady, code, message}' /tmp/client3-status.json
+          jq -e '.ok == true and .authDisabled == false and (.setupReady | type == "boolean")' /tmp/client3-status.json >/dev/null
           jq -r '"CLIENT3_FIRST_ADMIN_EXISTS=\(.hasUsers)"' /tmp/client3-status.json
           echo 'CLIENT3_BOOTSTRAP_READ_ONLY_DIAGNOSIS_COMPLETE'
