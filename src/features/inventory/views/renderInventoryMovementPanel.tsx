@@ -11,7 +11,11 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'setInventoryVariantOperationQuantity' | 'saveInventoryMovement'
   | 'createEmptyInventoryItem' | 'resetInventoryArrivalForm'
   | 'resetInventoryOperationSelection' | 'setMovementSourceRefreshToken'
->
+  | 'suggestionValues'
+> & { onInlineArrivalVariant: (seed: {
+  productId: number | string; productName: string; category: 'adult' | 'child';
+  gender: string; material: string; length: string; color: string; size: string; quantity: number;
+}) => void }
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
   const mode = ctx.inventoryDraft.movementType as 'arrival' | 'writeoff' | 'manual_set' | 'transfer'
@@ -36,6 +40,10 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       reason={ctx.inventoryDraft.comment || ''}
       isAdmin={ctx.isAdmin}
       newVariantWorkspace={ctx.arrivalWorkspace}
+      colorSuggestions={ctx.suggestionValues.colors || []}
+      sizeSuggestions={ctx.suggestionValues.sizes || []}
+      childAgeSuggestions={ctx.suggestionValues.childAges || []}
+      onInlineArrivalVariant={ctx.onInlineArrivalVariant}
       extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
       onMode={next => {
         ctx.resetInventoryArrivalForm()
