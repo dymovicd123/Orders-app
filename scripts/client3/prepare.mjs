@@ -63,7 +63,10 @@ export function renderConfig(worker,database,id) {
    main:'worker/index.ts',
    compatibility_date:'2026-07-06',
    compatibility_flags:['nodejs_compat'],
-   vars:{CLIENT3_INSTALLATION:'1'},
+   vars:{CLIENT3_INSTALLATION:'1',
+     ...(worker==='orders-app-client3-old-client' && database==='orders_db_client3_old_client' &&
+         id.toLowerCase()==='0717f239-6d81-4837-8586-777d94e22c53'
+       ? {CLIENT3_BOOTSTRAP_SHA256:'d12cfd35245c69573b1a7609d66c440943f9ba40d0b33e3a33912e550865632a'} : {})},
    d1_databases:[{binding:'DB',database_name:database,database_id:id,migrations_dir:'.client3-migrations'}],
    assets:{directory:'./dist/client',not_found_handling:'single-page-application',run_worker_first:['/api/*']},
    observability:{enabled:true},
