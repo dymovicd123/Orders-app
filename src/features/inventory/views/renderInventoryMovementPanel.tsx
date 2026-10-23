@@ -2,7 +2,7 @@ import type { InventoryRenderContext } from './types'
 import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWorkspace'
 
 type PanelContext = Pick<InventoryRenderContext,
-  | 'inventoryPanelStyle' | 'inventoryDraft' | 'inventoryMovementBusy'
+  | 'inventoryPanelStyle' | 'inventoryDraft' | 'inventoryMovementBusy' | 'inventoryMovementError'
   | 'movementSourceLoading' | 'movementSourceLoadError' | 'isAdmin'
   | 'arrivalWorkspace' | 'inventoryArrivalSummary' | 'inventoryOperationAllProductGroups'
   | 'selectInventoryOperationMode' | 'changeInventoryOperationSource'
@@ -37,6 +37,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       busy={ctx.inventoryMovementBusy}
       loading={ctx.movementSourceLoading}
       error={ctx.movementSourceLoadError || ''}
+      saveError={ctx.inventoryMovementError || ''}
       reason={ctx.inventoryDraft.comment || ''}
       isAdmin={ctx.isAdmin}
       newVariantWorkspace={ctx.arrivalWorkspace}
