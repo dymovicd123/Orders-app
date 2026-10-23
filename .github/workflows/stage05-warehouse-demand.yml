@@ -1,0 +1,25 @@
+name: Stage05 Warehouse Demand
+on:
+  pull_request:
+    paths:
+      - 'worker/domains/warehouse-demand.ts'
+      - 'src/features/inventory/views/InventoryDemandStatistics.tsx'
+      - 'src/features/inventory/views/inventory-demand-statistics.css'
+      - 'scripts/test-stage05-warehouse-demand.mjs'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/app/types.ts'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'worker/index.ts'
+      - '.github/workflows/stage05-warehouse-demand.yml'
+jobs:
+  demand-readonly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/test-stage05-warehouse-demand.mjs
+      - run: npm run typecheck
