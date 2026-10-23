@@ -1,0 +1,109 @@
+name: W7 Stocktake-Aligned Warehouse Operations
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+      - 'src/styles/193-unified-inventory-operations.css'
+      - 'scripts/test-w6-unified-operations.mjs'
+      - 'scripts/verify-w7-branch2-live.mjs'
+      - '.github/workflows/w7-stocktake-operations-branch2.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w7-stocktake-operations-branch2.yml'
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  verify:
+    name: W7 quantity, prior stocktake and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Operations semantics, UX and source stability
+        run: node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+      - name: Existing arrival and inventory revision guarantees
+        run: |
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-variant-integrity-r2.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build
+  deploy-branch2:
+    name: W7 isolated branch2 release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Exact W7 file allowlist and D1 isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "branch2"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="4c55616e686599f1ac9544b4228303b016635276"
+          git cat-file -e "$baseline^{commit}"
+          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changes"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/App.tsx|\
+              src/features/sections/InventorySection.tsx|\
+              src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\
+              src/features/inventory/views/renderInventoryMovementPanel.tsx|\
+              src/styles/193-unified-inventory-operations.css|\
+              scripts/test-w6-unified-operations.mjs|\
+              scripts/verify-w7-branch2-live.mjs|\
+              .github/workflows/w7-stocktake-operations-branch2.yml) ;;
+              *) echo "Unreviewed file $file" >&2; exit 11 ;;
+            esac
+          done <<< "$changes"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc; then
+            echo 'Production database is forbidden' >&2; exit 12
+          fi
+          if grep -Eq '^(migrations/|wrangler.jsonc|worker/)' <<< "$changes"; then
+            echo 'No data schema or Worker mutation changes allowed' >&2; exit 13
+          fi
+      - run: npm ci
+      - run: node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+      - run: npm run build
+      - name: Deploy Branch2 without D1 migrations
+        run: npx wrangler deploy
+      - name: Check actual public inventory chunk
+        run: node scripts/verify-w7-branch2-live.mjs
+      - name: Mark verified release status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          target="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg u "$target" '{state:"success",context:"w7-branch2-deploy",description:"W7 compiled and publicly verified",target_url:$u}')" >/dev/null

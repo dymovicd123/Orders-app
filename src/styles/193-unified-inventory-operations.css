@@ -28,3 +28,111 @@
 .stocktake-reused-operations .stocktake-e-review-actions{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;padding:10px 14px}
 @media(max-width:1050px){.stocktake-reused-operations .stocktake-start-modes{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.stocktake-reused-operations .stocktake-e-review-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.stocktake-reused-operations .stocktake-e-review-name{grid-column:1/-1}.stocktake-reused-operations .stocktake-e-review-actions>*{width:100%}.stocktake-reused-operations .w6-stocktake-new-content{margin:0 8px}}
+
+
+/* W7: use stocktake's restrained canvas, not a full-width dead area */
+.stocktake-reused-operations{
+  width:min(100%,1120px);
+  margin:0 auto;
+  gap:10px;
+  padding:0 0 16px;
+}
+.stocktake-reused-operations .stocktake-e-head{padding:10px 16px 2px!important}
+.stocktake-reused-operations .w6-operation-switch{
+  width:100%;
+  padding:8px 12px!important;
+}
+.stocktake-reused-operations .stocktake-start-modes .stocktake-start-mode{
+  min-height:55px;
+  padding:9px 12px!important;
+}
+.stocktake-reused-operations .stocktake-start-modes .stocktake-start-mode span{font-size:11px}
+.stocktake-reused-operations>.stocktake-e-start:not(.w6-operation-switch){
+  width:min(100%,790px);
+  justify-self:center;
+  margin:0 auto!important;
+  padding:16px 18px!important;
+}
+.stocktake-reused-operations .stocktake-selective-picker{
+  width:100%!important;
+  max-width:none!important;
+}
+.stocktake-reused-operations .stocktake-selective-head{align-items:center}
+.stocktake-reused-operations .stocktake-selective-head label{max-width:none;min-width:0}
+.stocktake-reused-operations .stocktake-counting-shell{
+  grid-template-columns:minmax(185px,225px) minmax(0,1fr);
+  margin:0 8px 6px!important;
+  gap:8px!important;
+}
+.stocktake-reused-operations .stocktake-sticky-progress{margin:3px 8px!important}
+.stocktake-reused-operations .stocktake-counting-rule{margin:0 8px 3px!important}
+.stocktake-reused-operations .stocktake-e-work-card{padding:0!important}
+.stocktake-reused-operations .stocktake-e-positions{gap:0!important}
+.stocktake-reused-operations .stocktake-e-position-compact{padding:6px 9px!important}
+.stocktake-reused-operations .stocktake-color-group{
+  grid-template-columns:minmax(105px,145px) minmax(0,1fr)!important;
+  gap:6px!important;
+  padding:4px 0!important;
+}
+.stocktake-reused-operations .stocktake-size-grid{
+  justify-content:flex-start;
+  gap:3px 5px!important;
+  padding:0!important;
+}
+.stocktake-reused-operations .stocktake-size-cell{
+  margin:0!important;
+  padding:1px!important;
+  max-width:none;
+}
+.stocktake-reused-operations .stocktake-e-active-head{margin:0 8px 2px!important;padding:10px 12px!important}
+.w7-operation-location{
+  display:flex;align-items:center;flex-wrap:wrap;gap:10px 15px;
+  padding:9px 13px;
+  border:1px solid #dce5f0;border-radius:10px;
+  background:#f8fafc;
+}
+.w7-operation-location>div:first-child{display:flex;flex-direction:column;gap:3px}
+.w7-operation-location>div:first-child>strong{font-size:12px}
+.w7-operation-location>div:first-child>small{font-size:10px;color:#64748b}
+.stocktake-reused-operations .w7-operation-location .stocktake-source-switch{
+  justify-self:auto!important;margin:0!important;
+}
+.w7-transfer-target{display:flex;align-items:center;gap:10px;font-size:13px}
+.w7-transfer-target>span{color:#2563eb;font-weight:800}
+.w7-transfer-after{display:block;color:#1d4f91;font-size:10px;line-height:1.25;font-weight:750}
+.w7-operation-location .stocktake-source-switch button{white-space:nowrap}
+@media(max-width:850px){
+  .stocktake-reused-operations{width:100%;margin:0}
+  .stocktake-reused-operations .stocktake-counting-shell{grid-template-columns:1fr}
+  .stocktake-reused-operations .stocktake-color-group{grid-template-columns:minmax(85px,105px) minmax(0,1fr)!important}
+}
+@media(max-width:520px){
+  .stocktake-reused-operations>.stocktake-e-start:not(.w6-operation-switch){padding:11px!important}
+  .w7-operation-location{gap:7px;padding:8px}
+  .w7-operation-location>div:first-child{width:100%}
+  .stocktake-reused-operations .stocktake-color-group{grid-template-columns:1fr!important;gap:3px!important}
+}
+
+
+.stocktake-reused-operations .w7-inline-arrival{
+  display:flex;flex-wrap:wrap;align-items:end;gap:10px;
+  padding:10px;margin:5px 0 10px;
+  background:#f8fbff;border:1px solid #cbdcf0;border-radius:9px;
+}
+.stocktake-reused-operations .w7-inline-arrival .stocktake-inline-add-head{
+  display:flex;justify-content:space-between;align-items:center;
+  flex:1 1 100%;margin:0;
+}
+.stocktake-reused-operations .w7-inline-arrival>label{
+  display:grid;gap:4px;flex:1 1 120px;
+  color:#475569;font-size:11px;font-weight:700;
+}
+.stocktake-reused-operations .w7-inline-arrival select,
+.stocktake-reused-operations .w7-inline-arrival input{
+  width:100%;min-width:0;min-height:36px;padding:6px 8px;
+  border:1px solid #cbd5e1;border-radius:7px;background:#fff;
+  color:#0f172a;font-size:12px;
+}
+.stocktake-reused-operations .w7-inline-arrival>p{font-size:12px;line-height:1.5;color:#7c3e19}
+.stocktake-reused-operations .stocktake-inline-position-footer{margin:2px 0 6px}
+.stocktake-reused-operations .stocktake-color-group:has(.w7-inline-arrival){align-items:start}

@@ -91,6 +91,7 @@ type SectionContext = Record<string, any> & {
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
+    onInlineArrivalVariant,
     activeSector,
     applyPendingInventoryWriteoffs,
     buildInventoryMatrix,
@@ -1920,17 +1921,31 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     })
   }
 
+  // Separate unsaved movement drafts by operation and physical location. Switching
+  // Warehouse/Boutique must not turn into a destructive reset of entered counts.
+  // This cache is UI-only; nothing is posted until the employee confirms.
+  const operationSourceDraftsRef = useRef<Record<string, { items: any[]; comment: string }>>({})
+  const operationDraftKey = (mode: string, source: string) => mode + ':' + source
+
   const changeInventoryOperationSource = (nextSource: 'warehouse' | 'boutique') => {
-    resetInventoryOperationSelection()
-    setInventoryDraft((current: any) => ({
-      ...current,
-      source: nextSource,
-      targetSource: current.targetSource === nextSource ? (nextSource === 'warehouse' ? 'boutique' : 'warehouse') : current.targetSource,
-      items: [createEmptyInventoryItem()],
-    }))
+    setInventoryDraft((current: any) => {
+      if (current.source === nextSource) return current
+      operationSourceDraftsRef.current[operationDraftKey(current.movementType, current.source)] = {
+        items: current.items, comment: current.comment,
+      }
+      const prior = operationSourceDraftsRef.current[operationDraftKey(current.movementType, nextSource)]
+      return {
+        ...current,
+        source: nextSource,
+        targetSource: current.targetSource === nextSource ? (nextSource === 'warehouse' ? 'boutique' : 'warehouse') : current.targetSource,
+        items: prior?.items || [createEmptyInventoryItem()],
+        comment: prior?.comment || '',
+      }
+    })
   }
 
   const swapInventoryTransferDirection = () => {
+    operationSourceDraftsRef.current = {}
     resetInventoryOperationSelection()
     setInventoryDraft((current: any) => ({
       ...current,
@@ -1941,6 +1956,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   const selectInventoryOperationMode = (mode: any) => {
+    // Different operations cannot inherit unsaved numerical intent from one another.
+    operationSourceDraftsRef.current = {}
     resetInventoryOperationSelection()
     setInventoryDraft((current: any) => ({
       ...current,
@@ -2669,6 +2686,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        onInlineArrivalVariant,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,
