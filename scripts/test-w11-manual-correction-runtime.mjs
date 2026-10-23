@@ -113,6 +113,14 @@ assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE variant_id=?",fr
 db.db.exec("INSERT INTO catalog_variants(id,external_id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active) VALUES(88,'RETIRED-46',1,2,'adult','МУЖ','БЕЖЕВЫЙ','ДРАП КАШЕМИР','СТАНДАРТ','46',0)")
 await assert.rejects(()=>save('w11-retired-size',[item('46',3)]),/удален|удалена|удалено|каталог/i)
 assert.equal(db.get("SELECT count(*) AS n FROM catalog_variants WHERE size_label='46' AND is_active=1").n,0)
+await assert.rejects(
+  ()=>save('w11-atomic-mixed-failure',[item('52',2),item('60',2,{productId:999})]),
+  /доступн|активн/i
+)
+assert.equal(db.get("SELECT count(*) AS n FROM catalog_variants WHERE size_label='52'").n,0,
+  'Failed multi-row operation must not create first variant')
+assert.equal(db.get("SELECT count(*) AS n FROM inventory_operations WHERE operation_id='w11-atomic-mixed-failure'").n,0,
+  'Rejected operation must not leave a completed movement')
 const appSource=(await import('node:fs')).readFileSync('src/App.tsx','utf8')
 const inventoryUi=(await import('node:fs')).readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
 assert.ok(appSource.includes('const alreadyInDraft = current.items.some(item =>'),'Double-click cannot create duplicated correction draft')
