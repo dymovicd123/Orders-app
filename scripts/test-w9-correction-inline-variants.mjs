@@ -31,7 +31,7 @@ assert.ok(rows.includes("inventoryDraft.movementType === 'manual_set'"), 'Catalo
 assert.ok(adapter.includes('onInlineCorrectionVariant={ctx.onInlineCorrectionVariant}'), 'Callback connected end to end')
 assert.ok(adapter.includes('item.draftKey!==row.draftKey'),'User can remove unsaved new size')
 assert.ok(worker.includes("createMissingVariant: (raw as InventoryItemInput"),'Flag is server-side opt-in')
-assert.ok(worker.includes("if (raw.productId <= 0 || !raw.productName || !raw.size || !raw.color || raw.expectedQuantity !== 0)"),'Exact baseline and complete identity required')
+assert.ok(worker.includes("if (raw.productId <= 0 || !raw.productName || !raw.size || raw.expectedQuantity !== 0)"),'Exact baseline and existing product required; no-color variant supported')
 assert.ok(worker.includes("const lookup = await db.prepare(") && worker.includes("JOIN catalog_stock_positions sp"),'Existing active catalogue execution required')
 assert.ok(worker.includes("toInt(row.position_active,0) === 1"),'Retired executions cannot be silently reactivated')
 assert.ok(worker.includes("allowRetiredRecreate: movementType === 'arrival'"),'Correction may not restore retired combinations')
