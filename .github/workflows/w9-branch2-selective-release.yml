@@ -1,0 +1,88 @@
+name: W9 Branch2 Correction Release
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w9-branch2-selective-release.yml'
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  publish:
+    name: W9 protected correction release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Only reviewed W9 files and isolated Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "branch2"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="57c1426bd227bec8dc0ac227c3fef4a4aaaded91"
+          git cat-file -e "$baseline^{commit}"
+          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changes"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/App.tsx|\
+              src/app/types.ts|\
+              src/app/controllers/useOperationalViewModel.ts|\
+              src/features/sections/InventorySection.tsx|\
+              src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\
+              src/features/inventory/views/renderInventoryMovementPanel.tsx|\
+              worker/domains/inventory-movement.ts|\
+              scripts/test-w8-warehouse-operation-integrity.mjs|\
+              scripts/test-w9-correction-inline-variants.mjs|\
+              scripts/verify-w9-branch2-live.mjs|\
+              .github/workflows/w9-correction-variants.yml|\
+              .github/workflows/w9-branch2-selective-release.yml) ;;
+              *) echo "Unexpected W9 release change: $file" >&2;exit 11 ;;
+            esac
+          done <<< "$changes"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then
+            echo "Production database forbidden" >&2;exit 12
+          fi
+          if grep -Eq '^(migrations/|wrangler.jsonc|package.json|package-lock.json)' <<< "$changes";then
+            echo "Migration/config/package changes forbidden" >&2;exit 13
+          fi
+      - run: npm ci
+      - name: W9 exact-count and catalog identity contracts
+        run: node --experimental-strip-types scripts/test-w9-correction-inline-variants.mjs
+      - name: Existing arrival, stocktake and errors
+        run: |
+          node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-variant-integrity-r2.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - run: npm run build
+      - name: Publish branch2 without database migration
+        run: npx wrangler deploy
+      - name: Verify live +size/+color interface
+        run: node scripts/verify-w9-branch2-live.mjs
+      - name: Mark release success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg u "$target" '{state:"success",context:"w9-branch2-release",description:"Correction W9 built and public UI verified",target_url:$u}')" >/dev/null
