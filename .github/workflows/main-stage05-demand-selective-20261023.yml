@@ -1,0 +1,118 @@
+name: Main Stage05 Demand Selective Release
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/warehouse-demand.ts'
+      - 'worker/index.ts'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/views/InventoryDemandStatistics.tsx'
+      - 'src/features/inventory/views/inventory-demand-statistics.css'
+      - 'src/app/types.ts'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'scripts/test-stage05-warehouse-demand.mjs'
+      - 'scripts/test-stage05-navigation-20261023.mjs'
+      - 'scripts/verify-stage05-main-live.mjs'
+      - '.github/workflows/main-stage05-demand-selective-20261023.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-stage05-demand-selective-20261023.yml'
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  stage05-build:
+    name: Main Stage05 SQL, access and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Demand SQL with pending and shipped cohorts
+        run: node scripts/test-stage05-warehouse-demand.mjs
+      - name: Clear interaction and no incomplete CSV
+        run: node scripts/test-stage05-navigation-20261023.mjs
+      - name: Manager role permissions remain unchanged
+        run: node --experimental-strip-types scripts/test-main-manager-three-workspaces-20261022.mjs
+      - name: Compile all UI and worker
+        run: npm run build
+  release-main:
+    name: Main Stage05 exact-scope release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: stage05-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Refuse unreviewed file changes and any wrong environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="7d642c8b3ad7d2f8a79526721abc33884f17c097"
+          git cat-file -e "$baseline^{commit}"
+          changed="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changed"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              worker/domains/warehouse-demand.ts|\
+              worker/index.ts|\
+              src/features/sections/InventorySection.tsx|\
+              src/features/inventory/views/InventoryDemandStatistics.tsx|\
+              src/features/inventory/views/inventory-demand-statistics.css|\
+              src/app/types.ts|\
+              src/app/controllers/useOperationalViewModel.ts|\
+              scripts/test-stage05-warehouse-demand.mjs|\
+              scripts/test-stage05-navigation-20261023.mjs|\
+              scripts/verify-stage05-main-live.mjs|\
+              .github/workflows/main-stage05-demand-selective-20261023.yml) ;;
+              *) echo "Unreviewed change forbidden in selective production release: $file" >&2; exit 11 ;;
+            esac
+          done <<< "$changed"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
+            echo "Branch2 D1 binding detected; refusing production deploy" >&2
+            exit 12
+          fi
+          git diff "$baseline" "$GITHUB_SHA" -- worker/index.ts | grep -Fq '/api/reports/warehouse-demand'
+          if git diff --name-only "$baseline" "$GITHUB_SHA" | grep -Eq '^(migrations/|wrangler.jsonc|package.json|package-lock.json)'; then
+            echo "Data, environment or dependency changes are not part of Stage05" >&2
+            exit 13
+          fi
+      - run: npm ci
+      - name: Production build of the exact reviewed commit
+        run: npm run build
+      - name: Read-only production Worker deploy; no D1 migration
+        run: npx wrangler deploy
+      - name: Verify public production assets show the new demand dashboard
+        run: node scripts/verify-stage05-main-live.mjs
+      - name: Publish verified Stage05 deployment status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -d "$(jq -nc --arg u "$target" '{state:"success",context:"stage05-main-selective-deploy",description:"Stage05 reviewed, built and live verified",target_url:$u}')" >/dev/null
