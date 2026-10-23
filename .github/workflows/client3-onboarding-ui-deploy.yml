@@ -53,6 +53,8 @@ jobs:
           npm run build
           grep -Fq 'Код первого запуска' src/App.tsx
           grep -Fq 'Неверный код первого запуска' worker/domains/auth.ts
+          grep -Fq 'AUTH_BOOTSTRAP_NOT_CONFIGURED' worker/domains/auth.ts
+          grep -Fq 'authSetupReady' src/App.tsx
           grep -Fq "bootstrapLogin: 'admin'" src/App.tsx
       - name: Generate guarded configuration for exact existing third D1
         shell: bash
@@ -67,7 +69,8 @@ jobs:
           set -euo pipefail
           url="https://orders-app-client3-old-client.orders-clothes.workers.dev"
           curl --retry 4 --retry-delay 2 -fsS "$url/api/auth/status" > /tmp/client3-status.json
-          jq -e '.ok == true' /tmp/client3-status.json >/dev/null
+          jq -e '.ok == true and (.setupReady | type == "boolean")' /tmp/client3-status.json >/dev/null
+          jq -r '"CLIENT3_FIRST_ADMIN_SETUP_READY=\(.setupReady) USERS_EXIST=\(.hasUsers)"' /tmp/client3-status.json
           response="$(curl -sS -o /dev/null -w '%{http_code}' "$url/api/orders")"
           [[ "$response" == 401 ]]
           echo 'CLIENT3_CUSTOMER_ONBOARDING_UI_DEPLOYED'
