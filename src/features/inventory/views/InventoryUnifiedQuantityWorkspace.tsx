@@ -134,7 +134,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     if(mode!=='arrival'&&mode!=='manual_set')return
     const color=inline.color==='БЕЗ ЦВЕТА'?'':inline.color.trim()
     const size=inline.size.trim(),quantity=Number(inline.quantity)
-    if((inline.kind==='color'&&!color)||!size||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
+    if((inline.kind==='color'&&!color)||!size||inline.quantity.trim()===''||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
       setNotice('Выберите цвет, размер и целое количество от '+(mode==='manual_set'?'0':'1')+' до 999999.');return
     }
     if(activeGroup?.rows.some(row=>positionKey(row)===inline.positionKey &&
@@ -350,7 +350,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                       {(mode === 'arrival' || mode==='manual_set') &&
                         <button type="button" className="stocktake-inline-add-trigger"
                           onClick={()=>{setNotice('');setInline(inline?.kind==='size'&&inline.positionKey===position.key&&inline.color===color?null:
-                            {positionKey:position.key,color,kind:'size',size:'',quantity:'1'})}}>+ {rows[0]?.audienceType==='child'?'возраст':'размер'}</button>}
+                            {positionKey:position.key,color,kind:'size',size:'',quantity:mode==='manual_set'?'':'1'})}}>+ {rows[0]?.audienceType==='child'?'возраст':'размер'}</button>}
                       </div>
                       {inline?.kind==='size'&&inline.positionKey===position.key&&inline.color===color&&
                         <div className="stocktake-inline-add-panel w7-inline-arrival">
@@ -375,7 +375,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                     <div className="stocktake-inline-position-footer">
                       <button type="button" className="ghost compact stocktake-inline-color-trigger"
                         onClick={()=>{setNotice('');setInline(inline?.kind==='color'&&inline.positionKey===position.key?null:
-                          {positionKey:position.key,color:'',kind:'color',size:'',quantity:'1'})}}>+ цвет</button>
+                          {positionKey:position.key,color:'',kind:'color',size:'',quantity:mode==='manual_set'?'':'1'})}}>+ цвет</button>
                       {inline?.kind==='color'&&inline.positionKey===position.key&&<div className="stocktake-inline-add-panel w7-inline-arrival">
                         <div className="stocktake-inline-add-head"><strong>Добавить новый цвет</strong>
                           <button type="button" className="ghost compact" onClick={()=>setInline(null)}>×</button></div>
