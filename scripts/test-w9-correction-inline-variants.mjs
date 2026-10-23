@@ -22,6 +22,8 @@ assert.ok(ui.includes('draft.filter(item=>') && ui.includes('item.createMissingV
 assert.ok(ui.includes('String(item.draftKey || item.variantId)'), 'New items are independently editable and reviewable')
 assert.ok(ui.includes("mode==='manual_set'?'Фактический остаток':'Количество'"),'Exact-count label for correction')
 assert.ok(ui.includes("quantity<(mode==='manual_set'?0:1)"),'Zero quantity is valid in correction, not in Arrival')
+assert.ok(ui.includes("inline.quantity.trim()===''"),'No invented physical stock: new correction quantity must be entered explicitly')
+assert.ok(ui.includes("quantity:mode==='manual_set'?'':'1'"),'Correction does not prefill a positive physical count')
 assert.ok(!ui.includes('У корректировки нет права'), 'Old contradictory error removed')
 assert.ok(app.includes("onInlineCorrectionVariant: (seed:"),'Create new draft locally before confirm')
 assert.ok(app.includes("createMissingVariant:true"),'Explicit creation flag')
