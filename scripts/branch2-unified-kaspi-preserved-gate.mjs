@@ -42,6 +42,16 @@ const blob = bytes => crypto.createHash('sha1')
   .update(Buffer.from('blob ' + bytes.length + '\0')).update(bytes).digest('hex')
 const sha = file => blob(fs.readFileSync(file))
 const check = (test, message) => { if (!test) throw new Error(message) }
+// A small additional manager workspace (Reports) is checked before the
+// frozen older navigation release. Restored old policy prevents recursion.
+const reportsPolicyBlob = fs.existsSync('src/app/managerWorkspaceAccess.ts') ? fs.readFileSync('src/app/managerWorkspaceAccess.ts') : null
+const reportsPolicySha = reportsPolicyBlob ? crypto.createHash('sha1').update(Buffer.from('blob '+reportsPolicyBlob.length+'\\0'.replace('\\0','\0'))).update(reportsPolicyBlob).digest('hex') : ''
+if(reportsPolicySha==='fd6f6d32bb675a3439c497892daea65280da20b7'){
+ const checkReports=spawnSync(process.execPath,['scripts/branch2-manager-reports-release-20261023.mjs'],
+   {stdio:'inherit',shell:false,maxBuffer:32*1024*1024,env:process.env,timeout:44*60*1000})
+ if(checkReports.error||checkReports.status!==0)throw Error('Manager Reports policy or previous release failed: '+checkReports.status)
+ process.exit(0)
+}
 // New payout permission is tested on a real SQLite ledger first; all prior
 // source-pinned contract tests replay against the immutable Branch2 baseline.
 if (sha('worker/index.ts') === 'a7ef327eb4fe7a79696470bc048324ca92858e6a') {

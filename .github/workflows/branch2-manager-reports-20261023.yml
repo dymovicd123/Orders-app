@@ -1,0 +1,25 @@
+name: Branch2 Manager Reports Role Gate
+on:
+  push:
+    branches: [fix/branch2-manager-reports-20261023]
+    paths: ['.github/workflows/branch2-manager-reports-20261023.yml', 'src/app/managerWorkspaceAccess.ts', 'scripts/test-manager-three-workspaces-20261022.mjs']
+  pull_request:
+    branches: [branch2]
+    paths: ['src/app/managerWorkspaceAccess.ts', 'scripts/test-manager-three-workspaces-20261022.mjs', '.github/workflows/branch2-manager-reports-20261023.yml']
+permissions:
+  contents: read
+jobs:
+  role-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify manager four sections and blocked admin pages
+        run: node --experimental-strip-types scripts/test-manager-three-workspaces-20261022.mjs
+      - run: npm run typecheck
+      - run: npm run build
