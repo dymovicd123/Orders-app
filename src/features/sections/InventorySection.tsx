@@ -92,6 +92,7 @@ type SectionContext = Record<string, any> & {
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
     onInlineArrivalVariant,
+    inventoryMovementError,
     activeSector,
     applyPendingInventoryWriteoffs,
     buildInventoryMatrix,
@@ -1821,7 +1822,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
-    if (activeSector !== 'inventory' || inventoryPanel !== 'movement' || inventoryDraft.movementType === 'arrival') return
+    if (activeSector !== 'inventory' || inventoryPanel !== 'movement') return
 
     const requestId = ++movementSourceRequestRef.current
     const sources = inventoryDraft.movementType === 'transfer'
@@ -2687,6 +2688,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     
               {renderInventoryMovementPanel({
         onInlineArrivalVariant,
+        inventoryMovementError,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,
