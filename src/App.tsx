@@ -5264,6 +5264,7 @@ function App() {
           quantity: Number(item.quantity || 0),
           expectedQuantity: item.expectedQuantity,
           observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined,
+          ...(inventoryDraft.movementType === 'manual_set' && item.createMissingVariant ? {createMissingVariant:true} : {}),
         }))
 
       if (!cleanItems.length) {
@@ -5281,8 +5282,9 @@ function App() {
       if (inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'manual_set') {
         const same = (left: unknown, right: unknown) => normalizeSearchText(left) === normalizeSearchText(right)
         const invalidItem = cleanItems.find((item) => {
-          // Старые orphan-строки без variantId разрешены только для manual_set:
-          // Worker всё равно требует уже существующую строку inventory_stock и ничего нового не создаёт.
+          // Explicit +size/+color corrections are resolved by the server from
+          // a validated active catalog product+execution, with no manual SKU matching.
+          if (inventoryDraft.movementType === 'manual_set' && !item.variantId && item.createMissingVariant) return false
           if (inventoryDraft.movementType === 'manual_set' && !item.variantId) return false
           const row = inventoryOperationSourceRows.find((entry) => String(entry.variantId || '') === String(item.variantId || ''))
           return !row
@@ -5355,7 +5357,7 @@ function App() {
               loadInventoryData('warehouse', true, '', false),
               loadInventoryData('boutique', true, '', false),
             ]
-          : inventoryDraft.movementType === 'arrival'
+          : inventoryDraft.movementType === 'arrival' || (inventoryDraft.movementType === 'manual_set' && cleanItems.some(item=>item.createMissingVariant))
             ? [
                 loadInventoryData(inventoryDraft.source, true, '', false),
                 loadCatalogData(true),
@@ -8810,7 +8812,19 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ inventoryMovementError, clearInventoryMovementError: () => setInventoryMovementError(''), onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
+        <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
+          const draftKey=inventoryUiId('correction')
+          setInventoryDraft(current=>({
+            ...current,
+            items:[
+              ...current.items.filter(item=>item.variantId||item.productName),
+              {productId:String(seed.productId),variantId:'',draftKey,createMissingVariant:true,
+               productName:seed.productName,category:seed.category,gender:seed.gender,
+               material:seed.material,length:seed.length,color:seed.color,size:seed.size,
+               quantity:seed.quantity,expectedQuantity:0,touched:true}
+            ],
+          }))
+        }, inventoryMovementError, clearInventoryMovementError: () => setInventoryMovementError(''), onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
           setInventoryArrivalPositions((current) => [
             ...current.filter(position => Boolean(position.productName) ||
               position.sizes.some(line => Boolean(line.color || line.size))),
