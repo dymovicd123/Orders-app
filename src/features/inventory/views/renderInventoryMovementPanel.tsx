@@ -15,6 +15,9 @@ type PanelContext = Pick<InventoryRenderContext,
 > & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
+}) => void; onInlineCorrectionVariant: (seed: {
+  productId: number | string; productName: string; category: 'adult'|'child';
+  gender:string;material:string;length:string;color:string;size:string;quantity:number;
 }) => void }
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
@@ -50,6 +53,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       sizeSuggestions={ctx.suggestionValues.sizes || []}
       childAgeSuggestions={ctx.suggestionValues.childAges || []}
       onInlineArrivalVariant={ctx.onInlineArrivalVariant}
+      onInlineCorrectionVariant={ctx.onInlineCorrectionVariant}
       extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
       onMode={next => {
         ctx.clearInventoryMovementError()
@@ -64,7 +68,15 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       onReason={value=>{ctx.clearInventoryMovementError();ctx.setInventoryDraft((current:any)=>({...current,comment:value}))}}
       onQuantity={(row,value)=>{
         ctx.clearInventoryMovementError()
-        if(mode==='manual_set')ctx.setInventoryCorrectionValue(row,value)
+        if(mode==='manual_set' && row.draftKey){
+          ctx.setInventoryDraft((current:any) => ({
+            ...current,
+            items: value===''
+              ? current.items.filter((item:any)=>item.draftKey!==row.draftKey)
+              : current.items.map((item:any)=>item.draftKey===row.draftKey
+                ? {...item,quantity:Math.max(0,Math.trunc(Number(value))),touched:true} : item),
+          }))
+        } else if(mode==='manual_set')ctx.setInventoryCorrectionValue(row,value)
         else ctx.setInventoryVariantOperationQuantity(row,Number(value||0))
       }}
       onSave={()=>ctx.saveInventoryMovement()}
