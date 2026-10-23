@@ -18,6 +18,7 @@ import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listFinanceReports } from './domains/finance-reports.ts'
+import { listWarehouseDemand } from './domains/warehouse-demand.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
@@ -518,6 +519,11 @@ export default {
 
       if (url.pathname === '/api/reports/orders-summary' && request.method === 'GET') {
         return json(await listOrdersFinanceSummary(env.DB, url));
+      }
+
+      if (url.pathname === '/api/reports/warehouse-demand' && request.method === 'GET') {
+        const result = await listWarehouseDemand(env.DB, url);
+        return json(result, result.ok ? undefined : { status: 400 });
       }
 
       if (url.pathname === '/api/reports/finance' && request.method === 'GET') {

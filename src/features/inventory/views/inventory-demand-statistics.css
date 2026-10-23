@@ -1,0 +1,25 @@
+.inventory-demand{padding:20px 2px;display:grid;gap:17px}
+.inventory-demand-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.inventory-demand-head h2{margin:0 0 6px;font-size:1.3rem}
+.inventory-demand-head p{margin:0;color:var(--text-muted,#687580)}
+.inventory-demand-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.inventory-demand-filters label,.inventory-demand-rank-head label{display:grid;gap:4px;font-size:.85rem;min-width:116px}
+.inventory-demand-search{flex:1;min-width:180px}
+.inventory-demand-filters input,.inventory-demand-filters select,.inventory-demand-rank-head select{width:100%;min-height:38px}
+.inventory-demand-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px}
+.inventory-demand-summary>div{background:var(--surface-muted,#f4f6f8);border:1px solid var(--border,#e4e7eb);border-radius:12px;padding:13px;display:grid;gap:6px}
+.inventory-demand-summary small{color:var(--text-muted,#687580)}
+.inventory-demand-summary strong{font-size:1.2rem}
+.inventory-demand-caveat{color:var(--text-muted,#687580);font-size:.86rem;line-height:1.5;margin:0}
+.inventory-demand-rank-head{display:flex;align-items:end;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.inventory-demand-tabs{display:flex;flex-wrap:wrap;gap:6px}
+.inventory-demand-tabs button{border:1px solid var(--border,#d4dce3);background:transparent;padding:8px 12px;border-radius:9px;cursor:pointer}
+.inventory-demand-tabs button.is-active{background:var(--accent,#233f69);color:white}
+.inventory-demand-ranking{overflow:auto;display:grid;gap:0}
+.inventory-demand-table-head,.inventory-demand-rank{display:grid;grid-template-columns:minmax(170px,2fr) repeat(4,minmax(110px,1fr));gap:10px;align-items:center;min-width:690px}
+.inventory-demand-table-head{font-size:.78rem;color:var(--text-muted,#687580);border-bottom:1px solid var(--border,#e4e7eb);padding:9px 6px}
+.inventory-demand-rank{padding:11px 6px;border-bottom:1px solid var(--border,#e4e7eb);font-size:.91rem}
+.inventory-demand-name{display:grid;gap:7px}
+.inventory-demand-track{height:5px;background:var(--border,#e4e7eb);border-radius:20px;overflow:hidden}
+.inventory-demand-track>div{height:100%;width:var(--bar-width);background:#5489c7;border-radius:20px}
+@media(max-width:650px){.inventory-demand{padding:12px 0}.inventory-demand-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-demand-head h2{font-size:1.1rem}}
