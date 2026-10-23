@@ -1920,6 +1920,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         size: row.size || '',
         quantity: parsed,
         touched: true,
+        // An active catalog size without a local stock row is a new 0-baseline
+        // physical variant for this location, not a missing/invalid SKU.
+        createMissingVariant: Number(row.id || 0) === 0,
         expectedQuantity: Number(row.quantity || 0),
       }
       return { ...current, items: [...rest, nextItem] }
