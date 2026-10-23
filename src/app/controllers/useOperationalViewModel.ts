@@ -867,7 +867,7 @@ const summary = useMemo(() => {
 
   const inventoryOperationSourceRows = useMemo(() => {
     const sourceRows = inventoryStockRowsForSource(inventoryDraft.source)
-    if (inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'arrival') {
+    if (inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'arrival' || inventoryDraft.movementType === 'manual_set') {
       // Use catalog identities for both arrival and writeoff, including variants with
       // no existing stock row at this point. Never match manually typed characteristics
       // to a similarly named SKU when a real variant ID is available.
@@ -900,7 +900,7 @@ const summary = useMemo(() => {
         } satisfies InventoryStockRecord))
       // Arrival cannot reactivate a retired catalog variant by accidentally
       // selecting an old stock record. Other modes keep their existing semantics.
-      return inventoryDraft.movementType === 'arrival'
+      return inventoryDraft.movementType === 'arrival' || inventoryDraft.movementType === 'manual_set'
         ? [...sourceRows.filter(row => activeProductIds.has(Number(row.productId))
           && (catalogData?.variants || []).some(variant => variant.isActive && Number(variant.id) === Number(row.variantId))), ...untracked]
         : [...sourceRows, ...untracked]
