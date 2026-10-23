@@ -1,0 +1,34 @@
+name: W6 Unified Warehouse Operations
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
+      - 'src/features/inventory/unifiedOperationMath.ts'
+      - 'src/styles/193-unified-inventory-operations.css'
+      - 'src/App.tsx'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'scripts/test-w6-unified-operations.mjs'
+      - '.github/workflows/w6-unified-warehouse-operations.yml'
+permissions:
+  contents: read
+jobs:
+  safe-operation-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: W6 quantity semantics and UX contracts
+        run: node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+      - name: Existing atomic arrival and catalog variant protections
+        run: node scripts/test-arrival-save-reliability.mjs && node scripts/test-arrival-variant-integrity-r2.mjs
+      - name: Existing stocktake stays reliable
+        run: node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Strict TypeScript and UI build
+        run: npm run build
