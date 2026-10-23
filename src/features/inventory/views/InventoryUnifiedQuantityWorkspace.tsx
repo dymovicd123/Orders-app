@@ -75,6 +75,12 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     p.onSource(next);setStage('select');setSelected([]);setCurrent('');setQuery('');setNotice('')
   }
   function select(key: string) {
+    if (selected.includes(key)) {
+      const removing = groups.find(g => g.key === key)
+      const edited = removing?.rows.filter(row => inventoryOperationDisplay(mode,draftMap.get(String(row.variantId))) !== '') || []
+      if (edited.length && !window.confirm('Убрать товар и очистить ' + edited.length + ' введённых значений?')) return
+      for (const row of edited) p.onQuantity(row, '')
+    }
     setSelected(prev=>prev.includes(key)?prev.filter(id=>id!==key):[...prev,key])
     setCurrent(key)
   }
@@ -111,6 +117,14 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           <span><strong>{g.productName}</strong><small>{g.rows.length} вариантов</small></span></label>)}
           {!filtered.length&&<p>По поиску товаров нет.</p>}</div>
         {groups.length>filtered.length&&<p className="w6-hint">Показаны первые 120 подходящих товаров. Другие найдутся поиском.</p>}
+        {mode==='arrival'&&isAdmin&&<div className="w6-new-variant"><button type="button" onClick={()=>setNewVariant(!newVariant)}>
+          {newVariant?'− Скрыть новый вариант':'+ Товара или варианта ещё нет? Добавить при приходе'}</button>
+          {newVariant&&<div className="w6-new-form"><p>Новая комбинация появится в каталоге после подтверждения прихода. Существующие товары удобнее выбирать из списка.</p>{newVariantWorkspace}</div>}
+        </div>}
+        {mode==='arrival'&&extraArrival.rows>0&&!selected.length&&<div className="w6-message">
+          Заполнено новых вариантов: {extraArrival.rows} · {extraArrival.totalQuantity} шт.
+          <button type="button" onClick={()=>{setNotice('');setStage('review')}}>Проверить приход новых вариантов →</button>
+        </div>}
         <footer><span>{selected.length?selected.length+' товаров выбрано':'Выберите товары'}</span><button type="button" className="primary" disabled={!selected.length} onClick={()=>{setCurrent(selected[0]);setStage('quantities')}}>Перейти к вариантам →</button></footer>
       </div>}
       {stage==='quantities'&&<div className="w6-step"><header><span>ШАГ 2</span><h4>{names[mode].input}: заполните нужные варианты</h4>
