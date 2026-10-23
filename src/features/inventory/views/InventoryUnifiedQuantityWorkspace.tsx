@@ -29,6 +29,7 @@ const names = {
   transfer: { title: 'Перемещение', action: 'Подтвердить перемещение', input: 'Переместить', detail: 'Укажите количество для переноса между складом и бутиком. Резервы заказов не переписываются.' },
 } as const
 const int = (value: unknown) => Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0
+const movementInput = (mode:Mode, item:Draft|undefined) => displayQuantityInput(mode==='transfer'?'writeoff':mode,item)
 const sourceName = (s: string) => s === 'boutique' ? 'Бутик' : 'Склад'
 function positionKey(row: Row) { return [row.material || 'СТАНДАРТ', row.length || 'СТАНДАРТ', row.audienceType || 'adult', row.gender || ''].join('::') }
 function positionLabel(row: Row) {
@@ -81,7 +82,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const unselected = useMemo(() => groups.filter(g => g.productName.toLocaleLowerCase('ru').includes(startSearch.toLocaleLowerCase('ru').trim())).slice(0,180),[groups,startSearch])
   const searchableChosen = chosen.filter(g => g.productName.toLocaleLowerCase('ru').includes(productSearch.toLocaleLowerCase('ru').trim()))
   const groupIndex = chosen.findIndex(g => g.key === activeGroup?.key)
-  const filledGroup = (g: Group) => g.rows.filter(r => displayQuantityInput(mode,draftMap.get(String(r.variantId))) !== '').length
+  const filledGroup = (g: Group) => g.rows.filter(r => movementInput(mode,draftMap.get(String(r.variantId))) !== '').length
   const ready = changed > 0 && (mode === 'arrival' || mode === 'transfer' || Boolean(reason.trim()))
   useEffect(() => {
     if(stage === 'review' && !busy && !changed) {
@@ -93,7 +94,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     const remove = selected.includes(key)
     if(remove) {
       const g = groups.find(item => item.key === key)
-      const filled = (g?.rows || []).filter(row => displayQuantityInput(mode,draftMap.get(String(row.variantId))) !== '')
+      const filled = (g?.rows || []).filter(row => movementInput(mode,draftMap.get(String(row.variantId))) !== '')
       if(filled.length && !window.confirm('Убрать товар и очистить ' + filled.length + ' введённых значений?')) return
       for(const row of filled) p.onQuantity(row,'')
     }
@@ -192,7 +193,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
               <span>{chosen.length} товаров</span></div>
               <button className="ghost compact" type="button" onClick={() => {
                 if(changed && !window.confirm('Очистить выбранные товары и числа?'))return
-                for(const g of chosen) for(const row of g.rows) if(displayQuantityInput(mode,draftMap.get(String(row.variantId)))!=='')p.onQuantity(row,'')
+                for(const g of chosen) for(const row of g.rows) if(movementInput(mode,draftMap.get(String(row.variantId)))!=='')p.onQuantity(row,'')
                 setSelected([]);setCurrent('')
               }}>Очистить</button>
             </div>
@@ -300,7 +301,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
                       <div className="stocktake-color-group-head"><strong>{color}</strong></div>
                       <div className="stocktake-color-group-body"><div className="stocktake-size-grid">
                         {rows.slice().sort((a,b)=>(a.size||'').localeCompare(b.size||'','ru',{numeric:true})).map(row=>{
-                          const value=displayQuantityInput(mode,draftMap.get(String(row.variantId)))
+                          const value=movementInput(mode,draftMap.get(String(row.variantId)))
                           const currentQuantity=int(row.quantity)
                           const after=value===''?currentQuantity:(mode==='transfer'?Math.max(0,currentQuantity-int(value)):previewQuantity(mode,currentQuantity,int(value)))
                           const targetBefore=mode==='transfer'?p.targetQuantity(row.variantId):0
