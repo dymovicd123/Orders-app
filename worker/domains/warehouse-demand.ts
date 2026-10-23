@@ -1,6 +1,7 @@
-// Stage05: read-only demand statistics for shipped orders. This module never reads inventory_stock.
-// Its date axis is the actual order shipping date, not creation date.
-export const warehouseDemandSql = String.raw`
+// Stage05 v2: read-only demand by shipped order cohort; never reads inventory_stock.
+// The current order-item snapshot may include later exchanges, so this is not an immutable
+// sale-event ledger. We explicitly disclose that limitation in the response and UI.
+const demandBaseSql = String.raw`
 WITH returns_by_item AS (
   SELECT ri.order_item_id, SUM(ri.quantity) AS returned_qty
   FROM return_items ri
@@ -9,27 +10,34 @@ WITH returns_by_item AS (
     AND COALESCE(r.status, 'completed') <> 'cancelled'
     AND NOT EXISTS (
       SELECT 1 FROM exchanges e
-      WHERE e.refund_return_id = r.id AND COALESCE(e.status, 'completed') <> 'cancelled'
+      WHERE e.refund_return_id = r.id
+        AND COALESCE(e.status, 'completed') <> 'cancelled'
     )
   GROUP BY ri.order_item_id
-),
-sale_lines AS (
+), sale_lines AS (
   SELECT
-    TRIM(COALESCE(oi.product_name_snapshot, '')) AS product,
-    TRIM(COALESCE(oi.color_snapshot, '')) AS color,
-    TRIM(COALESCE(oi.size_snapshot, '')) AS size,
-    TRIM(COALESCE(oi.material_snapshot, '')) AS material,
-    TRIM(COALESCE(oi.length_snapshot, '')) AS length,
-    TRIM(COALESCE(oi.gender_snapshot, '')) AS gender,
+    oi.id AS item_id, o.id AS order_id, o.external_id AS external_id,
+    SUBSTR(o.shipping_date, 1, 10) AS shipped_at,
+    o.total_amount AS order_total,
+    COALESCE(NULLIF(TRIM(oi.product_name_snapshot), ''), 'Без названия') AS product,
+    COALESCE(NULLIF(TRIM(oi.color_snapshot), ''), 'Не указан') AS color,
+    COALESCE(NULLIF(TRIM(oi.size_snapshot), ''), 'Не указан') AS size,
+    COALESCE(NULLIF(TRIM(oi.material_snapshot), ''), 'Не указан') AS material,
+    COALESCE(NULLIF(TRIM(oi.length_snapshot), ''), 'Не указана') AS length,
+    COALESCE(NULLIF(TRIM(oi.gender_snapshot), ''), 'Не указан') AS gender,
     COALESCE(NULLIF(TRIM(oi.audience_type), ''), 'unknown') AS category,
     CASE WHEN oi.is_workshop = 1 THEN 'workshop'
       ELSE COALESCE(NULLIF(oi.source_type, ''), 'warehouse') END AS source,
     CAST(oi.quantity AS INTEGER) AS sold,
     MIN(CAST(oi.quantity AS INTEGER), MAX(0, COALESCE(rb.returned_qty, 0))) AS returned,
-    CASE WHEN oi.unit_price > 0
-      AND oi.line_total = oi.quantity * oi.unit_price
-      THEN CAST(oi.unit_price AS INTEGER) ELSE NULL END AS proven_price,
-    oi.order_id
+    CASE
+      WHEN oi.unit_price > 0 OR
+        (COALESCE(o.pricing_mode, '') = 'itemized_v1' AND oi.unit_price = 0)
+      THEN CAST(oi.unit_price AS INTEGER)
+      ELSE NULL
+    END AS recorded_price,
+    CASE WHEN oi.unit_price > 0 AND oi.line_total <> oi.quantity * oi.unit_price
+      THEN 1 ELSE 0 END AS price_discrepancy
   FROM order_items oi
   JOIN orders o ON o.id = oi.order_id
   LEFT JOIN returns_by_item rb ON rb.order_item_id = oi.id
@@ -37,56 +45,90 @@ sale_lines AS (
     AND o.order_status <> 'deleted'
     AND SUBSTR(o.shipping_date, 1, 10) BETWEEN ? AND ?
     AND oi.quantity > 0
-    AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('cancelled', 'replaced_edit', 'reversed_delete')
+    AND COALESCE(oi.stock_writeoff_status, '') NOT IN
+      ('cancelled', 'replaced_edit', 'reversed_delete')
 )
+`;
+export const warehouseDemandSql = demandBaseSql + String.raw`
 SELECT product, color, size, material, length, gender, category, source,
        SUM(sold) AS sold,
        SUM(returned) AS returned,
        SUM(sold - returned) AS net,
-       SUM(CASE WHEN proven_price IS NULL THEN 0 ELSE sold - returned END) AS priced_quantity,
-       SUM(CASE WHEN proven_price IS NULL THEN 0 ELSE (sold - returned) * proven_price END) AS known_revenue,
-       COUNT(DISTINCT order_id) AS orders_count
+       SUM(CASE WHEN recorded_price IS NOT NULL THEN sold - returned ELSE 0 END) AS priced_quantity,
+       SUM(CASE WHEN recorded_price IS NOT NULL THEN (sold - returned) * recorded_price ELSE 0 END) AS known_revenue,
+       SUM(CASE WHEN price_discrepancy = 1 THEN sold - returned ELSE 0 END) AS price_discrepancy_quantity,
+       MIN(CASE WHEN recorded_price IS NOT NULL THEN recorded_price END) AS min_price,
+       MAX(CASE WHEN recorded_price IS NOT NULL THEN recorded_price END) AS max_price
 FROM sale_lines
 GROUP BY product, color, size, material, length, gender, category, source
 ORDER BY sold DESC, product ASC, color ASC, size ASC
-LIMIT 6001`;
+LIMIT 6001
+`;
+export const warehouseDemandOrdersSql = demandBaseSql + String.raw`
+SELECT item_id, order_id, external_id, shipped_at, product, color, size, material,
+       length, gender, category, source, sold, returned, sold - returned AS net,
+       recorded_price, price_discrepancy, order_total
+FROM sale_lines
+WHERE product = ? AND color = ? AND size = ? AND material = ?
+  AND length = ? AND gender = ? AND category = ? AND source = ?
+ORDER BY shipped_at DESC, item_id DESC
+LIMIT 51 OFFSET ?
+`;
 
 type DemandRow = Record<string, string | number | null>;
-const asNumber = (value: unknown) => Math.max(0, Number(value) || 0);
-const asText = (value: unknown) => String(value ?? '').trim();
+const num = (n: unknown) => Math.max(0, Number(n) || 0);
+const txt = (n: unknown) => String(n ?? '').trim();
+const validDay = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day)
+  && !Number.isNaN(Date.parse(day + 'T00:00:00Z'))
+  && new Date(day + 'T00:00:00Z').toISOString().slice(0, 10) === day;
 
 export async function listWarehouseDemand(db: D1Database, url: URL) {
-  const start = asText(url.searchParams.get('start'));
-  const end = asText(url.searchParams.get('end'));
-  const validDate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date)
-    && !Number.isNaN(Date.parse(date + 'T00:00:00Z'))
-    && new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) === date;
-  if (!validDate(start) || !validDate(end) || start > end)
+  const start = txt(url.searchParams.get('start'));
+  const end = txt(url.searchParams.get('end'));
+  if (!validDay(start) || !validDay(end) || start > end)
     return { ok: false, message: 'Проверьте даты отчёта.' };
   if (Date.parse(end) - Date.parse(start) > 366 * 86400000)
     return { ok: false, message: 'Выберите период не более одного года.' };
 
+  if (url.searchParams.get('mode') === 'orders') {
+    const fields = ['product', 'color', 'size', 'material', 'length', 'gender', 'category', 'source'] as const;
+    const values = fields.map(key => txt(url.searchParams.get(key)));
+    if (values.some(value => !value || value.length > 250))
+      return { ok: false, message: 'Выберите конкретный вариант товара.' };
+    const rawOffset = Number(url.searchParams.get('offset') ?? '0');
+    if (!Number.isSafeInteger(rawOffset) || rawOffset < 0 || rawOffset > 10000)
+      return { ok: false, message: 'Некорректная страница списка заказов.' };
+    const result = await db.prepare(warehouseDemandOrdersSql)
+      .bind(end, start, end, ...values, rawOffset).all<DemandRow>();
+    const rows = result.results || [];
+    return { ok: true, mode: 'orders', hasMore: rows.length > 50, nextOffset: rawOffset + 50,
+      orders: rows.slice(0, 50).map(row => ({
+        itemId: num(row.item_id), orderId: num(row.order_id),
+        externalId: txt(row.external_id), shippedAt: txt(row.shipped_at),
+        product: txt(row.product), color: txt(row.color), size: txt(row.size),
+        material: txt(row.material), length: txt(row.length), gender: txt(row.gender),
+        category: txt(row.category), source: txt(row.source),
+        sold: num(row.sold), returned: num(row.returned), net: num(row.net),
+        unitPrice: row.recorded_price === null ? null : num(row.recorded_price),
+        priceDiscrepancy: Boolean(num(row.price_discrepancy)),
+        orderTotal: num(row.order_total),
+      })) };
+  }
+
   const result = await db.prepare(warehouseDemandSql).bind(end, start, end).all<DemandRow>();
   const raw = result.results || [];
-  // Never silently publish an incomplete ranking as if it represented the whole period.
   const truncated = raw.length > 6000;
   const rows = truncated ? [] : raw.map(row => ({
-    product: asText(row.product) || 'Без названия',
-    color: asText(row.color) || 'Не указан',
-    size: asText(row.size) || 'Не указан',
-    material: asText(row.material) || 'Не указан',
-    length: asText(row.length) || 'Не указана',
-    gender: asText(row.gender) || 'Не указан',
-    category: asText(row.category) || 'unknown',
-    source: asText(row.source),
-    sold: asNumber(row.sold),
-    returned: asNumber(row.returned),
-    net: asNumber(row.net),
-    pricedQuantity: asNumber(row.priced_quantity),
-    knownRevenue: asNumber(row.known_revenue),
-    ordersCount: asNumber(row.orders_count),
+    product: txt(row.product), color: txt(row.color), size: txt(row.size),
+    material: txt(row.material), length: txt(row.length), gender: txt(row.gender),
+    category: txt(row.category), source: txt(row.source),
+    sold: num(row.sold), returned: num(row.returned), net: num(row.net),
+    pricedQuantity: num(row.priced_quantity), knownRevenue: num(row.known_revenue),
+    priceDiscrepancyQuantity: num(row.price_discrepancy_quantity),
+    minPrice: row.min_price === null ? null : num(row.min_price),
+    maxPrice: row.max_price === null ? null : num(row.max_price),
   }));
-  return { ok: true, start, end, truncated, rows,
-    method: 'shipped_order_cohort',
-    note: 'Продажи по дате отправки заказа. Состав заказа учитывает проведённые обмены; возвраты учтены до конца выбранного периода. Денежные показатели доступны только по строкам с подтверждённой ценой.' };
+  return { ok: true, mode: 'summary', start, end, truncated, rows,
+    method: 'shipped_order_cohort_current_items',
+    note: 'По дате отправки заказов, в текущем составе позиций. Обмены после отправки могут изменять прошлые периоды. Возвраты учитываются до конца выбранного периода. Цена берётся из сохранённой unit_price; для старых строк ноль без подтверждения считается неизвестным. Сумма позиций — не сумма поступивших оплат.' };
 }
