@@ -4,6 +4,8 @@ on:
     branches: [branch2]
     paths:
       - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - 'src/features/inventory/views/StocktakeSharedInputs.tsx'
+      - 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
       - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
       - 'src/features/inventory/unifiedOperationMath.ts'
       - 'src/styles/193-unified-inventory-operations.css'
