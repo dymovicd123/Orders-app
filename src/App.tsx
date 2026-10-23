@@ -5121,7 +5121,7 @@ function App() {
   function setInventoryVariantOperationQuantity(row: InventoryStockRecord, quantity: number) {
     const physical = Math.max(0, Number(row.quantity || 0))
     const requested = Math.max(0, Math.trunc(Number(quantity || 0)))
-    const nextQuantity = inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff' ? requested : Math.min(physical, requested)
+    const nextQuantity = inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'arrival' ? requested : Math.min(physical, requested)
     const variantId = String(row.variantId || '')
     if (!variantId) return
     setInventoryDraft((current) => {
@@ -5239,7 +5239,13 @@ function App() {
     setMessage(null)
     try {
       const movementItems = inventoryDraft.movementType === 'arrival'
-        ? flattenInventoryArrivalPositions()
+        // Existing catalog SKUs are selected by their IDs in the same grid as
+        // correction/writeoff. Only genuinely new combinations use the legacy
+        // creation subform. Both are saved in the same atomic movement request.
+        ? [
+            ...inventoryDraft.items.filter((item) => item.variantId && Number(item.quantity || 0) > 0),
+            ...flattenInventoryArrivalPositions(),
+          ]
         : inventoryDraft.items
       const cleanItems = movementItems
         .filter((item) => (item.variantId || item.productName) && (inventoryDraft.movementType === 'manual_set' ? item.touched : Number(item.quantity || 0) > 0))
