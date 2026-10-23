@@ -132,8 +132,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   function addInlineVariant(sample:Row) {
     if(!inline)return
     if(mode!=='arrival'&&mode!=='manual_set')return
-    const color=inline.color.trim(),size=inline.size.trim(),quantity=Number(inline.quantity)
-    if(!color||!size||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
+    const color=inline.color==='БЕЗ ЦВЕТА'?'':inline.color.trim()
+    const size=inline.size.trim(),quantity=Number(inline.quantity)
+    if((inline.kind==='color'&&!color)||!size||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
       setNotice('Выберите цвет, размер и целое количество от '+(mode==='manual_set'?'0':'1')+' до 999999.');return
     }
     if(activeGroup?.rows.some(row=>positionKey(row)===inline.positionKey &&
