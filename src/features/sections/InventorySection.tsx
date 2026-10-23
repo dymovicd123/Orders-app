@@ -92,6 +92,7 @@ type SectionContext = Record<string, any> & {
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
     onInlineArrivalVariant,
+    onInlineCorrectionVariant,
     inventoryMovementError,
     clearInventoryMovementError,
     activeSector,
@@ -2691,6 +2692,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     
               {renderInventoryMovementPanel({
         onInlineArrivalVariant,
+        onInlineCorrectionVariant,
         inventoryMovementError,
         clearInventoryMovementError,
         stocktakeActiveSources: stocktakeActiveSessions.map(session=>session.source),
