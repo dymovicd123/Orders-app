@@ -14,7 +14,7 @@ type DemandResponse = {
   periodOrderCount?: number; periodShippedOrderCount?: number
 }
 type OrderLine = {
-  itemId: number; orderId: number; externalId: string; shippedAt: string
+  itemId: number; orderId: number; externalId: string; shippedAt: string; orderedAt: string
   sold: number; returned: number; net: number
   unitPrice: number | null; orderTotal: number; priceDiscrepancy: boolean
 }
@@ -217,7 +217,7 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
     {response&&!response.truncated&&!loading&&<>
       <div className="demand-explain"><span className="demand-explain-dot" aria-hidden="true"/>
         {isSent?'Считаем только товары из заказов, отмеченных «Отправлен», по дате отправки.':'Считаем товары из всех оформленных заказов по дате создания, включая ожидающие отправки.'}
-        {response.periodOrderCount!==undefined&&<span className="demand-explain-counter">За месяц оформлено {count(response.periodOrderCount)} заказов · отправлено {count(response.periodShippedOrderCount||0)}</span>}
+        {source==='all'&&category==='all'&&response.periodOrderCount!==undefined&&<span className="demand-explain-counter">За период оформлено {count(response.periodOrderCount)} заказов · отправлено {count(response.periodShippedOrderCount||0)}</span>}
       </div>
       <div className="demand-kpis">
         <div><small>{isSent?'Отправлено товаров':'Заказано товаров'}</small><strong>{count(totals.sold)} шт.</strong></div>
@@ -283,7 +283,7 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
             {orderError&&<p role="alert">{orderError}</p>}
             {orderLoading&&!orders.length&&<p>Загружаем позиции…</p>}
             {orders.map(item=><article className="demand-order" key={item.itemId}>
-              <strong>{item.externalId||'Заказ №'+item.orderId}</strong><small>{isSent?'Отправлен':'Оформлен'} · {item.shippedAt||'Дата отправки не указана'}</small>
+              <strong>{item.externalId||'Заказ №'+item.orderId}</strong><small>{isSent?'Отправлен '+(item.shippedAt||'без даты'):'Оформлен '+(item.orderedAt||'без даты')}</small>
               <div><b>{item.net} шт.</b><span>{item.unitPrice===null?'Цена позиции неизвестна':money(item.unitPrice)+' / шт.'}</span></div>
               <small>{item.unitPrice===null?'Общая сумма заказа '+money(item.orderTotal)+' — не цена этого товара':'Стоимость позиции '+money(item.net*item.unitPrice)}</small>
               {item.priceDiscrepancy&&<small className="demand-warning">Старая сумма строки отличается от цены за штуку</small>}
