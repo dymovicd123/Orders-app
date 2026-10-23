@@ -204,7 +204,7 @@ export function InventoryDemandStatistics({ active }: { active: boolean }) {
         <div className="inventory-demand-period-actions">
           <button type="button" className={!custom && month === currentMonth() ? 'is-active' : ''} onClick={() => chooseMonth(currentMonth())}>Этот месяц</button>
           <button type="button" className={!custom && month === shiftMonth(currentMonth(), -1) ? 'is-active' : ''} onClick={() => chooseMonth(shiftMonth(currentMonth(), -1))}>Прошлый месяц</button>
-          <button type="button" className={custom ? 'is-active' : ''} onClick={() => setCustom(value => !value)}>Свой период</button>
+          <button type="button" className={custom ? 'is-active' : ''} onClick={() => { if (custom) { setCustom(false); setPeriod(monthRange(month)); clearDrilldown() } else setCustom(true) }}>Свой период</button>
         </div>
         {!custom ? <label className="inventory-demand-month">Месяц <input type="month" value={month} onChange={e => { if (e.target.value) chooseMonth(e.target.value) }} /></label> : (
           <form className="inventory-demand-dates" onSubmit={event => { event.preventDefault(); applyCustom() }}>
