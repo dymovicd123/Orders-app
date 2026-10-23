@@ -149,14 +149,6 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
     return ()=>ctrl.abort()
   },[active,variantId,period.start,period.end,scope,orderPage])
 
-  function exportModels() {
-    const quote=(v:string|number)=>'"'+String(v).replace(/"/g,'""')+'"'
-    const data=[['Модель','Количество','Возврат','Количество без возвратов','Стоимость по ценам позиций','Средняя цена','С известной ценой'],
-      ...models.map(m=>[m.name,m.sold,m.returned,m.net,m.amount,m.priced?Number((m.amount/m.priced).toFixed(2)):'',m.priced])]
-    const csv='\uFEFF'+data.map(row=>row.map(quote).join(';')).join('\r\n')
-    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}))
-    const a=document.createElement('a');a.href=url;a.download='spros-modeli-'+period.start+'.csv';a.click();URL.revokeObjectURL(url)
-  }
 
   function analysisCard(kind:Dimension,items:Summary[],limit:number) {
     const visible=showAll===kind?items:items.slice(0,limit)
@@ -246,7 +238,7 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
       </details>
       <div className="demand-section-title">
         <div><h3>{isSent?'Какие товары продали':'Что чаще всего заказывают'}</h3><p>Нажмите «Подробнее», чтобы увидеть конкретные варианты и позиции заказов.</p></div>
-        <button type="button" className="demand-download" onClick={exportModels}>↓ Скачать список моделей (CSV)</button>
+
       </div>
       <div className="demand-main-grid">
         <div className="demand-main-left">
