@@ -93,7 +93,6 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
   const [orderMore,setOrderMore]=useState(false)
 
   const isSent = scope==='shipped'
-  const noun = isSent ? 'отправленных' : 'заказанных'
   function clearDetail() {setSelection(null);setPickedModel(null);setPickedVariant(null);setOrders([]);setOrderPage(0)}
   function chooseMonth(value:string) {setMonth(value);setPeriod(monthDates(value));setCustom(false);clearDetail()}
   function openGroup(kind:Dimension,name:string) {
@@ -127,7 +126,6 @@ export function InventoryDemandStatistics({active}:{active:boolean}) {
   const materials=useMemo(()=>rank(filtered,'material'),[filtered])
   const lengths=useMemo(()=>rank(filtered,'length'),[filtered])
   const genders=useMemo(()=>rank(filtered,'gender'),[filtered])
-  const byDimension:Record<Dimension,Summary[]>={product:models,color:colors,size:sizes,material:materials,length:lengths,gender:genders}
   const displayedModels=useMemo(()=>models.filter(m=>m.name.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))),[models,query])
   const focusRows=useMemo(()=>!selection?[]:filtered.filter(row=>row[selection.kind]===selection.name),[filtered,selection])
   const focusModels=useMemo(()=>rank(focusRows,'product'),[focusRows])
