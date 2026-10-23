@@ -1,6 +1,7 @@
 import type { InventoryRenderContext } from './types'
 import { partitionTransferVariantRows, refineMovementPickerContext } from '../movementPickerB2B'
 import { WriteoffReview } from './WriteoffReview'
+import { InventoryUnifiedQuantityWorkspace } from './InventoryUnifiedQuantityWorkspace'
 import '../../../styles/192b2b-movement-picker.css'
 import '../../../styles/w4-human-operations.css'
 
@@ -52,6 +53,43 @@ type PanelContext = Pick<InventoryRenderContext,
 
 
 export function renderInventoryMovementPanel(ctx: PanelContext) {
+  // Reuse the verified movement server paths. Only the employee-facing selection,
+  // quantity entry and review screen changes; transfer remains unchanged.
+  if (ctx.inventoryDraft.movementType !== 'transfer') {
+    const mode = ctx.inventoryDraft.movementType as 'arrival' | 'writeoff' | 'manual_set'
+    const source = ctx.inventoryDraft.source as 'warehouse' | 'boutique'
+    return (
+      <div className="inventory-movement-panel" style={ctx.inventoryPanelStyle('movement')}>
+        <InventoryUnifiedQuantityWorkspace
+          key={mode + ':' + source}
+          mode={mode}
+          source={source}
+          groups={ctx.inventoryOperationAllProductGroups}
+          draft={ctx.inventoryDraft.items}
+          busy={ctx.inventoryMovementBusy}
+          loading={ctx.movementSourceLoading}
+          error={ctx.movementSourceLoadError || ''}
+          reason={ctx.inventoryDraft.comment || ''}
+          isAdmin={ctx.isAdmin}
+          newVariantWorkspace={ctx.arrivalWorkspace}
+          extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
+          onMode={(next) => ctx.selectInventoryOperationMode(next)}
+          onSource={(next) => ctx.changeInventoryOperationSource(next)}
+          onReason={(value) => ctx.setInventoryDraft((current: any) => ({ ...current, comment: value }))}
+          onQuantity={(row, value) => mode === 'manual_set'
+            ? ctx.setInventoryCorrectionValue(row, value)
+            : ctx.setInventoryVariantOperationQuantity(row, Number(value || 0))}
+          onSave={() => ctx.saveInventoryMovement()}
+          onClear={() => {
+            ctx.setInventoryDraft((current: any) => ({ ...current, items: [ctx.createEmptyInventoryItem()], comment: '' }))
+            ctx.resetInventoryArrivalForm()
+            ctx.resetInventoryOperationSelection()
+          }}
+          onRefresh={() => ctx.setMovementSourceRefreshToken((value: number) => value + 1)}
+        />
+      </div>
+    )
+  }
   // STEP 192B2B: refine only the read/UX context; the accepted JSX and transfer mutation runtime stay unchanged.
   const movementCtx = refineMovementPickerContext(ctx)
   const {
