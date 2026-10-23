@@ -62,8 +62,6 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     .map(item => ({ row: allRows.get(String(item.variantId)), quantity: int(item.quantity) }))
     .filter((item): item is { row: Row; quantity: number } => Boolean(item.row)), [draft, allRows, mode])
   const changed = entries.length + (mode === 'arrival' ? extraArrival.rows : 0)
-  const changedUnitCount = entries.reduce((n,e) => n +
-    (mode === 'manual_set' ? Math.abs(previewQuantity(mode,int(e.row.quantity),e.quantity) - int(e.row.quantity)) : e.quantity),0)
   const unselected = useMemo(() => groups.filter(g => g.productName.toLocaleLowerCase('ru').includes(startSearch.toLocaleLowerCase('ru').trim())).slice(0,180),[groups,startSearch])
   const searchableChosen = chosen.filter(g => g.productName.toLocaleLowerCase('ru').includes(productSearch.toLocaleLowerCase('ru').trim()))
   const groupIndex = chosen.findIndex(g => g.key === activeGroup?.key)
