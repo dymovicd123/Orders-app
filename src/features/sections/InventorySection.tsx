@@ -93,6 +93,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
     onInlineArrivalVariant,
     inventoryMovementError,
+    clearInventoryMovementError,
     activeSector,
     applyPendingInventoryWriteoffs,
     buildInventoryMatrix,
@@ -2689,6 +2690,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               {renderInventoryMovementPanel({
         onInlineArrivalVariant,
         inventoryMovementError,
+        clearInventoryMovementError,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,
