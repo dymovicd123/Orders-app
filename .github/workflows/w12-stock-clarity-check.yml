@@ -1,0 +1,39 @@
+name: W12 Stock Clarity Check
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/inventory/views/renderInventoryOverviewPanel.tsx'
+      - 'src/features/inventory/views/renderInventoryHistoryPanel.tsx'
+      - 'src/features/inventory/views/StockVariantTimeline.tsx'
+      - 'src/features/inventory/views/renderInventoryAttentionPanel.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/sections/OrdersHeaderSection.tsx'
+      - 'src/styles/**'
+      - 'scripts/test-w12-stock-clarity.mjs'
+      - '.github/workflows/w12-stock-clarity-check.yml'
+  push:
+    branches: [feature/branch2-stock-clarity-20261024]
+permissions:
+  contents: read
+jobs:
+  check:
+    name: W12 isolated UI contracts and complete application build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: W12 stock/history issue regression
+        run: node scripts/test-w12-stock-clarity.mjs
+      - name: Core warehouse runtime and regression
+        run: |
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node --experimental-strip-types scripts/test-w9-correction-inline-variants.mjs
+      - name: Typecheck and full bundle
+        run: npm run build
