@@ -1,0 +1,30 @@
+/* Stock source must be unmistakable; action hierarchy stays restrained. */
+.stock-v14-page .stock-v14-heading{align-items:center;margin-bottom:17px}
+.stock-v14-page .stock-v14-location-tools{
+  padding:9px 11px;border:1px solid #cbdcf3;background:#f4f8ff;
+  border-radius:13px;gap:10px;box-shadow:0 1px 4px rgba(45,88,143,.04)
+}
+.stock-v16-source-control{display:grid;gap:5px}
+.stock-v16-source-label{font-size:12px;color:#355478;line-height:1.25}
+.stock-v14-page .stock-v16-source-switch{
+  padding:4px;gap:5px;background:#e4ecf7;border:1px solid #ccd9e8;border-radius:10px
+}
+.stock-v14-page .stock-v16-source-switch button{
+  min-height:37px;min-width:96px;border:1px solid transparent;
+  border-radius:7px;color:#516781;background:transparent;font-size:13px;font-weight:650
+}
+.stock-v14-page .stock-v16-source-switch button.is-active{
+  background:#2466ae;border-color:#2466ae;color:#fff;
+  box-shadow:0 2px 6px rgba(20,83,155,.2);font-weight:750
+}
+.stock-v14-page .stock-v16-source-switch button:not(.is-active):hover{background:#fff}
+.stock-v14-page .stock-v16-source-switch button:focus-visible{
+  outline:3px solid #eabf57;outline-offset:2px
+}
+.stock-v14-page .stock-v14-refresh{align-self:end;margin-bottom:4px}
+
+@media(max-width:680px){
+  .stock-v14-page .stock-v14-location-tools{width:100%;justify-content:space-between}
+  .stock-v14-page .stock-v16-source-switch button{min-width:82px}
+  .stock-v14-page .stock-v14-refresh{margin:0}
+}
