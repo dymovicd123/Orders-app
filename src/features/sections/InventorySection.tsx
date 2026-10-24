@@ -1745,7 +1745,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         source, variantId, beforeId: historyCheckNextBeforeId, limit: 50,
       })
       if (requestId !== historyRequestRef.current) return
-      const rows = Array.isArray(older?.rows) ? older.rows : []
+      const rows: InventoryCheckHistoryRow[] = Array.isArray(older?.rows) ? older.rows : []
       setHistoryCheckRows(current => {
         const existing = new Set(current.map(row => row.id))
         return [...current, ...rows.filter(row => !existing.has(row.id))]
