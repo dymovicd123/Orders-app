@@ -75,7 +75,7 @@ jobs:
           "src/styles/w16-stock-source-attention.css",
           "scripts/test-main-w19-stock-operations.mjs",
           ".github/workflows/w19-main-stock-operations-only.yml"
-])
+          ])
           if(!changed.length||changed.some(p=>!allowed.has(p)))throw Error('Unreviewed main path: '+changed.join(','))
           const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
           if(!wrangler.includes('"name": "orders-app"')
