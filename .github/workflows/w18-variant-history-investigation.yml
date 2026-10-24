@@ -1,0 +1,124 @@
+name: W18 Variant History Investigation
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/inventory-stocktake.ts'
+      - 'src/App.tsx'
+      - 'src/app/types.ts'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/views/renderInventoryHistoryPanel.tsx'
+      - 'src/features/inventory/views/StockVariantTimeline.tsx'
+      - 'src/styles/w18-history-investigation.css'
+      - 'scripts/test-w12-sku-history.mjs'
+      - 'scripts/test-w18-variant-history-investigation.mjs'
+      - '.github/workflows/w18-variant-history-investigation.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w18-variant-history-investigation.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Exact variant SQLite history, UI and complete build
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Real SQLite check history and employee investigation
+        run: |
+          node --experimental-strip-types scripts/test-w18-variant-history-investigation.mjs
+          node --experimental-strip-types scripts/test-w12-sku-history.mjs
+      - name: Existing stock operations and history regressions
+        run: |
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node --experimental-strip-types scripts/test-w17-optional-stock-notes-clear.mjs
+          node scripts/test-step189b-history.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check W18-only scope and isolated branch2 D1
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import {execFileSync} from 'node:child_process'
+          if(process.env.GITHUB_REF_NAME!=='branch2')throw Error('Wrong branch')
+          const baseline='0d456f1b873d74a3eb4b8a1776d5edd5e1b84f67'
+          execFileSync('git',['merge-base','--is-ancestor',baseline,process.env.GITHUB_SHA])
+          const changes=execFileSync('git',['diff','--name-only',baseline,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n')
+          const allowed=new Set([
+            'worker/domains/inventory-stocktake.ts',
+            'src/App.tsx',
+            'src/app/types.ts',
+            'src/features/sections/InventorySection.tsx',
+            'src/features/inventory/views/renderInventoryHistoryPanel.tsx',
+            'src/features/inventory/views/StockVariantTimeline.tsx',
+            'src/styles/w18-history-investigation.css',
+            'scripts/test-w12-sku-history.mjs',
+            'scripts/test-w18-variant-history-investigation.mjs',
+            '.github/workflows/w18-variant-history-investigation.yml',
+          ])
+          if(!changes.length||changes.some(p=>!allowed.has(p)))throw Error('Outside reviewed W18: '+changes.join(','))
+          const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
+          if(!wrangler.includes('"name": "orders-app-branch2"')
+            ||!wrangler.includes('"database_name": "orders_db_branch2"')
+            ||!wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301')
+            ||wrangler.includes('orders_db_prod'))throw Error('Incorrect test D1')
+          console.log('W18_STOCK_HISTORY_SCOPE_VERIFIED')
+          NODE
+      - run: npm ci
+      - name: Recheck full recorded-history facts and build
+        run: |
+          node --experimental-strip-types scripts/test-w18-variant-history-investigation.mjs
+          node --experimental-strip-types scripts/test-w12-sku-history.mjs
+          npm run build
+      - name: Deploy branch2 Worker without D1 migrations
+        run: npx wrangler deploy
+      - name: Verify current SKU history module on test site
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://orders-app-branch2.orders-clothes.workers.dev'
+          let passed=false
+          for(let i=0;i<7;i++){
+            try {
+              const response=await fetch(host+'/?w18='+Date.now(),{cache:'no-store'})
+              if(!response.ok)throw Error('HTTP '+response.status)
+              const html=await response.text()
+              const match=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
+              if(!match)throw Error('Missing entry asset')
+              const entry=await (await fetch(host+match[1],{cache:'no-store'})).text()
+              const inventoryName=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
+              if(!inventoryName)throw Error('Inventory module missing')
+              const chunk=await (await fetch(host+'/assets/'+inventoryName[0],{cache:'no-store'})).text()
+              if(!chunk.includes('Показать более ранние сверки') || !chunk.includes('Что известно об этом варианте'))throw Error('Old history module cached')
+              console.log('W18_STOCK_HISTORY_BRANCH2_LIVE')
+              passed=true;break
+            }catch(error) {
+              console.warn(String(error))
+              if(i<6)await new Promise(r=>setTimeout(r,3500))
+            }
+          }
+          if(!passed)throw Error('Live history UI could not be verified')
+          NODE
