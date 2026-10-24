@@ -4,7 +4,7 @@ import { workspaceModules } from '../src/app/constants.ts'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from '../src/app/managerWorkspaceAccess.ts'
 
 const managerIds = workspaceModules.filter(item => canSeeWorkspaceMenuItem('manager', item.id)).map(item => item.id)
-assert.deepEqual(managerIds, ['orders', 'workshop', 'inventory', 'reports', 'finance'], 'Managers must see Orders, Workshop, Inventory, Reports and Finance')
+assert.deepEqual(managerIds, ['orders', 'workshop', 'inventory', 'finance', 'reports'], 'Managers must see Orders, Workshop, Inventory, Reports and Finance')
 assert.equal(workspaceModules.filter(item => canSeeWorkspaceMenuItem('admin', item.id)).length, workspaceModules.length, 'Admin navigation must remain complete')
 for (const sector of ['orders', 'workshop', 'inventory', 'reports', 'finance']) {
   assert(canOpenWorkspaceSector('manager', sector), 'Manager lost an operational workspace: '+sector)
