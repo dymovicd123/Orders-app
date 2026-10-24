@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
 import '../../../styles/193-unified-inventory-operations.css'
+import '../../../styles/w16-stock-source-attention.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
 type Row = { id?: number; draftKey?:string; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
