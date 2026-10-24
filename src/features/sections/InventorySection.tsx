@@ -382,6 +382,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [movementSourceLoadError, setMovementSourceLoadError] = useState('')
   const [movementSourceRefreshToken, setMovementSourceRefreshToken] = useState(0)
   const [attentionCorrectionTarget, setAttentionCorrectionTarget] = useState<{ token: number; source: 'warehouse' | 'boutique'; variantId: number; productId: number } | null>(null)
+  const [attentionCorrectionReadyToken, setAttentionCorrectionReadyToken] = useState<number | null>(null)
   const movementSourceRequestRef = useRef(0)
 
   const catalogReviewGroups = useMemo(() => {
@@ -1833,6 +1834,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       : [inventoryDraft.source]
 
     setMovementSourceLoading(true)
+    setAttentionCorrectionReadyToken(null)
     setMovementSourceLoadError('')
     void loadOperationStockSources(
       sources,
@@ -1840,6 +1842,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       current,
     ).then((result) => {
       if (!current() || result.status === 'cancelled') return
+      if (result.status === 'ready' && attentionCorrectionTarget?.source === inventoryDraft.source
+        && inventoryDraft.movementType === 'manual_set') {
+        setAttentionCorrectionReadyToken(attentionCorrectionTarget.token)
+      }
       if (result.status === 'error') {
         const names = result.failedSources.map(sourceLabel).join(' и ')
         setMovementSourceLoadError(
@@ -1858,7 +1864,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       // a late background response to repaint the next operation's error state.
       if (current()) movementSourceRequestRef.current += 1
     }
-  }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken])
+  }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken, attentionCorrectionTarget?.token])
 
   const operationVisibleRows = useMemo(() => {
     const rows = [...(selectedInventoryOperationGroup?.rows || [])]
@@ -2735,7 +2741,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
-        attentionCorrectionTarget,
+        attentionCorrectionTarget: attentionCorrectionReadyToken === attentionCorrectionTarget?.token ? attentionCorrectionTarget : null,
         clearAttentionCorrectionTarget: () => setAttentionCorrectionTarget(null),
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
