@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { displayQuantityInput, previewQuantity, type UnifiedQuantityMode } from '../unifiedOperationMath'
 import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
+import { findCorrectionFocusGroup } from '../operationCorrectionFocus'
 import '../../../styles/193-unified-inventory-operations.css'
 import '../../../styles/w16-stock-source-attention.css'
 
@@ -96,9 +97,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       || mode !== 'manual_set' || source !== target.source || loading || error) return
     // Locate the exact SKU in the freshly loaded source rather than searching
     // by a possibly duplicated model/color/size text label.
-    const group = groups.find(group => group.rows.some(row =>
-      Number(row.variantId) === target.variantId
-      && (!target.productId || Number(row.productId) === target.productId)))
+    const group = findCorrectionFocusGroup(groups, target)
     if (!group) {
       if (!groups.length) return
       appliedFocusToken.current = target.token
