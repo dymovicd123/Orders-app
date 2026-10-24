@@ -3,6 +3,7 @@ import '../../../styles/w8-1-stock-overview.css'
 import '../../../styles/w8-2-stock-workspace.css'
 import '../../../styles/w13-stock-catalog-browse.css'
 import '../../../styles/w14-simple-stock-controls.css'
+import '../../../styles/w16-stock-source-attention.css'
 import { StockBrowseDetail } from './StockBrowseDetail'
 import { stockRowHasBalance } from '../stockBrowseLayout'
 
