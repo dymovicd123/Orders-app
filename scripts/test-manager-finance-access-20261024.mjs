@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { workspaceModules } from '../src/app/constants.ts'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from '../src/app/managerWorkspaceAccess.ts'
-const allowed=['orders','workshop','inventory','reports','finance']
+const allowed=['orders','workshop','inventory','finance','reports']
 const visible=workspaceModules.filter(item=>canSeeWorkspaceMenuItem('manager',item.id)).map(item=>item.id)
 assert.deepEqual(visible,allowed,'Managers should see Finance in addition to four existing workspaces')
 for(const sector of allowed){
