@@ -1,0 +1,32 @@
+name: W12.2 Stock Overview
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/inventory/views/renderInventoryOverviewPanel.tsx'
+      - 'src/styles/w8-1-stock-overview.css'
+      - 'scripts/test-w12-stock-overview.mjs'
+      - '.github/workflows/w12-stock-overview.yml'
+permissions:
+  contents: read
+jobs:
+  overview:
+    name: W12.2 source-specific balances and full build
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: W12.2 exact SKU browsing contracts
+        run: node scripts/test-w12-stock-overview.mjs
+      - name: Existing SQL stock movement and revision regressions
+        run: |
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full app and Worker build
+        run: npm run build
