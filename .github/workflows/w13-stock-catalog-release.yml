@@ -58,7 +58,7 @@ jobs:
           npm audit --audit-level=high
           node --experimental-strip-types scripts/test-w13-stock-catalog-browse.mjs
           node scripts/test-w12-stock-overview.mjs
-      - name: Regression: correction, transfer, stocktake
+      - name: "Regression: correction, transfer, stocktake"
         run: |
           node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
           node scripts/test-step191d-transfer-runtime-safety.mjs
