@@ -23,20 +23,31 @@ assert.equal(summarizeWriteoff([{...sample[0],requested:1.5}]).valid,false)
 assert.equal(summarizeWriteoff([{...sample[0],requested:0}]).valid,false)
 assert.equal(summarizeWriteoff([{...sample[0],requested:0},{...sample[1],requested:1}]).rows.length,1)
 
+// W12: the W6 unified operations workspace replaced the legacy WriteoffReview
+// screen. Keep assertions against the active read/review/confirm path, not dead UI.
 const panel=fs.readFileSync('src/features/inventory/views/renderInventoryMovementPanel.tsx','utf8')
-const review=fs.readFileSync('src/features/inventory/views/WriteoffReview.tsx','utf8')
+const workspace=fs.readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
 const api=fs.readFileSync('worker/domains/inventory-movement.ts','utf8')
-assert.match(panel,/Списать товар/)
-assert.match(panel,/selectInventoryOperationMode\('writeoff'\)/)
-assert.match(panel,/WriteoffReview source=/)
-assert.match(panel,/inventoryDraft.movementType!=='writeoff'/,
-  'Writeoff must not use the old immediate-submit button')
-assert.match(review,/reviewedSignature === signature/,
-  'Any change to selected items, quantities or reason must require reviewing again')
-assert.match(review,/Проверить списание/)
-assert.match(review,/Подтвердить списание/)
-assert.match(review,/onClick=\{onConfirm\}/)
+assert.match(panel,/InventoryUnifiedQuantityWorkspace/,
+  'Writeoff must be implemented by the actual unified workspace')
+assert.match(panel,/onSave=\{\(\)=>ctx.saveInventoryMovement\(\)\}/,
+  'The unified confirmation must use the persisted inventory writer')
+assert.match(workspace,/\['writeoff','Списание','Вычесть из остатка'\]/,
+  'Writeoff must remain a distinct negative-stock operation')
+assert.match(workspace,/if\(!changed\)/,
+  'Empty operations must not enter review')
+assert.match(workspace,/mode !== 'arrival' && mode !== 'transfer' && !reason.trim\(\)/,
+  'Writeoff must require a reason before review')
+assert.match(workspace,/setStage\('review'\)/,
+  'The user must review quantities before confirming')
+assert.match(workspace,/disabled=\{busy\|\|!ready/,
+  'Save is disabled without a reviewed valid operation')
+assert.match(workspace,/onClick=\{\(\)=>void p.onSave\(\)\}/,
+  'Only the reviewed confirmation stage can save')
+assert.match(workspace,/mode==='writeoff'\|\|mode==='transfer'/,
+  'Untracked quantities must be flagged when writing off beyond the record')
 assert.match(api,/buildStockResolutionRequired\('writeoff'/)
 assert.match(api,/inventory_operation_evidence/)
 assert.match(api,/inventory_operation_request_fingerprints/)
-console.log('INVENTORY WRITEOFF REVIEW PASSED — per-line physical/reserve/shortage maths, extra physical proof, reason, review reset, guarded submission')
+
+console.log('INVENTORY WRITEOFF REVIEW PASSED — summary maths, active W6 preview/reason/guarded confirmation and worker evidence')
