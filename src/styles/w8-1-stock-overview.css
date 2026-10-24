@@ -187,3 +187,30 @@
   .inventory-stock-size-free { font-size: 13px; }
   .inventory-stock-size-meta { white-space: normal; }
 }
+
+
+/* W12: catalog-like, single-location stock list — no nested execution/color accordions. */
+.inventory-stock-flat-workspace{
+  display:grid;gap:10px;padding:13px 15px 16px;
+  border-top:1px solid #e2e8f0;background:#fafcff;
+}
+.inventory-stock-flat-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.inventory-stock-flat-heading strong{color:#1e293b;font-size:13px}
+.inventory-stock-flat-heading span{color:#64748b;font-size:11px}
+.inventory-stock-flat-scroll{max-width:100%;overflow:auto;border:1px solid #dae3ef;border-radius:10px;background:#fff}
+.inventory-stock-flat-table{border-collapse:collapse;width:100%;min-width:610px;font-size:12px}
+.inventory-stock-flat-table th{text-align:left;padding:9px 11px;white-space:nowrap;background:#f1f5f9;color:#475569;font-weight:750}
+.inventory-stock-flat-table td{padding:9px 11px;border-top:1px solid #edf2f7;color:#334155;vertical-align:middle}
+.inventory-stock-flat-table td:first-child{min-width:165px}
+.inventory-stock-flat-table td:first-child strong{font-weight:600}
+.inventory-stock-flat-table td.quantity{font-variant-numeric:tabular-nums;text-align:right}
+.inventory-stock-flat-table td.inventory-stock-flat-free>b{color:#166534;font-size:13px}
+.inventory-stock-flat-table td.inventory-stock-flat-free.is-shortage>b{color:#b91c1c}
+.inventory-stock-flat-table tr.needs-attention{background:#fff7ed}
+.inventory-stock-flat-table td:last-child{text-align:right}
+.inventory-stock-flat-table td:last-child button{min-height:30px;padding:5px 9px}
+.inventory-stock-flat-scroll:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+@media(max-width:720px){
+  .inventory-stock-flat-workspace{padding:10px}
+  .inventory-stock-flat-heading{display:grid;gap:5px}
+}
