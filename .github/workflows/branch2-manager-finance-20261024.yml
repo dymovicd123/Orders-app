@@ -1,0 +1,91 @@
+name: branch2 Manager Finance Access
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/app/managerWorkspaceAccess.ts'
+      - 'scripts/test-manager-finance-access-20261024.mjs'
+      - 'scripts/test-manager-three-workspaces-20261022.mjs'
+      - '.github/workflows/branch2-manager-finance-20261024.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-manager-finance-20261024.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Manager menu and deep links
+        run: |
+          node --experimental-strip-types scripts/test-manager-finance-access-20261024.mjs
+          node --experimental-strip-types scripts/test-manager-three-workspaces-20261022.mjs
+      - name: Full application build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Exact manager policy change and correct D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "branch2"
+          baseline="aecddc3874fc60bc3c1d27d7af05334ae8c41eec"
+          git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
+          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changes"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/app/managerWorkspaceAccess.ts|\
+              scripts/test-manager-finance-access-20261024.mjs|\
+              scripts/test-manager-three-workspaces-20261022.mjs|\
+              .github/workflows/branch2-manager-finance-20261024.yml) ;;
+              *) echo "Unexpected deployment file: $file";exit 11 ;;
+            esac
+          done <<< "$changes"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+      - run: npm ci
+      - name: Role policy regression
+        run: node --experimental-strip-types scripts/test-manager-finance-access-20261024.mjs
+      - name: Full build
+        run: npm run build
+      - name: Publish without migrations
+        run: npx wrangler deploy
+      - name: Confirm workspace URL responds
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://orders-app-branch2.orders-clothes.workers.dev'
+          for(let attempt=0;attempt<8;attempt++){
+            try{
+              const response=await fetch(host+'/?manager_finance='+Date.now(),{cache:'no-store'})
+              if(!response.ok)throw Error('HTTP '+response.status)
+              if(!(await response.text()).includes('/assets/'))throw Error('Missing entrypoint')
+              console.log('MANAGER_FINANCE_BRANCH2_LIVE')
+              process.exit(0)
+            }catch(error){if(attempt===7)throw error;await new Promise(r=>setTimeout(r,3500))}
+          }
+          NODE
