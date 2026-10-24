@@ -2,6 +2,7 @@ import type { InventoryRenderContext } from './types'
 import '../../../styles/w8-1-stock-overview.css'
 import '../../../styles/w8-2-stock-workspace.css'
 import '../../../styles/w13-stock-catalog-browse.css'
+import '../../../styles/w14-simple-stock-controls.css'
 import { StockBrowseDetail } from './StockBrowseDetail'
 import { stockRowHasBalance } from '../stockBrowseLayout'
 
@@ -157,7 +158,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
   const routineCountActive = Boolean((ctx as any).cycleCountData?.source === simpleStockSource || (ctx as any).cycleCountNotice)
 
   return (
-    <div className="inventory-overview-panel inventory-calm-stock stock-v13-page" style={inventoryPanelStyle('overview')}>
+    <div className="inventory-overview-panel inventory-calm-stock stock-v13-page stock-v14-page" style={inventoryPanelStyle('overview')}>
                     <div className="inventory-calm-head warehouse-clean-stock-head stock-v14-heading">
                       <div>
                         <h3>Остатки</h3>
