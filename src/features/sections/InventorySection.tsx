@@ -10,6 +10,7 @@ import { renderInventoryOverviewPanel } from '../inventory/views/renderInventory
 import { renderInventoryAttentionPanel } from '../inventory/views/renderInventoryAttentionPanel'
 import { useInventoryAttentionActions } from '../inventory/useInventoryAttentionActions'
 import { runRoutineCycleCount } from '../inventory/routineCycleCount'
+import { loadOperationStockSources } from '../inventory/loadOperationStockSources'
 import { renderInventoryStocktakePanel } from '../inventory/views/renderInventoryStocktakePanel'
 import { renderInventoryWarehousePanel } from '../inventory/views/renderInventoryWarehousePanel'
 import { renderInventoryBoutiquePanel } from '../inventory/views/renderInventoryBoutiquePanel'
@@ -1835,26 +1836,38 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     if (activeSector !== 'inventory' || inventoryPanel !== 'movement') return
 
     const requestId = ++movementSourceRequestRef.current
+    const current = () => requestId === movementSourceRequestRef.current
+      && activeSector === 'inventory' && inventoryPanel === 'movement'
     const sources = inventoryDraft.movementType === 'transfer'
       ? Array.from(new Set([inventoryDraft.source, inventoryDraft.targetSource]))
       : [inventoryDraft.source]
 
     setMovementSourceLoading(true)
     setMovementSourceLoadError('')
-    void Promise.all(sources.map((source: 'warehouse' | 'boutique') => loadInventoryData(source, true, '', false)))
-      .then((results: any[]) => {
-        if (requestId !== movementSourceRequestRef.current) return
-        if (results.some((result) => !result?.ok)) {
-          setMovementSourceLoadError(`Не удалось обновить товары точки «${sourceLabel(inventoryDraft.source)}».`)
-        }
-      })
-      .catch((error: unknown) => {
-        if (requestId !== movementSourceRequestRef.current) return
-        setMovementSourceLoadError(error instanceof Error ? error.message : `Не удалось обновить товары точки «${sourceLabel(inventoryDraft.source)}».`)
-      })
-      .finally(() => {
-        if (requestId === movementSourceRequestRef.current) setMovementSourceLoading(false)
-      })
+    void loadOperationStockSources(
+      sources,
+      (source: 'warehouse' | 'boutique') => loadInventoryData(source, true, '', false),
+      current,
+    ).then((result) => {
+      if (!current() || result.status === 'cancelled') return
+      if (result.status === 'error') {
+        const names = result.failedSources.map(sourceLabel).join(' и ')
+        setMovementSourceLoadError(
+          `Не удалось получить полный актуальный список точки «${names}». Проверьте соединение и нажмите «Обновить список».`,
+        )
+      }
+    }).catch((error: unknown) => {
+      if (!current()) return
+      setMovementSourceLoadError(error instanceof Error ? error.message : 'Не удалось загрузить остатки выбранной точки.')
+    }).finally(() => {
+      if (current()) setMovementSourceLoading(false)
+    })
+
+    return () => {
+      // Switches between Operations / other warehouse panels must not allow
+      // a late background response to repaint the next operation's error state.
+      if (current()) movementSourceRequestRef.current += 1
+    }
   }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken])
 
   const operationVisibleRows = useMemo(() => {
