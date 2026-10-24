@@ -1,0 +1,45 @@
+name: Client3 bootstrap diagnostics (read only)
+
+on:
+  push:
+    branches:
+      - client3/isolated-stabilization-20261020
+    paths:
+      - '.github/workflows/client3-bootstrap-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnosis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Check exact Client3 secret metadata and registration state without reading secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "client3/isolated-stabilization-20261020" ]]
+          [[ -n "${CF_ACCOUNT_ID:-}" && -n "${CF_API_TOKEN:-}" ]]
+          api="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/orders-app-client3-old-client/secrets"
+          status="$(curl --fail-with-body --retry 2 --connect-timeout 12 --max-time 30 -sS \
+            -H "Authorization: Bearer $CF_API_TOKEN" -o /tmp/client3-secrets.json -w '%{http_code}' "$api")"
+          [[ "$status" == 200 ]]
+          jq -e '.success == true and (.result | type == "array")' /tmp/client3-secrets.json >/dev/null
+          jq -r '.result[] | select(.name == "ADMIN_MODE_PASSWORD" or .name == "ADMIN_MODE_LOGIN" or .name == "ADMIN_MODE_SESSION_SECRET") | "CLIENT3_CONFIGURED_\(.name)=\(.type)"' /tmp/client3-secrets.json
+          if ! jq -e '.result | any(.name == "ADMIN_MODE_PASSWORD")' /tmp/client3-secrets.json >/dev/null; then
+            echo 'CLIENT3_BOOTSTRAP_SECRET_MISSING'
+          else
+            echo 'CLIENT3_BOOTSTRAP_SECRET_PRESENT'
+          fi
+          curl --retry 2 --connect-timeout 12 --max-time 30 -fsS \
+            https://orders-app-client3-old-client.orders-clothes.workers.dev/api/auth/status \
+            -o /tmp/client3-status.json
+          echo 'CLIENT3_PUBLIC_AUTH_STATUS_NON_SENSITIVE_FIELDS:'
+          jq '{ok, hasUsers, authDisabled, setupReady, code, message}' /tmp/client3-status.json
+          jq -e '.ok == true and .authDisabled == false and (.setupReady | type == "boolean")' /tmp/client3-status.json >/dev/null
+          jq -r '"CLIENT3_FIRST_ADMIN_EXISTS=\(.hasUsers)"' /tmp/client3-status.json
+          echo 'CLIENT3_BOOTSTRAP_READ_ONLY_DIAGNOSIS_COMPLETE'

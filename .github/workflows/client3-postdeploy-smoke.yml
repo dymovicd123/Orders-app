@@ -1,0 +1,33 @@
+name: Client3 live anonymous-security and SPA smoke (no database writes)
+on:
+  push:
+    branches:
+      - client3/isolated-stabilization-20261020
+    paths:
+      - '.github/workflows/client3-postdeploy-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  anonymous-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify third Worker health, assets, and locked API
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="https://orders-app-client3-old-client.orders-clothes.workers.dev"
+          code="$(curl --retry 4 --retry-delay 2 --connect-timeout 15 -sS -o /tmp/client3-health.json -w '%{http_code}' "$site/api/health")"
+          test "$code" = 200
+          jq -e '.ok == true' /tmp/client3-health.json >/dev/null
+          echo 'CLIENT3_PUBLIC_HEALTH_OK'
+          code="$(curl --retry 4 --retry-delay 2 --connect-timeout 15 -sS -o /tmp/client3-web.html -w '%{http_code}' "$site/")"
+          test "$code" = 200
+          grep -qi '<html' /tmp/client3-web.html
+          echo 'CLIENT3_SPA_PUBLIC_OK'
+          for path in /api/orders /api/payments /api/catalog; do
+            code="$(curl --retry 4 --retry-delay 2 --connect-timeout 15 -sS -o /tmp/client3-private.json -w '%{http_code}' "$site$path")"
+            test "$code" = 401 || { echo "Unexpected API response at $path: $code"; exit 1; }
+            echo "CLIENT3_LOCKED_ANONYMOUS_${path//\//_}_OK"
+          done
+          echo 'CLIENT3_POSTDEPLOY_REMOTE_SMOKE_PASSED'

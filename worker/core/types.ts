@@ -8,6 +8,8 @@ export interface Env {
   ADMIN_MODE_LOGIN?: string;
   ADMIN_MODE_PASSWORD?: string;
   ADMIN_MODE_SESSION_SECRET?: string;
+  CLIENT3_INSTALLATION?: string;
+  CLIENT3_BOOTSTRAP_SHA256?: string;
 }
 
 

@@ -81,3 +81,8 @@ npm-debug.log*
 /SETUP_AND_DEPLOY.cmd
 /README.txt
 # === end Orders-app Git hygiene R2 ===
+
+# Isolated third installation (generated locally; never commit a tenant's D1 binding)
+/wrangler.client3.json
+/.client3-migrations/
+/.client3-local-state/

@@ -76,7 +76,7 @@ export default {
 
     try {
       if (url.pathname === '/api/auth/status' && request.method === 'GET') {
-        return handleAuthStatus(env.DB, request);
+        return handleAuthStatus(env.DB, env, request);
       }
 
       if (url.pathname === '/api/auth/setup' && request.method === 'POST') {

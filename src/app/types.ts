@@ -390,6 +390,7 @@ export type AuthStatusResponse = {
   ok: boolean
   hasUsers: boolean
   authDisabled?: boolean
+  setupReady?: boolean
   user?: AuthUser | null
 }
 

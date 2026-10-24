@@ -1,0 +1,59 @@
+name: Client3 Cloudflare access preflight (read only)
+
+on:
+  push:
+    branches:
+      - client3/isolated-stabilization-20261020
+    paths:
+      - '.github/workflows/client3-cloudflare-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Validate existing Cloudflare access without changing anything
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "client3/isolated-stabilization-20261020" ]]
+          [[ -n "${CF_ACCOUNT_ID:-}" && -n "${CF_API_TOKEN:-}" ]] || {
+            echo "CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN missing"
+            exit 3
+          }
+          api="https://api.cloudflare.com/client/v4"
+          token_status="$(curl --retry 2 --connect-timeout 12 --max-time 30 -sS -o /tmp/client3-token.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CF_API_TOKEN" "$api/user/tokens/verify")"
+          [[ "$token_status" == "200" ]] && jq -e '.success == true and .result.status == "active"' /tmp/client3-token.json >/dev/null || {
+            echo "Existing Cloudflare token cannot be verified as active (HTTP $token_status)"
+            exit 4
+          }
+          echo 'CLOUDFLARE_TOKEN_ACTIVE'
+          for resource in workers/scripts d1/database; do
+            key="$(echo "$resource" | tr '/' '_')"
+            code="$(curl --retry 2 --connect-timeout 12 --max-time 30 -sS \
+              -o "/tmp/client3-$key.json" -w '%{http_code}' \
+              -H "Authorization: Bearer $CF_API_TOKEN" "$api/accounts/$CF_ACCOUNT_ID/$resource")"
+            if [[ "$code" != "200" ]] || ! jq -e '.success == true' "/tmp/client3-$key.json" >/dev/null; then
+              echo "Cloudflare account endpoint $resource not accessible (HTTP $code)"
+              exit 5
+            fi
+            echo "CLOUDFLARE_READ_ACCESS_${key^^}_OK"
+          done
+          jq -e '[.result[]? | select(.name == "orders_db_client3_old_client")] | length == 0' \
+            /tmp/client3-d1_database.json >/dev/null || {
+              echo 'Client3 database name already exists: do not reuse automatically'
+              exit 6
+            }
+          jq -e '[.result[]? | select(.id == "orders-app-client3-old-client")] | length == 0' \
+            /tmp/client3-workers_scripts.json >/dev/null || {
+              echo 'Client3 Worker name already exists: do not overwrite automatically'
+              exit 7
+            }
+          echo 'CLIENT3_CLOUDFLARE_PREFLIGHT_PASSED_NO_WRITES'

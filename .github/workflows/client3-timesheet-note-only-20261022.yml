@@ -1,0 +1,97 @@
+name: Client3 ONLY timesheet obsolete note removal 20261022
+on:
+  push:
+    branches:
+      - client3/isolated-stabilization-20261020
+    paths:
+      - 'src/features/sections/TeamSection.tsx'
+permissions:
+  contents: read
+concurrency:
+  group: client3-timesheet-note-exact-20261022
+  cancel-in-progress: false
+jobs:
+  exact-client3-copy-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Assert exclusive Client3 branch and ONLY requested UI modification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'dymovicd123/Orders-app'
+          test "$GITHUB_REF_NAME" = 'client3/isolated-stabilization-20261020'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote origin refs/heads/client3/isolated-stabilization-20261020 | cut -f1)" = "$GITHUB_SHA"
+          echo "Changed paths since isolated Client3 baseline:"
+          git diff --name-only '1af675aac4871301abbf4f8d9ba49bd16d3cebac' HEAD
+          actual="$(git diff --name-only '1af675aac4871301abbf4f8d9ba49bd16d3cebac' HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/client3-timesheet-note-only-20261022.yml' 'src/features/sections/TeamSection.tsx')"
+          test "$actual" = "$expected"
+          git diff --unified=1 '1af675aac4871301abbf4f8d9ba49bd16d3cebac' HEAD -- src/features/sections/TeamSection.tsx | grep -Fq -- '-                        <div className="muted-note">Сымбат и администраторы не назначаются в табель.'
+          ! grep -Fq 'Сымбат и администраторы не назначаются в табель' src/features/sections/TeamSection.tsx
+          grep -Fq '<h3>Табель</h3>' src/features/sections/TeamSection.tsx
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - name: Validate existing isolated Client3 Worker and its own D1 without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl --retry 2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$base/d1/database/0717f239-6d81-4837-8586-777d94e22c53" > /tmp/client3-db.json
+          jq -e '.success == true and .result.name == "orders_db_client3_old_client"' /tmp/client3-db.json >/dev/null
+          curl --retry 2 -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$base/workers/scripts" > /tmp/client3-workers.json
+          jq -e '.success == true and any(.result[]?; .id == "orders-app-client3-old-client")' /tmp/client3-workers.json >/dev/null
+      - name: Verify isolated code and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/client3/test-fresh.mjs
+          node scripts/client3/stability-gate.mjs
+          npm run typecheck
+          npm run build
+      - name: Guard exact Client3 config, do not run any D1 command
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/client3/prepare.mjs --configure orders-app-client3-old-client orders_db_client3_old_client 0717f239-6d81-4837-8586-777d94e22c53
+          node scripts/client3/prepare.mjs --validate
+          grep -Fq '"name": "orders-app-client3-old-client"' wrangler.client3.json
+          grep -Fq '"database_name": "orders_db_client3_old_client"' wrangler.client3.json
+          grep -Fq '"database_id": "0717f239-6d81-4837-8586-777d94e22c53"' wrangler.client3.json
+          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.client3.json
+          ! grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.client3.json
+      - name: Publish only existing isolated Client3 Worker
+        run: npx wrangler deploy --config wrangler.client3.json
+      - name: Verify live Client3 auth and published timesheet UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          curl --retry 4 --retry-delay 2 -fsS "$root/api/auth/status" | jq -e '.ok == true' >/dev/null
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$root/api/orders")" = '401'
+          node --input-type=module <<'NODE'
+          const root='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          const html=await fetch(root+'/?client3-timesheet='+Date.now(),{cache:'no-store'}).then(r=>r.text())
+          const scripts=[...html.matchAll(/(?:src=)["']([^"']+\.js)["']/g)].map(x=>x[1])
+          if(!scripts.length)throw Error('Client3 bundle entry script missing')
+          const first=await fetch(new URL(scripts[0],root),{cache:'no-store'}).then(r=>r.text())
+          const match=first.match(/TeamSection-[A-Za-z0-9_-]+\.js/)
+          if(!match)throw Error('TeamSection chunk missing from Client3')
+          const team=await fetch(root+'/assets/'+match[0],{cache:'no-store'}).then(r=>r.text())
+          if(team.includes('Сымбат и администраторы не назначаются в табель'))throw Error('Old note still served by Client3')
+          if(!team.includes('Табель'))throw Error('Timesheet removed unexpectedly')
+          console.log('CLIENT3_TIMESHEET_COPY_ONLY_VERIFIED',match[0])
+          NODE

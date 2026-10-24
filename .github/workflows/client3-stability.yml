@@ -1,0 +1,49 @@
+name: Client3 independent clean schema and stability acceptance
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/client3/**'
+      - 'worker/domains/auth.ts'
+      - 'worker/core/types.ts'
+      - '.github/workflows/client3-stability.yml'
+      - 'docs/CLIENT3_STABILIZATION.md'
+      - '.gitignore'
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: "Empty D1 equivalent: all migrations, FK, zero customer data and protected binding"
+        run: node scripts/client3/test-fresh.mjs
+      - name: Resolver, exchanges, returns, payments, stock and auth regressions
+        run: node scripts/client3/stability-gate.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production-equivalent SPA Worker build
+        run: npm run build
+      - name: Third-client deployment helper parse and fail-closed without explicit approval
+        run: |
+          node --check scripts/client3/release-isolated.mjs
+          if node scripts/client3/release-isolated.mjs; then
+            echo 'Release helper unexpectedly allowed an implicit deployment'
+            exit 1
+          fi
+      - name: Real isolated Worker and disposable D1 — two-line batch exchange, retries, cancellation and stock
+        run: node scripts/client3/test-runtime-local.mjs
+      - name: No checkout/build artifact contains protected production D1 config as tenant binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e wrangler.client3.json
+          test ! -e .client3-migrations
+          grep -Fq 'CLIENT3_INSTALLATION' worker/domains/auth.ts
+          echo 'CLIENT3_STABILITY_LOCAL_ONLY_COMPLETE_NO_LIVE_D1_ACCESS'

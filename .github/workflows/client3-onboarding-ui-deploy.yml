@@ -1,0 +1,89 @@
+name: Client3 isolated onboarding UI deployment
+
+on:
+  push:
+    branches:
+      - client3/isolated-stabilization-20261020
+    paths:
+      - '.github/workflows/client3-onboarding-ui-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client3-onboarding-ui-only
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: "${{ github.event.head_commit.message == 'Client3: DEPLOY safer customer first-admin form 2026-10-20' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify existing third database and Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "client3/isolated-stabilization-20261020" ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$base/d1/database/0717f239-6d81-4837-8586-777d94e22c53" > /tmp/client3-db.json
+          jq -e '.success == true and .result.name == "orders_db_client3_old_client"' /tmp/client3-db.json >/dev/null
+          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$base/workers/scripts" > /tmp/client3-workers.json
+          jq -e '.success == true and any(.result[]?; .id == "orders-app-client3-old-client")' /tmp/client3-workers.json >/dev/null
+          echo 'Verified existing third-only Worker and D1; no D1 changes.'
+      - name: Install and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/client3/test-fresh.mjs
+          node scripts/client3/stability-gate.mjs
+          npm run typecheck
+          npm run build
+          grep -Fq 'Код первого запуска' src/App.tsx
+          grep -Fq 'Неверный код первого запуска' worker/domains/auth.ts
+          grep -Fq 'AUTH_BOOTSTRAP_NOT_CONFIGURED' worker/domains/auth.ts
+          grep -Fq 'authSetupReady' src/App.tsx
+          grep -Fq 'CLIENT3_BOOTSTRAP_SHA256' scripts/client3/prepare.mjs
+          grep -Fq "bootstrapLogin: 'admin'" src/App.tsx
+      - name: Generate guarded configuration for exact existing third D1
+        shell: bash
+        run: |
+          node scripts/client3/prepare.mjs --configure orders-app-client3-old-client orders_db_client3_old_client 0717f239-6d81-4837-8586-777d94e22c53
+          node scripts/client3/prepare.mjs --validate
+      - name: Deploy only third Worker without database migrations
+        run: npx wrangler deploy --config wrangler.client3.json
+      - name: Verify remote third site and locked API
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://orders-app-client3-old-client.orders-clothes.workers.dev"
+          ready=0
+          for attempt in $(seq 1 12); do
+            curl -fsS "$url/api/auth/status" > /tmp/client3-status.json
+            if jq -e '.ok == true and .setupReady == true and .hasUsers == false' /tmp/client3-status.json >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          if [[ "$ready" != 1 ]]; then
+            echo 'Client3 first-admin invitation not yet ready after deployment' >&2
+            jq '{ok,hasUsers,setupReady}' /tmp/client3-status.json
+            exit 4
+          fi
+          echo 'CLIENT3_FIRST_ADMIN_INVITATION_READY=1 USERS_EXIST=0'
+          response="$(curl -sS -o /dev/null -w '%{http_code}' "$url/api/orders")"
+          [[ "$response" == 401 ]]
+          echo 'CLIENT3_CUSTOMER_ONBOARDING_UI_DEPLOYED'
