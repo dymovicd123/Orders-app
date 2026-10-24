@@ -1,5 +1,6 @@
-import type { InventoryCheckHistoryRow, InventoryHistoryResponse } from '../../../app/types'
+import type { InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse } from '../../../app/types'
 import { buildStockVariantTimeline, stockCheckHasDifference } from '../stockVariantTimelineModel'
+import '../../../styles/w18-history-investigation.css'
 
 type Movement = InventoryHistoryResponse['movements'][number]
 type ExactVariant = {
@@ -16,7 +17,12 @@ type Props = {
   variant: ExactVariant
   movements: Movement[]
   checks: InventoryCheckHistoryRow[]
+  evidence: InventoryCheckHistoryResponse | null
   checksUnavailable: boolean
+  checksHasMore: boolean
+  checksPagingBusy: boolean
+  checksPageError: string
+  loadMoreChecks: () => void
   hasMore: boolean
   busy: boolean
   loadMore: () => void
@@ -28,9 +34,15 @@ const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(valu
 const quantity = (value: number) => `${value} шт.`
 
 export function StockVariantTimeline({
-  variant, movements, checks, checksUnavailable, hasMore, busy, loadMore, momentLabel, movementLabel,
+  variant, movements, checks, evidence, checksUnavailable, checksHasMore, checksPagingBusy,
+  checksPageError, loadMoreChecks, hasMore, busy, loadMore, momentLabel, movementLabel,
 }: Props) {
   const { events, firstObservedDifference } = buildStockVariantTimeline(movements, checks, variant.source, variant.variantId)
+  const firstConfirmedDifference = evidence?.firstConfirmedDifference === undefined
+    ? firstObservedDifference : evidence.firstConfirmedDifference
+  const previousMatch = evidence?.lastMatchingBeforeDifference || null
+  const latestCheck = [...checks].sort((a, b) =>
+    b.checkedAt.localeCompare(a.checkedAt) || Number(b.id) - Number(a.id))[0] || null
 
   const identity = [variant.color, variant.material && variant.material !== 'СТАНДАРТ' ? variant.material : '',
     variant.length && variant.length !== 'СТАНДАРТ' ? variant.length : '',
@@ -46,16 +58,44 @@ export function StockVariantTimeline({
       <strong className="stock-variant-identity">Вариант #{variant.variantId}</strong>
     </div>
 
-    {firstObservedDifference ? <div className="stock-variant-first-gap" role="note">
-      <strong>Самое раннее расхождение среди загруженных проверок: {momentLabel(firstObservedDifference.checkedAt)}</strong>
-      <p>По системе было {quantity(numeric(firstObservedDifference.expectedQuantity))}, при проверке посчитали {quantity(numeric(firstObservedDifference.countedQuantity))}.
-        Это точка, где несовпадение <b>зафиксировано</b>, а не доказательство того, что ошибка возникла именно тогда.</p>
-    </div> : <div className="stock-variant-no-gap" role="note">
-      <strong>{checksUnavailable ? 'Данные проверок пока недоступны' : 'Подтверждённых расхождений среди загруженных проверок нет'}</strong>
-      <p>{checksUnavailable
-        ? 'Движения доступны, но сверки не загрузились. Повторите обновление прежде, чем делать выводы.'
-        : 'Это не гарантия совпадения с фактическим количеством: возможны непроведённые операции и более старые записи.'}</p>
-    </div>}
+    <section className="w18-investigation-summary" aria-label="Сводка расследования по варианту">
+      <div className="w18-investigation-title">
+        <strong>Что известно об этом варианте</strong>
+        <span>Только подтверждённые записи учёта, без догадок</span>
+      </div>
+      <div className="w18-investigation-metrics">
+        <div><span>Сверок в истории</span><strong>{checksUnavailable ? 'Недоступно' : evidence?.totalChecks ?? checks.length}</strong></div>
+        <div><span>С расхождением</span><strong>{checksUnavailable ? '—' : evidence?.differenceCount ?? checks.filter(stockCheckHasDifference).length}</strong></div>
+        <div><span>Движений загружено</span><strong>{movements.length}{hasMore ? '+' : ''}</strong></div>
+      </div>
+      {latestCheck && !checksUnavailable ? <p className="w18-last-count">
+        Последняя загруженная физическая сверка: <b>{momentLabel(latestCheck.checkedAt)}</b>.
+        По системе <b>{quantity(numeric(latestCheck.expectedQuantity))}</b>,
+        посчитано <b>{quantity(numeric(latestCheck.countedQuantity))}</b>.
+        {stockCheckHasDifference(latestCheck) ? ' Есть подтверждённое несовпадение.' : ' Тогда количество совпало.'}
+      </p> : null}
+      {checksUnavailable ? <div className="stock-variant-no-gap" role="note">
+        <strong>Сверки сейчас недоступны.</strong>
+        <p>Не делайте вывод об отсутствии расхождений. Обновите историю.</p>
+      </div> : firstConfirmedDifference ? <div className="stock-variant-first-gap" role="note">
+        <strong>{evidence ? 'Первая зафиксированная нехватка или излишек за всю доступную историю проверок' : 'Первое несовпадение среди загруженных сверок'}: {momentLabel(firstConfirmedDifference.checkedAt)}</strong>
+        <p>По системе: {quantity(numeric(firstConfirmedDifference.expectedQuantity))}.
+        Фактически: {quantity(numeric(firstConfirmedDifference.countedQuantity))}.
+        {firstConfirmedDifference.checkedBy ? ` Проверил(а): ${firstConfirmedDifference.checkedBy}.` : ''}
+        Это день <b>обнаружения</b>, не обязательно день возникновения ошибки.</p>
+        {previousMatch && <p>До этого товар совпадал с учётом при сверке <b>{momentLabel(previousMatch.checkedAt)}</b>
+          . Проверьте движения и связанные документы <b>между двумя проверками</b> — это наиболее полезный известный интервал.</p>}
+        {!previousMatch && <p>Более ранней подтверждённой сверки с совпадением нет. Точную дату возникновения ошибки по одним записям определить нельзя.</p>}
+      </div> : <div className="stock-variant-no-gap" role="note">
+        <strong>Подтверждённых расхождений в сохранённых сверках нет.</strong>
+        <p>Это не гарантия правильных остатков сегодня: отсутствующий приход или выдача без оформления не отражаются в журнале.</p>
+      </div>}
+      <details className="w18-investigation-how">
+        <summary>Как найти причину расхождения?</summary>
+        <p>Сначала найдите последнюю сверку, на которой товар совпадал с учётом. Затем изучите приходы, выдачи, возвраты, перемещения и корректировки до первого несовпадения. Сверьте документы и фактическое количество. Если операция отсутствует, история сама не восстановит её автоматически.</p>
+        <p>Ниже показаны <b>проведённые</b> действия. Отклонённые попытки сохранения и неоформленные физические движения здесь не отображаются.</p>
+      </details>
+    </section>
 
     {events.length ? <ol className="stock-variant-events">
       {events.map(event => {
@@ -100,7 +140,14 @@ export function StockVariantTimeline({
       })}
     </ol> : <p className="stock-variant-empty">Для этого варианта пока нет загруженных событий. Отсутствие записи не подтверждает отсутствие движения.</p>}
 
-    {hasMore ? <div className="stock-variant-more">
+    {checksHasMore && <div className="stock-variant-more w18-older-checks">
+      <p>Есть более ранние физические сверки. Загрузите их, чтобы увидеть полную хронологию проверок рядом с движениями.</p>
+      {checksPageError && <p role="alert">{checksPageError}</p>}
+      <button className="secondary" type="button" disabled={checksPagingBusy} onClick={loadMoreChecks}>
+        {checksPagingBusy ? 'Загружаю проверки…' : 'Показать более ранние сверки'}
+      </button>
+    </div>}
+        {hasMore ? <div className="stock-variant-more">
       <p>Есть более ранние операции. Пока они не загружены, точку возникновения расхождения нельзя считать установленной.</p>
       <button type="button" className="secondary" disabled={busy} onClick={loadMore}>{busy ? 'Загружаю…' : 'Загрузить более ранние события'}</button>
     </div> : null}
