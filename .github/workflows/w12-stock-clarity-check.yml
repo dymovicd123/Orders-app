@@ -29,7 +29,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: W12 stock/history issue regression
-        run: node scripts/test-w12-stock-clarity.mjs
+        run: node --experimental-strip-types scripts/test-w12-stock-clarity.mjs
       - name: Core warehouse runtime and regression
         run: |
           node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
