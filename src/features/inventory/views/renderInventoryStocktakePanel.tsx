@@ -9,9 +9,10 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'currentStocktakePositions'
   | 'cycleCountBusy'
   | 'cycleCountData'
-  | 'cycleCountFilledCount'
   | 'cycleCountLoading'
   | 'cycleCountNotice'
+  | 'refreshCycleCountSuggestions'
+  | 'cycleCountFilledCount'
   | 'cycleCountOpen'
   | 'cycleCountValues'
   | 'discardStocktake'
@@ -32,7 +33,6 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'openStocktakeReview'
   | 'persistStocktakeFact'
   | 'printInventoryStocktakePdf'
-  | 'refreshCycleCountSuggestions'
   | 'resumeStocktake'
   | 'selectedStocktakePositionCount'
   | 'setCycleCountData'
@@ -108,9 +108,6 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     catalogActiveProducts,
     currentStocktakeGroup,
     currentStocktakePositions,
-    cycleCountData,
-    cycleCountLoading,
-    cycleCountNotice,
     discardStocktake,
     dismissStocktakeOutcome,
     filteredStocktakeProductGroups,
@@ -129,7 +126,6 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     openStocktakeReview,
     persistStocktakeFact,
     printInventoryStocktakePdf,
-    refreshCycleCountSuggestions,
     resumeStocktake,
     selectedStocktakePositionCount,
     setCycleCountData,
@@ -206,10 +202,6 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     return String(a.productName || '').localeCompare(String(b.productName || ''), 'ru')
   })
   const selectiveQueueIsLarge = selectedStocktakePositionCount > 20
-  const recommendationData = cycleCountData?.source === stocktakeSource ? cycleCountData : null
-  const recommendedProductIds = new Set((recommendationData?.items || []).map((row: any) => Number(row.productId || 0)).filter(Boolean))
-  const recommendedStocktakeProducts = (stocktakeSelectableProducts || []).filter((product: any) => recommendedProductIds.has(Number(product.productId))).slice(0, 6)
-  const unselectedRecommendedProducts = recommendedStocktakeProducts.filter((product: any) => !stocktakeSelectedProductIds.includes(Number(product.productId)))
   const stocktakeProgressPercent = stocktakeProgress.total ? Math.round((stocktakeProgress.filled / stocktakeProgress.total) * 100) : 0
   const currentStocktakeRows = currentStocktakeGroup?.rows || []
   const currentStocktakeFilled = currentStocktakeRows.filter((row: any) => (stocktakeFacts[String(row.id)] ?? '') !== '').length
@@ -296,20 +288,6 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
     
                               {stocktakeStartMode === 'selective' ? (
                                 <div className="stocktake-selective-picker stocktake-selective-picker-v5 stocktake-selective-picker-w5">
-                                  <div className={`stocktake-selective-recommendations ${recommendedStocktakeProducts.length ? 'has-items' : 'is-calm'}`}>
-                                    <div className="stocktake-selective-recommendations-head">
-                                      <div>
-                                        <span className="stocktake-step-kicker">Рекомендуем проверить</span>
-                                        <strong>{cycleCountLoading && !recommendationData ? 'Подбираю товары…' : recommendedStocktakeProducts.length ? `${recommendedStocktakeProducts.length} ${recommendedStocktakeProducts.length === 1 ? 'товар' : recommendedStocktakeProducts.length < 5 ? 'товара' : 'товаров'}` : recommendationData ? 'Сейчас отдельных рекомендаций нет' : cycleCountNotice ? 'Не удалось подобрать рекомендации' : 'Подбираю товары…'}</strong>
-                                        <small>{recommendedStocktakeProducts.length ? 'Подобраны по давности проверки, движениям и прошлым расхождениям.' : recommendationData ? 'Выберите нужные товары ниже.' : cycleCountNotice ? 'Товары ниже можно выбрать вручную.' : 'Список появится автоматически.'}</small>
-                                      </div>
-                                      {unselectedRecommendedProducts.length ? <button className="secondary compact stocktake-recommended-add-all" type="button" onClick={() => setStocktakeSelectedProductIds((current) => Array.from(new Set([...current, ...unselectedRecommendedProducts.map((product: any) => Number(product.productId))])))}>Добавить все</button> : (!recommendationData && cycleCountNotice ? <button className="secondary compact" type="button" disabled={cycleCountLoading} onClick={() => void refreshCycleCountSuggestions(stocktakeSource)}>{cycleCountLoading ? 'Загружаю…' : 'Повторить'}</button> : null)}
-                                    </div>
-                                    {recommendedStocktakeProducts.length ? <div className="stocktake-recommended-products">{recommendedStocktakeProducts.map((product: any) => {
-                                      const selected = stocktakeSelectedProductIds.includes(Number(product.productId))
-                                      return <button type="button" className={`stocktake-recommended-product ${selected ? 'is-selected' : ''}`} key={`stocktake-recommended-${product.productId}`} onClick={() => setStocktakeSelectedProductIds((current) => selected ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])}><span><strong>{product.productName}</strong><small>{product.positionCount} поз.</small></span><b>{selected ? '✓ Выбрано' : 'Добавить'}</b></button>
-                                    })}</div> : null}
-                                  </div>
                                   <div className="stocktake-selective-head">
                                     <label><span>Найдите товар</span><input value={stocktakeStartSearch} onChange={(event) => setStocktakeStartSearch(event.target.value)} placeholder="Название товара…" /></label>
                                     <div className="stocktake-selective-count"><strong>{stocktakeSelectedProductIds.length ? `${stocktakeSelectedProductIds.length} товаров выбрано` : 'Соберите проверку'}</strong><span>{stocktakeSelectedProductIds.length ? `${selectedStocktakePositionCount} позиций нужно будет пересчитать` : 'Можно выбрать один или несколько товаров'}</span></div>
