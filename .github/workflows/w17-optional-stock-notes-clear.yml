@@ -1,0 +1,116 @@
+name: W17 Optional Stock Notes and Search Clear
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+      - 'src/features/inventory/views/renderInventoryOverviewPanel.tsx'
+      - 'scripts/test-w8-warehouse-operation-integrity.mjs'
+      - 'scripts/test-w17-optional-stock-notes-clear.mjs'
+      - '.github/workflows/w17-optional-stock-notes-clear.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w17-optional-stock-notes-clear.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Optional notes, quantity guards and complete build
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Optional note and single search cross
+        run: |
+          node --experimental-strip-types scripts/test-w17-optional-stock-notes-clear.mjs
+          node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+      - name: Existing stock safety, runtime and UI regressions
+        run: |
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node --experimental-strip-types scripts/test-w9-correction-inline-variants.mjs
+          node --experimental-strip-types scripts/test-w15-stock-list-and-operation-reload.mjs
+          node --experimental-strip-types scripts/test-w16-source-attention-correction.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+      - name: Full TypeScript and Cloudflare Worker build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify W17-only scope and branch2 D1 binding
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import {execFileSync} from 'node:child_process'
+          if(process.env.GITHUB_REF_NAME!=='branch2')throw Error('Wrong branch')
+          const baseline='b3196ce28ebf9d61deafccfd8535c6c9d62f55df'
+          execFileSync('git',['merge-base','--is-ancestor',baseline,process.env.GITHUB_SHA])
+          const changed=execFileSync('git',['diff','--name-only',baseline,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n')
+          const allowed=new Set([
+            'src/App.tsx',
+            'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx',
+            'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
+            'scripts/test-w8-warehouse-operation-integrity.mjs',
+            'scripts/test-w17-optional-stock-notes-clear.mjs',
+            '.github/workflows/w17-optional-stock-notes-clear.yml',
+          ])
+          if(!changed.length||changed.some(p=>!allowed.has(p)))throw Error('Outside safe scope: '+changed.join(','))
+          const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
+          if(!wrangler.includes('"name": "orders-app-branch2"')
+            ||!wrangler.includes('"database_name": "orders_db_branch2"')
+            ||!wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301')
+            ||wrangler.includes('orders_db_prod'))throw Error('Incorrect isolated test DB')
+          console.log('W17_ONLY_TEST_BRANCH_NO_DB_CHANGES')
+          NODE
+      - run: npm ci
+      - name: Recheck optional note and real SQLite
+        run: |
+          node --experimental-strip-types scripts/test-w17-optional-stock-notes-clear.mjs
+          node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          npm run build
+      - name: Publish only branch2; no database migrations
+        run: npx wrangler deploy
+      - name: Verify updated operation and stock chunks live
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://orders-app-branch2.orders-clothes.workers.dev'
+          let verified=false
+          for(let attempt=0;attempt<7;attempt++){
+            try{
+              const response=await fetch(host+'/?w17='+Date.now(),{cache:'no-store'})
+              if(!response.ok)throw Error('HTTP '+response.status)
+              const html=await response.text()
+              const script=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
+              if(!script)throw Error('Entry asset missing')
+              const entry=await (await fetch(host+script[1],{cache:'no-store'})).text()
+              const chunk=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
+              if(!chunk)throw Error('Inventory chunk absent')
+              const inventory=await (await fetch(host+'/assets/'+chunk[0],{cache:'no-store'})).text()
+              if(!inventory.includes('Комментарий (необязательно)'))throw Error('Old mandatory comment still live')
+              if(!inventory.includes('Очистить поиск'))throw Error('Single clear UI not loaded')
+              console.log('W17_OPTIONAL_NOTES_LIVE_BRANCH2')
+              verified=true;break
+            }catch(error){console.warn(String(error));if(attempt<6)await new Promise(resolve=>setTimeout(resolve,3500))}
+          }
+          if(!verified)throw Error('Failed to verify branch2 stock UI after deploy')
+          NODE
