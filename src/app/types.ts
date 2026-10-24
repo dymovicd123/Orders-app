@@ -1201,7 +1201,24 @@ export type InventoryCheckHistoryRow = {
   countedQuantity?: number
 }
 
-export type InventoryCheckHistoryResponse = { ok: boolean; rows: InventoryCheckHistoryRow[] }
+export type InventoryCheckHistoryResponse = {
+  ok: boolean
+  rows: InventoryCheckHistoryRow[]
+  hasMore?: boolean
+  nextBeforeId?: number | null
+  totalChecks?: number
+  differenceCount?: number
+  firstConfirmedDifference?: InventoryCheckHistoryObservation | null
+  lastMatchingBeforeDifference?: InventoryCheckHistoryObservation | null
+}
+export type InventoryCheckHistoryObservation = {
+  id: string
+  checkedAt: string
+  expectedQuantity: number
+  countedQuantity: number
+  checkedBy?: string | null
+  referenceId?: string | null
+}
 
 export type InventoryResponse = {
   ok: boolean
