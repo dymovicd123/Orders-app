@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { selectStockOverviewModels } from '../inventory/stockOverviewSelectors'
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
 import type { CatalogResolutionContext, CatalogResolutionFacts, InventoryCycleCountSuggestionsResponse, InventoryReservation, InventoryStocktakeSession, InventoryStocktakeSessionSummary } from '../../../shared/api-contracts.ts'
 import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryHistoryResponse, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
@@ -177,7 +178,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     inventorySnapshotLoadErrors,
     inventoryStats,
     inventoryStocktakeAllGroups,
-    inventoryStocktakeGroups,
     printInventoryStocktakePdf,
     inventoryStatusFilter,
     isAdmin,
@@ -281,8 +281,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   } | null>(null)
   const simpleStockSourceRequestRef = useRef(0)
   const [stockOverviewRetryBusy, setStockOverviewRetryBusy] = useState(false)
-  const [simpleStockCategory, setSimpleStockCategory] = useState<'all' | 'adult' | 'child'>('all')
-  const [simpleStockAvailabilityFilter, setSimpleStockAvailabilityFilter] = useState<'free' | 'reserved' | 'attention' | 'all'>('all')
+  const [simpleStockSearch, setSimpleStockSearch] = useState('')
+  const [simpleStockAvailabilityFilter, setSimpleStockAvailabilityFilter] = useState<'all' | 'withStock'>('withStock')
   const [simpleStockDetail, setSimpleStockDetail] = useState<SimpleStockDetail | null>(null)
   const [simpleStockReservations, setSimpleStockReservations] = useState<InventoryReservation[]>([])
   const [simpleStockReservationsBusy, setSimpleStockReservationsBusy] = useState(false)
@@ -305,13 +305,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [simpleStockCatalogError, setSimpleStockCatalogError] = useState('')
   const simpleStockCatalogRequestRef = useRef(false)
 
-  function openSimpleStockProduct(updater: string | ((current: string) => string)) {
-    const nextKey = typeof updater === 'function' ? updater(simpleStockOpenProductKey) : updater
-    if (typeof nextKey !== 'string') return
-    setSimpleStockOpenProductKey(nextKey)
-    // Inventory is lightweight by default. Fetch catalog variants only when
-    // someone explicitly expands a product, without modifying stock counts.
-    if (!nextKey || catalogData || simpleStockCatalogRequestRef.current) return
+  function ensureSimpleStockCatalog() {
+    // Fetch inactive/zero-stock details only when requested; no stock writes.
+    if (catalogData || simpleStockCatalogRequestRef.current) return
     simpleStockCatalogRequestRef.current = true
     setSimpleStockCatalogLoading(true)
     setSimpleStockCatalogError('')
@@ -325,6 +321,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       simpleStockCatalogRequestRef.current = false
       setSimpleStockCatalogLoading(false)
     })
+  }
+
+  function openSimpleStockProduct(updater: string | ((current: string) => string)) {
+    const nextKey = typeof updater === 'function' ? updater(simpleStockOpenProductKey) : updater
+    if (typeof nextKey !== 'string') return
+    setSimpleStockOpenProductKey(nextKey)
+    if (nextKey) ensureSimpleStockCatalog()
   }
   // Switching the physical location is a fresh server read, never just a toggle
   // between possibly old cached location snapshots. Hide old counts until confirmed.
@@ -1565,70 +1568,43 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     ? Number(row.warehouseAvailable ?? (Number(row.warehouseQuantity || 0) - Number(row.warehouseReserved || 0)))
     : Number(row.boutiqueAvailable ?? (Number(row.boutiqueQuantity || 0) - Number(row.boutiqueReserved || 0)))
 
-  const simpleStockGroups = useMemo(() => {
-    const result: any[] = []
-    const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
-    for (const product of inventoryStocktakeGroups || []) {
-      const productRows = product.rows || []
-      const allRows = simpleStockCategory === 'all'
-        ? productRows
-        : productRows.filter((row: any) => (row.category || 'adult') === simpleStockCategory)
-      // The availability switch selects PRODUCTS, not which sizes are
-      // visible inside a selected product. Filtering individual SKU rows made
-      // reserved/short sizes disappear and falsely labelled a partial sum
-      // ("На месте 5" while physical warehouse quantity was actually 11).
-      const matchingRows = allRows.filter((row: any) => {
-        const free = simpleStockQuantity(row)
-        const reserved = simpleStockReserved(row)
-        const physical = simpleStockPhysical(row)
-        if (simpleStockAvailabilityFilter === 'all') return hasExplicitStockSearch || physical !== 0 || reserved !== 0
-        if (simpleStockAvailabilityFilter === 'free') return free > 0
-        if (simpleStockAvailabilityFilter === 'reserved') return reserved > 0
-        return free < 0 || physical < 0
-      })
-      if (!matchingRows.length) continue
-      const visibleRows = allRows.filter((row: any) =>
-        hasExplicitStockSearch || simpleStockPhysical(row) !== 0 || simpleStockReserved(row) !== 0
-      )
-      result.push({
-        ...product,
-        rows: visibleRows,
-        allRows,
-        availabilityFilterApplied: true,
-      })
-    }
-    return result
-  }, [inventoryStocktakeGroups, simpleStockSource, simpleStockAvailabilityFilter, simpleStockCategory, inventoryQuery])
+  const simpleStockGroups = useMemo(() => selectStockOverviewModels(
+    inventoryStocktakeAllGroups || [],
+    simpleStockSearch,
+    simpleStockAvailabilityFilter,
+    (row: any) => simpleStockPhysical(row) !== 0 || simpleStockReserved(row) !== 0,
+  ), [inventoryStocktakeAllGroups, simpleStockSearch, simpleStockAvailabilityFilter, simpleStockSource])
 
   const simpleStockStats = useMemo(() => {
-    const allRows = (inventoryStocktakeGroups || []).flatMap((group: any) => group.rows || [])
-    const rows = simpleStockCategory === 'all'
-      ? allRows
-      : allRows.filter((row: any) => (row.category || 'adult') === simpleStockCategory)
-    const availableFor = (row: any, source: 'warehouse' | 'boutique') => source === 'warehouse'
-      ? Number(row.warehouseAvailable ?? (Number(row.warehouseQuantity || 0) - Number(row.warehouseReserved || 0)))
-      : Number(row.boutiqueAvailable ?? (Number(row.boutiqueQuantity || 0) - Number(row.boutiqueReserved || 0)))
-    const currentQuantity = (row: any) => availableFor(row, simpleStockSource)
+    // Full location totals, unaffected by model search/list filters.
+    const rows = (inventoryStocktakeAllGroups || []).flatMap((group: any) => group.rows || [])
+    const physicalFor = (row: any, source: 'warehouse' | 'boutique') =>
+      Number(source === 'warehouse' ? row.warehouseQuantity || 0 : row.boutiqueQuantity || 0)
+    const reservedFor = (row: any, source: 'warehouse' | 'boutique') =>
+      Number(source === 'warehouse' ? row.warehouseReserved || 0 : row.boutiqueReserved || 0)
+    const freeFor = (row: any, source: 'warehouse' | 'boutique') =>
+      Number(source === 'warehouse'
+        ? row.warehouseAvailable ?? (physicalFor(row, source) - reservedFor(row, source))
+        : row.boutiqueAvailable ?? (physicalFor(row, source) - reservedFor(row, source)))
+    const currentFree = (row: any) => freeFor(row, simpleStockSource)
     return {
-      warehouse: rows.reduce((sum: number, row: any) => sum + availableFor(row, 'warehouse'), 0),
-      warehousePhysical: rows.reduce((sum: number, row: any) => sum + Number(row.warehouseQuantity || 0), 0),
-      warehouseReserved: rows.reduce((sum: number, row: any) => sum + Number(row.warehouseReserved || 0), 0),
-      boutique: rows.reduce((sum: number, row: any) => sum + availableFor(row, 'boutique'), 0),
-      boutiquePhysical: rows.reduce((sum: number, row: any) => sum + Number(row.boutiqueQuantity || 0), 0),
-      boutiqueReserved: rows.reduce((sum: number, row: any) => sum + Number(row.boutiqueReserved || 0), 0),
-      negativeWarehouse: rows.filter((row: any) => availableFor(row, 'warehouse') < 0).length,
-      negativeBoutique: rows.filter((row: any) => availableFor(row, 'boutique') < 0).length,
+      warehouse: rows.reduce((sum: number, row: any) => sum + freeFor(row, 'warehouse'), 0),
+      warehousePhysical: rows.reduce((sum: number, row: any) => sum + physicalFor(row, 'warehouse'), 0),
+      warehouseReserved: rows.reduce((sum: number, row: any) => sum + reservedFor(row, 'warehouse'), 0),
+      boutique: rows.reduce((sum: number, row: any) => sum + freeFor(row, 'boutique'), 0),
+      boutiquePhysical: rows.reduce((sum: number, row: any) => sum + physicalFor(row, 'boutique'), 0),
+      boutiqueReserved: rows.reduce((sum: number, row: any) => sum + reservedFor(row, 'boutique'), 0),
+      negativeWarehouse: rows.filter((row: any) => freeFor(row, 'warehouse') < 0).length,
+      negativeBoutique: rows.filter((row: any) => freeFor(row, 'boutique') < 0).length,
       variants: rows.length,
-      hiddenZero: rows.filter((row: any) => currentQuantity(row) === 0).length,
-      freeVariants: rows.filter((row: any) => currentQuantity(row) > 0).length,
-      reservedVariants: rows.filter((row: any) => simpleStockReserved(row) > 0).length,
-      attentionVariants: rows.filter((row: any) => currentQuantity(row) < 0 || simpleStockPhysical(row) < 0).length,
-      adultVariants: allRows.filter((row: any) => (row.category || 'adult') === 'adult').length,
-      childVariants: allRows.filter((row: any) => (row.category || 'adult') === 'child').length,
+      hiddenZero: rows.filter((row: any) => currentFree(row) === 0).length,
+      freeVariants: rows.filter((row: any) => currentFree(row) > 0).length,
+      reservedVariants: rows.filter((row: any) => reservedFor(row, simpleStockSource) > 0).length,
+      attentionVariants: rows.filter((row: any) => currentFree(row) < 0 || physicalFor(row, simpleStockSource) < 0).length,
+      adultVariants: rows.filter((row: any) => (row.category || 'adult') === 'adult').length,
+      childVariants: rows.filter((row: any) => (row.category || 'adult') === 'child').length,
     }
-  }, [inventoryStocktakeGroups, simpleStockCategory, simpleStockSource])
-
-
+  }, [inventoryStocktakeAllGroups, simpleStockSource])
 
   async function openSimpleStockRowsDetail(rows: any[], options: { aggregate?: boolean; label?: string; source?: 'warehouse' | 'boutique' } = {}) {
     if (!rows?.length) return
@@ -2482,14 +2458,15 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         setQuickStocktakeValues,
         setCycleCountValues,
         setSimpleStockAvailabilityFilter,
-        setSimpleStockCategory,
         setSimpleStockDetail,
         setSimpleStockOpenProductKey: openSimpleStockProduct,
         setSimpleStockSource,
         simpleStockCatalogLoading,
         simpleStockCatalogError,
+        simpleStockSearch,
+        setSimpleStockSearch,
+        ensureSimpleStockCatalog,
         simpleStockAvailabilityFilter,
-        simpleStockCategory,
         simpleStockDetail,
         simpleStockGroups,
         simpleStockOpenProductKey,
