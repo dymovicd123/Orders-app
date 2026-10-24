@@ -51,7 +51,6 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
         <div className="orders-stock-attention" role="status" aria-label="Складские случаи для проверки">
           <div className="orders-stock-attention-content">
             <strong>Проверить складской учёт</strong>
-            <span>Это сигналы по данным системы, а не доказательство отсутствия вещей. Заказы автоматически не блокируются.</span>
             <div className="orders-stock-attention-counts">
               {shortageCount > 0 ? <span><b>{shortageCount}</b> {shortageCount === 1 ? 'случай' : 'случаев'} нехватки по активным заказам</span> : null}
               {shippedCount > 0 ? <span><b>{shippedCount}</b> {shippedCount === 1 ? 'случай' : 'случаев'} при уже выполненной отправке</span> : null}
