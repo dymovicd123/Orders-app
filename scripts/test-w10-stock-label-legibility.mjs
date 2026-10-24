@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+const read = p => readFileSync(new URL(p, import.meta.url),'utf8')
+const css = read('../src/styles/188e4-stocktake-usability.css')
+const shared = read('../src/features/inventory/views/StocktakeSharedInputs.tsx')
+const stocktake = read('../src/features/inventory/views/renderInventoryStocktakePanel.tsx')
+const operations = read('../src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx')
+assert.match(css,/\.stocktake-size-system\s*\{[^}]*font-size:\s*11px;/)
+assert.match(css,/\.stocktake-size-system\s*\{[^}]*color:\s*#64748b;/)
+assert.match(css,/\.stocktake-size-system\s*\{[^}]*line-height:\s*1\.25;/)
+assert.equal((css.match(/\.stocktake-size-system\s*\{/g)||[]).length,1,'Only one source-of-truth system label rule')
+assert.ok(shared.includes('className="stocktake-size-system"'),'Shared cell must render the label')
+assert.ok(stocktake.includes('<StocktakeSizeCountCell'),'Stocktake uses shared cell')
+assert.ok(operations.includes('<StocktakeSizeCountCell'),'All four operations use shared cell')
+assert.ok(operations.includes("['manual_set','Корректировка'") && operations.includes("['transfer','Перемещение'"),'Operations remain unchanged')
+console.log('W10_SHARED_STOCK_LABEL_LEGIBILITY_PASSED')
