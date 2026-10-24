@@ -127,7 +127,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const searchableChosen = chosen.filter(g => g.productName.toLocaleLowerCase('ru').includes(productSearch.toLocaleLowerCase('ru').trim()))
   const groupIndex = chosen.findIndex(g => g.key === activeGroup?.key)
   const filledGroup = (g: Group) => g.rows.filter(r => movementInput(mode,draftMap.get(String(r.variantId))) !== '').length
-  const ready = changed > 0 && (mode === 'arrival' || mode === 'transfer' || Boolean(reason.trim()))
+  const ready = changed > 0
   useEffect(() => {
     if(stage === 'review' && !busy && !changed) {
       setStage('select');setSelected([]);setCurrent('');setNotice('')
@@ -183,7 +183,6 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     if(!changed){setNotice('Введите количество хотя бы в одной ячейке.');return}
     const limit=mode==='transfer'?60:100
     if(changed>limit){setNotice('В одну '+(mode==='transfer'?'перемещение':'операцию')+' допускается не более '+limit+' вариантов. Разделите список.');return}
-    if(mode !== 'arrival' && mode !== 'transfer' && !reason.trim()){setNotice('Укажите причину операции.');return}
     setNotice('');setStage('review')
   }
   return <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e stocktake-reused-operations"
@@ -448,9 +447,9 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       {mode==='arrival'&&isAdmin&&newVariant&&<div className="w6-stocktake-new-content">
         {newVariantWorkspace}
       </div>}
-      <label className="w6-stocktake-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)': 'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
+      <label className="w6-stocktake-reason">Комментарий (необязательно)
         <input value={reason} onChange={e=>p.onReason(e.target.value)}
-          placeholder={mode==='arrival'?'Новая партия':'Например: физическая сверка / повреждение'} />
+          placeholder="При необходимости поясните действие" />
       </label>
       {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}
       <div className="stocktake-e-footer stocktake-e-footer-v4">
@@ -487,8 +486,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           <div className="stocktake-e-review-quantity"><strong>+{extraArrival.totalQuantity} шт.</strong></div>
         </div>}
       </div>
-      <label className="w6-stocktake-reason">{mode==='arrival'?'Комментарий к приходу (необязательно)':mode==='transfer'?'Комментарий к перемещению (необязательно)':'Причина '+(mode==='writeoff'?'списания':'корректировки')+' (обязательно)'}
-        <input value={reason} onChange={e=>p.onReason(e.target.value)} placeholder="Что произошло с товаром?" />
+      <label className="w6-stocktake-reason">Комментарий (необязательно)
+        <input value={reason} onChange={e=>p.onReason(e.target.value)} placeholder="При необходимости поясните действие" />
       </label>
       {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}
       {saveError&&<div className="stocktake-inline-notice w6-notice-error w8-operation-save-error" role="alert">
