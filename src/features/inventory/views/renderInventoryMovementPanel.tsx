@@ -12,7 +12,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'createEmptyInventoryItem' | 'resetInventoryArrivalForm'
   | 'resetInventoryOperationSelection' | 'setMovementSourceRefreshToken'
   | 'suggestionValues'
-> & { attentionCorrectionTarget?: { token:number; source:'warehouse'|'boutique'; productId:number; variantId:number } | null } & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
+> & { attentionCorrectionTarget?: { token:number; source:'warehouse'|'boutique'; productId:number; variantId:number } | null; clearAttentionCorrectionTarget: () => void } & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
 }) => void; onInlineCorrectionVariant: (seed: {
@@ -57,11 +57,13 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       onInlineCorrectionVariant={ctx.onInlineCorrectionVariant}
       extraArrival={{ rows: ctx.inventoryArrivalSummary.rows, totalQuantity: ctx.inventoryArrivalSummary.totalQuantity }}
       onMode={next => {
+        ctx.clearAttentionCorrectionTarget()
         ctx.clearInventoryMovementError()
         ctx.resetInventoryArrivalForm()
         ctx.selectInventoryOperationMode(next)
       }}
       onSource={next => {
+        ctx.clearAttentionCorrectionTarget()
         ctx.clearInventoryMovementError()
         if(mode==='arrival'&&ctx.inventoryArrivalSummary.rows > 0)ctx.resetInventoryArrivalForm()
         ctx.changeInventoryOperationSource(next)
@@ -82,6 +84,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
       }}
       onSave={()=>ctx.saveInventoryMovement()}
       onClear={()=>{
+        ctx.clearAttentionCorrectionTarget()
         ctx.clearInventoryMovementError()
         ctx.setInventoryDraft((current:any)=>({...current,items:[ctx.createEmptyInventoryItem()],comment:''}))
         ctx.resetInventoryArrivalForm()
