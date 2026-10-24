@@ -159,3 +159,59 @@
 .stocktake-reused-operations .w8-transfer-stocktake-lock strong{font-size:13px}
 .stocktake-reused-operations .w8-transfer-stocktake-lock p{margin:0;font-size:12px;line-height:1.45}
 .stocktake-reused-operations .w8-transfer-stocktake-lock small{color:#8a6940;font-size:11px}
+
+
+/* Stock workspace W12: one restrained semantic accent per operation.
+   Data, validation, warnings and save semantics are intentionally unchanged. */
+.stocktake-reused-operations[data-unified-operation="arrival"]{
+  --w12-accent:#15803d;--w12-tint:#f0fdf4;--w12-border:#86efac;
+}
+.stocktake-reused-operations[data-unified-operation="writeoff"]{
+  --w12-accent:#b91c1c;--w12-tint:#fef2f2;--w12-border:#fca5a5;
+}
+.stocktake-reused-operations[data-unified-operation="transfer"]{
+  --w12-accent:#a16207;--w12-tint:#fffbeb;--w12-border:#fcd34d;
+}
+.stocktake-reused-operations[data-unified-operation="manual_set"]{
+  --w12-accent:#1d4ed8;--w12-tint:#eff6ff;--w12-border:#93c5fd;
+}
+.stocktake-reused-operations .stocktake-e-head{
+  border-inline-start:4px solid var(--w12-accent);
+  background:var(--w12-tint);
+  border-radius:8px;
+}
+.stocktake-reused-operations .stocktake-e-head h3{
+  color:var(--w12-accent);
+}
+.stocktake-reused-operations .stocktake-start-modes .stocktake-start-mode.is-active{
+  background:var(--w12-tint)!important;
+  border-color:var(--w12-accent)!important;
+  box-shadow:inset 0 0 0 1px var(--w12-accent);
+}
+.stocktake-reused-operations .stocktake-start-modes .stocktake-start-mode.is-active strong{
+  color:var(--w12-accent);
+}
+.stocktake-reused-operations .w7-operation-location{
+  border-color:var(--w12-border);
+  background:var(--w12-tint);
+}
+.stocktake-reused-operations .stocktake-sticky-progress-bar>i{
+  background:var(--w12-accent)!important;
+}
+.stocktake-reused-operations .stocktake-e-start-button,
+.stocktake-reused-operations .stocktake-review-button,
+.stocktake-reused-operations .stocktake-e-review-actions .primary{
+  background:var(--w12-accent)!important;
+  border-color:var(--w12-accent)!important;
+  color:#fff!important;
+}
+.stocktake-reused-operations .stocktake-size-cell:has(.w6-stocktake-after){
+  outline-color:var(--w12-border);
+  background:var(--w12-tint);
+}
+.stocktake-reused-operations .stocktake-size-cell .w6-stocktake-after{
+  color:var(--w12-accent);
+}
+.stocktake-reused-operations .stocktake-counting-rule{
+  border-inline-start:3px solid var(--w12-accent);
+}
