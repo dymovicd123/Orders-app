@@ -17,7 +17,9 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
     workspaceSector = 'orders',
   } = ctx
 
-  const stockConcerns = Number(warehouseAttention?.counts?.shortage || 0) + Number(warehouseAttention?.counts?.shippedUntracked || 0)
+  const shortageCount = Math.max(0, Number(warehouseAttention?.counts?.shortage || 0))
+  const shippedCount = Math.max(0, Number(warehouseAttention?.counts?.shippedUntracked || 0))
+  const stockConcerns = shortageCount + shippedCount
 
   return (
     <article className={`card wide sector-${workspaceSector} orders-workspace-header`} id={kaspiMode ? 'kaspi-orders-tabs' : 'orders-tabs'} style={sectorStyle(workspaceSector)}>
@@ -46,12 +48,16 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
         </div>
       )}
       {!kaspiMode && stockConcerns > 0 ? (
-        <div className="orders-stock-attention" role="status">
-          <div>
-            <strong>Нужно проверить товары: {stockConcerns}</strong>
-            <span>По некоторым заказам количество на складе не совпадает с данными системы. Посмотрите, какие товары требуют проверки.</span>
+        <div className="orders-stock-attention" role="status" aria-label="Складские случаи для проверки">
+          <div className="orders-stock-attention-content">
+            <strong>Проверить складской учёт</strong>
+            <span>Это сигналы по данным системы, а не доказательство отсутствия вещей. Заказы автоматически не блокируются.</span>
+            <div className="orders-stock-attention-counts">
+              {shortageCount > 0 ? <span><b>{shortageCount}</b> {shortageCount === 1 ? 'случай' : 'случаев'} нехватки по активным заказам</span> : null}
+              {shippedCount > 0 ? <span><b>{shippedCount}</b> {shippedCount === 1 ? 'случай' : 'случаев'} при уже выполненной отправке</span> : null}
+            </div>
           </div>
-          <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Посмотреть список</button>
+          <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Открыть случаи и действия →</button>
         </div>
       ) : null}
     </article>
