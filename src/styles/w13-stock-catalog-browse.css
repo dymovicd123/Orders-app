@@ -1,0 +1,185 @@
+/* W13 — stock browsing follows Catalog's master/detail hierarchy.
+   Display only. Stock quantity and transaction truth remain in InventorySection. */
+.stock-v13-page{--stock-ink:#223049;--stock-muted:#64748b;--stock-line:#e2e8f0}
+.stock-v13-page .inventory-calm-head{margin-bottom:8px}
+.stock-v13-page .inventory-calm-head h3{font-size:20px;line-height:1.25}
+.stock-v13-page .inventory-calm-head p{font-size:12px;color:var(--stock-muted)}
+.stock-v13-page .inventory-calm-toolbar{gap:10px;margin-bottom:12px;align-items:center}
+.stock-v13-page .inventory-calm-summary{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;padding:0;margin-bottom:14px;border:0;background:transparent;
+}
+.stock-v13-page .inventory-calm-summary>div{
+  border:1px solid var(--stock-line);background:#fff;border-radius:12px;
+  min-width:0;padding:13px 15px;box-shadow:none;
+}
+.stock-v13-page .inventory-calm-summary>div.is-primary{background:#f4f8ff;border-color:#d7e5f8}
+.stock-v13-page .inventory-calm-summary>div>span{color:var(--stock-muted);font-size:11px;font-weight:700}
+.stock-v13-page .inventory-calm-summary>div>strong{color:var(--stock-ink);font-size:26px;line-height:1.3;font-variant-numeric:tabular-nums}
+.stock-v13-page .inventory-calm-summary>div>small{font-size:10px;color:#718198}
+.stock-v13-page .inventory-calm-summary>details{grid-column:1/-1;font-size:11px;margin:0}
+.stock-v13-page .inventory-calm-summary>details:not([open]){justify-self:start}
+.stock-v13-page .inventory-calm-filters{margin-bottom:7px;gap:6px}
+.stock-v13-page .inventory-calm-filters>button{min-height:34px;font-size:12px}
+.stock-v13-filter-hint{
+  display:flex;justify-content:space-between;align-items:center;gap:8px 18px;
+  padding:2px 1px 12px;color:var(--stock-muted);font-size:11px;flex-wrap:wrap;
+}
+.stock-v13-filter-hint b{color:#45566e}
+.stock-v13-filter-hint button{
+  cursor:pointer;background:transparent;border:0;color:#a45a1a;
+  text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:700;
+}
+.stock-v13-browse.catalog-master-detail{
+  display:grid;grid-template-columns:minmax(230px,285px) minmax(0,1fr);
+  gap:0;min-height:400px;margin:4px 0 18px;
+  border:1px solid #dfe6f1;border-radius:16px;background:#fff;
+  box-shadow:0 6px 21px rgba(31,53,79,.045);overflow:hidden;
+}
+.stock-v13-master{
+  border-right:1px solid #e0e7f1;min-width:0;
+  background:#f9fbfd;display:flex;flex-direction:column;
+}
+.stock-v13-master-head{display:grid;gap:3px;padding:16px 15px 12px;border-bottom:1px solid #e8edf4}
+.stock-v13-master-head strong{font-size:13px;color:var(--stock-ink)}
+.stock-v13-master-head small{font-size:11px;color:#7a8799;line-height:1.4}
+.stock-v13-master-list{display:flex;flex-direction:column;overflow:auto;max-height:680px;padding:7px;gap:4px}
+.stock-v13-master-item{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"name qty" "sub sub";gap:6px 9px;min-width:0;
+  border:1px solid transparent;border-radius:11px;background:transparent;
+  padding:11px 12px;text-align:left;font:inherit;color:var(--stock-ink);
+  cursor:pointer;transition:background .13s,border-color .13s;
+}
+.stock-v13-master-item:hover{background:#eef3fa}
+.stock-v13-master-item.is-selected{
+  background:#eaf2ff;border-color:#c8ddf6;box-shadow:inset 3px 0 #3b75bb;
+}
+.stock-v13-master-identity{grid-area:name;display:grid;gap:4px;min-width:0}
+.stock-v13-master-identity strong{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.stock-v13-master-identity small{font-size:10px;color:var(--stock-muted)}
+.stock-v13-master-quantity{grid-area:qty;display:grid;justify-items:end;align-content:start;gap:2px}
+.stock-v13-master-quantity b{color:#1c654c;font-size:17px;font-variant-numeric:tabular-nums;line-height:1.2}
+.stock-v13-master-quantity small{color:#78869b;font-size:9px}
+.stock-v13-master-item.has-shortage .stock-v13-master-quantity b{color:#bd4c29}
+.stock-v13-master-subtotals{grid-area:sub;font-size:10px;color:#697b90}
+.stock-v13-detail-pane{min-width:0;background:#fff}
+.stock-v13-detail{display:grid;gap:0;padding:0}
+.stock-v13-detail-header{
+  display:grid;gap:15px;padding:22px 24px 18px;
+  border-bottom:1px solid #e8eef5;background:#fff;
+}
+.stock-v13-title>span{display:block;color:#7d8b9d;font-size:11px;font-weight:700;margin-bottom:6px}
+.stock-v13-title h3{margin:0;font-size:19px;line-height:1.3;color:var(--stock-ink);overflow-wrap:anywhere}
+.stock-v13-title p{color:var(--stock-muted);font-size:11px;margin:5px 0 0}
+.stock-v13-product-balances{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px
+}
+.stock-v13-product-balances>div{min-width:0;border:1px solid #e4eaf2;border-radius:10px;padding:11px 12px;display:grid;gap:3px}
+.stock-v13-product-balances span{font-size:10px;font-weight:700;color:#738196}
+.stock-v13-product-balances strong{font-size:19px;font-variant-numeric:tabular-nums;color:var(--stock-ink);line-height:1.2}
+.stock-v13-product-balances>.is-free{background:#f2faf6;border-color:#d7ebdf}
+.stock-v13-product-balances>.is-free strong{color:#236c4e}
+.stock-v13-product-balances>.is-shortage{background:#fff4ed;border-color:#f4d4c0}
+.stock-v13-product-balances>.is-shortage strong{color:#b33e1e}
+.stock-v13-execution-list{display:grid;gap:14px;padding:17px 21px 19px}
+.stock-v13-execution{border:1px solid #e4eaf1;border-radius:13px;overflow:hidden;background:#fff}
+.stock-v13-execution-title{
+  padding:11px 15px;background:#f5f8fc;border-bottom:1px solid #e7edf5;
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+}
+.stock-v13-execution-title strong{font-size:12px;color:#3d4e65;line-height:1.4}
+.stock-v13-execution-title span{font-size:10px;color:#7c899a;white-space:nowrap}
+.stock-v13-colors{display:grid;gap:0}
+.stock-v13-color{padding:13px 15px 16px;border-bottom:1px solid #eaf0f5}
+.stock-v13-color:last-child{border-bottom:0}
+.stock-v13-color-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.stock-v13-color-head strong{font-size:13px;line-height:1.3;color:var(--stock-ink)}
+.stock-v13-color-head small{font-size:10px;color:#8592a4;white-space:nowrap}
+.stock-v13-size-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:9px}
+.stock-v13-size-card{
+  border:1px solid #dce5f0;border-radius:11px;overflow:hidden;background:#fff;
+  display:grid;grid-template-rows:1fr auto;min-width:0;
+}
+.stock-v13-size-card:hover{border-color:#aac5e7;box-shadow:0 2px 8px rgba(52,89,135,.06)}
+.stock-v13-size-card.is-shortage{border-color:#efc29e;background:#fff9f5}
+.stock-v13-size-main{width:100%;border:0;background:transparent;text-align:left;padding:12px 12px 8px;cursor:pointer;color:inherit}
+.stock-v13-size-main:focus-visible,.stock-v13-history:focus-visible,.stock-v13-master-item:focus-visible{outline:2px solid #3b82f6;outline-offset:-2px}
+.stock-v13-size-label{display:flex;align-items:baseline;gap:7px;color:#7a8799;font-size:10px;font-weight:700}
+.stock-v13-size-label strong{font-size:21px;color:#1b314b;line-height:1.1}
+.stock-v13-size-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:12px}
+.stock-v13-size-values>span{display:grid;gap:3px;min-width:0}
+.stock-v13-size-values small{color:#738297;font-size:9px;font-weight:600;line-height:1.25}
+.stock-v13-size-values b{color:#24344c;font-size:16px;font-variant-numeric:tabular-nums;line-height:1.2}
+.stock-v13-size-free{border-left:1px solid #e5eaf2;padding-left:9px}
+.stock-v13-size-free b{color:#1e7b51}
+.stock-v13-size-card.is-shortage .stock-v13-size-free b{color:#b34a20}
+.stock-v13-history{
+  border:0;border-top:1px solid #edf1f6;background:#fafcfe;padding:7px 11px;
+  color:#42668c;font-size:10px;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.stock-v13-history:hover{background:#edf5ff}
+.stock-v13-no-active{display:grid;gap:5px;padding:19px;border:1px dashed #dbe5ee;border-radius:10px}
+.stock-v13-no-active strong{font-size:13px;color:#334155}
+.stock-v13-no-active span{font-size:11px;color:#64748b;line-height:1.5}
+.stock-v13-zero-disclosure{margin:0 21px 21px;padding:0;border:1px solid #e3e9f1;border-radius:11px;overflow:hidden}
+.stock-v13-zero-disclosure summary{
+  display:flex;align-items:center;gap:7px;cursor:pointer;padding:12px 15px;
+  font-size:12px;font-weight:700;color:#4c5d74;list-style:none;background:#f9fbfe;
+}
+.stock-v13-zero-disclosure summary::-webkit-details-marker{display:none}
+.stock-v13-zero-disclosure summary strong{font-size:11px;color:#8995a5;background:#e9eef4;border-radius:20px;padding:2px 7px}
+.stock-v13-zero-disclosure summary span{margin-left:auto}
+.stock-v13-zero-disclosure>p{font-size:11px;color:#6d7b90;line-height:1.5;margin:12px 14px}
+.stock-v13-zero-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:7px;padding:0 13px 15px}
+.stock-v13-zero-grid button{
+  border:1px solid #e2e8f0;border-radius:9px;background:#fff;
+  padding:9px 10px;text-align:left;display:grid;gap:3px;min-width:0;cursor:pointer
+}
+.stock-v13-zero-grid button:hover{background:#f0f6fd}
+.stock-v13-zero-grid strong{font-size:16px;color:#475569}
+.stock-v13-zero-grid span{font-size:11px;color:#52657c;overflow-wrap:anywhere}
+.stock-v13-zero-grid small{font-size:9px;color:#8492a4;overflow-wrap:anywhere}
+.stock-v13-empty{padding:22px;color:#69788d;font-size:12px;line-height:1.5}
+.stock-v13-load-note{margin:10px 20px 0;color:#61758f;font-size:11px}
+.stock-v13-load-note.is-error{color:#b34428}
+.stock-v13-page .inventory-stock-routine-disclosure{margin-top:14px}
+@media(max-width:900px){
+  .stock-v13-browse.catalog-master-detail{grid-template-columns:minmax(190px,32%) minmax(0,1fr)}
+  .stock-v13-detail-header{padding:17px}
+  .stock-v13-execution-list{padding:13px;gap:12px}
+  .stock-v13-size-grid{grid-template-columns:repeat(auto-fill,minmax(178px,1fr))}
+}
+@media(max-width:690px){
+  .stock-v13-page .inventory-calm-summary{gap:6px}
+  .stock-v13-page .inventory-calm-summary>div{padding:10px}
+  .stock-v13-page .inventory-calm-summary>div>strong{font-size:20px}
+  .stock-v13-page .inventory-calm-summary>div>small{display:none}
+  .stock-v13-browse.catalog-master-detail{display:flex;flex-direction:column;gap:0}
+  .stock-v13-master{border-right:0;border-bottom:1px solid #dce5ef}
+  .stock-v13-master-list{
+    max-height:190px;overflow:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    padding:8px;gap:6px;
+  }
+  .stock-v13-master-item{padding:9px;grid-template-areas:"name name" "qty qty" "sub sub";gap:5px}
+  .stock-v13-master-quantity{justify-items:start}
+  .stock-v13-master-subtotals{font-size:9px}
+  .stock-v13-detail-header{padding:15px;gap:10px}
+  .stock-v13-execution-list{padding:10px}
+  .stock-v13-execution-title{padding:10px 12px}
+  .stock-v13-color{padding:12px}
+  .stock-v13-size-grid{grid-template-columns:repeat(auto-fill,minmax(156px,1fr))}
+  .stock-v13-size-main{padding:10px 9px 8px}
+  .stock-v13-size-values{gap:3px}
+  .stock-v13-size-values small{font-size:9px}
+  .stock-v13-size-values b{font-size:14px}
+  .stock-v13-size-free{padding-left:6px}
+  .stock-v13-zero-disclosure{margin:0 10px 14px}
+}
+@media(max-width:360px){
+  .stock-v13-product-balances{gap:5px}
+  .stock-v13-product-balances>div{padding:8px 6px}
+  .stock-v13-product-balances strong{font-size:17px}
+  .stock-v13-size-grid{grid-template-columns:1fr}
+}
