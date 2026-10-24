@@ -1,0 +1,34 @@
+name: W13 Stock Catalog Browser
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/inventory/stockBrowseLayout.ts'
+      - 'src/features/inventory/views/StockBrowseDetail.tsx'
+      - 'src/features/inventory/views/renderInventoryOverviewPanel.tsx'
+      - 'src/styles/w13-stock-catalog-browse.css'
+      - 'scripts/test-w13-stock-catalog-browse.mjs'
+      - '.github/workflows/w13-stock-catalog-browse.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Model/color/size layout, stock safety and full build
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Exact grouping, reserve and zero visibility
+        run: node --experimental-strip-types scripts/test-w13-stock-catalog-browse.mjs
+      - name: Correction, arrivals, transfer and physical checks stay intact
+        run: |
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build
