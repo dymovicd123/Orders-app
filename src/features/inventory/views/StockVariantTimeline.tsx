@@ -1,4 +1,5 @@
 import type { InventoryCheckHistoryRow, InventoryHistoryResponse } from '../../../app/types'
+import { buildStockVariantTimeline, stockCheckHasDifference } from '../stockVariantTimelineModel'
 
 type Movement = InventoryHistoryResponse['movements'][number]
 type ExactVariant = {
@@ -11,10 +12,6 @@ type ExactVariant = {
   size?: string
   gender?: string
 }
-type Event =
-  | { kind: 'movement'; moment: string; key: string; movement: Movement }
-  | { kind: 'check'; moment: string; key: string; check: InventoryCheckHistoryRow }
-
 type Props = {
   variant: ExactVariant
   movements: Movement[]
@@ -28,30 +25,12 @@ type Props = {
 }
 
 const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0
-const isDifferent = (check: InventoryCheckHistoryRow) =>
-  check.expectedQuantity !== undefined && check.countedQuantity !== undefined
-    && Number(check.expectedQuantity) !== Number(check.countedQuantity)
 const quantity = (value: number) => `${value} шт.`
 
 export function StockVariantTimeline({
   variant, movements, checks, checksUnavailable, hasMore, busy, loadMore, momentLabel, movementLabel,
 }: Props) {
-  // The API applies exact variantId + source filters; never reconstruct identity
-  // from names or fold events belonging to another location into this timeline.
-  const exactChecks = checks.filter(check => check.source === variant.source
-    && check.expectedQuantity !== undefined && check.countedQuantity !== undefined)
-  const observedDifference = [...exactChecks].filter(isDifferent)
-    .sort((a, b) => a.checkedAt.localeCompare(b.checkedAt))[0]
-  const events: Event[] = [
-    ...movements.map(movement => ({
-      kind: 'movement' as const, moment: movement.createdAt,
-      key: `m-${movement.id}`, movement,
-    })),
-    ...exactChecks.map(check => ({
-      kind: 'check' as const, moment: check.checkedAt,
-      key: `c-${check.id}`, check,
-    })),
-  ].sort((a, b) => a.moment.localeCompare(b.moment) || a.key.localeCompare(b.key))
+  const { events, firstObservedDifference } = buildStockVariantTimeline(movements, checks, variant.source, variant.variantId)
 
   const identity = [variant.color, variant.material && variant.material !== 'СТАНДАРТ' ? variant.material : '',
     variant.length && variant.length !== 'СТАНДАРТ' ? variant.length : '',
@@ -67,9 +46,9 @@ export function StockVariantTimeline({
       <strong className="stock-variant-identity">Вариант #{variant.variantId}</strong>
     </div>
 
-    {observedDifference ? <div className="stock-variant-first-gap" role="note">
-      <strong>Самое раннее расхождение среди загруженных проверок: {momentLabel(observedDifference.checkedAt)}</strong>
-      <p>По системе было {quantity(numeric(observedDifference.expectedQuantity))}, при проверке посчитали {quantity(numeric(observedDifference.countedQuantity))}.
+    {firstObservedDifference ? <div className="stock-variant-first-gap" role="note">
+      <strong>Самое раннее расхождение среди загруженных проверок: {momentLabel(firstObservedDifference.checkedAt)}</strong>
+      <p>По системе было {quantity(numeric(firstObservedDifference.expectedQuantity))}, при проверке посчитали {quantity(numeric(firstObservedDifference.countedQuantity))}.
         Это точка, где несовпадение <b>зафиксировано</b>, а не доказательство того, что ошибка возникла именно тогда.</p>
     </div> : <div className="stock-variant-no-gap" role="note">
       <strong>{checksUnavailable ? 'Данные проверок пока недоступны' : 'Подтверждённых расхождений среди загруженных проверок нет'}</strong>
@@ -82,7 +61,7 @@ export function StockVariantTimeline({
       {events.map(event => {
         if (event.kind === 'check') {
           const check = event.check
-          const different = isDifferent(check)
+          const different = stockCheckHasDifference(check)
           return <li key={event.key} className={different ? 'is-difference' : 'is-check'}>
             <div className="stock-variant-event-head"><time>{momentLabel(check.checkedAt)}</time><b>{different ? 'Расхождение при сверке' : 'Сверка количества'}</b></div>
             <div className="stock-variant-event-numbers">
