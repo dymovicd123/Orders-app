@@ -1842,7 +1842,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       current,
     ).then((result) => {
       if (!current() || result.status === 'cancelled') return
-      if (result.status === 'ready' && attentionCorrectionTarget?.source === inventoryDraft.source
+      if (result.status === 'ready' && attentionCorrectionTarget !== null && attentionCorrectionTarget.source === inventoryDraft.source
         && inventoryDraft.movementType === 'manual_set') {
         setAttentionCorrectionReadyToken(attentionCorrectionTarget.token)
       }
