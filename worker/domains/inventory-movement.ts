@@ -35,6 +35,7 @@ export function inventoryManualRequestFingerprint(
     quantity: item.quantity,
     expectedQuantity: item.expectedQuantity,
     observedPhysicalQuantity: item.observedPhysicalQuantity,
+    ...((item as typeof item & {createMissingVariant?:boolean}).createMissingVariant ? {createMissingVariant:true} : {}),
   })).sort((a, b) => (
     a.variantId - b.variantId
     || a.productId - b.productId
@@ -616,7 +617,10 @@ export async function applyInventoryMovement(
   const movementType = cleanText(input.movementType).toLowerCase() as InventoryMovementKind;
   const comment = cleanText(input.comment);
   const requestId = cleanText(input.requestId) || `manual-${crypto.randomUUID()}`;
-  const normalizedItems = Array.isArray(input.items) ? input.items.map(normalizeInventoryItem) : [];
+  const normalizedItems = Array.isArray(input.items) ? input.items.map(raw => ({
+    ...normalizeInventoryItem(raw),
+    createMissingVariant: (raw as InventoryItemInput & {createMissingVariant?:boolean}).createMissingVariant === true,
+  })) : [];
   const rawItems = movementType === 'manual_set'
     ? normalizedItems
     : normalizedItems.filter(item => item.quantity > 0);
@@ -672,7 +676,7 @@ export async function applyInventoryMovement(
 
   const now = new Date().toISOString();
   type ResolvedEntry = {
-    raw: ReturnType<typeof normalizeInventoryItem>;
+    raw: ReturnType<typeof normalizeInventoryItem> & {createMissingVariant?:boolean};
     item: InventoryResolvedItem;
     legacyStock?: { id: number; quantity: number; reserved_quantity?: number } | null;
   };
@@ -681,7 +685,7 @@ export async function applyInventoryMovement(
   const variantIdsJson = JSON.stringify(variantIds);
   const canonicalById = new Map<number, InventoryResolvedItem>();
   const staleArrivalById = new Map<number, { productId: number; productName: string; productActive: boolean; retirementId: number }>();
-  const arrivalMaterializationTrace: ArrivalMaterializationTrace | null = movementType === 'arrival'
+  const arrivalMaterializationTrace: ArrivalMaterializationTrace | null = movementType === 'arrival' || movementType === 'manual_set'
     ? { createdAt: '', productExternalIds: [], executionKeys: [], variantExternalIds: [] }
     : null;
   let arrivalMutationCommitted = false;
@@ -873,7 +877,14 @@ export async function applyInventoryMovement(
     }
 
     if (movementType === 'manual_set') {
-      legacyManualIndexes.push(index);
+      if ((raw as typeof raw & {createMissingVariant?:boolean}).createMissingVariant) {
+        if (raw.productId <= 0 || !raw.productName || !raw.size || raw.expectedQuantity !== 0) {
+          throw new Error('Для нового размера корректировки выберите активный товар, цвет и размер. Начальный учтённый остаток должен быть 0.');
+        }
+        creatableIndexes.push(index);
+      } else {
+        legacyManualIndexes.push(index);
+      }
       return;
     }
     if (movementType === 'writeoff' || movementType === 'delete') {
@@ -883,6 +894,28 @@ export async function applyInventoryMovement(
   });
 
   if (creatableIndexes.length) {
+    if (movementType === 'manual_set') {
+      // Correction can only add a size/color for an EXISTING active product and
+      // stock-position, exactly as a selective stocktake does. Never silently
+      // recreate retired executions or create a different product by a typo.
+      const productIds = [...new Set(creatableIndexes.map(index => items[index].productId))];
+      const lookup = await db.prepare(
+        `SELECT p.id, p.name, p.is_active, sp.material, sp.length, sp.is_active AS position_active
+         FROM catalog_products p JOIN catalog_stock_positions sp ON sp.product_id=p.id
+         WHERE p.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+      ).bind(JSON.stringify(productIds)).all<Record<string,unknown>>();
+      for (const index of creatableIndexes) {
+        const raw = items[index];
+        const matches = (lookup.results||[]).some(row =>
+          toInt(row.id,0) === raw.productId
+          && toInt(row.is_active,0) === 1
+          && toInt(row.position_active,0) === 1
+          && normalizeCatalogProductIdentityKey(row.name) === normalizeCatalogProductIdentityKey(raw.productName)
+          && canonicalStockPositionValue(row.material) === canonicalStockPositionValue(raw.material)
+          && canonicalStockPositionValue(row.length) === canonicalStockPositionValue(raw.length));
+        if (!matches) throw new Error('Корректировка: товар или исполнение больше не доступны в каталоге. Обновите таблицу; удалённые варианты нельзя восстанавливать автоматически.');
+      }
+    }
     const creatableRaw = creatableIndexes.map(index => ({ ...items[index], variantId: 0 }));
     const createdResolved = await resolveInventoryCreatableItemsBulk(db, creatableRaw, {
       allowRetiredRecreate: movementType === 'arrival',
@@ -1051,7 +1084,8 @@ export async function applyInventoryMovement(
     // Write-off of an active catalog SKU is allowed even when this location
     // has never had an inventory_stock row. Only explicit quantity confirmation
     // can record the otherwise untracked physical departure.
-    if ((movementType === 'manual_set' || movementType === 'delete') && !existingStock?.id) {
+    if ((movementType === 'manual_set' || movementType === 'delete') && !existingStock?.id
+        && !(movementType === 'manual_set' && rawItem.createMissingVariant && rawItem.expectedQuantity === 0)) {
       throw new Error(`${movementType === 'manual_set' ? 'Корректировка' : 'Списание'}: выбранной позиции больше нет на выбранной точке. Обновите остатки.`);
     }
 
@@ -1352,7 +1386,7 @@ export async function applyInventoryMovement(
 
   try {
     await db.batch(statements);
-    arrivalMutationCommitted = movementType === 'arrival';
+    arrivalMutationCommitted = movementType === 'arrival' || movementType === 'manual_set';
   } catch (error) {
     const raced = await db.prepare(
       `SELECT o.operation_id, o.operation_type, o.source_type, o.status, o.item_count, f.request_fingerprint
