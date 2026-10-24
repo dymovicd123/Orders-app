@@ -131,13 +131,20 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         <p>Выберите модель, цвет и размер. Количество показано по одной точке.</p>
                       </div>
                       <div className="stock-v14-location-tools">
-                        <div className="inventory-calm-source" aria-label="Точка остатков">
-                          {[
-                            { value: 'warehouse' as const, label: 'Склад' },
-                            { value: 'boutique' as const, label: 'Бутик' },
-                          ].map((entry) => (
-                            <button key={entry.value} type="button" className={simpleStockSource === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockSource(entry.value)}>{entry.label}</button>
-                          ))}
+                        <div className="stock-v16-source-control">
+                          <strong className="stock-v16-source-label">Остатки какой точки?</strong>
+                          <div className="inventory-calm-source stock-v16-source-switch" role="group" aria-label="Точка остатков">
+                            {[
+                              { value: 'warehouse' as const, label: 'Склад' },
+                              { value: 'boutique' as const, label: 'Бутик' },
+                            ].map((entry) => (
+                              <button key={entry.value} type="button" aria-pressed={simpleStockSource === entry.value}
+                                className={simpleStockSource === entry.value ? 'is-active' : ''}
+                                onClick={() => setSimpleStockSource(entry.value)}>
+                                {simpleStockSource === entry.value ? '✓ ' : ''}{entry.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                         <button className="secondary compact stock-v14-refresh" type="button"
                           onClick={() => setSimpleStockSource(simpleStockSource)}
