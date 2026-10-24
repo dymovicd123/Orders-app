@@ -1,6 +1,7 @@
 import type { InventoryRenderContext } from './types'
 import '../../../styles/w8-3-daily-surfaces.css'
 import '../../../styles/stock-attention-human-friendly.css'
+import '../../../styles/w16-stock-source-attention.css'
 
 type AttentionCategory = 'shortage' | 'handover' | 'intake' | 'identify'
 
@@ -25,7 +26,7 @@ type PanelContext = Pick<InventoryRenderContext,
 > & {
   openAttentionOrder: (item: { orderId?: number | null; externalId?: string; orderDate?: string }) => void
   openAttentionArrival: (item: { source: string }) => void
-  openAttentionStocktake: (item: { source: string }) => void
+  openAttentionCorrection: (item: { source: string; variantId: number; productId?: number }) => void
   openAttentionHistory: (item: { source: string; variantId: number }) => void
 }
 
@@ -58,7 +59,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     openAttentionFoundCatalog,
     openAttentionOrder,
     openAttentionArrival,
-    openAttentionStocktake,
+    openAttentionCorrection,
     openAttentionHistory,
     reconcileFoundInventoryStock,
     refreshWarehouseAttention,
@@ -132,13 +133,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             <div><strong>Не хватает товара по заказам</strong><span>В этих заказах товара по системе меньше, чем нужно.</span></div>
             <b>{Number(counts?.shortage || 0)}</b>
           </div>
-          <div className="inventory-attention-guide" role="note">
-            <strong>Начните с истории именно этого размера и цвета</strong>
-            <div className="inventory-attention-guide-steps">
-              <div><b>Посмотрите движения и сверки</b><span>Сначала откройте «История варианта». Если фактический приход был, но его забыли оформить, администратор может провести приход.</span></div>
-              <div><b>По истории причина не ясна?</b><span>Физически пересчитайте товар через «Проверить количество». Не исправляйте остаток наугад.</span></div>
-            </div>
-          </div>
+          <p className="inventory-attention-simple-guide">Сначала проверьте историю варианта и фактическое количество. Если учёт неверный — откройте корректировку нужного размера. Резервы заказов не изменяются.</p>
           {(items.shortages || []).length ? (
             <div className="inventory-attention-list">
               {items.shortages.map((item: any) => (
@@ -148,17 +143,13 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                     <span>{detailLine(item) || 'Характеристики не указаны'} · {sourceLabel(item.source)}</span>
                     <small>{item.orderId ? `Заказ ${item.externalId || item.orderId} · ${formatDateShort(item.orderDate)}` : 'Заказ не найден — проверьте историю товара'}</small>
                     <p className="inventory-attention-task-reason"><strong>По системе не хватает {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</strong> На месте {item.physical} · в резерве {item.reserved}.</p>
-                    <details className="inventory-attention-facts">
-                      <summary>Посмотреть данные учёта</summary>
-                      <span>В наличии по системе: {item.physical} шт. · Зарезервировано: {item.reserved} шт. · Не хватает: {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</span>
-                    </details>
+
                   </div>
                   <div className="inventory-attention-actions">
                     {item.orderId ? <button className="secondary compact" type="button" onClick={() => openAttentionOrder(item)}>Открыть заказ</button> : null}
                     {Number(item.variantId) > 0 ? <button className="secondary compact" type="button" onClick={() => openAttentionHistory(item)}>История варианта</button> : null}
                     {isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionArrival(item)}>Оформить приход</button> : null}
-                    {Number(item.variantId) > 0 ? <button className="secondary compact" type="button" onClick={() => openAttentionHistory(item)}>История варианта</button> : null}
-                  <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
+                    {Number(item.variantId) > 0 ? <button className="primary compact" type="button" onClick={() => openAttentionCorrection(item)}>Корректировать остаток</button> : null}
                   </div>
                 </article>
               ))}
@@ -179,7 +170,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
           </div>
           <div className="inventory-attention-guide is-shipped" role="note">
             <strong>Что проверить</strong>
-            <p>Сверьте товар и его вариант с заказом и историей поступлений. Если текущий остаток записан неверно, нажмите «Проверить количество».</p>
+            <p>Историческая нехватка при отправке не означает, что сейчас остаток неверный. Сверьте заказ и движения до принятия решения.</p>
           </div>
           {(items.shippedUntracked || []).length ? <div className="inventory-attention-list">
             {items.shippedUntracked!.map((item) => (
@@ -196,7 +187,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                 </div>
                 <div className="inventory-attention-actions">
                   {item.orderId ? <button className="secondary compact" type="button" onClick={() => openAttentionOrder(item)}>Открыть заказ</button> : null}
-                  <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
+                  {Number(item.variantId) > 0 ? <button className="secondary compact" type="button" onClick={() => openAttentionHistory(item)}>История варианта</button> : null}
                 </div>
               </article>
             ))}

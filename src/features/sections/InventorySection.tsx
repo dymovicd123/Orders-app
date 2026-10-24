@@ -381,6 +381,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [movementSourceLoading, setMovementSourceLoading] = useState(false)
   const [movementSourceLoadError, setMovementSourceLoadError] = useState('')
   const [movementSourceRefreshToken, setMovementSourceRefreshToken] = useState(0)
+  const [attentionCorrectionTarget, setAttentionCorrectionTarget] = useState<{ token: number; source: 'warehouse' | 'boutique'; variantId: number; productId: number } | null>(null)
+  const [attentionCorrectionReadyToken, setAttentionCorrectionReadyToken] = useState<number | null>(null)
   const movementSourceRequestRef = useRef(0)
 
   const catalogReviewGroups = useMemo(() => {
@@ -1832,6 +1834,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       : [inventoryDraft.source]
 
     setMovementSourceLoading(true)
+    setAttentionCorrectionReadyToken(null)
     setMovementSourceLoadError('')
     void loadOperationStockSources(
       sources,
@@ -1839,6 +1842,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       current,
     ).then((result) => {
       if (!current() || result.status === 'cancelled') return
+      if (result.status === 'ready' && attentionCorrectionTarget !== null && attentionCorrectionTarget.source === inventoryDraft.source
+        && inventoryDraft.movementType === 'manual_set') {
+        setAttentionCorrectionReadyToken(attentionCorrectionTarget.token)
+      }
       if (result.status === 'error') {
         const names = result.failedSources.map(sourceLabel).join(' и ')
         setMovementSourceLoadError(
@@ -1857,7 +1864,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       // a late background response to repaint the next operation's error state.
       if (current()) movementSourceRequestRef.current += 1
     }
-  }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken])
+  }, [activeSector, inventoryPanel, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType, movementSourceRefreshToken, attentionCorrectionTarget?.token])
 
   const operationVisibleRows = useMemo(() => {
     const rows = [...(selectedInventoryOperationGroup?.rows || [])]
@@ -2323,7 +2330,24 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openAttentionFoundCatalog: openFoundInventoryCatalog,
         openAttentionOrder: (item: any) => void openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate }),
         openAttentionArrival: (item: any) => { if (isAdmin) { setInventoryDraft((draft: any) => ({ ...draft, source: item.source, movementType: 'arrival' })); openInventoryPanel('movement') } },
-        openAttentionStocktake: (item: any) => { setStocktakeSource(item.source); openInventoryPanel('stocktake') },
+        openAttentionCorrection: (item: any) => {
+          const variantId = Number(item.variantId || 0)
+          if (!Number.isSafeInteger(variantId) || variantId <= 0) return
+          const source: 'warehouse' | 'boutique' = item.source === 'boutique' ? 'boutique' : 'warehouse'
+          // Navigating from an issue must not reuse a draft belonging to
+          // another operation or location. No physical count is inferred.
+          operationSourceDraftsRef.current = {}
+          resetInventoryOperationSelection()
+          setInventoryDraft((current: any) => ({
+            ...current, source, targetSource: source === 'warehouse' ? 'boutique' : 'warehouse',
+            movementType: 'manual_set', items: [createEmptyInventoryItem()], comment: '',
+          }))
+          setAttentionCorrectionTarget((previous) => ({
+            token: (previous?.token || 0) + 1,
+            source, variantId, productId: Number(item.productId || 0),
+          }))
+          openInventoryPanel('movement')
+        },
         openAttentionHistory: (item: any) => {
           if (!Number(item.variantId || 0)) return
           openSimpleStockHistory({
@@ -2717,6 +2741,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        attentionCorrectionTarget: attentionCorrectionReadyToken === attentionCorrectionTarget?.token ? attentionCorrectionTarget : null,
+        clearAttentionCorrectionTarget: () => setAttentionCorrectionTarget(null),
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
         inventoryMovementError,
