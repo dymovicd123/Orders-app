@@ -26,6 +26,7 @@ type PanelContext = Pick<InventoryRenderContext,
   openAttentionOrder: (item: { orderId?: number | null; externalId?: string; orderDate?: string }) => void
   openAttentionArrival: (item: { source: string }) => void
   openAttentionStocktake: (item: { source: string }) => void
+  openAttentionHistory: (item: { source: string; variantId: number }) => void
 }
 
 function detailLine(item: any) {
@@ -58,6 +59,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     openAttentionOrder,
     openAttentionArrival,
     openAttentionStocktake,
+    openAttentionHistory,
     reconcileFoundInventoryStock,
     refreshWarehouseAttention,
     setAttentionCategory,
@@ -89,7 +91,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
           <p>{isIntake
             ? 'Товар уже известен. Если вещь действительно уже у вас, можно завершить приёмку.'
             : isShortage
-              ? 'Здесь собраны случаи, когда количество товара в системе не совпало с заказами. Посмотрите, что произошло, и выберите подходящую проверку. Отправка заказов из-за этого не останавливается.'
+              ? 'Здесь отдельно показаны активные резервы с нехваткой и уже отправленные заказы с неучтённой выдачей. Это сигналы учёта, а не доказательство отсутствия вещи. Отправка автоматически не блокируется.'
               : 'Здесь только вопросы о том, какой это товар или что действительно выдали.'}</p>
         </div>
         <button className="secondary compact" type="button" onClick={refreshWarehouseAttention} disabled={attentionLoading}>{attentionLoading ? 'Обновляю…' : 'Обновить'}</button>
@@ -105,7 +107,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
         <>
           <div className="inventory-attention-summary">
             <strong>Есть товары, которые нужно проверить: {categoryCounts.shortage + clarificationTotal}</strong>
-            <span>До отправки: {Number(counts?.shortage || 0)} · После отправки: {Number(counts?.shippedUntracked || 0)} · Уточнить товар или выдачу: {clarificationTotal}. Выберите нужный раздел ниже.</span>
+            <span>Активные заказы: {Number(counts?.shortage || 0)} · Отправленные: {Number(counts?.shippedUntracked || 0)} · Определить товар/выдачу: {clarificationTotal}. Для каждого случая можно открыть историю точного варианта.</span>
           </div>
           <div className="inventory-attention-tabs" role="tablist" aria-label="Что нужно уточнить">
             {tabs.map((tab) => (
@@ -131,10 +133,10 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
             <b>{Number(counts?.shortage || 0)}</b>
           </div>
           <div className="inventory-attention-guide" role="note">
-            <strong>Как проверить эти товары</strong>
+            <strong>Начните с истории именно этого размера и цвета</strong>
             <div className="inventory-attention-guide-steps">
-              <div><b>Товар поступил, но не записан?</b><span>Оформите приход. Это действие доступно администратору.</span></div>
-              <div><b>Количество в системе неправильное?</b><span>Откройте «Проверить количество» и сверьте остаток.</span></div>
+              <div><b>Посмотрите движения и сверки</b><span>Сначала откройте «История варианта». Если фактический приход был, но его забыли оформить, администратор может провести приход.</span></div>
+              <div><b>По истории причина не ясна?</b><span>Физически пересчитайте товар через «Проверить количество». Не исправляйте остаток наугад.</span></div>
             </div>
           </div>
           {(items.shortages || []).length ? (
@@ -145,7 +147,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                     <strong>{item.productName}</strong>
                     <span>{detailLine(item) || 'Характеристики не указаны'} · {sourceLabel(item.source)}</span>
                     <small>{item.orderId ? `Заказ ${item.externalId || item.orderId} · ${formatDateShort(item.orderDate)}` : 'Заказ не найден — проверьте историю товара'}</small>
-                    <p className="inventory-attention-task-reason"><strong>Не хватает {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</strong> по данным системы</p>
+                    <p className="inventory-attention-task-reason"><strong>По системе не хватает {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</strong> На месте {item.physical} · в резерве {item.reserved}.</p>
                     <details className="inventory-attention-facts">
                       <summary>Посмотреть данные учёта</summary>
                       <span>В наличии по системе: {item.physical} шт. · Зарезервировано: {item.reserved} шт. · Не хватает: {Math.max(0, Number(item.countRelevantReserved || 0) - Number(item.physical || 0))} шт.</span>
@@ -153,8 +155,10 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                   </div>
                   <div className="inventory-attention-actions">
                     {item.orderId ? <button className="secondary compact" type="button" onClick={() => openAttentionOrder(item)}>Открыть заказ</button> : null}
+                    {Number(item.variantId) > 0 ? <button className="secondary compact" type="button" onClick={() => openAttentionHistory(item)}>История варианта</button> : null}
                     {isAdmin ? <button className="secondary compact" type="button" onClick={() => openAttentionArrival(item)}>Оформить приход</button> : null}
-                    <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
+                    {Number(item.variantId) > 0 ? <button className="secondary compact" type="button" onClick={() => openAttentionHistory(item)}>История варианта</button> : null}
+                  <button className="secondary compact" type="button" onClick={() => openAttentionStocktake(item)}>Проверить количество</button>
                   </div>
                 </article>
               ))}
@@ -184,7 +188,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                   <strong>{item.productName}</strong>
                   <span>{detailLine(item) || 'Характеристики не указаны'} · {sourceLabel(item.source)}</span>
                   <small>Заказ {item.externalId || item.orderId} · {formatDateShort(item.orderDate)} · отправлен {formatDateTime(item.occurredAt)}</small>
-                  <p className="inventory-attention-task-reason"><strong>При отправке не хватало {item.untrackedQuantity} шт.</strong> по данным системы</p>
+                  <p className="inventory-attention-task-reason"><strong>При отправке {item.untrackedQuantity} шт. не были учтены в остатке.</strong> Это исторический случай, а не новое списание.</p>
                   <details className="inventory-attention-facts">
                     <summary>Посмотреть данные отправки</summary>
                     <span>В наличии по системе до отправки: {item.trackedPhysicalBefore} шт. · Отправлено: {item.shippedQuantity} шт. · Не хватало в учёте: {item.untrackedQuantity} шт.</span>
