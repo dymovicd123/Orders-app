@@ -8,6 +8,10 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'historyBusy'
   | 'historyCheckLabel'
   | 'historyCheckRows'
+  | 'historyCheckEvidence'
+  | 'historyCheckHasMore'
+  | 'historyChecksPagingBusy'
+  | 'historyChecksPageError'
   | 'historyChecksUnavailable'
   | 'historyDisplayRows'
   | 'historyError'
@@ -22,6 +26,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'inventoryPanelStyle'
   | 'isAdmin'
   | 'loadHistoryChecks'
+  | 'loadMoreHistoryChecks'
   | 'loadHistoryMovements'
   | 'openHistoryStocktake'
   | 'openInventoryPanel'
@@ -40,6 +45,10 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     historyBusy,
     historyCheckLabel,
     historyCheckRows,
+    historyCheckEvidence,
+    historyCheckHasMore,
+    historyChecksPagingBusy,
+    historyChecksPageError,
     historyChecksUnavailable,
     historyDisplayRows,
     historyError,
@@ -54,6 +63,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     inventoryPanelStyle,
     isAdmin,
     loadHistoryChecks,
+    loadMoreHistoryChecks,
     loadHistoryMovements,
     openHistoryStocktake,
     openInventoryPanel,
@@ -96,7 +106,12 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                               variant={historyVariantFilter}
                               movements={historyRows}
                               checks={historyCheckRows}
+                              evidence={historyCheckEvidence}
                               checksUnavailable={historyChecksUnavailable}
+                              checksHasMore={historyCheckHasMore}
+                              checksPagingBusy={historyChecksPagingBusy}
+                              checksPageError={historyChecksPageError}
+                              loadMoreChecks={() => void loadMoreHistoryChecks()}
                               hasMore={historyHasMore}
                               busy={historyBusy}
                               loadMore={() => void loadHistoryMovements(false)}
