@@ -1,0 +1,136 @@
+name: W19 Main Stock and Operations Only
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/**'
+      - 'src/styles/w13-stock-catalog-browse.css'
+      - 'src/styles/w14-simple-stock-controls.css'
+      - 'src/styles/w16-stock-source-attention.css'
+      - 'scripts/test-main-w19-stock-operations.mjs'
+      - '.github/workflows/w19-main-stock-operations-only.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/w19-main-stock-operations-only.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Stock models, quantities and operation controls
+        run: |
+          node --experimental-strip-types scripts/test-main-w19-stock-operations.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Full TypeScript and Worker build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Strict W19 scope, unchanged history and issues, production-only D1
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import {execFileSync} from 'node:child_process'
+          if(process.env.GITHUB_REF_NAME!=='main')throw Error('Only main is allowed')
+          const baseline='c34998de90a1112db7cb58cfb4babc41365db000'
+          execFileSync('git',['merge-base','--is-ancestor',baseline,process.env.GITHUB_SHA])
+          const changed=execFileSync('git',['diff','--name-only',baseline,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n')
+          const allowed=new Set([
+          "src/App.tsx",
+          "src/features/sections/InventorySection.tsx",
+          "src/features/inventory/views/renderInventoryOverviewPanel.tsx",
+          "src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx",
+          "src/features/inventory/views/StockBrowseDetail.tsx",
+          "src/features/inventory/stockBrowseLayout.ts",
+          "src/features/inventory/stockOverviewSelectors.ts",
+          "src/features/inventory/loadOperationStockSources.ts",
+          "src/styles/w13-stock-catalog-browse.css",
+          "src/styles/w14-simple-stock-controls.css",
+          "src/styles/w16-stock-source-attention.css",
+          "scripts/test-main-w19-stock-operations.mjs",
+          ".github/workflows/w19-main-stock-operations-only.yml"
+          ])
+          if(!changed.length||changed.some(p=>!allowed.has(p)))throw Error('Unreviewed main path: '+changed.join(','))
+          const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
+          if(!wrangler.includes('"name": "orders-app"')
+            ||!wrangler.includes('"database_name": "orders_db_prod"')
+            ||!wrangler.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4')
+            ||wrangler.includes('orders_db_branch2'))throw Error('Wrong database or worker')
+          for(const p of [
+            'src/features/inventory/views/renderInventoryAttentionPanel.tsx',
+            'src/features/inventory/views/renderInventoryHistoryPanel.tsx',
+            'src/features/inventory/views/StockVariantTimeline.tsx',
+            'src/features/sections/OrdersHeaderSection.tsx',
+            'worker/domains/inventory-stocktake.ts',
+            'worker/domains/inventory-history.ts',
+          ])execFileSync('git',['diff','--exit-code',baseline,process.env.GITHUB_SHA,'--',p])
+          console.log('W19_ONLY_STOCK_AND_OPERATIONS_CONFIRMED')
+          NODE
+      - run: npm ci
+      - name: Quantity, reservations, correction and full build
+        run: |
+          node --experimental-strip-types scripts/test-main-w19-stock-operations.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          npm run build
+      - name: Confirm stock UI compiled
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const files=fs.readdirSync('dist/client/assets')
+          const code=files.filter(f=>f.endsWith('.js')).map(f=>fs.readFileSync('dist/client/assets/'+f,'utf8'))
+          if(!code.some(v=>v.includes('stock-v14-master-controls')&&v.includes('stock-v16-source-switch')))throw Error('New stock module absent')
+          if(!code.some(v=>v.includes('Не удалось получить полный актуальный список')))throw Error('Safe operation reload absent')
+          console.log('W19_STOCK_AND_OPERATION_BUNDLES_COMPILED')
+          NODE
+      - name: Deploy ONLY production Worker, no migrations
+        run: npx wrangler deploy
+      - name: Verify main live lazy-loaded stock module
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://orders-app.orders-clothes.workers.dev'
+          let verified=false
+          for(let i=0;i<7;i++){
+            try{
+              const res=await fetch(host+'/?w19='+Date.now(),{cache:'no-store'})
+              if(!res.ok)throw Error('Index HTTP '+res.status)
+              const html=await res.text()
+              const src=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
+              if(!src)throw Error('Entry chunk missing')
+              const entry=await (await fetch(host+src[1],{cache:'no-store'})).text()
+              const chunk=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
+              if(!chunk)throw Error('Warehouse entry missing')
+              const stock=await (await fetch(host+'/assets/'+chunk[0],{cache:'no-store'})).text()
+              if(!stock.includes('stock-v14-master-controls')||!stock.includes('Комментарий (необязательно)'))throw Error('Old warehouse still served')
+              console.log('W19_MAIN_STOCK_OPERATIONS_LIVE')
+              verified=true;break
+            }catch(e){console.warn(String(e));if(i<6)await new Promise(r=>setTimeout(r,3500))}
+          }
+          if(!verified)throw Error('Main stock update not verified')
+          NODE
