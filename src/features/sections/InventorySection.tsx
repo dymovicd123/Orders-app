@@ -2346,6 +2346,20 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         openAttentionOrder: (item: any) => void openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate }),
         openAttentionArrival: (item: any) => { if (isAdmin) { setInventoryDraft((draft: any) => ({ ...draft, source: item.source, movementType: 'arrival' })); openInventoryPanel('movement') } },
         openAttentionStocktake: (item: any) => { setStocktakeSource(item.source); openInventoryPanel('stocktake') },
+        openAttentionHistory: (item: any) => {
+          if (!Number(item.variantId || 0)) return
+          openSimpleStockHistory({
+            source: item.source === 'boutique' ? 'boutique' : 'warehouse',
+            variantId: Number(item.variantId),
+            productId: Number(item.productId || 0),
+            productName: item.productName,
+            gender: item.gender,
+            color: item.color,
+            material: item.material,
+            length: item.length,
+            size: item.size,
+          })
+        },
         reconcileFoundInventoryStock: resolveFoundInventoryStock,
         refreshWarehouseAttention,
         setAttentionCategory,
