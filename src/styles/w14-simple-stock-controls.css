@@ -43,3 +43,46 @@
   .stock-v14-page .inventory-calm-summary{gap:7px}
   .stock-v14-summary-label{display:grid;gap:2px}
 }
+
+
+/* W15: large model lists were flex-shrinking their children below text height.
+   Use intrinsic grid rows, not a compressed column of overlapping buttons. */
+.stock-v14-page .stock-v13-master-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
+  align-content: start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: min(70vh, 680px);
+  gap: 5px;
+  scrollbar-gutter: stable;
+}
+.stock-v14-page .stock-v13-master-item {
+  flex: 0 0 auto;
+  min-height: max-content;
+  align-self: start;
+  overflow: visible;
+  line-height: 1.35;
+}
+.stock-v14-page .stock-v13-master-identity strong,
+.stock-v14-page .stock-v13-master-identity small,
+.stock-v14-page .stock-v13-master-subtotals {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.stock-v14-page .stock-v13-master-quantity {min-width: 36px;}
+@media (max-width: 690px) {
+  .stock-v14-page .stock-v13-master-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 240px;
+  }
+  .stock-v14-page .stock-v13-master-item {
+    min-width: 0;
+    align-self: stretch;
+  }
+}
+@media (max-width: 400px) {
+  .stock-v14-page .stock-v13-master-list {grid-template-columns: minmax(0, 1fr);}
+}
