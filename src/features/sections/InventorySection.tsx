@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { selectStockOverviewModels } from '../inventory/stockOverviewSelectors'
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
 import type { CatalogResolutionContext, CatalogResolutionFacts, InventoryCycleCountSuggestionsResponse, InventoryReservation, InventoryStocktakeSession, InventoryStocktakeSessionSummary } from '../../../shared/api-contracts.ts'
 import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryHistoryResponse, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
@@ -1568,22 +1569,12 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     ? Number(row.warehouseAvailable ?? (Number(row.warehouseQuantity || 0) - Number(row.warehouseReserved || 0)))
     : Number(row.boutiqueAvailable ?? (Number(row.boutiqueQuantity || 0) - Number(row.boutiqueReserved || 0)))
 
-  const simpleStockGroups = useMemo(() => {
-    // The warehouse page searches model names only; global inventoryQuery
-    // belongs to Operations/Catalog and must not trim the SKU set here.
-    const query = simpleStockSearch.trim().toLocaleLowerCase('ru-RU')
-    return (inventoryStocktakeAllGroups || []).filter((product: any) => {
-      if (query && !String(product.productName || '').toLocaleLowerCase('ru-RU').includes(query)) return false
-      if (simpleStockAvailabilityFilter === 'all') return true
-      return (product.rows || []).some((row: any) =>
-        simpleStockPhysical(row) !== 0 || simpleStockReserved(row) !== 0
-      )
-    }).map((product: any) => ({
-      ...product,
-      rows: product.rows || [],
-      allRows: product.rows || [],
-    }))
-  }, [inventoryStocktakeAllGroups, simpleStockSearch, simpleStockAvailabilityFilter, simpleStockSource])
+  const simpleStockGroups = useMemo(() => selectStockOverviewModels(
+    inventoryStocktakeAllGroups || [],
+    simpleStockSearch,
+    simpleStockAvailabilityFilter,
+    (row: any) => simpleStockPhysical(row) !== 0 || simpleStockReserved(row) !== 0,
+  ), [inventoryStocktakeAllGroups, simpleStockSearch, simpleStockAvailabilityFilter, simpleStockSource])
 
   const simpleStockStats = useMemo(() => {
     // Full location totals, unaffected by model search/list filters.
