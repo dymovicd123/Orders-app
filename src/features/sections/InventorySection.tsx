@@ -178,7 +178,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     inventorySnapshotLoadErrors,
     inventoryStats,
     inventoryStocktakeAllGroups,
-    inventoryStocktakeGroups,
     printInventoryStocktakePdf,
     inventoryStatusFilter,
     isAdmin,
