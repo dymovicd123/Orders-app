@@ -1741,6 +1741,21 @@ export async function listInventoryCheckHistory(db: D1Database, url: URL) {
          AND c.expected_quantity <> c.counted_quantity
        ORDER BY c.checked_at ASC, c.id ASC LIMIT 1`
     ).bind(...exactBindings).first<Record<string, unknown>>();
+    const previousMatch = first ? await db.prepare(
+      `SELECT c.id, c.checked_at, c.expected_quantity, c.counted_quantity, c.checked_by
+       FROM inventory_stock_checks c
+       WHERE c.variant_id = ? ${exactSourceClause}
+         AND c.expected_quantity = c.counted_quantity
+         AND (c.checked_at < ? OR (c.checked_at = ? AND c.id < ?))
+       ORDER BY c.checked_at DESC, c.id DESC LIMIT 1`
+    ).bind(...exactBindings, cleanText(first.checked_at), cleanText(first.checked_at), toInt(first.id, 0)).first<Record<string, unknown>>() : null;
+    const lastMatchingBeforeDifference = previousMatch ? {
+      id: String(toInt(previousMatch.id, 0)),
+      checkedAt: cleanText(previousMatch.checked_at),
+      expectedQuantity: toInt(previousMatch.expected_quantity, 0),
+      countedQuantity: toInt(previousMatch.counted_quantity, 0),
+      checkedBy: cleanText(previousMatch.checked_by) || null,
+    } : null;
     const earliest = first ? {
       id: String(toInt(first.id, 0)),
       checkedAt: cleanText(first.checked_at),
@@ -1756,6 +1771,7 @@ export async function listInventoryCheckHistory(db: D1Database, url: URL) {
       totalChecks: Math.max(0, toInt(summary?.total_checks, 0)),
       differenceCount: Math.max(0, toInt(summary?.difference_count, 0)),
       firstConfirmedDifference: earliest,
+      lastMatchingBeforeDifference,
       rows: page.map(row => ({
         kind: 'check', id: String(toInt(row.id, 0)), source: normalizeSourceType(row.inventory_source),
         scope: null, checkedAt: cleanText(row.checked_at), checkedBy: cleanText(row.checked_by) || null,
