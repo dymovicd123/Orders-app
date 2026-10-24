@@ -941,17 +941,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
-    if (inventoryPanel === 'overview' && cycleCountData && cycleCountData.source !== simpleStockSource) {
-      setCycleCountData(null)
-      setCycleCountValues({})
-    }
-    if (inventoryPanel !== 'stocktake' || stocktakeSession || stocktakeStartMode !== 'selective') return
-    if (cycleCountLoading || cycleCountData?.source === stocktakeSource || (!cycleCountData && cycleCountNotice)) return
-    setCycleCountValues({})
-    void refreshCycleCountSuggestions(stocktakeSource)
-  }, [inventoryPanel, activeSector, simpleStockSource, stocktakeSource, stocktakeStartMode, stocktakeSession?.id, cycleCountData?.source, cycleCountLoading, cycleCountNotice])
-
-  useEffect(() => {
     if (!stocktakeSession || !currentStocktakeGroup || stocktakeFoundOtherProduct) return
     setStocktakeFoundProductId(Number(currentStocktakeGroup.productId || 0))
   }, [stocktakeSession?.id, currentStocktakeGroup?.key, stocktakeFoundOtherProduct])
