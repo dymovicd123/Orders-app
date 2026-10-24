@@ -304,7 +304,6 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                               variantId: Number(row.variantId),
                               productId: Number(row.productId || 0),
                               productName: selectedGroup.productName,
-                              category: row.category,
                               color: row.color,
                               material: row.material,
                               length: row.length,
