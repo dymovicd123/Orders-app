@@ -1710,17 +1710,53 @@ export async function listInventoryCheckHistory(db: D1Database, url: URL) {
   if (variantId > 0) {
     const exactSourceClause = source ? 'AND c.inventory_source = ?' : '';
     const exactBindings: Array<string | number> = source ? [variantId, source] : [variantId];
+    // Unlike general warehouse history, the exact SKU needs a genuine
+    // chronological investigation. Check paging and the earliest mismatch
+    // must be independent; otherwise the first 50 checks can mislead staff.
+    const beforeId = Math.max(0, toInt(url.searchParams.get('beforeId'), 0));
+    const cursorClause = beforeId ? 'AND c.id < ?' : '';
+    const cursorBindings: Array<string | number> = beforeId ? [beforeId] : [];
     const exact = await db.prepare(
       `SELECT c.id, c.inventory_source, c.check_type, c.reference_type, c.reference_id,
               c.expected_quantity, c.counted_quantity, c.difference_quantity, c.checked_by, c.checked_at
        FROM inventory_stock_checks c
-       WHERE c.variant_id = ? ${exactSourceClause}
-       ORDER BY c.checked_at DESC, c.id DESC
+       WHERE c.variant_id = ? ${exactSourceClause} ${cursorClause}
+       ORDER BY c.id DESC
        LIMIT ?`
-    ).bind(...exactBindings, limit).all<Record<string, unknown>>();
+    ).bind(...exactBindings, ...cursorBindings, limit + 1).all<Record<string, unknown>>();
+    const raw = exact.results || [];
+    const page = raw.slice(0, limit);
+    // Full-history count and earliest observed discrepancy are not paginated.
+    // A "first occurrence" is reliable only when sourced from the entire
+    // recorded history for this exact SKU and location.
+    const summary = await db.prepare(
+      `SELECT COUNT(*) AS total_checks,
+              COALESCE(SUM(CASE WHEN c.expected_quantity <> c.counted_quantity THEN 1 ELSE 0 END), 0) AS difference_count
+       FROM inventory_stock_checks c WHERE c.variant_id = ? ${exactSourceClause}`
+    ).bind(...exactBindings).first<Record<string, unknown>>();
+    const first = await db.prepare(
+      `SELECT c.id, c.checked_at, c.expected_quantity, c.counted_quantity, c.checked_by, c.reference_id
+       FROM inventory_stock_checks c
+       WHERE c.variant_id = ? ${exactSourceClause}
+         AND c.expected_quantity <> c.counted_quantity
+       ORDER BY c.checked_at ASC, c.id ASC LIMIT 1`
+    ).bind(...exactBindings).first<Record<string, unknown>>();
+    const earliest = first ? {
+      id: String(toInt(first.id, 0)),
+      checkedAt: cleanText(first.checked_at),
+      expectedQuantity: toInt(first.expected_quantity, 0),
+      countedQuantity: toInt(first.counted_quantity, 0),
+      checkedBy: cleanText(first.checked_by) || null,
+      referenceId: cleanText(first.reference_id) || null,
+    } : null;
     return {
       ok: true,
-      rows: (exact.results || []).map(row => ({
+      hasMore: raw.length > limit,
+      nextBeforeId: page.length ? toInt(page[page.length - 1].id, 0) : null,
+      totalChecks: Math.max(0, toInt(summary?.total_checks, 0)),
+      differenceCount: Math.max(0, toInt(summary?.difference_count, 0)),
+      firstConfirmedDifference: earliest,
+      rows: page.map(row => ({
         kind: 'check', id: String(toInt(row.id, 0)), source: normalizeSourceType(row.inventory_source),
         scope: null, checkedAt: cleanText(row.checked_at), checkedBy: cleanText(row.checked_by) || null,
         itemCount: 1, differenceCount: toInt(row.difference_quantity, 0) !== 0 ? 1 : 0,
