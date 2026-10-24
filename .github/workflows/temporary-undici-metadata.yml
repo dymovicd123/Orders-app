@@ -1,0 +1,19 @@
+name: Undici metadata probe
+on:
+  push:
+    branches: [fix/branch2-dompurify-3-4-17-20261024]
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read published npm package integrity
+        run: |
+          npm view undici@7.30.1 dist.integrity --json
+          npm view undici@7.30.1 dist.tarball
