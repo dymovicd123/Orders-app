@@ -1,4 +1,5 @@
 import type { InventoryRenderContext } from './types'
+import { StocktakeProductChoice, StocktakeSizeCountCell } from './StocktakeSharedInputs'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'addStocktakeNewCombination'
@@ -321,7 +322,9 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                   <div className="stocktake-selective-list stocktake-selective-list-v5">
                                     {visibleStocktakeSelectableProducts.length ? visibleStocktakeSelectableProducts.map((product: any) => {
                                       const checked = stocktakeSelectedProductIds.includes(Number(product.productId))
-                                      return <label className={`stocktake-selective-product ${checked ? 'is-selected' : ''}`} key={`stocktake-select-${product.productId}`}><input type="checkbox" checked={checked} onChange={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} /><span><strong>{product.productName}</strong><small>{product.positionCount} поз. {checked ? '· выбрано' : ''}</small></span></label>
+                                      return <StocktakeProductChoice key={`stocktake-select-${product.productId}`} checked={checked} name={product.productName}
+                                        description={`${product.positionCount} поз. ${checked ? '· выбрано' : ''}`}
+                                        onToggle={() => setStocktakeSelectedProductIds((current) => checked ? current.filter((id) => id !== Number(product.productId)) : [...current, Number(product.productId)])} />
                                     }) : <div className="stocktake-product-list-empty">По поиску ничего не найдено. Уже выбранные товары остаются в очереди выше.</div>}
                                   </div>
                                 </div>
@@ -449,12 +452,17 @@ export function renderInventoryStocktakePanel(ctx: PanelContext) {
                                                           const saving = stocktakeSavingIds.includes(Number(row.id))
                                                           const recount = row.status === 'recount_required'
                                                           return (
-                                                            <label className={`stocktake-size-cell ${raw !== '' ? 'is-filled' : ''} ${saving ? 'is-saving' : ''} ${recount ? 'needs-recount' : ''}`} key={`stocktake-item-${row.id}`}>
-                                                              <span className="stocktake-size-label">{row.size || '—'}<small className="stocktake-size-system">По системе: {Number(row.currentQuantity ?? row.baselineQuantity ?? 0)}</small></span>
-                                                              <input data-stocktake-count-input="1" data-stocktake-item-id={row.id} aria-label={`${currentStocktakeGroup.productName} ${color} ${row.size || ''}: фактическое количество`} type="number" min="0" step="1" inputMode="numeric" value={raw} onChange={(event) => setStocktakeFact(Number(row.id), event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void persistStocktakeFact(Number(row.id), raw); focusNextStocktakeCountInput(Number(row.id)) } }} onBlur={() => { if (raw !== '' || row.countedQuantity !== null && row.countedQuantity !== undefined) void persistStocktakeFact(Number(row.id), raw) }} placeholder="—" />
-                                                              {raw !== '' ? <button className="stocktake-size-clear" type="button" aria-label="Очистить значение" title="Вернуть в состояние «не посчитано»" onClick={(event) => { event.preventDefault(); setStocktakeFact(Number(row.id), '') }}>×</button> : null}
+                                                            <StocktakeSizeCountCell stocktakeField cellId={row.id} size={row.size || '—'}
+                                                              currentQuantity={Number(row.currentQuantity ?? row.baselineQuantity ?? 0)} value={raw}
+                                                              stateClass={`${saving ? 'is-saving' : ''} ${recount ? 'needs-recount' : ''}`}
+                                                              ariaLabel={`${currentStocktakeGroup.productName} ${color} ${row.size || ''}: фактическое количество`}
+                                                              onChange={(value) => setStocktakeFact(Number(row.id), value)}
+                                                              onClear={() => setStocktakeFact(Number(row.id), '')}
+                                                              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void persistStocktakeFact(Number(row.id), raw); focusNextStocktakeCountInput(Number(row.id)) } }}
+                                                              onBlur={() => { if (raw !== '' || row.countedQuantity !== null && row.countedQuantity !== undefined) void persistStocktakeFact(Number(row.id), raw) }}
+                                                            >
                                                               {recount ? <span className="stocktake-size-recount">Пересчитать</span> : null}
-                                                            </label>
+                                                            </StocktakeSizeCountCell>
                                                           )
                                                         })}
                                                         <button className={`stocktake-inline-add-trigger ${inlineSizeOpen ? 'is-active' : ''}`} type="button" disabled={stocktakeInlineAddBusy} onClick={() => inlineSizeOpen ? setStocktakeInlineAdd(null) : openStocktakeInlineSize(position, actualColor)}>+ {rows?.[0]?.category === 'child' ? 'возраст' : 'размер'}</button>

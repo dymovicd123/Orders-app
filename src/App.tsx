@@ -43,7 +43,7 @@ import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
-import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft } from './features/inventory/inventoryDraftFactories'
+import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
 import { loadCompleteInventorySnapshot } from './features/inventory/loadCompleteInventorySnapshot'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
@@ -615,6 +615,7 @@ function App() {
   const [inventoryControlSettings, setInventoryControlSettings] = useState<InventoryControlSettings | null>(null)
   const [inventoryControlBusy, setInventoryControlBusy] = useState(false)
   const [inventoryMovementBusy, setInventoryMovementBusy] = useState(false)
+  const [inventoryMovementError, setInventoryMovementError] = useState('')
   const [arrivalRecoveryPrompt, setArrivalRecoveryPrompt] = useState<ArrivalRecoveryPrompt | null>(null)
   const [arrivalRecoveryError, setArrivalRecoveryError] = useState('')
   const arrivalRecoveryContinueRef = useRef<(() => Promise<void>) | null>(null)
@@ -5113,7 +5114,7 @@ function App() {
   function setInventoryVariantOperationQuantity(row: InventoryStockRecord, quantity: number) {
     const physical = Math.max(0, Number(row.quantity || 0))
     const requested = Math.max(0, Math.trunc(Number(quantity || 0)))
-    const nextQuantity = inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff' ? requested : Math.min(physical, requested)
+    const nextQuantity = inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'arrival' ? requested : Math.min(physical, requested)
     const variantId = String(row.variantId || '')
     if (!variantId) return
     setInventoryDraft((current) => {
@@ -5227,11 +5228,18 @@ function App() {
   async function saveInventoryMovement() {
     if (inventoryMovementBusy) return
     setInventoryMovementBusy(true)
+    setInventoryMovementError('')
     setError(null)
     setMessage(null)
     try {
       const movementItems = inventoryDraft.movementType === 'arrival'
-        ? flattenInventoryArrivalPositions()
+        // Existing catalog SKUs are selected by their IDs in the same grid as
+        // correction/writeoff. Only genuinely new combinations use the legacy
+        // creation subform. Both are saved in the same atomic movement request.
+        ? [
+            ...inventoryDraft.items.filter((item) => item.variantId && Number(item.quantity || 0) > 0),
+            ...flattenInventoryArrivalPositions(),
+          ]
         : inventoryDraft.items
       const cleanItems = movementItems
         .filter((item) => (item.variantId || item.productName) && (inventoryDraft.movementType === 'manual_set' ? item.touched : Number(item.quantity || 0) > 0))
@@ -5248,6 +5256,7 @@ function App() {
           quantity: Number(item.quantity || 0),
           expectedQuantity: item.expectedQuantity,
           observedPhysicalQuantity: inventoryDraft.movementType === 'manual_set' ? item.observedPhysicalQuantity : undefined,
+          ...(inventoryDraft.movementType === 'manual_set' && item.createMissingVariant ? {createMissingVariant:true} : {}),
         }))
 
       if (!cleanItems.length) {
@@ -5265,8 +5274,9 @@ function App() {
       if (inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'transfer' || inventoryDraft.movementType === 'manual_set') {
         const same = (left: unknown, right: unknown) => normalizeSearchText(left) === normalizeSearchText(right)
         const invalidItem = cleanItems.find((item) => {
-          // Старые orphan-строки без variantId разрешены только для manual_set:
-          // Worker всё равно требует уже существующую строку inventory_stock и ничего нового не создаёт.
+          // Explicit +size/+color corrections are resolved by the server from
+          // a validated active catalog product+execution, with no manual SKU matching.
+          if (inventoryDraft.movementType === 'manual_set' && !item.variantId && item.createMissingVariant) return false
           if (inventoryDraft.movementType === 'manual_set' && !item.variantId) return false
           const row = inventoryOperationSourceRows.find((entry) => String(entry.variantId || '') === String(item.variantId || ''))
           return !row
@@ -5339,7 +5349,7 @@ function App() {
               loadInventoryData('warehouse', true, '', false),
               loadInventoryData('boutique', true, '', false),
             ]
-          : inventoryDraft.movementType === 'arrival'
+          : inventoryDraft.movementType === 'arrival' || (inventoryDraft.movementType === 'manual_set' && cleanItems.some(item=>item.createMissingVariant))
             ? [
                 loadInventoryData(inventoryDraft.source, true, '', false),
                 loadCatalogData(true),
@@ -5369,6 +5379,7 @@ function App() {
           ? ' Внимание: операция записана, но отображение актуального остатка не подтверждено. Не оформляйте приход повторно — проверьте историю операции и нажмите «Обновить».'
           : ''
         const transferShortage = isTransfer ? (result.warnings || []).reduce((sum, row) => sum + Math.max(0, Number(row.shortageAfter || 0)), 0) : 0
+        setInventoryMovementError('')
         setMessage(isTransfer
           ? `Перемещение ${sourceLabel(inventoryDraft.source)} → ${sourceLabel(inventoryDraft.targetSource)} сохранено${result.externalId ? ` · ${result.externalId}` : ''}.${transferShortage > 0 ? ` В исходной точке после перемещения не хватает ${transferShortage} шт. для активных заказов — резервы сохранены.` : ''}`
           : inventoryDraft.movementType === 'arrival'
@@ -5455,7 +5466,10 @@ function App() {
 
       await finishMovement(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      // Keep the original draft and review visible so users can inspect the same
+      // variants instead of starting over. A failed response is not proof that
+      // no movement committed; do not generate a fresh request ID here.
+      setInventoryMovementError(err instanceof Error ? err.message : 'Не удалось сохранить складскую операцию. Проверьте историю.')
     } finally {
       setInventoryMovementBusy(false)
     }
@@ -8807,7 +8821,48 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
+        <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
+          const draftKey=inventoryUiId('correction')
+          setInventoryDraft(current=>{
+            // Two fast clicks on +размер/+цвет must never add the same SKU twice:
+            // manual_set is an absolute count, not two separate arrivals.
+            const same = (a: unknown, b: unknown) => normalizeSearchText(a) === normalizeSearchText(b)
+            const alreadyInDraft = current.items.some(item =>
+              item.createMissingVariant
+              && String(item.productId) === String(seed.productId)
+              && item.category === seed.category
+              && same(item.gender,seed.gender)
+              && same(item.material,seed.material)
+              && same(item.length,seed.length)
+              && same(item.color,seed.color)
+              && same(item.size,seed.size))
+            if(alreadyInDraft)return current
+            return {
+              ...current,
+              items:[
+                ...current.items.filter(item=>item.variantId||item.productName),
+                {productId:String(seed.productId),variantId:'',draftKey,createMissingVariant:true,
+                 productName:seed.productName,category:seed.category,gender:seed.gender,
+                 material:seed.material,length:seed.length,color:seed.color,size:seed.size,
+                 quantity:seed.quantity,expectedQuantity:0,touched:true}
+              ],
+            }
+          })
+        }, inventoryMovementError, clearInventoryMovementError: () => setInventoryMovementError(''), onInlineArrivalVariant: (seed: { productId: number | string; productName: string; category: 'adult' | 'child'; gender: string; material: string; length: string; color: string; size: string; quantity: number }) => {
+          setInventoryArrivalPositions((current) => [
+            ...current.filter(position => Boolean(position.productName) ||
+              position.sizes.some(line => Boolean(line.color || line.size))),
+            createEmptyArrivalPosition({
+              productId: String(seed.productId || ''),
+              productName: seed.productName,
+              category: seed.category,
+              gender: seed.gender,
+              material: seed.material,
+              length: seed.length,
+              sizes: [{ id: inventoryUiId('size'), color: seed.color, size: seed.size, quantity: seed.quantity }],
+            }),
+          ])
+        }, activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
         </DeferredSection>
 
         <section className="grid" style={sectorStyle('overview')}>

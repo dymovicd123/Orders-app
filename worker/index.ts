@@ -20,6 +20,7 @@ import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domai
 import { listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
+import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
@@ -1092,7 +1093,15 @@ export default {
               variantId: error.variantId || null,
             }, { status: error.status });
           }
-          throw error;
+          const safe = warehouseOperationFeedback(error,
+            movementType === 'manual_set' ? 'manual_set' : movementType === 'writeoff' ? 'writeoff' : 'arrival',
+            input.requestId);
+          console.error(JSON.stringify({
+            event:'warehouse_movement_failed', operation:movementType,
+            requestId:cleanText(input.requestId), code:safe.code,
+            detail:cleanText(error instanceof Error ? error.message : error).slice(0,900),
+          }));
+          return json({ok:false,code:safe.code,message:safe.message,...(safe.reference ? {reference:safe.reference} : {})},{status:safe.status});
         }
         if ('code' in result && result.code === 'stock_resolution_required') {
           return json(result, { status: 409 });
@@ -1116,7 +1125,18 @@ export default {
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
-        const result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);
+        let result;
+        try {
+          result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);
+        } catch(error) {
+          const safe = warehouseOperationFeedback(error,'transfer',input.requestId);
+          console.error(JSON.stringify({
+            event:'warehouse_transfer_failed',
+            requestId:cleanText(input.requestId), code:safe.code,
+            detail:cleanText(error instanceof Error ? error.message : error).slice(0,900),
+          }));
+          return json({ok:false,code:safe.code,message:safe.message,...(safe.reference ? {reference:safe.reference} : {})},{status:safe.status});
+        }
         if ('code' in result && result.code === 'stock_resolution_required') {
           return json(result, { status: 409 });
         }

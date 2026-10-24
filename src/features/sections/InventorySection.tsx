@@ -91,6 +91,10 @@ type SectionContext = Record<string, any> & {
 
 export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const {
+    onInlineArrivalVariant,
+    onInlineCorrectionVariant,
+    inventoryMovementError,
+    clearInventoryMovementError,
     activeSector,
     applyPendingInventoryWriteoffs,
     buildInventoryMatrix,
@@ -716,9 +720,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   useEffect(() => {
-    if (inventoryPanel !== 'stocktake') return
+    if (activeSector !== 'inventory' || (inventoryPanel !== 'stocktake' && inventoryPanel !== 'movement')) return
+    // The operation form must know before submission if the source/destination
+    // is currently under a stocktake. No inventory writes are triggered.
     void refreshActiveStocktakes()
-  }, [inventoryPanel])
+  }, [activeSector, inventoryPanel])
 
   useEffect(() => {
     if (activeSector !== 'inventory') return
@@ -1794,7 +1800,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
-    if (activeSector !== 'inventory' || inventoryPanel !== 'movement' || inventoryDraft.movementType === 'arrival') return
+    if (activeSector !== 'inventory' || inventoryPanel !== 'movement') return
 
     const requestId = ++movementSourceRequestRef.current
     const sources = inventoryDraft.movementType === 'transfer'
@@ -1888,23 +1894,40 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         size: row.size || '',
         quantity: parsed,
         touched: true,
+        // An active catalog size without a local stock row is a new 0-baseline
+        // physical variant for this location, not a missing/invalid SKU.
+        createMissingVariant: Number(row.id || 0) === 0,
         expectedQuantity: Number(row.quantity || 0),
       }
       return { ...current, items: [...rest, nextItem] }
     })
   }
 
+  // Separate unsaved movement drafts by operation and physical location. Switching
+  // Warehouse/Boutique must not turn into a destructive reset of entered counts.
+  // This cache is UI-only; nothing is posted until the employee confirms.
+  const operationSourceDraftsRef = useRef<Record<string, { items: any[]; comment: string }>>({})
+  const operationDraftKey = (mode: string, source: string) => mode + ':' + source
+
   const changeInventoryOperationSource = (nextSource: 'warehouse' | 'boutique') => {
-    resetInventoryOperationSelection()
-    setInventoryDraft((current: any) => ({
-      ...current,
-      source: nextSource,
-      targetSource: current.targetSource === nextSource ? (nextSource === 'warehouse' ? 'boutique' : 'warehouse') : current.targetSource,
-      items: [createEmptyInventoryItem()],
-    }))
+    setInventoryDraft((current: any) => {
+      if (current.source === nextSource) return current
+      operationSourceDraftsRef.current[operationDraftKey(current.movementType, current.source)] = {
+        items: current.items, comment: current.comment,
+      }
+      const prior = operationSourceDraftsRef.current[operationDraftKey(current.movementType, nextSource)]
+      return {
+        ...current,
+        source: nextSource,
+        targetSource: current.targetSource === nextSource ? (nextSource === 'warehouse' ? 'boutique' : 'warehouse') : current.targetSource,
+        items: prior?.items || [createEmptyInventoryItem()],
+        comment: prior?.comment || '',
+      }
+    })
   }
 
   const swapInventoryTransferDirection = () => {
+    operationSourceDraftsRef.current = {}
     resetInventoryOperationSelection()
     setInventoryDraft((current: any) => ({
       ...current,
@@ -1915,6 +1938,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   }
 
   const selectInventoryOperationMode = (mode: any) => {
+    // Different operations cannot inherit unsaved numerical intent from one another.
+    operationSourceDraftsRef.current = {}
     resetInventoryOperationSelection()
     setInventoryDraft((current: any) => ({
       ...current,
@@ -2634,6 +2659,13 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       })}
     
               {renderInventoryMovementPanel({
+        onInlineArrivalVariant,
+        onInlineCorrectionVariant,
+        inventoryMovementError,
+        clearInventoryMovementError,
+        stocktakeActiveSources: stocktakeActiveSessions.map(session=>session.source),
+        openStocktakeForOperation: (source: 'warehouse'|'boutique') => {setStocktakeSource(source);openInventoryPanel('stocktake')},
+        refreshActiveStocktakes,
         arrivalWorkspace,
         FriendlyNumberInput,
         SmartPickerInput,

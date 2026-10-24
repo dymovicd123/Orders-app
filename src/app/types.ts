@@ -1731,6 +1731,9 @@ export type InventoryDraftItem = {
   length: string
   size: string
   quantity: number
+  // New +size / +color correction draft, validated atomically by Worker.
+  draftKey?: string
+  createMissingVariant?: boolean
   touched?: boolean
   expectedQuantity?: number
   observedPhysicalQuantity?: number | null
