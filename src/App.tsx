@@ -2380,10 +2380,11 @@ function App() {
     return data
   }
 
-  async function loadInventoryCheckHistory(input: { source?: string; variantId?: number; limit?: number } = {}) {
+  async function loadInventoryCheckHistory(input: { source?: string; variantId?: number; limit?: number; beforeId?: number } = {}) {
     const params = new URLSearchParams({ limit: String(input.limit || 30) })
     if (input.source) params.set('source', input.source)
     if (input.variantId) params.set('variantId', String(input.variantId))
+    if (input.beforeId) params.set('beforeId', String(input.beforeId))
     const response = await apiFetch(`/api/inventory/check-history?${params.toString()}`)
     const data = await readJsonResponse<InventoryCheckHistoryResponse>(response, 'Ревизии и сверки')
     if (!response.ok) throw new Error('Не удалось загрузить ревизии и сверки.')

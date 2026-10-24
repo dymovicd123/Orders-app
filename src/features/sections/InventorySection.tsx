@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { selectStockOverviewModels } from '../inventory/stockOverviewSelectors'
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
 import type { CatalogResolutionContext, CatalogResolutionFacts, InventoryCycleCountSuggestionsResponse, InventoryReservation, InventoryStocktakeSession, InventoryStocktakeSessionSummary } from '../../../shared/api-contracts.ts'
-import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryHistoryResponse, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
+import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
 import { renderInventoryHealthPanel } from '../inventory/views/renderInventoryHealthPanel'
 import { renderInventoryExactPanel } from '../inventory/views/renderInventoryExactPanel'
 import { renderInventorySourceToolbar } from '../inventory/views/renderInventorySourceToolbar'
@@ -291,6 +291,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyMode, setHistoryMode] = useState<'movements' | 'checks'>('movements')
   const [historyRows, setHistoryRows] = useState<InventoryHistoryResponse['movements']>([])
   const [historyCheckRows, setHistoryCheckRows] = useState<InventoryCheckHistoryRow[]>([])
+  const [historyCheckEvidence, setHistoryCheckEvidence] = useState<InventoryCheckHistoryResponse | null>(null)
+  const [historyCheckHasMore, setHistoryCheckHasMore] = useState(false)
+  const [historyCheckNextBeforeId, setHistoryCheckNextBeforeId] = useState<number | null>(null)
+  const [historyChecksPagingBusy, setHistoryChecksPagingBusy] = useState(false)
+  const [historyChecksPageError, setHistoryChecksPageError] = useState('')
   const [historyChecksUnavailable, setHistoryChecksUnavailable] = useState(false)
   const [historyBusy, setHistoryBusy] = useState(false)
   const [historyError, setHistoryError] = useState('')
@@ -1675,6 +1680,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       // Never render a previous SKU's cached events under a newly selected variant.
       setHistoryRows([])
       setHistoryCheckRows([])
+      setHistoryCheckEvidence(null)
+      setHistoryCheckHasMore(false)
+      setHistoryCheckNextBeforeId(null)
+      setHistoryChecksPageError('')
       setHistoryHasMore(false)
       setHistoryNextBeforeId(null)
       setHistoryChecksUnavailable(false)
@@ -1703,10 +1712,15 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
           })
           if (requestId !== historyRequestRef.current) return
           setHistoryCheckRows(Array.isArray(checks?.rows) ? checks.rows : [])
+          setHistoryCheckEvidence(checks)
+          setHistoryCheckHasMore(Boolean(checks?.hasMore))
+          setHistoryCheckNextBeforeId(Number(checks?.nextBeforeId || 0) || null)
           setHistoryChecksUnavailable(false)
         } catch {
           if (requestId !== historyRequestRef.current) return
           setHistoryCheckRows([])
+          setHistoryCheckEvidence(null)
+          setHistoryCheckHasMore(false)
           setHistoryChecksUnavailable(true)
         }
       }
@@ -1715,6 +1729,34 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю склада.')
     } finally {
       if (requestId === historyRequestRef.current) setHistoryBusy(false)
+    }
+  }
+
+  async function loadMoreHistoryChecks() {
+    if (!historyVariantFilter?.variantId || !historyCheckHasMore || !historyCheckNextBeforeId
+      || historyChecksPagingBusy) return
+    const requestId = historyRequestRef.current
+    const source = historyVariantFilter.source
+    const variantId = historyVariantFilter.variantId
+    setHistoryChecksPagingBusy(true)
+    setHistoryChecksPageError('')
+    try {
+      const older = await loadInventoryCheckHistory({
+        source, variantId, beforeId: historyCheckNextBeforeId, limit: 50,
+      })
+      if (requestId !== historyRequestRef.current) return
+      const rows: InventoryCheckHistoryRow[] = Array.isArray(older?.rows) ? older.rows : []
+      setHistoryCheckRows(current => {
+        const existing = new Set(current.map(row => row.id))
+        return [...current, ...rows.filter(row => !existing.has(row.id))]
+      })
+      setHistoryCheckHasMore(Boolean(older?.hasMore))
+      setHistoryCheckNextBeforeId(Number(older?.nextBeforeId || 0) || null)
+    } catch (err) {
+      if (requestId !== historyRequestRef.current) return
+      setHistoryChecksPageError(err instanceof Error ? err.message : 'Не удалось загрузить ранние сверки.')
+    } finally {
+      if (requestId === historyRequestRef.current) setHistoryChecksPagingBusy(false)
     }
   }
 
@@ -2800,6 +2842,10 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyBusy,
         historyCheckLabel,
         historyCheckRows,
+        historyCheckEvidence,
+        historyCheckHasMore,
+        historyChecksPagingBusy,
+        historyChecksPageError,
         historyChecksUnavailable,
         historyDisplayRows,
         historyError,
@@ -2814,6 +2860,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         inventoryPanelStyle,
         isAdmin,
         loadHistoryChecks,
+        loadMoreHistoryChecks,
         loadHistoryMovements,
         openHistoryStocktake,
         openInventoryPanel,
