@@ -5271,10 +5271,6 @@ function App() {
         throw new Error('Выберите хотя бы один товар/вариант.')
       }
 
-      if ((inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'manual_set') && !inventoryDraft.comment.trim()) {
-        throw new Error(inventoryDraft.movementType === 'writeoff' ? 'Укажите причину списания.' : 'Укажите причину корректировки.')
-      }
-
       if ((inventoryDraft.movementType === 'writeoff' || inventoryDraft.movementType === 'transfer') && cleanItems.some((item) => !item.variantId)) {
         throw new Error('Для списания и перемещения выберите существующий вариант из остатков выбранной точки.')
       }
