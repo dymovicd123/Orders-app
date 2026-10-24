@@ -70,6 +70,9 @@ type InventoryHistoryFilter = {
   productName?: string
   color?: string
   size?: string
+  material?: string
+  length?: string
+  gender?: string
 }
 
 type ResolutionFactsState = CatalogResolutionFacts & { productId: number; genderScope: '' | 'female' | 'male' | 'unisex' }
@@ -287,6 +290,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyMode, setHistoryMode] = useState<'movements' | 'checks'>('movements')
   const [historyRows, setHistoryRows] = useState<InventoryHistoryResponse['movements']>([])
   const [historyCheckRows, setHistoryCheckRows] = useState<InventoryCheckHistoryRow[]>([])
+  const [historyChecksUnavailable, setHistoryChecksUnavailable] = useState(false)
   const [historyBusy, setHistoryBusy] = useState(false)
   const [historyError, setHistoryError] = useState('')
   const [historyHasMore, setHistoryHasMore] = useState(false)
@@ -1699,11 +1703,19 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     const requestId = ++historyRequestRef.current
     setHistoryBusy(true)
     setHistoryError('')
+    if (reset) {
+      // Never render a previous SKU's cached events under a newly selected variant.
+      setHistoryRows([])
+      setHistoryCheckRows([])
+      setHistoryHasMore(false)
+      setHistoryNextBeforeId(null)
+      setHistoryChecksUnavailable(false)
+    }
     try {
       const data = await loadInventoryHistory({
         source: historyVariantFilter?.source || '',
         variantId: Number(historyVariantFilter?.variantId || 0),
-        q: historyQuery,
+        q: historyVariantFilter?.variantId ? '' : historyQuery,
         beforeId: reset ? 0 : Number(historyNextBeforeId || 0),
         limit: 50,
       })
@@ -1712,6 +1724,24 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setHistoryRows((current) => reset ? rows : [...current, ...rows])
       setHistoryHasMore(Boolean(data?.hasMore))
       setHistoryNextBeforeId(Number(data?.nextBeforeId || 0) || null)
+      if (reset && Number(historyVariantFilter?.variantId || 0) > 0) {
+        // Physical checks are stored separately from movements. Load exact
+        // source+variant facts alongside the focused timeline, read-only.
+        try {
+          const checks = await loadInventoryCheckHistory({
+            source: historyVariantFilter?.source || '',
+            variantId: Number(historyVariantFilter?.variantId || 0),
+            limit: 50,
+          })
+          if (requestId !== historyRequestRef.current) return
+          setHistoryCheckRows(Array.isArray(checks?.rows) ? checks.rows : [])
+          setHistoryChecksUnavailable(false)
+        } catch {
+          if (requestId !== historyRequestRef.current) return
+          setHistoryCheckRows([])
+          setHistoryChecksUnavailable(true)
+        }
+      }
     } catch (err) {
       if (requestId !== historyRequestRef.current) return
       setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю склада.')
@@ -2751,6 +2781,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyBusy,
         historyCheckLabel,
         historyCheckRows,
+        historyChecksUnavailable,
         historyDisplayRows,
         historyError,
         historyHasMore,
