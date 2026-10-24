@@ -212,6 +212,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                           <button key={entry.value} type="button" className={simpleStockSource === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockSource(entry.value)}>{entry.label}</button>
                         ))}
                       </div>
+                      <button className="secondary compact inventory-stock-refresh-selected" type="button" onClick={() => setSimpleStockSource(simpleStockSource)} aria-label={`Обновить остатки точки ${sourceLabel(simpleStockSource)}`}>Обновить остатки ↻</button>
                     </div>
     
                     <div className="inventory-stock-summary-context"><strong>{sourceLabel(simpleStockSource)}</strong><span>{summaryScopeLabel}</span></div>
