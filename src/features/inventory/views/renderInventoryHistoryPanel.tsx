@@ -1,11 +1,14 @@
 import type { InventoryRenderContext } from './types'
 import '../../../styles/w8-3-daily-surfaces.css'
+import '../../../styles/w12-stock-variant-timeline.css'
+import { StockVariantTimeline } from './StockVariantTimeline'
 
 type PanelContext = Pick<InventoryRenderContext,
   | 'formatHistoryMoment'
   | 'historyBusy'
   | 'historyCheckLabel'
   | 'historyCheckRows'
+  | 'historyChecksUnavailable'
   | 'historyDisplayRows'
   | 'historyError'
   | 'historyHasMore'
@@ -37,6 +40,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     historyBusy,
     historyCheckLabel,
     historyCheckRows,
+    historyChecksUnavailable,
     historyDisplayRows,
     historyError,
     historyHasMore,
@@ -61,7 +65,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     sourceLabel
   } = ctx
   const historyVariantIdentity = historyVariantFilter
-    ? [historyVariantFilter.productName, historyVariantFilter.color, historyVariantFilter.size].filter(Boolean).join(' · ')
+    ? [historyVariantFilter.productName, historyVariantFilter.color, historyVariantFilter.material, historyVariantFilter.length, historyVariantFilter.size].filter(Boolean).join(' · ')
     : ''
 
   return (
@@ -69,7 +73,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                     <div className="inventory-panel-headline">
                       <div>
                         <h3>История склада</h3>
-                        <p>Движения товара и физические проверки разделены. Для конкретной позиции показывается вся сохранённая история, а не только последние операции.</p>
+                        <p>Выберите вариант в «Остатках», чтобы увидеть его движение и сверки в одной понятной хронологии. Здесь нет изменений количества.</p>
                       </div>
                       <div className="inventory-history-actions">
                         {historyVariantFilter ? <button className="human-history-filter inventory-history-focus" type="button" onClick={() => setHistoryVariantFilter(null)}><span>Позиция</span><strong>{historyVariantIdentity || 'Выбрана'}</strong><em>Сбросить ×</em></button> : null}
@@ -78,13 +82,28 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                       </div>
                     </div>
     
-                    <div className="history-mode-switch" role="tablist" aria-label="Вид истории склада">
+                    {!historyVariantFilter ? <div className="history-mode-switch" role="tablist" aria-label="Вид истории склада">
                       <button type="button" className={`secondary compact ${historyMode === 'movements' ? 'is-active' : ''}`} onClick={() => setHistoryMode('movements')}>Движения</button>
                       <button type="button" className={`secondary compact ${historyMode === 'checks' ? 'is-active' : ''}`} onClick={() => setHistoryMode('checks')}>Ревизии и сверки</button>
-                    </div>
+                    </div> : null}
     
                     {historyMode === 'movements' ? (
                       <>
+                        {historyVariantFilter ? (
+                          historyError ? <div className="history-load-state is-error"><strong>Не удалось загрузить историю варианта.</strong><span>{historyError}</span><button className="secondary compact" type="button" onClick={() => void loadHistoryMovements(true)}>Повторить</button></div>
+                          : historyBusy && !historyRows.length ? <div className="history-load-state"><strong>Загружаю историю конкретного варианта…</strong></div>
+                          : <StockVariantTimeline
+                              variant={historyVariantFilter}
+                              movements={historyRows}
+                              checks={historyCheckRows}
+                              checksUnavailable={historyChecksUnavailable}
+                              hasMore={historyHasMore}
+                              busy={historyBusy}
+                              loadMore={() => void loadHistoryMovements(false)}
+                              momentLabel={formatHistoryMoment}
+                              movementLabel={inventoryMovementHumanLabel}
+                            />
+                        ) : (<>
                         <div className="history-filter-bar inventory-history-filter-bar">
                           <label className="history-search-field"><span>Поиск</span><input value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Товар, характеристика, комментарий, TR-…" /></label>
                           <button className="primary compact history-filter-submit" type="button" disabled={historyBusy} onClick={() => void loadHistoryMovements(true)}>Найти</button>
@@ -144,6 +163,8 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                           ))}
                           {historyHasMore ? <button className="secondary history-load-more" type="button" disabled={historyBusy} onClick={() => void loadHistoryMovements(false)}>{historyBusy ? 'Загружаю…' : 'Показать ещё'}</button> : null}
                         </div> : <div className="history-load-state"><strong>Движений по выбранным условиям нет.</strong><span>Это нормальный пустой результат, а не потерянная история.</span></div>}
+
+                        </>)}
                       </>
                     ) : (
                       historyError ? <div className="history-load-state is-error"><strong>Не удалось загрузить ревизии и сверки.</strong><span>{historyError}</span><button className="secondary compact" type="button" onClick={() => void loadHistoryChecks()}>Повторить</button></div>
