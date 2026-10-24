@@ -2736,6 +2736,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     
               {renderInventoryMovementPanel({
         attentionCorrectionTarget,
+        clearAttentionCorrectionTarget: () => setAttentionCorrectionTarget(null),
         onInlineArrivalVariant,
         onInlineCorrectionVariant,
         inventoryMovementError,
