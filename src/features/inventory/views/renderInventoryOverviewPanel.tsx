@@ -7,6 +7,11 @@ import { StockBrowseDetail } from './StockBrowseDetail'
 import { stockRowHasBalance } from '../stockBrowseLayout'
 
 type PanelContext = Pick<InventoryRenderContext,
+  | 'SmartPickerInput'
+  | 'inventoryPickerOptions'
+  | 'inventoryQuery'
+  | 'setInventoryQuery'
+  | 'productCategoryLabel'
   | 'applyQuickStocktake'
   | 'cycleCountBusy'
   | 'cycleCountData'
@@ -108,6 +113,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
   const {
     applyQuickStocktake,
     formatMoney,
+    productCategoryLabel,
     inventoryPanelStyle,
     openOrderFromFinance,
     openSimpleStockHistory,
