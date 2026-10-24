@@ -76,25 +76,25 @@ jobs:
           while IFS= read -r file;do
             [[ -z "$file" ]] && continue
             case "$file" in
-              src/App.tsx|\\
+              src/App.tsx|\
               src/app/types.ts|\
-              src/app/controllers/useOperationalViewModel.ts|\\
-              src/features/sections/InventorySection.tsx|\\
-              src/features/inventory/unifiedOperationMath.ts|\\
-              src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\\
-              src/features/inventory/views/StocktakeSharedInputs.tsx|\\
-              src/features/inventory/views/renderInventoryMovementPanel.tsx|\\
-              src/features/inventory/views/renderInventoryStocktakePanel.tsx|\\
-              src/styles/193-unified-inventory-operations.css|\\
-              src/styles/188e4-stocktake-usability.css|\\
-              worker/domains/inventory-movement.ts|\\
-              worker/domains/warehouse-operation-feedback.ts|\\
-              worker/index.ts|\\
-              scripts/test-w6-unified-operations.mjs|\\
-              scripts/test-w8-warehouse-operation-integrity.mjs|\\
-              scripts/test-w9-correction-inline-variants.mjs|\\
-              scripts/test-w10-stock-label-legibility.mjs|\\
-              scripts/test-w11-manual-correction-runtime.mjs|\\
+              src/app/controllers/useOperationalViewModel.ts|\
+              src/features/sections/InventorySection.tsx|\
+              src/features/inventory/unifiedOperationMath.ts|\
+              src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\
+              src/features/inventory/views/StocktakeSharedInputs.tsx|\
+              src/features/inventory/views/renderInventoryMovementPanel.tsx|\
+              src/features/inventory/views/renderInventoryStocktakePanel.tsx|\
+              src/styles/193-unified-inventory-operations.css|\
+              src/styles/188e4-stocktake-usability.css|\
+              worker/domains/inventory-movement.ts|\
+              worker/domains/warehouse-operation-feedback.ts|\
+              worker/index.ts|\
+              scripts/test-w6-unified-operations.mjs|\
+              scripts/test-w8-warehouse-operation-integrity.mjs|\
+              scripts/test-w9-correction-inline-variants.mjs|\
+              scripts/test-w10-stock-label-legibility.mjs|\
+              scripts/test-w11-manual-correction-runtime.mjs|\
               .github/workflows/main-w12-operations-only-20261024.yml) ;;
               *) echo "Unreviewed main change: $file"; exit 11 ;;
             esac
