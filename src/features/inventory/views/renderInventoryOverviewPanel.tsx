@@ -173,7 +173,7 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                         </div>
                         <div className="stock-v14-master-controls">
                           <div className="stock-v14-model-search">
-                            <input type="search" value={simpleStockSearch} placeholder="Найти модель…"
+                            <input type="text" value={simpleStockSearch} placeholder="Найти модель…"
                               aria-label="Поиск модели по названию"
                               onChange={(event) => setSimpleStockSearch(event.target.value)} />
                             {simpleStockSearch ? <button type="button" onClick={() => setSimpleStockSearch('')} aria-label="Очистить поиск">×</button> : null}

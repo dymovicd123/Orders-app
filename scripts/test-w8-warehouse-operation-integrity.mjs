@@ -55,6 +55,7 @@ assert.ok(view.includes("const limit=mode==='transfer'?60:100"),'Respect transfe
 assert.ok(view.includes('if(changed>limit)'), 'Count existing and new SKU lines')
 assert.ok(view.includes("(mode === 'arrival' || mode==='manual_set')"),'Correction can now add a new size using shared picker')
 assert.ok(!view.includes("{mode !== 'writeoff' && mode !== 'transfer' &&"),'Dead correction + size removed')
-assert.ok(view.includes("mode==='transfer'?'Комментарий к перемещению (необязательно)'"),'Correct transfer comment label')
+assert.equal((view.match(/Комментарий \(необязательно\)/g)||[]).length,2,'Every operation and review accepts empty comment')
+assert.ok(!view.includes('Укажите причину операции.'),'No forced stock note')
 assert.ok(stylesheet.includes('w8-operation-save-error'),'Scoped error styling')
 console.log('W8_WAREHOUSE_ERRORS_AND_LIMITS_PASSED')
