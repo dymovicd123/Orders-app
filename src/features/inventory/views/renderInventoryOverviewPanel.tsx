@@ -58,7 +58,6 @@ type PanelContext = Pick<InventoryRenderContext,
   simpleStockCatalogError?: string
 }
 
-const w8Text = (value: unknown) => String(value || '').trim()
 const w8Plural = (value: number, one: string, few: string, many: string) => {
   const absolute = Math.abs(value)
   const lastTwo = absolute % 100
@@ -160,8 +159,6 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
   })
 
   const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
-  const visibleVariantCount = simpleStockGroups.reduce((sum: number, group: any) =>
-    sum + Number((group.rows || []).length), 0)
   const selectedGroup = simpleStockGroups.find((group: any) => group.key === simpleStockOpenProductKey) || simpleStockGroups[0] || null
   const stockSourceName = sourceLabel(simpleStockSource)
   const availabilityScopeLabel = simpleStockAvailabilityFilter === 'free'
