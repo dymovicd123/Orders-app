@@ -12,7 +12,7 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'createEmptyInventoryItem' | 'resetInventoryArrivalForm'
   | 'resetInventoryOperationSelection' | 'setMovementSourceRefreshToken'
   | 'suggestionValues'
-> & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
+> & { attentionCorrectionTarget?: { token:number; source:'warehouse'|'boutique'; productId:number; variantId:number } | null } & Record<string,unknown> & { stocktakeActiveSources:string[]; openStocktakeForOperation:(source:'warehouse'|'boutique')=>void; refreshActiveStocktakes:()=>Promise<void>; clearInventoryMovementError: () => void; onInlineArrivalVariant: (seed: {
   productId: number | string; productName: string; category: 'adult' | 'child';
   gender: string; material: string; length: string; color: string; size: string; quantity: number;
 }) => void; onInlineCorrectionVariant: (seed: {
@@ -27,6 +27,7 @@ export function renderInventoryMovementPanel(ctx: PanelContext) {
   return <div className="inventory-movement-panel" style={ctx.inventoryPanelStyle('movement')}>
     <InventoryUnifiedQuantityWorkspace
       key={mode}
+      focusVariant={ctx.attentionCorrectionTarget}
       mode={mode}
       source={source}
       targetSource={target}
