@@ -6,7 +6,6 @@ import { StockBrowseDetail } from './StockBrowseDetail'
 import { stockRowHasBalance } from '../stockBrowseLayout'
 
 type PanelContext = Pick<InventoryRenderContext,
-  | 'SmartPickerInput'
   | 'applyQuickStocktake'
   | 'cycleCountBusy'
   | 'cycleCountData'
@@ -15,32 +14,26 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'cycleCountValues'
   | 'formatMoney'
   | 'inventoryPanelStyle'
-  | 'inventoryPickerOptions'
-  | 'inventoryQuery'
   | 'isAdmin'
   | 'openInventoryPanel'
   | 'openOrderFromFinance'
   | 'openSimpleStockHistory'
   | 'openSimpleStockRowsDetail'
-  | 'productCategoryLabel'
   | 'refreshInventoryModule'
   | 'quickStocktakeBusy'
   | 'quickStocktakeNotice'
   | 'quickStocktakeOpen'
   | 'quickStocktakeValues'
   | 'refreshCycleCountSuggestions'
-  | 'setInventoryQuery'
   | 'setQuickStocktakeNotice'
   | 'setQuickStocktakeOpen'
   | 'setQuickStocktakeValues'
   | 'setCycleCountValues'
   | 'setSimpleStockAvailabilityFilter'
-  | 'setSimpleStockCategory'
   | 'setSimpleStockDetail'
   | 'setSimpleStockOpenProductKey'
   | 'setSimpleStockSource'
   | 'simpleStockAvailabilityFilter'
-  | 'simpleStockCategory'
   | 'simpleStockDetail'
   | 'simpleStockGroups'
   | 'simpleStockOpenProductKey'
@@ -54,6 +47,9 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'sourceLabel'
   | 'submitRoutineCycleCount'
 > & {
+  simpleStockSearch: string
+  setSimpleStockSearch: (value: string) => void
+  ensureSimpleStockCatalog: () => void
   simpleStockCatalogLoading?: boolean
   simpleStockCatalogError?: string
 }
@@ -109,32 +105,28 @@ function renderRoutineCycleCountCue(ctx: PanelContext) {
 
 export function renderInventoryOverviewPanel(ctx: PanelContext) {
   const {
-    SmartPickerInput,
     applyQuickStocktake,
     formatMoney,
     inventoryPanelStyle,
-    inventoryPickerOptions,
-    inventoryQuery,
     openOrderFromFinance,
     openSimpleStockHistory,
     openSimpleStockRowsDetail,
-    productCategoryLabel,
     quickStocktakeBusy,
     quickStocktakeNotice,
     quickStocktakeValues,
-    setInventoryQuery,
     setQuickStocktakeNotice,
     setQuickStocktakeOpen,
     setQuickStocktakeValues,
+    simpleStockSearch,
+    setSimpleStockSearch,
+    ensureSimpleStockCatalog,
     setSimpleStockAvailabilityFilter,
-    setSimpleStockCategory,
     setSimpleStockDetail,
     setSimpleStockOpenProductKey,
     setSimpleStockSource,
     simpleStockCatalogLoading,
     simpleStockCatalogError,
     simpleStockAvailabilityFilter,
-    simpleStockCategory,
     simpleStockDetail,
     simpleStockGroups,
     simpleStockOpenProductKey,
@@ -158,66 +150,36 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
     boutiqueQuantity: detail.source === 'boutique' ? detail.physical : 0, boutiqueReserved: detail.source === 'boutique' ? detail.reserved : 0, boutiqueAvailable: detail.source === 'boutique' ? detail.free : 0,
   })
 
-  const hasExplicitStockSearch = Boolean(inventoryQuery.trim())
   const selectedGroup = simpleStockGroups.find((group: any) => group.key === simpleStockOpenProductKey) || simpleStockGroups[0] || null
   const stockSourceName = sourceLabel(simpleStockSource)
-  const availabilityScopeLabel = simpleStockAvailabilityFilter === 'free'
-    ? 'товары со свободными остатками'
-    : simpleStockAvailabilityFilter === 'reserved'
-      ? 'товары с резервами'
-      : simpleStockAvailabilityFilter === 'attention'
-        ? 'товары с нехваткой'
-        : hasExplicitStockSearch ? 'все найденные позиции' : 'все позиции с остатком'
-  const resultScopeLabel = hasExplicitStockSearch
-    ? `Поиск: «${inventoryQuery.trim()}» · ${availabilityScopeLabel}`
-    : simpleStockAvailabilityFilter === 'free'
-      ? 'Товары со свободным остатком · внутри все размеры с наличием или резервом'
-      : simpleStockAvailabilityFilter === 'reserved'
-        ? 'Товары с резервами · внутри все размеры с наличием или резервом'
-        : simpleStockAvailabilityFilter === 'attention'
-          ? 'Товары с нехваткой · внутри все размеры с наличием или резервом'
-          : 'Все позиции с остатком'
-  const summaryScopeLabel = hasExplicitStockSearch
-    ? 'Итог по найденным позициям'
-    : simpleStockCategory === 'child'
-      ? 'Итог по детским товарам'
-      : simpleStockCategory === 'adult'
-        ? 'Итог по взрослым товарам'
-        : 'Итог по всей точке'
+  const resultScopeLabel = simpleStockSearch.trim() ? 'Результаты поиска по названиям' :
+    simpleStockAvailabilityFilter === 'withStock' ? 'С учтённым наличием или резервом' : 'Активные модели каталога'
   const routineCountActive = Boolean((ctx as any).cycleCountData?.source === simpleStockSource || (ctx as any).cycleCountNotice)
 
   return (
     <div className="inventory-overview-panel inventory-calm-stock stock-v13-page" style={inventoryPanelStyle('overview')}>
-                    <div className="inventory-calm-head warehouse-clean-stock-head">
+                    <div className="inventory-calm-head warehouse-clean-stock-head stock-v14-heading">
                       <div>
                         <h3>Остатки</h3>
-                        <p>Найдите модель, выберите цвет и размер. Остатки показаны только для выбранной точки.</p>
+                        <p>Выберите модель, цвет и размер. Количество показано по одной точке.</p>
+                      </div>
+                      <div className="stock-v14-location-tools">
+                        <div className="inventory-calm-source" aria-label="Точка остатков">
+                          {[
+                            { value: 'warehouse' as const, label: 'Склад' },
+                            { value: 'boutique' as const, label: 'Бутик' },
+                          ].map((entry) => (
+                            <button key={entry.value} type="button" className={simpleStockSource === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockSource(entry.value)}>{entry.label}</button>
+                          ))}
+                        </div>
+                        <button className="secondary compact stock-v14-refresh" type="button"
+                          onClick={() => setSimpleStockSource(simpleStockSource)}
+                          title={`Обновить остатки точки ${sourceLabel(simpleStockSource)}`}
+                          aria-label={`Обновить остатки точки ${sourceLabel(simpleStockSource)}`}>↻ Обновить</button>
                       </div>
                     </div>
-    
-                    <div className="inventory-calm-toolbar">
-                      <div className="inventory-calm-search">
-                        <SmartPickerInput
-                          value={inventoryQuery}
-                          options={inventoryPickerOptions.products}
-                          placeholder="Найти товар"
-                          onChange={setInventoryQuery}
-                          ariaLabel="Поиск товара"
-                        />
-                        {inventoryQuery ? <button className="secondary compact" type="button" onClick={() => setInventoryQuery('')}>Очистить</button> : null}
-                      </div>
-                      <div className="inventory-calm-source" aria-label="Точка остатков">
-                        {[
-                          { value: 'warehouse' as const, label: 'Склад' },
-                          { value: 'boutique' as const, label: 'Бутик' },
-                        ].map((entry) => (
-                          <button key={entry.value} type="button" className={simpleStockSource === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockSource(entry.value)}>{entry.label}</button>
-                        ))}
-                      </div>
-                      <button className="secondary compact inventory-stock-refresh-selected" type="button" onClick={() => setSimpleStockSource(simpleStockSource)} aria-label={`Обновить остатки точки ${sourceLabel(simpleStockSource)}`}>Обновить остатки ↻</button>
-                    </div>
-    
-                    <div className="inventory-stock-summary-context"><strong>{sourceLabel(simpleStockSource)}</strong><span>{summaryScopeLabel}</span></div>
+
+                    <div className="stock-v14-summary-label"><strong>{sourceLabel(simpleStockSource)}</strong><span>Вся точка · поиск и список моделей не меняют эти числа</span></div>
                     <div className="inventory-calm-summary" aria-label="Краткая сводка остатков">
                       <div className="is-primary"><span>Свободно</span><strong>{formatMoney(simpleStockSource === 'warehouse' ? simpleStockStats.warehouse : simpleStockStats.boutique)}</strong><small>можно использовать сейчас</small></div>
                       <div><span>На месте</span><strong>{formatMoney(simpleStockSource === 'warehouse' ? simpleStockStats.warehousePhysical : simpleStockStats.boutiquePhysical)}</strong><small>должно находиться в точке</small></div>
@@ -228,39 +190,29 @@ export function renderInventoryOverviewPanel(ctx: PanelContext) {
                       </details>
                     </div>
 
-                    <div className="inventory-calm-filters">
-                      {[
-                        { value: 'free', label: `Есть свободные (${simpleStockStats.freeVariants} поз.)` },
-                        { value: 'reserved', label: `В заказах (${simpleStockStats.reservedVariants} поз.)` },
-                        { value: 'attention', label: `Нехватка (${simpleStockStats.attentionVariants} поз.)` },
-                        { value: 'all', label: 'Все с остатком' },
-                      ].map((entry) => (
-                        <button key={entry.value} type="button" className={simpleStockAvailabilityFilter === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockAvailabilityFilter(entry.value as any)}>{entry.label}</button>
-                      ))}
-                      <details className="inventory-calm-extra-filter">
-                        <summary>Тип товара</summary>
-                        <div>
-                          {[
-                            { value: 'all' as const, label: 'Все' },
-                            { value: 'adult' as const, label: 'Взрослые' },
-                            { value: 'child' as const, label: 'Детские' },
-                          ].map((entry) => (
-                            <button key={entry.value} type="button" className={simpleStockCategory === entry.value ? 'is-active' : ''} onClick={() => setSimpleStockCategory(entry.value)}>{entry.label}</button>
-                          ))}
-                        </div>
-                      </details>
-                    </div>
-                    <div className="stock-v13-filter-hint" role="status">
-                      <span>Фильтр отбирает <b>модели</b>, а внутри выбранной модели показаны все размеры с остатком или резервом.</span>
-                      {simpleStockStats.attentionVariants > 0 ? <button type="button" onClick={() => setSimpleStockAvailabilityFilter('attention')}>{simpleStockStats.attentionVariants} поз. требуют проверки →</button> : null}
-                    </div>
-    
-
                     <div className="stock-v13-browse catalog-master-detail" data-stock-browser="catalog-master-detail">
                       <aside className="stock-v13-master" aria-label="Каталог моделей с остатками">
                         <div className="stock-v13-master-head">
                           <strong>{simpleStockGroups.length} {w8Plural(simpleStockGroups.length, 'модель', 'модели', 'моделей')}</strong>
                           <small>{resultScopeLabel}</small>
+                        </div>
+                        <div className="stock-v14-master-controls">
+                          <div className="stock-v14-model-search">
+                            <input type="search" value={simpleStockSearch} placeholder="Найти модель…"
+                              aria-label="Поиск модели по названию"
+                              onChange={(event) => setSimpleStockSearch(event.target.value)} />
+                            {simpleStockSearch ? <button type="button" onClick={() => setSimpleStockSearch('')} aria-label="Очистить поиск">×</button> : null}
+                          </div>
+                          <div className="stock-v14-simple-filters" role="group" aria-label="Какие модели показывать">
+                            <button type="button" className={simpleStockAvailabilityFilter === 'withStock' ? 'is-active' : ''}
+                              aria-pressed={simpleStockAvailabilityFilter === 'withStock'}
+                              onClick={() => setSimpleStockAvailabilityFilter('withStock')}>С остатком</button>
+                            <button type="button" className={simpleStockAvailabilityFilter === 'all' ? 'is-active' : ''}
+                              aria-pressed={simpleStockAvailabilityFilter === 'all'}
+                              onClick={() => { ensureSimpleStockCatalog(); setSimpleStockAvailabilityFilter('all') }}>Все модели</button>
+                          </div>
+                          {simpleStockCatalogLoading ? <small role="status">Загружаем полный каталог…</small> : null}
+                          {simpleStockAvailabilityFilter === 'all' && simpleStockCatalogError ? <small role="alert">{simpleStockCatalogError}</small> : null}
                         </div>
                         <div className="stock-v13-master-list" role="list">
                           {simpleStockGroups.length ? simpleStockGroups.map((group: any) => {
