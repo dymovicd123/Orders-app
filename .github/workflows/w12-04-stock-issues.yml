@@ -1,0 +1,102 @@
+name: W12.4 Stock Issue Cases
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/features/sections/OrdersHeaderSection.tsx'
+      - 'src/features/inventory/views/renderInventoryAttentionPanel.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/styles/order-stock-attention-banner.css'
+      - 'scripts/test-w12-stock-issues.mjs'
+      - '.github/workflows/w12-04-stock-issues.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/w12-04-stock-issues.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Clear problem categories and read-only SKU navigation
+        run: node scripts/test-w12-stock-issues.mjs
+      - name: Stock and order regression tests
+        run: |
+          node --experimental-strip-types scripts/test-w8-warehouse-operation-integrity.mjs
+          node scripts/test-order-shortage-save-nonblocking.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Build full app and Worker
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Only issue display and test database
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = branch2
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          baseline="d881aa7288f36b7aa9bc6e0abd16ee2b7e0e6c00"
+          git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
+          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
+          test -n "$changes"
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/features/sections/OrdersHeaderSection.tsx|\
+              src/features/inventory/views/renderInventoryAttentionPanel.tsx|\
+              src/features/sections/InventorySection.tsx|\
+              src/styles/order-stock-attention-banner.css|\
+              scripts/test-w12-stock-issues.mjs|\
+              .github/workflows/w12-04-stock-issues.yml) ;;
+              *) echo "Unexpected change: $file" >&2; exit 11 ;;
+            esac
+          done <<< "$changes"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then exit 12;fi
+      - run: npm ci
+      - name: Security and regression
+        run: |
+          npm audit --omit=dev --audit-level=moderate
+          npm audit --audit-level=high
+          node scripts/test-w12-stock-issues.mjs
+          npm run build
+      - name: Deploy only branch2
+        run: npx wrangler deploy
+      - name: Verify test worker response
+        run: |
+          node --input-type=module <<'NODE'
+          const url='https://orders-app-branch2.orders-clothes.workers.dev/'
+          for(let attempt=0;attempt<7;attempt++){
+            try {
+              const response=await fetch(url+'?w12_4='+Date.now(),{cache:'no-store'})
+              if(!response.ok)throw Error('HTTP '+response.status)
+              if(!(await response.text()).includes('/assets/'))throw Error('No asset entry')
+              console.log('W12_4_BRANCH2_LIVE')
+              process.exit(0)
+            }catch(err){if(attempt===6)throw err;await new Promise(resolve=>setTimeout(resolve,4000))}
+          }
+          NODE
