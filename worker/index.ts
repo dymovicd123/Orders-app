@@ -70,6 +70,25 @@ import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
 
+function warehouseSupervisorEndpoint(path: string, method: string) {
+  // Elevated access is valid only on these warehouse/catalog endpoints.
+  // It cannot grant Finance, personnel, order deletion, reference-merging or system privileges.
+  if (!['GET', 'POST', 'PATCH', 'PUT'].includes(method)) return false;
+  return [
+    /^\/api\/inventory\/(?:settings|pending-writeoffs\/apply|audit\/resolve|lifecycle\/pending)$/,
+    /^\/api\/inventory\/movements\/\d+\/reverse$/,
+    /^\/api\/inventory\/stocktakes\/[^/]+\/items\/combination$/,
+    /^\/api\/inventory\/lifecycle\/\d+\/(?:context|resolve-facts|reconcile-inbound)$/,
+    /^\/api\/catalog\/review(?:\/reconcile|\/\d+\/(?:context|resolve-facts|exclude|resolve))?$/,
+    /^\/api\/catalog\/products(?:\/\d+)?$/,
+    /^\/api\/catalog\/variants(?:\/\d+)?$/,
+    /^\/api\/catalog\/retirements(?:\/\d+\/restore)?$/,
+    /^\/api\/catalog\/executions\/\d+\/(?:retirement-preview|retire|variant-groups\/(?:retirement-preview|retire))$/,
+  ].some(pattern => pattern.test(path));
+}
+
+
+
 
 export default {
   async fetch(request, env) {
@@ -100,6 +119,13 @@ export default {
           return json({ ok: false, message: 'Перед работой смените временный пароль.', code: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 });
         }
         request = withAuthenticatedHeaders(request, authUser) as any;
+        // The job title is read from the authenticated account's active employee record,
+        // never from a caller-provided role header.
+        if (authUser.role !== 'admin' && authUser.employeeRole === 'Завсклад' && warehouseSupervisorEndpoint(url.pathname, request.method)) {
+          const warehouseHeaders = new Headers(request.headers);
+          warehouseHeaders.set('X-Access-Role', 'admin');
+          request = new Request(request, { headers: warehouseHeaders }) as any;
+        }
       }
 
       if (url.pathname === '/api/auth/me' && request.method === 'GET') {
