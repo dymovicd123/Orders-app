@@ -381,6 +381,7 @@ export type AuthUser = {
   role: AccessRole
   managerId: number | null
   managerName: string | null
+  employeeRole?: string
   displayName: string
   mustChangePassword?: boolean
 }

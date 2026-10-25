@@ -178,6 +178,7 @@ export type AuthUser = {
   role: 'admin' | 'manager';
   managerId: number | null;
   managerName: string | null;
+  employeeRole?: string;
   displayName: string;
   mustChangePassword: boolean;
 };
