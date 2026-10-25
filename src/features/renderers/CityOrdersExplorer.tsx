@@ -59,9 +59,18 @@ export function CityOrdersExplorer({ rows, apiFetch, onOpenOrder, startDate, end
   }
 
   useEffect(() => { close() }, [startDate, endDate])
+
+  // The page beneath the portaled dialog is a separate natural scroll surface.
+  // Freeze it only while the dialog is open; leave its scroll position untouched.
   useEffect(() => {
     if (!selected) return
-    closeRef.current?.focus()
+    document.documentElement.classList.add('city-orders-scroll-locked')
+    return () => document.documentElement.classList.remove('city-orders-scroll-locked')
+  }, [Boolean(selected)])
+
+  useEffect(() => {
+    if (!selected) return
+    closeRef.current?.focus({ preventScroll: true })
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
