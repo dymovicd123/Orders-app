@@ -35,3 +35,6 @@
 .city-orders-loading,.city-orders-empty{color:#78869b;font-size:13px;text-align:center;padding:12px;margin:0}
 .city-orders-error{padding:10px 26px;color:#a83131;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 @media(max-width:720px){.city-orders-backdrop{padding:0;align-items:stretch}.city-orders-dialog{max-height:100vh;height:100%;border-radius:0}.city-orders-dialog-header{padding:20px 16px 12px}.city-orders-dialog-title h2{font-size:19px}.city-orders-summary{margin:0 16px}.city-orders-hint{padding:0 16px}.city-orders-list{padding:0 12px 16px}.city-order-main{flex-wrap:wrap}.city-order-person{flex-basis:100%}.city-order-money{flex:1;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.city-order-money strong{font-size:12px}.city-orders-footer{padding:12px}.city-order-open{margin-left:auto}}
+
+/* Export intentionally omits application styles: plain city label survives when buttons are hidden. */
+.city-report-export-label{display:none}

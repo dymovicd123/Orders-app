@@ -49,7 +49,7 @@ jobs:
             esac
           done
       - run: npm ci
-      - name: Focused regression for catalog permissions and city order UI
+      - name: Focused regression for catalog permissions, city export and order UI
         run: node scripts/test-city-team-warehouse-20261025.mjs
       - name: Typecheck and build complete app
         run: npm run build

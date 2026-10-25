@@ -105,7 +105,7 @@ export function CityOrdersExplorer({ rows, apiFetch, onOpenOrder, startDate, end
         <thead><tr><th>Город</th><th className="num">Заказов</th><th className="num">Сумма</th><th className="num">Получено</th><th className="num">Долг</th><th className="num">Клиентов</th><th className="num">Менеджеров</th><th className="num">Средний чек</th></tr></thead>
         <tbody>
           {rows.map(row => <tr key={`city-total-${row.city}`}>
-            <td><button className="city-report-city-link" type="button" aria-label={`Заказы города: ${row.city}`} title="Посмотреть заказы" onClick={() => open(row)}>{row.city}</button></td>
+            <td><span className="city-report-export-label">{row.city}</span><button className="city-report-city-link" type="button" aria-label={`Заказы города: ${row.city}`} title="Посмотреть заказы" onClick={() => open(row)}>{row.city}</button></td>
             <td className="num">{row.order_count}</td><td className="num">{formatMoney(row.total_sales)}</td><td className="num">{formatMoney(row.total_received)}</td><td className="num">{formatMoney(row.total_debt)}</td><td className="num">{row.clients}</td><td className="num">{row.managers}</td>
             <td className="num">{formatMoney(row.order_count ? Number(row.total_sales || 0) / Number(row.order_count || 1) : 0)}</td>
           </tr>)}
