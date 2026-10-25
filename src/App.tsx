@@ -287,6 +287,7 @@ function App() {
 
   const accessRole: AccessRole = authUser?.role || 'manager'
   const isAdmin = authUser?.role === 'admin'
+  const canManageWarehouse = isAdmin || authUser?.employeeRole === 'Завсклад'
   const authReady = !authChecking
   const handleAuthInvalid = useCallback((reason: 'unauthorized' | 'password_change_required') => {
     setError(null)
@@ -1142,7 +1143,7 @@ function App() {
   }
   const openInventoryPanel = (panel: InventoryPanel) => {
     const nextPanel: InventoryPanel = panel === 'audit' ? 'settings' : panel
-    if (!isAdmin && (nextPanel === 'catalog' || nextPanel === 'settings')) {
+    if (!canManageWarehouse && (nextPanel === 'catalog' || nextPanel === 'settings')) {
       setInventoryPanel('overview')
       return
     }
@@ -1239,7 +1240,7 @@ function App() {
       loadCatalogData(force),
       loadReferencesData(force),
       loadInventoryControlSettings(),
-      isAdmin ? loadInventoryLifecycle(force) : Promise.resolve(null),
+      canManageWarehouse ? loadInventoryLifecycle(force) : Promise.resolve(null),
       loadWarehouseAttention(),
     ])
   }
@@ -1452,8 +1453,8 @@ function App() {
       // Do not rely on another screen having loaded them earlier in the session.
       void loadReferencesData()
       void loadInventoryControlSettings()
-      if (!isAdmin && inventoryPanel === 'catalog') setInventoryPanel('overview')
-      if (isAdmin && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
+      if (!canManageWarehouse && inventoryPanel === 'catalog') setInventoryPanel('overview')
+      if (canManageWarehouse && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
     if ((activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange'))) {
       // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources
@@ -1463,17 +1464,17 @@ function App() {
       void loadInventoryData('boutique', false, '', false)
       void loadCatalogData()
     }
-  }, [activeSector, authReady, orderPanel, isAdmin, inventoryPanel])
+  }, [activeSector, authReady, orderPanel, isAdmin, canManageWarehouse, inventoryPanel])
 
   useEffect(() => {
-    if (!authReady || isAdmin) return
+    if (!authReady || canManageWarehouse) return
     if (activeSector === 'inventory' && inventoryPanel === 'catalog') setInventoryPanel('overview')
-  }, [activeSector, authReady, inventoryPanel, isAdmin])
+  }, [activeSector, authReady, inventoryPanel, canManageWarehouse])
 
   useEffect(() => {
-    if (!authReady || !isAdmin || activeSector !== 'inventory' || inventoryPanel !== 'catalog') return
+    if (!authReady || !canManageWarehouse || activeSector !== 'inventory' || inventoryPanel !== 'catalog') return
     void loadReferenceKindCounts(['colors', 'materials', 'lengths', 'sizes', 'childAges'])
-  }, [activeSector, authReady, inventoryPanel, isAdmin])
+  }, [activeSector, authReady, inventoryPanel, canManageWarehouse])
 
   useEffect(() => {
     if (!authReady) return
@@ -1839,7 +1840,7 @@ function App() {
 
 
   async function loadCatalogReview(force = false, orderId = 0) {
-    if (!isAdmin) return null
+    if (!canManageWarehouse) return null
     if (!orderId && catalogReview?.mode !== 'order' && catalogReview && !force) return catalogReview
     setCatalogReviewBusy(true)
     try {
@@ -1858,7 +1859,7 @@ function App() {
   }
 
   async function reconcileCatalogReview(limit = 20) {
-    if (!isAdmin || catalogReviewBusy) return null
+    if (!canManageWarehouse || catalogReviewBusy) return null
     setCatalogReviewBusy(true)
     setError(null)
     try {
@@ -1887,7 +1888,7 @@ function App() {
   }
 
   async function resolveCatalogReviewFacts(orderItemId: number, input: CatalogResolutionInput) {
-    if (!isAdmin || !orderItemId || catalogReviewBusy) return null
+    if (!canManageWarehouse || !orderItemId || catalogReviewBusy) return null
     setCatalogReviewBusy(true)
     setError(null)
     try {
@@ -1913,7 +1914,7 @@ function App() {
   }
 
   async function excludeCatalogReviewItem(orderItemId: number) {
-    if (!isAdmin || !orderItemId || catalogReviewBusy) return null
+    if (!canManageWarehouse || !orderItemId || catalogReviewBusy) return null
     setCatalogReviewBusy(true)
     setError(null)
     try {
@@ -1935,7 +1936,7 @@ function App() {
   }
 
   async function loadInventoryLifecycle(force = false) {
-    if (!isAdmin) {
+    if (!canManageWarehouse) {
       setInventoryLifecycle(null)
       return null
     }
@@ -1960,7 +1961,7 @@ function App() {
   }
 
   async function resolveInventoryLifecycleFacts(eventId: number, input: CatalogResolutionInput) {
-    if (!isAdmin || !eventId || inventoryLifecycleBusy) return null
+    if (!canManageWarehouse || !eventId || inventoryLifecycleBusy) return null
     setInventoryLifecycleBusy(true)
     setError(null)
     try {
@@ -1996,7 +1997,7 @@ function App() {
       if (!response.ok || result?.ok === false) throw new Error(result?.message || 'Не удалось завершить приёмку.')
       const [attentionData] = await Promise.all([
         loadWarehouseAttention(true),
-        isAdmin ? loadInventoryLifecycle(true) : Promise.resolve(null),
+        canManageWarehouse ? loadInventoryLifecycle(true) : Promise.resolve(null),
         loadInventoryData('warehouse', true, '', false),
         loadInventoryData('boutique', true, '', false),
       ])
@@ -2143,7 +2144,7 @@ function App() {
   }
 
   async function resolveCatalogReviewItem(orderItemId: number, variantId: number) {
-    if (!isAdmin || !orderItemId || !variantId || catalogReviewBusy) return false
+    if (!canManageWarehouse || !orderItemId || !variantId || catalogReviewBusy) return false
     setCatalogReviewBusy(true)
     setError(null)
     try {
@@ -2182,7 +2183,7 @@ function App() {
   }
 
   async function resolveInventoryAuditIssue(row: InventoryAuditResponse['missing'][number] | InventoryAuditResponse['resolved'][number], resolved = true) {
-    if (!isAdmin || inventoryAuditBusy || !row?.issueKey) return
+    if (!canManageWarehouse || inventoryAuditBusy || !row?.issueKey) return
     if (resolved) {
       const question = 'Подтверждайте расхождение только после фактической сверки этой позиции. Система НЕ изменит остаток автоматически — она запомнит, что исторический разрыв проверен сотрудником. Продолжить?'
       if (!window.confirm(question)) return
@@ -2219,7 +2220,7 @@ function App() {
   }
 
   async function toggleInventoryAutoWriteoff() {
-    if (!isAdmin || inventoryControlBusy) return
+    if (!canManageWarehouse || inventoryControlBusy) return
     const nextEnabled = !(inventoryControlSettings?.autoWriteoffEnabled ?? true)
     const question = nextEnabled
       ? 'Включить автосписание? Новые заказы со склада и бутика снова будут сразу менять остатки.'
@@ -2244,7 +2245,7 @@ function App() {
   }
 
   async function applyPendingInventoryWriteoffs() {
-    if (!isAdmin || inventoryControlBusy) return
+    if (!canManageWarehouse || inventoryControlBusy) return
     const pending = inventoryControlSettings?.pendingWriteoffCount || 0
     if (!pending) {
       setMessage('Отложенных списаний нет.')
@@ -2271,7 +2272,7 @@ function App() {
   }
 
   async function reverseInventoryMovement(movement: InventoryMovementRecord) {
-    if (!isAdmin || !movement.canReverse || reversingInventoryMovementId) return
+    if (!canManageWarehouse || !movement.canReverse || reversingInventoryMovementId) return
     const label = `${movement.productName} · ${movement.quantityDelta >= 0 ? '+' : ''}${movement.quantityDelta}`
     if (!window.confirm(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
     setReversingInventoryMovementId(movement.id)
@@ -8229,7 +8230,7 @@ function removeDebtPayment(index: number) {
   }
 
   function renderInventoryStockGroups(source: InventorySourceKey, groups: InventoryStockGroup[]) {
-    return InventoryStockGroupsRenderer(source, groups, { expandedInventoryGroups, getInventoryRowCategory, hasInventoryQuickFilters, inventorySearchTokens, isAdmin, productCategoryLabel, sourceLabel, startInventoryTransferFromStockRow, toggleInventoryGroup })
+    return InventoryStockGroupsRenderer(source, groups, { expandedInventoryGroups, getInventoryRowCategory, hasInventoryQuickFilters, inventorySearchTokens, isAdmin: canManageWarehouse, productCategoryLabel, sourceLabel, startInventoryTransferFromStockRow, toggleInventoryGroup })
   }
 
   const financeReportOptions: Array<{ value: FinanceReportType; label: string; note: string }> = [
@@ -8440,7 +8441,7 @@ function removeDebtPayment(index: number) {
             <div className="auth-user-card">
               <strong>{authUser.displayName || authUser.managerName || authUser.login}</strong>
               <span>@{authUser.login}{authUser.managerName ? ` · ${authUser.managerName}` : ''}</span>
-              <em>{isAdmin ? 'Администратор' : 'Менеджер'}</em>
+              <em>{isAdmin ? 'Администратор' : authUser?.employeeRole === 'Завсклад' ? 'Завсклад' : authUser?.employeeRole === 'Упаковщик' ? 'Упаковщик' : 'Менеджер'}</em>
             </div>
             <div className="access-role-actions">
               {isAdmin ? (
@@ -8850,7 +8851,7 @@ function removeDebtPayment(index: number) {
               sizes: [{ id: inventoryUiId('size'), color: seed.color, size: seed.size, quantity: seed.quantity }],
             }),
           ])
-        }, activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
+        }, activeSector, addInventoryMatrixColor, addInventoryMatrixSize, applyPendingInventoryWriteoffs, buildInventoryMatrix, catalogCategoryFilter, catalogOnlyWithoutVariants, setCatalogOnlyWithoutVariants, catalogData, catalogReview, catalogReviewBusy, catalogIssueStats, catalogProductDraft, catalogProductStockSummary, catalogVariantDraft, catalogVariantsByProductId, ChoicePills, clearInventoryMatrixValues, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, expandedCatalogProducts, filteredInventoryRows, formatMoney, FriendlyNumberInput, filteredReferenceItems, formatDateShort, getCatalogProductEffectiveCategory, getCatalogVariantCategory, getInventoryRowCategory, getStockQuantityForVariant, groupedInventoryRows, handleInventoryMatrixKeyDown, inventoryArrivalProductChoices, inventoryArrivalPositions, inventoryArrivalSummary, inventoryArrivalVariantOpen, inventoryArrivalReadyVariants, selectInventoryArrivalVariant, selectInventoryArrivalProduct, updateInventoryArrivalPosition, addInventoryArrivalSize, updateInventoryArrivalSize, removeInventoryArrivalSize, addInventoryArrivalPosition, removeInventoryArrivalPosition, resetInventoryArrivalForm, setInventoryArrivalVariantOpen, inventoryAudit, inventoryAuditBusy, resolveInventoryAuditIssue, inventoryCategoryFilter, inventoryControlBusy, inventoryControlSettings, inventoryMovementBusy, inventoryDraft, inventoryDraftSummary, inventoryHistoryRows, inventoryMatrix, inventoryMatrixActiveGroupKey, inventoryMatrixAxisLabel, inventoryMatrixBatchGroups, inventoryMatrixCellKey, inventoryMatrixCellMap, inventoryMatrixColors, inventoryMatrixColorToAdd, inventoryMatrixDraftItem, inventoryMatrixSizes, inventoryMatrixSizeToAdd, inventoryMatrixSummary, inventoryModelVersion, inventoryMovementText, matchedInventoryOperationVariant, activeInventoryOperationItem, selectedInventoryOperationItems, inventoryOperationAllProductGroups, inventoryOperationProductGroups, inventoryOperationSearch, inventoryOperationVariant, inventoryOperationActiveVariantId, inventoryExistingVariantOpen, inventoryExistingVariantSearch, inventoryExistingVariantRows, inventoryPanel, inventoryPanelStyle, inventoryPickerOptions, inventoryProblemRows, inventoryQuery, inventoryQuickFilters, inventorySortMode, inventorySourceRows, inventorySnapshotLoadErrors, inventoryStats, inventoryStocktakeAllGroups, inventoryStocktakeGroups, inventoryStocktakeStats, printInventoryStocktakePdf, applyInventoryStocktakeChanges, inventoryStatusFilter, isAdmin: canManageWarehouse, latestManualMovements, latestReturnExchangeMovements, latestSaleMovements, loadCatalogData, loadCatalogReview, reconcileCatalogReview, loadCatalogReviewContext, resolveCatalogReviewFacts, excludeCatalogReviewItem, inventoryLifecycle, inventoryLifecycleBusy, warehouseAttention, loadInventoryLifecycle, loadInventoryLifecycleContext, resolveInventoryLifecycleFacts, reconcileKnownInventoryLifecycle, reconcileFoundInventoryStock, loadWarehouseAttention, loadInventoryAudit, loadInventoryData, loadInventoryHistory, loadInventoryCheckHistory, loadInventoryReservations, loadInventoryStocktakeSessions, loadInventoryStocktakeSession, createInventoryStocktakeSession, saveInventoryStocktakeCount, addInventoryStocktakeVariant, addInventoryStocktakeCombination, loadInventoryCycleCounts, applyInventoryCycleCounts, quickInventoryStocktake, quickInventoryStocktakeBatch, completeInventoryStocktakeSession, cancelInventoryStocktakeSession, loadReferenceItems, loadReferencesData, references, normalizeSuggestion, openInventoryPanel, openOrderFromFinance, openOrderStockHandoverById, operationVariantOptions, inventoryProductReferenceGroups, inventoryWriteoffReferenceGroups, referenceBusy, referenceDraft, referenceItems, referenceKind, referenceSearch, referenceStatusFilter, removeReferenceEntry, resolveCatalogReviewItem, resetReferenceDraft, saveReferenceEntry, selectedReferenceKindConfig, selectReferenceKind, setReferenceDraft, setReferenceSearch, setReferenceStatusFilter, productCategoryLabel, productHasVariantCategory, refreshInventoryModule, renderInventoryStockGroups, resetInventoryOperationSelection, removeInventoryVariantOperationItem, reverseInventoryMovement, reversingInventoryMovementId, saveCatalogProduct, saveCatalogVariant, saveInventoryMovement, sectorStyle, startNextInventoryMatrixProduct, openInventoryMatrixBatchGroup, removeInventoryMatrixBatchGroup, selectedCatalogProduct, selectedInventoryOperationGroup, selectInventoryOperationVariant, setCatalogCategoryFilter, setCatalogProductDraft, setCatalogVariantDraft, setExpandedCatalogProducts, setInventoryCategoryFilter, setInventoryDraft, setInventoryMatrix, setInventoryMatrixCell, setInventoryMatrixColorToAdd, setInventoryMatrixSizeToAdd, setInventoryExistingVariantOpen, setInventoryExistingVariantSearch, setInventoryQuery, setInventoryQuickFilters, setInventorySortMode, setInventoryStatusFilter, setInventoryVariantOperationQuantity, SmartPickerInput, sourceLabel, suggestionValues, arrivalSuggestionValues, toggleInventoryAutoWriteoff, updateInventoryMatrixCategory, updateInventoryMatrixGender, updateInventoryMatrixLength, updateInventoryMatrixMaterial, updateInventoryMatrixProductInput, updateInventoryDirectProductInput, updateInventoryOperationVariantField, visibleCatalogProducts }} />
         </DeferredSection>
 
         <section className="grid" style={sectorStyle('overview')}>
