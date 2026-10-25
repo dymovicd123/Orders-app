@@ -71,20 +71,35 @@ import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
 
 function warehouseSupervisorEndpoint(path: string, method: string) {
-  // Elevated access is valid only on these warehouse/catalog endpoints.
-  // It cannot grant Finance, personnel, order deletion, reference-merging or system privileges.
-  if (!['GET', 'POST', 'PATCH', 'PUT'].includes(method)) return false;
-  return [
-    /^\/api\/inventory\/(?:settings|pending-writeoffs\/apply|audit\/resolve|lifecycle\/pending)$/,
-    /^\/api\/inventory\/movements\/\d+\/reverse$/,
-    /^\/api\/inventory\/stocktakes\/[^/]+\/items\/combination$/,
-    /^\/api\/inventory\/lifecycle\/\d+\/(?:context|resolve-facts|reconcile-inbound)$/,
-    /^\/api\/catalog\/review(?:\/reconcile|\/\d+\/(?:context|resolve-facts|exclude|resolve))?$/,
-    /^\/api\/catalog\/products(?:\/\d+)?$/,
-    /^\/api\/catalog\/variants(?:\/\d+)?$/,
-    /^\/api\/catalog\/retirements(?:\/\d+\/restore)?$/,
-    /^\/api\/catalog\/executions\/\d+\/(?:retirement-preview|retire|variant-groups\/(?:retirement-preview|retire))$/,
-  ].some(pattern => pattern.test(path));
+  // Explicit warehouse-only allowlist. No order, payment, employee, or global administrator rights.
+  const routes: Array<[RegExp, string[]]> = [
+    [/^\/api\/inventory\/settings$/, ['PATCH']],
+    [/^\/api\/inventory\/pending-writeoffs\/apply$/, ['POST']],
+    [/^\/api\/inventory\/audit\/resolve$/, ['POST']],
+    [/^\/api\/inventory\/movements\/\d+\/reverse$/, ['POST']],
+    [/^\/api\/inventory\/stocktakes\/[^/]+\/items\/combination$/, ['POST']],
+    [/^\/api\/inventory\/lifecycle\/pending$/, ['GET']],
+    [/^\/api\/inventory\/lifecycle\/\d+\/(?:context|resolve-facts)$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/review$/, ['GET']],
+    [/^\/api\/catalog\/review\/reconcile$/, ['POST']],
+    [/^\/api\/catalog\/review\/\d+\/(?:context|resolve-facts|exclude|resolve)$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/execution-prices$/, ['PUT']],
+    [/^\/api\/catalog\/retirements$/, ['GET']],
+    [/^\/api\/catalog\/retirements\/\d+\/restore$/, ['POST']],
+    [/^\/api\/catalog\/executions\/\d+\/(?:retirement-preview|retire|variant-groups\/(?:retirement-preview|retire))$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/products$/, ['POST']],
+    [/^\/api\/catalog\/products\/\d+$/, ['PATCH']],
+    [/^\/api\/catalog\/products\/\d+\/(?:retirement-preview|retire)$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/variants$/, ['POST']],
+    [/^\/api\/catalog\/variants\/\d+$/, ['PATCH']],
+  ];
+  return routes.some(([pattern, methods]) => pattern.test(path) && methods.includes(method));
+}
+
+function isWarehouseCatalogCharacteristicKind(kind: string | null) {
+  return ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(
+    normalizeReferenceKind(kind) || '',
+  );
 }
 
 
@@ -525,20 +540,28 @@ export default {
       }
 
       if (url.pathname === '/api/reference-values' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
+        const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await createReferenceValue(env.DB, request);
       }
 
       const referenceMatch = url.pathname.match(/^\/api\/reference-values\/(\d+)$/);
       if (referenceMatch && request.method === 'PATCH') {
-        const denied = requireAdminAccess(request);
+        const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
+        const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await updateReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
       }
 
       if (referenceMatch && request.method === 'DELETE') {
-        const denied = requireAdminAccess(request);
+        const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
+        const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await deleteReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
       }

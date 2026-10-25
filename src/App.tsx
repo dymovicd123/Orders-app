@@ -1110,7 +1110,7 @@ function App() {
     inventoryQuickFilters,
     inventorySortMode,
     inventoryStatusFilter,
-    isAdmin,
+    isAdmin: canManageWarehouse,
     orderPeriodStats,
     orders,
     referenceKindCounts,
@@ -3784,8 +3784,8 @@ function App() {
   }
 
   async function saveReferenceEntry() {
-    if (!isAdmin) {
-      setError('Изменение справочников доступно только администратору.')
+    if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {
+      setError('Изменение этого справочника доступно только администратору.')
       return
     }
 
@@ -3834,8 +3834,8 @@ function App() {
   }
 
   async function removeReferenceEntry(id: number) {
-    if (!isAdmin) {
-      setError('Удаление значений справочника доступно только администратору.')
+    if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {
+      setError('Удаление значений этого справочника доступно только администратору.')
       return
     }
 
@@ -8788,7 +8788,7 @@ function removeDebtPayment(index: number) {
               {busy ? 'Обновляю...' : 'Обновить'}
             </button>
             <div className="erp-topbar-status">
-              <span className="hint">Роль: <strong>{isAdmin ? 'Админ' : 'Менеджер'}</strong></span>
+              <span className="hint">Роль: <strong>{isAdmin ? 'Админ' : authUser?.employeeRole === 'Завсклад' ? 'Завсклад' : authUser?.employeeRole === 'Упаковщик' ? 'Упаковщик' : 'Менеджер'}</strong></span>
               <span className={`status-pill ${health === null ? 'status-warning' : health.ok ? 'status-online' : 'status-offline'}`}>
                 {health === null ? 'Проверка...' : health.ok ? 'Готово' : 'Нет связи'}
               </span>

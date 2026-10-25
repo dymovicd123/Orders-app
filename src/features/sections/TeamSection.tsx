@@ -80,6 +80,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
   const [teamAccessEditorId, setTeamAccessEditorId] = useState<number | null>(null)
   const [teamAccessDraft, setTeamAccessDraft] = useState({ id: 0, login: '', password: '', role: 'manager', isActive: true, mustChangePassword: true })
   const teamAccessLoginRef = useRef<HTMLInputElement | null>(null)
+  const teamEditorRef = useRef<HTMLElement | null>(null)
   const [systemAdminEditorOpen, setSystemAdminEditorOpen] = useState(false)
   const [systemAdminDraft, setSystemAdminDraft] = useState({ id: 0, login: '', password: '', isActive: true, mustChangePassword: true })
   const systemAdminLoginRef = useRef<HTMLInputElement | null>(null)
@@ -96,6 +97,14 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [teamAccessEditorId])
+
+  useEffect(() => {
+    if (!teamFormOpen || teamMode !== 'employees') return
+    const frame = window.requestAnimationFrame(() => {
+      teamEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [teamFormOpen, teamDraft.id, teamMode])
 
   function suggestTeamLogin(name: string, excludingAccountId = 0) {
     const transliteration: Record<string, string> = {
@@ -325,7 +334,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                   </div>
     
                   {teamFormOpen ? (
-                    <section className="mini-panel team-editor-panel">
+                    <section ref={teamEditorRef} className="mini-panel team-editor-panel" style={{ scrollMarginTop: 96 }}>
                       <div className="mini-panel-head">
                         <div>
                           <h3>{teamDraft.id ? 'Редактирование сотрудника' : 'Новый сотрудник'}</h3>
