@@ -39,6 +39,7 @@ jobs:
               src/App.tsx|src/app/types.ts|src/features/sections/TeamSection.tsx|\
               src/features/renderers/FinanceReportContentRenderer.tsx|\
               src/features/renderers/CityOrdersExplorer.tsx|\
+              src/styles/city-orders-explorer.css|\
               worker/index.ts|worker/domains/team.ts|worker/domains/auth.ts|\
               worker/domains/finance-reports.ts|worker/core/text.ts|worker/core/types.ts|\
               migrations/0115_team_birth_date.sql|\
