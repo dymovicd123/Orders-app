@@ -1321,8 +1321,11 @@ export async function listCityReportOrders(db: D1Database, url: URL) {
   const result = await db.prepare(
     `SELECT o.id, o.external_id, o.order_date, o.order_status, o.shipping_status,
             o.total_amount, o.received_amount, o.debt_amount,
-            COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
-            COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager
+            CASE WHEN o.customer_name_override IS NOT NULL
+              THEN COALESCE(NULLIF(o.customer_name_override, ''), NULLIF(c.phone_normalized, ''), '—')
+              ELSE COALESCE(NULLIF(c.display_name, ''), NULLIF(c.phone_normalized, ''), '—')
+            END AS customer,
+            COALESCE(NULLIF(m.name, ''), NULLIF(o.manager_snapshot_name, ''), 'Не указан') AS manager
      FROM orders o
      LEFT JOIN customers c ON c.id = o.customer_id
      LEFT JOIN managers m ON m.id = o.manager_id

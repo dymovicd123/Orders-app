@@ -6,6 +6,7 @@ type RendererContext = Record<string, any>
 export function FinanceReportContentRenderer(ctx: RendererContext) {
   const {
     apiFetch,
+    openOrderFromFinance,
     exportSelectedFinanceReportWord,
     financeReport,
     financeReportOptions,
@@ -182,7 +183,7 @@ export function FinanceReportContentRenderer(ctx: RendererContext) {
           { label: 'Долг', value: formatMoney(financeReport.overview.periodDebt) },
           { label: 'Лидер', value: financeReport.reports.cities[0]?.city || '—' },
         ])}
-        <CityOrdersExplorer rows={financeReport.reports.cities} apiFetch={apiFetch} startDate={financeReport.startDate} endDate={financeReport.endDate} formatDateShort={formatDateShort} formatMoney={formatMoney} />
+        <CityOrdersExplorer rows={financeReport.reports.cities} apiFetch={apiFetch} onOpenOrder={openOrderFromFinance} startDate={financeReport.startDate} endDate={financeReport.endDate} formatDateShort={formatDateShort} formatMoney={formatMoney} />
         <section className="strict-report-section"><div className="strict-section-head"><h3>По дням</h3><span className="soft-badge">продажи по дате заказа · деньги по дате операции</span></div>
           {cityDays.map((day) => <article className="strict-day-card" key={`city-day-${day.date}`}><div className="strict-day-head"><strong>{formatDateShort(day.date)}</strong><span>{`заказов ${day.orderCount} · сумма ${formatMoney(day.totalSales)}`}</span></div><div className="table-shell"><table className="data-table strict-report-table"><thead><tr><th>Город</th><th className="num">Заказов</th><th className="num">Сумма</th><th className="num">Получено</th><th className="num">Долг</th><th className="num">Клиентов</th><th className="num">Менеджеров</th><th className="num">Средний чек</th></tr></thead><tbody>{day.cities.map((row) => <tr key={`${day.date}-${row.city}`}><td>{row.city}</td><td className="num">{row.order_count}</td><td className="num">{formatMoney(row.total_sales)}</td><td className="num">{formatMoney(row.total_received)}</td><td className="num">{formatMoney(row.total_debt)}</td><td className="num">{row.clients}</td><td className="num">{row.managers}</td><td className="num">{formatMoney(row.avg_check)}</td></tr>)}</tbody></table></div></article>)}
           {!cityDays.length ? <div className="empty-state">Данных по датам заказов нет.</div> : null}
