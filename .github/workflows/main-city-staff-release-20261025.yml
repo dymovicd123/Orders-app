@@ -46,7 +46,7 @@ jobs:
               worker/domains/finance-reports.ts|worker/core/text.ts|worker/core/types.ts|\
               migrations/0115_team_birth_date.sql|\
               scripts/test-main-city-staff-20261025.mjs|\
-              .github/workflows/main-city-staff-20261025.yml) ;;
+              .github/workflows/main-city-staff-release-20261025.yml) ;;
               *) echo "Unexpected file since baseline: $file"; exit 1 ;;
             esac
           done
