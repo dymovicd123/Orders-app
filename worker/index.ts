@@ -611,7 +611,7 @@ export default {
       }
 
       if (url.pathname === '/api/team' && request.method === 'GET') {
-        return json(await listTeamEmployees(env.DB));
+        return json(await listTeamEmployees(env.DB, authUser?.role === 'admin'));
       }
 
       if (url.pathname === '/api/team/employees' && request.method === 'POST') {

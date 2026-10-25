@@ -137,7 +137,7 @@ export async function countTeamEmployeeReferences(db: D1Database, id: number) {
 }
 
 
-export async function listTeamEmployees(db: D1Database) {
+export async function listTeamEmployees(db: D1Database, includeBirthDate = false) {
   // Keep this as a single non-compound SELECT. The previous compound reference_rows CTE
   // occasionally hit D1/SQLite's compound-SELECT term limit on the live database.
   // Team size is small, so scalar COUNT subqueries are both predictable and cheap here.
@@ -191,7 +191,7 @@ export async function listTeamEmployees(db: D1Database) {
     comment: cleanText(row.comment),
     colorKey: normalizeManagerColor(row.color_key, toInt(row.id, 0) - 1),
     hiredAt: cleanText(row.hired_at),
-    birthDate: cleanText(row.birth_date),
+    ...(includeBirthDate ? { birthDate: cleanText(row.birth_date) } : {}),
     dismissedAt: cleanText(row.dismissed_at),
     referenceCount: toInt(row.reference_count, 0),
     canDelete: toInt(row.reference_count, 0) === 0,
