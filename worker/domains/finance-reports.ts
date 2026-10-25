@@ -1306,3 +1306,42 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     },
   };
 }
+
+ 
+// Read-on-demand details; business dates and city grouping intentionally match the aggregate.
+export async function listCityReportOrders(db: D1Database, url: URL) {
+  const { startDate, endDate } = parseReportDateRange(url);
+  const city = cleanText(url.searchParams.get('city'));
+  if (!city || city.length > 160) return { ok: false, message: 'Выберите город из отчёта.', status: 400 };
+  const requestedLimit = Number(url.searchParams.get('limit') || 25);
+  const requestedOffset = Number(url.searchParams.get('offset') || 0);
+  const limit = Number.isSafeInteger(requestedLimit) ? Math.min(50, Math.max(1, requestedLimit)) : 25;
+  const offset = Number.isSafeInteger(requestedOffset) ? Math.max(0, requestedOffset) : 0;
+  if (offset > 100000) return { ok: false, message: 'Слишком большой номер страницы.', status: 400 };
+  const result = await db.prepare(
+    `SELECT o.id, o.external_id, o.order_date, o.order_status, o.shipping_status,
+            o.total_amount, o.received_amount, o.debt_amount,
+            COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
+            COALESCE(m.name, o.manager_snapshot_name, 'Не указан') AS manager
+     FROM orders o
+     LEFT JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN managers m ON m.id = o.manager_id
+     WHERE o.order_date BETWEEN ? AND ?
+       AND o.order_status <> 'deleted'
+       AND COALESCE(NULLIF(o.city, ''), 'Не указан') = ?
+     ORDER BY o.order_date DESC, o.id DESC
+     LIMIT ? OFFSET ?`
+  ).bind(startDate, endDate, city, limit + 1, offset).all<any>();
+  const rows = mapSqlRows(result);
+  return {
+    ok: true, city, startDate, endDate, offset, limit,
+    hasMore: rows.length > limit,
+    orders: rows.slice(0, limit).map((row: any) => ({
+      id: Number(row.id || 0), externalId: cleanText(row.external_id),
+      orderDate: cleanText(row.order_date), orderStatus: cleanText(row.order_status),
+      shippingStatus: cleanText(row.shipping_status), customer: cleanText(row.customer),
+      manager: cleanText(row.manager), totalAmount: Number(row.total_amount || 0),
+      receivedAmount: Number(row.received_amount || 0), debtAmount: Number(row.debt_amount || 0),
+    })),
+  };
+}

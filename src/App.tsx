@@ -8940,7 +8940,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'reports'} label="Отчёты">
-        <ReportsSection ctx={{ financeReportBusy, financeReportFilters, financeReportOptions, financeReportType, getPeriodRange, reloadFinanceReports, sectorStyle, setFinanceReportFilters, setFinanceReportType, financeReportContentCtx: { exportSelectedFinanceReportWord, financeReport, financeReportOptions, financeReportType, formatDateShort, formatMoney, formatPercent, ManagerBadge, managerColorFor, printSelectedFinanceReportPdf } }} />
+        <ReportsSection ctx={{ financeReportBusy, financeReportFilters, financeReportOptions, financeReportType, getPeriodRange, reloadFinanceReports, sectorStyle, setFinanceReportFilters, setFinanceReportType, financeReportContentCtx: { apiFetch, exportSelectedFinanceReportWord, financeReport, financeReportOptions, financeReportType, formatDateShort, formatMoney, formatPercent, ManagerBadge, managerColorFor, printSelectedFinanceReportPdf } }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'activity'} label="Журнал действий">
