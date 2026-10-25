@@ -1459,7 +1459,7 @@ function App() {
       void loadInventoryData('boutique', false, '', false)
       void loadCatalogData()
     }
-  }, [activeSector, authReady, orderPanel, isAdmin, canManageWarehouse, inventoryPanel]
+  }, [activeSector, authReady, orderPanel, isAdmin, canManageWarehouse, inventoryPanel])
 
   useEffect(() => {
     if (!authReady || canManageWarehouse) return
