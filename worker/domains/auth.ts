@@ -372,6 +372,7 @@ export function authUserPayload(user: AuthUser) {
     role: user.role,
     managerId: user.managerId,
     managerName: user.managerName,
+    employeeRole: user.employeeRole || '',
     displayName: user.displayName,
     mustChangePassword: user.mustChangePassword,
   };
@@ -524,7 +525,8 @@ export async function getCurrentAuthUser(db: D1Database, request: Request): Prom
   const now = new Date().toISOString();
   const row = await db.prepare(`
     SELECT u.id, u.login, u.email, u.role, u.manager_id, u.display_name, u.is_active,
-      COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
+      COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name,
+      m.role AS employee_role, m.is_active AS employee_is_active
     FROM app_sessions s
     JOIN app_users u ON u.id = s.user_id
     LEFT JOIN managers m ON m.id = u.manager_id
@@ -544,6 +546,7 @@ export async function getCurrentAuthUser(db: D1Database, request: Request): Prom
     role: normalizeAuthRole(row.role),
     managerId: row.manager_id === null || row.manager_id === undefined ? null : toInt(row.manager_id, 0),
     managerName: cleanText(row.manager_name) || null,
+    employeeRole: toInt(row.employee_is_active, 0) === 1 ? cleanText(row.employee_role) : '',
     displayName: cleanText(row.display_name) || cleanText(row.manager_name) || login,
     mustChangePassword: Boolean(toInt(row.must_change_password, 0)),
   };
@@ -673,7 +676,8 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
 
   const row = await db.prepare(`
     SELECT u.id, u.login, u.email, u.password_hash, u.role, u.manager_id, u.display_name, u.is_active,
-      COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name
+      COALESCE(u.must_change_password, 0) AS must_change_password, m.name AS manager_name,
+      m.role AS employee_role, m.is_active AS employee_is_active
     FROM app_users u
     LEFT JOIN managers m ON m.id = u.manager_id
     WHERE lower(u.login) = lower(?)
@@ -708,6 +712,7 @@ export async function handleAuthLogin(db: D1Database, request: Request) {
     role: normalizeAuthRole(row.role),
     managerId: row.manager_id === null || row.manager_id === undefined ? null : toInt(row.manager_id, 0),
     managerName: cleanText(row.manager_name) || null,
+    employeeRole: toInt(row.employee_is_active, 0) === 1 ? cleanText(row.employee_role) : '',
     displayName: cleanText(row.display_name) || cleanText(row.manager_name) || normalizedLogin,
     mustChangePassword: Boolean(toInt(row.must_change_password, 0)),
   };

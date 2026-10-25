@@ -17,7 +17,7 @@ import { previewExchangeCancellationChain } from './domains/exchange-cancel-chai
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
-import { listFinanceReports } from './domains/finance-reports.ts'
+import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
@@ -71,6 +71,39 @@ import { getWarehouseAttentionSummary } from './domains/warehouse-attention.ts'
 // Auth R2: account sessions are authoritative. The legacy simple-admin cookie is no longer a runtime access path.
 
 
+function warehouseSupervisorEndpoint(path: string, method: string) {
+  // Explicit warehouse-only allowlist. No order, payment, employee, or global administrator rights.
+  const routes: Array<[RegExp, string[]]> = [
+    [/^\/api\/inventory\/settings$/, ['PATCH']],
+    [/^\/api\/inventory\/pending-writeoffs\/apply$/, ['POST']],
+    [/^\/api\/inventory\/audit\/resolve$/, ['POST']],
+    [/^\/api\/inventory\/movements\/\d+\/reverse$/, ['POST']],
+    [/^\/api\/inventory\/stocktakes\/[^/]+\/items\/combination$/, ['POST']],
+    [/^\/api\/inventory\/lifecycle\/pending$/, ['GET']],
+    [/^\/api\/inventory\/lifecycle\/\d+\/(?:context|resolve-facts)$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/review$/, ['GET']],
+    [/^\/api\/catalog\/review\/reconcile$/, ['POST']],
+    [/^\/api\/catalog\/review\/\d+\/(?:context|resolve-facts|exclude|resolve)$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/execution-prices$/, ['PUT']],
+    [/^\/api\/catalog\/retirements$/, ['GET']],
+    [/^\/api\/catalog\/retirements\/\d+\/restore$/, ['POST']],
+    [/^\/api\/catalog\/executions\/\d+\/(?:retirement-preview|retire|variant-groups\/(?:retirement-preview|retire))$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/products$/, ['POST']],
+    [/^\/api\/catalog\/products\/\d+$/, ['PATCH']],
+    [/^\/api\/catalog\/products\/\d+\/(?:retirement-preview|retire)$/, ['GET', 'POST']],
+    [/^\/api\/catalog\/variants$/, ['POST']],
+    [/^\/api\/catalog\/variants\/\d+$/, ['PATCH']],
+  ];
+  return routes.some(([pattern, methods]) => pattern.test(path) && methods.includes(method));
+}
+
+function isWarehouseCatalogCharacteristicKind(kind: string | null) {
+  return ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(
+    normalizeReferenceKind(kind) || '',
+  );
+}
+
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -100,6 +133,13 @@ export default {
           return json({ ok: false, message: 'Перед работой смените временный пароль.', code: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 });
         }
         request = withAuthenticatedHeaders(request, authUser) as any;
+        // The job title is read from the authenticated account's active employee record,
+        // never from a caller-provided role header.
+        if (authUser.role !== 'admin' && authUser.employeeRole === 'Завсклад' && warehouseSupervisorEndpoint(url.pathname, request.method)) {
+          const warehouseHeaders = new Headers(request.headers);
+          warehouseHeaders.set('X-Access-Role', 'admin');
+          request = new Request(request, { headers: warehouseHeaders }) as any;
+        }
       }
 
       if (url.pathname === '/api/auth/me' && request.method === 'GET') {
@@ -499,20 +539,28 @@ export default {
       }
 
       if (url.pathname === '/api/reference-values' && request.method === 'POST') {
-        const denied = requireAdminAccess(request);
+        const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await createReferenceValue(env.DB, request);
       }
 
       const referenceMatch = url.pathname.match(/^\/api\/reference-values\/(\d+)$/);
       if (referenceMatch && request.method === 'PATCH') {
-        const denied = requireAdminAccess(request);
+        const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
+        const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await updateReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
       }
 
       if (referenceMatch && request.method === 'DELETE') {
-        const denied = requireAdminAccess(request);
+        const dbKind = await env.DB.prepare('SELECT kind FROM reference_values WHERE id = ?').bind(toInt(referenceMatch[1], 0)).first<{ kind: string }>();
+        const proposal = await request.clone().json().catch(() => ({})) as { kind?: unknown };
+        const warehouseCharacteristic = authUser?.employeeRole === 'Завсклад' && isWarehouseCatalogCharacteristicKind(dbKind?.kind || null) && isWarehouseCatalogCharacteristicKind(cleanText(proposal.kind));
+        const denied = warehouseCharacteristic ? null : requireAdminAccess(request);
         if (denied) return denied;
         return await deleteReferenceValue(env.DB, toInt(referenceMatch[1], 0), request);
       }
@@ -525,6 +573,11 @@ export default {
       if (url.pathname === '/api/reports/warehouse-demand' && request.method === 'GET') {
         const result = await listWarehouseDemand(env.DB, url);
         return json(result, result.ok ? undefined : { status: 400 });
+      }
+
+      if (url.pathname === '/api/reports/city-orders' && request.method === 'GET') {
+        const result = await listCityReportOrders(env.DB, url);
+        return json(result, result.ok ? undefined : { status: result.status || 400 });
       }
 
       if (url.pathname === '/api/reports/finance' && request.method === 'GET') {
@@ -580,7 +633,7 @@ export default {
       }
 
       if (url.pathname === '/api/team' && request.method === 'GET') {
-        return json(await listTeamEmployees(env.DB));
+        return json(await listTeamEmployees(env.DB, authUser?.role === 'admin'));
       }
 
       if (url.pathname === '/api/team/employees' && request.method === 'POST') {

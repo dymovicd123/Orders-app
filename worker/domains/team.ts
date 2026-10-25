@@ -12,6 +12,7 @@ export type EmployeeInput = {
   phone?: unknown;
   colorKey?: unknown;
   hiredAt?: unknown;
+  birthDate?: unknown;
   comment?: unknown;
   isActive?: unknown;
 };
@@ -136,7 +137,7 @@ export async function countTeamEmployeeReferences(db: D1Database, id: number) {
 }
 
 
-export async function listTeamEmployees(db: D1Database) {
+export async function listTeamEmployees(db: D1Database, includeBirthDate = false) {
   // Keep this as a single non-compound SELECT. The previous compound reference_rows CTE
   // occasionally hit D1/SQLite's compound-SELECT term limit on the live database.
   // Team size is small, so scalar COUNT subqueries are both predictable and cheap here.
@@ -162,7 +163,7 @@ export async function listTeamEmployees(db: D1Database) {
        SELECT manager_id, COUNT(*) AS ref_count FROM attendance_days WHERE manager_id IS NOT NULL GROUP BY manager_id
      )
      SELECT m.id, m.name, m.is_active, COALESCE(m.role, '') AS role, COALESCE(m.phone, '') AS phone,
-            COALESCE(m.comment, '') AS comment, COALESCE(m.color_key, '') AS color_key,
+            COALESCE(m.comment, '') AS comment, COALESCE(m.birth_date, '') AS birth_date, COALESCE(m.color_key, '') AS color_key,
             COALESCE(orx.first_order_at, m.hired_at, substr(m.created_at, 1, 10)) AS hired_at,
             COALESCE(m.dismissed_at, '') AS dismissed_at,
             m.created_at, m.updated_at,
@@ -190,6 +191,7 @@ export async function listTeamEmployees(db: D1Database) {
     comment: cleanText(row.comment),
     colorKey: normalizeManagerColor(row.color_key, toInt(row.id, 0) - 1),
     hiredAt: cleanText(row.hired_at),
+    ...(includeBirthDate ? { birthDate: cleanText(row.birth_date) } : {}),
     dismissedAt: cleanText(row.dismissed_at),
     referenceCount: toInt(row.reference_count, 0),
     canDelete: toInt(row.reference_count, 0) === 0,
@@ -219,6 +221,11 @@ export async function saveTeamEmployee(db: D1Database, input: EmployeeInput) {
   const isActive = input.isActive === false || Number(input.isActive) === 0 ? 0 : 1;
   const now = new Date().toISOString();
   const hiredAt = normalizeDate(input.hiredAt || now);
+  const rawBirthDate = cleanText(input.birthDate);
+  const birthDate = rawBirthDate ? normalizeDate(rawBirthDate) : '';
+  if (rawBirthDate && (!/^\d{4}-\d{2}-\d{2}$/.test(rawBirthDate) || !Number.isFinite(Date.parse(`${birthDate}T00:00:00Z`)) || new Date(`${birthDate}T00:00:00Z`).toISOString().slice(0, 10) !== birthDate || birthDate > normalizeDate(now))) {
+    throw new Error('Проверьте дату рождения: нужна реальная дата не позднее сегодняшней.');
+  }
   const colorKey = normalizeManagerColor(input.colorKey, id || Date.now());
 
   let employeeId = id;
@@ -227,16 +234,16 @@ export async function saveTeamEmployee(db: D1Database, input: EmployeeInput) {
     if (!existing?.id) throw new Error('Сотрудник не найден.');
     await db.prepare(
       `UPDATE managers
-       SET name = ?, role = ?, phone = ?, comment = ?, color_key = ?, hired_at = ?, is_active = ?,
+       SET name = ?, role = ?, phone = ?, comment = ?, color_key = ?, hired_at = ?, birth_date = ?, is_active = ?,
            dismissed_at = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(dismissed_at, ?) END,
            updated_at = ?
        WHERE id = ?`
-    ).bind(name, role, phone || null, comment || null, colorKey, hiredAt, isActive, isActive, now.slice(0, 10), now, id).run();
+    ).bind(name, role, phone || null, comment || null, colorKey, hiredAt, birthDate || null, isActive, isActive, now.slice(0, 10), now, id).run();
   } else {
     const inserted = await db.prepare(
-      `INSERT INTO managers (name, role, phone, salary_base, comment, color_key, hired_at, dismissed_at, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(name, role, phone || null, comment || null, colorKey, hiredAt, isActive ? null : now.slice(0, 10), isActive, now, now).run();
+      `INSERT INTO managers (name, role, phone, salary_base, comment, color_key, hired_at, birth_date, dismissed_at, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(name, role, phone || null, comment || null, colorKey, hiredAt, birthDate || null, isActive ? null : now.slice(0, 10), isActive, now, now).run();
     employeeId = Number(inserted.meta?.last_row_id || 0);
   }
 
@@ -248,7 +255,7 @@ export async function saveTeamEmployee(db: D1Database, input: EmployeeInput) {
     details: `${role}; цвет ${colorKey}; начало ${hiredAt}${phone ? `; ${phone}` : ''}`,
   });
 
-  return { ok: true, employeeId, employee: { id: employeeId, name, role, phone, comment, colorKey, hiredAt, isActive: Boolean(isActive) } };
+  return { ok: true, employeeId, employee: { id: employeeId, name, role, phone, comment, colorKey, hiredAt, birthDate, isActive: Boolean(isActive) } };
 }
 
 

@@ -1,0 +1,44 @@
+/* Scoped city-order drilldown; intentionally outside report export print tree. */
+.city-report-city-link{display:inline-flex;align-items:center;max-width:100%;padding:3px 0;border:0;background:none;color:var(--primary,#2452bd);font:inherit;font-weight:700;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px}
+.city-report-city-link:hover,.city-report-city-link:focus-visible{text-decoration-color:currentColor}
+/* CSS overrides the global !important natural-page overflow while this one dialog is open.
+   Reserving the page's scrollbar gutter prevents horizontal layout jumps. */
+html.city-orders-scroll-locked{overflow-y:hidden!important;scrollbar-gutter:stable}
+html.city-orders-scroll-locked body{overflow-y:hidden!important}
+.city-orders-backdrop{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(16,26,45,.56);overscroll-behavior:none}
+.city-orders-dialog{width:min(920px,100%);max-height:min(92vh,930px);display:flex;flex-direction:column;border:1px solid #e1e8f2;border-radius:18px;overflow:hidden;overscroll-behavior:contain;background:#fff;color:#162136;box-shadow:0 22px 70px rgba(15,31,58,.25)}
+.city-orders-dialog-header{padding:23px 26px 13px;display:flex;gap:20px;justify-content:space-between;align-items:start}
+.city-orders-dialog-title h2{font-size:22px;line-height:1.2;margin:0;color:#152238}
+.city-orders-dialog-title p{font-size:13px;margin:7px 0 0;color:#69778d}
+.city-orders-close{display:grid;place-items:center;width:34px;height:34px;min-width:34px;border:1px solid #e3e9f2;border-radius:10px;background:#f7f9fc;color:#46556e;font-size:23px;font-weight:400;line-height:1;cursor:pointer}
+.city-orders-close:hover{background:#eaf0fa}
+.city-orders-summary{margin:0 26px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px}
+.city-orders-summary strong{font-size:14px;color:#233450}
+.city-orders-summary span{color:#6e7a8e}
+.city-orders-hint{font-size:12px;color:#778296;padding:0 26px;margin:9px 0 16px}
+.city-orders-list{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;padding:0 26px 14px;display:flex;flex-direction:column;gap:10px}
+.city-order-card{border:1px solid #e2e8f0;border-radius:12px;padding:13px 17px;background:#fff;box-shadow:0 1px 2px rgba(20,38,67,.035)}
+.city-order-heading{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding-bottom:11px;border-bottom:1px solid #eff2f6}
+.city-order-number{display:flex;gap:8px;align-items:baseline}
+.city-order-number strong{font-size:14px;color:#1b2b44}
+.city-order-number span{color:#7d899a;font-size:11px;font-variant-numeric:tabular-nums}
+.city-order-date{font-size:12px;color:#67748a}
+.city-order-status{margin-left:auto;padding:4px 9px;border-radius:999px;background:#f1f4f8;color:#627086;font-size:11px;font-weight:600}
+.city-order-status.is-sent{background:#eaf7f1;color:#246c50}
+.city-order-main{display:flex;align-items:center;gap:16px;padding-top:12px}
+.city-order-person{display:flex;flex-direction:column;gap:5px;flex:1 1 170px;min-width:0}
+.city-order-person strong{font-size:13px;font-weight:600;color:#253853;overflow-wrap:anywhere}
+.city-order-person span{font-size:12px;color:#8290a2;overflow-wrap:anywhere}
+.city-order-money{display:grid;grid-template-columns:repeat(3,minmax(70px,95px));gap:10px}
+.city-order-money>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.city-order-money span{color:#8b96a6;font-size:11px}
+.city-order-money strong{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:#253853}
+.city-order-open,.city-orders-footer button,.city-orders-error button{border:1px solid #cbd9f5;border-radius:9px;background:#edf3ff;color:#2456b6;padding:9px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.city-order-open:hover,.city-orders-footer button:hover,.city-orders-error button:hover{background:#dfeaff}
+.city-orders-footer{padding:12px 26px 18px;border-top:1px solid #e7edf5;display:flex;justify-content:center}
+.city-orders-loading,.city-orders-empty{color:#78869b;font-size:13px;text-align:center;padding:12px;margin:0}
+.city-orders-error{padding:10px 26px;color:#a83131;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+@media(max-width:720px){.city-orders-backdrop{padding:0;align-items:stretch}.city-orders-dialog{max-height:100vh;height:100%;border-radius:0}.city-orders-dialog-header{padding:20px 16px 12px}.city-orders-dialog-title h2{font-size:19px}.city-orders-summary{margin:0 16px}.city-orders-hint{padding:0 16px}.city-orders-list{padding:0 12px 16px}.city-order-main{flex-wrap:wrap}.city-order-person{flex-basis:100%}.city-order-money{flex:1;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.city-order-money strong{font-size:12px}.city-orders-footer{padding:12px}.city-order-open{margin-left:auto}}
+
+/* Export intentionally omits application styles: plain city label survives when buttons are hidden. */
+.city-report-export-label{display:none}

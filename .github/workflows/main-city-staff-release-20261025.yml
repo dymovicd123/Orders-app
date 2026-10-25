@@ -1,0 +1,143 @@
+name: Main staff roles, DOB and city orders selective release
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-city-staff-release-20261025.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: main-city-staff
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Constrain release to reviewed business-safe files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF:-$GITHUB_REF_NAME}" = "main"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          base="0a3208e4f9420b0354db7e937cafe69eabad66af"
+          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
+          git diff --name-only "$base" "$GITHUB_SHA" | while IFS= read -r file; do
+            case "$file" in
+              src/App.tsx|src/app/types.ts|src/features/sections/TeamSection.tsx|\
+              src/features/renderers/FinanceReportContentRenderer.tsx|\
+              src/features/renderers/CityOrdersExplorer.tsx|\
+              src/styles/city-orders-explorer.css|\
+              worker/index.ts|worker/domains/team.ts|worker/domains/auth.ts|\
+              worker/domains/finance-reports.ts|worker/core/text.ts|worker/core/types.ts|\
+              migrations/0115_team_birth_date.sql|\
+              scripts/test-main-city-staff-20261025.mjs|\
+              .github/workflows/main-city-staff-release-20261025.yml) ;;
+              *) echo "Unexpected file since baseline: $file"; exit 1 ;;
+            esac
+          done
+      - run: npm ci
+      - name: Focused regression for report scroll isolation and catalog permissions
+        run: node scripts/test-main-city-staff-20261025.mjs
+      - name: Typecheck and build complete app
+        run: npm run build
+  migrate-and-deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Strict production identity and configured credentials
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF:-$GITHUB_REF_NAME}" = "main"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+      - run: npm ci
+      - name: Capture production business totals before additive schema change
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+          SELECT
+          (SELECT COUNT(*) FROM orders) AS orders_count,
+          (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_value,
+          (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+          (SELECT COUNT(*) FROM payments) AS payment_count,
+          (SELECT COUNT(*) FROM inventory_movements) AS movement_count,
+          (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_qty,
+          (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_qty,
+          (SELECT COUNT(*) FROM managers) AS manager_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/before-data.json
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS present FROM pragma_table_info('managers') WHERE name='birth_date'" --json | jq -er '.[0].results[0].present' > /tmp/birth-column-before
+          grep -Eq '^[01]$' /tmp/birth-column-before
+      - name: Capture production D1 Time Travel bookmark before any write
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No backup") end' > /tmp/time-travel-bookmark
+          test -s /tmp/time-travel-bookmark
+      - name: Add optional employee birth date in production only
+        run: |
+          set -euo pipefail
+          test -s /tmp/time-travel-bookmark
+          if [ "$(cat /tmp/birth-column-before)" = "0" ]; then
+            npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0115_team_birth_date.sql
+          fi
+      - name: Verify production schema and financial stock totals unchanged
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "SELECT COUNT(*) AS present FROM pragma_table_info('managers') WHERE name='birth_date'" --json | jq -e '.[0].results[0].present==1'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+          SELECT
+          (SELECT COUNT(*) FROM orders) AS orders_count,
+          (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_value,
+          (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+          (SELECT COUNT(*) FROM payments) AS payment_count,
+          (SELECT COUNT(*) FROM inventory_movements) AS movement_count,
+          (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_qty,
+          (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_qty,
+          (SELECT COUNT(*) FROM managers) AS manager_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/after-data.json
+          cmp /tmp/before-data.json /tmp/after-data.json
+      - name: Compile the publishable app
+        run: npm run build
+      - name: Publish main after verified production DOB schema
+        run: npx wrangler deploy
+      - name: Verify production app responds
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const host='https://orders-app.orders-clothes.workers.dev'
+          for(let attempt=0; attempt<6; attempt++){
+            try{
+              const r=await fetch(host+'/?main_city_staff='+Date.now(),{cache:'no-store'})
+              if(!r.ok)throw Error('HTTP '+r.status)
+              if(!(await r.text()).includes('/assets/'))throw Error('Missing assets')
+              console.log('MAIN_CITY_STAFF_RELEASE_DEPLOY_OK');process.exit(0)
+            }catch(e){if(attempt===5)throw e;await new Promise(resolve=>setTimeout(resolve,2500))}
+          }
+          NODE
