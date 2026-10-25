@@ -5482,7 +5482,7 @@ function App() {
   }
 
   async function saveCatalogProduct() {
-    if (!isAdmin) {
+    if (!canManageWarehouse) {
       setError('Редактирование каталога товаров доступно только администратору.')
       return
     }
@@ -5509,7 +5509,7 @@ function App() {
   }
 
   async function saveCatalogVariant() {
-    if (!isAdmin) {
+    if (!canManageWarehouse) {
       setError('Редактирование вариантов доступно только администратору.')
       return
     }
