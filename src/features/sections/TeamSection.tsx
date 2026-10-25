@@ -318,7 +318,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                     {isAdmin ? (
                       <button className="primary compact" type="button" onClick={() => {
-                        setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: MANAGER_COLOR_OPTIONS[teamEmployees.length % MANAGER_COLOR_OPTIONS.length], hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
+                        setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: MANAGER_COLOR_OPTIONS[teamEmployees.length % MANAGER_COLOR_OPTIONS.length], hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
                         setTeamFormOpen(true)
                       }}>+ Добавить сотрудника</button>
                     ) : null}
@@ -350,11 +350,16 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                         <label>Роль
                           <select disabled={!isAdmin} value={teamDraft.role} onChange={(event) => setTeamDraft((draft) => ({ ...draft, role: event.target.value }))}>
                             <option value="Менеджер">Менеджер</option>
+                            <option value="Упаковщик">Упаковщик</option>
+                            <option value="Завсклад">Завсклад</option>
                             <option value="Админ">Админ</option>
                           </select>
                         </label>
                         <label>Дата начала (если ещё нет заказов)
                           <input disabled={!isAdmin} type="date" value={teamDraft.hiredAt} onChange={(event) => setTeamDraft((draft) => ({ ...draft, hiredAt: event.target.value }))} />
+                        </label>
+                        <label>Дата рождения (необязательно)
+                          <input disabled={!isAdmin} type="date" max={formatLocalDateInput()} value={teamDraft.birthDate || ''} onChange={(event) => setTeamDraft((draft) => ({ ...draft, birthDate: event.target.value }))} />
                         </label>
                         <label>Контакт необязательно
                           <input disabled={!isAdmin} value={teamDraft.phone} onChange={(event) => setTeamDraft((draft) => ({ ...draft, phone: event.target.value }))} placeholder="Телефон или рабочая почта" />
@@ -472,6 +477,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                               <div className="team-person-cell">
                                 <ManagerBadge name={employee.name} colorKey={employee.colorKey} seed={employee.id} />
                                 {employee.phone ? <small>{employee.phone}</small> : null}
+                                {employee.birthDate ? <small>Дата рождения: {formatDateShort(employee.birthDate)}</small> : null}
                               </div>
                             </td>
                             <td>{employee.role || 'Менеджер'}</td>
@@ -551,7 +557,7 @@ export function TeamSection({ ctx }: { ctx: SectionContext }) {
                             <td>{isAdmin ? (
                               <div className="table-action-row">
                                 <button className="secondary compact" type="button" onClick={() => {
-                                  setTeamDraft({ id: employee.id, name: employee.name, role: employee.role || 'Менеджер', phone: employee.phone || '', colorKey: employee.colorKey || '#2563EB', hiredAt: employee.hiredAt || formatLocalDateInput(), comment: employee.comment || '', isActive: employee.isActive, createAccount: false, login: '', password: '', mustChangePassword: true })
+                                  setTeamDraft({ id: employee.id, name: employee.name, role: employee.role || 'Менеджер', phone: employee.phone || '', birthDate: employee.birthDate || '', colorKey: employee.colorKey || '#2563EB', hiredAt: employee.hiredAt || formatLocalDateInput(), comment: employee.comment || '', isActive: employee.isActive, createAccount: false, login: '', password: '', mustChangePassword: true })
                                   closeTeamEmployeeAccess()
                                   setTeamFormOpen(true)
                                 }}>Редактировать</button>

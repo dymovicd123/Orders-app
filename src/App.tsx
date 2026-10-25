@@ -716,7 +716,7 @@ function App() {
   const [financeMethodDraft, setFinanceMethodDraft] = useState({ id: 0, value: '', sortOrder: '0', isActive: true })
   const [teamEmployees, setTeamEmployees] = useState<TeamEmployee[]>([])
   const [teamBusy, setTeamBusy] = useState(false)
-  const [teamDraft, setTeamDraft] = useState({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
+  const [teamDraft, setTeamDraft] = useState({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
   const [teamRosterView, setTeamRosterView] = useState<'active' | 'former'>('active')
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [teamColorEditorId, setTeamColorEditorId] = useState<number | null>(null)
@@ -2858,7 +2858,7 @@ function App() {
         }
       }
 
-      setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
+      setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
       await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
       setTeamFormOpen(false)
       setMessage(shouldCreateAccount ? `Сотрудник сохранён. Вход @${requestedLogin} создан.` : 'Сотрудник сохранён.')
@@ -2951,7 +2951,7 @@ function App() {
       const response = await apiFetch(`/api/team/employees/${employee.id}`, { method: 'DELETE' })
       const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Удаление сотрудника')
       if (!response.ok) throw new Error(data.message || 'Не удалось удалить сотрудника.')
-      if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
+      if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
       await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
       setMessage(data.message || 'Сотрудник удалён из команды.')
     } catch (err) {

@@ -55,7 +55,10 @@ export function normalizeImportConfirmText(value: unknown) {
 
 export function normalizeEmployeeRole(value: unknown) {
   const text = upperText(value);
-  return text.includes('АДМИН') || text.includes('ADMIN') ? 'Админ' : 'Менеджер';
+  if (text.includes('АДМИН') || text.includes('ADMIN')) return 'Админ';
+  if (text === 'ЗАВСКЛАД' || text === 'ЗАВЕДУЮЩИЙ СКЛАДОМ') return 'Завсклад';
+  if (text === 'УПАКОВЩИК') return 'Упаковщик';
+  return 'Менеджер';
 }
 
 

@@ -212,6 +212,7 @@ export type ManagerOption = {
 export type TeamEmployee = ManagerOption & {
   role: string
   phone: string
+  birthDate?: string
   accountEmails?: string
   accountsCount?: number
   comment: string
