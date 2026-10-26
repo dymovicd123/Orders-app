@@ -40,7 +40,7 @@ jobs:
             esac
           done
       - run: npm ci
-      - name: KPI and roles regression
+      - name: KPI and roles regression (corrected UI button check)
         run: node scripts/test-product-kpi-20261026.mjs
       - name: Typecheck and complete app build
         run: npm run build
