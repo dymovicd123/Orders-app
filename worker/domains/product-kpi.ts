@@ -129,7 +129,7 @@ export async function listProductKpis(db:D1Database,monthParam:unknown,user:Auth
       'FROM orders o JOIN order_items oi ON oi.order_id=o.id',
       'LEFT JOIN returns_by_item ret ON ret.order_item_id=oi.id',
       "WHERE o.shipping_status='sent' AND o.order_status<>'deleted'",
-      'AND DATE(COALESCE(NULLIF(o.shipping_date,''), o.order_date)) BETWEEN ? AND ? AND oi.product_id=? AND oi.quantity>0',
+      "AND DATE(COALESCE(NULLIF(o.shipping_date,''), o.order_date)) BETWEEN ? AND ? AND oi.product_id=? AND oi.quantity>0",
       where?'AND '+where:'',
       'GROUP BY o.manager_id',
     ].join(' ')
