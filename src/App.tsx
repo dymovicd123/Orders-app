@@ -1502,7 +1502,7 @@ function App() {
       void loadLeadRecords()
       void loadCallCentreRecords()
     }
-    if (activeSector === 'plan') {
+    if (activeSector === 'plan' && isAdmin) {
       void loadPlans()
     }
     if (activeSector === 'finance') {
@@ -8934,7 +8934,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'plan'} label="План">
-        <PlanSection ctx={{ deleteDepartmentPlan, deleteManagerPlan, departmentPlanDraft, editDepartmentPlan, editManagerPlan, exportPlanReportWord, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadPlans, ManagerBadge, ManagerPicker, managerPlanDraft, planBusy, planFilters, planReport, printPlanReportPdf, references, saveDepartmentPlan, saveManagerPlan, sectorStyle, setDepartmentPlanDraft, setManagerPlanDraft, setPlanFilters }} />
+        <PlanSection ctx={{ apiFetch, currentManagerId: authUser?.managerId || 0, deleteDepartmentPlan, deleteManagerPlan, departmentPlanDraft, editDepartmentPlan, editManagerPlan, exportPlanReportWord, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadPlans, ManagerBadge, ManagerPicker, managerPlanDraft, planBusy, planFilters, planReport, printPlanReportPdf, references, saveDepartmentPlan, saveManagerPlan, sectorStyle, setDepartmentPlanDraft, setManagerPlanDraft, setPlanFilters }} />
         </DeferredSection>
         <DeferredSection active={activeSector === 'finance'} label="Финансы">
         <FinanceSection ctx={{ apiFetch, active: activeSector === 'finance' && authReady, accessRole, financeMode, financeReportBusy, financeReportFilters, getPeriodRange, sectorStyle, setFinanceReportFilters, financeDashboardCtx: { cashMovementDraft, cashRegister, cashRegisterBusy, cashRegisterCycles, cashRegisterCyclesBusy, cashRegisterCyclesHasMore, cashRegisterCyclesOpen, cashSetupAmount, cashReconcileAmount, cashReconcileComment, financeMethodDraft, financeMethodsBusy, financeMode, financePaymentMethods, financeReport, financeReportBusy, moneyHistory, moneyHistoryBusy, moneyHistoryError, moneyHistoryHasMore, moneyHistoryQuery, moneyHistorySummary, moneyHistoryType, loadMoneyHistory, setMoneyHistoryQuery, setMoneyHistoryType, reloadFinanceReports, formatDateShort, formatMoney, formatPercent, FriendlyNumberInput, isAdmin, loadCashRegister, loadCashRegisterCycles, loadFinancePaymentMethods, ManagerBadge, managerColorFor, normalizeSuggestion, openOrderFromFinance, removeFinancePaymentMethod, saveCashRegisterMovement, saveFinancePaymentMethod, setCashMovementDraft, setCashRegisterCyclesOpen, setCashSetupAmount, setCashReconcileAmount, setCashReconcileComment, setupCashRegister, activateCashRegister, setCashAutoTracking, reconcileCashRegister, reverseCashRegisterMovement, resetCashRegisterCycle, setFinanceMethodDraft, setFinanceMode } }} />
