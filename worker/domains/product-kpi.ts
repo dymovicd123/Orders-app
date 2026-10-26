@@ -53,7 +53,7 @@ export async function saveProductKpi(db:D1Database,input:any,actor:string) {
   if(!Array.isArray(input.participants)||!input.participants.length||input.participants.length>60)return err('Выберите участников KPI.')
   const parts=input.participants.map((p:any)=>({
     managerId:int(p.managerId,'Менеджер'),quota:int(p.quota,'Квота',false,100000),
-    bonusAmount:int(p.bonusAmount,'Бонус',true,100000000),
+    bonusAmount:int(p.bonusAmount,'Бонус',false,100000000),
   }))
   if(new Set(parts.map((p:any)=>p.managerId)).size!==parts.length)return err('Менеджеры повторяются.')
   if(parts.reduce((sum:number,p:any)=>sum+p.quota,0)!==total)return err('Сумма квот не совпадает с общей целью.')

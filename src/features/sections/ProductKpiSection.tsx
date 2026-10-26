@@ -106,7 +106,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   }
   function toggleManager(id:number,checked:boolean){
     setDraft(d=>{
-      const list=checked?[...d.participants,{managerId:id,quota:1,bonusAmount:20000}]:d.participants.filter(x=>x.managerId!==id)
+      const list=checked?[...d.participants,{managerId:id,quota:1,bonusAmount:0}]:d.participants.filter(x=>x.managerId!==id)
       return {...d,participants:distribute(list,d.targetQuantity)}
     })
   }
@@ -115,6 +115,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     if(!draft.productId){setError('Выберите товар из каталога.');return}
     if(!draft.participants.length){setError('Добавьте менеджеров.');return}
     if(draft.participants.some(p=>p.quota<=0)){setError('У каждого менеджера должна быть положительная квота.');return}
+    if(draft.participants.some(p=>p.bonusAmount<=0)){setError('Укажите бонус каждому менеджеру.');return}
     if(quotaSum!==draft.targetQuantity){setError('Распределите всю общую цель между менеджерами.');return}
     if(variants.length&&matches.length===0){setError('Таких комбинаций в каталоге нет.');return}
     setSaving(true)
@@ -191,7 +192,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
       </div>
       <div className="pkpi-editor-foot">
         <strong className={quotaSum===draft.targetQuantity?'pkpi-balanced':'pkpi-unbalanced'}>Распределено: {quotaSum} / {draft.targetQuantity} шт.</strong>
-        <button className="primary" type="button" onClick={()=>void save()} disabled={saving||!draft.productId||!draft.participants.length||quotaSum!==draft.targetQuantity||draft.targetQuantity<1||draft.participants.some(p=>p.quota<1)||Boolean(variants.length&&!matches.length)}>{saving?'Сохраняю…':'Сохранить KPI'}</button>
+        <button className="primary" type="button" onClick={()=>void save()} disabled={saving||!draft.productId||!draft.participants.length||quotaSum!==draft.targetQuantity||draft.targetQuantity<1||draft.participants.some(p=>p.quota<1||p.bonusAmount<1)||Boolean(variants.length&&!matches.length)}>{saving?'Сохраняю…':'Сохранить KPI'}</button>
       </div>
     </div>:null}
     {busy?<p className="pkpi-muted">Загружаем KPI…</p>:null}
