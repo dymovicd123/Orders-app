@@ -18,6 +18,7 @@ export function LeadsSection({ ctx }: { ctx: SectionContext }) {
     leadDraft,
     leadFilters,
     leadMode,
+    isAdmin,
     leadRecords,
     loadCallCentreRecords,
     loadLeadRecords,
@@ -65,7 +66,7 @@ export function LeadsSection({ ctx }: { ctx: SectionContext }) {
                     {leadDraft.id ? <button className="secondary" type="button" onClick={() => setLeadDraft({ id: 0, date: formatLocalDateInput(), managerId: 0, managerName: '', acceptedCount: 0, badCount: 0, comment: '' })}>Новая запись</button> : null}
                   </div>
                   <div className="table-shell"><table className="data-table"><thead><tr><th>Дата</th><th>Менеджер</th><th>Принято</th><th>Неквал</th><th>Квал</th><th>Продажи</th><th>Конверсия</th><th>Комментарий</th><th className="export-hide">Действия</th></tr></thead><tbody>
-                    {leadRecords.map((row) => <tr key={`lead-${row.id}`}><td>{formatDateShort(row.date)}</td><td><ManagerBadge name={row.manager} colorKey={row.managerColor} compact /></td><td>{row.acceptedCount}</td><td>{row.badCount}</td><td>{row.qualifiedCount}</td><td>{row.salesCount}</td><td>{formatPercent(row.conversionRate)}</td><td>{row.comment || '—'}</td><td className="export-hide"><div className="row-actions compact-actions"><button className="secondary compact" type="button" onClick={() => editLeadRecord(row)}>Редактировать</button><button className="ghost danger compact" type="button" onClick={() => void deleteLeadRecord(row.id)}>Удалить</button></div></td></tr>)}
+                    {leadRecords.map((row) => <tr key={`lead-${row.id}`}><td>{formatDateShort(row.date)}</td><td><ManagerBadge name={row.manager} colorKey={row.managerColor} compact /></td><td>{row.acceptedCount}</td><td>{row.badCount}</td><td>{row.qualifiedCount}</td><td>{row.salesCount}</td><td>{formatPercent(row.conversionRate)}</td><td>{row.comment || '—'}</td><td className="export-hide"><div className="row-actions compact-actions"><button className="secondary compact" type="button" onClick={() => editLeadRecord(row)}>Редактировать</button>{isAdmin ? <button className="ghost danger compact" type="button" onClick={() => void deleteLeadRecord(row.id)}>Удалить</button> : null}</div></td></tr>)}
                     {!leadRecords.length ? <tr><td colSpan={9} className="empty-state">Лидов за период пока нет.</td></tr> : null}
                   </tbody></table></div>
                 </>
@@ -88,7 +89,7 @@ export function LeadsSection({ ctx }: { ctx: SectionContext }) {
                     {callCentreDraft.id ? <button className="secondary" type="button" onClick={() => setCallCentreDraft({ id: 0, date: formatLocalDateInput(), managerId: 0, managerName: '', acceptedLeads: 0, callsMade: 0, callsAccepted: 0, fakeCount: 0, refusalCount: 0, potentialCount: 0, comment: '' })}>Новая запись</button> : null}
                   </div>
                   <div className="table-shell"><table className="data-table"><thead><tr><th>Дата</th><th>Менеджер</th><th>Лиды</th><th>Звонки</th><th>Принято</th><th>Фейки</th><th>Отказники</th><th>Потенциалы</th><th>% дозвона</th><th className="export-hide">Действия</th></tr></thead><tbody>
-                    {callCentreRecords.map((row) => <tr key={`cc-${row.id}`}><td>{formatDateShort(row.date)}</td><td><ManagerBadge name={row.manager} colorKey={row.managerColor} compact /></td><td>{row.acceptedLeads}</td><td>{row.callsMade}</td><td>{row.callsAccepted}</td><td>{row.fakeCount}</td><td>{row.refusalCount}</td><td>{row.potentialCount}</td><td>{formatPercent(row.callAcceptanceRate)}</td><td className="export-hide"><div className="row-actions compact-actions"><button className="secondary compact" type="button" onClick={() => editCallCentreRecord(row)}>Редактировать</button><button className="ghost danger compact" type="button" onClick={() => void deleteCallCentreRecord(row.id)}>Удалить</button></div></td></tr>)}
+                    {callCentreRecords.map((row) => <tr key={`cc-${row.id}`}><td>{formatDateShort(row.date)}</td><td><ManagerBadge name={row.manager} colorKey={row.managerColor} compact /></td><td>{row.acceptedLeads}</td><td>{row.callsMade}</td><td>{row.callsAccepted}</td><td>{row.fakeCount}</td><td>{row.refusalCount}</td><td>{row.potentialCount}</td><td>{formatPercent(row.callAcceptanceRate)}</td><td className="export-hide"><div className="row-actions compact-actions"><button className="secondary compact" type="button" onClick={() => editCallCentreRecord(row)}>Редактировать</button>{isAdmin ? <button className="ghost danger compact" type="button" onClick={() => void deleteCallCentreRecord(row.id)}>Удалить</button> : null}</div></td></tr>)}
                     {!callCentreRecords.length ? <tr><td colSpan={10} className="empty-state">Call Centre за период пока пуст.</td></tr> : null}
                   </tbody></table></div>
                 </>

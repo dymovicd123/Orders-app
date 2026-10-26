@@ -8930,7 +8930,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'leads'} label="Лиды">
-        <LeadsSection ctx={{ callCentreDraft, callCentreRecords, deleteCallCentreRecord, deleteLeadRecord, editCallCentreRecord, editLeadRecord, formatDateShort, formatLocalDateInput, formatPercent, FriendlyNumberInput, getPeriodRange, leadBusy, leadDraft, leadFilters, leadMode, leadRecords, loadCallCentreRecords, loadLeadRecords, ManagerBadge, ManagerPicker, references, saveCallCentreRecord, saveLeadRecord, sectorStyle, setCallCentreDraft, setLeadDraft, setLeadFilters, setLeadMode }} />
+        <LeadsSection ctx={{ isAdmin, callCentreDraft, callCentreRecords, deleteCallCentreRecord, deleteLeadRecord, editCallCentreRecord, editLeadRecord, formatDateShort, formatLocalDateInput, formatPercent, FriendlyNumberInput, getPeriodRange, leadBusy, leadDraft, leadFilters, leadMode, leadRecords, loadCallCentreRecords, loadLeadRecords, ManagerBadge, ManagerPicker, references, saveCallCentreRecord, saveLeadRecord, sectorStyle, setCallCentreDraft, setLeadDraft, setLeadFilters, setLeadMode }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'plan'} label="План">

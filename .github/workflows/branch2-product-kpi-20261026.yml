@@ -34,13 +34,13 @@ jobs:
             case "$f" in
               migrations/0116_monthly_product_kpi.sql|worker/domains/product-kpi.ts|worker/index.ts|src/App.tsx|\
               src/app/managerWorkspaceAccess.ts|src/features/sections/PlanSection.tsx|\
-              src/features/sections/ProductKpiSection.tsx|src/styles/product-kpi.css|\
+              src/features/sections/ProductKpiSection.tsx|src/features/sections/LeadsSection.tsx|src/styles/product-kpi.css|\
               scripts/test-product-kpi-20261026.mjs|.github/workflows/branch2-product-kpi-20261026.yml) ;;
               *) echo "Unexpected change: $f";exit 1;;
             esac
           done
       - run: npm ci
-      - name: KPI and roles regression (explicit bonus input) (corrected UI button check)
+      - name: KPI, Leads permissions and role regression (corrected UI button check)
         run: node scripts/test-product-kpi-20261026.mjs
       - name: Typecheck and complete app build (manager KPI state)
         run: npm run build

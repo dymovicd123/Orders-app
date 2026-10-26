@@ -715,6 +715,8 @@ export default {
       }
 
       if (url.pathname === '/api/plans' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Денежные планы доступны только администратору.');
+        if (denied) return denied;
         return json(await listPlans(env.DB, url));
       }
 
