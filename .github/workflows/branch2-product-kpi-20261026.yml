@@ -40,7 +40,7 @@ jobs:
             esac
           done
       - run: npm ci
-      - name: KPI, Leads permissions and role regression (corrected UI button check)
+      - name: KPI, Leads permissions and compact picker UX regression
         run: node scripts/test-product-kpi-20261026.mjs
       - name: Typecheck and complete app build (manager KPI state)
         run: npm run build

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogVariantRecord } from '../../app/types'
 import '../../styles/product-kpi.css'
 
@@ -51,9 +51,21 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   const [editing,setEditing]=useState(false)
   const [draft,setDraft]=useState<Draft>(()=>initial(thisMonth()))
   const [productQuery,setProductQuery]=useState('')
+  const [searchOpen,setSearchOpen]=useState(false)
+  const [detailsOpen,setDetailsOpen]=useState(false)
+  const [sharedBonus,setSharedBonus]=useState('')
+  const productInputRef=useRef<HTMLInputElement|null>(null)
+  const editorRef=useRef<HTMLDivElement|null>(null)
+  const [highlighted,setHighlighted]=useState(0)
   const [expanded,setExpanded]=useState<number[]>([])
   const activeProducts=useMemo(()=>(catalog?.products||[]).filter(p=>p.isActive),[catalog])
-  const candidates=useMemo(()=>activeProducts.filter(p=>normalize(p.name).includes(normalize(productQuery))).slice(0,45),[activeProducts,productQuery])
+  const candidates=useMemo(()=>{
+    const query=normalize(productQuery)
+    if(query.length<2)return []
+    return activeProducts.filter(p=>normalize(p.name).includes(query))
+      .sort((a,b)=>Number(normalize(b.name).startsWith(query))-Number(normalize(a.name).startsWith(query)) || a.name.localeCompare(b.name,'ru'))
+      .slice(0,8)
+  },[activeProducts,productQuery])
   const variants=useMemo(()=>(catalog?.variants||[]).filter(v=>v.isActive&&v.productId===draft.productId),[catalog,draft.productId])
   const matches=useMemo(()=>variants.filter(v=>filterKeys.every(k=>!draft.filters[k]||variantValue(v,k)===draft.filters[k])),[variants,draft.filters])
   const values=useMemo(()=>{
@@ -66,6 +78,32 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   },[variants,draft.filters])
   const quotaSum=draft.participants.reduce((s,p)=>s+p.quota,0)
   const conflict=records.filter(r=>r.id!==draft.id&&r.productId===draft.productId&&overlap(r.filters,draft.filters))
+  useEffect(()=>{
+    if(!editing)return
+    const frame=window.requestAnimationFrame(()=>editorRef.current?.scrollIntoView({behavior:'smooth',block:'start'}))
+    return ()=>window.cancelAnimationFrame(frame)
+  },[editing,draft.id])
+
+  function handleProductKey(event:KeyboardEvent<HTMLInputElement>){
+    if(event.key==='Escape'){setSearchOpen(false);return}
+    if(!searchOpen||!candidates.length)return
+    if(event.key==='ArrowDown'){event.preventDefault();setHighlighted(i=>(i+1)%candidates.length)}
+    if(event.key==='ArrowUp'){event.preventDefault();setHighlighted(i=>(i-1+candidates.length)%candidates.length)}
+    if(event.key==='Enter'){
+      event.preventDefault()
+      selectProduct(candidates[Math.min(highlighted,candidates.length-1)].id)
+    }
+  }
+
+  function changeProduct(){
+    setDraft(d=>({...d,productId:0,filters:emptyFilters()}))
+    setProductQuery('')
+    setDetailsOpen(false)
+    setSearchOpen(true)
+    setHighlighted(0)
+    window.requestAnimationFrame(()=>productInputRef.current?.focus())
+  }
+
   async function load(targetMonth=month){
     setBusy(true);setError('')
     try{
@@ -91,22 +129,25 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     void initialData()
   },[isAdmin])
   function create(){
-    setDraft(initial(month));setProductQuery('');setMessage('');setEditing(true)
+    setDraft(initial(month));setProductQuery('');setSearchOpen(false);setDetailsOpen(false);setSharedBonus('');setMessage('');setError('');setEditing(true)
   }
   function edit(row:Campaign){
     setDraft({id:row.id,month:row.month,title:row.title,productId:row.productId,targetQuantity:row.targetQuantity,
       filters:{...emptyFilters(),...row.filters},
       participants:row.participants.map(p=>({managerId:p.managerId,quota:p.quota,bonusAmount:p.bonusAmount})),
       expectedUpdatedAt:row.updatedAt})
-    setProductQuery(row.productName);setMessage('');setEditing(true)
+    setProductQuery(row.productName);setSearchOpen(false);setDetailsOpen(filterKeys.some(k=>Boolean(row.filters[k])));setSharedBonus('');setMessage('');setError('');setEditing(true)
   }
   function selectProduct(id:number){
     setDraft(d=>({...d,productId:id,filters:emptyFilters(),title:''}))
     setProductQuery(activeProducts.find(p=>p.id===id)?.name||'')
+    setSearchOpen(false)
+    setHighlighted(0)
+    setDetailsOpen(false)
   }
   function toggleManager(id:number,checked:boolean){
     setDraft(d=>{
-      const list=checked?[...d.participants,{managerId:id,quota:1,bonusAmount:0}]:d.participants.filter(x=>x.managerId!==id)
+      const list=checked?[...d.participants,{managerId:id,quota:1,bonusAmount:numberValue(sharedBonus)}]:d.participants.filter(x=>x.managerId!==id)
       return {...d,participants:distribute(list,d.targetQuantity)}
     })
   }
@@ -140,87 +181,187 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     }catch(e){setError(e instanceof Error?e.message:'Не удалось удалить KPI.')}
     finally{setSaving(false)}
   }
+  const selectedProduct=activeProducts.find(p=>p.id===draft.productId)
+  const activeDetails=filterKeys.filter(k=>Boolean(draft.filters[k])).length
+  const canSave=!saving&&Boolean(draft.productId)&&draft.targetQuantity>0&&Boolean(draft.participants.length)
+    &&quotaSum===draft.targetQuantity&&draft.participants.every(p=>p.quota>0&&p.bonusAmount>0)
+    &&(!variants.length||matches.length>0)
   return <section className="pkpi">
-    <header className="pkpi-header">
-      <div><h3>KPI по товарам</h3><p>Несколько самостоятельных заданий на месяц. Выполнение считается по отправленным заказам, бонус показан расчётно — без начисления зарплаты или выплаты.</p></div>
-      {isAdmin?<button type="button" className="primary compact" onClick={create}>+ Новое задание</button>:null}
-    </header>
     <div className="pkpi-toolbar">
-      <label>Месяц <input type="month" value={month} onChange={e=>{setMonth(e.target.value);setEditing(false)}} /></label>
-      <button className="secondary compact" type="button" onClick={()=>void load()} disabled={busy}>Обновить</button>
-      <span>{records.length} заданий</span>
+      <label className="pkpi-month">Месяц <input type="month" value={month} onChange={e=>{setMonth(e.target.value);setEditing(false)}}/></label>
+      <div className="pkpi-toolbar-actions">
+        <span className="pkpi-count">{records.length===1?'1 задание':records.length+' заданий'}</span>
+        <button type="button" className="pkpi-refresh" onClick={()=>void load()} disabled={busy} title="Обновить KPI" aria-label="Обновить KPI">↻</button>
+        {isAdmin?<button type="button" className="primary pkpi-create-button" onClick={create}>+ Создать KPI</button>:null}
+      </div>
     </div>
-    {!isAdmin && !currentManagerId?<p className="pkpi-error">Аккаунт не привязан к сотруднику, поэтому личные KPI не отображаются. Обратитесь к администратору.</p>:null}
+    {!isAdmin&&!currentManagerId?<p className="pkpi-error">Учётная запись не привязана к сотруднику. Обратитесь к администратору.</p>:null}
     {error?<p className="pkpi-error" role="alert">{error}</p>:null}
     {message?<p className="pkpi-ok" role="status">{message}</p>:null}
-    {editing&&isAdmin?<div className="pkpi-editor">
-      <div className="pkpi-editor-head"><h4>{draft.id?'Изменить KPI':'Новое задание KPI'}</h4><button className="secondary compact" type="button" onClick={()=>setEditing(false)}>Закрыть</button></div>
-      <div className="pkpi-two">
-        <label>Месяц <input type="month" value={draft.month} onChange={e=>setDraft(d=>({...d,month:e.target.value}))}/></label>
-        <label>Название задания (необязательно) <input value={draft.title} onChange={e=>setDraft(d=>({...d,title:e.target.value}))} placeholder="Например, продать Абай шапаны"/></label>
+
+    {editing&&isAdmin?<div className="pkpi-editor" ref={editorRef}>
+      <div className="pkpi-editor-head">
+        <div><h3>{draft.id?'Редактирование KPI':'Новый KPI'}</h3><span>На {new Date(draft.month+'-01T12:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</span></div>
+        <button type="button" className="pkpi-close" onClick={()=>setEditing(false)} aria-label="Закрыть форму">×</button>
       </div>
-      <div className="pkpi-product">
-        <label>Поиск товара <input value={productQuery} placeholder="Введите модель из каталога" onChange={e=>{setProductQuery(e.target.value);setDraft(d=>({...d,productId:0,filters:emptyFilters()}))}} /></label>
-        <div className="pkpi-product-choices">
-          {candidates.map(p=><button key={p.id} type="button" className={draft.productId===p.id?'pkpi-picked':''} onClick={()=>selectProduct(p.id)}>{p.name}</button>)}
+
+      <div className="pkpi-fields">
+        <div className="pkpi-form-group">
+          <label className="pkpi-field-title" htmlFor="pkpi-product-search">Какой товар нужно продать?</label>
+          {selectedProduct?
+            <div className="pkpi-product-selected">
+              <span className="pkpi-product-name">{selectedProduct.name}</span>
+              <button type="button" onClick={changeProduct}>Сменить</button>
+            </div>
+            :
+            <div className="pkpi-product-search" onBlur={e=>{
+              if(!e.currentTarget.contains(e.relatedTarget as Node))setSearchOpen(false)
+            }}>
+              <input id="pkpi-product-search" ref={productInputRef} type="search" autoComplete="off"
+                role="combobox" aria-autocomplete="list" aria-expanded={searchOpen&&productQuery.trim().length>=2&&candidates.length>0}
+                aria-controls="pkpi-search-options"
+                placeholder="Начните вводить название модели…"
+                value={productQuery}
+                onFocus={()=>setSearchOpen(true)}
+                onChange={e=>{setProductQuery(e.target.value);setSearchOpen(true);setHighlighted(0)}}
+                onKeyDown={handleProductKey}/>
+              {searchOpen&&productQuery.trim().length>=2?
+                <div id="pkpi-search-options" className="pkpi-search-results" role="listbox" aria-label="Подходящие товары">
+                  {candidates.map((p,i)=><button key={p.id} type="button" role="option" aria-selected={i===highlighted}
+                    className={i===highlighted?'is-highlighted':''}
+                    onMouseEnter={()=>setHighlighted(i)} onClick={()=>selectProduct(p.id)}>{p.name}</button>)}
+                  {!candidates.length?<div className="pkpi-no-results">Ничего не найдено. Попробуйте другое название.</div>:null}
+                </div>:null}
+            </div>}
+          {draft.productId?<div className="pkpi-attributes">
+            <button type="button" className="pkpi-attributes-toggle" aria-expanded={detailsOpen} onClick={()=>setDetailsOpen(v=>!v)}>
+              <span>{activeDetails?'Характеристики: '+activeDetails+' выбрано':'Уточнить характеристики'}</span>
+              <span>{activeDetails?describe(draft.filters):'Все цвета, материалы и размеры'}</span>
+              <span className="pkpi-chevron">{detailsOpen?'⌃':'⌄'}</span>
+            </button>
+            {detailsOpen?<div className="pkpi-filter-grid">
+              {filterKeys.map(key=><label key={key}>{labels[key]}
+                <select value={draft.filters[key]} onChange={e=>setDraft(d=>({...d,filters:{...d.filters,[key]:e.target.value}}))}>
+                  <option value="">Любой</option>
+                  {(draft.filters[key]&&!values[key].includes(draft.filters[key])?[draft.filters[key],...values[key]]:values[key])
+                    .map(v=><option key={v} value={v}>{v}</option>)}
+                </select></label>)}
+              <span className="pkpi-filter-note">{variants.length?matches.length+' сочетаний подходят': 'Для модели пока не заведены варианты'}</span>
+              {activeDetails?<button type="button" className="pkpi-filter-reset" onClick={()=>setDraft(d=>({...d,filters:emptyFilters()}))}>Сбросить уточнения</button>:null}
+            </div>:null}
+          </div>:null}
+          {conflict.length?<p className="pkpi-warn">Есть похожий KPI в этом месяце. Одна продажа может пойти в зачёт сразу нескольких заданий.</p>:null}
         </div>
-        {draft.productId?<small>Выбрано: {activeProducts.find(p=>p.id===draft.productId)?.name}. Далее можно уточнить любые характеристики.</small>:<small>Сначала выберите модель. Остальные параметры необязательны.</small>}
+
+        <div className="pkpi-target-row">
+          <label className="pkpi-field-title">Цель на месяц, шт.
+            <input className="pkpi-target-input" type="number" min={1} max={100000} value={draft.targetQuantity}
+              onChange={e=>setDraft(d=>({...d,targetQuantity:numberValue(e.target.value)}))}/>
+          </label>
+          <label className="pkpi-field-title pkpi-optional-name">Название (необязательно)
+            <input value={draft.title} onChange={e=>setDraft(d=>({...d,title:e.target.value}))}
+              placeholder={selectedProduct?.name||'Например, осенняя акция'}/>
+          </label>
+        </div>
+
+        <div className="pkpi-participants">
+          <div className="pkpi-section-title">
+            <h4>Кто участвует</h4>
+            <span>{draft.participants.length?draft.participants.length+' выбрано':'Выберите менеджеров'}</span>
+          </div>
+          <div className="pkpi-member-picks">
+            {managers.map(m=>{
+              const chosen=draft.participants.some(p=>p.managerId===m.id)
+              return <button key={m.id} type="button" className={chosen?'is-selected':''}
+                aria-pressed={chosen} onClick={()=>toggleManager(m.id,!chosen)}>
+                <span aria-hidden="true">{chosen?'✓':'+'}</span>{m.name}
+              </button>
+            })}
+          </div>
+
+          {draft.participants.length>0?<div className="pkpi-allocation">
+            <div className="pkpi-allocation-head">
+              <div><strong>Распределение плана</strong><span>Можно скорректировать долю каждого</span></div>
+              <button type="button" className="secondary compact"
+                onClick={()=>setDraft(d=>({...d,participants:distribute(d.participants,d.targetQuantity)}))}>Разделить поровну</button>
+            </div>
+            <div className="pkpi-member-table">
+              <div className="pkpi-member-table-head"><span>Менеджер</span><span>Штук</span><span>Бонус, ₸</span></div>
+              {draft.participants.map(p=><div className="pkpi-member-row" key={p.managerId}>
+                <strong>{managers.find(m=>m.id===p.managerId)?.name||'Менеджер #'+p.managerId}</strong>
+                <label aria-label="Квота"><span className="pkpi-mobile-label">Штук</span>
+                  <input type="number" min={1} value={p.quota}
+                    onChange={e=>setDraft(d=>({...d,participants:d.participants.map(x=>x.managerId===p.managerId?{...x,quota:numberValue(e.target.value)}:x)}))}/></label>
+                <label aria-label="Бонус"><span className="pkpi-mobile-label">Бонус, ₸</span>
+                  <input type="number" min={1} value={p.bonusAmount||''} placeholder="—"
+                    onChange={e=>setDraft(d=>({...d,participants:d.participants.map(x=>x.managerId===p.managerId?{...x,bonusAmount:numberValue(e.target.value)}:x)}))}/></label>
+              </div>)}
+            </div>
+            <div className="pkpi-bonus-common">
+              <label>Одинаковый бонус всем, ₸
+                <input type="number" min={1} value={sharedBonus} placeholder="Сумма" onChange={e=>setSharedBonus(e.target.value)}/>
+              </label>
+              <button type="button" className="secondary compact" disabled={!numberValue(sharedBonus)}
+                onClick={()=>setDraft(d=>({...d,participants:d.participants.map(p=>({...p,bonusAmount:numberValue(sharedBonus)}))}))}>Применить</button>
+            </div>
+          </div>:null}
+        </div>
       </div>
-      {draft.productId?<div className="pkpi-filter-grid">
-        {filterKeys.map(key=><label key={key}>{labels[key]}
-          <select value={draft.filters[key]} onChange={e=>setDraft(d=>({...d,filters:{...d.filters,[key]:e.target.value}}))}>
-            <option value="">Все</option>
-            {(draft.filters[key]&&!values[key].includes(draft.filters[key])?[draft.filters[key],...values[key]]:values[key]).map(v=><option key={v} value={v}>{v}</option>)}
-          </select></label>)}
-        <div className="pkpi-full pkpi-hint">{variants.length?matches.length+' подходящих комбинаций в каталоге': 'У модели пока нет вариантов. Можно задать KPI на модель целиком.'}</div>
-        {conflict.length?<p className="pkpi-full pkpi-warn">В этом месяце уже есть {conflict.length} KPI с пересекающимися условиями по модели. Одна продажа может учитываться в каждом таком задании.</p>:null}
-      </div>:null}
-      <div className="pkpi-quota-head">
-        <label>Общая цель, шт. <input type="number" min={1} max={100000} value={draft.targetQuantity} onChange={e=>setDraft(d=>({...d,targetQuantity:numberValue(e.target.value)}))}/></label>
-        <button className="secondary compact" type="button" onClick={()=>setDraft(d=>({...d,participants:distribute(d.participants,d.targetQuantity)}))}>Распределить поровну</button>
-      </div>
-      <div className="pkpi-managers">
-        <strong>Менеджеры</strong><p>Выберите участников. Квоты можно изменить вручную; сумма должна равняться общей цели.</p>
-        <div className="pkpi-member-picks">{managers.map(m=><label key={m.id}><input type="checkbox" checked={draft.participants.some(p=>p.managerId===m.id)} onChange={e=>toggleManager(m.id,e.target.checked)}/>{m.name}</label>)}</div>
-        {draft.participants.length?<div className="pkpi-member-table">
-          {draft.participants.map(p=><div key={p.managerId} className="pkpi-member-row">
-            <strong>{managers.find(m=>m.id===p.managerId)?.name||'Менеджер #'+p.managerId}</strong>
-            <label>Квота <input type="number" min={1} value={p.quota} onChange={e=>setDraft(d=>({...d,participants:d.participants.map(x=>x.managerId===p.managerId?{...x,quota:numberValue(e.target.value)}:x)}))}/></label>
-            <label>Бонус, ₸ <input type="number" min={0} value={p.bonusAmount} onChange={e=>setDraft(d=>({...d,participants:d.participants.map(x=>x.managerId===p.managerId?{...x,bonusAmount:numberValue(e.target.value)}:x)}))}/></label>
-          </div>)}
-        </div>:null}
-      </div>
+
       <div className="pkpi-editor-foot">
-        <strong className={quotaSum===draft.targetQuantity?'pkpi-balanced':'pkpi-unbalanced'}>Распределено: {quotaSum} / {draft.targetQuantity} шт.</strong>
-        <button className="primary" type="button" onClick={()=>void save()} disabled={saving||!draft.productId||!draft.participants.length||quotaSum!==draft.targetQuantity||draft.targetQuantity<1||draft.participants.some(p=>p.quota<1||p.bonusAmount<1)||Boolean(variants.length&&!matches.length)}>{saving?'Сохраняю…':'Сохранить KPI'}</button>
+        <div>
+          <strong className={draft.participants.length&&quotaSum===draft.targetQuantity?'pkpi-balanced':'pkpi-unbalanced'}>
+            {quotaSum} из {draft.targetQuantity} шт. распределено
+          </strong>
+          {quotaSum!==draft.targetQuantity&&draft.participants.length>0?
+            <small>{quotaSum<draft.targetQuantity?'Осталось '+(draft.targetQuantity-quotaSum)+' шт.':'Превышение на '+(quotaSum-draft.targetQuantity)+' шт.'}</small>:null}
+        </div>
+        <div className="pkpi-editor-buttons">
+          <button type="button" className="secondary compact" onClick={()=>setEditing(false)}>Отмена</button>
+          <button type="button" className="primary" onClick={()=>void save()} disabled={!canSave}>
+            {saving?'Сохраняем…':draft.id?'Сохранить изменения':'Создать KPI'}
+          </button>
+        </div>
       </div>
     </div>:null}
-    {busy?<p className="pkpi-muted">Загружаем KPI…</p>:null}
-    {!busy&&!records.length?<p className="pkpi-empty">{isAdmin?'В этом месяце пока нет заданий KPI. Создайте первое задание.':'На этот месяц вам пока не назначали KPI.'}</p>:null}
+    {!editing&&!busy&&records.length===0?
+      <div className="pkpi-empty">
+        <strong>{isAdmin?'Заданий на этот месяц ещё нет':'На этот месяц KPI пока не назначены'}</strong>
+        {isAdmin?<><p>Создайте первое задание: выберите товар, участников и цель.</p>
+          <button type="button" className="secondary compact" onClick={create}>+ Создать KPI</button></>:null}
+      </div>:null}
+    {busy?<p className="pkpi-loading" role="status">Загружаем KPI…</p>:null}
     <div className="pkpi-list">{records.map(k=>{
-      const totalSold=k.participants.reduce((s,p)=>s+p.sold,0),achieved=k.participants.filter(p=>p.achieved).length
+      const totalSold=k.participants.reduce((sum,p)=>sum+p.sold,0)
+      const achieved=k.participants.filter(p=>p.achieved).length
       const expandedNow=expanded.includes(k.id)
       return <article className="pkpi-card" key={k.id}>
         <div className="pkpi-card-header">
-          <div><h4>{k.title}</h4><p>{k.productName} · {describe(k.filters)}</p></div>
-          <span className="pkpi-card-tag">{k.month}</span>
+          <div><h4>{k.title}</h4><p>{k.productName}{describe(k.filters)==='Все варианты модели'?' · Все варианты':' · '+describe(k.filters)}</p></div>
+          <span className="pkpi-summary">{achieved} из {k.participants.length} выполнили</span>
         </div>
-        <div className="pkpi-stats">
-          <div><span>Общая цель</span><strong>{k.targetQuantity} шт.</strong></div>
-          <div><span>Учтено</span><strong>{totalSold} шт.</strong></div>
-          <div><span>Выполнили</span><strong>{achieved} / {k.participants.length}</strong></div>
+        <div className="pkpi-summary-row">
+          <strong>{totalSold} <span>/ {k.targetQuantity} шт.</span></strong>
+          <span>{Math.round(100*totalSold/Math.max(1,k.targetQuantity))}%</span>
         </div>
         <div className="pkpi-progress"><div style={{width:Math.min(100,100*totalSold/Math.max(1,k.targetQuantity))+'%'}}/></div>
         <div className="pkpi-card-actions">
-          <button className="secondary compact" type="button" onClick={()=>setExpanded(curr=>expandedNow?curr.filter(id=>id!==k.id):[...curr,k.id])}>{expandedNow?'Скрыть участников':'Посмотреть участников'}</button>
-          {isAdmin?<><button className="secondary compact" type="button" onClick={()=>edit(k)}>Изменить</button><button className="ghost danger compact" type="button" disabled={saving} onClick={()=>void remove(k)}>Удалить</button></>:null}
+          <button className="secondary compact" type="button"
+            onClick={()=>setExpanded(curr=>expandedNow?curr.filter(id=>id!==k.id):[...curr,k.id])}>
+            {expandedNow?'Скрыть участников':'Участники и прогресс'}
+          </button>
+          {isAdmin?<><button className="secondary compact" type="button" onClick={()=>edit(k)}>Изменить</button>
+            <button className="ghost danger compact" type="button" disabled={saving} onClick={()=>void remove(k)}>Удалить</button></>:null}
         </div>
         {expandedNow?<div className="pkpi-progress-members">{k.participants.map(m=><div className="pkpi-progress-member" key={m.managerId}>
-          <div className="pkpi-member-stats"><strong>{m.manager}</strong><span>{m.sold} / {m.quota} шт.</span><span className={m.achieved?'pkpi-balanced':'pkpi-muted'}>{m.achieved?'Выполнено · бонус '+formatMoney(m.earnedBonus):'Осталось '+Math.max(0,m.quota-m.sold)+' шт.'}</span></div>
+          <div className="pkpi-member-stats"><strong>{m.manager}</strong><span>{m.sold} / {m.quota} шт.</span>
+            <span className={m.achieved?'pkpi-balanced':'pkpi-muted'}>
+              {m.achieved?'Выполнено · бонус '+formatMoney(m.earnedBonus):'Осталось '+Math.max(0,m.quota-m.sold)+' шт.'}
+            </span></div>
           <div className="pkpi-progress"><div style={{width:Math.min(100,100*m.sold/Math.max(1,m.quota))+'%'}}/></div>
         </div>)}</div>:null}
       </article>
     })}</div>
-    <p className="pkpi-disclaimer">Текущий расчёт: отправленные заказы за выбранный месяц, по действующим товарным позициям, за вычетом самостоятельных возвратов. Обмены и поздние корректировки могут менять результат задним числом. KPI не создаёт финансовых выплат.</p>
+    {records.length>0?<p className="pkpi-disclaimer">В зачёт идут отправленные заказы с учётом возвратов. Бонусы здесь рассчитываются, но не выплачиваются.</p>:null}
   </section>
 }
