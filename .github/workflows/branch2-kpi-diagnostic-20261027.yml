@@ -33,3 +33,19 @@ jobs:
       - name: Inspect October KPI bindings and filters
         run: |
           npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "SELECT k.id, k.month, k.title, k.product_id, cp.name AS catalog_model, k.filters_json, k.target_quantity, kp.manager_id, kp.quota FROM product_kpis k JOIN catalog_products cp ON cp.id = k.product_id JOIN product_kpi_participants kp ON kp.kpi_id = k.id WHERE k.month = '2026-10' LIMIT 30" --json
+      - name: Regression - verified October shipped unit matches adult KPI (read-only)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS qualifying_units
+            FROM orders o JOIN order_items oi ON oi.order_id=o.id
+            WHERE o.external_id='ORD-20261018142249-5C6A8E03'
+              AND o.shipping_status='sent'
+              AND DATE(COALESCE(NULLIF(o.shipping_date,''),o.order_date)) BETWEEN '2026-10-01' AND '2026-10-31'
+              AND o.manager_id=10 AND oi.product_id=75
+              AND (CASE WHEN UPPER(TRIM(COALESCE(oi.audience_type,''))) IN ('','ADULT','ВЗРОСЛЫЙ','ВЗРОСЛАЯ') THEN 'ВЗРОСЛЫЙ' ELSE UPPER(TRIM(oi.audience_type)) END)='ВЗРОСЛЫЙ'
+              AND UPPER(TRIM(COALESCE(oi.gender_snapshot,'')))='ЖЕН'
+              AND UPPER(TRIM(COALESCE(oi.material_snapshot,'')))='ШЕРСТЬ'
+              AND UPPER(TRIM(COALESCE(oi.length_snapshot,'')))='СТАНДАРТ'
+          " --json | jq -e '.[0].results[0].qualifying_units==1'
+          echo 'OCTOBER_SENT_ETHNO_CARDIGAN_KPI_MATCH_PASS'
