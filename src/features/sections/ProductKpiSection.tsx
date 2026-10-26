@@ -72,7 +72,10 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     const obj={} as Record<FilterKey,string[]>
     for(const key of filterKeys){
       const relevant=variants.filter(v=>filterKeys.every(other=>other===key||!draft.filters[other]||variantValue(v,other)===draft.filters[other]))
-      obj[key]=[...new Set(relevant.map(v=>variantValue(v,key)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}))
+      const suggestions=[...new Set([...relevant,...(relevant.length?[]:variants)].map(v=>variantValue(v,key)).filter(Boolean))]
+      if(key==='category')suggestions.push('ВЗРОСЛЫЙ','ДЕТСКИЙ')
+      if(key==='gender')suggestions.push('ЖЕН','МУЖ','УНИСЕКС')
+      obj[key]=[...new Set(suggestions)].sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}))
     }
     return obj
   },[variants,draft.filters])
@@ -158,7 +161,6 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     if(draft.participants.some(p=>p.quota<=0)){setError('У каждого менеджера должна быть положительная квота.');return}
     if(draft.participants.some(p=>p.bonusAmount<=0)){setError('Укажите бонус каждому менеджеру.');return}
     if(quotaSum!==draft.targetQuantity){setError('Распределите всю общую цель между менеджерами.');return}
-    if(variants.length&&matches.length===0){setError('Таких комбинаций в каталоге нет.');return}
     setSaving(true)
     try{
       const response=await apiFetch('/api/product-kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)})
@@ -185,13 +187,13 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   const activeDetails=filterKeys.filter(k=>Boolean(draft.filters[k])).length
   const canSave=!saving&&Boolean(draft.productId)&&draft.targetQuantity>0&&Boolean(draft.participants.length)
     &&quotaSum===draft.targetQuantity&&draft.participants.every(p=>p.quota>0&&p.bonusAmount>0)
-    &&(!variants.length||matches.length>0)
+
   return <section className="pkpi">
     <div className="pkpi-toolbar">
       <label className="pkpi-month">Месяц <input type="month" value={month} onChange={e=>{setMonth(e.target.value);setEditing(false)}}/></label>
       <div className="pkpi-toolbar-actions">
         <span className="pkpi-count">{records.length===1?'1 задание':records.length+' заданий'}</span>
-        <button type="button" className="pkpi-refresh" onClick={()=>void load()} disabled={busy} title="Обновить KPI" aria-label="Обновить KPI">↻</button>
+        <button type="button" className="pkpi-refresh" onClick={()=>void load()} disabled={busy} title="Обновить KPI" aria-label="Обновить KPI"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.2 5.5"/><path d="M20 4v7h-7"/></svg></button>
         {isAdmin?<button type="button" className="primary pkpi-create-button" onClick={create}>+ Создать KPI</button>:null}
       </div>
     </div>
@@ -202,7 +204,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     {editing&&isAdmin?<div className="pkpi-editor" ref={editorRef}>
       <div className="pkpi-editor-head">
         <div><h3>{draft.id?'Редактирование KPI':'Новый KPI'}</h3><span>На {new Date(draft.month+'-01T12:00:00').toLocaleDateString('ru-RU',{month:'long',year:'numeric'})}</span></div>
-        <button type="button" className="pkpi-close" onClick={()=>setEditing(false)} aria-label="Закрыть форму">×</button>
+        <button type="button" className="pkpi-close" onClick={()=>setEditing(false)} aria-label="Закрыть форму"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6L18 18M18 6L6 18"/></svg></button>
       </div>
 
       <div className="pkpi-fields">
@@ -241,12 +243,12 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
             </button>
             {detailsOpen?<div className="pkpi-filter-grid">
               {filterKeys.map(key=><label key={key}>{labels[key]}
-                <select value={draft.filters[key]} onChange={e=>setDraft(d=>({...d,filters:{...d.filters,[key]:e.target.value}}))}>
-                  <option value="">Любой</option>
-                  {(draft.filters[key]&&!values[key].includes(draft.filters[key])?[draft.filters[key],...values[key]]:values[key])
-                    .map(v=><option key={v} value={v}>{v}</option>)}
-                </select></label>)}
-              <span className="pkpi-filter-note">{variants.length?matches.length+' сочетаний подходят': 'Для модели пока не заведены варианты'}</span>
+                <input list={'pkpi-values-'+key} value={draft.filters[key]}
+                  placeholder="Любой" autoComplete="off"
+                  onChange={e=>setDraft(d=>({...d,filters:{...d.filters,[key]:e.target.value.toUpperCase()}}))}/>
+                <datalist id={'pkpi-values-'+key}>{values[key].map(v=><option key={v} value={v}/>)}</datalist>
+              </label>)}
+              <span className="pkpi-filter-note">{matches.length>0?matches.length+' сочетаний найдены в каталоге': 'Можно задать и новую комбинацию — существующий вариант для KPI не требуется'}</span>
               {activeDetails?<button type="button" className="pkpi-filter-reset" onClick={()=>setDraft(d=>({...d,filters:emptyFilters()}))}>Сбросить уточнения</button>:null}
             </div>:null}
           </div>:null}
@@ -274,7 +276,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
               const chosen=draft.participants.some(p=>p.managerId===m.id)
               return <button key={m.id} type="button" className={chosen?'is-selected':''}
                 aria-pressed={chosen} onClick={()=>toggleManager(m.id,!chosen)}>
-                <span aria-hidden="true">{chosen?'✓':'+'}</span>{m.name}
+                {m.name}
               </button>
             })}
           </div>

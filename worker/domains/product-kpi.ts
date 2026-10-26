@@ -6,8 +6,8 @@ import type { AuthUser } from '../core/types.ts'
 type Filter = 'category' | 'gender' | 'color' | 'material' | 'length' | 'size'
 const filterKeys: Filter[] = ['category','gender','color','material','length','size']
 const stockColumns: Record<Filter,string> = {
-  category: "UPPER(TRIM(COALESCE(oi.audience_type,'ВЗРОСЛЫЙ')))",
-  gender: "UPPER(TRIM(COALESCE(oi.gender_snapshot,'')))",
+  category: "CASE WHEN UPPER(TRIM(COALESCE(oi.audience_type,''))) IN ('','ADULT','ВЗРОСЛЫЙ','ВЗРОСЛАЯ') THEN 'ВЗРОСЛЫЙ' WHEN UPPER(TRIM(COALESCE(oi.audience_type,''))) IN ('CHILD','KID','KIDS','ДЕТСКИЙ','ДЕТСКАЯ','ДЕТИ') THEN 'ДЕТСКИЙ' ELSE UPPER(TRIM(oi.audience_type)) END",
+  gender: "CASE WHEN UPPER(TRIM(COALESCE(oi.gender_snapshot,''))) IN ('ЖЕН','ЖЕНСКИЙ','ЖЕНСКАЯ','FEMALE') THEN 'ЖЕН' WHEN UPPER(TRIM(COALESCE(oi.gender_snapshot,''))) IN ('МУЖ','МУЖСКОЙ','MALE') THEN 'МУЖ' ELSE UPPER(TRIM(COALESCE(oi.gender_snapshot,''))) END",
   color: "UPPER(TRIM(COALESCE(oi.color_snapshot,'')))",
   material: "UPPER(TRIM(COALESCE(oi.material_snapshot,'СТАНДАРТ')))",
   length: "UPPER(TRIM(COALESCE(oi.length_snapshot,'СТАНДАРТ')))",
@@ -31,7 +31,14 @@ function endOfMonth(m:string) {
 function normalizedFilters(value:unknown):Record<Filter,string> {
   const o=value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{}
   const v={} as Record<Filter,string>
-  for(const k of filterKeys)v[k]=cleanText(o[k]).toUpperCase().slice(0,100)
+  for(const k of filterKeys){
+    let raw=cleanText(o[k]).toUpperCase().slice(0,100)
+    if(k==='category' && ['ADULT','ВЗРОСЛАЯ'].includes(raw))raw='ВЗРОСЛЫЙ'
+    if(k==='category' && ['CHILD','KIDS','KID','ДЕТСКАЯ','ДЕТИ'].includes(raw))raw='ДЕТСКИЙ'
+    if(k==='gender' && ['ЖЕНСКИЙ','ЖЕНСКАЯ','FEMALE'].includes(raw))raw='ЖЕН'
+    if(k==='gender' && ['МУЖСКОЙ','MALE'].includes(raw))raw='МУЖ'
+    v[k]=raw
+  }
   return v
 }
 function parseFilters(s:unknown) {
@@ -61,15 +68,9 @@ export async function saveProductKpi(db:D1Database,input:any,actor:string) {
   if(!product)return err('Выберите действующую модель из каталога.')
   const validManagers=mapSqlRows(await db.prepare("SELECT id FROM managers WHERE id IN (SELECT value FROM json_each(?)) AND is_active=1 AND TRIM(COALESCE(role,'')) IN ('Менеджер','МЕНЕДЖЕР','Manager','manager')").bind(JSON.stringify(parts.map((p:any)=>p.managerId))).all<any>())
   if(validManagers.length!==parts.length)return err('Можно назначать только активных менеджеров.')
-  const specified=filterKeys.filter(k=>filters[k])
-  if(specified.length){
-    const variants=mapSqlRows(await db.prepare('SELECT category,gender,color,material,length,size_label FROM catalog_variants WHERE product_id=? AND is_active=1').bind(productId).all<any>())
-    const matches=variants.some((v:any)=>specified.every(k=>{
-      const value=k==='size'?v.size_label:k==='category'?(v.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ'):v[k]
-      return cleanText(value).toUpperCase()===filters[k]
-    }))
-    if(!matches)return err('В каталоге не найдено ни одного действующего варианта с такими характеристиками.')
-  }
+  // KPI is a sales target, not a stock operation. A valid combination can be
+  // promised before the corresponding catalog variant is registered.
+  // Count sales by model and order-item snapshots; never require a catalog SKU.
   const before=id?await snapshot(db,id):null
   if(id&&!before)return err('KPI не найден.')
   if(id&&cleanText(before.updated_at)!==cleanText(input.expectedUpdatedAt))return err('KPI уже изменён. Обновите страницу.')
@@ -128,7 +129,7 @@ export async function listProductKpis(db:D1Database,monthParam:unknown,user:Auth
       'FROM orders o JOIN order_items oi ON oi.order_id=o.id',
       'LEFT JOIN returns_by_item ret ON ret.order_item_id=oi.id',
       "WHERE o.shipping_status='sent' AND o.order_status<>'deleted'",
-      'AND o.shipping_date BETWEEN ? AND ? AND oi.product_id=? AND oi.quantity>0',
+      'AND DATE(COALESCE(NULLIF(o.shipping_date,''), o.order_date)) BETWEEN ? AND ? AND oi.product_id=? AND oi.quantity>0',
       where?'AND '+where:'',
       'GROUP BY o.manager_id',
     ].join(' ')
