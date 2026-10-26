@@ -59,7 +59,7 @@ export async function saveProductKpi(db:D1Database,input:any,actor:string) {
   if(parts.reduce((sum:number,p:any)=>sum+p.quota,0)!==total)return err('Сумма квот не совпадает с общей целью.')
   const product=await db.prepare('SELECT name FROM catalog_products WHERE id=? AND is_active=1').bind(productId).first<any>()
   if(!product)return err('Выберите действующую модель из каталога.')
-  const validManagers=mapSqlRows(await db.prepare("SELECT id FROM managers WHERE id IN (SELECT value FROM json_each(?)) AND is_active=1 AND UPPER(TRIM(COALESCE(role,''))) IN ('МЕНЕДЖЕР','MANAGER')").bind(JSON.stringify(parts.map((p:any)=>p.managerId))).all<any>())
+  const validManagers=mapSqlRows(await db.prepare("SELECT id FROM managers WHERE id IN (SELECT value FROM json_each(?)) AND is_active=1 AND TRIM(COALESCE(role,'')) IN ('Менеджер','МЕНЕДЖЕР','Manager','manager')").bind(JSON.stringify(parts.map((p:any)=>p.managerId))).all<any>())
   if(validManagers.length!==parts.length)return err('Можно назначать только активных менеджеров.')
   const specified=filterKeys.filter(k=>filters[k])
   if(specified.length){

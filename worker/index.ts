@@ -698,7 +698,7 @@ export default {
       if (url.pathname === '/api/product-kpis/eligible-managers' && request.method === 'GET') {
         const denied = requireAdminUser(authUser, 'Настройки KPI доступны только администратору.');
         if (denied) return denied;
-        const rows = await env.DB.prepare("SELECT id,name FROM managers WHERE is_active=1 AND UPPER(TRIM(COALESCE(role,''))) IN ('МЕНЕДЖЕР','MANAGER') ORDER BY name").all<any>();
+        const rows = await env.DB.prepare("SELECT id,name FROM managers WHERE is_active=1 AND TRIM(COALESCE(role,'')) IN ('Менеджер','МЕНЕДЖЕР','Manager','manager') ORDER BY name").all<any>();
         return json({ok:true,managers:rows.results || []});
       }
       if (url.pathname === '/api/product-kpis' && request.method === 'POST') {
