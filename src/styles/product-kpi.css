@@ -107,3 +107,23 @@
 
 @media(max-width:740px){.pkpi-member-row{grid-template-columns:minmax(0,1fr) minmax(72px,100px) minmax(90px,125px)}.pkpi-member-table-head{display:none}}
 @media(max-width:440px){.pkpi-member-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pkpi-member-row strong{grid-column:1/-1}}
+
+/* Lightweight application-rendered chooser; no native datalist/dropdown theme differences. */
+.pkpi-choice-field{position:relative;min-width:0}
+.pkpi-choice-field>label{display:grid;gap:6px;color:#586d86;font-size:12px;font-weight:650}
+.pkpi-choice-input-wrap{position:relative;display:flex;align-items:center;min-width:0}
+.pkpi-choice-input-wrap>input{width:100%;height:39px;padding-right:34px;background:#fff;border:1px solid #d0dbea;color:#19314e;border-radius:9px;min-width:0;text-overflow:ellipsis;font-size:13px}
+.pkpi-choice-input-wrap>input:focus{border-color:#7099ef;outline:2px solid #c3d9ff;outline-offset:0}
+.pkpi-choice-caret{position:absolute;right:12px;pointer-events:none;color:#7a8ca6;font-size:15px}
+.pkpi-choice-clear{position:absolute;right:6px;top:4px;width:29px;height:29px;padding:0;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#8999ad;font-size:19px}
+.pkpi-choice-clear:hover{background:#edf3fa;color:#2459ae}
+.pkpi-choice-menu{position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:60;max-height:249px;overflow-y:auto;overscroll-behavior:contain;background:#fff;border:1px solid #d9e3ef;border-radius:11px;padding:5px;box-shadow:0 12px 28px rgba(16,34,64,.13)}
+.pkpi-choice-menu button{display:flex;width:100%;min-height:35px;align-items:center;justify-content:space-between;gap:8px;border:0;border-radius:7px;text-align:left;font-size:12px;font-weight:600;color:#2c4360;padding:8px 9px;background:#fff;cursor:pointer;overflow-wrap:anywhere}
+.pkpi-choice-menu button:hover,.pkpi-choice-menu button.is-active{background:#edf3ff;color:#2355aa}
+.pkpi-choice-menu .pkpi-choice-all{color:#708097;font-weight:500;border-bottom:1px solid #edf0f5;border-radius:0;margin-bottom:4px}
+.pkpi-choice-group{color:#93a0b0;letter-spacing:.02em;font-size:10px;font-weight:700;padding:7px 9px 3px;text-transform:uppercase}
+.pkpi-choice-menu button small{font-size:10px;color:#8b9ab0;font-weight:400;white-space:nowrap}
+.pkpi-choice-menu .pkpi-choice-custom{display:block;background:#fff8eb;color:#94601b;border-top:1px solid #f3e5cb;border-radius:7px;margin-top:5px}
+.pkpi-choice-menu .pkpi-choice-custom small{display:block;white-space:normal;color:#a27947;font-size:10px;margin-top:4px}
+.pkpi-choice-empty,.pkpi-choice-hint{font-size:12px;line-height:1.4;color:#7b8aa0;padding:9px}
+.pkpi-choice-field.is-open{z-index:70}

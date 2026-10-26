@@ -12,6 +12,7 @@ type Props = {
 }
 
 const normalized = (value: string) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase()
+const identity = (value: string) => normalized(value).replace(/[‐‑‒–—-]+/g,' ').replace(/\s+/g,' ')
 
 export function KpiCharacteristicPicker({
   label, value, modelOptions, referenceOptions, referenceStatus, onChange,
@@ -35,14 +36,14 @@ export function KpiCharacteristicPicker({
       const candidate = normalized(item)
       if (!candidate || used.has(candidate)) continue
       used.add(candidate)
-      if (!prefix || candidate.includes(prefix)) model.push({ value: candidate, fromModel: true })
+      if (!prefix || identity(candidate).includes(identity(prefix))) model.push({ value: candidate, fromModel: true })
     }
     for (const item of referenceOptions) {
       const candidate = normalized(item)
       if (!candidate || used.has(candidate)) continue
       used.add(candidate)
       // Do not flood the user with every dictionary value until they search.
-      if (prefix && candidate.includes(prefix)) elsewhere.push({ value: candidate, fromModel: false })
+      if (prefix && identity(candidate).includes(identity(prefix))) elsewhere.push({ value: candidate, fromModel: false })
     }
     model.sort((a,b) => a.value.localeCompare(b.value,'ru',{numeric:true}))
     elsewhere.sort((a,b) => a.value.localeCompare(b.value,'ru',{numeric:true}))
@@ -52,9 +53,9 @@ export function KpiCharacteristicPicker({
 
   const queryValue = normalized(query)
   const allKnown = useMemo(() =>
-    new Set([...modelOptions, ...referenceOptions].map(normalized).filter(Boolean)),
+    new Set([...modelOptions, ...referenceOptions].map(identity).filter(Boolean)),
   [modelOptions, referenceOptions])
-  const canUseCustom = queryValue.length > 0 && !allKnown.has(queryValue) && referenceStatus === 'ready'
+  const canUseCustom = queryValue.length > 0 && !allKnown.has(identity(queryValue)) && referenceStatus === 'ready'
   const showCustom = open && canUseCustom
   const showResults = open
 
@@ -64,7 +65,7 @@ export function KpiCharacteristicPicker({
     setOpen(false)
     setSelectedIndex(0)
   }
-  const activeIndex = Math.min(selectedIndex, options.length + (showCustom ? 1 : 0) - 1)
+  const activeIndex = Math.max(0,Math.min(selectedIndex, options.length + (showCustom ? 1 : 0) - 1))
 
   const keyboard = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
@@ -90,7 +91,7 @@ export function KpiCharacteristicPicker({
       event.preventDefault()
       if (options.length && activeIndex < options.length) commit(options[Math.max(0,activeIndex)].value)
       else if (showCustom) commit(queryValue)
-      else if (queryValue && allKnown.has(queryValue)) commit(queryValue)
+      else if (queryValue && allKnown.has(identity(queryValue))) commit(queryValue)
     }
   }
 

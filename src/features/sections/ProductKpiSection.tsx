@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogVariantRecord } from '../../app/types'
+import { KpiCharacteristicPicker } from './KpiCharacteristicPicker'
 import '../../styles/product-kpi.css'
 
 type FilterKey = 'category' | 'gender' | 'color' | 'material' | 'length' | 'size'
@@ -53,6 +54,8 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   const [productQuery,setProductQuery]=useState('')
   const [searchOpen,setSearchOpen]=useState(false)
   const [detailsOpen,setDetailsOpen]=useState(false)
+  const [referenceOptions,setReferenceOptions]=useState<Record<string,string[]>>({})
+  const [referenceStatus,setReferenceStatus]=useState<'idle'|'loading'|'ready'|'error'>('idle')
   const [sharedBonus,setSharedBonus]=useState('')
   const productInputRef=useRef<HTMLInputElement|null>(null)
   const editorRef=useRef<HTMLDivElement|null>(null)
@@ -79,6 +82,38 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
     }
     return obj
   },[variants,draft.filters])
+  useEffect(()=>{
+    if(!isAdmin||!editing||!detailsOpen||referenceStatus!=='idle')return
+    let cancelled=false
+    setReferenceStatus('loading')
+    async function loadCharacteristics(){
+      const kinds=['colors','materials','lengths','sizes','childAges']
+      try{
+        const responses=await Promise.all(kinds.map(kind=>apiFetch('/api/reference-values?kind='+kind)))
+        const parsed=await Promise.all(responses.map(response=>response.json()))
+        if(responses.some(response=>!response.ok)||parsed.some(item=>!item.ok))throw new Error('Не удалось загрузить справочники')
+        if(cancelled)return
+        const options:Record<string,string[]>={}
+        for(let i=0;i<kinds.length;i++){
+          options[kinds[i]]=(parsed[i].items||[])
+            .filter((item:{isActive:boolean})=>item.isActive)
+            .map((item:{value:string})=>normalize(item.value))
+            .filter(Boolean)
+        }
+        setReferenceOptions({
+          color:options.colors||[],
+          material:options.materials||[],
+          length:options.lengths||[],
+          size:[...new Set([...(options.sizes||[]),...(options.childAges||[])])],
+        })
+        setReferenceStatus('ready')
+      }catch{
+        if(!cancelled)setReferenceStatus('error')
+      }
+    }
+    void loadCharacteristics()
+    return ()=>{cancelled=true}
+  },[editing,detailsOpen,isAdmin,referenceStatus,apiFetch])
   const quotaSum=draft.participants.reduce((s,p)=>s+p.quota,0)
   const conflict=records.filter(r=>r.id!==draft.id&&r.productId===draft.productId&&overlap(r.filters,draft.filters))
   useEffect(()=>{
@@ -242,13 +277,15 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
               <span className="pkpi-chevron">{detailsOpen?'⌃':'⌄'}</span>
             </button>
             {detailsOpen?<div className="pkpi-filter-grid">
-              {filterKeys.map(key=><label key={key}>{labels[key]}
-                <input list={'pkpi-values-'+key} value={draft.filters[key]}
-                  placeholder="Любой" autoComplete="off"
-                  onChange={e=>setDraft(d=>({...d,filters:{...d.filters,[key]:e.target.value.toUpperCase()}}))}/>
-                <datalist id={'pkpi-values-'+key}>{values[key].map(v=><option key={v} value={v}/>)}</datalist>
-              </label>)}
-              <span className="pkpi-filter-note">{matches.length>0?matches.length+' сочетаний найдены в каталоге': 'Можно задать и новую комбинацию — существующий вариант для KPI не требуется'}</span>
+              {filterKeys.map(key=><KpiCharacteristicPicker key={key}
+                label={labels[key]} value={draft.filters[key]}
+                modelOptions={values[key]}
+                referenceOptions={key==='category'?['ВЗРОСЛЫЙ','ДЕТСКИЙ']:key==='gender'?['ЖЕН','МУЖ','УНИСЕКС']:(referenceOptions[key]||[])}
+                referenceStatus={key==='category'||key==='gender'?'ready':referenceStatus==='idle'?'loading':referenceStatus}
+                onChange={value=>setDraft(d=>({...d,filters:{...d.filters,[key]:value}}))}/>)}
+              <span className="pkpi-filter-note">
+                {matches.length>0?matches.length+' сочетаний есть у модели': 'Выбранных сочетаний пока нет у модели — KPI всё равно можно создать'}
+              </span>
               {activeDetails?<button type="button" className="pkpi-filter-reset" onClick={()=>setDraft(d=>({...d,filters:emptyFilters()}))}>Сбросить уточнения</button>:null}
             </div>:null}
           </div>:null}
