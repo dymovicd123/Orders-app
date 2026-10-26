@@ -42,7 +42,7 @@ jobs:
       - run: npm ci
       - name: KPI and roles regression (corrected UI button check)
         run: node scripts/test-product-kpi-20261026.mjs
-      - name: Typecheck and complete app build
+      - name: Typecheck and complete app build (manager KPI state)
         run: npm run build
   deploy:
     if: github.ref == 'refs/heads/branch2'

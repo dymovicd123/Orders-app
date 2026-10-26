@@ -123,7 +123,8 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
       const json=await response.json()
       if(!response.ok||!json.ok)throw new Error(json.message||'Не удалось сохранить KPI.')
       setEditing(false);setMessage(draft.id?'KPI обновлён.':'KPI создан.')
-      await load(month)
+      if(draft.month!==month)setMonth(draft.month)
+      else await load(month)
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить KPI.')}
     finally{setSaving(false)}
   }
@@ -148,6 +149,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
       <button className="secondary compact" type="button" onClick={()=>void load()} disabled={busy}>Обновить</button>
       <span>{records.length} заданий</span>
     </div>
+    {!isAdmin && !currentManagerId?<p className="pkpi-error">Аккаунт не привязан к сотруднику, поэтому личные KPI не отображаются. Обратитесь к администратору.</p>:null}
     {error?<p className="pkpi-error" role="alert">{error}</p>:null}
     {message?<p className="pkpi-ok" role="status">{message}</p>:null}
     {editing&&isAdmin?<div className="pkpi-editor">
