@@ -45,8 +45,9 @@ export function KpiCharacteristicPicker({
       // Do not flood the user with every dictionary value until they search.
       if (prefix && identity(candidate).includes(identity(prefix))) elsewhere.push({ value: candidate, fromModel: false })
     }
-    model.sort((a,b) => a.value.localeCompare(b.value,'ru',{numeric:true}))
-    elsewhere.sort((a,b) => a.value.localeCompare(b.value,'ru',{numeric:true}))
+    const exactFirst=(a:Option,b:Option)=>Number(identity(b.value)===identity(prefix))-Number(identity(a.value)===identity(prefix)) || a.value.localeCompare(b.value,'ru',{numeric:true})
+    model.sort(exactFirst)
+    elsewhere.sort(exactFirst)
     return [...model.slice(0, prefix ? 7 : 6), ...elsewhere.slice(0, prefix ? 5 : 0)]
       .slice(0, 9)
   }, [query, modelOptions, referenceOptions])
@@ -89,9 +90,11 @@ export function KpiCharacteristicPicker({
     }
     if (event.key === 'Enter' && open) {
       event.preventDefault()
-      if (options.length && activeIndex < options.length) commit(options[Math.max(0,activeIndex)].value)
-      else if (showCustom) commit(queryValue)
-      else if (queryValue && allKnown.has(identity(queryValue))) commit(queryValue)
+      const officialExact=options.find(option=>identity(option.value)===identity(queryValue))
+      if (officialExact) commit(officialExact.value)
+      else if (options.length && activeIndex < options.length) commit(options[Math.max(0,activeIndex)].value)
+      // A non-dictionary value can only be confirmed through the explicit,
+      // visibly labelled custom action to avoid accidental typos becoming KPI filters.
     }
   }
 

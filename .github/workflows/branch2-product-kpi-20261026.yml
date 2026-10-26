@@ -41,7 +41,7 @@ jobs:
             esac
           done
       - run: npm ci
-      - name: KPI reference-aware characteristic picker regression
+      - name: KPI dictionary picker, manual fallback and reliable reference loading regression
         run: node scripts/test-product-kpi-20261026.mjs
       - name: Typecheck and complete app build (manager KPI state)
         run: npm run build

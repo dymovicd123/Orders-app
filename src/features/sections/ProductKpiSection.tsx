@@ -84,7 +84,8 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   },[variants,draft.filters])
   useEffect(()=>{
     if(!isAdmin||!editing||!detailsOpen||referenceStatus!=='idle')return
-    let cancelled=false
+    // Cache the loaded official options even if the accordion closes meanwhile.
+    // Clearing the request on a status update would otherwise discard its result.
     setReferenceStatus('loading')
     async function loadCharacteristics(){
       const kinds=['colors','materials','lengths','sizes','childAges']
@@ -92,7 +93,6 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
         const responses=await Promise.all(kinds.map(kind=>apiFetch('/api/reference-values?kind='+kind)))
         const parsed=await Promise.all(responses.map(response=>response.json()))
         if(responses.some(response=>!response.ok)||parsed.some(item=>!item.ok))throw new Error('Не удалось загрузить справочники')
-        if(cancelled)return
         const options:Record<string,string[]>={}
         for(let i=0;i<kinds.length;i++){
           options[kinds[i]]=(parsed[i].items||[])
@@ -108,11 +108,10 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
         })
         setReferenceStatus('ready')
       }catch{
-        if(!cancelled)setReferenceStatus('error')
+        setReferenceStatus('error')
       }
     }
     void loadCharacteristics()
-    return ()=>{cancelled=true}
   },[editing,detailsOpen,isAdmin,referenceStatus,apiFetch])
   const quotaSum=draft.participants.reduce((s,p)=>s+p.quota,0)
   const conflict=records.filter(r=>r.id!==draft.id&&r.productId===draft.productId&&overlap(r.filters,draft.filters))
@@ -285,6 +284,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
                 onChange={value=>setDraft(d=>({...d,filters:{...d.filters,[key]:value}}))}/>)}
               <span className="pkpi-filter-note">
                 {matches.length>0?matches.length+' сочетаний есть у модели': 'Выбранных сочетаний пока нет у модели — KPI всё равно можно создать'}
+                {referenceStatus==='error'?<button type="button" className="pkpi-retry-references" onClick={()=>setReferenceStatus('idle')}>Обновить справочники</button>:null}
               </span>
               {activeDetails?<button type="button" className="pkpi-filter-reset" onClick={()=>setDraft(d=>({...d,filters:emptyFilters()}))}>Сбросить уточнения</button>:null}
             </div>:null}
