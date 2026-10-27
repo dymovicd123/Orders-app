@@ -648,6 +648,22 @@ try {
   assert.equal(Number(activeBeforeShip.quantity),1)
   const physicalOldBeforeShip=Number(stock().quantity)
   const physicalNewBeforeShip=Number(newStock().quantity)
+  // Main now requires a factual post-stocktake handover review before
+  // shipping. Preserve the guard; in this synthetic test the remaining old
+  // item is physically still here. The answer never changes Physical itself.
+  const blockedAfterSwap=await api('/api/orders/'+remainingOrderId+'/shipping','PATCH',ship,{expectedStatus:409})
+  assert.equal(blockedAfterSwap.data.code,'stock_handover_review_required')
+  const outstandingHandover=(await api('/api/orders/'+remainingOrderId+'/stock-handover')).data
+  const pendingHandover=(outstandingHandover.items||[]).filter(entry=>entry.reviewNeeded)
+  assert(pendingHandover.length>0,'At least one post-stocktake review must be resolved')
+  for(const entry of pendingHandover) {
+    const confirmation=await api('/api/orders/'+remainingOrderId+'/stock-handover','PATCH',{
+      action:'still_here',orderItemId:entry.orderItemId,
+      checkpointId:entry.checkpointId,checkpointAt:entry.checkpointAt,
+    })
+    assert(confirmation.data.ok,'Post-stocktake still-here review must succeed')
+  }
+  assert.equal(Number(stock().quantity),physicalOldBeforeShip,'Handover review cannot itself decrement Physical')
   await api('/api/orders/'+remainingOrderId+'/shipping','PATCH',ship)
   const fulfilledAfterShip=sql('SELECT status,quantity FROM inventory_reservations WHERE order_item_id=?',remainingOldItem.id)
   assert.equal(fulfilledAfterShip.status,'fulfilled','Remaining old item must be physically issued exactly once')
