@@ -1,0 +1,93 @@
+name: Main P0 atomic payments and refunds release
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/money.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'scripts/test-p0-financial-atomic-20261027.mjs'
+      - '.github/workflows/main-p0-financial-atomic-20261027.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-p0-financial-atomic-20261027.yml'
+permissions:
+  contents: read
+concurrency:
+  group: main-p0-financial-atomic-20261027
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Exact production target and no migrations/other business edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          base="5a6482c9b20d1cd89148ed18d4a16c3e77613ec8"
+          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
+          while IFS= read -r f; do
+            case "$f" in
+              worker/domains/money.ts|worker/domains/returns-exchanges.ts|\
+              scripts/test-p0-financial-atomic-20261027.mjs|\
+              .github/workflows/main-p0-financial-atomic-20261027.yml) ;;
+              *) echo "Unreviewed main change: $f"; exit 10 ;;
+            esac
+          done < <(git diff --name-only "$base" "$GITHUB_SHA")
+      - run: npm ci
+      - name: Execute current Worker SQL with competing stale balances
+        run: node scripts/test-p0-financial-atomic-20261027.mjs
+      - name: Adjacent financial, Return, Exchange and correction regressions
+        run: |
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+          node scripts/test-operational-autonomy-r3-return-exchange-capacity.mjs
+          node scripts/test-stage01-finance-correction-reliability-r4.mjs
+          node scripts/test-order-edit-payment-method-correction.mjs
+      - name: Full application, Worker and TypeScript build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Refuse incorrect production target or missing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = main
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - run: npm ci
+      - name: Reconfirm SQL guard and full build on exact release commit
+        run: |
+          node scripts/test-p0-financial-atomic-20261027.mjs
+          npm run build
+      - name: Publish Worker without migrations or database writes
+        run: npx wrangler deploy
+      - name: Public origin smoke
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://orders-app.orders-clothes.workers.dev'
+          const r=await fetch(host+'/?p0_finance='+Date.now(),{cache:'no-store'})
+          if(!r.ok||!(await r.text()).includes('/assets/'))throw Error('Production app not served')
+          console.log('MAIN_P0_FINANCE_RELEASE_PUBLIC_OK')
+          NODE
