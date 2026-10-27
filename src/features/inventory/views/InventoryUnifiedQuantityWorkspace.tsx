@@ -188,7 +188,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   }
   function addFirstCatalogVariant(group: Group) {
     if ((mode !== 'arrival' && mode !== 'manual_set') || !group.productId) return
-    const category = group.category === 'child' ? 'child' : 'adult'
+    const category: 'adult' | 'child' = group.category === 'child' ? 'child' : 'adult'
     const gender = group.genderScope === 'female' ? 'ЖЕН'
       : group.genderScope === 'male' ? 'МУЖ' : firstVariant.gender.trim().toUpperCase()
     const quantity = Number(firstVariant.quantity)
