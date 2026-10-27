@@ -221,7 +221,27 @@ try{
   for(const o of stageVirtual)statements.push('DROP TABLE IF EXISTS '+quoteName(o.name)+';')
   for(const o of stageTables.filter(t=>!stageVirtual.includes(t)&&!shadowStage.has(t.name)))
     statements.push('DROP TABLE IF EXISTS '+quoteName(o.name)+';')
+  const dropEnd=statements.length
   for(const table of [...dataTables,...virtualTables])statements.push(table.sql.trim().replace(/;$/,'')+';')
+  const createEnd=statements.length
+  // Topologically order data by foreign-key dependencies. D1 commits each
+  // imported chunk separately, so parents must exist before child inserts.
+  const tableMap=new Map(dataTables.map(t=>[t.name,t]))
+  const parents=new Map(dataTables.map(t=>[
+    t.name,[...new Set(local.prepare('PRAGMA foreign_key_list('+quoteName(t.name)+')').all()
+      .map(f=>f.table).filter(n=>tableMap.has(n)&&n!==t.name))]
+  ]))
+  const visited=new Set(),visiting=new Set(),orderedDataTables=[]
+  function visit(name){
+    if(visited.has(name))return
+    assert(!visiting.has(name),'Cross-table FK cycle needs a single explicit import group: '+name)
+    visiting.add(name)
+    for(const p of parents.get(name)||[])visit(p)
+    visiting.delete(name)
+    visited.add(name)
+    orderedDataTables.push(tableMap.get(name))
+  }
+  for(const t of dataTables)visit(t.name)
   function dumpRows(name,fields,includeRowid=false){
     const quoted=fields.map(quoteName)
     const colSql=(includeRowid?['rowid',...quoted]:quoted).join(',')
@@ -236,12 +256,13 @@ try{
     }
     return written
   }
-  for(const table of dataTables){
+  for(const table of orderedDataTables){
     const fields=local.prepare('PRAGMA table_xinfo('+quoteName(table.name)+')').all()
       .filter(c=>!c.hidden).map(c=>c.name)
     dumpRows(table.name,fields)
   }
   for(const table of virtualTables)dumpRows(table.name,['order_id','search_text'],true)
+  const dataEnd=statements.length
   for(const idx of prodSchema.filter(s=>s.type==='index'&&s.sql))
     statements.push(idx.sql.trim().replace(/;$/,'')+';')
   for(const item of prodSchema.filter(s=>(s.type==='trigger'||s.type==='view')&&s.sql))
