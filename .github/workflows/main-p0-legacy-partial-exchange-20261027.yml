@@ -1,0 +1,88 @@
+name: Main P0 legacy partial exchange reservation release
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs'
+      - '.github/workflows/main-p0-legacy-partial-exchange-20261027.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/main-p0-legacy-partial-exchange-20261027.yml'
+permissions:
+  contents: read
+concurrency:
+  group: main-p0-legacy-partial-exchange-20261027
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Strict scope and production target; no schema or unrelated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+          base="d0cd01250b49b4d3eb202a1d003ac629d55e20ca"
+          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
+          while IFS= read -r f; do
+            case "$f" in
+              worker/domains/returns-exchanges.ts|\
+              scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs|\
+              .github/workflows/main-p0-legacy-partial-exchange-20261027.yml) ;;
+              *) echo "Unexpected file in legacy exchange release: $f"; exit 10 ;;
+            esac
+          done < <(git diff --name-only "$base" "$GITHUB_SHA")
+      - run: npm ci
+      - name: Actual Worker and isolated SQLite end-to-end: legacy partial, cancel, retries and ship
+        run: node --experimental-strip-types scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs
+      - name: Adjacent Return, exchange and payment regressions
+        run: |
+          node scripts/test-return-exchange-cancel-autonomy.mjs
+          node scripts/test-operational-autonomy-r3-return-exchange-capacity.mjs
+          node scripts/test-p0-financial-atomic-20261027.mjs
+      - name: Full Worker and client build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Verify production identity and Cloudflare permissions
+        run: |
+          test "$GITHUB_REF_NAME" = main
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          ! grep -Fq 'orders_db_branch2' wrangler.jsonc
+      - run: npm ci
+      - name: Repeat real Worker+SQLite and build on exact main commit
+        run: |
+          node --experimental-strip-types scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs
+          npm run build
+      - name: Worker-only release without D1 schema changes
+        run: npx wrangler deploy
+      - name: Check production origin
+        run: |
+          node --input-type=module <<'NODE'
+          const host='https://orders-app.orders-clothes.workers.dev'
+          const r=await fetch(host+'/?legacy_exchange='+Date.now(),{cache:'no-store'})
+          if(!r.ok||!(await r.text()).includes('/assets/'))throw Error('Production origin missing app')
+          console.log('MAIN_P0_LEGACY_EXCHANGE_RELEASE_LIVE')
+          NODE
