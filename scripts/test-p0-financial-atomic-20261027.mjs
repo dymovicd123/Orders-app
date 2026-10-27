@@ -6,15 +6,22 @@ import { DatabaseSync } from 'node:sqlite'
 
 const moneySource=fs.readFileSync('worker/domains/money.ts','utf8')
 const returnsSource=fs.readFileSync('worker/domains/returns-exchanges.ts','utf8')
-function sqlFrom(source, start) {
-  const at=source.indexOf('\x60'+start)
-  assert(at>=0,'Missing actual production SQL: '+start)
-  const end=source.indexOf('\x60',at+1)
-  assert(end>at,'Unclosed production SQL')
-  return source.slice(at+1,end)
+function sqlFrom(source, start, guard) {
+  // The file also contains historical/general inserts. Exercise only the
+  // guarded statement from the current critical-operation path.
+  let from=0
+  while (true) {
+    const at=source.indexOf('\x60'+start,from)
+    assert(at>=0,'Missing guarded production SQL: '+start)
+    const end=source.indexOf('\x60',at+1)
+    assert(end>at,'Unclosed production SQL')
+    const sql=source.slice(at+1,end)
+    if(sql.includes(guard))return sql
+    from=end+1
+  }
 }
-const paymentSql=sqlFrom(moneySource,'INSERT INTO payments (order_id, payment_date, method, amount, payment_kind, comment, created_at)')
-const refundSql=sqlFrom(returnsSource,'INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)')
+const paymentSql=sqlFrom(moneySource,'INSERT INTO payments (order_id, payment_date, method, amount, payment_kind, comment, created_at)','CASE WHEN EXISTS')
+const refundSql=sqlFrom(returnsSource,'INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)','CASE WHEN ? = 0 OR EXISTS')
 assert.match(paymentSql,/CASE WHEN EXISTS/)
 assert.match(refundSql,/CASE WHEN \? = 0 OR EXISTS/)
 assert(moneySource.includes('not null constraint failed:\\s*payments\\.amount'),'Missing payment 409 classification')
