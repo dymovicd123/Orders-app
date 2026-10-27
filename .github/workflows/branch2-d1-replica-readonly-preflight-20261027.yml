@@ -1,0 +1,45 @@
+name: Branch2 safe main-D1 mirror read-only preflight
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/branch2-d1-replica-readonly-preflight-20261027.mjs'
+      - '.github/workflows/branch2-d1-replica-readonly-preflight-20261027.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'scripts/branch2-d1-replica-readonly-preflight-20261027.mjs'
+      - '.github/workflows/branch2-d1-replica-readonly-preflight-20261027.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-db-mirror-readonly-preflight
+  cancel-in-progress: false
+jobs:
+  static-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Verify read-only implementation and hardwired distinct DB IDs
+        run: |
+          node --check scripts/branch2-d1-replica-readonly-preflight-20261027.mjs
+          grep -Fq 'orders_db_branch2' wrangler.jsonc
+          grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+  inspect-live:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: static-isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Compare D1 structures and aggregate counts using SELECT-only calls
+        run: node scripts/branch2-d1-replica-readonly-preflight-20261027.mjs
