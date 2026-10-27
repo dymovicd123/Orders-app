@@ -256,7 +256,12 @@ try{
   const checkFile=join(directory,'import-validation.sqlite')
   const verifyDb=new DatabaseSync(checkFile,{enableDoubleQuotedStringLiterals:true})
   try{
+    // Cloudflare imports a SQL file as one implicit transaction. The local
+    // validator must exercise the same transaction boundary: otherwise
+    // deferred foreign keys would be checked after each individual INSERT.
+    verifyDb.exec('BEGIN TRANSACTION')
     verifyDb.exec(scriptSql)
+    verifyDb.exec('COMMIT')
     verifyDb.exec('PRAGMA foreign_keys = ON')
     assert(verifyDb.prepare('PRAGMA foreign_key_check').all().length===0,'Generated SQL violates foreign keys')
     for(const name of ['orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks']){
