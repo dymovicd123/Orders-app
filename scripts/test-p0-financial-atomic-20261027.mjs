@@ -17,18 +17,18 @@ const paymentSql=sqlFrom(moneySource,'INSERT INTO payments (order_id, payment_da
 const refundSql=sqlFrom(returnsSource,'INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)')
 assert.match(paymentSql,/CASE WHEN EXISTS/)
 assert.match(refundSql,/CASE WHEN \? = 0 OR EXISTS/)
-assert.match(moneySource,/not null constraint failed:\\s\*payments\\\.amount/i)
-assert.match(returnsSource,/not null constraint failed:\\s\*returns\\\.amount/i)
+assert(moneySource.includes('not null constraint failed:\\s*payments\\.amount'),'Missing payment 409 classification')
+assert(returnsSource.includes('not null constraint failed:\\s*returns\\.amount'),'Missing Return 409 classification')
 const db=new DatabaseSync(':memory:')
 db.exec(`
  CREATE TABLE orders (id INTEGER PRIMARY KEY, total_amount INTEGER NOT NULL, order_status TEXT NOT NULL DEFAULT 'new', archived_at TEXT);
  CREATE TABLE payments (id INTEGER PRIMARY KEY, order_id INTEGER, payment_date TEXT, method TEXT, amount INTEGER NOT NULL, payment_kind TEXT, comment TEXT, created_at TEXT);
  CREATE TABLE returns (id INTEGER PRIMARY KEY, order_id INTEGER, manager_id INTEGER, return_date TEXT, amount INTEGER NOT NULL, payment_method TEXT, comment TEXT, status TEXT, created_at TEXT);
-\`)
+`)
 const now='2026-10-27T11:00:00.000Z'
 const pay=(id,amount)=>db.prepare(paymentSql).run(id,'2026-10-27','НАЛИЧКА',id,amount,amount,'debt',null,now)
 const refund=(id,amount)=>db.prepare(refundSql).run(id,null,'2026-10-27',amount,id,amount,amount,amount>0?'НАЛИЧКА':null,null,now)
-const count=(table,id)=>db.prepare(\`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS amount FROM \${table} WHERE order_id=?\`).get(id)
+const count=(table,id)=>db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS amount FROM ${table} WHERE order_id=?`).get(id)
 const createOrder=id=>db.prepare('INSERT INTO orders (id,total_amount,order_status) VALUES (?,10000,?)').run(id,'new')
 
 // Independent request ids both pass an earlier 10k preflight;
