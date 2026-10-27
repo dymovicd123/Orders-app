@@ -19,6 +19,7 @@ import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physica
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
+import { listProductKpis, removeProductKpi, saveProductKpi } from './domains/product-kpi.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
@@ -690,7 +691,31 @@ export default {
         return json(await deleteCallCentreRecord(env.DB, toInt(callCentreMatch[1], 0)));
       }
 
+      if (url.pathname === '/api/product-kpis' && request.method === 'GET') {
+        return json(await listProductKpis(env.DB, url.searchParams.get('month'), authUser!));
+      }
+      if (url.pathname === '/api/product-kpis/eligible-managers' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Настройки KPI доступны только администратору.');
+        if (denied) return denied;
+        const rows = await env.DB.prepare("SELECT id,name FROM managers WHERE is_active=1 AND TRIM(COALESCE(role,'')) IN ('Менеджер','МЕНЕДЖЕР','Manager','manager') ORDER BY name").all<any>();
+        return json({ok:true,managers:rows.results || []});
+      }
+      if (url.pathname === '/api/product-kpis' && request.method === 'POST') {
+        const denied = requireAdminUser(authUser, 'KPI может изменять только администратор.');
+        if (denied) return denied;
+        const input = await readJson<any>(request);
+        return json(await saveProductKpi(env.DB,input,cleanText(authUser?.login)||'admin'));
+      }
+      const productKpiMatch = url.pathname.match(/^\/api\/product-kpis\/(\d+)$/);
+      if (productKpiMatch && request.method === 'DELETE') {
+        const denied = requireAdminUser(authUser, 'Удаление KPI доступно только администратору.');
+        if (denied) return denied;
+        return json(await removeProductKpi(env.DB,toInt(productKpiMatch[1],0),cleanText(authUser?.login)||'admin'));
+      }
+
       if (url.pathname === '/api/plans' && request.method === 'GET') {
+        const denied = requireAdminUser(authUser, 'Денежные планы доступны только администратору.');
+        if (denied) return denied;
         return json(await listPlans(env.DB, url));
       }
 

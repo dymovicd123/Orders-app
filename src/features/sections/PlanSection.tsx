@@ -1,8 +1,13 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import { useState } from 'react'
+import { ProductKpiSection } from './ProductKpiSection'
 type SectionContext = Record<string, any>
 
 export function PlanSection({ ctx }: { ctx: SectionContext }) {
+  const [page,setPage] = useState<'money' | 'kpi'>(ctx.isAdmin ? 'money' : 'kpi')
   const {
+    apiFetch,
+    currentManagerId,
     deleteDepartmentPlan,
     deleteManagerPlan,
     departmentPlanDraft,
@@ -34,6 +39,11 @@ export function PlanSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className="card wide sector-plan" id="plan" style={sectorStyle('plan')}>
               <div className="card-label">План</div>
+              <div className="order-panel-tabs" role="tablist" aria-label="Разделы плана">
+                {isAdmin ? <button className={`secondary compact ${page==='money'?'is-active':''}`} type="button" onClick={()=>setPage('money')}>Денежный план</button> : null}
+                <button className={`secondary compact ${page==='kpi'?'is-active':''}`} type="button" onClick={()=>setPage('kpi')}>KPI по товарам</button>
+              </div>
+              {page === 'kpi' || !isAdmin ? <ProductKpiSection apiFetch={apiFetch} isAdmin={isAdmin} currentManagerId={currentManagerId} formatMoney={formatMoney} /> : <>
               <div className="card-meta">План менеджера, план отдела и выполнение собраны в одном модуле.</div>
               <div className="form-grid compact-form">
                 <label>Начало<input type="date" value={managerPlanDraft.periodStart} onChange={(event) => setManagerPlanDraft((draft) => ({ ...draft, periodStart: event.target.value }))} /></label>
@@ -75,7 +85,7 @@ export function PlanSection({ ctx }: { ctx: SectionContext }) {
                   {(planReport?.departmentPlans || []).map((row) => <tr key={`dp-${row.id}`}><td>{formatDateShort(row.periodStart)} — {formatDateShort(row.periodEnd)}</td><td>{formatMoney(row.plannedAmount)}</td><td>{formatMoney(Number(row.factAmount || 0) + Number(row.returnAmount || 0))}</td><td>{formatMoney(row.returnAmount)}</td><td>{formatMoney(row.factAmount)}</td><td>{formatPercent(row.completionRate)}</td><td className="export-hide">{isAdmin ? <div className="row-actions compact-actions"><button className="secondary compact" type="button" onClick={() => editDepartmentPlan(row)}>Редактировать</button><button className="ghost danger compact" type="button" onClick={() => void deleteDepartmentPlan(row.id)}>Удалить</button></div> : '—'}</td></tr>)}
                   {!(planReport?.departmentPlans || []).length ? <tr><td colSpan={7} className="empty-state">Плана отдела пока нет.</td></tr> : null}
                 </tbody></table></div></section>
-              </div></div>
+              </div></div></>}
             </article>
   )
 }
