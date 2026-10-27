@@ -87,6 +87,26 @@ async function api(route, method = 'GET', body, options = {}) {
   else assert(response.ok, method + ' ' + route + ': HTTP ' + response.status + ': ' + JSON.stringify(data))
   return { status: response.status, data, response }
 }
+// Synthetic orders may be younger/older than an earlier SKU stocktake by
+// milliseconds. Always honor the REAL handover gate; never bypass it to
+// make this test pass when a checkpoint happens to fall in the same second.
+async function shipAfterApplicableStocktakeReview(orderId, payload) {
+  const review=(await api('/api/orders/'+orderId+'/stock-handover')).data
+  const pending=(review.items||[]).filter(entry=>entry.reviewNeeded)
+  if(pending.length) {
+    const blocked=await api('/api/orders/'+orderId+'/shipping','PATCH',payload,{expectedStatus:409})
+    assert.equal(blocked.data.code,'stock_handover_review_required',
+      'Real Worker must not ship past a pending post-stocktake review')
+    for(const item of pending) {
+      const answer=await api('/api/orders/'+orderId+'/stock-handover','PATCH',{
+        action:'still_here',orderItemId:item.orderItemId,
+        checkpointId:item.checkpointId,checkpointAt:item.checkpointAt,
+      })
+      assert(answer.data.ok,'Synthetic physical item remains on shelf after review')
+    }
+  }
+  return api('/api/orders/'+orderId+'/shipping','PATCH',payload)
+}
 const sql = (query, ...params) => sqlite.prepare(query).get(...params)
 const count = (table, where = '1=1') => sql('SELECT COUNT(*) AS n FROM ' + table + ' WHERE ' + where).n
 try {
@@ -323,7 +343,7 @@ try {
   assert.equal(Number(legacyInitial.debt_amount),7000)
   const legacyOld=sql('SELECT id,variant_id FROM order_items WHERE order_id=?',legacyId)
   assert.equal(Number(legacyOld.variant_id),variantId)
-  await api('/api/orders/'+legacyId+'/shipping','PATCH',ship)
+  await shipAfterApplicableStocktakeReview(legacyId,ship)
   const legacyPhysicalBefore=Number(stock().quantity)
   const legacyReplacementBefore=Number(newStock().quantity)
   const legacyExchangePayload={
@@ -379,7 +399,7 @@ try {
   const multiOld=sqlite.prepare('SELECT id,variant_id,quantity FROM order_items WHERE order_id=? ORDER BY id').all(multiId)
   assert.equal(multiOld.length,2)
   assert.deepEqual(multiOld.map(x=>Number(x.variant_id)),[variantId,newVariantId])
-  await api('/api/orders/'+multiId+'/shipping','PATCH',ship)
+  await shipAfterApplicableStocktakeReview(multiId,ship)
   const beforeMultiOld=Number(stock().quantity)
   const beforeMultiNew=Number(newStock().quantity)
   const pair1={
