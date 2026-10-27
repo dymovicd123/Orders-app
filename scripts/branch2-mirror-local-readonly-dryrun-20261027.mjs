@@ -53,7 +53,7 @@ try{
   // SQLite FTS5 creates auxiliary shadow tables automatically. Recreating
   // those separately would corrupt the derived search index. Copy canonical
   // content tables, create the virtual FTS table, then rebuild its index.
-  const virtualTables=prodTables.filter(t=>/CREATE\\s+VIRTUAL\\s+TABLE/i.test(t.sql||''))
+  const virtualTables=prodTables.filter(t=>/CREATE\s+VIRTUAL\s+TABLE/i.test(t.sql||''))
   const shadowNames=new Set(prodTables.filter(t=>virtualTables.some(v=>t.name.startsWith(v.name+'_'))).map(t=>t.name))
   const dataTables=prodTables.filter(t=>!virtualTables.includes(t)&&!shadowNames.has(t.name))
   console.log('DERIVED_SEARCH_SCHEMAS '+JSON.stringify({
@@ -119,8 +119,8 @@ try{
   }
   // Populate virtual search from canonical rows, not from FTS shadow pages.
   for(const virtual of virtualTables){
-    assert(/\\bfts5\\s*\\(/i.test(virtual.sql),'Unsupported virtual table engine: '+virtual.name)
-    if(/\\bcontent\\s*=\\s*['"][^'"]+['"]/i.test(virtual.sql)){
+    assert(/\bfts5\s*\(/i.test(virtual.sql),'Unsupported virtual table engine: '+virtual.name)
+    if(/\bcontent\s*=\s*['"][^'"]+['"]/i.test(virtual.sql)){
       const name=ident(virtual.name)
       local.exec('INSERT INTO '+name+' ('+name+') VALUES (\'rebuild\')')
     }else{
