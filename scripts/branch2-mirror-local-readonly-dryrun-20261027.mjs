@@ -50,16 +50,25 @@ let local=null
 try{
   local=new DatabaseSync(localFile,{enableDoubleQuotedStringLiterals:true})
   local.exec('PRAGMA foreign_keys = OFF')
-  // FTS-backed virtual tables cannot be safely mirrored with the D1 API.
-  for(const table of prodTables){
+  // SQLite FTS5 creates auxiliary shadow tables automatically. Recreating
+  // those separately would corrupt the derived search index. Copy canonical
+  // content tables, create the virtual FTS table, then rebuild its index.
+  const virtualTables=prodTables.filter(t=>/CREATE\\s+VIRTUAL\\s+TABLE/i.test(t.sql||''))
+  const shadowNames=new Set(prodTables.filter(t=>virtualTables.some(v=>t.name.startsWith(v.name+'_'))).map(t=>t.name))
+  const dataTables=prodTables.filter(t=>!virtualTables.includes(t)&&!shadowNames.has(t.name))
+  console.log('DERIVED_SEARCH_SCHEMAS '+JSON.stringify({
+    virtualTables:virtualTables.map(t=>t.name),
+    shadowCount:shadowNames.size,
+    virtualDefinitions:virtualTables.map(t=>t.sql),
+  }))
+  for(const table of [...dataTables,...virtualTables]){
     assert(typeof table.sql==='string','No CREATE SQL for '+table.name)
-    assert(!/CREATE\s+VIRTUAL\s+TABLE/i.test(table.sql),'Virtual table needs separate plan: '+table.name)
     local.exec(table.sql)
   }
   const stageSettingMap=new Map(stageSettings.map(r=>[r.key,r]))
   let total=0,batchedReads=0
   const copiedCounts={}
-  for(const table of prodTables){
+  for(const table of dataTables){
     const name=table.name
     if(skipData.has(name)){copiedCounts[name]=0;continue}
     const columns=local.prepare('PRAGMA table_xinfo('+ident(name)+')').all()
@@ -107,6 +116,16 @@ try{
     // Re-read compact source count; a live table that changed DURING copy is not a snapshot.
     const source=await readOnly(PROD,'SELECT COUNT(*) AS n FROM '+tableName)
     assert(Number(source[0]?.n)===n,'Live source table changed while reading: '+name)
+  }
+  // Populate virtual search from canonical rows, not from FTS shadow pages.
+  for(const virtual of virtualTables){
+    assert(/\\bfts5\\s*\\(/i.test(virtual.sql),'Unsupported virtual table engine: '+virtual.name)
+    if(/\\bcontent\\s*=\\s*['"][^'"]+['"]/i.test(virtual.sql)){
+      const name=ident(virtual.name)
+      local.exec('INSERT INTO '+name+' ('+name+') VALUES (\'rebuild\')')
+    }else{
+      throw Error('FTS without external content needs an explicit data strategy: '+virtual.name)
+    }
   }
   // Never import production credentials, logins, sessions or security locks.
   const tableSet=new Set(prodTables.map(x=>x.name))
