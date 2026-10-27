@@ -315,27 +315,67 @@ try{
   let importStarted=false
   try{
     importStarted=true
-    const result=spawnSync('npx',['wrangler','d1','execute','orders_db_branch2','--remote','--file='+sqlFile,'--yes'],{
-      cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:25*60*1000,
-      maxBuffer:16*1024*1024
-    })
-    if(result.status!==0||result.error){
-      // Explicitly redact SQL rows and customer data. Wrangler errors may
-      // contain the failing INSERT's values; NEVER print raw stdout/stderr.
-      const safeLines=String(result.stderr||'').split('\n')
-        .filter(line=>/ERROR|Error|failed|invalid|HTTP|Too large|too large|size|limit|API|unknown|unknown option/i.test(line))
-        .map(line=>/\b(INSERT|CREATE|DROP|UPDATE|DELETE|SELECT|VALUES|REPLACE)\b/i.test(line)
-          ? '[SQL statement redacted]'
-          : line.replace(/(['"]).*?\1/g,'[quoted value redacted]').slice(0,210))
-        .slice(-12)
-      console.error('BRANCH2_IMPORT_DIAGNOSTICS '+JSON.stringify({
-        exit:result.status,signal:result.signal,errorCode:result.error?.code||null,
-        stderrLines:safeLines,
-        stderrBytes:Buffer.byteLength(result.stderr||''),
-        stdoutBytes:Buffer.byteLength(result.stdout||''),
-      }))
-      throw Error('Staging-only Wrangler import did not complete')
+    // Use the published D1 import API directly: Wrangler hides server-side
+    // import errors behind a generic CLI failure for large SQL files.
+    // Every API action below is scoped to the exact staging database UUID.
+    const {createHash}=await import('node:crypto')
+    const etag=createHash('md5').update(scriptSql).digest('hex')
+    const endpoint=root+TEST+'/import'
+    const safeError=unknown=>{
+      const value=String(unknown||'').slice(0,2000)
+      if(/\b(INSERT|UPDATE|DELETE|DROP|CREATE|SELECT|VALUES|REPLACE)\b/i.test(value))return '[SQL error redacted]'
+      return value.replace(/(['"]).*?\1/g,'[quoted value redacted]').slice(0,350)
     }
+    async function importAction(payload){
+      const res=await fetch(endpoint,{
+        method:'POST',
+        headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify(payload),
+        signal:AbortSignal.timeout(120000)
+      })
+      const data=await res.json()
+      if(!res.ok||data.success===false||!data.result){
+        console.error('BRANCH2_D1_IMPORT_HTTP '+JSON.stringify({
+          action:payload.action,http:res.status,
+          errors:(data.errors||[]).map(e=>({code:e.code,reason:safeError(e.message)})).slice(0,5)
+        }))
+        throw Error('Staging D1 import '+payload.action+' rejected')
+      }
+      return data.result
+    }
+    const init=await importAction({action:'init',etag})
+    assert(init.filename&&typeof init.filename==='string','D1 init returned no filename')
+    if(init.upload_url){
+      const url=new URL(init.upload_url)
+      assert(url.protocol==='https:','D1 SQL upload URL is not HTTPS')
+      const uploaded=await fetch(url,{method:'PUT',body:scriptSql,signal:AbortSignal.timeout(180000)})
+      assert(uploaded.ok,'Staging D1 SQL upload rejected HTTP '+uploaded.status)
+      const received=(uploaded.headers.get('etag')||'').replaceAll('"','')
+      assert(received===etag,'D1 signed SQL upload etag mismatch')
+    }
+    console.log('BRANCH2_SQL_UPLOADED_TO_STAGING_ONLY '+JSON.stringify({bytes:Buffer.byteLength(scriptSql)}))
+    const ingested=await importAction({action:'ingest',etag,filename:init.filename})
+    let result=ingested
+    let iterations=0
+    while(result.status!=='complete'&&result.status!=='error'){
+      const at=result.at_bookmark||ingested.at_bookmark
+      assert(typeof at==='string'&&at.length>12,'Missing D1 import poll bookmark')
+      if(iterations++>240)throw Error('Staging D1 ingestion timed out')
+      await new Promise(resolve=>setTimeout(resolve,1000))
+      result=await importAction({action:'poll',current_bookmark:at})
+    }
+    if(result.status==='error'||result.error){
+      console.error('BRANCH2_D1_IMPORT_SERVER_ERROR '+JSON.stringify({
+        status:result.status,error:safeError(result.error),
+        messages:(result.messages||[]).map(safeError).slice(-6)
+      }))
+      throw Error('Staging D1 import returned server error')
+    }
+    assert(result.status==='complete'&&result.success!==false,'D1 ingestion has not completed')
+    console.log('BRANCH2_IMPORT_SUCCESS '+JSON.stringify({
+      numQueries:result.result?.num_queries??null,
+      returnedBookmark:Boolean(result.result?.final_bookmark)
+    }))
     // No production reads here. Verify targeted tables and staging logins.
     for(const name of ['orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks','inventory_stocktake_items','catalog_variants']){
       const rows=await readOnly(TEST,'SELECT COUNT(*) AS n FROM '+quoteName(name))
