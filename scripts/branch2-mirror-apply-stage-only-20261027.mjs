@@ -8,6 +8,7 @@ import {join} from 'node:path'
 import {DatabaseSync} from 'node:sqlite'
 const PROD='17e68a41-1d58-4a36-8a63-47c3e32443c4'
 const TEST='40065052-854e-44b8-bcd5-251bdd488301'
+const DEST='0904a573-21ff-44d8-93b0-c9200f771702'
 const account=process.env.CLOUDFLARE_ACCOUNT_ID
 const token=process.env.CLOUDFLARE_API_TOKEN
 const config=readFileSync('wrangler.jsonc','utf8')
@@ -16,7 +17,7 @@ assert(config.includes('"name": "orders-app-branch2"')&&config.includes(TEST)&&!
 const root='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'
 let prodReads=0,testReads=0
 async function readOnly(id,sql){
-  assert(id===PROD||id===TEST,'Unexpected D1 database')
+  assert(id===PROD||id===TEST||id===DEST,'Unexpected D1 database')
   assert(/^SELECT\b/i.test(sql.trim()),'Only SELECT SQL allowed')
   const response=await fetch(root+id+'/query',{method:'POST',headers:{
     Authorization:'Bearer '+token,'Content-Type':'application/json',
@@ -317,7 +318,7 @@ try{
   const chunks=[]
   const limitBytes=1024*1024
   for(const phase of [
-    {name:'reset',sql:statements.slice(0,dropEnd)},
+    // Target is a new EMPTY D1: never delete or modify existing Branch2.
     {name:'schema',sql:statements.slice(dropEnd,createEnd)},
     {name:'data',sql:statements.slice(createEnd,dataEnd)},
     {name:'indexes',sql:statements.slice(dataEnd)},
@@ -372,15 +373,17 @@ try{
     stages:[...new Set(chunks.map(x=>x.name.split('-')[0]))],
   }))
 
+  // Existing Branch2 credentials and app stay on the old DB until validation
+  // passes; all remote writes target only the newly created empty DEST UUID.
   // Main is never a target: remote writes are only allowed through the exact
   // stage binding after validating the UUID and remote DB name one more time.
-  const metadata=await fetch(root+TEST,{
+  const metadata=await fetch(root+DEST,{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)
   })
   assert(metadata.ok,'Unable to confirm target D1 metadata')
   const target=(await metadata.json()).result
-  assert(target?.name==='orders_db_branch2','Staging remote identity changed')
-  const bookmarkResponse=await fetch(root+TEST+'/time_travel/bookmark',{
+  assert(target?.name==='orders_db_branch2_mirror_20261027','New D1 remote identity changed')
+  const bookmarkResponse=await fetch(root+DEST+'/time_travel/bookmark',{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)
   })
   assert(bookmarkResponse.ok,'Cannot obtain staging restore bookmark; import refused')
@@ -401,7 +404,7 @@ try{
     // import errors behind a generic CLI failure for large SQL files.
     // Every API action below is scoped to the exact staging database UUID.
     const {createHash}=await import('node:crypto')
-    const endpoint=root+TEST+'/import'
+    const endpoint=root+DEST+'/import'
     const safeError=unknown=>{
       if(unknown===null||unknown===undefined)return ''
       const value=typeof unknown==='string'?unknown:JSON.stringify(unknown)
@@ -467,13 +470,13 @@ try{
     console.log('BRANCH2_CHUNKED_IMPORT_ALL_COMMITTED')
     // No production reads here. Verify targeted tables and staging logins.
     for(const name of ['orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks','inventory_stocktake_items','catalog_variants']){
-      const rows=await readOnly(TEST,'SELECT COUNT(*) AS n FROM '+quoteName(name))
+      const rows=await readOnly(DEST,'SELECT COUNT(*) AS n FROM '+quoteName(name))
       assert(Number(rows[0]?.n)===Number(copiedCounts[name]),'Staging import mismatch for '+name)
     }
-    const accounts=await readOnly(TEST,"SELECT role,COUNT(*) AS n FROM app_users GROUP BY role")
+    const accounts=await readOnly(DEST,"SELECT role,COUNT(*) AS n FROM app_users GROUP BY role")
     assert(accounts.length===1&&accounts[0].role==='admin'&&Number(accounts[0].n)===1,
       'Staging auth accounts do not contain exactly one admin')
-    const sessions=await readOnly(TEST,'SELECT COUNT(*) AS n FROM app_sessions')
+    const sessions=await readOnly(DEST,'SELECT COUNT(*) AS n FROM app_sessions')
     assert(Number(sessions[0]?.n)===0,'Staging sessions not reset')
     console.log('BRANCH2_PRODUCTION_DATA_MIRROR_COMPLETE: real business data, staging-only admin, production untouched')
   }catch(err){
@@ -481,7 +484,7 @@ try{
     if(importStarted){
       // Time Travel can revert partial staging imports. NEVER restore main.
       try{
-        const restoreUrl=new URL(root+TEST+'/time_travel/restore')
+        const restoreUrl=new URL(root+DEST+'/time_travel/restore')
         restoreUrl.searchParams.set('bookmark',bookmark)
         const response=await fetch(restoreUrl,{
           method:'POST',headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(180000)
