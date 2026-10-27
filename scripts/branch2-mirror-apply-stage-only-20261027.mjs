@@ -357,6 +357,17 @@ try{
     console.log('BRANCH2_SQL_UPLOADED_TO_STAGING_ONLY '+JSON.stringify({bytes:Buffer.byteLength(transferSql)}))
     const ingested=await importAction({action:'ingest',etag,filename:init.filename})
     console.log('BRANCH2_INGEST_RESPONSE_SHAPE '+JSON.stringify({keys:Object.keys(ingested),status:ingested.status,innerSuccess:ingested.success,atBookmark:Boolean(ingested.at_bookmark),errorPresent:Boolean(ingested.error)}))
+    if(ingested.error||ingested.success===false){
+      const raw=String(ingested.error||'Import rejected')
+      const firstSqlKeyword=raw.search(/\b(?:INSERT|UPDATE|DELETE|DROP|CREATE|SELECT|VALUES|REPLACE)\b/i)
+      const message=firstSqlKeyword>=0?raw.slice(0,firstSqlKeyword):raw
+      console.error('BRANCH2_D1_INGEST_REJECTION '+JSON.stringify({
+        innerSuccess:ingested.success,
+        reason:message.replace(/(['"]).*?\1/g,'[literal redacted]').slice(0,500),
+        rawErrorChars:raw.length,
+      }))
+      throw Error('Cloudflare D1 rejected staging import file before polling')
+    }
     let result=ingested
     let iterations=0
     while(result.status!=='complete'&&result.status!=='error'){
