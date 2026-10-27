@@ -356,6 +356,7 @@ try{
     }
     console.log('BRANCH2_SQL_UPLOADED_TO_STAGING_ONLY '+JSON.stringify({bytes:Buffer.byteLength(transferSql)}))
     const ingested=await importAction({action:'ingest',etag,filename:init.filename})
+    console.log('BRANCH2_INGEST_RESPONSE_SHAPE '+JSON.stringify({keys:Object.keys(ingested),status:ingested.status,innerSuccess:ingested.success,atBookmark:Boolean(ingested.at_bookmark),errorPresent:Boolean(ingested.error)}))
     let result=ingested
     let iterations=0
     while(result.status!=='complete'&&result.status!=='error'){
@@ -389,6 +390,7 @@ try{
     assert(Number(sessions[0]?.n)===0,'Staging sessions not reset')
     console.log('BRANCH2_PRODUCTION_DATA_MIRROR_COMPLETE: real business data, staging-only admin, production untouched')
   }catch(err){
+    console.error('BRANCH2_IMPORT_FAILURE_REASON '+String(err instanceof Error ? err.message : err).replace(/(['"]).*?\1/g,'[quoted value redacted]').slice(0,270))
     if(importStarted){
       // Time Travel can revert partial staging imports. NEVER restore main.
       try{
