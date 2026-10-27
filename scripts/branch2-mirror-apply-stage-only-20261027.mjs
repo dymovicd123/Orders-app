@@ -81,8 +81,8 @@ try{
     let cursor=0,offset=0,n=0
     while(true){
       const statement=rowid
-        ? 'SELECT rowid AS __mirror_cursor__, * FROM '+tableName+' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 100'
-        : 'SELECT * FROM '+tableName+' LIMIT 100 OFFSET '+offset
+        ? 'SELECT rowid AS __mirror_cursor__, * FROM '+tableName+' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 400'
+        : 'SELECT * FROM '+tableName+' LIMIT 400 OFFSET '+offset
       const rows=await readOnly(PROD,statement)
       batchedReads++
       if(!rows.length)break
@@ -107,7 +107,7 @@ try{
         insert.run(...values)
         n++
       }
-      if(rows.length<100)break
+      if(rows.length<400)break
       offset+=rows.length
       assert(n<1500000,'Unexpectedly large production table')
     }
@@ -135,7 +135,7 @@ try{
       let cursor=0,totalFts=0
       while(true){
         const rows=await readOnly(PROD,'SELECT rowid AS __mirror_cursor__,order_id,search_text FROM '+name+
-          ' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 100')
+          ' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 400')
         if(!rows.length)break
         for(const row of rows){
           const id=Number(row.__mirror_cursor__)
@@ -144,7 +144,7 @@ try{
           cursor=id
           totalFts++
         }
-        if(rows.length<100)break
+        if(rows.length<400)break
       }
       const rowCount=await readOnly(PROD,'SELECT COUNT(*) AS n FROM '+name)
       assert(totalFts===Number(rowCount[0]?.n||0),'FTS row count changed during copy: '+virtual.name)
@@ -319,7 +319,23 @@ try{
       cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:25*60*1000,
       maxBuffer:16*1024*1024
     })
-    if(result.status!==0||result.error)throw Error('Staging-only Wrangler import did not complete')
+    if(result.status!==0||result.error){
+      // Explicitly redact SQL rows and customer data. Wrangler errors may
+      // contain the failing INSERT's values; NEVER print raw stdout/stderr.
+      const safeLines=String(result.stderr||'').split('\n')
+        .filter(line=>/ERROR|Error|failed|invalid|HTTP|Too large|too large|size|limit|API|unknown|unknown option/i.test(line))
+        .map(line=>/\b(INSERT|CREATE|DROP|UPDATE|DELETE|SELECT|VALUES|REPLACE)\b/i.test(line)
+          ? '[SQL statement redacted]'
+          : line.replace(/(['"]).*?\1/g,'[quoted value redacted]').slice(0,210))
+        .slice(-12)
+      console.error('BRANCH2_IMPORT_DIAGNOSTICS '+JSON.stringify({
+        exit:result.status,signal:result.signal,errorCode:result.error?.code||null,
+        stderrLines:safeLines,
+        stderrBytes:Buffer.byteLength(result.stderr||''),
+        stdoutBytes:Buffer.byteLength(result.stdout||''),
+      }))
+      throw Error('Staging-only Wrangler import did not complete')
+    }
     // No production reads here. Verify targeted tables and staging logins.
     for(const name of ['orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks','inventory_stocktake_items','catalog_variants']){
       const rows=await readOnly(TEST,'SELECT COUNT(*) AS n FROM '+quoteName(name))
@@ -335,9 +351,10 @@ try{
     if(importStarted){
       // Time Travel can revert partial staging imports. NEVER restore main.
       try{
-        const response=await fetch(root+TEST+'/time_travel/restore',{
-          method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-          body:JSON.stringify({bookmark}),signal:AbortSignal.timeout(180000)
+        const restoreUrl=new URL(root+TEST+'/time_travel/restore')
+        restoreUrl.searchParams.set('bookmark',bookmark)
+        const response=await fetch(restoreUrl,{
+          method:'POST',headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(180000)
         })
         const data=await response.json()
         if(!response.ok||data.success===false)throw Error('Cloudflare rejected staging rollback')
