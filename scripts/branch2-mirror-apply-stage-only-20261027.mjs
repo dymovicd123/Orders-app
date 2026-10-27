@@ -319,7 +319,7 @@ try{
     // import errors behind a generic CLI failure for large SQL files.
     // Every API action below is scoped to the exact staging database UUID.
     const {createHash}=await import('node:crypto')
-    const etag=createHash('md5').update(scriptSql).digest('hex')
+    const transferSql='-- unique staging data refresh '+new Date().toISOString()+'\n'+scriptSql\n    const etag=createHash('md5').update(transferSql).digest('hex')
     const endpoint=root+TEST+'/import'
     const safeError=unknown=>{
       const value=String(unknown||'').slice(0,2000)
@@ -348,12 +348,12 @@ try{
     if(init.upload_url){
       const url=new URL(init.upload_url)
       assert(url.protocol==='https:','D1 SQL upload URL is not HTTPS')
-      const uploaded=await fetch(url,{method:'PUT',body:scriptSql,signal:AbortSignal.timeout(180000)})
+      const uploaded=await fetch(url,{method:'PUT',body:transferSql,signal:AbortSignal.timeout(180000)})
       assert(uploaded.ok,'Staging D1 SQL upload rejected HTTP '+uploaded.status)
       const received=(uploaded.headers.get('etag')||'').replaceAll('"','')
       assert(received===etag,'D1 signed SQL upload etag mismatch')
     }
-    console.log('BRANCH2_SQL_UPLOADED_TO_STAGING_ONLY '+JSON.stringify({bytes:Buffer.byteLength(scriptSql)}))
+    console.log('BRANCH2_SQL_UPLOADED_TO_STAGING_ONLY '+JSON.stringify({bytes:Buffer.byteLength(transferSql)}))
     const ingested=await importAction({action:'ingest',etag,filename:init.filename})
     let result=ingested
     let iterations=0
