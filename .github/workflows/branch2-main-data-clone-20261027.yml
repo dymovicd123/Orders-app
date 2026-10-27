@@ -33,7 +33,7 @@ jobs:
           grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
           grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
           ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
-          base='fedca806aabc056513ab399abccd4218de56d21a'
+          base='cf7a7198cfe3fe4050a2625cc04e9dc17219243c'
           git merge-base --is-ancestor "$base" "$GITHUB_SHA"
           while IFS= read -r file; do
             case "$file" in
