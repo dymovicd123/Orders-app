@@ -311,6 +311,67 @@ try{
     sourceRows:total,mainReadQueries:prodReads,adminPreserved:true,
     newManagerLogins:0,stagingSettingsPreserved:true
   }))
+  // One large (39 MB / 65k-statement) D1 import is rejected by Cloudflare.
+  // Instead use independent small D1 import transactions: reset, schema,
+  // parent-before-child data, and finally indexes/views/triggers.
+  const chunks=[]
+  const limitBytes=1024*1024
+  for(const phase of [
+    {name:'reset',sql:statements.slice(0,dropEnd)},
+    {name:'schema',sql:statements.slice(dropEnd,createEnd)},
+    {name:'data',sql:statements.slice(createEnd,dataEnd)},
+    {name:'indexes',sql:statements.slice(dataEnd)},
+  ]){
+    let bucket=[],bytes=0,part=0
+    function flush(){
+      if(!bucket.length)return
+      const sql='PRAGMA defer_foreign_keys = ON;\n'+bucket.join('\n')+'\n'
+      chunks.push({name:phase.name+'-'+(++part),sql})
+      bucket=[];bytes=0
+    }
+    for(const stmt of phase.sql){
+      const len=Buffer.byteLength(stmt)+1
+      assert(len<limitBytes,'An individual staging SQL statement is too large')
+      if(bytes+len>limitBytes)flush()
+      bucket.push(stmt)
+      bytes+=len
+    }
+    flush()
+  }
+  assert(chunks.length>4&&chunks.length<120,'Unexpected staging chunk count')
+  // Verify committed chunk boundaries as well as the original full SQL file.
+  // An FK crossing a chunk boundary without its parent must fail BEFORE any
+  // Cloudflare staging write, not midway through the production mirror.
+  const chunkCheck=new DatabaseSync(join(directory,'chunk-boundary-check.sqlite'),{
+    enableDoubleQuotedStringLiterals:true
+  })
+  try{
+    chunkCheck.exec('PRAGMA foreign_keys=ON')
+    for(const [i,chunk] of chunks.entries()){
+      chunkCheck.exec('BEGIN')
+      try{
+        chunkCheck.exec(chunk.sql)
+        chunkCheck.exec('COMMIT')
+      }catch(err){
+        try{chunkCheck.exec('ROLLBACK')}catch{}
+        throw Error('Offline staging import chunk '+i+' ('+chunk.name+') invalid: '+String(err?.message||'unknown').replace(/(['"]).*?\1/g,'[literal]'))
+      }
+    }
+    assert(chunkCheck.prepare('PRAGMA foreign_key_check').all().length===0,
+      'Staged chunk replay has foreign-key violations')
+    assert(Object.values(chunkCheck.prepare('PRAGMA quick_check').get())[0]==='ok',
+      'Staged chunk replay failed integrity check')
+    for(const name of ['orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks','inventory_stocktake_items','catalog_variants']){
+      const original=local.prepare('SELECT COUNT(*) AS n FROM '+quoteName(name)).get().n
+      const replayed=chunkCheck.prepare('SELECT COUNT(*) AS n FROM '+quoteName(name)).get().n
+      assert.equal(replayed,original,'Staged chunk replay count mismatch: '+name)
+    }
+  }finally{chunkCheck.close()}
+  console.log('BRANCH2_CHUNKED_SQL_OFFLINE_VERIFIED '+JSON.stringify({
+    chunks:chunks.length,maxBytes:Math.max(...chunks.map(x=>Buffer.byteLength(x.sql))),
+    stages:[...new Set(chunks.map(x=>x.name.split('-')[0]))],
+  }))
+
   // Main is never a target: remote writes are only allowed through the exact
   // stage binding after validating the UUID and remote DB name one more time.
   const metadata=await fetch(root+TEST,{
