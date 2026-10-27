@@ -459,6 +459,22 @@ try {
   const failedId=Number(failedOrder.data.orderId)
   assert(failedId>0)
   const failedItemId=Number(sql('SELECT id FROM order_items WHERE order_id=?',failedId).id)
+  // A valid post-stocktake check may require a factual handover review.
+  // Do not bypass the Worker: assert the 409, answer 'still_here' for the
+  // synthetic unit, then ship. Without a review, normal shipping is allowed.
+  const failpointHandover=(await api('/api/orders/'+failedId+'/stock-handover')).data
+  const failpointPending=(failpointHandover.items||[]).filter(entry=>entry.reviewNeeded)
+  if(failpointPending.length){
+    const blocked=await api('/api/orders/'+failedId+'/shipping','PATCH',ship,{expectedStatus:409})
+    assert.equal(blocked.data.code,'stock_handover_review_required')
+    for(const entry of failpointPending){
+      const reviewed=await api('/api/orders/'+failedId+'/stock-handover','PATCH',{
+        action:'still_here',orderItemId:entry.orderItemId,
+        checkpointId:entry.checkpointId,checkpointAt:entry.checkpointAt,
+      })
+      assert(reviewed.data.ok,'Stocktake review must be confirmed before the test Return')
+    }
+  }
   await api('/api/orders/'+failedId+'/shipping','PATCH',ship)
   const failedReturnPayload={
     orderId:failedId,returnDate:'2026-10-20',amount:1000,paymentMethod:'НАЛИЧКА',
