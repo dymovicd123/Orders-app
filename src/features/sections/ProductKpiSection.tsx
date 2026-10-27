@@ -37,6 +37,82 @@ const describe=(filters:Filters)=>filterKeys.filter(k=>filters[k]).map(k=>labels
 function overlap(a:Filters,b:Filters){
   return filterKeys.every(k=>!a[k]||!b[k]||normalize(a[k])===normalize(b[k]))
 }
+
+function KpiProgressOverview({records,isAdmin,saving,formatMoney,onEdit,onRemove}:{
+  records:Campaign[];isAdmin:boolean;saving:boolean;
+  formatMoney:(n:number)=>string;onEdit:(k:Campaign)=>void;onRemove:(k:Campaign)=>void
+}){
+  if(!records.length)return null
+  const complete=records.reduce((sum,k)=>sum+k.participants.filter(p=>p.achieved).length,0)
+  const total=records.reduce((sum,k)=>sum+k.participants.length,0)
+  const percentage=(sold:number,quota:number)=>Math.round(sold/Math.max(1,quota)*100)
+  const bar=(sold:number,quota:number)=><div className="pkpi-metric-track" aria-label={percentage(sold,quota)+'% выполнено'}>
+    <span style={{width:Math.min(100,percentage(sold,quota))+'%'}}/>
+  </div>
+  return <section className="pkpi-overview" aria-label="Таблица выполнения товарных KPI">
+    <div className="pkpi-overview-heading">
+      <div><h3>Выполнение KPI</h3><p>Квоты менеджеров за выбранный месяц</p></div>
+      <span>{complete} из {total} выполнено</span>
+    </div>
+    {records.map(k=>{
+      const sold=k.participants.reduce((sum,p)=>sum+p.sold,0)
+      const completed=k.participants.filter(p=>p.achieved).length
+      const remaining=k.participants.reduce((sum,p)=>sum+Math.max(0,p.quota-p.sold),0)
+      const details=describe(k.filters)
+      return <article className="pkpi-overview-task" key={k.id}>
+        <div className="pkpi-overview-task-head">
+          <div className="pkpi-overview-task-title">
+            <h4>{k.title}</h4>
+            <p>{k.productName}{details==='Все варианты модели'?' · Все варианты':' · '+details}</p>
+          </div>
+          <div className="pkpi-overview-task-totals">
+            <strong>{sold} / {k.targetQuantity} шт.</strong>
+            <small>{completed} из {k.participants.length} выполнили</small>
+          </div>
+          {isAdmin?<div className="pkpi-overview-actions">
+            <button type="button" className="secondary compact" onClick={()=>onEdit(k)}>Изменить</button>
+            <button type="button" className="ghost danger compact" disabled={saving} onClick={()=>onRemove(k)}>Удалить</button>
+          </div>:null}
+        </div>
+        {bar(sold,k.targetQuantity)}
+        <div className="pkpi-overview-table-scroll">
+          <table className="pkpi-overview-table">
+            <thead><tr>
+              <th scope="col">Менеджер</th><th scope="col" className="num">План</th>
+              <th scope="col" className="num">Продано</th><th scope="col" className="num">Осталось</th>
+              <th scope="col">Выполнение</th><th scope="col" className="num">Бонус при выполнении</th>
+              <th scope="col">Статус</th>
+            </tr></thead>
+            <tbody>{k.participants.map(m=><tr key={m.managerId}>
+              <th scope="row">{m.manager}</th>
+              <td className="num">{m.quota}</td>
+              <td className="num pkpi-overview-sold">{m.sold}</td>
+              <td className="num">{Math.max(0,m.quota-m.sold)}</td>
+              <td><div className="pkpi-overview-percent"><strong>{percentage(m.sold,m.quota)}%</strong>{bar(m.sold,m.quota)}</div></td>
+              <td className="num">{formatMoney(m.bonusAmount)}</td>
+              <td><span className={'pkpi-outcome '+(m.achieved?'is-done':'is-open')}>{m.achieved?'Выполнено':'В работе'}</span></td>
+            </tr>)}</tbody>
+            <tfoot><tr><th scope="row">Итого по заданию</th>
+              <td className="num">{k.targetQuantity}</td><td className="num">{sold}</td>
+              <td className="num">{remaining}</td><td>{percentage(sold,k.targetQuantity)}%</td>
+              <td className="num">—</td><td>{completed} / {k.participants.length}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+        <div className="pkpi-overview-mobile">
+          {k.participants.map(m=><div className="pkpi-overview-person" key={m.managerId}>
+            <div className="pkpi-overview-person-line"><strong>{m.manager}</strong><span className={'pkpi-outcome '+(m.achieved?'is-done':'is-open')}>{m.achieved?'Выполнено':'В работе'}</span></div>
+            <div className="pkpi-overview-person-line"><strong>{m.sold} / {m.quota} шт.</strong><strong>{percentage(m.sold,m.quota)}%</strong></div>
+            {bar(m.sold,m.quota)}
+            <div className="pkpi-overview-person-foot"><span>Осталось {Math.max(0,m.quota-m.sold)} шт.</span><span>Бонус {formatMoney(m.bonusAmount)}</span></div>
+          </div>)}
+        </div>
+      </article>
+    })}
+    <p className="pkpi-overview-note">Выполнение рассчитывается по отправленным товарам с учётом возвратов. Бонус не является фактической выплатой.</p>
+  </section>
+}
+
 export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney}:{
   apiFetch:(url:string,options?:RequestInit)=>Promise<Response>;
   isAdmin:boolean;currentManagerId:number;formatMoney:(value:number)=>string
@@ -60,7 +136,6 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   const productInputRef=useRef<HTMLInputElement|null>(null)
   const editorRef=useRef<HTMLDivElement|null>(null)
   const [highlighted,setHighlighted]=useState(0)
-  const [expanded,setExpanded]=useState<number[]>([])
   const activeProducts=useMemo(()=>(catalog?.products||[]).filter(p=>p.isActive),[catalog])
   const candidates=useMemo(()=>{
     const query=normalize(productQuery)
@@ -370,37 +445,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
           <button type="button" className="secondary compact" onClick={create}>+ Создать KPI</button></>:null}
       </div>:null}
     {busy?<p className="pkpi-loading" role="status">Загружаем KPI…</p>:null}
-    <div className="pkpi-list">{records.map(k=>{
-      const totalSold=k.participants.reduce((sum,p)=>sum+p.sold,0)
-      const achieved=k.participants.filter(p=>p.achieved).length
-      const expandedNow=expanded.includes(k.id)
-      return <article className="pkpi-card" key={k.id}>
-        <div className="pkpi-card-header">
-          <div><h4>{k.title}</h4><p>{k.productName}{describe(k.filters)==='Все варианты модели'?' · Все варианты':' · '+describe(k.filters)}</p></div>
-          <span className="pkpi-summary">{achieved} из {k.participants.length} выполнили</span>
-        </div>
-        <div className="pkpi-summary-row">
-          <strong>{totalSold} <span>/ {k.targetQuantity} шт.</span></strong>
-          <span>{Math.round(100*totalSold/Math.max(1,k.targetQuantity))}%</span>
-        </div>
-        <div className="pkpi-progress"><div style={{width:Math.min(100,100*totalSold/Math.max(1,k.targetQuantity))+'%'}}/></div>
-        <div className="pkpi-card-actions">
-          <button className="secondary compact" type="button"
-            onClick={()=>setExpanded(curr=>expandedNow?curr.filter(id=>id!==k.id):[...curr,k.id])}>
-            {expandedNow?'Скрыть участников':'Участники и прогресс'}
-          </button>
-          {isAdmin?<><button className="secondary compact" type="button" onClick={()=>edit(k)}>Изменить</button>
-            <button className="ghost danger compact" type="button" disabled={saving} onClick={()=>void remove(k)}>Удалить</button></>:null}
-        </div>
-        {expandedNow?<div className="pkpi-progress-members">{k.participants.map(m=><div className="pkpi-progress-member" key={m.managerId}>
-          <div className="pkpi-member-stats"><strong>{m.manager}</strong><span>{m.sold} / {m.quota} шт.</span>
-            <span className={m.achieved?'pkpi-balanced':'pkpi-muted'}>
-              {m.achieved?'Выполнено · бонус '+formatMoney(m.earnedBonus):'Осталось '+Math.max(0,m.quota-m.sold)+' шт.'}
-            </span></div>
-          <div className="pkpi-progress"><div style={{width:Math.min(100,100*m.sold/Math.max(1,m.quota))+'%'}}/></div>
-        </div>)}</div>:null}
-      </article>
-    })}</div>
-    {records.length>0?<p className="pkpi-disclaimer">В зачёт идут отправленные заказы с учётом возвратов. Бонусы здесь рассчитываются, но не выплачиваются.</p>:null}
+    <KpiProgressOverview records={records} isAdmin={isAdmin} saving={saving}
+      formatMoney={formatMoney} onEdit={edit} onRemove={row=>void remove(row)}/>
   </section>
 }
