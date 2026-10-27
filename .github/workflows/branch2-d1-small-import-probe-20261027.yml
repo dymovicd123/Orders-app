@@ -45,7 +45,7 @@ jobs:
           import {createHash} from 'node:crypto'
           const id='40065052-854e-44b8-bcd5-251bdd488301'
           const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/d1/database/'+id+'/import'
-          const etag=createHash('md5').update('SELECT 1 AS probe;\n').digest('hex')
+          const etag=createHash('md5').update('SELECT 1 AS probe; -- '+new Date().toISOString()).digest('hex')
           const res=await fetch(root,{method:'POST',headers:{
             Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
             'Content-Type':'application/json'
