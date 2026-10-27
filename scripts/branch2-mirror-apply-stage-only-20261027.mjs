@@ -322,11 +322,11 @@ try{
     if(result.status!==0||result.error){
       // Explicitly redact SQL rows and customer data. Wrangler errors may
       // contain the failing INSERT's values; NEVER print raw stdout/stderr.
-      const safeLines=String(result.stderr||'').split('\\n')
+      const safeLines=String(result.stderr||'').split('\n')
         .filter(line=>/ERROR|Error|failed|invalid|HTTP|Too large|too large|size|limit|API|unknown|unknown option/i.test(line))
-        .map(line=>/\\b(INSERT|CREATE|DROP|UPDATE|DELETE|SELECT|VALUES|REPLACE)\\b/i.test(line)
+        .map(line=>/\b(INSERT|CREATE|DROP|UPDATE|DELETE|SELECT|VALUES|REPLACE)\b/i.test(line)
           ? '[SQL statement redacted]'
-          : line.replace(/(['"]).*?\\1/g,'[quoted value redacted]').slice(0,210))
+          : line.replace(/(['"]).*?\1/g,'[quoted value redacted]').slice(0,210))
         .slice(-12)
       console.error('BRANCH2_IMPORT_DIAGNOSTICS '+JSON.stringify({
         exit:result.status,signal:result.signal,errorCode:result.error?.code||null,
