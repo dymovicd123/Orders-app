@@ -1,0 +1,60 @@
+name: Resolver and shipping lifecycle acceptance 2026-10-27
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/domains/catalog-review.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/domains/catalog.ts'
+      - 'worker/index.ts'
+      - 'src/features/orders/**'
+      - 'src/app/controllers/useWorkspaceViewModel.tsx'
+      - '.github/workflows/resolver-shipping-acceptance-20261027.yml'
+      - 'scripts/test-main-resolver-*.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/resolver-shipping-acceptance-20261027.yml'
+      - 'worker/domains/catalog-review.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/domains/catalog.ts'
+      - 'worker/index.ts'
+      - 'src/features/orders/**'
+permissions:
+  contents: read
+jobs:
+  resolver-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - name: Existing SKU, old reservations, empty modal, gender and recovery
+        run: |
+          node --experimental-strip-types scripts/test-main-resolver-active-reserve-20261022.mjs
+          node --experimental-strip-types scripts/test-main-resolver-actionable-20261022.mjs
+          node --experimental-strip-types scripts/test-main-resolver-opposite-gender-20261022.mjs
+          node --experimental-strip-types scripts/test-pending-known-reservation-shipping-20261020.mjs
+      - name: Human resolver questions and completion
+        run: |
+          node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
+          node scripts/test-catalog-resolver-r11-preserve-known-gender.mjs
+          node scripts/test-catalog-resolver-r12-catalog-consistency.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-stage02-post-review-resolver-return-ux.mjs
+      - name: Shortage, stocktake/handover and retired SKU safety
+        run: |
+          node scripts/test-order-shortage-save-nonblocking.mjs
+          node scripts/test-stock-shortage-ui-no-inline-recount-20261013.mjs
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-handover-cas-after-revision-r2.mjs
+          node scripts/test-catalog-retired-operational-write-guards.mjs
+      - name: Real Worker requests against disposable full-schema SQLite
+        run: |
+          node --experimental-strip-types scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs
+      - name: Cross-check finance and build
+        run: |
+          node scripts/test-p0-financial-atomic-20261027.mjs
+          npm run build
