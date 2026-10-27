@@ -81,8 +81,8 @@ try{
     let cursor=0,offset=0,n=0
     while(true){
       const statement=rowid
-        ? 'SELECT rowid AS __mirror_cursor__, * FROM '+tableName+' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 100'
-        : 'SELECT * FROM '+tableName+' LIMIT 100 OFFSET '+offset
+        ? 'SELECT rowid AS __mirror_cursor__, * FROM '+tableName+' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 400'
+        : 'SELECT * FROM '+tableName+' LIMIT 400 OFFSET '+offset
       const rows=await readOnly(PROD,statement)
       batchedReads++
       if(!rows.length)break
@@ -107,7 +107,7 @@ try{
         insert.run(...values)
         n++
       }
-      if(rows.length<100)break
+      if(rows.length<400)break
       offset+=rows.length
       assert(n<1500000,'Unexpectedly large production table')
     }
@@ -135,7 +135,7 @@ try{
       let cursor=0,totalFts=0
       while(true){
         const rows=await readOnly(PROD,'SELECT rowid AS __mirror_cursor__,order_id,search_text FROM '+name+
-          ' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 100')
+          ' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 400')
         if(!rows.length)break
         for(const row of rows){
           const id=Number(row.__mirror_cursor__)
@@ -144,7 +144,7 @@ try{
           cursor=id
           totalFts++
         }
-        if(rows.length<100)break
+        if(rows.length<400)break
       }
       const rowCount=await readOnly(PROD,'SELECT COUNT(*) AS n FROM '+name)
       assert(totalFts===Number(rowCount[0]?.n||0),'FTS row count changed during copy: '+virtual.name)
