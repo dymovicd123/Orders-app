@@ -11,6 +11,7 @@ on:
       - 'src/app/controllers/useWorkspaceViewModel.tsx'
       - '.github/workflows/resolver-shipping-acceptance-20261027.yml'
       - 'scripts/test-main-resolver-*.mjs'
+      - 'scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs'
   push:
     branches: [main]
     paths:
