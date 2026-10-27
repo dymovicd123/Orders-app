@@ -62,3 +62,42 @@ jobs:
             uploadUrlPresent:Boolean(data.result?.upload_url)
           }))
           NODE
+      - name: Test complete D1 REST init-upload-ingest-poll on harmless SELECT
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {createHash} from 'node:crypto'
+          import assert from 'node:assert/strict'
+          const sql='SELECT 1 AS probe; -- '+new Date().toISOString()+'\n'
+          const etag=createHash('md5').update(sql).digest('hex')
+          const endpoint='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
+            '/d1/database/40065052-854e-44b8-bcd5-251bdd488301/import'
+          async function act(body){
+            const res=await fetch(endpoint,{method:'POST',headers:{
+              Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'
+            },body:JSON.stringify(body)})
+            const data=await res.json()
+            console.log('REST_PHASE '+JSON.stringify({
+              action:body.action,http:res.status,topSuccess:data.success,
+              keys:Object.keys(data.result||{}),status:data.result?.status,
+              success:data.result?.success,bookmarkPresent:Boolean(data.result?.at_bookmark),
+              error:data.result?.error||null,errors:data.errors?.map(e=>e.message)
+            }))
+            assert(res.ok&&data.success!==false,'HTTP failure')
+            return data.result
+          }
+          const init=await act({action:'init',etag})
+          assert(init.filename&&init.upload_url,'Missing upload URL')
+          const upload=await fetch(init.upload_url,{method:'PUT',body:sql})
+          assert(upload.ok)
+          assert((upload.headers.get('etag')||'').replaceAll('"','')===etag)
+          console.log('REST_TINY_UPLOAD_OK')
+          let state=await act({action:'ingest',etag,filename:init.filename})
+          for(let i=0;i<12 && state?.status!=='complete' && state?.status!=='error';i++){
+            assert(state.at_bookmark,'Missing poll bookmark')
+            await new Promise(resolve=>setTimeout(resolve,1000))
+            state=await act({action:'poll',current_bookmark:state.at_bookmark})
+          }
+          assert(state?.status==='complete','Tiny REST import not completed')
+          console.log('REST_TINY_IMPORT_OK')
+          NODE
