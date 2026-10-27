@@ -1,0 +1,104 @@
+name: Branch2 publish verified mirrored business database
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'wrangler.jsonc'
+      - '.github/workflows/branch2-verified-mirror-cutover-20261027.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'wrangler.jsonc'
+      - '.github/workflows/branch2-verified-mirror-cutover-20261027.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-verified-mirror-cutover-20261027
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Exact safe staging Worker binding and reviewed scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          base='ffce896bdd7884e41e3d78e88855d4f019e4f099'
+          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
+          while IFS= read -r f; do
+            case "$f" in
+              wrangler.jsonc|.github/workflows/branch2-verified-mirror-cutover-20261027.yml) ;;
+              *) echo "Unapproved staging Worker switch source: $f"; exit 10 ;;
+            esac
+          done < <(git diff --name-only "$base" "$GITHUB_SHA")
+      - run: npm ci
+      - run: npm run build
+      - name: Confirm copied production orders, warehouse history, sole staging admin
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          const db='0904a573-21ff-44d8-93b0-c9200f771702'
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/d1/database/'+db
+          const auth={Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'}
+          const meta=await fetch(root,{headers:auth})
+          assert(meta.ok)
+          assert((await meta.json()).result?.name==='orders_db_branch2_mirror_20261027')
+          async function select(sql){
+            assert(/^SELECT\b/i.test(sql.trim()))
+            const r=await fetch(root+'/query',{method:'POST',headers:auth,body:JSON.stringify({sql})})
+            const j=await r.json()
+            assert(r.ok&&j.success)
+            return j.result[0]?.results||[]
+          }
+          for(const [table,count] of [
+            ['orders',2191],['order_items',5197],['inventory_stock',1817],
+            ['inventory_reservations',2108],['inventory_movements',6648],
+            ['inventory_stock_checks',3486],['inventory_stocktake_items',7734],
+            ['catalog_variants',1918]
+          ]){
+            const [x]=await select('SELECT COUNT(*) AS n FROM "'+table+'"')
+            assert.equal(Number(x.n),count,'Incomplete staging mirror: '+table)
+          }
+          const roles=await select('SELECT role,COUNT(*) AS n FROM app_users GROUP BY role')
+          assert.equal(roles.length,1)
+          assert.equal(roles[0].role,'admin')
+          assert.equal(Number(roles[0].n),1)
+          const [sessions]=await select('SELECT COUNT(*) AS n FROM app_sessions')
+          assert.equal(Number(sessions.n),0)
+          console.log('VERIFIED_NEW_BRANCH2_D1_DATA_AND_ADMIN')
+          NODE
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - run: npm run build
+      - name: Publish Branch2 Worker only without D1 schema migrations
+        run: npx wrangler deploy
+      - name: Test only the Branch2 origin
+        run: |
+          node --input-type=module <<'NODE'
+          const r=await fetch('https://orders-app-branch2.orders-clothes.workers.dev/?mirror_check='+Date.now())
+          if(!r.ok||!(await r.text()).includes('/assets/'))throw Error('Branch2 Worker origin unavailable')
+          console.log('BRANCH2_LIVE_MIRROR_CUTOVER_OK')
+          NODE
