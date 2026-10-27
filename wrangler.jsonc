@@ -11,8 +11,8 @@
 	"d1_databases": [
   	{
     	"binding": "DB",
-    	"database_name": "orders_db_branch2",
-    	"database_id": "40065052-854e-44b8-bcd5-251bdd488301"
+    	"database_name": "orders_db_branch2_mirror_20261027",
+    	"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"
   	}
 	],
 	"assets": {
