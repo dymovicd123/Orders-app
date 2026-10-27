@@ -35,7 +35,7 @@ db.exec(`
 const now='2026-10-27T11:00:00.000Z'
 const pay=(id,amount)=>db.prepare(paymentSql).run(id,'2026-10-27','НАЛИЧКА',id,amount,amount,'debt',null,now)
 const refund=(id,amount)=>db.prepare(refundSql).run(id,null,'2026-10-27',amount,id,amount,amount,amount>0?'НАЛИЧКА':null,null,now)
-const count=(table,id)=>db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS amount FROM ${table} WHERE order_id=?`).get(id)
+const count=(table,id)=>({...db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS amount FROM ${table} WHERE order_id=?`).get(id)})
 const createOrder=id=>db.prepare('INSERT INTO orders (id,total_amount,order_status) VALUES (?,10000,?)').run(id,'new')
 
 // Independent request ids both pass an earlier 10k preflight;
