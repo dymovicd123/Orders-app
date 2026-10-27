@@ -43,7 +43,7 @@ jobs:
             esac
           done < <(git diff --name-only "$base" "$GITHUB_SHA")
       - run: npm ci
-      - name: Actual Worker and isolated SQLite end-to-end: legacy partial, cancel, retries and ship
+      - name: "Actual Worker and isolated SQLite end-to-end: legacy partial, cancel, retries and ship"
         run: node --experimental-strip-types scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs
       - name: Adjacent Return, exchange and payment regressions
         run: |
