@@ -38,3 +38,27 @@ jobs:
           echo '=== Remote SQL file ==='
           npx wrangler d1 execute orders_db_branch2 --remote --file=/tmp/branch2-probe.sql --yes --json
           echo 'BRANCH2_REMOTE_D1_TINY_IMPORT_PASSED'
+      - name: Inspect D1 import init response structure (no upload or ingestion)
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {createHash} from 'node:crypto'
+          const id='40065052-854e-44b8-bcd5-251bdd488301'
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/d1/database/'+id+'/import'
+          const etag=createHash('md5').update('SELECT 1 AS probe;\n').digest('hex')
+          const res=await fetch(root,{method:'POST',headers:{
+            Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
+            'Content-Type':'application/json'
+          },body:JSON.stringify({action:'init',etag}),signal:AbortSignal.timeout(30000)})
+          const data=await res.json()
+          console.log('INIT_SHAPE '+JSON.stringify({
+            http:res.status,apiSuccess:data.success,resultType:typeof data.result,
+            resultKeys:Object.keys(data.result||{}),
+            status:data.result?.status,innerSuccess:data.result?.success,
+            errorCode:(data.errors||[]).map(e=>e.code),
+            errorMessage:(data.errors||[]).map(e=>String(e.message).slice(0,150)),
+            innerError:String(data.result?.error||'').slice(0,180),
+            filenamePresent:Boolean(data.result?.filename),
+            uploadUrlPresent:Boolean(data.result?.upload_url)
+          }))
+          NODE
