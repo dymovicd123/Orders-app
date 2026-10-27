@@ -48,7 +48,7 @@ const directory=mkdtempSync(join(tmpdir(),'orders-branch2-mirror-'))
 const localFile=join(directory,'local-dryrun.sqlite')
 let local=null
 try{
-  local=new DatabaseSync(localFile)
+  local=new DatabaseSync(localFile,{enableDoubleQuotedStringLiterals:true})
   local.exec('PRAGMA foreign_keys = OFF')
   // FTS-backed virtual tables cannot be safely mirrored with the D1 API.
   for(const table of prodTables){
