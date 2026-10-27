@@ -401,76 +401,70 @@ try{
     // import errors behind a generic CLI failure for large SQL files.
     // Every API action below is scoped to the exact staging database UUID.
     const {createHash}=await import('node:crypto')
-    const transferSql='-- unique staging data refresh '+new Date().toISOString()+'\n'+scriptSql
-    const etag=createHash('md5').update(transferSql).digest('hex')
     const endpoint=root+TEST+'/import'
     const safeError=unknown=>{
-      const value=String(unknown||'').slice(0,2000)
-      if(/\b(INSERT|UPDATE|DELETE|DROP|CREATE|SELECT|VALUES|REPLACE)\b/i.test(value))return '[SQL error redacted]'
-      return value.replace(/(['"]).*?\1/g,'[quoted value redacted]').slice(0,350)
+      if(unknown===null||unknown===undefined)return ''
+      const value=typeof unknown==='string'?unknown:JSON.stringify(unknown)
+      const trimmed=value.slice(0,1500)
+      const keyword=trimmed.search(/\b(?:INSERT|UPDATE|DELETE|DROP|CREATE|SELECT|VALUES|REPLACE)\b/i)
+      return (keyword>=0?trimmed.slice(0,keyword):trimmed)
+        .replace(/(['"]).*?\1/g,'[redacted literal]').slice(0,320)
     }
     async function importAction(payload){
       const res=await fetch(endpoint,{
         method:'POST',
         headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
         body:JSON.stringify(payload),
-        signal:AbortSignal.timeout(120000)
+        signal:AbortSignal.timeout(90000)
       })
       const data=await res.json()
       if(!res.ok||data.success===false||!data.result){
-        console.error('BRANCH2_D1_IMPORT_HTTP '+JSON.stringify({
+        console.error('STAGING_D1_CHUNK_API_FAILURE '+JSON.stringify({
           action:payload.action,http:res.status,
-          errors:(data.errors||[]).map(e=>({code:e.code,reason:safeError(e.message)})).slice(0,5)
+          errorCodes:(data.errors||[]).map(e=>e.code),
+          reason:(data.errors||[]).map(e=>safeError(e.message)).slice(0,3)
         }))
-        throw Error('Staging D1 import '+payload.action+' rejected')
+        throw Error('Staging D1 chunk API '+payload.action+' rejected')
       }
       return data.result
     }
-    const init=await importAction({action:'init',etag})
-    assert(init.filename&&typeof init.filename==='string','D1 init returned no filename')
-    if(init.upload_url){
-      const url=new URL(init.upload_url)
-      assert(url.protocol==='https:','D1 SQL upload URL is not HTTPS')
-      const uploaded=await fetch(url,{method:'PUT',body:transferSql,signal:AbortSignal.timeout(180000)})
-      assert(uploaded.ok,'Staging D1 SQL upload rejected HTTP '+uploaded.status)
-      const received=(uploaded.headers.get('etag')||'').replaceAll('"','')
-      assert(received===etag,'D1 signed SQL upload etag mismatch')
-    }
-    console.log('BRANCH2_SQL_UPLOADED_TO_STAGING_ONLY '+JSON.stringify({bytes:Buffer.byteLength(transferSql)}))
-    const ingested=await importAction({action:'ingest',etag,filename:init.filename})
-    console.log('BRANCH2_INGEST_RESPONSE_SHAPE '+JSON.stringify({keys:Object.keys(ingested),status:ingested.status,innerSuccess:ingested.success,atBookmark:Boolean(ingested.at_bookmark),errorPresent:Boolean(ingested.error)}))
-    if(ingested.error||ingested.success===false){
-      const raw=String(ingested.error||'Import rejected')
-      const firstSqlKeyword=raw.search(/\b(?:INSERT|UPDATE|DELETE|DROP|CREATE|SELECT|VALUES|REPLACE)\b/i)
-      const message=firstSqlKeyword>=0?raw.slice(0,firstSqlKeyword):raw
-      console.error('BRANCH2_D1_INGEST_REJECTION '+JSON.stringify({
-        innerSuccess:ingested.success,
-        reason:message.replace(/(['"]).*?\1/g,'[literal redacted]').slice(0,500),
-        rawErrorChars:raw.length,
+    for(const [i,chunk] of chunks.entries()){
+      const sql='-- unique stage import '+new Date().toISOString()+' phase '+i+'\n'+chunk.sql
+      const etag=createHash('md5').update(sql).digest('hex')
+      const init=await importAction({action:'init',etag})
+      assert(init.filename&&init.upload_url,'D1 chunk init did not provide fresh upload URL')
+      const upload=await fetch(init.upload_url,{
+        method:'PUT',body:sql,signal:AbortSignal.timeout(90000)
+      })
+      assert(upload.ok,'D1 chunk '+i+' upload rejected HTTP '+upload.status)
+      assert((upload.headers.get('etag')||'').replaceAll('"','')===etag,
+        'D1 chunk upload ETag mismatch')
+      let result=await importAction({action:'ingest',filename:init.filename,etag})
+      if(result.success===false||result.error){
+        console.error('STAGING_D1_CHUNK_INGEST_FAILURE '+JSON.stringify({
+          index:i,phase:chunk.name,error:safeError(result.error)
+        }))
+        throw Error('D1 rejected staging chunk '+i+' '+chunk.name)
+      }
+      let polls=0
+      while(result.status!=='complete'&&result.status!=='error'){
+        assert(typeof result.at_bookmark==='string','D1 chunk missing status bookmark')
+        assert(polls++<180,'D1 chunk poll timed out')
+        await new Promise(ok=>setTimeout(ok,1000))
+        result=await importAction({action:'poll',current_bookmark:result.at_bookmark})
+        if(result.success===false||result.error)break
+      }
+      if(result.status!=='complete'||result.success===false||result.error){
+        console.error('STAGING_D1_CHUNK_FINAL_FAILURE '+JSON.stringify({
+          index:i,phase:chunk.name,status:result.status,error:safeError(result.error)
+        }))
+        throw Error('D1 staging chunk '+i+' '+chunk.name+' did not finish')
+      }
+      console.log('BRANCH2_CHUNK_COMMITTED '+JSON.stringify({
+        position:i+1,total:chunks.length,phase:chunk.name
       }))
-      throw Error('Cloudflare D1 rejected staging import file before polling')
     }
-    let result=ingested
-    let iterations=0
-    while(result.status!=='complete'&&result.status!=='error'){
-      const at=result.at_bookmark||ingested.at_bookmark
-      assert(typeof at==='string'&&at.length>12,'Missing D1 import poll bookmark')
-      if(iterations++>240)throw Error('Staging D1 ingestion timed out')
-      await new Promise(resolve=>setTimeout(resolve,1000))
-      result=await importAction({action:'poll',current_bookmark:at})
-    }
-    if(result.status==='error'||result.error){
-      console.error('BRANCH2_D1_IMPORT_SERVER_ERROR '+JSON.stringify({
-        status:result.status,error:safeError(result.error),
-        messages:(result.messages||[]).map(safeError).slice(-6)
-      }))
-      throw Error('Staging D1 import returned server error')
-    }
-    assert(result.status==='complete'&&result.success!==false,'D1 ingestion has not completed')
-    console.log('BRANCH2_IMPORT_SUCCESS '+JSON.stringify({
-      numQueries:result.result?.num_queries??null,
-      returnedBookmark:Boolean(result.result?.final_bookmark)
-    }))
+    console.log('BRANCH2_CHUNKED_IMPORT_ALL_COMMITTED')
     // No production reads here. Verify targeted tables and staging logins.
     for(const name of ['orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks','inventory_stocktake_items','catalog_variants']){
       const rows=await readOnly(TEST,'SELECT COUNT(*) AS n FROM '+quoteName(name))
