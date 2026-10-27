@@ -1,0 +1,44 @@
+name: Create isolated Branch2 mirror destination D1
+on:
+  push:
+    branches: [branch2]
+    paths: ['.github/workflows/branch2-create-mirror-d1-20261027.yml']
+permissions:
+  contents: read
+jobs:
+  create-empty-mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create distinct isolated D1; do not touch either existing DB
+        shell: bash
+        run: |
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          const name='orders_db_branch2_mirror_20261027'
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID
+          const token=process.env.CLOUDFLARE_API_TOKEN
+          assert(account&&token)
+          const root='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database'
+          const list=await fetch(root+'?per_page=100',{headers:{Authorization:'Bearer '+token}})
+          assert(list.ok,'D1 list denied')
+          const existing=(await list.json()).result||[]
+          let db=existing.find(x=>x.name===name)
+          if(!db){
+            const response=await fetch(root,{method:'POST',headers:{
+              Authorization:'Bearer '+token,'Content-Type':'application/json'
+            },body:JSON.stringify({name}),signal:AbortSignal.timeout(30000)})
+            const json=await response.json()
+            if(!response.ok||!json.success)throw Error('Creating fresh staging D1 rejected: '+(json.errors||[]).map(x=>x.code).join(','))
+            db=json.result
+          }
+          assert(db.name===name)
+          assert(db.uuid!=='17e68a41-1d58-4a36-8a63-47c3e32443c4')
+          assert(db.uuid!=='40065052-854e-44b8-bcd5-251bdd488301')
+          console.log('ISOLATED_BRANCH2_MIRROR_D1_READY '+JSON.stringify({name:db.name,uuid:db.uuid}))
+          NODE
