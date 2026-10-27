@@ -319,7 +319,8 @@ try{
     // import errors behind a generic CLI failure for large SQL files.
     // Every API action below is scoped to the exact staging database UUID.
     const {createHash}=await import('node:crypto')
-    const transferSql='-- unique staging data refresh '+new Date().toISOString()+'\n'+scriptSql\n    const etag=createHash('md5').update(transferSql).digest('hex')
+    const transferSql='-- unique staging data refresh '+new Date().toISOString()+'\n'+scriptSql
+    const etag=createHash('md5').update(transferSql).digest('hex')
     const endpoint=root+TEST+'/import'
     const safeError=unknown=>{
       const value=String(unknown||'').slice(0,2000)
