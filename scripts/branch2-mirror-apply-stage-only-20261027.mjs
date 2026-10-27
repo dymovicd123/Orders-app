@@ -268,6 +268,18 @@ try{
     assert.equal(verifyDb.prepare("SELECT COUNT(*) AS n FROM app_users WHERE role='manager'").get().n,0)
     assert.equal(verifyDb.prepare('SELECT COUNT(*) AS n FROM app_sessions').get().n,0)
   }finally{verifyDb.close()}
+  // Exercise the exact Wrangler D1 SQL importer locally (same worker config,
+  // never --remote) before touching real Branch2 data.
+  const {spawnSync}=await import('node:child_process')
+  const localImport=spawnSync('npx',['wrangler','d1','execute','orders_db_branch2',
+    '--local','--persist-to='+join(directory,'d1-emulator'),
+    '--file='+sqlFile,'--yes'],{
+    cwd:process.cwd(),env:process.env,encoding:'utf8',timeout:8*60*1000,
+    maxBuffer:16*1024*1024
+  })
+  assert(localImport.status===0&&!localImport.error,
+    'Wrangler local D1 importer rejected staging SQL; no remote database touched')
+  console.log('MIRROR_WRANGLER_LOCAL_D1_IMPORT_PASSED')
   console.log('MIRROR_STAGE_SQL_VALIDATED '+JSON.stringify({
     sqlBytes:Buffer.byteLength(scriptSql),tables:prodTables.length,
     sourceRows:total,mainReadQueries:prodReads,adminPreserved:true,
@@ -275,7 +287,6 @@ try{
   }))
   // Main is never a target: remote writes are only allowed through the exact
   // stage binding after validating the UUID and remote DB name one more time.
-  const {spawnSync}=await import('node:child_process')
   const metadata=await fetch(root+TEST,{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)
   })
