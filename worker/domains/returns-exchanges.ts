@@ -414,8 +414,26 @@ export async function createReturn(
     const createStatements: D1PreparedStatement[] = [
       db.prepare(
         `INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'completed', ?)`
-      ).bind(orderId, managerRow?.manager_id ?? null, returnDate, amount, amount > 0 ? paymentMethod : null, comment || null, createdAt),
+         VALUES (?, ?, ?,
+           CASE WHEN ? = 0 OR EXISTS (
+             SELECT 1 FROM orders o
+             WHERE o.id = ? AND o.order_status NOT IN ('deleted', 'archived')
+               AND o.archived_at IS NULL
+               AND ? <= MAX(0, COALESCE((
+                 SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
+                 FROM payments p WHERE p.order_id = o.id
+               ), 0) - COALESCE((
+                 SELECT SUM(CASE WHEN ret.amount > 0 THEN ret.amount ELSE 0 END)
+                 FROM returns ret WHERE ret.order_id = o.id
+                   AND COALESCE(ret.status, 'completed') <> 'cancelled'
+               ), 0))
+           ) THEN ? ELSE NULL END,
+           ?, ?, 'completed', ?)`
+      ).bind(
+        orderId, managerRow?.manager_id ?? null, returnDate,
+        amount, orderId, amount, amount,
+        amount > 0 ? paymentMethod : null, comment || null, createdAt,
+      ),
       db.prepare(
         `UPDATE critical_operations
          SET target_type = 'return', target_id = last_insert_rowid(), target_ref = ?, step = 'return_created',
@@ -437,7 +455,22 @@ export async function createReturn(
         comment: comment || null,
       }));
     }
-    const [insertReturn] = await db.batch(createStatements);
+    // The refund limit must be enforced atomically with Return creation.
+    // If two employees both read the same refundable amount, the losing batch
+    // intentionally fails returns.amount NOT NULL before recording money,
+    // stock obligations or the critical operation's target.
+    let insertReturn: D1Result<unknown>;
+    try {
+      [insertReturn] = await db.batch(createStatements);
+    } catch (error) {
+      const raw = cleanText(error instanceof Error ? error.message : error);
+      if (/not null constraint failed:\s*returns\.amount/i.test(raw)) {
+        throw new CriticalOperationConflictError(
+          'Доступная сумма возврата изменилась: другой сотрудник уже оформил возврат денег. Ничего не списано. Обновите заказ.',
+        );
+      }
+      throw error;
+    }
     returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
     returnId = toInt(criticalOperation.row.target_id, 0) || returnId;
