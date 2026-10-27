@@ -8,7 +8,7 @@ import '../../../styles/w16-stock-source-attention.css'
 
 type Mode = UnifiedQuantityMode | 'transfer'
 type Row = { id?: number; draftKey?:string; variantId: number | string; productId: number | string; productName: string; gender?: string; material?: string; length?: string; color?: string; size?: string; audienceType?: string; quantity?: number; reservedQuantity?: number }
-type Group = { key: string; productName: string; rows: Row[] }
+type Group = { key: string; productId?: number; category?: 'adult' | 'child'; genderScope?: string; productName: string; rows: Row[] }
 type Draft = { variantId?: number | string; draftKey?:string; createMissingVariant?:boolean;
   productId?:number|string;productName?:string;category?:'adult'|'child';gender?:string;
   material?:string;length?:string;color?:string;size?:string;
@@ -62,7 +62,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     ...group,
     rows:[...group.rows,...(mode==='manual_set' ? draft.filter(item=>
       item.createMissingVariant && item.draftKey
-      && String(item.productId)===String(group.rows[0]?.productId)).map(item=>({
+      && String(item.productId)===String(group.productId || group.rows[0]?.productId)).map(item=>({
         variantId:item.draftKey!,draftKey:item.draftKey,productId:item.productId!,
         productName:item.productName||group.productName,
         audienceType:item.category||'adult',gender:item.gender||'',
@@ -86,6 +86,13 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   const setStage = (next:Stage) => setStageBySource(old=>({...old,[source]:next}))
   const [productSearch, setProductSearch] = useState('')
   const [newVariant, setNewVariant] = useState(false)
+  const [firstVariant, setFirstVariant] = useState({
+    gender: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ',
+    color: '', size: '', quantity: '',
+  })
+  useEffect(() => {
+    setFirstVariant({ gender: '', material: 'СТАНДАРТ', length: 'СТАНДАРТ', color: '', size: '', quantity: '' })
+  }, [current, source, mode])
   const [inline, setInline] = useState<{ positionKey:string; color:string; kind:'size'|'color'; size:string; quantity:string } | null>(null)
   const [notice, setNotice] = useState('')
   const appliedFocusToken = useRef<number | null>(null)
@@ -179,6 +186,32 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
     else p.onInlineArrivalVariant(seed)
     setInline(null);setNotice('')
   }
+  function addFirstCatalogVariant(group: Group) {
+    if ((mode !== 'arrival' && mode !== 'manual_set') || !group.productId) return
+    const category = group.category === 'child' ? 'child' : 'adult'
+    const gender = group.genderScope === 'female' ? 'ЖЕН'
+      : group.genderScope === 'male' ? 'МУЖ' : firstVariant.gender.trim().toUpperCase()
+    const quantity = Number(firstVariant.quantity)
+    if ((category === 'adult' && gender !== 'ЖЕН' && gender !== 'МУЖ')
+      || !firstVariant.size.trim()
+      || firstVariant.quantity.trim() === ''
+      || !Number.isInteger(quantity) || quantity < (mode === 'arrival' ? 1 : 0)
+      || quantity > 999999) {
+      setNotice('Укажите пол для взрослого товара, размер и корректное количество (для прихода от 1).')
+      return
+    }
+    const seed = {
+      productId: group.productId, productName: group.productName, category, gender,
+      material: firstVariant.material.trim() || 'СТАНДАРТ',
+      length: firstVariant.length.trim() || 'СТАНДАРТ',
+      color: firstVariant.color.trim().toUpperCase(), size: firstVariant.size.trim(),
+      quantity,
+    }
+    if (mode === 'manual_set') p.onInlineCorrectionVariant(seed)
+    else p.onInlineArrivalVariant(seed)
+    setFirstVariant(old => ({ ...old, color: '', size: '', quantity: '' }))
+    setNotice('')
+  }
   function review() {
     if(!changed){setNotice('Введите количество хотя бы в одной ячейке.');return}
     const limit=mode==='transfer'?60:100
@@ -259,7 +292,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           </div>}
           <div className="stocktake-selective-list stocktake-selective-list-v5">
             {unselected.length ? unselected.map(g => <StocktakeProductChoice key={g.key}
-              name={g.productName} description={g.rows.length+' поз. '+(selected.includes(g.key)?'· выбрано':'')}
+              name={g.productName} description={(g.rows.length ? g.rows.length+' поз.' : 'Пока нет вариантов')+' '+(selected.includes(g.key)?'· выбрано':'')}
               checked={selected.includes(g.key)} onToggle={() => toggleProduct(g.key)} />)
               : <div className="stocktake-product-list-empty">По поиску ничего не найдено.</div>}
           </div>
@@ -354,6 +387,37 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
               </div>
             </div>
             <div className="stocktake-e-positions stocktake-e-positions-compact">
+              {!activeGroup.rows.length && <div className="stocktake-inline-add-panel w7-inline-arrival">
+                <strong>В каталоге есть «{activeGroup.productName}», но пока нет ни одного варианта.</strong>
+                {(mode === 'arrival' || mode === 'manual_set') && activeGroup.productId ? <>
+                  <p>{mode === 'arrival' ? 'Создайте первый вариант прямо в приходе.' : 'Укажите первый вариант и его фактический остаток.'}</p>
+                  <div className="inventory-arrival-common-grid">
+                    {activeGroup.category !== 'child' && !['female','male'].includes(activeGroup.genderScope || '') &&
+                      <label>Пол <select value={firstVariant.gender} onChange={e=>setFirstVariant(old=>({...old,gender:e.target.value}))}>
+                        <option value="">Выберите пол</option><option value="ЖЕН">ЖЕН</option><option value="МУЖ">МУЖ</option>
+                      </select></label>}
+                    <label>Материал <input value={firstVariant.material} onChange={e=>setFirstVariant(old=>({...old,material:e.target.value}))} /></label>
+                    <label>Длина <input value={firstVariant.length} onChange={e=>setFirstVariant(old=>({...old,length:e.target.value}))} /></label>
+                    <label>Цвет <input value={firstVariant.color} list="operation-first-color-values"
+                      onChange={e=>setFirstVariant(old=>({...old,color:e.target.value}))} placeholder="Без цвета или цвет" />
+                      <datalist id="operation-first-color-values">{p.colorSuggestions.map(value=><option key={value} value={value}/>)}</datalist>
+                    </label>
+                    <label>{activeGroup.category === 'child' ? 'Возраст' : 'Размер'}
+                      <input value={firstVariant.size} list="operation-first-size-values"
+                        onChange={e=>setFirstVariant(old=>({...old,size:e.target.value}))} placeholder="Размер" />
+                      <datalist id="operation-first-size-values">{(activeGroup.category === 'child' ? p.childAgeSuggestions : p.sizeSuggestions).map(value=><option key={value} value={value}/>)}</datalist>
+                    </label>
+                    <label>{mode === 'arrival' ? 'Пришло' : 'Фактический остаток'}
+                      <input type="number" min={mode === 'arrival' ? 1 : 0} step="1"
+                        value={firstVariant.quantity} onChange={e=>setFirstVariant(old=>({...old,quantity:e.target.value}))} />
+                    </label>
+                  </div>
+                  <button type="button" className="primary compact" disabled={busy}
+                    onClick={()=>addFirstCatalogVariant(activeGroup)}>
+                    {mode === 'arrival' ? 'Добавить в приход' : 'Добавить в корректировку'}
+                  </button>
+                </> : <p>Сначала оформите приход первого варианта этого товара. Списывать или перемещать несуществующую позицию нельзя.</p>}
+              </div>}
               {positions(activeGroup.rows).map(position=>{
                 const colors=new Map<string,Row[]>()
                 for(const row of position.rows) {
