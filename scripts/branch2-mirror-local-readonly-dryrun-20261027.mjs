@@ -124,7 +124,31 @@ try{
       const name=ident(virtual.name)
       local.exec('INSERT INTO '+name+' ('+name+') VALUES (\'rebuild\')')
     }else{
-      throw Error('FTS without external content needs an explicit data strategy: '+virtual.name)
+      // The production FTS5 indexes are self-contained, not external-content
+      // indexes. Their virtual rows hold order_id and searchable text; FTS
+      // shadow tables are generated automatically from those same rows.
+      const name=ident(virtual.name)
+      const fields=local.prepare('PRAGMA table_xinfo('+name+')').all().filter(c=>!c.hidden).map(c=>c.name)
+      assert(fields.includes('order_id')&&fields.includes('search_text'),
+        'Unexpected FTS schema; cannot safely recreate '+virtual.name)
+      const copy=local.prepare('INSERT INTO '+name+' (rowid,order_id,search_text) VALUES (?,?,?)')
+      let cursor=0,totalFts=0
+      while(true){
+        const rows=await readOnly(PROD,'SELECT rowid AS __mirror_cursor__,order_id,search_text FROM '+name+
+          ' WHERE rowid > '+cursor+' ORDER BY rowid LIMIT 100')
+        if(!rows.length)break
+        for(const row of rows){
+          const id=Number(row.__mirror_cursor__)
+          assert(Number.isSafeInteger(id)&&id>cursor,'Invalid FTS row cursor')
+          copy.run(id,row.order_id,row.search_text)
+          cursor=id
+          totalFts++
+        }
+        if(rows.length<100)break
+      }
+      const rowCount=await readOnly(PROD,'SELECT COUNT(*) AS n FROM '+name)
+      assert(totalFts===Number(rowCount[0]?.n||0),'FTS row count changed during copy: '+virtual.name)
+      copiedCounts[virtual.name]=totalFts
     }
   }
   // Never import production credentials, logins, sessions or security locks.
