@@ -383,6 +383,10 @@ try{
   assert(metadata.ok,'Unable to confirm target D1 metadata')
   const target=(await metadata.json()).result
   assert(target?.name==='orders_db_branch2_mirror_20261027','New D1 remote identity changed')
+  const existingMirror=await readOnly(DEST,
+    "SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='_cf_KV'")
+  assert(Number(existingMirror[0]?.n||0)===0,
+    'Refuse nonempty mirror D1; current Branch2 and production must never be overwritten')
   const bookmarkResponse=await fetch(root+DEST+'/time_travel/bookmark',{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)
   })
