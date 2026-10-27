@@ -1,0 +1,143 @@
+name: Main product KPI and managers Leads/Plan selective release
+on:
+  push:
+    branches: [release-product-kpi-leads-20261027, main]
+    paths:
+      - '.github/workflows/main-product-kpi-20261027.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: main-product-kpi-20261027
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/release-product-kpi-leads-20261027' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Verify strict main release scope and worker configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_BASE_REF:-main}" = "main"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          base="f1a5330e2750f93685a56c7dc4db54f75e1667c0"
+          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
+          git diff --name-only "$base" "$GITHUB_SHA" | while IFS= read -r file; do
+            case "$file" in
+              worker/domains/product-kpi.ts|migrations/0116_monthly_product_kpi.sql|\
+              src/features/sections/ProductKpiSection.tsx|\
+              src/features/sections/KpiCharacteristicPicker.tsx|\
+              src/features/sections/PlanSection.tsx|src/features/sections/LeadsSection.tsx|\
+              src/styles/product-kpi.css|src/app/managerWorkspaceAccess.ts|\
+              src/App.tsx|worker/index.ts|\
+              scripts/test-main-product-kpi-20261027.mjs|\
+              .github/workflows/main-product-kpi-20261027.yml) ;;
+              *) echo "Unexpected file in main KPI release: $file"; exit 1 ;;
+            esac
+          done
+      - run: npm ci
+      - name: Confirm KPI formulas, private manager access, responsive reporting, and no finance writes
+        run: node scripts/test-main-product-kpi-20261027.mjs
+      - name: Typecheck and build full main application
+        run: npm run build
+  migrate-and-deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Validate strict production target and configured credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "main"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+      - run: npm ci
+      - name: Snapshot production orders, payment, catalog and stock totals
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_amount,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_qty,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_qty,
+            (SELECT COUNT(*) FROM catalog_products) AS products_count,
+            (SELECT COUNT(*) FROM managers) AS managers_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/kpi-prod-before.json
+      - name: Capture production D1 Time Travel bookmark
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4/time_travel/bookmark" \
+            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No backup bookmark") end' > /tmp/kpi-prod-bookmark
+          test -s /tmp/kpi-prod-bookmark
+      - name: Create only standalone monthly product KPI tables
+        run: |
+          set -euo pipefail
+          test -s /tmp/kpi-prod-bookmark
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --file migrations/0116_monthly_product_kpi.sql
+      - name: Assert new schema and preserve all production business data
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT COUNT(*) AS count FROM sqlite_master
+            WHERE type='table' AND name IN ('product_kpis','product_kpi_participants','product_kpi_audit')
+          " --json | jq -e '.[0].results[0].count==3'
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --command "
+            SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS orders_amount,
+            (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS orders_debt,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements_count,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_qty,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_qty,
+            (SELECT COUNT(*) FROM catalog_products) AS products_count,
+            (SELECT COUNT(*) FROM managers) AS managers_count
+          " --json | jq -cSe '.[0].results[0]' > /tmp/kpi-prod-after.json
+          cmp /tmp/kpi-prod-before.json /tmp/kpi-prod-after.json
+      - name: Build main publishable bundle
+        run: npm run build
+      - name: Publish main only
+        run: npx wrangler deploy
+      - name: Verify production origin serves fresh bundled app
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const host='https://orders-app.orders-clothes.workers.dev'
+          for(let attempt=0;attempt<6;attempt++){
+            try{
+              const r=await fetch(host+'/?main_product_kpi='+Date.now(),{cache:'no-store'})
+              if(!r.ok)throw Error('HTTP '+r.status)
+              if(!(await r.text()).includes('/assets/'))throw Error('Expected app assets')
+              console.log('MAIN_PRODUCT_KPI_RELEASE_DEPLOY_OK');process.exit(0)
+            }catch(e){if(attempt===5)throw e;await new Promise(resolve=>setTimeout(resolve,2500))}
+          }
+          NODE
