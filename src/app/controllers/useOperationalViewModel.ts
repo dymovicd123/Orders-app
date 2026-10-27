@@ -927,11 +927,11 @@ const summary = useMemo(() => {
   }, [inventoryData, catalogData, inventoryDraft.source, inventoryDraft.targetSource, inventoryDraft.movementType])
 
   const inventoryOperationAllProductGroups = useMemo(() => {
-    const groups = new Map<string, { key: string; productId: number; productName: string; category: 'adult' | 'child'; adultVariantCount: number; childVariantCount: number; variantsCount: number; totalQuantity: number; rows: InventoryStockRecord[] }>()
+    const groups = new Map<string, { key: string; productId: number; productName: string; category: 'adult' | 'child'; genderScope: string; adultVariantCount: number; childVariantCount: number; variantsCount: number; totalQuantity: number; rows: InventoryStockRecord[] }>()
     inventoryOperationSourceRows.forEach((row) => {
       const rowCategory = getInventoryRowCategory(row)
       const key = row.productId ? `id:${row.productId}` : `name:${normalizeSuggestion(row.productName)}`
-      const group = groups.get(key) || { key, productId: Number(row.productId || 0), productName: row.productName || 'Без названия', category: rowCategory, adultVariantCount: 0, childVariantCount: 0, variantsCount: 0, totalQuantity: 0, rows: [] }
+      const group = groups.get(key) || { key, productId: Number(row.productId || 0), productName: row.productName || 'Без названия', category: rowCategory, genderScope: '', adultVariantCount: 0, childVariantCount: 0, variantsCount: 0, totalQuantity: 0, rows: [] }
       group.variantsCount += 1
       if (rowCategory === 'child') group.childVariantCount += 1
       else group.adultVariantCount += 1
@@ -939,13 +939,31 @@ const summary = useMemo(() => {
       group.rows.push(row)
       groups.set(key, group)
     })
+    // Operations browse the entire active Catalog, not only variants already known
+    // to a stock point. Newly created products can have zero variants.
+    for (const product of catalogData?.products || []) {
+      if (!product.isActive || Number(product.id || 0) <= 0) continue
+      const key = `id:${product.id}`
+      const present = groups.get(key)
+      if (present) {
+        present.genderScope = String(product.genderScope || 'unisex')
+        continue
+      }
+      groups.set(key, {
+        key, productId: Number(product.id), productName: product.name,
+        category: product.category === 'child' ? 'child' : 'adult',
+        genderScope: String(product.genderScope || 'unisex'),
+        adultVariantCount: 0, childVariantCount: 0, variantsCount: 0,
+        totalQuantity: 0, rows: [],
+      })
+    }
     return Array.from(groups.values())
       .map((group) => ({
         ...group,
         rows: [...group.rows].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0) || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))),
       }))
       .sort((a, b) => a.productName.localeCompare(b.productName, 'ru', { numeric: true }))
-  }, [inventoryOperationSourceRows, catalogVariantCategoryById, inventoryDraft.movementType])
+  }, [inventoryOperationSourceRows, catalogVariantCategoryById, catalogData, inventoryDraft.movementType])
 
   const inventoryOperationProductGroups = useMemo(() => {
     const searchTokens = normalizeSearchText(inventoryOperationSearch).split(/\s+/).filter(Boolean)

@@ -4,6 +4,9 @@ on:
     branches: [release-product-kpi-leads-20261027, main]
     paths:
       - '.github/workflows/main-product-kpi-20261027.yml'
+      - 'src/App.tsx'
+      - 'src/app/controllers/useOperationalViewModel.ts'
+      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -41,6 +44,8 @@ jobs:
               src/features/sections/PlanSection.tsx|src/features/sections/LeadsSection.tsx|\
               src/styles/product-kpi.css|src/app/managerWorkspaceAccess.ts|\
               src/App.tsx|worker/index.ts|\
+              src/app/controllers/useOperationalViewModel.ts|\
+              src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx|\
               scripts/test-main-product-kpi-20261027.mjs|\
               .github/workflows/main-product-kpi-20261027.yml) ;;
               *) echo "Unexpected file in main KPI release: $file"; exit 1 ;;
@@ -49,6 +54,12 @@ jobs:
       - run: npm ci
       - name: Confirm KPI formulas, private manager access, responsive reporting, and no finance writes
         run: node scripts/test-main-product-kpi-20261027.mjs
+      - name: Verify warehouse operations, stocktake, correction, reservations, and transfers
+        run: |
+          node --experimental-strip-types scripts/test-main-w19-stock-operations.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
       - name: Typecheck and build full main application
         run: npm run build
   migrate-and-deploy:
@@ -123,6 +134,11 @@ jobs:
             (SELECT COUNT(*) FROM managers) AS managers_count
           " --json | jq -cSe '.[0].results[0]' > /tmp/kpi-prod-after.json
           cmp /tmp/kpi-prod-before.json /tmp/kpi-prod-after.json
+      - name: Verify all 4 warehouse operations before production write
+        run: |
+          node --experimental-strip-types scripts/test-main-w19-stock-operations.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
       - name: Build main publishable bundle
         run: npm run build
       - name: Publish main only

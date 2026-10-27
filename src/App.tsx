@@ -1443,7 +1443,8 @@ function App() {
       void loadInventoryData('boutique')
       // Full catalog variants are unnecessary for ordinary Остатки/Внимание/История reads.
       // Movement keeps them because the frozen Arrival workspace depends on catalog variants.
-      if (inventoryPanel === 'movement' || inventoryPanel === 'stocktake' || inventoryPanel === 'catalog') void loadCatalogData()
+      if (inventoryPanel === 'movement') void loadCatalogData(true)
+      else if (inventoryPanel === 'stocktake' || inventoryPanel === 'catalog') void loadCatalogData()
       // Inventory admin forms must always use the canonical reference dictionaries.
       // Do not rely on another screen having loaded them earlier in the session.
       void loadReferencesData()
