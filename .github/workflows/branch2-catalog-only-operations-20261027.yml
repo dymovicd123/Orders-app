@@ -1,0 +1,71 @@
+name: Branch2 catalog-only product operations release
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-catalog-only-operations-20261027.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-catalog-only-operations-20261027.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Verify only release workflow changed since catalog-only operation fix
+        run: |
+          set -euo pipefail
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          base="ed01a595d71cbed1f0f033eb1d11b30a3246cdb6"
+          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
+          changes="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          test "$changes" = '.github/workflows/branch2-catalog-only-operations-20261027.yml'
+      - run: npm ci
+      - name: Verify arrival, writeoff, correction, transfer and stocktake
+        run: |
+          node --experimental-strip-types scripts/test-w6-unified-operations.mjs
+          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Check strict isolated Cloudflare target
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy Branch2 only, no migrations
+        run: npx wrangler deploy
+      - name: Verify Branch2 public response
+        run: |
+          node --input-type=module <<'NODE'
+          const url='https://orders-app-branch2.orders-clothes.workers.dev/?operation_release='+Date.now()
+          const response=await fetch(url,{cache:'no-store'})
+          if(!response.ok||!(await response.text()).includes('/assets/'))throw Error('Branch2 live UI not confirmed')
+          console.log('BRANCH2_OPERATIONS_RELEASE_LIVE')
+          NODE
