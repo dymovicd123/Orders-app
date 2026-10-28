@@ -261,6 +261,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <tbody>
                     {orders.length ? orders.map((order) => {
                       const projection = projectOrderOperationalState(order, { isAdmin })
+                      const returnTruth = order.return_physical_summary
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
                       const itemSummary = summarizeOrderItemLines(
                         order.items,
@@ -409,6 +410,19 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               <span className={`status-pill ${projection.paymentClass}`}>{projection.paymentLabel}</span>
                               <span className={`status-pill ${order.shipping_status === 'sent' ? 'status-online' : 'status-warning'}`}>{shippingStatusLabel(order)}</span>
                               {projection.workshopLabel ? <small>{projection.workshopLabel}</small> : null}
+                              {returnTruth ? (
+                                <div className="order-return-truth" aria-label="Что известно о возвратах">
+                                  {returnTruth.moneyOnlyCount > 0 ? <small>Возврат только денег: {returnTruth.moneyOnlyCount}</small> : null}
+                                  {returnTruth.moneyAndGoodsCount > 0 ? <small>Возврат товаров и денег: {returnTruth.moneyAndGoodsCount}</small> : null}
+                                  {returnTruth.goodsOnlyCount > 0 ? <small>Возврат только товаров: {returnTruth.goodsOnlyCount}</small> : null}
+                                  {returnTruth.pendingQuantity > 0 ? <small>Товары ещё едут: {returnTruth.pendingQuantity} шт. — не на остатке</small> : null}
+                                  {returnTruth.receivedStockQuantity > 0 ? <small>Физически получили в Склад/Бутик: {returnTruth.receivedStockQuantity} шт.</small> : null}
+                                  {returnTruth.receivedNoStockQuantity > 0 ? <small>Получили без добавления в остаток: {returnTruth.receivedNoStockQuantity} шт.</small> : null}
+                                  {returnTruth.legacyUnknownQuantity > 0 ? <small>Старая история, получение неизвестно: {returnTruth.legacyUnknownQuantity} шт.</small> : null}
+                                  {returnTruth.moneyOnlyCount > 0 && returnTruth.moneyAndGoodsCount === 0 && returnTruth.goodsOnlyCount === 0
+                                    ? <small>Физический возврат вещей не зафиксирован</small> : null}
+                                </div>
+                              ) : null}
                               <small>{waitingDaysLabel(order)}</small>
                               <small>{projection.lifecycleLabel}</small>
                             </div>
