@@ -15,11 +15,19 @@ const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'}
 const meta=await fetch(root,{headers,signal:AbortSignal.timeout(25000)})
 assert(meta.ok&&(await meta.json()).result?.name==='orders_db_branch2_mirror_20261027')
 async function select(sql){
-  assert(/^\s*SELECT\b/i.test(sql),'Read-only SELECT only')
+  assert(/^\s*(?:SELECT|WITH)\b/i.test(sql) && !sql.includes(';')
+    && !/\b(?:INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|PRAGMA|ATTACH|VACUUM)\b/i.test(sql),
+    'Read-only SELECT or WITH...SELECT only')
   const response=await fetch(root+'/query',{method:'POST',headers,
     body:JSON.stringify({sql}),signal:AbortSignal.timeout(30000)})
   const json=await response.json()
-  assert(response.ok&&json.success,'D1 read-only aggregate failed')
+  if (!response.ok || !json.success) {
+    console.error('READ_ONLY_D1_AGGREGATE_ERROR '+JSON.stringify({
+      status:response.status,codes:(json.errors||[]).map(x=>x.code),
+      messages:(json.errors||[]).map(x=>String(x.message||'').replace(/(['"]).*?\1/g,'[value]').slice(0,250))
+    }))
+    throw Error('D1 read-only aggregate failed')
+  }
   return json.result?.[0]?.results||[]
 }
 const header=[
@@ -44,7 +52,7 @@ const header=[
  ' AND COALESCE(e.status,\'completed\')<>\'cancelled\')',
  ')',
 ].join('\n')
-const [stats]=await select('SELECT * FROM ( '+header+
+const [stats]=await select(header+
  ' SELECT COUNT(*) AS active_returns,',
  ' SUM(CASE WHEN amount>0 AND goods_qty=0 THEN 1 ELSE 0 END) AS money_only,',
  ' SUM(CASE WHEN amount>0 AND goods_qty>0 THEN 1 ELSE 0 END) AS money_and_goods,',
@@ -55,7 +63,7 @@ const [stats]=await select('SELECT * FROM ( '+header+
  ' SUM(received_no_stock_qty) AS received_no_stock_units,',
  ' SUM(old_untracked_qty) AS legacy_untracked_units,',
  ' SUM(CASE WHEN created_at < \'2026-10-01\' OR created_at >= \'2026-11-01\' THEN 1 ELSE 0 END) AS created_outside_return_month',
- ' FROM rows)')
+ ' FROM rows')
 console.log('OCT_2026_RETURN_AGGREGATE '+JSON.stringify(stats))
 const flagged=await select(header+
  " SELECT return_id,external_id,return_date,amount,shipping_status FROM rows"+
