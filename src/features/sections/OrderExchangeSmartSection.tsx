@@ -43,6 +43,16 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     suggestionValues,
   } = ctx
 
+  // This component can mount after the parent effect has run (deferred workspace).
+  // Scroll only when the exchange form is actually present in the DOM.
+  useEffect(() => {
+    if (!exchangeSelectedOrder?.id) return
+    const frame = requestAnimationFrame(() => {
+      exchangeFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [exchangeSelectedOrder?.id, exchangeFormRef])
+
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
   const [receivingExchangeId, setReceivingExchangeId] = useState<number | null>(null)
 
@@ -404,14 +414,6 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                       <label><span>Количество</span><FriendlyNumberInput type="number" min="1" step="1" value={required} onChange={(event) => applyExchangeSetNewItemPatch(index, { quantity: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} /></label>
                       <label><span>Откуда выдаём</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
                     </div>
-                    {item.sourceType !== 'workshop' ? <div className="exchange-shipment-choice">
-                      <strong>Новый товар уже отправили клиенту?</strong>
-                      <div className="exchange-choice-row">
-                        <button type="button" className={item.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'sent' })}>Уже отправили</button>
-                        <button type="button" className={item.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
-                      </div>
-                      {item.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, нажмите «Отправить замену» в таблице заказов. Пока он остаётся в резерве.</div> : null}
-                    </div> : null}
                     {String(item.productName || '').trim() ? (
                       <>
                         <div className="exchange-new-details">
@@ -425,6 +427,14 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                             <label><span>{String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={item.size || ''} options={String(item.audienceType || '').includes('ДЕТ') ? suggestionValues.childAges : suggestionValues.sizes} placeholder={String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'} onChange={(value) => applyExchangeSetNewItemPatch(index, { size: value })} /></label>
                           </div>
                         </div>
+                    {item.sourceType !== 'workshop' ? <div className={`exchange-shipment-choice${!item.shipmentState ? " needs-choice" : ""}`}>
+                      <strong>Новый товар уже отправили клиенту?</strong>
+                      <div className="exchange-choice-row" role="group" aria-label="Фактическая отправка замены">
+                        <button type="button" aria-pressed={item.shipmentState === 'sent'} className={item.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'sent' })}>Уже отправили</button>
+                        <button type="button" aria-pressed={item.shipmentState === 'pending'} className={item.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
+                      </div>
+                      {item.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, нажмите «Отправить замену» в таблице заказов. Пока он остаётся в резерве.</div> : null}
+                    </div> : null}
                         <div className="exchange-new-price">
                           <div><span>Цена по каталогу</span><strong>{item.catalogPriceSnapshot == null ? 'Нет цены' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
                           <label><span>Цена продажи</span><FriendlyNumberInput type="number" min="0" value={item.unitPrice ?? ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { unitPrice: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)), priceOrigin: 'manual' })} /></label>
