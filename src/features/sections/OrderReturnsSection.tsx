@@ -293,7 +293,6 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               ? `Отправлен${returnSelectedOrder.shipping_date ? ` · ${returnSelectedOrder.shipping_date}` : ''}`
                               : 'Не отправлен'}
                           </span>
-                          <small className="field-hint">Это учётная отметка отправки, а не подтверждение того, что товары уже вернулись обратно.</small>
                         </div>
                         <span className="status-pill status-warning">
                           Доступно {formatMoney(Math.max(0, Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0)))}
