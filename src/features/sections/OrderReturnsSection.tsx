@@ -135,7 +135,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   const toggleReturnItem = (item: any) => {
     if (item.issuedToClient === false) return
     const selected = Number(item.quantity || 0) > 0
-    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : Math.max(1, Number(item.maxQuantity || 1)) })
+    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : Math.max(1, Number(item.maxQuantity || 1)), physicalState: 'pending', restock: false })
   }
   const markReturnArrived = (item: any) => {
     const physicalState = defaultReturnDestination(item)
