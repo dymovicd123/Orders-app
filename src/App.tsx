@@ -7031,6 +7031,38 @@ function removeDebtPayment(index: number) {
     }
   }
 
+  async function markExchangeReplacementSent(order: OrderRecord, item: OrderRecord['items'][number]) {
+    const eventId = Number(item.pendingExchangeDispatchId || 0)
+    if (!eventId || savingOrder) return
+    setSavingOrder(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const key = `exchange-dispatch:${eventId}`
+      const critical = prepareCriticalRequest(key, { eventId })
+      const response = await apiFetch(`/api/exchanges/pending-dispatch/${eventId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
+        body: JSON.stringify(critical.payload),
+      })
+      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(
+        response, 'Отправка замены', { allowHttpError: true })
+      if (!response.ok || !result.ok) throw new Error(result.message || 'Не удалось отметить отправку замены.')
+      completeCriticalRequest(key, critical.requestId)
+      if (result.order) upsertOrderInState(result.order)
+      await Promise.allSettled([
+        loadDashboard(false),
+        loadInventoryData('warehouse', true, '', false),
+        loadInventoryData('boutique', true, '', false),
+      ])
+      setMessage(`Замена «${item.productName}» по заказу ${order.external_id} отмечена отправленной.`)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Не удалось отметить отправку замены.')
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
   async function markOrderSentToClient(order: OrderRecord): Promise<boolean> {
     const projection = await getOrderOperationalProjection(order)
     if (!projection.canShip) {
@@ -7609,6 +7641,10 @@ function removeDebtPayment(index: number) {
           setError(`Новая позиция ${index + 1}: цена Каталога изменилась. Выберите товар заново.`)
           return
         }
+        if (item.sourceType !== 'workshop' && item.shipmentState !== 'sent' && item.shipmentState !== 'pending') {
+          setError(`Новая позиция ${index + 1}: укажите, отправили ли товар клиенту.`)
+          return
+        }
         addedValue += quantity * unitPrice
         newPayload.push({
           ...item,
@@ -7816,7 +7852,7 @@ function removeDebtPayment(index: number) {
         ? null
         : getOrderSourceAvailability(effectiveNewItem, exchangeRequiredQuantity)
       const needsPhysicalConfirmation = Boolean(exchangeAvailability?.canObservePhysical && Number(exchangeAvailability.currentPhysical || 0) < exchangeRequiredQuantity)
-      if (needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
+      if (effectiveNewItem.shipmentState === 'sent' && needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
         setError(`Позиция обмена ${index + 1}: по учёту товара недостаточно. Подтвердите только наличие конкретных вещей для выдачи — общий остаток изменять не нужно.`)
         return
       }
@@ -8935,7 +8971,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, markExchangeReplacementSent, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">

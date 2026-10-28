@@ -60,6 +60,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     kaspiMode = false,
     ManagerBadge,
     markOrderSentToClient,
+    markExchangeReplacementSent,
     openOrderStockHandover,
     normalizeSuggestion,
     ordinaryOrdersSeparated = false,
@@ -431,6 +432,20 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <td>
                           <div className="order-table-actions">
                             {retainedOnly ? <span className="soft-badge">Только история</span> : null}
+                            {!retainedOnly && !archived && !projection.deleted ? (order.items || [])
+                              .filter((item: any) => Number(item.pendingExchangeDispatchId || 0) > 0 && Number(item.quantity || 0) > 0)
+                              .map((item: any) => (
+                                <button
+                                  key={`exchange-dispatch-${item.pendingExchangeDispatchId}`}
+                                  type="button"
+                                  className="secondary compact order-exchange-dispatch-button"
+                                  disabled={savingOrder}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void markExchangeReplacementSent(order, item)
+                                  }}
+                                >Отправить замену: {item.productName} × {item.quantity}</button>
+                              )) : null}
                             {projection.canOpenStockHandover ? (
                               <button
                                 className="secondary compact order-stock-handover-trigger"

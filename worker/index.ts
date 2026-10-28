@@ -57,7 +57,7 @@ import { undoUnusedCatalogConsolidation } from './domains/catalog-zero-stock-und
 import { previewPositiveStockConsolidationUndo, undoPositiveStockCatalogConsolidation } from './domains/catalog-positive-stock-undo.ts'
 import { previewZeroStockReMerge, reMergeZeroStockCatalogVariant } from './domains/catalog-zero-stock-remerge.ts'
 import { recentCatalogStockReconciliations } from './domains/catalog-stock-reconciliation-write.ts'
-import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
+import { cancelExchange, cancelExchangeSetV2, cancelReturn, correctExchangeFinancials, correctMistakenOrderHandoverWithCurrentExchange, createExchange, createExchangeSetV2FromRequest, createReturn, dispatchPendingExchangeReplacement, isExchangeSetV2, listExchanges, receiveReturnedItem } from './domains/returns-exchanges.ts'
 import { createItemizedExchangeBatchFromRequest } from './domains/exchange-batch.ts'
 import { continueDatabaseStorageCleanup, getDatabaseStorageStatus, startDatabaseStorageCleanup, updateDatabaseStorageCapacity } from './domains/storage.ts'
 import { buildStockResolutionRequired } from './domains/stock-resolution.ts'
@@ -2191,6 +2191,19 @@ export default {
           method:cleanText(row.payment_method),itemQuantity:toInt(row.item_quantity,0),
           parentExchangeId:toInt(row.parent_exchange_id,0)||null,
         }))});
+      }
+
+      const exchangeDispatchMatch = url.pathname.match(/^\/api\/exchanges\/pending-dispatch\/(\d+)$/)
+      if (exchangeDispatchMatch && request.method === 'POST') {
+        const input = await readJson<{ requestId?: string }>(request)
+        input.requestId = cleanText(input.requestId) || cleanText(request.headers.get('X-Idempotency-Key')) || undefined
+        try {
+          return json(await dispatchPendingExchangeReplacement(env.DB, toInt(exchangeDispatchMatch[1], 0), input.requestId))
+        } catch (error) {
+          const criticalResponse = criticalOperationErrorResponse(error)
+          if (criticalResponse) return criticalResponse
+          throw error
+        }
       }
 
       if (url.pathname === '/api/exchanges/batch' && request.method === 'POST') {

@@ -1240,6 +1240,7 @@ export async function createExchange(
     throw new Error('Обмен больше не принимает полный остаток товара. Обновите форму и подтвердите только выдаваемые вещи.');
   }
   const physicalIssueConfirmed = (input.newItem as any)?.issuePossessionConfirmed === true;
+  const shipmentState = cleanText((input.newItem as any)?.shipmentState);
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
 
@@ -1383,6 +1384,9 @@ export async function createExchange(
   const effectiveReplacementSource: OrderItemSourceType = input.newSourceWasManuallyChanged
     ? requestedNewItem.sourceType
     : inheritedReplacementSource;
+  if (!requestedNewItem.isWorkshop && shipmentState !== 'sent' && shipmentState !== 'pending') {
+    throw new CriticalOperationConflictError('Укажите, отправлен ли новый товар клиенту.');
+  }
   const newItem = {
     ...requestedNewItem,
     sourceType: effectiveReplacementSource,
@@ -1405,7 +1409,7 @@ export async function createExchange(
         `SELECT quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
       ).bind(newItem.inventorySource, resolved.variantId).first<{ quantity: number }>();
       const physical = Math.max(0, toInt(stock?.quantity, 0));
-      if (physical < newItem.quantity && !physicalIssueConfirmed) {
+      if (shipmentState === 'sent' && physical < newItem.quantity && !physicalIssueConfirmed) {
         throw new Error(`По учёту новой позиции обмена на месте ${physical} шт., требуется ${newItem.quantity}. Подтвердите, что именно эти вещи физически у вас для выдачи. Общий остаток не будет пересчитан.`);
       }
     }
@@ -1612,10 +1616,10 @@ export async function createExchange(
       isWorkshop: false,
       productId: resolvedNew.productId,
       variantId: resolvedNew.variantId,
-      pendingReason: inventoryLifecyclePendingReason(resolvedNew, false),
+      pendingReason: shipmentState === 'pending' ? 'awaiting_dispatch' : inventoryLifecyclePendingReason(resolvedNew, false),
       timestamp,
     });
-    if (resolvedNew.variantId) {
+    if (shipmentState === 'sent' && resolvedNew.variantId) {
       newStockWriteOff = await applyCanonicalInventoryLifecycleEvent(
         db,
         newEvent.id,
@@ -1624,7 +1628,7 @@ export async function createExchange(
         `Физическое списание новой позиции обмена #${exchangeId}`,
         { outboundPossessionConfirmed: physicalIssueConfirmed },
       );
-    } else {
+    } else if (shipmentState === 'sent') {
       pendingInventory.push({ eventId: newEvent.id, eventType: newEvent.event_type, productName: cleanText(insertedNewOrderItem.product_name_snapshot), source: newItem.inventorySource });
     }
   }
@@ -2919,7 +2923,7 @@ export type ExchangeSetOldInput = {
   expectedCatalogPriceSnapshot?: number | null
 }
 
-export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number]
+export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number] & { shipmentState?: 'sent' | 'pending' }
 
 export type ExchangeSetInput = {
   requestId?: string
@@ -2980,6 +2984,7 @@ type ExchangeSetNewPlan = {
   inventorySource: SourceType | null
   stockKey: string | null
   physicalIssueConfirmed: boolean
+  shipmentState: 'sent' | 'pending'
 }
 
 type ExchangeSetExecutionPlan = {
@@ -3518,10 +3523,15 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             inventorySource: null,
             stockKey: null,
             physicalIssueConfirmed: false,
+            shipmentState: 'pending',
           })
           continue
         }
 
+        const shipmentState = cleanText((requested as any).shipmentState)
+        if (shipmentState !== 'sent' && shipmentState !== 'pending') {
+          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: укажите, отправлен ли товар клиенту.`)
+        }
         const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
@@ -3531,7 +3541,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         }
         const physicalIssueConfirmed = (requested as any).issuePossessionConfirmed === true
         let stockKey: string | null = null
-        if (variantId) {
+        if (variantId && shipmentState === 'sent') {
           stockKey = `${inventorySource}:${variantId}`
           const group = stockGroups.get(stockKey) || {
             source: inventorySource,
@@ -3544,7 +3554,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           group.allConfirmed = group.allConfirmed && physicalIssueConfirmed
           stockGroups.set(stockKey, group)
         }
-        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed })
+        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed, shipmentState })
       }
 
       for (const group of stockGroups.values()) {
@@ -3836,10 +3846,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           isWorkshop: false,
           productId: resolved.productId,
           variantId: resolved.variantId,
-          pendingReason: inventoryLifecyclePendingReason(resolved, false),
+          pendingReason: plan.shipmentState === 'pending' ? 'awaiting_dispatch' : inventoryLifecyclePendingReason(resolved, false),
           timestamp,
         })
-        if (resolved.variantId) {
+        if (plan.shipmentState === 'sent' && resolved.variantId) {
           await applyCanonicalInventoryLifecycleEvent(
             db,
             event.id,
@@ -3848,9 +3858,11 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             `Физическое списание новой позиции обмена #${exchangeId}`,
             { outboundPossessionConfirmed: plan.physicalIssueConfirmed },
           )
-        } else {
+        } else if (plan.shipmentState === 'sent') {
           pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(inserted.product_name_snapshot), source: plan.inventorySource })
         }
+        // pending: retain the active reservation, do not write off any physical stock.
+        // Dispatch is a separate user action even when the original order was sent.
       }
 
       completedNew = index + 1
@@ -4416,6 +4428,84 @@ export async function cancelExchangeSetV2(
     return order ? { ...completed, order, refreshRequired: false } : completed
   } catch (error) {
     await failCriticalOperation(db, criticalOperation, error)
+    throw error
+  }
+}
+
+
+// Dispatch only a replacement explicitly saved as "not shipped".
+// The original order's shipping_status/shipping_date belong to its first dispatch.
+export async function dispatchPendingExchangeReplacement(
+  db: D1Database,
+  eventId: number,
+  requestId?: string,
+) {
+  let operation: CriticalOperationHandle | null = null
+  try {
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error('Выберите товар замены.')
+    operation = await beginCriticalOperation(db, 'exchange_replacement_dispatch', requestId, { eventId })
+    if (operation.cachedResponse) return operation.cachedResponse
+    const row = await db.prepare(
+      `SELECT le.id, le.status, le.pending_reason, le.order_id, le.order_item_id, le.operation_id,
+              e.status AS exchange_status, o.order_status, o.archived_at, o.external_id,
+              oi.quantity, oi.is_workshop
+       FROM inventory_lifecycle_events le
+       JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+       JOIN orders o ON o.id=le.order_id
+       JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=le.order_id
+       WHERE le.id=? AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
+       LIMIT 1`
+    ).bind(eventId).first<Record<string, unknown>>()
+    if (!row) throw new CriticalOperationConflictError('Новая позиция обмена не найдена.')
+    if (cleanText(row.exchange_status) === 'cancelled' || isArchivedOrder(row) || normalizeOrderStatus(row.order_status) === 'deleted') {
+      throw new CriticalOperationConflictError('Этот обмен уже отменён или заказ закрыт для отправки.')
+    }
+    if (toInt(row.is_workshop, 0) || toInt(row.quantity, 0) <= 0) {
+      throw new CriticalOperationConflictError('Позиция замены больше не ожидает отправки.')
+    }
+    if (cleanText(row.status) === 'cancelled') {
+      throw new CriticalOperationConflictError('Складское событие замены отменено.')
+    }
+    if (cleanText(row.status) === 'pending' && cleanText(row.pending_reason) !== 'awaiting_dispatch') {
+      throw new CriticalOperationConflictError('Сначала уточните товар замены в каталоге.')
+    }
+    if (cleanText(row.status) === 'pending') {
+      const item = await getOrderItemForReturnOrExchange(db, toInt(row.order_id, 0), toInt(row.order_item_id, 0))
+      if (!item) throw new CriticalOperationConflictError('Новая позиция не найдена в заказе.')
+      const resolved = await resolveInventoryLifecycleCandidate(db, item, false)
+      if (!resolved.variantId) {
+        throw new CriticalOperationConflictError('Товар замены не распознан. Сначала уточните его в каталоге.')
+      }
+      const now = new Date().toISOString()
+      // Clicking "Отправить замену" explicitly confirms a real physical dispatch;
+      // shortage evidence is line-scoped and never overwrites an entire SKU count.
+      await applyCanonicalInventoryLifecycleEvent(db, eventId, resolved.variantId, now,
+        `Отправлена замена по обмену #${toInt(row.operation_id, 0)}`,
+        { outboundPossessionConfirmed: true })
+    }
+    const completedResponse = { ok: true, eventId, orderId: toInt(row.order_id, 0), alreadySent: cleanText(row.status) === 'applied' }
+    await completeCriticalOperation(db, operation, completedResponse)
+    if (!completedResponse.alreadySent) {
+      try {
+        await writeActivityLog(db, {
+          eventType: 'exchange_replacement_shipped',
+          entityType: 'exchange',
+          entityId: toInt(row.operation_id, 0),
+          orderId: completedResponse.orderId,
+          externalOrderId: cleanText(row.external_id),
+          title: 'Отправлена новая вещь по обмену',
+          details: `Позиция #${toInt(row.order_item_id, 0)}; количество ${toInt(row.quantity, 0)} шт.`,
+        })
+      } catch (error) {
+        console.warn('Exchange replacement dispatch activity log failed', error)
+      }
+    }
+    let order = null
+    try { order = await getOrder(db, completedResponse.orderId) }
+    catch (error) { console.warn('Exchange dispatch readback failed', error) }
+    return { ...completedResponse, ...(order ? { order } : {}) }
+  } catch (error) {
+    await failCriticalOperation(db, operation, error)
     throw error
   }
 }
