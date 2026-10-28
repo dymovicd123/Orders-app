@@ -52,7 +52,7 @@ const header=[
  ' AND COALESCE(e.status,\'completed\')<>\'cancelled\')',
  ')',
 ].join('\n')
-const [stats]=await select(header+
+const [stats]=await select(header+'\n'+[
  ' SELECT COUNT(*) AS active_returns,',
  ' SUM(CASE WHEN amount>0 AND goods_qty=0 THEN 1 ELSE 0 END) AS money_only,',
  ' SUM(CASE WHEN amount>0 AND goods_qty>0 THEN 1 ELSE 0 END) AS money_and_goods,',
@@ -63,7 +63,8 @@ const [stats]=await select(header+
  ' SUM(received_no_stock_qty) AS received_no_stock_units,',
  ' SUM(old_untracked_qty) AS legacy_untracked_units,',
  ' SUM(CASE WHEN created_at < \'2026-10-01\' OR created_at >= \'2026-11-01\' THEN 1 ELSE 0 END) AS created_outside_return_month',
- ' FROM rows')
+ ' FROM rows',
+].join('\n'))
 console.log('OCT_2026_RETURN_AGGREGATE '+JSON.stringify(stats))
 const flagged=await select(header+
  " SELECT return_id,external_id,return_date,amount,shipping_status FROM rows"+
