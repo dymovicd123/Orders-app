@@ -7050,12 +7050,12 @@ function removeDebtPayment(index: number) {
       if (!response.ok || !result.ok) throw new Error(result.message || 'Не удалось отметить отправку замены.')
       completeCriticalRequest(key, critical.requestId)
       if (result.order) upsertOrderInState(result.order)
-      setMessage(`Замена «${item.productName}» по заказу ${order.external_id} отмечена отправленной.`)
       await Promise.allSettled([
         loadDashboard(false),
         loadInventoryData('warehouse', true, '', false),
         loadInventoryData('boutique', true, '', false),
       ])
+      setMessage(`Замена «${item.productName}» по заказу ${order.external_id} отмечена отправленной.`)
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Не удалось отметить отправку замены.')
     } finally {
