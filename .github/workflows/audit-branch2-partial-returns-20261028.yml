@@ -4,6 +4,7 @@ on:
     branches: [branch2]
     paths:
       - 'scripts/audit-branch2-partial-returns-20261028.mjs'
+      - 'scripts/test-branch2-partial-return-sequence-20261028.mjs'
       - '.github/workflows/audit-branch2-partial-returns-20261028.yml'
 permissions:
   contents: read
@@ -18,5 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
+      - run: npm ci
+      - name: Verify sequential partial returns and physical states locally
+        run: node scripts/test-branch2-partial-return-sequence-20261028.mjs
       - name: Read only the isolated Branch2 D1 copy, no writes
         run: node scripts/audit-branch2-partial-returns-20261028.mjs
