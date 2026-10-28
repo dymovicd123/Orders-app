@@ -1,0 +1,48 @@
+name: Branch2 shipping correction and all stock checkpoint safety 20261028
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/routineCycleCount.ts'
+      - 'scripts/test-old-order-post-stocktake-handover-r1.mjs'
+      - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - 'scripts/test-mistaken-shipping-physical-restore-20261028.mjs'
+      - '.github/workflows/branch2-shipping-checkpoint-safety-20261028.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/inventory/routineCycleCount.ts'
+      - 'scripts/test-old-order-post-stocktake-handover-r1.mjs'
+      - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - 'scripts/test-mistaken-shipping-physical-restore-20261028.mjs'
+      - '.github/workflows/branch2-shipping-checkpoint-safety-20261028.yml'
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - name: Physical correction must restore only proven stock delta
+        run: node scripts/test-mistaken-shipping-physical-restore-20261028.mjs
+      - name: All revision, selective and manual check handover decisions
+        run: |
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-old-order-post-stocktake-guard-r1.mjs
+          node scripts/test-handover-cas-after-revision-r2.mjs
+          node scripts/test-operational-autonomy-a4-handover-correction.mjs
+          node scripts/test-stage02-phase2c-early-handover-possession-resolver.mjs
+      - name: Typecheck and build
+        run: npm run build
