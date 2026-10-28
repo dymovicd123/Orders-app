@@ -227,6 +227,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     referenceSearch,
     referenceStatusFilter,
     refreshInventoryModule,
+    refreshOrdersAfterPhysicalCheck,
     removeReferenceEntry,
     renderInventoryStockGroups,
     resetReferenceDraft,
@@ -884,7 +885,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const currentStocktakeGroup = stocktakeGroups[stocktakeProductIndex] || null
   const stocktakeActiveForSelectedSource = stocktakeActiveSessions.find((entry: any) => entry.source === stocktakeSource) || null
   const cycleCountFilledCount = Object.values(cycleCountValues).filter((value) => value !== '').length
-  const submitRoutineCycleCount = (row: any, countedQuantity: number) => runRoutineCycleCount({ row, countedQuantity, source: simpleStockSource, busy: cycleCountBusy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions: refreshCycleCountSuggestions, setBusy: setCycleCountBusy, setNotice: setCycleCountNotice, setData: setCycleCountData, setValues: setCycleCountValues })
+  const submitRoutineCycleCount = (row: any, countedQuantity: number) => runRoutineCycleCount({ row, countedQuantity, source: simpleStockSource, busy: cycleCountBusy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions: refreshCycleCountSuggestions, onSuccess: refreshOrdersAfterPhysicalCheck, setBusy: setCycleCountBusy, setNotice: setCycleCountNotice, setData: setCycleCountData, setValues: setCycleCountValues })
 
   async function refreshCycleCountSuggestions(source: StocktakeSource = stocktakeSource, keepNotice = false, limit = 12) {
     const seq = ++cycleCountLoadSeq.current
@@ -939,6 +940,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         ? `Проверено ${selected.length}. Расхождений исправлено: ${result.changedCount}.`
         : `Проверено ${selected.length}. Остатки совпали.`)
       await refreshInventoryModule(true)
+      void refreshOrdersAfterPhysicalCheck?.()
       await refreshCycleCountSuggestions(stocktakeSource, true)
     } catch (error) {
       setCycleCountNotice(error instanceof Error ? error.message : 'Не удалось сохранить короткую сверку.')
@@ -1401,6 +1403,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       else { setStocktakeSession(null); setStocktakeFacts({}); setStocktakeNotice(result.message || 'Проверка завершена.') }
       setStocktakeReviewMode(false)
       await Promise.allSettled([refreshInventoryModule(true), refreshActiveStocktakes()])
+      void refreshOrdersAfterPhysicalCheck?.()
     } catch (error) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось завершить ревизию.')
     } finally {
