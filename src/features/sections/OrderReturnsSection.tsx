@@ -575,7 +575,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                         <summary>
                           <div className="history-card-date"><strong>{entry.returnDate || '—'}</strong><span>Возврат</span></div>
                           <div className="history-card-main"><strong>{entry.externalId}</strong><span>{entry.customer}{entry.city ? ` · ${entry.city}` : ''} · Менеджер: {entry.manager || '—'}</span></div>
-                          <div className="history-card-amount"><strong>{formatMoney(entry.amount)}</strong><span>{entry.items?.length ? `${entry.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.` : entry.amount > 0 ? 'Только деньги · товары не указаны' : 'Товары не указаны'}</span></div>
+                          <div className="history-card-amount"><strong>{formatMoney(entry.amount)}</strong><span>{entry.items?.length
+                                  ? `${entry.amount > 0 ? 'Товары и деньги' : 'Только товары'} · ${entry.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.`
+                                  : entry.amount > 0 ? 'Только деньги · товары не указаны' : 'Товары не указаны'}</span></div>
                           <span className={`status-pill ${entry.status === 'cancelled' ? 'status-offline' : 'status-online'}`}>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span>
                           <span className="history-card-open">Подробнее</span>
                         </summary>
