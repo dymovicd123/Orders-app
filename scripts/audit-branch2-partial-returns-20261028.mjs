@@ -70,4 +70,24 @@ JOIN inventory_reservations res ON res.order_item_id=ri.order_item_id AND res.st
 WHERE COALESCE(r.status,'completed')<>'cancelled' AND ri.quantity>0
 AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
 `)))
+console.log('PARTIAL_RETURN_AUDIT_HISTORICAL_ORDER_CONTEXT',JSON.stringify(await sql(`
+SELECT o.id AS order_id, o.shipping_status, oi.id AS order_item_id,
+ oi.quantity AS active_quantity, oi.stock_writeoff_status,
+ ri.quantity AS returned_quantity, ri.physical_tracking, ri.physical_received_at,
+ r.id AS return_id, r.status AS return_status,
+ (SELECT COUNT(*) FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+  WHERE ei.order_item_id=oi.id AND ei.role='old'
+  AND COALESCE(e.status,'completed')<>'cancelled') AS times_exchanged
+FROM orders o JOIN order_items oi ON oi.order_id=o.id
+JOIN return_items ri ON ri.order_item_id=oi.id
+JOIN returns r ON r.id=ri.return_id
+WHERE o.id IN (894,1563)
+ORDER BY o.id,oi.id LIMIT 30`)))
+console.log('PARTIAL_RETURN_AUDIT_OPEN_RESERVE_CONTEXT',JSON.stringify(await sql(`
+SELECT o.id AS order_id,o.shipping_status,oi.id AS order_item_id,oi.quantity,
+ oi.stock_writeoff_status,res.status AS reservation_status,res.quantity AS reservation_quantity,
+ (SELECT COUNT(*) FROM inventory_handover_reviews hr WHERE hr.order_item_id=oi.id) AS review_count
+FROM orders o JOIN order_items oi ON oi.order_id=o.id
+JOIN inventory_reservations res ON res.order_item_id=oi.id AND res.status IN ('active','unresolved')
+WHERE o.id=1563 ORDER BY oi.id LIMIT 15`)))
 console.log('PARTIAL_RETURN_AUDIT_COMPLETE_READ_ONLY')
