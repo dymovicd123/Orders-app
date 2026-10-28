@@ -110,6 +110,22 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
         : 'warehouse'
   const selectedReturnLines = (returnDraft.items || []).filter((item: any) => item.issuedToClient !== false && Number(item.quantity || 0) > 0)
   const selectedReturnQuantity = selectedReturnLines.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+  const returnMoneySelected = Number(returnDraft.amount || 0) > 0
+  const returnGoodsSelected = selectedReturnQuantity > 0
+  const returnKind = returnMoneySelected && returnGoodsSelected
+    ? 'Возврат товаров и денег'
+    : returnMoneySelected
+      ? 'Возврат только денег'
+      : returnGoodsSelected
+        ? 'Возврат только товаров'
+        : 'Возврат не заполнен'
+  const pendingSelectedQty = selectedReturnLines
+    .filter((item: any) => item.physicalState === 'pending')
+    .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+  const arrivedStockQty = selectedReturnLines
+    .filter((item: any) => item.physicalState === 'warehouse' || item.physicalState === 'boutique')
+    .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+  const arrivedNoStockQty = selectedReturnQuantity - pendingSelectedQty - arrivedStockQty
   const patchReturnItem = (orderItemId: number, patch: Record<string, unknown>) => setReturnDraft((current: any) => ({
     ...current,
     items: current.items.map((entry: any) => Number(entry.orderItemId || 0) === Number(orderItemId || 0)
@@ -119,7 +135,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   const toggleReturnItem = (item: any) => {
     if (item.issuedToClient === false) return
     const selected = Number(item.quantity || 0) > 0
-    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : 1 })
+    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : Math.max(1, Number(item.maxQuantity || 1)), physicalState: 'pending', restock: false })
   }
   const markReturnArrived = (item: any) => {
     const physicalState = defaultReturnDestination(item)
@@ -346,7 +362,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Выбирайте товар только если клиент действительно получал его; сумма возврата денег указывается отдельно.</span>
+                          <span className="muted-small">По умолчанию отмечены все ранее выданные товары, которые ещё можно вернуть. Снимите лишние позиции и проверьте количество. Пока не подтвердили получение, товары считаются «Ещё едет обратно» и НЕ увеличивают остаток. Возврат денег указывают отдельно.</span>
                         </div>
                         {returnDraft.items.some((item: any) => item.issuedToClient === false) ? (
                           <div className="history-note">
@@ -484,12 +500,25 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                           )}
                         </div>
 
-                        <div className="return-smart-summary">
+                        <div className="return-smart-summary" role="status" aria-live="polite">
                           <div>
-                            <span>Выбрано товаров</span>
+                            <span>Вид операции — проверьте перед сохранением</span>
+                            <strong>{returnKind}</strong>
+                          </div>
+                          <div>
+                            <span>Деньги клиенту</span>
+                            <strong>{formatMoney(Number(returnDraft.amount || 0))} ₸</strong>
+                          </div>
+                          <div>
+                            <span>Выбранные товары</span>
                             <strong>{selectedReturnLines.length} поз. · {selectedReturnQuantity} шт.</strong>
                           </div>
-                          <p>Товары и деньги учитываются отдельно: сумма возврата выше должна совпадать с фактической договорённостью с клиентом.</p>
+                          {returnGoodsSelected ? (
+                            <p>Ещё едут: {pendingSelectedQty} шт. · Уже получили на склад/бутик: {arrivedStockQty} шт. · Получены без остатка: {arrivedNoStockQty} шт.</p>
+                          ) : returnMoneySelected ? (
+                            <p><strong>Товары не выбраны.</strong> Система зафиксирует только возврат денег. Физическое получение вещей не будет зарегистрировано.</p>
+                          ) : <p>Укажите сумму возврата или выберите хотя бы один товар.</p>}
+                          <p>Перед подтверждением убедитесь, что выбор товаров и их физический статус соответствуют фактам. Не отмечайте «Уже вернули», пока вещь не приехала.</p>
                         </div>
                       </div>
                     </div>
@@ -546,7 +575,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                         <summary>
                           <div className="history-card-date"><strong>{entry.returnDate || '—'}</strong><span>Возврат</span></div>
                           <div className="history-card-main"><strong>{entry.externalId}</strong><span>{entry.customer}{entry.city ? ` · ${entry.city}` : ''} · Менеджер: {entry.manager || '—'}</span></div>
-                          <div className="history-card-amount"><strong>{formatMoney(entry.amount)}</strong><span>{entry.items?.length ? `${entry.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.` : 'Без списка товаров'}</span></div>
+                          <div className="history-card-amount"><strong>{formatMoney(entry.amount)}</strong><span>{entry.items?.length
+                                  ? `${entry.amount > 0 ? 'Товары и деньги' : 'Только товары'} · ${entry.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.`
+                                  : entry.amount > 0 ? 'Только деньги · товары не указаны' : 'Товары не указаны'}</span></div>
                           <span className={`status-pill ${entry.status === 'cancelled' ? 'status-offline' : 'status-online'}`}>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span>
                           <span className="history-card-open">Подробнее</span>
                         </summary>
@@ -624,7 +655,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 ) : null}
                               </div>
                             ))}
-                            {!entry.items?.length ? <div className="history-product-card"><span>Товары в этой старой записи не указаны.</span></div> : null}
+                            {!entry.items?.length ? <div className="history-product-card"><span>Товары в операции не указаны. Физический возврат не зафиксирован — это может быть возврат только денег. Не добавляйте товар в остаток без подтверждения.</span></div> : null}
                           </div>
                           {entry.comment ? <div className="history-note"><span>Комментарий возврата</span><strong>{entry.comment}</strong></div> : null}
                           {entry.cancellationComment ? <div className="history-note is-danger"><span>Причина отмены</span><strong>{entry.cancellationComment}</strong></div> : null}

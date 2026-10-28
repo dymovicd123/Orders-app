@@ -7447,6 +7447,29 @@ function removeDebtPayment(index: number) {
       return
     }
 
+    const selectedQuantity = selectedReturnItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+    const returnKind = amount > 0 && selectedQuantity > 0
+      ? 'ВОЗВРАТ ТОВАРОВ И ДЕНЕГ'
+      : amount > 0
+        ? 'ВОЗВРАТ ТОЛЬКО ДЕНЕГ'
+        : 'ВОЗВРАТ ТОЛЬКО ТОВАРОВ'
+    const pendingQuantity = selectedReturnItems
+      .filter((item) => item.physicalState === 'pending')
+      .reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+    const receivedQuantity = selectedQuantity - pendingQuantity
+    if (!window.confirm(
+      `Подтвердите операцию по заказу ${returnSelectedOrder.external_id}:\n\n`
+      + `${returnKind}\n`
+      + `Деньги: ${formatMoney(amount)} ₸\n`
+      + `Товары: ${selectedQuantity} шт.\n`
+      + `Ещё едут обратно: ${pendingQuantity} шт.\n`
+      + `Физически получены: ${receivedQuantity} шт.\n\n`
+      + (selectedQuantity === 0
+        ? 'ВНИМАНИЕ: ни один товар не выбран. Складские остатки не увеличатся.\n\n'
+        : '')
+      + 'Проверьте, что товары и деньги указаны по факту. Сохранить возврат?'
+    )) return
+
     setReturnBusy(true)
     setError(null)
     setMessage(null)

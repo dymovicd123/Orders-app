@@ -850,6 +850,16 @@ export type OrderRecord = {
   committed_return_count?: number
   committed_exchange_count?: number
   has_committed_item_return?: boolean
+  // Summarized facts from active standalone returns, excluding exchange-owned refunds.
+  return_physical_summary?: {
+    moneyOnlyCount: number
+    moneyAndGoodsCount: number
+    goodsOnlyCount: number
+    pendingQuantity: number
+    receivedStockQuantity: number
+    receivedNoStockQuantity: number
+    legacyUnknownQuantity: number
+  } | null
   comment: string | null
   archived_at?: string | null
   archived_by?: string | null

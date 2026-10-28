@@ -748,12 +748,14 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       return {
         orderItemId: Number(item.id || 0),
         productName: item.productName || 'Позиция',
-        quantity: 0,
+        // Explicitly preselect every still-returnable issued unit. Nothing is
+        // marked physically received or restocked until the operator says so.
+        quantity: issuedToClient ? Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)) : 0,
         maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
         sourceType,
         issuedToClient,
         restock: false,
-        physicalState: (sourceType === 'workshop' ? 'no_stock' : 'pending') as 'pending' | 'no_stock',
+        physicalState: 'pending' as const,
       }
     }).filter((item) => item.orderItemId > 0 && item.maxQuantity > 0),
   }
