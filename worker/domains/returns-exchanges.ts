@@ -500,7 +500,7 @@ export async function createReturn(
   const stockReturns: unknown[] = [];
   const pendingInventory: unknown[] = [];
   for (const validated of validatedSelectedItems) {
-    const { selected, orderItem, quantity, wantsRestock, isWorkshop, physicalTracking, physicalState, inventorySource } = validated;
+    const { selected, orderItem, quantity, wantsRestock, isWorkshop, inventorySource } = validated;
 
     const itemIndex = validatedSelectedItems.indexOf(validated);
     const itemKey = `return:item:${itemIndex + 1}`;
