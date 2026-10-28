@@ -7609,6 +7609,10 @@ function removeDebtPayment(index: number) {
           setError(`Новая позиция ${index + 1}: цена Каталога изменилась. Выберите товар заново.`)
           return
         }
+        if (item.sourceType !== 'workshop' && item.shipmentState !== 'sent' && item.shipmentState !== 'pending') {
+          setError(`Новая позиция ${index + 1}: укажите, отправили ли товар клиенту.`)
+          return
+        }
         addedValue += quantity * unitPrice
         newPayload.push({
           ...item,
@@ -7816,7 +7820,7 @@ function removeDebtPayment(index: number) {
         ? null
         : getOrderSourceAvailability(effectiveNewItem, exchangeRequiredQuantity)
       const needsPhysicalConfirmation = Boolean(exchangeAvailability?.canObservePhysical && Number(exchangeAvailability.currentPhysical || 0) < exchangeRequiredQuantity)
-      if (needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
+      if (effectiveNewItem.shipmentState === 'sent' && needsPhysicalConfirmation && !effectiveNewItem.stockObservationEnabled) {
         setError(`Позиция обмена ${index + 1}: по учёту товара недостаточно. Подтвердите только наличие конкретных вещей для выдачи — общий остаток изменять не нужно.`)
         return
       }
