@@ -2081,6 +2081,19 @@ export function normalizeShipmentObservations(input: unknown): ShipmentInventory
 }
 
 
+// Waiting exchange replacements are reserved for their own explicit dispatch.
+// General shipment and per-item handover must never treat them as issued goods.
+const pendingExchangeReplacementExclusionSql = (orderItemReference: 'r.order_item_id' | 'oi.id') => `NOT EXISTS (
+  SELECT 1 FROM inventory_lifecycle_events pending_replacement
+  JOIN exchanges pending_exchange ON pending_exchange.id = pending_replacement.operation_id
+  WHERE pending_replacement.order_item_id = ${orderItemReference}
+    AND pending_replacement.operation_type = 'exchange'
+    AND pending_replacement.event_type = 'exchange_new_out'
+    AND pending_replacement.status = 'pending'
+    AND pending_replacement.pending_reason = 'awaiting_dispatch'
+    AND COALESCE(pending_exchange.status,'completed') <> 'cancelled'
+)`;
+
 export async function fulfillOrderReservationsV2(
   db: D1Database,
   orderId: number,
@@ -2097,6 +2110,19 @@ export async function fulfillOrderReservationsV2(
   const scopeSql = scopedOrderItemIds.length
     ? ` AND r.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
     : '';
+  if (stockConfirmationOperation === 'handover') {
+    const pendingReplacement = await db.prepare(
+      `SELECT le.id FROM inventory_lifecycle_events le
+       JOIN exchanges e ON e.id = le.operation_id
+       WHERE le.order_id = ? AND le.order_item_id = ?
+         AND le.operation_type = 'exchange' AND le.event_type = 'exchange_new_out'
+         AND le.status = 'pending' AND le.pending_reason = 'awaiting_dispatch'
+         AND COALESCE(e.status, 'completed') <> 'cancelled' LIMIT 1`
+    ).bind(orderId, handoverOrderItemId).first<{id:number}>();
+    if (pendingReplacement?.id) {
+      throw new Error('Эта замена ещё не отправлена. Для неё используйте «Отправить замену» в заказах.');
+    }
+  }
   const reservationBindings: Array<string | number> = [orderId];
   if (scopedOrderItemIds.length) reservationBindings.push(JSON.stringify(scopedOrderItemIds));
   const rows = await db.prepare(
@@ -2108,6 +2134,7 @@ export async function fulfillOrderReservationsV2(
      LEFT JOIN catalog_variants reservation_variant ON reservation_variant.id = r.variant_id
      LEFT JOIN catalog_products reservation_product ON reservation_product.id = reservation_variant.product_id
      WHERE r.order_id = ? AND r.status IN ('active', 'unresolved')${scopeSql}
+       AND ${pendingExchangeReplacementExclusionSql('r.order_item_id')}
      ORDER BY r.id ASC`
   ).bind(...reservationBindings).all<Record<string, unknown>>();
   const reservations = rows.results || [];
@@ -2128,6 +2155,7 @@ export async function fulfillOrderReservationsV2(
          AND ret.order_id = r.order_id
          AND COALESCE(ret.status, 'completed') <> 'cancelled'
        WHERE r.order_id = ? AND r.status = 'active'${scopeSql}
+         AND ${pendingExchangeReplacementExclusionSql('r.order_item_id')}
          AND COALESCE(oi.is_workshop, 0) = 0
          AND oi.quantity > 0
          AND NOT EXISTS (
@@ -2948,6 +2976,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
      WHERE oi.order_id = ?
        AND COALESCE(oi.is_workshop, 0) = 0
        AND oi.quantity > 0
+       AND ${pendingExchangeReplacementExclusionSql('oi.id')}
        AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'retired_physically_issued', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
        AND (r.id IS NULL OR r.variant_id IS NULL OR stock.id IS NULL)
      ORDER BY oi.id ASC
@@ -2973,6 +3002,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
        AND r.variant_id IS NOT NULL
        AND oi.quantity > 0
        AND COALESCE(oi.is_workshop, 0) = 0
+       AND ${pendingExchangeReplacementExclusionSql('r.order_item_id')}
        AND COALESCE(oi.stock_writeoff_status, '') NOT IN ('fulfilled', 'written_off', 'negative', 'retired_physically_issued', 'catalog_excluded', 'catalog_excluded_history', 'workshop_no_catalog', 'legacy_unknown_gender')
      GROUP BY r.inventory_source, r.variant_id, stock.quantity
      HAVING COALESCE(stock.quantity, 0) < SUM(r.quantity)

@@ -14,6 +14,7 @@ q.exec([
 "CREATE TABLE returns(id INTEGER PRIMARY KEY, order_id INTEGER, status TEXT)",
 "CREATE TABLE return_items(id INTEGER PRIMARY KEY, return_id INTEGER, order_item_id INTEGER, quantity INTEGER)",
 "CREATE TABLE exchanges(id INTEGER PRIMARY KEY, refund_return_id INTEGER, status TEXT)",
+"CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,operation_type TEXT,operation_id INTEGER,event_type TEXT,status TEXT,pending_reason TEXT)",
 "CREATE TABLE inventory_model_meta(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)",
 "CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY AUTOINCREMENT, inventory_source TEXT, movement_type TEXT, product_id INTEGER, variant_id INTEGER, product_name_snapshot TEXT, gender_snapshot TEXT, color_snapshot TEXT, material_snapshot TEXT, length_snapshot TEXT, size_snapshot TEXT, quantity_delta INTEGER, quantity_after INTEGER, reference_type TEXT, reference_id TEXT, comment TEXT, created_at TEXT)",
 "INSERT INTO orders VALUES(201,'ORD-ZERO','2026-10-21','active','','not_sent',NULL,NULL)",
@@ -109,11 +110,11 @@ assert(!fn.includes('await askStockResolution({'))
 assert(fn.includes('void loadWarehouseAttention(false, true)'))
 assert(readFileSync('src/features/inventory/views/renderInventoryAttentionPanel.tsx','utf8').includes('Заказ уже отправлен — проверить причину'))
 const stockAttentionUI = readFileSync('src/features/inventory/views/renderInventoryAttentionPanel.tsx','utf8')
-assert.equal((stockAttentionUI.match(/className="inventory-attention-guide"/g) || []).length, 1, 'Active shortage section has one common guide')
+assert.equal((stockAttentionUI.match(/className="inventory-attention-guide"/g) || []).length, 0, 'Active shortage section no longer carries the old guide')
 assert.equal((stockAttentionUI.match(/className="inventory-attention-guide is-shipped"/g) || []).length, 1, 'Shipped shortage section has one common guide')
 assert(!stockAttentionUI.includes('inventory-attention-task-help'), 'No repeated instruction in each item card')
 assert(!stockAttentionUI.includes('не добавляйте его повторно на склад'), 'Avoid vague historical-shipment instruction')
-assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Проверить количество'), 'Keep existing stock actions')
+assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Корректировать остаток'), 'Keep current stock actions')
 
 assert(readFileSync('src/features/sections/OrdersHeaderSection.tsx','utf8').includes('shippedUntracked'))
 assert(readFileSync('worker/domains/order-reservations.ts','utf8').includes("stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation"))

@@ -14,7 +14,13 @@ const capture=(source,variable)=>{
 }
 const creation=capture(returns,'dangling')
 const intake=capture(returns,'activeReservation')
-const shipment=capture(shipping,'conflictingReturn')
+const pendingHelperStart=shipping.indexOf('const pendingExchangeReplacementExclusionSql = ')
+assert(pendingHelperStart>=0)
+const pendingTickOpen=shipping.indexOf('`',pendingHelperStart)
+const pendingTickClose=shipping.indexOf('`',pendingTickOpen+1)
+assert(pendingTickOpen>=0&&pendingTickClose>pendingTickOpen)
+const pendingExclusion=shipping.slice(pendingTickOpen+1,pendingTickClose).replaceAll('${orderItemReference}','r.order_item_id')
+const shipment=capture(shipping,'conflictingReturn').replaceAll("${pendingExchangeReplacementExclusionSql('r.order_item_id')}",pendingExclusion)
 assert.match(creation,/inventory_reservations/)
 assert.match(creation,/status IN \('active', 'unresolved'\)/)
 assert.match(intake,/status IN \('active', 'unresolved'\)/)
@@ -47,6 +53,7 @@ db.exec(`
  CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);
  CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,refund_return_id INTEGER,status TEXT);
+ CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_item_id INTEGER,operation_type TEXT,operation_id INTEGER,event_type TEXT,status TEXT,pending_reason TEXT);
  INSERT INTO order_items VALUES(5,42,'ШАПАН',0,1);
  INSERT INTO inventory_reservations VALUES(7,42,5,'active',1);
  INSERT INTO returns VALUES(10,42,'completed');
