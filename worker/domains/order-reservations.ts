@@ -2155,6 +2155,7 @@ export async function fulfillOrderReservationsV2(
          AND ret.order_id = r.order_id
          AND COALESCE(ret.status, 'completed') <> 'cancelled'
        WHERE r.order_id = ? AND r.status = 'active'${scopeSql}
+         AND ${pendingExchangeReplacementExclusionSql('r.order_item_id')}
          AND COALESCE(oi.is_workshop, 0) = 0
          AND oi.quantity > 0
          AND NOT EXISTS (
