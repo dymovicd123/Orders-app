@@ -1,0 +1,79 @@
+name: Main KPI exact-product UI fix (no DB writes)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/features/sections/ProductKpiSection.tsx'
+      - 'src/features/sections/productKpiProductMatch.ts'
+      - 'scripts/test-main-product-kpi-selection-20261028.mjs'
+      - '.github/workflows/main-kpi-product-selection-20261028.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/features/sections/ProductKpiSection.tsx'
+      - 'src/features/sections/productKpiProductMatch.ts'
+      - 'scripts/test-main-product-kpi-selection-20261028.mjs'
+      - '.github/workflows/main-kpi-product-selection-20261028.yml'
+permissions:
+  contents: read
+concurrency:
+  group: main-kpi-selection-ui-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - name: Verify exact/ambiguous model selection and save wiring
+        run: node --experimental-strip-types scripts/test-main-product-kpi-selection-20261028.mjs
+      - name: Existing product KPI, manager privacy, and quota tests
+        run: node scripts/test-main-product-kpi-20261027.mjs
+      - name: Typecheck and build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Guard production target and strictly UI-only change
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = main
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_branch2|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          git diff --name-only HEAD^ HEAD | while IFS= read -r file; do
+            case "$file" in
+              src/features/sections/ProductKpiSection.tsx|src/features/sections/productKpiProductMatch.ts|scripts/test-main-product-kpi-selection-20261028.mjs|.github/workflows/main-kpi-product-selection-20261028.yml) ;;
+              *) echo "Unexpected file in KPI-only production deploy: $file"; exit 1 ;;
+            esac
+          done
+      - run: npm ci
+      - run: node --experimental-strip-types scripts/test-main-product-kpi-selection-20261028.mjs
+      - run: npm run build
+      - name: Deploy frontend-only KPI fix to production Worker
+        run: npx wrangler deploy
+      - name: Check production origin responds
+        run: |
+          node --input-type=module <<'NODE'
+          const url='https://orders-app.orders-clothes.workers.dev/?kpi_autoselect='+Date.now()
+          const response=await fetch(url,{cache:'no-store'})
+          if(!response.ok||!(await response.text()).includes('/assets/'))throw Error('Production origin does not serve app assets')
+          console.log('MAIN_KPI_EXACT_PRODUCT_DEPLOY_PASS')
+          NODE
