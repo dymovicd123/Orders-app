@@ -4537,7 +4537,7 @@ export async function dispatchPendingExchangeReplacement(
       // shortage evidence is line-scoped and never overwrites an entire SKU count.
       await applyCanonicalInventoryLifecycleEvent(db, eventId, resolved.variantId, now,
         `Отправлена замена по обмену #${toInt(row.operation_id, 0)}`,
-        { outboundPossessionConfirmed: true })
+        { outboundPossessionConfirmed: true, explicitReplacementDispatch: true })
     }
     const completedResponse = { ok: true, eventId, orderId: toInt(row.order_id, 0), alreadySent: cleanText(row.status) === 'applied' }
     await completeCriticalOperation(db, operation, completedResponse)
