@@ -1,0 +1,85 @@
+name: Branch2 explicit exchange shipment and checkpoint acceptance
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/App.tsx'
+      - 'src/app/types.ts'
+      - 'src/features/sections/OrderExchangeSection.tsx'
+      - 'src/features/sections/OrderExchangeSmartSection.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'src/styles/193-exchange-set-v2.css'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/exchange-batch.ts'
+      - 'worker/domains/orders-relations.ts'
+      - 'worker/domains/orders-read.ts'
+      - 'worker/domains/orders-write.ts'
+      - 'worker/index.ts'
+      - 'scripts/test-branch2-exchange-delayed-dispatch-20261028.mjs'
+      - '.github/workflows/branch2-exchange-delayed-dispatch-20261028.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-branch2-exchange-delayed-dispatch-20261028.mjs'
+      - '.github/workflows/branch2-exchange-delayed-dispatch-20261028.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-exchange-delayed-dispatch-20261028
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - name: Verify explicit exchange dispatch, idempotency, and all physical checkpoint hooks
+        run: node scripts/test-branch2-exchange-delayed-dispatch-20261028.mjs
+      - name: Confirm existing correction, handover and exchange safety
+        run: |
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-old-order-post-stocktake-guard-r1.mjs
+          node scripts/test-w11-manual-correction-runtime.mjs
+          node scripts/test-operational-autonomy-r3-return-exchange-capacity.mjs
+      - name: Typecheck and build
+        run: npm run build
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Verify exact Branch2 database isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = branch2
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
+          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+      - run: npm ci
+      - run: node scripts/test-branch2-exchange-delayed-dispatch-20261028.mjs
+      - run: npm run build
+      - name: Publish Branch2 Worker without schema mutations
+        run: npx wrangler deploy
+      - name: Check staging Worker response
+        run: |
+          node --input-type=module <<'NODE'
+          const r=await fetch('https://orders-app-branch2.orders-clothes.workers.dev/?exchange_dispatch='+Date.now(),{cache:'no-store'})
+          if(!r.ok||!(await r.text()).includes('/assets/')) throw Error('Branch2 origin did not respond')
+          console.log('BRANCH2_EXCHANGE_DELIVERY_DEPLOY_OK')
+          NODE
