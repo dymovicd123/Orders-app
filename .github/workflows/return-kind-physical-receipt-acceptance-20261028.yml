@@ -1,0 +1,62 @@
+name: Branch2 return kind and physical receipt acceptance 20261028
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'src/app/utils.ts'
+      - 'src/app/types.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'worker/domains/orders-relations.ts'
+      - 'worker/domains/orders-read.ts'
+      - 'scripts/test-return-kind-physical-truth-20261028.mjs'
+      - 'scripts/audit-returns-october-readonly-20261028.mjs'
+      - '.github/workflows/return-kind-physical-receipt-acceptance-20261028.yml'
+  push:
+    branches: [branch2]
+    paths:
+      - 'src/app/utils.ts'
+      - 'src/app/types.ts'
+      - 'src/App.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/OrdersTableSection.tsx'
+      - 'worker/domains/orders-relations.ts'
+      - 'worker/domains/orders-read.ts'
+      - 'scripts/test-return-kind-physical-truth-20261028.mjs'
+      - 'scripts/audit-returns-october-readonly-20261028.mjs'
+      - '.github/workflows/return-kind-physical-receipt-acceptance-20261028.yml'
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - run: npm ci
+      - name: Verify return draft, SQL receipt projections and UI confirmation
+        run: node scripts/test-return-kind-physical-truth-20261028.mjs
+      - name: Existing Return/Exchange physical and money-only regressions
+        run: |
+          node scripts/test-return-exchange-physical-receipt-r1.mjs
+          node scripts/test-stage01-money-only-return-shipping-r19b.mjs
+          node scripts/test-return-unissued-physical-safety-r2.mjs
+      - name: Typecheck and bundle
+        run: npm run build
+  october-readonly-audit:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+    needs: acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Aggregate October returns on copied Branch2 D1 via SELECT-only API
+        run: node scripts/audit-returns-october-readonly-20261028.mjs
