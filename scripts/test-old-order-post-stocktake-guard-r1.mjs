@@ -21,7 +21,7 @@ const shortage=shipping.indexOf('let blockers = await getOrderShipmentInventoryB
 assert(proof>=0&&fulfillment>proof&&shortage>proof,'Shipment must stop for review before physical writeoff/shortage resolutions')
 assert(shipping.includes("code: 'stock_handover_review_required'"))
 assert(app.includes("result.code === 'stock_handover_review_required'"))
-assert(table.includes('Проверить выдачу после ревизии'))
+assert(table.includes('Уточнить выдачу после проверки склада'))
 assert(app.includes('Да, выдали до проверки')&&app.includes('Нет, во время проверки был на месте'))
 assert(app.includes("action: 'issued_before_checkpoint'")===false,'Client must preserve the existing bounded action API, not add uncontrolled writes')
 assert(reserve.includes("status = 'fulfilled', fulfilled_at = ?, released_at = NULL"),'Prior-issue reconciliation must close reserve')

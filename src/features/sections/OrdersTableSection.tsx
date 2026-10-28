@@ -441,7 +441,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   void openOrderStockHandover(order)
                                 }}
                               >
-                                {order.stock_handover_review_needed ? 'Проверить выдачу после ревизии' : 'Выдать готовые товары'}
+                                {order.stock_handover_review_needed ? 'Уточнить выдачу после проверки склада' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
                             {projection.canShip && !order.stock_handover_review_needed ? (
@@ -458,7 +458,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               </button>
                             ) : null}
                             {projection.canShip && order.stock_handover_review_needed ? (
-                              <span className="order-stock-handover-wait-note">Сначала проверьте выдачу после ревизии. После подтверждения появится «Отправить клиенту».</span>
+                              <span className="order-stock-handover-wait-note">Сначала уточните выдачу после проверки склада. После подтверждения появится «Отправить клиенту».</span>
                             ) : null}
                             {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
                               <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
