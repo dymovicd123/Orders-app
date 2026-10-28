@@ -122,6 +122,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
       ? 'Добавьте товар, который клиент получает.'
       : !newPricesReady
         ? 'Укажите цену продажи для каждого нового товара.'
+        : filledNewItems.some((entry: any) => entry.item?.sourceType !== 'workshop' && !['sent','pending'].includes(entry.item?.shipmentState))
+          ? 'Укажите, отправлены ли новые товары клиенту.'
         : refundAmount > 0 && draftPaymentAmount > 0
           ? 'После пересчёта доплата больше не нужна. Сумма оплаты будет очищена.'
           : refundAmount <= 0 && draftPaymentAmount > dueBeforeSettlement
@@ -389,7 +391,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 const groupConfirmed = matchingIndexes.every((candidateIndex: number) =>
                   exchangeDraft.newItems[candidateIndex]?.item?.stockObservationEnabled === true)
                 const availability = item.sourceType === 'workshop' ? null : getOrderSourceAvailability(item, batchRequired)
-                const physicalShortage = Boolean(availability?.canObservePhysical && Number(availability.currentPhysical || 0) < batchRequired)
+                const physicalShortage = Boolean(item.shipmentState === 'sent' && availability?.canObservePhysical && Number(availability.currentPhysical || 0) < batchRequired)
                 const observationOwner = matchingIndexes[0] === index
                 return (
                   <div className="exchange-new-card" key={entry.draftKey}>
@@ -402,6 +404,14 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                       <label><span>Количество</span><FriendlyNumberInput type="number" min="1" step="1" value={required} onChange={(event) => applyExchangeSetNewItemPatch(index, { quantity: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} /></label>
                       <label><span>Откуда выдаём</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
                     </div>
+                    {item.sourceType !== 'workshop' ? <div className="exchange-shipment-choice">
+                      <strong>Новый товар уже отправили клиенту?</strong>
+                      <div className="exchange-choice-row">
+                        <button type="button" className={item.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'sent' })}>Уже отправили</button>
+                        <button type="button" className={item.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
+                      </div>
+                      {item.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, нажмите «Отправить замену» в таблице заказов. Пока он остаётся в резерве.</div> : null}
+                    </div> : null}
                     {String(item.productName || '').trim() ? (
                       <>
                         <div className="exchange-new-details">
