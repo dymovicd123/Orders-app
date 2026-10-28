@@ -120,6 +120,12 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult, returnPhysicalResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
+                (SELECT e.id FROM inventory_lifecycle_events e
+                 JOIN exchanges exchange_row ON exchange_row.id=e.operation_id
+                 WHERE e.order_item_id=oi.id AND e.operation_type='exchange'
+                   AND e.event_type='exchange_new_out' AND e.status='pending'
+                   AND COALESCE(exchange_row.status,'completed')<>'cancelled'
+                 ORDER BY e.id DESC LIMIT 1) AS pending_exchange_dispatch_id,
                 p.name AS canonical_product_name,
                 p.is_active AS canonical_product_active,
                 v.is_active AS canonical_variant_active,
