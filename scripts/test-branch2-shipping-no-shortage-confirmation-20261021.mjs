@@ -114,7 +114,7 @@ assert.equal((stockAttentionUI.match(/className="inventory-attention-guide"/g) |
 assert.equal((stockAttentionUI.match(/className="inventory-attention-guide is-shipped"/g) || []).length, 1, 'Shipped shortage section has one common guide')
 assert(!stockAttentionUI.includes('inventory-attention-task-help'), 'No repeated instruction in each item card')
 assert(!stockAttentionUI.includes('не добавляйте его повторно на склад'), 'Avoid vague historical-shipment instruction')
-assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Проверить количество'), 'Keep existing stock actions')
+assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Корректировать остаток'), 'Keep current stock actions')
 
 assert(readFileSync('src/features/sections/OrdersHeaderSection.tsx','utf8').includes('shippedUntracked'))
 assert(readFileSync('worker/domains/order-reservations.ts','utf8').includes("stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation"))
