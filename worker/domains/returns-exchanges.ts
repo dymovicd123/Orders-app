@@ -1240,6 +1240,7 @@ export async function createExchange(
     throw new Error('Обмен больше не принимает полный остаток товара. Обновите форму и подтвердите только выдаваемые вещи.');
   }
   const physicalIssueConfirmed = (input.newItem as any)?.issuePossessionConfirmed === true;
+  const shipmentState = cleanText((input.newItem as any)?.shipmentState);
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
 
@@ -1383,6 +1384,9 @@ export async function createExchange(
   const effectiveReplacementSource: OrderItemSourceType = input.newSourceWasManuallyChanged
     ? requestedNewItem.sourceType
     : inheritedReplacementSource;
+  if (!requestedNewItem.isWorkshop && shipmentState !== 'sent' && shipmentState !== 'pending') {
+    throw new CriticalOperationConflictError('Укажите, отправлен ли новый товар клиенту.');
+  }
   const newItem = {
     ...requestedNewItem,
     sourceType: effectiveReplacementSource,
@@ -1405,7 +1409,7 @@ export async function createExchange(
         `SELECT quantity FROM inventory_stock WHERE inventory_source = ? AND variant_id = ? ORDER BY id ASC LIMIT 1`
       ).bind(newItem.inventorySource, resolved.variantId).first<{ quantity: number }>();
       const physical = Math.max(0, toInt(stock?.quantity, 0));
-      if (physical < newItem.quantity && !physicalIssueConfirmed) {
+      if (shipmentState === 'sent' && physical < newItem.quantity && !physicalIssueConfirmed) {
         throw new Error(`По учёту новой позиции обмена на месте ${physical} шт., требуется ${newItem.quantity}. Подтвердите, что именно эти вещи физически у вас для выдачи. Общий остаток не будет пересчитан.`);
       }
     }
@@ -1615,7 +1619,7 @@ export async function createExchange(
       pendingReason: inventoryLifecyclePendingReason(resolvedNew, false),
       timestamp,
     });
-    if (resolvedNew.variantId) {
+    if (shipmentState === 'sent' && resolvedNew.variantId) {
       newStockWriteOff = await applyCanonicalInventoryLifecycleEvent(
         db,
         newEvent.id,
@@ -1624,7 +1628,7 @@ export async function createExchange(
         `Физическое списание новой позиции обмена #${exchangeId}`,
         { outboundPossessionConfirmed: physicalIssueConfirmed },
       );
-    } else {
+    } else if (shipmentState === 'sent') {
       pendingInventory.push({ eventId: newEvent.id, eventType: newEvent.event_type, productName: cleanText(insertedNewOrderItem.product_name_snapshot), source: newItem.inventorySource });
     }
   }
@@ -2919,7 +2923,7 @@ export type ExchangeSetOldInput = {
   expectedCatalogPriceSnapshot?: number | null
 }
 
-export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number]
+export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number] & { shipmentState?: 'sent' | 'pending' }
 
 export type ExchangeSetInput = {
   requestId?: string
@@ -2980,6 +2984,7 @@ type ExchangeSetNewPlan = {
   inventorySource: SourceType | null
   stockKey: string | null
   physicalIssueConfirmed: boolean
+  shipmentState: 'sent' | 'pending'
 }
 
 type ExchangeSetExecutionPlan = {
@@ -3518,10 +3523,15 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             inventorySource: null,
             stockKey: null,
             physicalIssueConfirmed: false,
+            shipmentState: 'pending',
           })
           continue
         }
 
+        const shipmentState = cleanText((requested as any).shipmentState)
+        if (shipmentState !== 'sent' && shipmentState !== 'pending') {
+          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: укажите, отправлен ли товар клиенту.`)
+        }
         const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
@@ -3531,7 +3541,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         }
         const physicalIssueConfirmed = (requested as any).issuePossessionConfirmed === true
         let stockKey: string | null = null
-        if (variantId) {
+        if (variantId && shipmentState === 'sent') {
           stockKey = `${inventorySource}:${variantId}`
           const group = stockGroups.get(stockKey) || {
             source: inventorySource,
@@ -3544,7 +3554,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           group.allConfirmed = group.allConfirmed && physicalIssueConfirmed
           stockGroups.set(stockKey, group)
         }
-        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed })
+        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed, shipmentState })
       }
 
       for (const group of stockGroups.values()) {
@@ -3839,7 +3849,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           pendingReason: inventoryLifecyclePendingReason(resolved, false),
           timestamp,
         })
-        if (resolved.variantId) {
+        if (plan.shipmentState === 'sent' && resolved.variantId) {
           await applyCanonicalInventoryLifecycleEvent(
             db,
             event.id,
@@ -3848,9 +3858,11 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             `Физическое списание новой позиции обмена #${exchangeId}`,
             { outboundPossessionConfirmed: plan.physicalIssueConfirmed },
           )
-        } else {
+        } else if (plan.shipmentState === 'sent') {
           pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(inserted.product_name_snapshot), source: plan.inventorySource })
         }
+        // pending: retain the active reservation, do not write off any physical stock.
+        // Dispatch is a separate user action even when the original order was sent.
       }
 
       completedNew = index + 1
