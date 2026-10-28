@@ -14,7 +14,7 @@ q.exec([
 "CREATE TABLE returns(id INTEGER PRIMARY KEY, order_id INTEGER, status TEXT)",
 "CREATE TABLE return_items(id INTEGER PRIMARY KEY, return_id INTEGER, order_item_id INTEGER, quantity INTEGER)",
 "CREATE TABLE exchanges(id INTEGER PRIMARY KEY, refund_return_id INTEGER, status TEXT)",
-"CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_item_id INTEGER,operation_type TEXT,operation_id INTEGER,event_type TEXT,status TEXT,pending_reason TEXT)",
+"CREATE TABLE inventory_lifecycle_events(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,operation_type TEXT,operation_id INTEGER,event_type TEXT,status TEXT,pending_reason TEXT)",
 "CREATE TABLE inventory_model_meta(key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)",
 "CREATE TABLE inventory_movements(id INTEGER PRIMARY KEY AUTOINCREMENT, inventory_source TEXT, movement_type TEXT, product_id INTEGER, variant_id INTEGER, product_name_snapshot TEXT, gender_snapshot TEXT, color_snapshot TEXT, material_snapshot TEXT, length_snapshot TEXT, size_snapshot TEXT, quantity_delta INTEGER, quantity_after INTEGER, reference_type TEXT, reference_id TEXT, comment TEXT, created_at TEXT)",
 "INSERT INTO orders VALUES(201,'ORD-ZERO','2026-10-21','active','','not_sent',NULL,NULL)",
