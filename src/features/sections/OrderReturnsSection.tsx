@@ -288,6 +288,12 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                         <div>
                           <strong>{returnSelectedOrder.external_id}</strong>
                           <span>{returnSelectedOrder.order_date} · {returnSelectedOrder.manager_name || '—'} · {returnSelectedOrder.customer_name || returnSelectedOrder.customer_phone || '—'}</span>
+                          <span className={`status-pill ${returnSelectedOrder.shipping_status === 'sent' ? 'status-online' : 'status-warning'}`}>
+                            По системе: {returnSelectedOrder.shipping_status === 'sent'
+                              ? `Отправлен${returnSelectedOrder.shipping_date ? ` · ${returnSelectedOrder.shipping_date}` : ''}`
+                              : 'Не отправлен'}
+                          </span>
+                          <small className="field-hint">Это учётная отметка отправки, а не подтверждение того, что товары уже вернулись обратно.</small>
                         </div>
                         <span className="status-pill status-warning">
                           Доступно {formatMoney(Math.max(0, Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0)))}
