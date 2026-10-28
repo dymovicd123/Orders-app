@@ -4485,6 +4485,21 @@ export async function dispatchPendingExchangeReplacement(
     }
     const completedResponse = { ok: true, eventId, orderId: toInt(row.order_id, 0), alreadySent: cleanText(row.status) === 'applied' }
     await completeCriticalOperation(db, operation, completedResponse)
+    if (!completedResponse.alreadySent) {
+      try {
+        await writeActivityLog(db, {
+          eventType: 'exchange_replacement_shipped',
+          entityType: 'exchange',
+          entityId: toInt(row.operation_id, 0),
+          orderId: completedResponse.orderId,
+          externalOrderId: cleanText(row.external_id),
+          title: 'Отправлена новая вещь по обмену',
+          details: `Позиция #${toInt(row.order_item_id, 0)}; количество ${toInt(row.quantity, 0)} шт.`,
+        })
+      } catch (error) {
+        console.warn('Exchange replacement dispatch activity log failed', error)
+      }
+    }
     let order = null
     try { order = await getOrder(db, completedResponse.orderId) }
     catch (error) { console.warn('Exchange dispatch readback failed', error) }
