@@ -6,6 +6,7 @@ type RoutineCycleCountArgs = {
   quickInventoryStocktake: (input: { source: 'warehouse' | 'boutique'; variantId: number; expectedQuantity: number; countedQuantity: number }) => Promise<any>
   refreshInventoryModule: (force?: boolean) => Promise<any>
   refreshSuggestions: (source: 'warehouse' | 'boutique', keepNotice?: boolean, limit?: number) => Promise<any>
+  onSuccess?: () => void | Promise<void>
   setBusy: (value: boolean) => void
   setNotice: (value: string) => void
   setData: (update: any) => void
@@ -13,7 +14,7 @@ type RoutineCycleCountArgs = {
 }
 
 export async function runRoutineCycleCount(args: RoutineCycleCountArgs) {
-  const { row, countedQuantity, source, busy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions, setBusy, setNotice, setData, setValues } = args
+  const { row, countedQuantity, source, busy, quickInventoryStocktake, refreshInventoryModule, refreshSuggestions, onSuccess, setBusy, setNotice, setData, setValues } = args
   if (busy) return
   const numeric = Number(countedQuantity)
   if (!Number.isFinite(numeric) || numeric < 0 || !Number.isInteger(numeric)) {
@@ -43,6 +44,9 @@ export async function runRoutineCycleCount(args: RoutineCycleCountArgs) {
     setValues((current: any) => ({ ...current, [String(row.variantId)]: '' }))
     const successNotice = Boolean(result.changed) ? `Фактическое количество «${row.productName}» сохранено.` : `Совпадение «${row.productName}» подтверждено.`
     setNotice(successNotice)
+    // A successful physical check can invalidate the order handover decision.
+    // Refresh orders independently; a failed read must not imply save failure.
+    if (onSuccess) void Promise.resolve(onSuccess()).catch(() => {})
     try {
       await refreshInventoryModule(true)
     } catch {
