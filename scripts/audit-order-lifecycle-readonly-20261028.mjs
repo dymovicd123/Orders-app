@@ -79,6 +79,36 @@ const queries=[
   WHERE COALESCE(e.status,'completed')<>'cancelled'
     AND oi.is_workshop=0 AND ir.status IN ('active','unresolved')
 `],
+['returned_reserved_order_ids',`
+  SELECT r.order_id, ri.order_item_id, ri.quantity AS return_qty,
+    ir.quantity AS reservation_qty, ir.status AS reservation_status,
+    oi.stock_writeoff_status AS item_stock_status
+  FROM return_items ri JOIN returns r ON r.id=ri.return_id
+  JOIN inventory_reservations ir ON ir.order_item_id=ri.order_item_id AND ir.status IN ('active','unresolved')
+  JOIN order_items oi ON oi.id=ri.order_item_id
+  WHERE COALESCE(r.status,'completed')<>'cancelled' AND ri.quantity>0
+    AND NOT EXISTS(SELECT 1 FROM exchanges e WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
+  ORDER BY r.order_id, ri.order_item_id LIMIT 20
+`],
+['old_pending_while_replacement_written_off',`
+  SELECT COUNT(DISTINCT e.id) AS exchanges, COUNT(DISTINCT e.order_id) AS orders
+  FROM exchanges e
+  JOIN exchange_items old ON old.exchange_id=e.id AND old.role='old'
+  JOIN inventory_lifecycle_events outbound ON outbound.operation_type='exchange' AND outbound.operation_id=e.id
+    AND outbound.event_type='exchange_new_out' AND outbound.status='applied'
+  WHERE COALESCE(e.status,'completed')<>'cancelled'
+    AND old.physical_tracking=1 AND old.physical_received_at IS NULL
+`],
+['pending_old_and_new_outbound_order_ids',`
+  SELECT DISTINCT e.id AS exchange_id, e.order_id
+  FROM exchanges e
+  JOIN exchange_items old ON old.exchange_id=e.id AND old.role='old'
+  JOIN inventory_lifecycle_events outbound ON outbound.operation_type='exchange' AND outbound.operation_id=e.id
+    AND outbound.event_type='exchange_new_out' AND outbound.status='applied'
+  WHERE COALESCE(e.status,'completed')<>'cancelled'
+    AND old.physical_tracking=1 AND old.physical_received_at IS NULL
+  ORDER BY e.id DESC LIMIT 15
+`],
 ['example_exchange_order_ids',`
   SELECT e.id AS exchange_id, e.order_id AS order_id, o.shipping_status,
     date(o.shipping_date) AS original_ship_date, date(e.created_at) AS exchange_created_date,
