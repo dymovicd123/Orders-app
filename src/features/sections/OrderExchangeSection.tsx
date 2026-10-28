@@ -195,10 +195,10 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     && itemizedSoldPrice >= 0
     && (itemizedCatalogSnapshot === null || (Number.isSafeInteger(itemizedCatalogSnapshot) && itemizedCatalogSnapshot >= 0))
   )
-  const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim() && itemizedPriceReady)
+  const currentPairReady = Boolean(effectiveOldItem && effectiveOldAvailableQuantity > 0 && String(exchangeDraft.newItem.productName || '').trim() && itemizedPriceReady && (exchangeDraft.newItem.sourceType === 'workshop' || exchangeDraft.newItem.shipmentState === 'sent' || exchangeDraft.newItem.shipmentState === 'pending'))
   const queueCurrentExchangePair = () => {
     if (!currentPairReady) return
-    if (exchangePhysicalShortage && !exchangeIssueConfirmed) return
+    if (exchangeDraft.newItem.shipmentState === 'sent' && exchangePhysicalShortage && !exchangeIssueConfirmed) return
     const fresh = createExchangeDraft(exchangeSelectedOrder)
     const pair = {
       draftKey: exchangeDraft.currentPairKey || fresh.currentPairKey,
@@ -586,7 +586,15 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               </div>
                             </div>
                           ) : null}
-                          {exchangeDraft.newItem.sourceType === 'workshop' ? (
+                          {exchangeDraft.newItem.sourceType !== 'workshop' ? <div className="wide-field exchange-shipment-choice">
+                             <strong>Новый товар уже отправили клиенту?</strong>
+                             <div className="exchange-choice-row">
+                               <button type="button" className={exchangeDraft.newItem.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeItemPatch({ shipmentState: 'sent' })}>Уже отправили</button>
+                               <button type="button" className={exchangeDraft.newItem.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeItemPatch({ shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
+                             </div>
+                             {exchangeDraft.newItem.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, нажмите «Отправить замену» в таблице заказов. До этого товар остаётся в резерве.</div> : null}
+                           </div> : null}
+                           {exchangeDraft.newItem.sourceType === 'workshop' ? (
                             <>
                               <label className="wide-field"><span>Комментарий цеху</span><input value={exchangeDraft.newItem.workshopComment || ''} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, workshopComment: event.target.value } }))} /></label>
                               <label className="workshop-urgent-editor"><input type="checkbox" checked={Boolean(exchangeDraft.newItem.workshopUrgent)} onChange={(event) => setExchangeDraft((current) => ({ ...current, newItem: { ...current.newItem, workshopUrgent: event.target.checked } }))} /> Срочно для цеха</label>
