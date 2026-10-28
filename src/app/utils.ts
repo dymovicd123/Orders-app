@@ -748,9 +748,13 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       return {
         orderItemId: Number(item.id || 0),
         productName: item.productName || 'Позиция',
-        // Explicitly preselect every still-returnable issued unit. Nothing is
-        // marked physically received or restocked until the operator says so.
-        quantity: issuedToClient ? Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)) : 0,
+        // Preselect still-returnable issued units only if the WHOLE order was
+        // sent. An unshipped order requires explicit item selection even if
+        // an individual stock line has been fulfilled.
+        // Selection never confirms physical receipt or restocks inventory.
+        quantity: order?.shipping_status === 'sent' && issuedToClient
+          ? Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0))
+          : 0,
         maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
         sourceType,
         issuedToClient,
