@@ -51,5 +51,24 @@ assert.equal(utils.createReturnDraft({shipping_status:'sent',items:[
  {id:1,productName:'ШАРФ',quantity:3,availableOperationQuantity:available(),stockWriteoffStatus:'fulfilled',sourceType:'warehouse'}
 ]}).items.length,0,'Fully returned line must disappear from selection')
 assert.equal(db.prepare('SELECT SUM(quantity) AS qty FROM return_items WHERE physical_received_at IS NULL').get().qty,3,'Unreceived includes cancelled and exchange-related historical data but never proves stock')
+// A separate preflight SELECT and INSERT are not an atomic quantity claim.
+// Record the risk without executing writes on the real branch mirror.
+const race=new DatabaseSync(':memory:')
+race.exec(`CREATE TABLE order_items(id INTEGER PRIMARY KEY,quantity INTEGER);
+CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);
+CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
+INSERT INTO order_items VALUES(1,1); INSERT INTO returns VALUES(1,10,'completed'),(2,10,'completed');`)
+const availableForTwoWorkers=()=>race.prepare(`SELECT oi.quantity-COALESCE((
+SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id=ri.return_id
+WHERE ri.order_item_id=oi.id AND r.status='completed'),0) AS available FROM order_items oi WHERE id=1`).get().available
+const workerARead=availableForTwoWorkers(),workerBRead=availableForTwoWorkers()
+assert.equal(workerARead,1)
+assert.equal(workerBRead,1)
+race.exec(`INSERT INTO return_items VALUES(1,1,1,1); INSERT INTO return_items VALUES(2,2,1,1)`)
+assert.equal(availableForTwoWorkers(),-1,'Two independent preflights can both approve the last unit')
+assert.match(source,/const alreadyReturnedRow = await db\.prepare\(/)
+assert.match(source,/await insertCriticalMappedEntity\(/)
+console.log('PARTIAL_RETURN_CONCURRENT_PREFLIGHT_RISK_IDENTIFIED')
+race.close()
 db.close()
 console.log('PARTIAL_RETURN_SEQUENTIAL_LEDGER_UI_AND_PHYSICAL_TEST_PASS')
