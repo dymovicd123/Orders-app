@@ -19,6 +19,7 @@ export type OrderItem = {
   workshopDueDate?: string
   workshopDueTime?: string
   stockObservationEnabled?: boolean
+  shipmentState?: '' | 'sent' | 'pending'
   observedPhysicalQuantity?: number | null
   shortageAcknowledged?: boolean
   serverShortage?: {
