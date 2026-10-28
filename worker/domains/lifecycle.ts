@@ -394,7 +394,7 @@ export async function applyCanonicalInventoryLifecycleEvent(
   variantId: number,
   timestamp: string,
   resolutionComment = '',
-  options: { outboundPossessionConfirmed?: boolean } = {},
+  options: { outboundPossessionConfirmed?: boolean; explicitReplacementDispatch?: boolean } = {},
 ) {
   let event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складское событие не найдено.');
@@ -408,6 +408,13 @@ export async function applyCanonicalInventoryLifecycleEvent(
   const reference = inventoryLifecycleMovementReference(event);
   const action = inventoryLifecycleActionText(event);
   const isOutgoingExchange = cleanText(event.event_type) === 'exchange_new_out';
+  // An unshipped replacement is not a resolver problem and cannot be issued by
+  // resolving catalog fields. Only the explicit "Отправить замену" action may
+  // consume its reservation and deduct physical stock.
+  if (isOutgoingExchange && cleanText(event.pending_reason) === 'awaiting_dispatch'
+    && options.explicitReplacementDispatch !== true) {
+    throw new Error('Эта замена ещё не отправлена. Подтвердите отправку в таблице заказов.');
+  }
   const trackedPhysical = Math.max(0, toInt(stock.quantity, 0));
   const missingPhysical = isOutgoingExchange && trackedPhysical < qty;
   if (missingPhysical && options.outboundPossessionConfirmed !== true) {
@@ -981,6 +988,7 @@ export async function listInventoryLifecyclePending(db: D1Database, url: URL) {
        JOIN orders o ON o.id = e.order_id
        LEFT JOIN order_items oi ON oi.id = e.order_item_id AND oi.order_id = e.order_id
        WHERE e.status = 'pending'
+         AND COALESCE(e.pending_reason,'') <> 'awaiting_dispatch'
      ),
      manual_queue AS (
        SELECT pending_lifecycle.*, COUNT(*) OVER() AS manual_queue_count
@@ -1066,6 +1074,9 @@ export async function getInventoryLifecycleContext(db: D1Database, eventId: numb
   ).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   if (cleanText(event.status) !== 'pending') return { ok: true, eventId, status: cleanText(event.status), completed: true };
+  if (cleanText(event.pending_reason) === 'awaiting_dispatch') {
+    throw new Error('Замена ожидает отправки. Отметьте её в таблице заказов.');
+  }
   const retiredLink = await loadLifecycleRetiredCatalogLink(db, eventId);
   const retiredHistoricalSku = Boolean(
     toInt(retiredLink?.historical_variant_id, 0)
@@ -1173,6 +1184,9 @@ export async function resolveInventoryLifecycleFacts(db: D1Database, eventId: nu
   const event = await db.prepare(`SELECT * FROM inventory_lifecycle_events WHERE id = ? LIMIT 1`).bind(eventId).first<InventoryLifecycleEventRow>();
   if (!event?.id) throw new Error('Складская задача не найдена.');
   if (cleanText(event.status) === 'applied') return { ok: true, already: true, message: 'Эта складская задача уже выполнена.' };
+  if (cleanText(event.pending_reason) === 'awaiting_dispatch') {
+    throw new Error('Замена ещё не отправлена клиенту. Отметьте отправку в таблице заказов.');
+  }
   if (cleanText(event.pending_reason) === 'retired_historical') {
     throw new Error('Возвращается историческая удалённая SKU. Сначала восстановите свежую рабочую версию, затем подтвердите приёмку в неё; старая SKU не будет оживлена.');
   }
