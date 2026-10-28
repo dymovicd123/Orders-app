@@ -24,6 +24,17 @@ const noIssued=utils.createReturnDraft({shipping_status:'not_sent',items:[
   {id:20,productName:'Reserved',quantity:1,stockWriteoffStatus:'reserved',sourceType:'warehouse'}
 ]})
 assert.equal(noIssued.items[0].quantity,0,'Never imply a physical return for an unissued item')
+const notShippedButIssued=utils.createReturnDraft({shipping_status:'not_sent',items:[
+  {id:21,productName:'Выданное отдельной позицией',quantity:2,availableOperationQuantity:2,stockWriteoffStatus:'fulfilled',sourceType:'warehouse'},
+  {id:22,productName:'Цех без отправки',quantity:1,availableOperationQuantity:1,stockWriteoffStatus:'fulfilled',sourceType:'workshop'}
+]})
+assert(notShippedButIssued.items.every(i=>i.quantity===0),'No automatic item selection on an unshipped order')
+assert(notShippedButIssued.items.every(i=>i.physicalState==='pending'&&i.restock===false))
+const sentAndExhausted=utils.createReturnDraft({shipping_status:'sent',items:[
+  {id:23,productName:'Уже вернули всё',quantity:2,availableOperationQuantity:0,stockWriteoffStatus:'fulfilled',sourceType:'warehouse'}
+]})
+assert.equal(sentAndExhausted.items.length,0,'Never preselect an already returned sold quantity')
+assert(draft.items.every(i=>i.quantity===0||i.issuedToClient),'Only issued lines can be preselected')
 const db=new DatabaseSync(':memory:')
 db.exec([
  'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER, amount INTEGER, status TEXT);',
@@ -58,4 +69,4 @@ assert(/Возврат только денег/.test(readFileSync('src/features/
 assert(/window\.confirm\(/.test(readFileSync('src/App.tsx','utf8')))
 assert(/Физический возврат вещей не зафиксирован/.test(readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')))
 db.close()
-console.log('PASS return truth: default all issued only, no auto receipt, 3 kinds, physical groups, excluded cancelled/exchange, confirmation')
+console.log('PASS return truth: preselect issued on sent orders only, no auto receipt, 3 kinds, physical groups, excluded cancelled/exchange, confirmation')
