@@ -9,6 +9,7 @@
 .return-smart-card.is-selected .return-smart-check{border-color:#2563eb;background:#2563eb}
 .return-smart-card.is-unissued .return-smart-check{border-color:#cbd5e1;background:#e2e8f0}
 .return-smart-main{display:grid;gap:3px;min-width:0}.return-smart-main strong{overflow-wrap:anywhere}.return-smart-main small{color:#64748b}
+.return-smart-main .return-smart-characteristics{color:#334155;font-size:.83rem;line-height:1.4;overflow-wrap:anywhere}
 .return-smart-pick>b{font-size:.76rem;color:#475569;padding:5px 8px;border-radius:999px;background:#f1f5f9;white-space:nowrap}
 .return-smart-card.is-selected .return-smart-pick>b{background:#dbeafe;color:#1d4ed8}
 .return-smart-card.is-unissued .return-smart-pick>b{background:#e2e8f0;color:#64748b}
