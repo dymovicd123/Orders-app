@@ -748,6 +748,11 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       return {
         orderItemId: Number(item.id || 0),
         productName: item.productName || 'Позиция',
+        gender: item.gender,
+        color: item.color,
+        material: item.material,
+        length: item.length,
+        size: item.size,
         // Preselect still-returnable issued units only if the WHOLE order was
         // sent. An unshipped order requires explicit item selection even if
         // an individual stock line has been fulfilled.
