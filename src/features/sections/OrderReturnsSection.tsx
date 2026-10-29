@@ -378,6 +378,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                   <span className="return-smart-check">{selected ? '✓' : ''}</span>
                                   <span className="return-smart-main">
                                     <strong>{item.productName}</strong>
+                                    <small className="return-smart-characteristics">{formatReturnItemCharacteristics(item)}</small>
                                     <small>{returnSourceLabel(item)} · доступно {maxQuantity} шт.</small>
                                   </span>
                                   <b>{item.issuedToClient === false ? 'Не выдавали' : selected ? 'Возвращаем' : 'Выбрать'}</b>
