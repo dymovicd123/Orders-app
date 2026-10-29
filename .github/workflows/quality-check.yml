@@ -75,5 +75,11 @@ jobs:
       - name: Verify warehouse stock shows reserved and short sizes without misleading totals
         run: node scripts/test-inventory-stock-visible-reservations.mjs
 
+      - name: Verify original return-item characteristics and distinguish duplicate model names
+        run: node scripts/test-return-attributes-20261029.mjs
+
+      - name: Verify exact KPI model selection without Enter
+        run: node --experimental-strip-types scripts/test-branch2-kpi-exact-selection-20261029.mjs
+
       - name: Build application
         run: npm run build

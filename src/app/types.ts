@@ -117,6 +117,11 @@ export type ReturnHistoryResponse = {
 export type ReturnItemDraft = {
   orderItemId: number
   productName: string
+  gender?: string | null
+  color?: string | null
+  material?: string | null
+  length?: string | null
+  size?: string | null
   quantity: number
   maxQuantity: number
   sourceType: 'warehouse' | 'boutique' | 'workshop'

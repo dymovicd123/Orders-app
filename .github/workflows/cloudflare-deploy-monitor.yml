@@ -41,8 +41,8 @@ jobs:
               ;;
             branch2)
               grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-              grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-              grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+              grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+              grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
               if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
                 echo "Production D1 binding leaked into branch2. Refusing deploy." >&2
                 exit 11

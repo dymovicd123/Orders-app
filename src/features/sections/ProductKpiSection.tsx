@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogVariantRecord } from '../../app/types'
 import { KpiCharacteristicPicker } from './KpiCharacteristicPicker'
+import { findUniqueExactKpiProduct } from './productKpiProductMatch'
 import '../../styles/product-kpi.css'
 
 type FilterKey = 'category' | 'gender' | 'color' | 'material' | 'length' | 'size'
@@ -144,6 +145,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
       .sort((a,b)=>Number(normalize(b.name).startsWith(query))-Number(normalize(a.name).startsWith(query)) || a.name.localeCompare(b.name,'ru'))
       .slice(0,8)
   },[activeProducts,productQuery])
+  const exactProduct=useMemo(()=>findUniqueExactKpiProduct(activeProducts,productQuery),[activeProducts,productQuery])
   const variants=useMemo(()=>(catalog?.variants||[]).filter(v=>v.isActive&&v.productId===draft.productId),[catalog,draft.productId])
   const matches=useMemo(()=>variants.filter(v=>filterKeys.every(k=>!draft.filters[k]||variantValue(v,k)===draft.filters[k])),[variants,draft.filters])
   const values=useMemo(()=>{
@@ -265,14 +267,15 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   }
   async function save(){
     setError('');setMessage('')
-    if(!draft.productId){setError('Выберите товар из каталога.');return}
+    const resolvedProductId=draft.productId||exactProduct?.id||0
+    if(!resolvedProductId){setError('Выберите товар из каталога.');return}
     if(!draft.participants.length){setError('Добавьте менеджеров.');return}
     if(draft.participants.some(p=>p.quota<=0)){setError('У каждого менеджера должна быть положительная квота.');return}
     if(draft.participants.some(p=>p.bonusAmount<=0)){setError('Укажите бонус каждому менеджеру.');return}
     if(quotaSum!==draft.targetQuantity){setError('Распределите всю общую цель между менеджерами.');return}
     setSaving(true)
     try{
-      const response=await apiFetch('/api/product-kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)})
+      const response=await apiFetch('/api/product-kpis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...draft,productId:resolvedProductId})})
       const json=await response.json()
       if(!response.ok||!json.ok)throw new Error(json.message||'Не удалось сохранить KPI.')
       setEditing(false);setMessage(draft.id?'KPI обновлён.':'KPI создан.')
@@ -294,7 +297,7 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
   }
   const selectedProduct=activeProducts.find(p=>p.id===draft.productId)
   const activeDetails=filterKeys.filter(k=>Boolean(draft.filters[k])).length
-  const canSave=!saving&&Boolean(draft.productId)&&draft.targetQuantity>0&&Boolean(draft.participants.length)
+  const canSave=!saving&&Boolean(draft.productId||exactProduct?.id)&&draft.targetQuantity>0&&Boolean(draft.participants.length)
     &&quotaSum===draft.targetQuantity&&draft.participants.every(p=>p.quota>0&&p.bonusAmount>0)
 
   return <section className="pkpi">
@@ -326,7 +329,10 @@ export function ProductKpiSection({apiFetch,isAdmin,currentManagerId,formatMoney
             </div>
             :
             <div className="pkpi-product-search" onBlur={e=>{
-              if(!e.currentTarget.contains(e.relatedTarget as Node))setSearchOpen(false)
+              if(!e.currentTarget.contains(e.relatedTarget as Node)){
+                setSearchOpen(false)
+                if(exactProduct)selectProduct(exactProduct.id)
+              }
             }}>
               <input id="pkpi-product-search" ref={productInputRef} type="search" autoComplete="off"
                 role="combobox" aria-autocomplete="list" aria-expanded={searchOpen&&productQuery.trim().length>=2&&candidates.length>0}
