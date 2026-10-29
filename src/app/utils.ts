@@ -748,6 +748,11 @@ export function createReturnDraft(order?: OrderRecord | null): ReturnDraft {
       return {
         orderItemId: Number(item.id || 0),
         productName: item.productName || 'Позиция',
+        gender: item.gender,
+        color: item.color,
+        material: item.material,
+        length: item.length,
+        size: item.size,
         quantity: 0,
         maxQuantity: Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0)),
         sourceType,
