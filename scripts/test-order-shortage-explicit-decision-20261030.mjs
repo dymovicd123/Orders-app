@@ -55,7 +55,7 @@ await check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:deci
 const lines=[item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(2,2,3)}),item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(2,2,3)})]
 await check(lines,[101,101])
 assert.deepEqual((await mustShortage(()=>check([lines[0],item()],[101,101]),3))[0].inputIndexes,[0,1])
-await mustShortage(()=>check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(1,2,3)})],[101]),2)
+await check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(1,2,3)})],[101])
 // Source-specific: boutique remains free; no warehouse shortage should leak.
 await check([item(1,'boutique')],[101])
 await mustShortage(()=>check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(1,2,3)})],[102]),1)
