@@ -852,11 +852,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
         }
         // Ordering is a promise/reservation, not a full physical stock count.
-        // Older clients may still submit observedPhysicalQuantity: ignore it rather than
-        // silently changing the Warehouse/Boutique truth. A shortage is kept as a
-        // negative available balance and surfaced for warehouse attention.
+        // Physical quantities are never set by creating an order. A shortage
+        // requires a deliberate, snapshot-bound decision from the employee;
+        // the server must not manufacture acknowledgement on their behalf.
         let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
-          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
+          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null }
         ));
         let normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
@@ -1870,7 +1870,6 @@ export async function updateOrderCritical(
         for (const item of nextItems) {
           if (!item.isWorkshop) {
             item.observedPhysicalQuantity = null;
-            item.shortageAcknowledged = true;
           }
         }
       }
