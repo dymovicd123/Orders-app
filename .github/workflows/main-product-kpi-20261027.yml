@@ -1,7 +1,7 @@
 name: Main product KPI and managers Leads/Plan selective release
 on:
   push:
-    branches: [release-product-kpi-leads-20261027, main]
+    branches: [release-product-kpi-leads-20261027]
     paths:
       - '.github/workflows/main-product-kpi-20261027.yml'
       - 'src/App.tsx'
@@ -9,6 +9,14 @@ on:
       - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
   pull_request:
     branches: [main]
+    paths:
+      - 'worker/domains/product-kpi.ts'
+      - 'migrations/0116_monthly_product_kpi.sql'
+      - 'src/features/sections/ProductKpiSection.tsx'
+      - 'src/features/sections/KpiCharacteristicPicker.tsx'
+      - 'src/styles/product-kpi.css'
+      - 'scripts/test-main-product-kpi-20261027.mjs'
+      - '.github/workflows/main-product-kpi-20261027.yml'
   workflow_dispatch:
 permissions:
   contents: read

@@ -12,6 +12,7 @@ const groups=[
   ['Main identity and Resolver',[
     'scripts/verify-database-safety.mjs',
     'scripts/test-production-environment.mjs',
+    'scripts/test-deployment-workflow-safety-20261030.mjs',
     'scripts/test-main-resolver-opposite-gender-20261022.mjs',
     'scripts/test-main-resolver-active-reserve-20261022.mjs',
     'scripts/test-main-resolver-actionable-20261022.mjs',
