@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import worker from '../worker/index.ts'
+import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const sql=new DatabaseSync(':memory:')
 const migrations=fs.readdirSync('migrations').filter(name=>/^\d{4}.*\.sql$/.test(name)).sort()
@@ -14,23 +15,22 @@ for(const name of migrations){
  try {sql.exec(fs.readFileSync('migrations/'+name,'utf8'));last=name}
  catch(error){throw new Error('Fresh SQLite migration '+name+' failed after '+last+': '+(error?.message||error))}
 }
-// Test-only compatibility shim for confirmed migration debt #648.
-// Never execute this against production or a connected D1 binding.
-const orderColumns=new Set(sql.prepare("PRAGMA table_info(orders)").all().map(x=>x.name))
-const localSchemaGaps=[]
-if(!orderColumns.has('manager_snapshot_name')){
-  localSchemaGaps.push('orders.manager_snapshot_name')
-  sql.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
+// The migration gap #648 is handled by the pure, fail-closed planner. This
+// test explicitly applies the result to DISPOSABLE LOCAL SQLite only.
+// No remote DB, network, or migration executor is available in this script.
+const auditTableExists = Boolean(sql.prepare(
+  "SELECT name FROM sqlite_schema WHERE type='table' AND name='order_manager_audit'"
+).get())
+const localObservation = {
+  ordersColumns:sql.prepare('PRAGMA table_info(orders)').all(),
+  auditTableExists,
+  auditColumns:auditTableExists ? sql.prepare('PRAGMA table_info(order_manager_audit)').all() : [],
 }
-const existingTables=new Set(sql.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
-if(!existingTables.has('order_manager_audit')){
-  localSchemaGaps.push('order_manager_audit')
-  sql.exec(`CREATE TABLE order_manager_audit(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,order_id INTEGER,external_id TEXT,
-    previous_manager_id INTEGER,previous_manager_name TEXT,new_manager_id INTEGER,new_manager_name TEXT,
-    action TEXT,source TEXT,actor_role TEXT,actor_label TEXT,details TEXT,created_at TEXT)`)
-}
-console.log('P0_HTTP_LOCAL_SCHEMA_GAPS: '+JSON.stringify(localSchemaGaps)+' (tracked in #648)')
+const schemaPlan=planOrderManagerSchemaReconciliation(localObservation)
+const localSchemaGaps=schemaPlan.steps.map(step=>step.object)
+assert.deepEqual(localSchemaGaps,['orders.manager_snapshot_name','order_manager_audit'])
+for(const step of schemaPlan.steps)sql.exec(step.sql)
+console.log('P0_HTTP_LOCAL_SCHEMA_GAPS: '+JSON.stringify(localSchemaGaps)+' (explicit test-only repair; #648)')
 const tables=()=>new Set(sql.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
 for(const n of ['app_users','app_sessions','inventory_stock','inventory_reservations','critical_operations','orders','order_items','catalog_products','catalog_variants']){
  assert(tables().has(n),'Fresh complete schema must have '+n)
