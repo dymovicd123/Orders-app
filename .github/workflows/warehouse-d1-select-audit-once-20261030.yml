@@ -1,4 +1,4 @@
-name: Branch2-only pre-barcode warehouse data integrity read-only audit
+name: Branch2 pre-barcode stock deficit details and pending identity read-only
 on:
   push:
     branches: [audit/branch2-warehouse-barcode-readiness-20261030]
