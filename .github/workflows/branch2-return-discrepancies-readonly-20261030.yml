@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/audit-return-discrepancies-20261030.mjs'
       - '.github/workflows/branch2-return-discrepancies-readonly-20261030.yml'
+      - 'scripts/audit-return-discrepancies-production-readonly-20261030.mjs'
 permissions:
   contents: read
 jobs:
@@ -20,3 +21,5 @@ jobs:
         with: {node-version: '24'}
       - name: Forensic SELECT-only audit on frozen Branch2 mirror
         run: node scripts/audit-return-discrepancies-20261030.mjs
+      - name: Compare live production using strictly SELECT-only queries
+        run: node scripts/audit-return-discrepancies-production-readonly-20261030.mjs
