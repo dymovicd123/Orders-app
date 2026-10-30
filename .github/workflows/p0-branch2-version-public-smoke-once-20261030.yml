@@ -1,0 +1,21 @@
+name: P0 uploaded Branch2 version read-only smoke
+on:
+  push:
+    branches: [safe/p0-d1-readonly-inspection-20261030]
+    paths:
+      - '.github/workflows/p0-branch2-version-public-smoke-once-20261030.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: GET-only Worker version assets and denied anonymous orders
+        run: |
+          node --check scripts/p0-branch2-version-public-smoke-20261030.mjs
+          node scripts/p0-branch2-version-public-smoke-20261030.mjs
