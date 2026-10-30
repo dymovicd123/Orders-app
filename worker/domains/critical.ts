@@ -257,6 +257,38 @@ export async function criticalOperationEntityId(db: D1Database, requestId: strin
 }
 
 
+// D1 batch is atomic, but an INSERT that changes zero rows does not fail.
+// Gate the *business row itself* on the current lease AND missing entity key,
+// so a late owner or a concurrent duplicate cannot commit an unmapped row.
+export function prepareCriticalMappedInsert(
+  db: D1Database,
+  sql: string,
+  values: unknown[],
+  handle: CriticalOperationHandle | null | undefined,
+  entityType: string,
+  entityKey: string,
+): D1PreparedStatement {
+  if (!handle) return db.prepare(sql).bind(...values);
+  if (!handle.leaseToken) throw new CriticalOperationBusyError('Операция уже завершена.');
+  const match = /\bVALUES\s*\(([\s?,]+)\)\s*$/i.exec(sql);
+  if (!match || (match[1].match(/\?/g) || []).length !== values.length) {
+    throw new Error('Критическая вставка должна иметь точное соответствие параметров.');
+  }
+  const guardedSql = sql.slice(0, match.index) + `SELECT ${match[1]}
+    WHERE EXISTS (
+      SELECT 1 FROM critical_operations
+      WHERE request_id = ? AND status = 'started' AND lease_token = ?
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM critical_operation_entities
+      WHERE request_id = ? AND entity_type = ? AND entity_key = ?
+    )`;
+  return db.prepare(guardedSql).bind(
+    ...values, handle.requestId, handle.leaseToken, handle.requestId, entityType, entityKey,
+  );
+}
+
+
 export async function insertCriticalMappedEntity(
   db: D1Database,
   handle: CriticalOperationHandle,
@@ -267,19 +299,34 @@ export async function insertCriticalMappedEntity(
   const existing = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
   if (existing) return { id: existing, created: false };
   const now = new Date().toISOString();
-  const [insertResult] = await db.batch([
+  const [insertResult, mapResult] = await db.batch([
     insertStatement,
     db.prepare(
       `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
-       VALUES (?, ?, ?, last_insert_rowid(), ?)
-       ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
-    ).bind(handle.requestId, entityType, entityKey, now),
+       SELECT ?, ?, ?, last_insert_rowid(), ?
+       WHERE changes() = 1
+         AND EXISTS (
+           SELECT 1 FROM critical_operations
+           WHERE request_id = ? AND status = 'started' AND lease_token = ?
+         )`
+    ).bind(handle.requestId, entityType, entityKey, now, handle.requestId, handle.leaseToken),
   ]);
-  const insertedId = toInt(insertResult.meta?.last_row_id, 0);
-  const mappedId = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
-  const id = mappedId || insertedId;
-  if (!id) throw new Error(`Не удалось безопасно сохранить ${entityType}.`);
-  return { id, created: Boolean(insertedId && mappedId === insertedId) };
+  const inserted = toInt(insertResult.meta?.changes, 0);
+  const mapped = toInt(mapResult.meta?.changes, 0);
+  if (inserted === 1 && mapped === 1) {
+    const id = toInt(insertResult.meta?.last_row_id, 0);
+    if (!id) throw new Error(`Не удалось безопасно определить ${entityType}.`);
+    return { id, created: true };
+  }
+  // A missing row due to a concurrent duplicate is safe ONLY when there is
+  // an established mapping; never fall back to last_insert_rowid() after
+  // a zero-row insert (it may be from a previous, unrelated statement).
+  if (inserted === 0 && mapped === 0) {
+    const existingId = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
+    if (existingId) return { id: existingId, created: false };
+    throw new CriticalOperationBusyError('Действие было перехвачено другим запросом. Обновите страницу и повторите.');
+  }
+  throw new Error(`Не согласованы запись и привязка ${entityType}; требуется проверка операции.`);
 }
 
 

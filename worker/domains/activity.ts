@@ -3,15 +3,17 @@
 import { mapSqlRows } from '../core/sql.ts'
 import { cleanText, normalizeDate, toInt, upperText } from '../core/text.ts'
 import type { ActivityEventInput } from '../core/types.ts'
+import { prepareCriticalMappedInsert, type CriticalOperationHandle } from './critical.ts'
 
-export function activityLogStatement(db: D1Database, input: ActivityEventInput) {
+export function activityLogStatement(db: D1Database, input: ActivityEventInput,
+  guard?: { handle: CriticalOperationHandle; entityType: string; entityKey: string }) {
   const timestamp = input.createdAt || new Date().toISOString();
-  return db.prepare(
+  return prepareCriticalMappedInsert(db,
       `INSERT INTO activity_log (
         event_type, entity_type, entity_id, order_id, external_order_id,
         title, details, amount, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
+    , [
       cleanText(input.eventType) || 'unknown',
       cleanText(input.entityType) || 'system',
       input.entityId ?? null,
@@ -21,7 +23,7 @@ export function activityLogStatement(db: D1Database, input: ActivityEventInput) 
       input.details ? cleanText(input.details) : null,
       Math.max(0, toInt(input.amount, 0)),
       timestamp,
-    );
+    ], guard?.handle, guard?.entityType || 'activity_log', guard?.entityKey || 'unguarded');
 }
 
 export async function writeActivityLog(db: D1Database, input: ActivityEventInput) {
