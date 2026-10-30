@@ -1,4 +1,4 @@
-name: P0 Branch2 forensic deployment drift and D1 bookmark
+name: P0 Branch2 final live deploy and D1 GET-only attestation
 on:
   push:
     branches: [ops/p0-branch2-controlled-activation-20261030]
@@ -23,6 +23,10 @@ jobs:
         run: |
           node --check scripts/ops/p0-branch2-release-preflight-readonly-20261030.mjs
           node scripts/ops/p0-branch2-release-preflight-readonly-20261030.mjs
+      - name: GET-only public Branch2 UI and anonymous order API guard
+        run: |
+          node --check scripts/ops/p0-branch2-live-readonly-smoke-20261030.mjs
+          node scripts/ops/p0-branch2-live-readonly-smoke-20261030.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: branch2-p0-pre-deploy-d1-bookmark
