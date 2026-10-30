@@ -61,7 +61,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler versions upload --config wrangler.jsonc --message "P0 Branch2 SHA $PINNED_SHA inactive candidate"
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const configPath='dist/orders_app_branch2/wrangler.json'
+          if(!fs.existsSync(configPath)) throw Error('Missing Vite-generated deployment config')
+          const config=JSON.parse(fs.readFileSync(configPath,'utf8'))
+          if(config.name!=='orders-app-branch2') throw Error('Generated Worker must be Branch2')
+          const db=config.d1_databases?.filter(x=>x.binding==='DB')||[]
+          if(db.length!==1 || db[0].database_name!=='orders_db_branch2_mirror_20261027' ||
+             db[0].database_id!=='0904a573-21ff-44d8-93b0-c9200f771702') throw Error('Wrong D1 binding')
+          if(!config.assets?.directory ||
+             !fs.existsSync(path.resolve(path.dirname(configPath),config.assets.directory)))
+            throw Error('Generated assets missing')
+          if(!config.main || !fs.existsSync(path.resolve(path.dirname(configPath),config.main)))
+            throw Error('Generated Worker bundle missing')
+          console.log('BRANCH2_VITE_BUILD_ARTIFACT_VERIFIED')
+          NODE
+          npx wrangler versions upload --config dist/orders_app_branch2/wrangler.json --message "P0 Branch2 SHA $PINNED_SHA inactive candidate"
           echo 'P0_BRANCH2_INACTIVE_VERSION_UPLOADED'
       - name: Prove live Branch2 deployment did NOT change (GET only)
         shell: bash
