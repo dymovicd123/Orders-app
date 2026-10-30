@@ -16,7 +16,7 @@ d.exec(`
 CREATE TABLE orders(id INTEGER PRIMARY KEY,shipping_status TEXT,order_status TEXT,archived_at TEXT);
 CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,is_workshop INTEGER,
   product_id INTEGER,variant_id INTEGER,stock_writeoff_status TEXT);
-CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_item_id INTEGER,status TEXT);
+CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_item_id INTEGER,status TEXT,unresolved_reason TEXT);
 CREATE TABLE returns(id INTEGER PRIMARY KEY,status TEXT);
 CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
 INSERT INTO orders VALUES(1775,'not_sent','active',NULL);
@@ -24,6 +24,13 @@ INSERT INTO order_items VALUES(4348,1775,1,0,75,1498,'pending_reservation');
 `)
 const n=()=>d.prepare(`SELECT COUNT(*) AS n FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.id=4348 AND (${p})`).get().n
 assert.equal(n(),1,'Exact old order pending known SKU #1498 should be recoverable')
+d.exec('SAVEPOINT pending')
+try {
+ d.exec("INSERT INTO inventory_reservations VALUES(2,4348,'unresolved','concurrent_shortage')")
+ assert.equal(n(),1,'Concurrent last-piece pending known SKU must be visible in order Resolver')
+ d.exec("UPDATE inventory_reservations SET unresolved_reason='catalog_variant' WHERE id=2")
+ assert.equal(n(),0,'Only the explicit concurrent-stock reason may reopen a known-SKU pending reservation')
+}finally {d.exec('ROLLBACK TO pending; RELEASE pending')}
 for(const [sql,name] of [
  ["UPDATE order_items SET stock_writeoff_status='fulfilled' WHERE id=4348",'fulfilled was physically issued'],
  ["UPDATE order_items SET variant_id=NULL WHERE id=4348",'no canonical variant'],
@@ -31,9 +38,9 @@ for(const [sql,name] of [
  ["UPDATE order_items SET quantity=0 WHERE id=4348",'zero row'],
  ["UPDATE orders SET shipping_status='sent' WHERE id=1775",'sent is history'],
  ["UPDATE orders SET order_status='archived' WHERE id=1775",'archived is history'],
- ["INSERT INTO inventory_reservations VALUES(1,4348,'fulfilled')",'fulfilled reservation is immutable'],
- ["INSERT INTO inventory_reservations VALUES(1,4348,'released')",'released reservation must not reactivate'],
- ["INSERT INTO inventory_reservations VALUES(1,4348,'active')",'already reserved must not double reserve'],
+ ["INSERT INTO inventory_reservations (id,order_item_id,status) VALUES(1,4348,'fulfilled')",'fulfilled reservation is immutable'],
+ ["INSERT INTO inventory_reservations (id,order_item_id,status) VALUES(1,4348,'released')",'released reservation must not reactivate'],
+ ["INSERT INTO inventory_reservations (id,order_item_id,status) VALUES(1,4348,'active')",'already reserved must not double reserve'],
  ["INSERT INTO returns VALUES(1,'completed'); INSERT INTO return_items VALUES(1,1,4348,1)",'returned item must not re-reserve'],
 ]) {
  const x=new DatabaseSync(':memory:')
@@ -55,4 +62,4 @@ assert(stock.includes('admitOrderReservationAtomically(db, {'),'Known SKU must u
 assert(!admission.includes('SET quantity ='),'Reserving stock must never invent physical stock')
 assert(admission.includes('quantity >= COALESCE(reserved_quantity, 0) + ?'),'Concurrency admission must guard available stock')
 assert(router.includes("await reconcileCatalogReviewOrder(env.DB, id)"),'Shipping does not retry reservation recovery before blocking')
-console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: 10 negative cases, exact SKU, idempotency protections, no stock injection')
+console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: exact SKU, concurrent pending visible, 10 negative cases, idempotency and no physical writes')
