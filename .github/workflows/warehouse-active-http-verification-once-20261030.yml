@@ -1,0 +1,20 @@
+name: Branch2 warehouse live vs pinned UI and API readback
+on:
+  push:
+    branches: [audit/branch2-warehouse-barcode-readiness-20261030]
+    paths:
+      - '.github/workflows/warehouse-active-http-verification-once-20261030.yml'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Public Branch2 HTTP GET only — compare to immutable version and check auth
+        run: |
+          node --check scripts/ops/warehouse-branch2-current-live-http-verify-20261030.mjs
+          node scripts/ops/warehouse-branch2-current-live-http-verify-20261030.mjs
