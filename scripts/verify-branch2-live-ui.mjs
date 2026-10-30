@@ -43,7 +43,8 @@ async function verifyPass(pass) {
   const inventoryChunk=entrySource.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
   if(!inventoryChunk)throw new Error('Public index.js does not link InventorySection')
   const inventory=await get(base+'/assets/'+inventoryChunk[0])
-  for(const marker of ['Фильтр выбирает товары, но внутри каждого товара видны все размеры','Резерв под заказы превышает физический остаток','Все с остатком']){
+  // Current stock overview is model-oriented; do not require retired filter labels.
+  for(const marker of ['Остатки какой точки?','С учтённым наличием или резервом','Активные модели каталога','На месте','В заказах']){
     if(!inventory.includes(marker))throw new Error('PUBLIC BRANCH2 HAS STALE INVENTORY VISIBILITY UI: '+marker)
   }
   const missing=expected.filter(marker=>!references.includes(marker))

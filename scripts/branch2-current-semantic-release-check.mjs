@@ -30,6 +30,7 @@ const groups = [
   ['DB isolation and safety', [
     'scripts/verify-database-safety.mjs',
     'scripts/test-branch2-environment.mjs',
+    'scripts/test-branch2-cd-safety-20261030.mjs',
   ]],
   ['Orders, shipment and reservations', [
     'scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs',
