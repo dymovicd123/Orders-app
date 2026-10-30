@@ -31,3 +31,9 @@ npm run verify:db-safety
 ```
 
 `npm run verify` — единственный основной cumulative release gate. Не возвращать устаревшие verifier'ы с жёстко прошитыми старыми количеством миграций, размером Worker или Step-era hashes.
+
+## Временное правило по историческому CI (30.10.2026)
+
+Исторические source-hash/replay gates, old forensic scripts и one-off production GitHub Actions **не удалять в рамках общей уборки**. Сначала классифицировать в [реестре CI](CI_HOUSEKEEPING_2026-10-30.md), проверить все ссылки на них в workflow/package.json и доказать наличие действующего смыслового теста. Красный чек нельзя превращать в зелёный удалением проверок без замены.
+
+Документационный PR в main/branch2 не обязательно безопасен для деплоя: `.github/workflows/cloudflare-deploy-monitor.yml` реагирует на push целевой ветки, поэтому даже documentation-only merge требует проверки CD-поведения.

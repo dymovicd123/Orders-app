@@ -6,6 +6,13 @@ Updated: 2026-09-26
 
 Старые `CLOUDFLARE_CONTINUATION_CONTEXT_STEP*.md`, старые ZIP/context-файлы и исторические Stage-документы — evidence/history. Они не заменяют актуальный GitHub.
 
+
+## Актуальные решения на 2026-10-30
+
+- [План стабилизации склада до переработки заказов и штрихкодов](WAREHOUSE_STABILIZATION_PLAN_2026-10-30.md): последовательность расследования, продуктовые инварианты, границы вмешательств и вопросы сотрудникам.
+- [Ревизия GitHub/CI и технических долгов](CI_HOUSEKEEPING_2026-10-30.md): почему некоторые красные checks не являются регрессиями, как безопасно обновлять устаревшие тесты и разбирать одноразовые production workflows.
+- Пока план не прошёл техническую проверку, нет разрешения автоматически менять остатки или данные заказов. Старые continuation snapshots остаются только историей.
+
 ## Source of truth
 
 - Перед любой содержательной работой сначала проверять `dymovicd123/Orders-app` на GitHub.
@@ -137,3 +144,5 @@ Do not treat secondary readback/history failures as proof that a completed criti
 - CLIENT-ZAMMLER uses the existing Orders/Workshop model and is not roadmap Stage04.
 - Resolver R11/R12/R13 is considered stable; change only for a concrete defect.
 - Full Stage03 Production promotion requires explicit user authorization and fresh reconciliation from current main.
+
+- [Реестр 47 GitHub Actions и рисков production-write](PRODUCTION_WORKFLOW_REGISTER_2026-10-30.md) — срез 30.10, статусы кандидатов #639–#642 и требования к ручному выпуску.
