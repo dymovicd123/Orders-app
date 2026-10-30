@@ -1,110 +1,15 @@
-name: Branch2 retired SKU actual handover and isolated journal
+name: "Archived Branch2 legacy job - branch2-retired-item-issue-0113.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/branch2-retired-item-issue-0113.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/branch2-retired-item-issue-0113.yml'
-      - 'worker/domains/retired-item-handover.ts'
-      - 'worker/domains/order-reservations.ts'
-      - 'worker/domains/catalog-review.ts'
-      - 'worker/index.ts'
-      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
-      - 'src/App.tsx'
-      - 'migrations/0113_retired_order_item_actual_handover.sql'
-      - 'scripts/test-retired-order-item-handover-20261018.mjs'
-  push:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/branch2-retired-item-issue-0113.yml'
-      - 'migrations/0113_retired_order_item_actual_handover.sql'
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: branch2-retired-issue-0113
-  cancel-in-progress: false
 jobs:
-  validate:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 16
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: Exact retired-item SQL and end-to-end no-stock regression
-        run: |
-          set -euo pipefail
-          node --experimental-strip-types scripts/test-retired-order-item-handover-20261018.mjs
-          npm run build
-  branch2-schema:
-    needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Refuse main and hard-pin test D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_REF" == 'refs/heads/branch2' ]]
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
-          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
-      - run: npm ci
-      - name: Read-only before schema state
-        run: |
-          set -euo pipefail
-          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_issues') AS journal_tables,
-              (SELECT COUNT(*) FROM orders) AS orders,
-              (SELECT COUNT(*) FROM order_items) AS items,
-              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock,
-              (SELECT COUNT(*) FROM inventory_movements) AS movements,
-              (SELECT COUNT(*) FROM payments) AS payments;
-          " --json | jq -cSe '.[0].results[0]' > /tmp/retired-before.json
-          jq -e '.journal_tables==0 or .journal_tables==1' /tmp/retired-before.json
-      - name: Capture Branch2 Time Travel recovery bookmark
-        run: |
-          set -euo pipefail
-          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/40065052-854e-44b8-bcd5-251bdd488301/time_travel/bookmark" \
-            | jq -er 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No bookmark") end' > /tmp/retired-bookmark
-          test -s /tmp/retired-bookmark
-          echo "Branch2 recovery bookmark: $(cat /tmp/retired-bookmark)" >> "$GITHUB_STEP_SUMMARY"
-      - name: Apply strictly additive schema once on isolated Branch2
-        run: |
-          set -euo pipefail
-          [[ -s /tmp/retired-bookmark ]]
-          if [[ "$(jq -r .journal_tables /tmp/retired-before.json)" == 0 ]]; then
-            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --file migrations/0113_retired_order_item_actual_handover.sql
-          else
-            echo 'Journal schema already exists; skipped'
-          fi
-      - name: Read-only no-business-writes verification
-        run: |
-          set -euo pipefail
-          npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_issues') AS journal_tables,
-              (SELECT COUNT(*) FROM orders) AS orders,
-              (SELECT COUNT(*) FROM order_items) AS items,
-              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock,
-              (SELECT COUNT(*) FROM inventory_movements) AS movements,
-              (SELECT COUNT(*) FROM payments) AS payments;
-          " --json | jq -cSe '.[0].results[0]' > /tmp/retired-after.json
-          jq -e '.journal_tables==1' /tmp/retired-after.json
-          jq 'del(.journal_tables)' /tmp/retired-before.json > /tmp/before-business.json
-          jq 'del(.journal_tables)' /tmp/retired-after.json > /tmp/after-business.json
-          cmp /tmp/before-business.json /tmp/after-business.json
-          echo 'BRANCH2 RETIRED ISSUE JOURNAL READY; MONEY AND STOCK UNCHANGED'
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

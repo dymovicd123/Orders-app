@@ -1,109 +1,15 @@
-name: Stage04 Branch2 catalog cost snapshot schema 0106
-
+name: "Archived Branch2 legacy job - stage04-branch2-migration-0106.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/stage04-branch2-migration-0106.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  push:
-    branches: [branch2]
-    paths: ['.github/workflows/stage04-branch2-migration-0106.yml']
-
+  workflow_dispatch:
 permissions:
   contents: read
-
 jobs:
-  apply:
-    name: Update dormant Branch2 capture trigger only
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - name: Checkout exact tested Branch2 commit
-        uses: actions/checkout@v4
-      - name: Hard stop outside Branch2 / safe migration scope
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_REF_NAME" == "branch2" ]]
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
-            echo 'PRODUCTION binding forbidden' >&2; exit 20
-          fi
-          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" && test -n "${CLOUDFLARE_API_TOKEN:-}"
-          grep -Fq 'DROP TRIGGER IF EXISTS trg_workshop_settlement_completion' migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql
-          grep -Fq 'LEFT JOIN catalog_execution_prices ep' migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql
-      - name: Setup Node 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Install locked dependencies
-        run: npm ci
-      - name: Validate business contract locally
-        run: |
-          node scripts/test-branch2-environment.mjs
-          node scripts/test-stage04a-workshop-settlements.mjs
-          node scripts/test-stage04b-workshop-status-capture.mjs
-          node scripts/test-stage04b2-workshop-catalog-cost.mjs
-      - name: Read Branch2 safety preflight and business fingerprint
-        shell: bash
-        run: |
-          set -euo pipefail
-          info="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            SELECT
-              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0) AS capture_off,
-              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
-                ('trg_workshop_settlement_completion', 'trg_workshop_settlement_completion_reversal')) AS trigger_count,
-              (SELECT COUNT(*) FROM pragma_table_info('workshop_tasks') WHERE name='order_item_id') AS item_link_column,
-              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS price_table,
-              (SELECT COUNT(*) FROM orders) AS orders_count,
-              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
-              (SELECT COUNT(*) FROM payments) AS payments_count,
-              (SELECT COUNT(*) FROM workshop_tasks) AS tasks_count,
-              (SELECT COUNT(*) FROM workshop_settlement_events) AS events_count
-          " --json)"
-          echo "$info" | jq -cS '.[0].results[0]' > /tmp/stage04b2-before.json
-          test -s /tmp/stage04b2-before.json
-          jq -e '.capture_off==1 and .trigger_count==2 and .item_link_column==1 and .price_table==1' /tmp/stage04b2-before.json
-          old="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            SELECT CASE WHEN sql LIKE '%catalog_execution_prices%' THEN 1 ELSE 0 END AS priced
-            FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion'
-          " --json)"
-          jq -r '.[0].results[0].priced // -1' <<<"$old" > /tmp/stage04b2-already-priced
-      - name: Apply schema update to Branch2 only (capture remains off)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$(cat /tmp/stage04b2-already-priced)" == "1" ]]; then
-            echo 'Catalog-priced trigger already installed; skipping repeat.'
-          else
-            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc \
-              --file migrations/0106_v72_workshop_completion_catalog_cost_snapshot.sql
-          fi
-      - name: Verify installed trigger and no business data changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          after="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            SELECT
-              (SELECT COUNT(*) FROM workshop_settlement_capture_control WHERE id=1 AND enabled=0) AS capture_off,
-              (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN
-                ('trg_workshop_settlement_completion', 'trg_workshop_settlement_completion_reversal')) AS trigger_count,
-              (SELECT COUNT(*) FROM pragma_table_info('workshop_tasks') WHERE name='order_item_id') AS item_link_column,
-              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_execution_prices') AS price_table,
-              (SELECT COUNT(*) FROM orders) AS orders_count,
-              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
-              (SELECT COUNT(*) FROM payments) AS payments_count,
-              (SELECT COUNT(*) FROM workshop_tasks) AS tasks_count,
-              (SELECT COUNT(*) FROM workshop_settlement_events) AS events_count
-          " --json)"
-          [[ "$(jq -cS '.[0].results[0]' <<<"$after")" == "$(cat /tmp/stage04b2-before.json)" ]] || {
-            echo 'Unexpected database business fingerprint change' >&2; exit 25
-          }
-          trigger="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            SELECT CASE WHEN sql LIKE '%catalog_execution_prices%' THEN 1 ELSE 0 END AS priced
-            FROM sqlite_master WHERE type='trigger' AND name='trg_workshop_settlement_completion'
-          " --json)"
-          [[ "$(jq -r '.[0].results[0].priced // -1' <<<"$trigger")" == "1" ]] || exit 26
-          echo 'STAGE04-B2 BRANCH2 PASSED — cost snapshot trigger installed; financial capture disabled.'
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

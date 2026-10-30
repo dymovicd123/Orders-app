@@ -1,73 +1,15 @@
-name: Branch2 initial shipping must preserve pending exchange
+name: "Archived Branch2 legacy job - branch2-pending-exchange-initial-shipping-20261028.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/branch2-pending-exchange-initial-shipping-20261028.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths:
-      - 'worker/domains/order-reservations.ts'
-      - 'scripts/test-branch2-pending-exchange-initial-shipping-20261028.mjs'
-      - '.github/workflows/branch2-pending-exchange-initial-shipping-20261028.yml'
-  push:
-    branches: [branch2]
-    paths:
-      - 'worker/domains/order-reservations.ts'
-      - 'scripts/test-branch2-pending-exchange-initial-shipping-20261028.mjs'
-      - '.github/workflows/branch2-pending-exchange-initial-shipping-20261028.yml'
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: branch2-pending-exchange-initial-shipping
-  cancel-in-progress: false
 jobs:
-  verify:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 18
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '24', cache: npm }
-      - run: npm ci
-      - name: Test shipping, pending exchange reservation, and cancellation isolation
-        run: node scripts/test-branch2-pending-exchange-initial-shipping-20261028.mjs
-      - name: Existing exchange, handover and stock safety regression
-        run: |
-          node scripts/test-branch2-exchange-delayed-dispatch-20261028.mjs
-          node scripts/test-branch2-exchange-pending-resolver-guard-20261028.mjs
-          node scripts/test-handover-cas-after-revision-r2.mjs
-          node scripts/test-return-active-reserve-p0-20261021.mjs
-      - name: Typecheck and build
-        run: npm run build
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 18
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '24', cache: npm }
-      - name: Guard Branch2 mirror Worker and never production D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = branch2
-          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
-          test -n "${CLOUDFLARE_API_TOKEN:-}"
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
-          grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
-          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
-      - run: npm ci
-      - run: node scripts/test-branch2-pending-exchange-initial-shipping-20261028.mjs
-      - run: npm run build
-      - name: Deploy Branch2 only, no migrations
-        run: npx wrangler deploy
-      - name: Verify test worker response
-        run: |
-          node --input-type=module <<'NODE'
-          const r=await fetch('https://orders-app-branch2.orders-clothes.workers.dev/?initial_shipping_guard='+Date.now(),{cache:'no-store'})
-          if(!r.ok || !(await r.text()).includes('/assets/'))throw Error('Branch2 unavailable')
-          console.log('BRANCH2_INITIAL_SHIPPING_PENDING_EXCHANGE_DEPLOY_PASS')
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

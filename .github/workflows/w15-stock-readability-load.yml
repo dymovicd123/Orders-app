@@ -1,128 +1,15 @@
-name: W15 Stock Readability and Safe Operation Reload
+name: "Archived Branch2 legacy job - w15-stock-readability-load.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/w15-stock-readability-load.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths:
-      - 'src/styles/w14-simple-stock-controls.css'
-      - 'src/features/inventory/views/renderInventoryOverviewPanel.tsx'
-      - 'src/features/inventory/views/renderInventoryStocktakePanel.tsx'
-      - 'src/features/inventory/loadOperationStockSources.ts'
-      - 'src/features/sections/InventorySection.tsx'
-      - 'scripts/test-w15-stock-list-and-operation-reload.mjs'
-      - '.github/workflows/w15-stock-readability-load.yml'
-  push:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/w15-stock-readability-load.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  verify:
-    name: No overlap, reliable source refresh and full build
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 22
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: W15 layout, loading and simplified recount tests
-        run: node --experimental-strip-types scripts/test-w15-stock-list-and-operation-reload.mjs
-      - name: Existing warehouse display and operation regressions
-        run: |
-          node --experimental-strip-types scripts/test-w14-simple-stock-controls.mjs
-          node --experimental-strip-types scripts/test-w13-stock-catalog-browse.mjs
-          node scripts/test-w12-stock-overview.mjs
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          node scripts/test-step191d-transfer-runtime-safety.mjs
-          node scripts/test-stocktake-functional-acceptance.mjs
-      - name: Full TypeScript and Worker build
-        run: npm run build
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 22
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Exact W15 scope and isolated test database
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = "branch2"
-          baseline="07829cb0efdc3276de112d2dec6561ab27cffb46"
-          git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
-          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
-          test -n "$changes"
-          while IFS= read -r file; do
-            [[ -z "$file" ]] && continue
-            case "$file" in
-              src/styles/w14-simple-stock-controls.css|\
-              src/features/inventory/views/renderInventoryOverviewPanel.tsx|\
-              src/features/inventory/views/renderInventoryStocktakePanel.tsx|\
-              src/features/inventory/loadOperationStockSources.ts|\
-              src/features/sections/InventorySection.tsx|\
-              scripts/test-w15-stock-list-and-operation-reload.mjs|\
-              .github/workflows/w15-stock-readability-load.yml) ;;
-              *) echo "Unexpected W15 change: $file" >&2;exit 11 ;;
-            esac
-          done <<< "$changes"
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then exit 12;fi
-          if grep -Eq '^(worker/|migrations/|wrangler.jsonc|package.*json)' <<< "$changes";then exit 13;fi
-      - run: npm ci
-      - name: W15 stock layout and D1-safe reload regression
-        run: |
-          node --experimental-strip-types scripts/test-w15-stock-list-and-operation-reload.mjs
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          npm run build
-      - name: Verify new UI and source loader included in bundle
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs'
-          const files=fs.readdirSync('dist/client/assets')
-          const scripts=files.filter(f=>f.endsWith('.js')).map(f=>fs.readFileSync('dist/client/assets/'+f,'utf8'))
-          if(!scripts.some(s=>s.includes('Не удалось получить полный актуальный список')))throw Error('Bounded source loader feedback missing')
-          if(!scripts.some(s=>s.includes('stock-v13-master-list')))throw Error('Stock model list missing')
-          console.log('W15_SAFE_RELOAD_AND_MODELS_COMPILED')
-          NODE
-      - name: Deploy only test Worker without migrations
-        run: npx wrangler deploy
-      - name: Confirm current UI is live
-        run: |
-          node --input-type=module <<'NODE'
-          const host='https://orders-app-branch2.orders-clothes.workers.dev'
-          let ok=false
-          for(let attempt=0;attempt<7;attempt++){
-            try{
-              const response=await fetch(host+'/?w15='+Date.now(),{cache:'no-store'})
-              if(!response.ok)throw Error('HTTP '+response.status)
-              const html=await response.text()
-              const asset=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
-              if(!asset)throw Error('Entry script missing')
-              const entry=await (await fetch(host+asset[1],{cache:'no-store'})).text()
-              const chunk=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
-              if(!chunk)throw Error('Inventory chunk missing')
-              const page=await (await fetch(host+'/assets/'+chunk[0],{cache:'no-store'})).text()
-              if(!page.includes('Не удалось получить полный актуальный список'))throw Error('Old operation loader still live')
-              if(!page.includes('stock-v13-master-list'))throw Error('Stock pane not in current bundle')
-              console.log('W15_BRANCH2_LIVE')
-              ok=true
-              break
-            }catch(err){console.warn(String(err));if(attempt<6)await new Promise(resolve=>setTimeout(resolve,3500))}
-          }
-          if(!ok)throw Error('Current stock UI not verified on branch2')
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

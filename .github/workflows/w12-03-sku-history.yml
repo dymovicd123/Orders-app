@@ -1,105 +1,15 @@
-name: W12.3 Exact SKU History
+name: "Archived Branch2 legacy job - w12-03-sku-history.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/w12-03-sku-history.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths:
-      - 'src/features/inventory/stockVariantTimelineModel.ts'
-      - 'src/features/inventory/views/StockVariantTimeline.tsx'
-      - 'src/features/inventory/views/renderInventoryHistoryPanel.tsx'
-      - 'src/features/sections/InventorySection.tsx'
-      - 'src/styles/w12-stock-variant-timeline.css'
-      - 'scripts/test-w12-sku-history.mjs'
-      - '.github/workflows/w12-03-sku-history.yml'
-  push:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/w12-03-sku-history.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  verify:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: Exact variant timeline regression
-        run: node --experimental-strip-types scripts/test-w12-sku-history.mjs
-      - name: Inventory transactions remain valid
-        run: |
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          node scripts/test-stocktake-functional-acceptance.mjs
-      - name: Full TypeScript and Worker build
-        run: npm run build
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Verify only W12.3 changes and isolated test D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = branch2
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          baseline="8ca46ba2b5f4811e3731ceb2132a9413ad1e2605"
-          git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
-          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
-          test -n "$changes"
-          while IFS= read -r file;do
-            [[ -z "$file" ]] && continue
-            case "$file" in
-              src/features/inventory/stockVariantTimelineModel.ts|\
-              src/features/inventory/views/StockVariantTimeline.tsx|\
-              src/features/inventory/views/renderInventoryHistoryPanel.tsx|\
-              src/features/sections/InventorySection.tsx|\
-              src/styles/w12-stock-variant-timeline.css|\
-              scripts/test-w12-sku-history.mjs|\
-              .github/workflows/w12-03-sku-history.yml) ;;
-              *) echo "Out-of-scope file $file" >&2;exit 11 ;;
-            esac
-          done <<< "$changes"
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then exit 12;fi
-      - run: npm ci
-      - name: Security audit
-        run: |
-          npm audit --omit=dev --audit-level=moderate
-          npm audit --audit-level=high
-      - name: Exact history test and full build
-        run: |
-          node --experimental-strip-types scripts/test-w12-sku-history.mjs
-          npm run build
-      - name: Publish test worker only
-        run: npx wrangler deploy
-      - name: Check live test frontend responds
-        run: |
-          node --input-type=module <<'NODE'
-          const url='https://orders-app-branch2.orders-clothes.workers.dev/'
-          for(let n=0;n<7;n++){
-            try{
-              const response=await fetch(url+'?sku_history='+Date.now(),{cache:'no-store'})
-              if(!response.ok)throw Error('HTTP '+response.status)
-              if(!(await response.text()).includes('/assets/'))throw Error('Entry missing')
-              console.log('W12_3_BRANCH2_LIVE')
-              process.exit(0)
-            }catch(err){if(n===6)throw err;await new Promise(r=>setTimeout(r,4000))}
-          }
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

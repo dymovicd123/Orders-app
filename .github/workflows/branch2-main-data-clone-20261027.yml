@@ -1,62 +1,15 @@
-name: Branch2 clone into empty isolated D1 (no existing DB writes)
+name: "Archived Branch2 legacy job - branch2-main-data-clone-20261027.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/branch2-main-data-clone-20261027.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths:
-      - 'scripts/branch2-mirror-apply-stage-only-20261027.mjs'
-      - '.github/workflows/branch2-main-data-clone-20261027.yml'
-  push:
-    branches: [branch2]
-    paths:
-      - 'scripts/branch2-mirror-apply-stage-only-20261027.mjs'
-      - '.github/workflows/branch2-main-data-clone-20261027.yml'
+  workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: branch2-data-replacement-20261027
-  cancel-in-progress: false
 jobs:
-  verify:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: actions/setup-node@v4
-        with: {node-version: '24'}
-      - name: Exact staging identity and exclusive reviewed scope
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check scripts/branch2-mirror-apply-stage-only-20261027.mjs
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          ! grep -Eiq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
-          base='79c1f923fa058fcc1aa905e34b1c59c01393b680'
-          git merge-base --is-ancestor "$base" "$GITHUB_SHA"
-          while IFS= read -r file; do
-            case "$file" in
-              scripts/branch2-mirror-apply-stage-only-20261027.mjs|\
-              .github/workflows/branch2-main-data-clone-20261027.yml) ;;
-              *) echo "Unexpected change in exclusive staging copy: $file"; exit 10;;
-            esac
-          done < <(git diff --name-only "$base" "$GITHUB_SHA")
-  copy-branch2:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 48
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: '24', cache: npm}
-      - name: Refuse missing Cloudflare credentials
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
-      - run: npm ci
-      - name: Mirror from production SELECTs to Branch2 only; preserve admin and rollback safety
-        run: node scripts/branch2-mirror-apply-stage-only-20261027.mjs
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

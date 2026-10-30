@@ -1,124 +1,15 @@
-name: W16 Stock Source and Attention Actions
+name: "Archived Branch2 legacy job - w16-stock-attention-actions.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/w16-stock-attention-actions.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths:
-      - 'src/features/inventory/operationCorrectionFocus.ts'
-      - 'src/features/inventory/views/renderInventoryOverviewPanel.tsx'
-      - 'src/features/inventory/views/renderInventoryAttentionPanel.tsx'
-      - 'src/features/inventory/views/renderInventoryMovementPanel.tsx'
-      - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
-      - 'src/features/sections/InventorySection.tsx'
-      - 'src/styles/w16-stock-source-attention.css'
-      - 'scripts/test-w12-stock-issues.mjs'
-      - 'scripts/test-w16-source-attention-correction.mjs'
-      - '.github/workflows/w16-stock-attention-actions.yml'
-  push:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/w16-stock-attention-actions.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  verify:
-    name: Exact SKU navigation, source picker, stock safety and build
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 22
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - name: Source and correction navigation regression
-        run: |
-          node --experimental-strip-types scripts/test-w16-source-attention-correction.mjs
-          node scripts/test-w12-stock-issues.mjs
-          node --experimental-strip-types scripts/test-w15-stock-list-and-operation-reload.mjs
-      - name: Existing correction, stock and movement regressions
-        run: |
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          node --experimental-strip-types scripts/test-w9-correction-inline-variants.mjs
-          node scripts/test-w12-stock-overview.mjs
-          node scripts/test-step191d-transfer-runtime-safety.mjs
-      - name: Full application and Worker build
-        run: npm run build
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 22
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Verify strict UI-only changes and test D1 binding
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs'
-          import {execFileSync} from 'node:child_process'
-          if(process.env.GITHUB_REF_NAME!=='branch2')throw Error('Not test branch')
-          const baseline='e64aaf44c0733c451c4a4e2cce61527ff4383014'
-          execFileSync('git',['merge-base','--is-ancestor',baseline,process.env.GITHUB_SHA])
-          const changed=execFileSync('git',['diff','--name-only',baseline,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n')
-          const allowed=new Set([
-            'src/features/inventory/operationCorrectionFocus.ts',
-            'src/features/inventory/views/renderInventoryOverviewPanel.tsx',
-            'src/features/inventory/views/renderInventoryAttentionPanel.tsx',
-            'src/features/inventory/views/renderInventoryMovementPanel.tsx',
-            'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx',
-            'src/features/sections/InventorySection.tsx',
-            'src/styles/w16-stock-source-attention.css',
-            'scripts/test-w12-stock-issues.mjs',
-            'scripts/test-w16-source-attention-correction.mjs',
-            '.github/workflows/w16-stock-attention-actions.yml',
-          ])
-          if(!changed.length||changed.some(path=>!allowed.has(path)))throw Error('Unreviewed files: '+changed.join(','))
-          const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
-          if(!wrangler.includes('"name": "orders-app-branch2"')||!wrangler.includes('"database_name": "orders_db_branch2"')||!wrangler.includes('40065052-854e-44b8-bcd5-251bdd488301')||wrangler.includes('orders_db_prod'))throw Error('Wrong D1')
-          console.log('W16_READ_ONLY_TEST_SCOPE_VERIFIED')
-          NODE
-      - run: npm ci
-      - name: Repeat specific regressions and build
-        run: |
-          node --experimental-strip-types scripts/test-w16-source-attention-correction.mjs
-          node scripts/test-w12-stock-issues.mjs
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          npm run build
-      - name: Publish test worker without migrations
-        run: npx wrangler deploy
-      - name: Confirm new stock and issue UI are deployed
-        run: |
-          node --input-type=module <<'NODE'
-          const host='https://orders-app-branch2.orders-clothes.workers.dev'
-          let success=false
-          for(let attempt=0;attempt<7;attempt++){
-            try {
-              const response=await fetch(host+'/?w16='+Date.now(),{cache:'no-store'})
-              if(!response.ok)throw Error('HTTP '+response.status)
-              const html=await response.text()
-              const entryPath=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
-              if(!entryPath)throw Error('Missing entry asset')
-              const entry=await (await fetch(host+entryPath[1],{cache:'no-store'})).text()
-              const moduleName=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
-              if(!moduleName)throw Error('No Warehouse chunk')
-              const chunk=await (await fetch(host+'/assets/'+moduleName[0],{cache:'no-store'})).text()
-              if(!chunk.includes('Корректировать остаток')||!chunk.includes('Остатки какой точки?'))throw Error('Old Warehouse UI still deployed')
-              success=true
-              console.log('W16_STOCK_ACTIONS_LIVE_ON_BRANCH2')
-              break
-            } catch(err) {
-              console.warn(String(err))
-              if(attempt<6)await new Promise(r=>setTimeout(r,3500))
-            }
-          }
-          if(!success)throw Error('Unable to verify updated Warehouse module live')
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."
