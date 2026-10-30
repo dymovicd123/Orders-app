@@ -1,4 +1,4 @@
-name: P0 Branch2 readonly preflight and Time Travel bookmark
+name: P0 Branch2 forensic deployment drift and D1 bookmark
 on:
   push:
     branches: [ops/p0-branch2-controlled-activation-20261030]
