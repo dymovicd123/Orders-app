@@ -12,6 +12,7 @@ import type { CatalogReviewFactsInput } from './domains/catalog-review.ts'
 import { excludeCatalogReviewQueueItem, getCatalogReviewContext, listCatalogReviewQueue, reconcileCatalogReviewOrder, reconcileCatalogReviewQueue, resolveCatalogReviewFacts, resolveCatalogReviewQueueItem, resolveOrderCatalogReviewExistingVariant } from './domains/catalog-review.ts'
 import { getClientDetails, listClients } from './domains/clients.ts'
 import { criticalOperationErrorResponse } from './domains/critical.ts'
+import { inspectPendingReservation, resolvePendingReservation, PendingReservationError } from './domains/pending-reservation.ts'
 import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from './domains/exchange-price-history.ts'
 import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
@@ -2026,6 +2027,32 @@ export default {
           if (criticalResponse) return criticalResponse;
           const publicError = publicApiError(error);
           return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
+        }
+      }
+
+      const pendingReservationMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/items\/(\d+)\/pending-reservation$/);
+      if (pendingReservationMatch && (request.method === 'GET' || request.method === 'POST')) {
+        const orderId = toInt(pendingReservationMatch[1],0);
+        const orderItemId = toInt(pendingReservationMatch[2],0);
+        try {
+          if (request.method === 'GET') {
+            return json(await inspectPendingReservation(env.DB,orderId,orderItemId));
+          }
+          const input = await readJson<{
+            snapshot?: { inventorySource: 'warehouse' | 'boutique'; variantId:number;
+              requestedQuantity:number; physicalQuantity:number; reservedQuantity:number };
+            allowShortage?: boolean
+          }>(request);
+          const result = await resolvePendingReservation(env.DB,orderId,orderItemId,input,{
+            id:authUser!.id, displayName:authUser!.displayName || authUser!.login,
+          });
+          return json(result);
+        } catch(error) {
+          if (error instanceof PendingReservationError) return json({
+            ok:false,code:error.code,message:error.message,
+            ...(error.snapshot ? { snapshot:error.snapshot } : {}),
+          },{status:error.status});
+          throw error;
         }
       }
 
