@@ -1,21 +1,14 @@
 name: One-off production Kaspi sent-order history settlement
+# Archived 2026-10-30: historical Production operation; all jobs intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-main-kaspi-sent-history-20261018.yml'
-      - 'scripts/ops/kaspi-sent-history-recovery-20261018.sql'
-      - 'scripts/test-main-kaspi-sent-backfill-20261018.mjs'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-main-kaspi-sent-history-20261018.yml'
-      - 'scripts/ops/kaspi-sent-history-recovery-20261018.sql'
+  workflow_dispatch:
+
 permissions:
   contents: read
   statuses: read
 jobs:
   isolate:
+    if: false # archived historical Production operation; never execute
     name: Test exact recovery SQL on disposable SQLite (no remote writes)
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -28,7 +21,7 @@ jobs:
   apply:
     name: Guarded once-only Kaspi historical finance repair (production)
     needs: isolate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

@@ -1,19 +1,15 @@
 name: Stage03 Production migrations 0073-0074
 
+# Archived 2026-10-30: historical Production operation; all jobs intentionally disabled.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/stage03-production-migrations-0073-0074.yml'
-      - 'migrations/0073_v72_order_item_pricing_foundation.sql'
-      - 'migrations/0074_v72_retained_order_pricing_mode.sql'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   apply:
+    if: false # archived historical Production operation; never execute
     name: Apply Stage03 0073-0074 to Production D1
     runs-on: ubuntu-latest
     timeout-minutes: 15

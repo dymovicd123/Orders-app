@@ -1,10 +1,7 @@
 name: Stage04 Production dormant schema cutover
 
+# Archived 2026-10-30: historical Production operation; all jobs intentionally disabled.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/main-stage04-dormant-schema-20261018.yml'
   workflow_dispatch:
 
 permissions:
@@ -16,6 +13,7 @@ concurrency:
 
 jobs:
   migrate:
+    if: false # archived historical Production operation; never execute
     name: Prepare production settlement schema, leave capture OFF
     runs-on: ubuntu-latest
     timeout-minutes: 18

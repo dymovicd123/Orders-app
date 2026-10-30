@@ -1,17 +1,15 @@
 name: Stage03 Production migration 0072
 
+# Archived 2026-10-30: historical Production operation; all jobs intentionally disabled.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/stage03-production-migration-0072.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   apply:
+    if: false # archived historical Production operation; never execute
     name: Apply 0072 to Production D1 only
     runs-on: ubuntu-latest
     timeout-minutes: 12

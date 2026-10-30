@@ -1,14 +1,8 @@
 name: One-off exact production duplicate 1734 cleanup
+# Archived 2026-10-30: historical Production operation; all jobs intentionally disabled.
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/one-off-prod-1734-targeted-cleanup.yml'
-      - 'scripts/ops/one-off-duplicate-1734-20261015.sql'
-      - 'scripts/ops/test-one-off-duplicate-1734-20261015.mjs'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/one-off-prod-1734-targeted-cleanup.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -16,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   local-proof:
+    if: false # archived historical Production operation; never execute
     name: Test one-off SQL on in-memory SQLite, NO production access
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -35,7 +30,7 @@ jobs:
   production-once:
     name: Apply to exact Production D1 only if immutable preflight is true
     needs: local-proof
-    if: github.event_name == 'push' && github.ref_name == 'main'
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
