@@ -1,0 +1,23 @@
+name: Branch2 warehouse exact inactive version safe preview
+on:
+  push:
+    branches: [audit/branch2-warehouse-barcode-readiness-20261030]
+    paths:
+      - '.github/workflows/warehouse-staged-preview-readonly-once-20261030.yml'
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Verify exact uploaded warehouse version and auth on preview, GET only
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --check scripts/ops/warehouse-staged-branch2-preview-readonly-20261030.mjs
+          node scripts/ops/warehouse-staged-branch2-preview-readonly-20261030.mjs
