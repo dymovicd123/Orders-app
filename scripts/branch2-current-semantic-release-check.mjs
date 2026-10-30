@@ -39,6 +39,7 @@ const groups = [
     'scripts/test-order-manager-schema-reconciliation-20261030.mjs',
     'scripts/test-branch2-current-d1-readonly-preflight-20261030.mjs',
     'scripts/test-branch2-cd-safety-20261030.mjs',
+    'scripts/test-branch2-legacy-cloudflare-workflows-archived-20261030.mjs',
   ]],
   ['Orders, shipment and reservations', [
     'scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs',
