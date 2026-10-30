@@ -1,0 +1,23 @@
+name: P0 Branch2 inactive preview 500 diagnostics GET only
+on:
+  push:
+    branches: [ops/p0-branch2-controlled-activation-20261030]
+    paths:
+      - '.github/workflows/p0-branch2-native-500-debug-once-20261030.yml'
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Inspect Cloudflare upload logs and read-only preview HTTP status
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --check scripts/ops/p0-branch2-native-upload-500-readonly-debug-20261030.mjs
+          node scripts/ops/p0-branch2-native-upload-500-readonly-debug-20261030.mjs
