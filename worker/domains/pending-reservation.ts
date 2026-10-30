@@ -23,8 +23,10 @@ export type PendingReservationSnapshot = {
 export class PendingReservationError extends Error {
   code = 'pending_reservation_conflict';
   status = 409;
-  constructor(message: string, public snapshot: PendingReservationSnapshot | null = null) {
+  snapshot: PendingReservationSnapshot | null;
+  constructor(message: string, snapshot: PendingReservationSnapshot | null = null) {
     super(message);
+    this.snapshot = snapshot;
   }
 }
 const qty = (n: unknown) => {
