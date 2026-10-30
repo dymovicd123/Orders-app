@@ -22,6 +22,14 @@ if(!orderColumns.has('manager_snapshot_name')){
   localSchemaGaps.push('orders.manager_snapshot_name')
   sql.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
 }
+const existingTables=new Set(sql.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
+if(!existingTables.has('order_manager_audit')){
+  localSchemaGaps.push('order_manager_audit')
+  sql.exec(`CREATE TABLE order_manager_audit(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,order_id INTEGER,external_id TEXT,
+    previous_manager_id INTEGER,previous_manager_name TEXT,new_manager_id INTEGER,new_manager_name TEXT,
+    action TEXT,source TEXT,actor_role TEXT,actor_label TEXT,details TEXT,created_at TEXT)`)
+}
 console.log('P0_HTTP_LOCAL_SCHEMA_GAPS: '+JSON.stringify(localSchemaGaps)+' (tracked in #648)')
 const tables=()=>new Set(sql.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
 for(const n of ['app_users','app_sessions','inventory_stock','inventory_reservations','critical_operations','orders','order_items','catalog_products','catalog_variants']){
@@ -154,7 +162,7 @@ assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9042').get().quantity,2)
 assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9042').get().reserved_quantity,1,
  'Changing source must reserve exactly one boutique SKU')
-const shortage=await http('POST','/api/orders',payload('create-short',[item(),item()]))
+const shortage=await http('POST','/api/orders',payload('create-short',[item(),item(),item()]))
 assert.equal(shortage.status,409,'Shortage response: '+JSON.stringify(shortage))
 assert.equal(shortage.data.code,'order_stock_shortage')
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-short'").get().n,0)
