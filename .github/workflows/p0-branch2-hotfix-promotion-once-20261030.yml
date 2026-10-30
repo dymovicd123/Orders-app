@@ -1,0 +1,42 @@
+name: P0 Branch2 pinned lease-guard hotfix controlled promotion
+on:
+  push:
+    branches: [ops/p0-branch2-controlled-activation-20261030]
+    paths:
+      - '.github/workflows/p0-branch2-hotfix-promotion-once-20261030.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch2-p0-pinned-promotion-20261030
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/ops/p0-branch2-controlled-activation-20261030'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked CLI dependencies
+        run: npm ci
+      - name: Promote ONLY pinned Branch2 version with D1 bookmark, exact SHA attestation and rollback
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --check scripts/ops/p0-branch2-pin-version-promote-rollback-20261030.mjs
+          node scripts/ops/p0-branch2-pin-version-promote-rollback-20261030.mjs
+      - name: Save D1 bookmark captured before any version promotion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch2-p0-lease-hotfix-rollback-bookmark
+          path: release-proof/branch2-hotfix-promotion-bookmark.json
+          retention-days: 7
+          if-no-files-found: ignore
