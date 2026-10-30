@@ -34,7 +34,7 @@
 
 ### Обновление диагностики Stage04
 
-После обновления точного mirror ID Stage04-A и Stage04-B снова прошли. Исторический `test-inventory-writeoff-review.mjs` и тест видимости дублей ссылались на больше не монтируемую отдельную форму WriteoffReview, поэтому переведены на проверку единой формы операций, не меняя production или базу. Финальный CI-проход по этим обновлениям проверять в PR #637. Эти тестовые исправления **не** решают SHA-bound `release:check`.
+После обновления точного mirror ID Stage04-A и Stage04-B снова прошли. Исторический `test-inventory-writeoff-review.mjs` и тест видимости дублей ссылались на больше не монтируемую отдельную форму WriteoffReview, поэтому переведены на проверку единой формы операций, не меняя production или базу. Stage04 теперь действительно проходит: [run 41054695495](https://github.com/dymovicd123/Orders-app/actions/runs/41054695495). Проверки W12.4 и W16 тоже прошли ([W12.4](https://github.com/dymovicd123/Orders-app/actions/runs/41053599925), [W16](https://github.com/dymovicd123/Orders-app/actions/runs/41053600093)). Эти тестовые исправления **не** решают SHA-bound `release:check`.
 
 ## Конкретная очередь CI-cleanup
 
