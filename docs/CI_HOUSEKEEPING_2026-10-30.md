@@ -50,3 +50,13 @@
 | CD на documentation-only push | отдельное инфраструктурное решение | нет неожиданного build/deploy без ослабления real runtime releases |
 
 **Не путать** эти действия с новым функционалом склада: до закрытия CI housekeeping не начинать новую форму создания заказов и маркировку.
+
+## Дополнение 30.10: доказательство актуальной сборки и CD-рисков
+
+- [Branch2 #639](https://github.com/dymovicd123/Orders-app/pull/639) — current semantic release вместо frozen SHA. [Quality check успешен, run 41057995401](https://github.com/dymovicd123/Orders-app/actions/runs/41057995401). Доменная безопасность и Stage04/складские регрессии сохранены.
+- [Main #640](https://github.com/dymovicd123/Orders-app/pull/640) — аналогичный текущий gate, защищённые DOMPurify/Undici/Vite. [Quality check успешен, run 41059783126](https://github.com/dymovicd123/Orders-app/actions/runs/41059783126).
+- [Main #641](https://github.com/dymovicd123/Orders-app/pull/641) — Cloudflare монитор только читает результаты; без автоматического fallback-deploy, датированные Staff/KPI/Finance workflows не запускают ложные проверки на несвязанных PR. [Quality check успешен, run 41060891634](https://github.com/dymovicd123/Orders-app/actions/runs/41060891634).
+- [Branch2 #642](https://github.com/dymovicd123/Orders-app/pull/642) — прекратить Branch2 auto-fallback, проверять **текущие** маркеры интерфейса остатков на реальном URL после native success. [Quality check успешен, run 41061430513](https://github.com/dymovicd123/Orders-app/actions/runs/41061430513).
+- [Реестр всех 47 workflow](PRODUCTION_WORKFLOW_REGISTER_2026-10-30.md) — четыре категории, возможные remote D1 writers и стоп-условия. Из 47 ни один архивный запуск не делали ради «очистки». Полного доказательства прежнего применения миграций в production пока нет.
+
+**Граница готовности:** качество текущего кода в четырёх PR-кандидатах проверено, но **ни один не слит**; Cloudflare native trigger вне GitHub ещё не сверялся, данные D1 не затрагивались. Нельзя объявлять, что весь legacy CI/CD безопасен после одного зелёного Quality check. Инженерный цикл складских P0 можно начать в отдельной ветке с инвариантами и SQLite-тестами без ожидания каждой исторической однократной миграции; релиз в работающую систему — только после отдельной безопасной проверки CD.
