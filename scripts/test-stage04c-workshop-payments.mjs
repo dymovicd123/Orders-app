@@ -7,8 +7,9 @@ import {
 } from '../worker/domains/workshop-settlements.ts'
 
 const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
-assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2"/)
-assert.doesNotMatch(wrangler,/orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
+assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2_mirror_20261027"/)
+assert.match(wrangler, /"database_id"\s*:\s*"0904a573-21ff-44d8-93b0-c9200f771702"/)
+assert.doesNotMatch(wrangler,/orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4|40065052-854e-44b8-bcd5-251bdd488301/)
 const sql=fs.readFileSync('migrations/0107_v72_workshop_settlement_payment_method.sql','utf8')
 assert.doesNotMatch(sql,/(?:UPDATE|DELETE\s+FROM|INSERT\s+INTO)\s+workshop_settlement_events\b/i)
 assert.match(sql,/ALTER TABLE workshop_settlement_events ADD COLUMN payment_method TEXT/)

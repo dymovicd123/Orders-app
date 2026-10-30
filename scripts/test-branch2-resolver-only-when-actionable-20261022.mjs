@@ -24,6 +24,8 @@ CREATE TABLE inventory_reservations (
 CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT);
 CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER);
 CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER);
+CREATE TABLE exchanges (id INTEGER PRIMARY KEY,status TEXT);
+CREATE TABLE inventory_lifecycle_events (id INTEGER PRIMARY KEY,order_item_id INTEGER,operation_id INTEGER,operation_type TEXT,event_type TEXT,status TEXT,pending_reason TEXT);
 CREATE TABLE returns(id INTEGER PRIMARY KEY,status TEXT);
 CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
 CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,order_item_id INTEGER,quantity INTEGER,status TEXT);

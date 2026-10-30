@@ -5,6 +5,7 @@ import {correctMistakenOrderHandover} from '../worker/domains/order-reservations
 const sql=new DatabaseSync(':memory:')
 sql.exec([
 "CREATE TABLE inventory_model_meta(key TEXT PRIMARY KEY,value TEXT)",
+"CREATE TABLE activity_log(id INTEGER PRIMARY KEY,event_type TEXT,entity_type TEXT,entity_id INTEGER,order_id INTEGER,external_order_id TEXT,title TEXT,details TEXT,amount INTEGER,created_at TEXT)",
 "INSERT INTO inventory_model_meta VALUES('human_inventory_v2','active')",
 "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,archived_at TEXT,shipping_status TEXT,shipping_date TEXT,updated_at TEXT)",
 "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,stock_quantity_before INTEGER,stock_quantity_after INTEGER,stock_writeoff_status TEXT)",
@@ -31,7 +32,7 @@ const db={
   }
 }
 function reset({before=3,after=2,check=false,full=false,itemReturn=false}={}){
-  for(const table of ['orders','order_items','inventory_reservations','catalog_products','catalog_variants','inventory_stock','inventory_stock_checks','inventory_stocktake_sessions','returns','return_items','exchanges','inventory_movements'])sql.exec('DELETE FROM '+table)
+  for(const table of ['activity_log','orders','order_items','inventory_reservations','catalog_products','catalog_variants','inventory_stock','inventory_stock_checks','inventory_stocktake_sessions','returns','return_items','exchanges','inventory_movements'])sql.exec('DELETE FROM '+table)
   sql.exec([
     "INSERT INTO orders VALUES(1,'ORD-1','active',NULL,'sent','2026-10-20','2026-10-20')",
     "INSERT INTO catalog_products VALUES(3,1)",
@@ -65,6 +66,7 @@ assert.equal(state.order.shipping_date,null)
 assert.equal(state.item.stock_writeoff_status,'reserved')
 assert.equal(state.movements.length,1)
 assert.equal(state.movements[0].quantity_delta,1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type='order_false_handover_corrected' AND order_id=1").get().n,1,'Physical correction must retain an activity record')
 result=await correction()
 assert.equal(result.alreadyCorrected,true)
 assert.equal(outcome().stock.quantity,3,'Never double restore on repeat')

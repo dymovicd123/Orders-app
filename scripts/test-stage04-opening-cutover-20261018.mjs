@@ -44,7 +44,7 @@ assert.equal(summary.canInitialize,true)
 assert.equal(summary.confirmedDebt,0)
 await assert.rejects(activateWorkshopSettlements(db,{openingDebt:-1},1),e=>e.code==='invalid_opening_debt')
 await assert.rejects(activateWorkshopSettlements(db,{openingDebt:1.25},1),e=>e.code==='invalid_opening_debt')
-await assert.rejects(activateWorkshopSettlements(db,{openingDebt:5000},0),e=>e.code==='admin_required')
+await assert.rejects(activateWorkshopSettlements(db,{openingDebt:5000},0),e=>e.code==='actor_required')
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM workshop_settlement_events').get().n,0)
 
 const first=await activateWorkshopSettlements(db,{openingDebt:70000},1)
