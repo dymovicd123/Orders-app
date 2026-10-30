@@ -65,6 +65,7 @@ const groups = [
     'scripts/test-stocktake-functional-acceptance.mjs',
     'scripts/test-found-stock-unique-identity-barcode-readiness-20261030.mjs',
     'scripts/test-arrival-canonical-barcode-sku-20261030.mjs',
+    'scripts/test-transfer-canonical-barcode-identity-20261030.mjs',
     'scripts/test-w8-warehouse-operation-integrity.mjs',
     'scripts/test-w11-manual-correction-runtime.mjs',
     'scripts/test-w12-stock-issues.mjs',
