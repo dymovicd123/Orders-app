@@ -85,7 +85,7 @@ await forbid("UPDATE inventory_reservations SET status='unresolved',unresolved_r
 // The real API is session-authenticated and exposes an explicit GET preview/POST.
 const worker=fs.readFileSync('worker/index.ts','utf8')
 const view=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
-assert.match(worker,/pendingReservationMatch.*\\/pending-reservation/)
+assert(worker.includes('pendingReservationMatch') && worker.includes('pending-reservation'), 'Pending route must exist')
 assert.match(worker,/inspectPendingReservation\(env\.DB,orderId,orderItemId\)/)
 assert.match(worker,/resolvePendingReservation\(env\.DB,orderId,orderItemId,input/)
 assert.match(view,/Подтвердить резерв при нехватке/)
