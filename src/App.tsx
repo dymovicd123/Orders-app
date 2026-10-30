@@ -4460,7 +4460,7 @@ function App() {
         invalidateFinanceReadCaches()
         invalidateInventoryStockCaches(true)
         if (pendingReservations.length) {
-          setMessage('Заказ сохранён, но резерв не закреплён: свободное количество изменилось. Позиции требуют проверки в «Склад → Проблемы» до отправки. Обновляю список заказов.')
+          setMessage('Заказ сохранён, но резерв не закреплён: свободное количество изменилось. Проверьте остатки и разберите резерв этого заказа до отправки. Обновляю список заказов.')
         } else if (concurrentShortages.length) {
           setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки». Обновляю список заказов.')
         } else if (postSaveShortages.length) {
@@ -4538,7 +4538,7 @@ function App() {
       // that would later make Warehouse or the next availability hint show the pre-order number.
       invalidateInventoryStockCaches(true)
       if (pendingReservations.length) {
-        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Требуется проверка в «Склад → Проблемы» до отправки; физические остатки не менялись.`)
+        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки; физические остатки не менялись.`)
       } else if (concurrentShortages.length) {
         setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
@@ -6750,7 +6750,7 @@ function removeDebtPayment(index: number) {
       // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
       if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
       if (pendingReservations.length) {
-        setMessage(`Заказ ${order.external_id} обновлён, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Требуется проверка в «Склад → Проблемы» до отправки.`)
+        setMessage(`Заказ ${order.external_id} обновлён, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки.`)
       } else if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
