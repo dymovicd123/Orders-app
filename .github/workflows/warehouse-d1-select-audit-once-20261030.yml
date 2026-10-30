@@ -1,4 +1,4 @@
-name: Branch2 pre-barcode semantic SKU and reservation-item identity read-only
+name: Branch2 SKU and order reservation identity SELECT read-only corrected
 on:
   push:
     branches: [audit/branch2-warehouse-barcode-readiness-20261030]
