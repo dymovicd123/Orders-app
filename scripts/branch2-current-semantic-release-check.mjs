@@ -35,6 +35,7 @@ const groups = [
     'scripts/test-pending-reservation-resolution-20261030.mjs',
     'scripts/test-p0-critical-order-reservation-retry-20261030.mjs',
     'scripts/test-p0-http-pending-reservation-20261030.mjs',
+    'scripts/test-p0-http-create-core-20261030.mjs',
     'scripts/test-branch2-cd-safety-20261030.mjs',
   ]],
   ['Orders, shipment and reservations', [
