@@ -14,6 +14,9 @@ check(fulfill.includes('Math.max(0, quantityBefore - quantity)'), 'per-reservati
 check(fulfill.includes('SET quantity = MAX(0, (SELECT x.effective_quantity - x.required'), 'aggregate physical clamp missing')
 check(fulfill.includes('x.quantity_after - x.quantity_before, x.quantity_after'), 'sale movement must record actual physical delta')
 check(blockers.includes('return [...(unresolvedResult.results || []), ...(shortageResult.results || [])];'), 'shipment blocker list no longer surfaces physical shortage for contextual possession confirmation')
-check(!router.includes("code: 'stock_handover_review_required'"), 'historical handover review still hard-blocks final shipping')
-check(!router.includes('const handoverReviewBlockers = await orderHandoverReviewBlockers'), 'final shipping still calls historical handover blocker')
-console.log('SHIPPING SHORTAGE FLOW TESTS PASSED — shortage pauses only for contextual possession confirmation; historical handover review still does not hard-block final send')
+// A real post-order physical stocktake must be clarified BEFORE shipping;
+// this is a distinct physical-truth guard, not the shortage confirmation dialog.
+check(router.includes("code: 'stock_handover_review_required'"), 'Physical post-stocktake handover review must remain enforced')
+check(router.includes('await orderHandoverReviewBlockers(env.DB, id)'), 'Shipping must check post-order physical truth')
+check(router.includes('normalizeShipmentStockConfirmations(input.stockConfirmations)'), 'Keep contextual possession confirmation for genuine shortages')
+console.log('SHIPPING SHORTAGE FLOW TESTS PASSED — shortage pauses only for contextual possession confirmation; post-stocktake handover clarification is mandatory before final send')
