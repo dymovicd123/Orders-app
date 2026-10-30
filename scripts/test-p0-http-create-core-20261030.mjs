@@ -120,6 +120,40 @@ assert.equal(updatedRetry.status,200,'Metadata edit idempotent retry: '+JSON.str
 assert.equal(sql.prepare('SELECT city FROM orders WHERE id=?').get(createdId).city,'Алматы')
 assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1,
  'Metadata edit must not rewrite stock or reserve')
+const rawItem=current.items[0]
+const originalItem={
+ orderItemId:Number(rawItem.id),
+ productName:String(rawItem.productName||'P0 HTTP ТОВАР'),
+ audienceType:String(rawItem.audienceType||'ВЗРОСЛЫЙ'),
+ gender:String(rawItem.gender||'МУЖ'),color:String(rawItem.color||'БЕЖ'),
+ material:String(rawItem.material||'СТАНДАРТ'),length:String(rawItem.length||'СТАНДАРТ'),
+ size:String(rawItem.size||'50'),
+ quantity:Number(rawItem.quantity||1),unitPrice:Number(rawItem.unitPrice||1000),
+ lineTotal:Number(rawItem.lineTotal||1000),
+ catalogPriceSnapshot:rawItem.catalogPriceSnapshot??null,
+ sourceType:String(rawItem.sourceType||'warehouse'),
+ workshopComment:String(rawItem.workshopComment||''),
+ workshopUrgent:Boolean(rawItem.workshopUrgent),
+ workshopDueDate:String(rawItem.workshopDueDate||''),
+ workshopDueTime:String(rawItem.workshopDueTime||''),
+}
+const replacementPayload={
+ requestId:'p0-source-edit',
+ itemContentReplacement:{
+  expectedItems:[originalItem],
+  items:[{...originalItem,sourceType:'boutique'}],
+ },
+}
+const moved=await http('PATCH','/api/orders/'+createdId,replacementPayload)
+assert.equal(moved.status,200,'Change one SKU warehouse to boutique through HTTP PATCH: '+JSON.stringify(moved))
+const movedRetry=await http('PATCH','/api/orders/'+createdId,replacementPayload)
+assert.equal(movedRetry.status,200,'Source-edit retry must be idempotent: '+JSON.stringify(movedRetry))
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,0,
+ 'Changing source must release exactly the old warehouse reserve')
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9042').get().quantity,2)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9042').get().reserved_quantity,1,
+ 'Changing source must reserve exactly one boutique SKU')
 const shortage=await http('POST','/api/orders',payload('create-short',[item(),item()]))
 assert.equal(shortage.status,409,'Shortage response: '+JSON.stringify(shortage))
 assert.equal(shortage.data.code,'order_stock_shortage')
