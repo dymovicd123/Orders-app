@@ -130,7 +130,7 @@ export function StockVariantTimeline({
             <em className={delta < 0 ? 'is-negative' : ''}>{delta >= 0 ? '+' : ''}{delta}</em>
           </div>
           {numeric(movement.unexplainedQuantity) > 0 ? <p className="stock-variant-event-warning">
-            Фактическая операция включала {quantity(numeric(movement.unexplainedQuantity))} сверх учтённого остатка. Проверьте связанные документы.
+            При этой операции учётного остатка не хватало на {quantity(numeric(movement.unexplainedQuantity))}. Это исторический факт, а не свидетельство текущей недостачи. Текущее количество определяется последующими движениями и физическими сверками.
           </p> : null}
           <div className="stock-variant-event-meta">
             {movement.referenceId ? `Документ/заказ: ${movement.referenceId}` : 'Документ не указан'}

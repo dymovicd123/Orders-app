@@ -76,8 +76,16 @@ export function catalogReviewPendingKnownReservationPredicate(oi = 'oi', o = 'o'
     AND COALESCE(${o}.shipping_status, 'not_sent') <> 'sent'
     AND COALESCE(${o}.order_status, 'active') = 'active'
     AND COALESCE(${o}.archived_at, '') = ''
-    AND NOT EXISTS (SELECT 1 FROM inventory_reservations r
-      WHERE r.order_item_id = ${oi}.id)
+    AND (
+      NOT EXISTS (SELECT 1 FROM inventory_reservations r
+        WHERE r.order_item_id = ${oi}.id)
+      OR EXISTS (
+        SELECT 1 FROM inventory_reservations r
+        WHERE r.order_item_id = ${oi}.id
+          AND r.status = 'unresolved'
+          AND r.unresolved_reason = 'concurrent_shortage'
+      )
+    )
     AND NOT EXISTS (
       SELECT 1 FROM return_items ri JOIN returns ret ON ret.id = ri.return_id
       WHERE ri.order_item_id = ${oi}.id
@@ -746,7 +754,7 @@ export async function resolveCatalogReviewRows(
     const item = catalogReviewRowToOrderItem(row);
     const targetSource = normalizeSourceType(item.inventorySource);
     let existingReservation = await db.prepare(
-      `SELECT id, status, quantity, inventory_source, product_id, variant_id
+      `SELECT id, status, quantity, inventory_source, product_id, variant_id, unresolved_reason
        FROM inventory_reservations
        WHERE order_item_id = ?
        LIMIT 1`
@@ -835,6 +843,18 @@ export async function resolveCatalogReviewRows(
       && toInt(committedReservation?.product_id, 0) === productId
       && Math.max(0, toInt(committedReservation?.quantity, 0)) === Math.max(1, toInt(item.quantity, 1));
     if (!committedMatchesTarget) {
+      const queuedShortage = cleanText(committedReservation?.status) === 'unresolved'
+        && cleanText(committedReservation?.unresolved_reason) === 'concurrent_shortage'
+        && normalizeSourceType(committedReservation?.inventory_source) === targetSource
+        && toInt(committedReservation?.variant_id, 0) === variantId
+        && Math.max(0, toInt(committedReservation?.quantity, 0)) === Math.max(1, toInt(item.quantity, 1));
+      if (queuedShortage) {
+        // A known SKU remains in Resolver until availability or an explicit
+        // new decision permits safe admission. Never pretend it was reserved
+        // and never make shipment auto-reconciliation throw after saving it.
+        skipped += 1;
+        continue;
+      }
       throw new Error('Резерв позиции изменился одновременно с исправлением каталога. Обновите заказ и повторите действие.');
     }
 

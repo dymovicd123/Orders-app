@@ -293,14 +293,19 @@ export async function updateCriticalOperationTargetFromLastInsert(
 ) {
   const now = new Date().toISOString();
   const leaseUntil = Date.now() + 45_000;
-  const [insertResult] = await db.batch([
+  const [insertResult, updateResult] = await db.batch([
     insertStatement,
     db.prepare(
       `UPDATE critical_operations
        SET target_type = ?, target_id = last_insert_rowid(), target_ref = ?, step = ?, lease_until_ms = ?, updated_at = ?, last_error = NULL
-       WHERE request_id = ? AND status = 'started' AND lease_token = ?`
+       WHERE request_id = ? AND status = 'started' AND lease_token = ? AND step = 'validated'`
     ).bind(targetType, targetRef, nextStep, leaseUntil, now, handle.requestId, handle.leaseToken),
   ]);
+  // A zero-row guarded INSERT/UPDATE is not a SQL error: db.batch would
+  // otherwise commit an orphan order after an expired/reclaimed lease.
+  if (toInt(insertResult.meta?.changes, 0) !== 1 || toInt(updateResult.meta?.changes, 0) !== 1) {
+    throw new CriticalOperationBusyError('Сохранение заказа было перехвачено другим запросом. Обновите страницу и повторите действие.');
+  }
   const id = toInt(insertResult.meta?.last_row_id, 0);
   await refreshCriticalOperation(db, handle);
   const targetId = toInt(handle.row.target_id, 0) || id;

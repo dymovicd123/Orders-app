@@ -19,11 +19,13 @@ CREATE TABLE order_items (
 );
 CREATE TABLE inventory_reservations (
  id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,
- inventory_source TEXT,variant_id INTEGER,status TEXT,quantity INTEGER
+ inventory_source TEXT,variant_id INTEGER,status TEXT,quantity INTEGER,unresolved_reason TEXT
 );
 CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT);
 CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER);
 CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER);
+CREATE TABLE exchanges (id INTEGER PRIMARY KEY,status TEXT);
+CREATE TABLE inventory_lifecycle_events (id INTEGER PRIMARY KEY,order_item_id INTEGER,operation_id INTEGER,operation_type TEXT,event_type TEXT,status TEXT,pending_reason TEXT);
 CREATE TABLE returns(id INTEGER PRIMARY KEY,status TEXT);
 CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
 CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,order_item_id INTEGER,quantity INTEGER,status TEXT);
@@ -34,7 +36,7 @@ INSERT INTO order_items VALUES(
  4348,1775,75,1498,'ЭТНО КАРДИГАН','adult','ЖЕН','СВЕТЛО-БЕЖЕВЫЙ',
  'ШЕРСТЬ','СТАНДАРТ','52',1,'warehouse',0,'reserved','2026-10-22T08:00:00Z'
 );
-INSERT INTO inventory_reservations VALUES(1,1775,4348,'warehouse',1498,'active',1);
+INSERT INTO inventory_reservations VALUES(1,1775,4348,'warehouse',1498,'active',1,NULL);
 `)
 const db = {
  prepare(query) {
@@ -71,7 +73,7 @@ await scenario('Known SKU + physical adequate',`INSERT INTO inventory_stock VALU
 // With an active valid reservation, old released/fulfilled history must not create a popup.
 await scenario('Historical released reservation next to active',`
   INSERT INTO inventory_stock VALUES(1,'warehouse',1498,2);
-  INSERT INTO inventory_reservations VALUES(2,1775,4348,'warehouse',1498,'released',1)`,0,0,0)
+  INSERT INTO inventory_reservations VALUES(2,1775,4348,'warehouse',1498,'released',1,NULL)`,0,0,0)
 await scenario('Missing active reservation, known SKU',`
   DELETE FROM inventory_reservations`,1,0,0)
 await scenario('Only historical released reservation',`
@@ -80,6 +82,12 @@ await scenario('Only historical released reservation',`
 await scenario('Known pending with never-created reservation',`
   DELETE FROM inventory_reservations;
   UPDATE order_items SET stock_writeoff_status='pending_reservation'`,1,1,0)
+await scenario('Concurrent shortage retained as unresolved, known SKU requires actionable review',`
+  UPDATE inventory_reservations SET status='unresolved',unresolved_reason='concurrent_shortage';
+  UPDATE order_items SET stock_writeoff_status='pending_reservation'`,1,1,0)
+await scenario('Other unresolved reason is not automatically treated as a concurrent known-stock problem',`
+  UPDATE inventory_reservations SET status='unresolved',unresolved_reason='catalog_variant';
+  UPDATE order_items SET stock_writeoff_status='pending_reservation'`,1,0,0)
 await scenario('Genuinely unresolved catalog identity',`
   DELETE FROM inventory_reservations;
   UPDATE order_items SET product_id=NULL,variant_id=NULL,stock_writeoff_status='catalog_unresolved'`,1,1,0)
@@ -108,4 +116,4 @@ assert(shipping.includes('if (!actionableReview.count || !actionableReview.items
 assert(shipping.indexOf('inventory_reservation_inconsistent')<shipping.indexOf("code: 'catalog_review_required'"),'Stock inconsistency is separate')
 assert(!shipping.includes('stockConfirmations: null'),'Do not introduce confirmation popup')
 sql.close()
-console.log('BRANCH2_RESOLVER_ONLY_WHEN_ACTIONABLE_PASSED: 12 actual SQLite cases; empty modal prohibited; no D1 writes')
+console.log('BRANCH2_RESOLVER_ONLY_WHEN_ACTIONABLE_PASSED: 14 actual SQLite cases; empty modal prohibited; no D1 writes')

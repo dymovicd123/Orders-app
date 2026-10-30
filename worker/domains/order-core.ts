@@ -112,6 +112,14 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
           ? null
           : Number(item?.observedPhysicalQuantity),
         shortageAcknowledged: Boolean(item?.shortageAcknowledged),
+        shortageDecision: item?.shortageDecision && typeof item.shortageDecision === 'object'
+          ? {
+            inventorySource: item.shortageDecision.inventorySource,
+            variantId: item.shortageDecision.variantId,
+            requestedQuantity: item.shortageDecision.requestedQuantity,
+            physicalQuantity: item.shortageDecision.physicalQuantity,
+            reservedQuantity: item.shortageDecision.reservedQuantity,
+          } : null,
         inputIndex,
       };
     })

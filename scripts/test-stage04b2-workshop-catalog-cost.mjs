@@ -7,9 +7,9 @@ const base = fs.readFileSync('migrations/0083_v72_workshop_settlement_foundation
 const original = fs.readFileSync('migrations/0084_v72_workshop_settlement_status_capture.sql', 'utf8')
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8')
 assert.match(wrangler, /"name"\s*:\s*"orders-app-branch2"/)
-assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2"/)
-assert.match(wrangler, /"database_id"\s*:\s*"40065052-854e-44b8-bcd5-251bdd488301"/)
-assert.doesNotMatch(wrangler, /orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
+assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2_mirror_20261027"/)
+assert.match(wrangler, /"database_id"\s*:\s*"0904a573-21ff-44d8-93b0-c9200f771702"/)
+assert.doesNotMatch(wrangler, /orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4|40065052-854e-44b8-bcd5-251bdd488301/);
 assert.match(migration, /DROP TRIGGER IF EXISTS trg_workshop_settlement_completion/)
 assert.doesNotMatch(migration, /(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:orders|order_items|payments|catalog_execution_prices|workshop_tasks)\b/i)
 assert.doesNotMatch(migration, /(?:ALTER|DROP)\s+TABLE\s+/i)
