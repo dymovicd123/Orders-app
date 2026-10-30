@@ -1,0 +1,39 @@
+name: Branch2 warehouse pinned release 1fa6e7a3 one-time
+on:
+  push:
+    branches: [ops/branch2-warehouse-verified-version-promotion-20261030]
+    paths:
+      - '.github/workflows/warehouse-branch2-pinned-release-once-20261030.yml'
+permissions:
+  contents: read
+concurrency:
+  group: branch2-pinned-warehouse-release-20261030
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/ops/branch2-warehouse-verified-version-promotion-20261030'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked Wrangler CLI
+        run: npm ci
+      - name: Verify exact Branch2 SHA and pre-release bookmark; promote pinned version and rollback on failure
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --check scripts/ops/warehouse-branch2-pinned-release-once-20261030.mjs
+          node scripts/ops/warehouse-branch2-pinned-release-once-20261030.mjs
+      - name: Preserve pre-release Branch2 D1 time-travel bookmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch2-warehouse-p0-pre-release-d1-bookmark
+          path: release-proof/branch2-warehouse-version-promotion-bookmark.json
+          retention-days: 7
+          if-no-files-found: ignore
