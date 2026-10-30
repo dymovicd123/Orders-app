@@ -4,10 +4,9 @@ import { mapSqlRows } from '../core/sql.ts'
 import { cleanText, normalizeDate, toInt, upperText } from '../core/text.ts'
 import type { ActivityEventInput } from '../core/types.ts'
 
-export async function writeActivityLog(db: D1Database, input: ActivityEventInput) {
+export function activityLogStatement(db: D1Database, input: ActivityEventInput) {
   const timestamp = input.createdAt || new Date().toISOString();
-  try {
-    await db.prepare(
+  return db.prepare(
       `INSERT INTO activity_log (
         event_type, entity_type, entity_id, order_id, external_order_id,
         title, details, amount, created_at
@@ -22,7 +21,12 @@ export async function writeActivityLog(db: D1Database, input: ActivityEventInput
       input.details ? cleanText(input.details) : null,
       Math.max(0, toInt(input.amount, 0)),
       timestamp,
-    ).run();
+    );
+}
+
+export async function writeActivityLog(db: D1Database, input: ActivityEventInput) {
+  try {
+    await activityLogStatement(db,input).run();
   } catch (error) {
     console.warn('Activity log write skipped:', error);
   }
