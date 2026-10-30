@@ -5,6 +5,7 @@ import { summarizeWriteoff } from '../src/features/inventory/writeoffReview.ts'
 const read = file => fs.readFileSync(file, 'utf8')
 const view = read('src/app/controllers/useOperationalViewModel.ts')
 const panel = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
+const unified = read('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx')
 const write = read('worker/domains/inventory-movement.ts')
 const app = read('src/App.tsx')
 const workshop = read('src/features/sections/WorkshopSection.tsx')
@@ -20,9 +21,15 @@ for (const text of [
   "[inventoryData, catalogData, inventoryDraft.source",
 ])
   assert(view.includes(text), 'Catalog-only SKU missing in writeoff picker: '+text)
-assert(panel.includes('Нет записи на этой точке · по системе 0'))
-assert(panel.includes('Нет складской записи · потребуется подтверждение'))
-assert(panel.includes('Проверить списание') || panel.includes('WriteoffReview'))
+// The dedicated WriteoffReview/labels are retired. The real operation goes through
+// the unified workspace and requires an explicit API confirmation for untracked stock.
+assert.match(panel, /InventoryUnifiedQuantityWorkspace/, 'Unified operation view must be mounted')
+assert.match(panel, /mode={mode}/, 'Selected writeoff mode must reach the operation form')
+assert.match(panel, /groups={ctx\.inventoryOperationAllProductGroups}/, 'Catalog-only variants must reach the form')
+assert.match(panel, /onSave={\(\)=>ctx\.saveInventoryMovement\(\)}/, 'Unified operation must save through the guarded API')
+assert.match(unified, /writeoff:\s*\{ title: 'Списание', action: 'Подтвердить списание'/)
+assert.match(unified, /Комментарий \(необязательно\)/)
+assert.match(unified, /Нужно подтвердить фактическую выдачу/, 'Physical exception must be explained to staff')
 assert(app.includes("result.code === 'stock_resolution_required'"))
 assert(app.includes("stockConfirmations"))
 assert(workshop.includes("workshopChannel === 'kaspi'"), 'Keep urgent Kaspi workshop channel')
