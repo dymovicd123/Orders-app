@@ -4165,10 +4165,12 @@ function App() {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (field === 'quantity') {
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (orderPanel === 'zammler' && field === 'sourceType' && value === 'workshop') {
@@ -4339,6 +4341,7 @@ function App() {
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
           workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
+          shortageDecision: item.sourceType !== 'workshop' ? item.shortageDecision ?? null : undefined,
         })),
         payments: createDraft.payments.map((payment, index) => ({
           paymentDate: payment.paymentDate,
@@ -4363,6 +4366,8 @@ function App() {
         reservedQuantity?: number
         requestedQuantity?: number
         shortage?: number
+        inventorySource?: 'warehouse' | 'boutique'
+        variantId?: number
       }
       type CreateOrderRetiredCatalogItem = {
         inputIndex?: number
@@ -4424,7 +4429,10 @@ function App() {
               stockObservationEnabled: false,
               observedPhysicalQuantity: null,
               shortageAcknowledged: false,
+              shortageDecision: null,
               serverShortage: {
+                inventorySource: shortage.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
+                variantId: Number(shortage.variantId || 0),
                 physicalQuantity: Number(shortage.physicalQuantity || 0),
                 reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
                 requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
@@ -5582,10 +5590,12 @@ function App() {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (field === 'quantity') {
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (field === 'audienceType') {
@@ -6594,6 +6604,7 @@ function removeDebtPayment(index: number) {
             workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
             workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
             shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
+            shortageDecision: item.sourceType !== 'workshop' ? item.shortageDecision ?? null : undefined,
           })),
         }
       }
@@ -6670,6 +6681,8 @@ function removeDebtPayment(index: number) {
         reservedQuantity?: number
         requestedQuantity?: number
         shortage?: number
+        inventorySource?: 'warehouse' | 'boutique'
+        variantId?: number
       }
       type OrderStockWriteResult = {
         productName?: string
@@ -6701,7 +6714,10 @@ function removeDebtPayment(index: number) {
               stockObservationEnabled: false,
               observedPhysicalQuantity: null,
               shortageAcknowledged: false,
+              shortageDecision: null,
               serverShortage: {
+                inventorySource: shortage.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
+                variantId: Number(shortage.variantId || 0),
                 physicalQuantity: Number(shortage.physicalQuantity || 0),
                 reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
                 requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),

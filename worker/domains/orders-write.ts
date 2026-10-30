@@ -852,11 +852,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
         }
         // Ordering is a promise/reservation, not a full physical stock count.
-        // Older clients may still submit observedPhysicalQuantity: ignore it rather than
-        // silently changing the Warehouse/Boutique truth. A shortage is kept as a
-        // negative available balance and surfaced for warehouse attention.
+        // Physical quantities are never set by creating an order. A shortage
+        // requires a deliberate, snapshot-bound decision from the employee;
+        // the server must not manufacture acknowledgement on their behalf.
         let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
-          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
+          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null }
         ));
         let normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
@@ -943,29 +943,62 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           throw new OrderRetiredCatalogConfirmationError(retiredConfirmationItems);
         }
 
-        // A confirmed retired identity starts a fresh generation with Physical=0 and Reserved=0.
-        // If the caller has not supplied/acknowledged a stock decision, stop here before any
-        // Catalog row is recreated. This keeps failed order attempts read-only.
-        const retiredFreshShortages = [];
+        // A retired SKU starts a new catalog generation with no physical/reserved stock.
+        // It has no active variant ID yet, so the initial consent is bound to variantId=0,
+        // the *verified retired identity*, source and aggregate quantity. Do not create any
+        // catalog row until the explicit decision is validated for every matching line.
+        const retiredGroups = new Map<string, {
+          source: 'warehouse' | 'boutique';
+          productName: string;
+          requestedQuantity: number;
+          inputIndexes: number[];
+          lines: typeof normalizedItems;
+        }>();
         for (const [index, item] of normalizedItems.entries()) {
-          if (item.isWorkshop || item.observedPhysicalQuantity !== null || item.shortageAcknowledged) continue;
+          if (item.isWorkshop) continue;
           const inputIndex = Math.max(0, toInt(item.inputIndex, index));
           const retiredCandidate = retiredCandidateByInputIndex.get(inputIndex);
           if (!retiredCandidate || !confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) continue;
-          retiredFreshShortages.push({
-            inventorySource: item.inventorySource,
-            variantId: 0,
-            inputIndexes: [inputIndex],
+          const key = `${item.inventorySource}:${retiredCandidate.confirmationKey}`;
+          const group = retiredGroups.get(key) || {
+            source: item.inventorySource,
             productName: item.productName,
-            requestedQuantity: Math.max(1, toInt(item.quantity, 1)),
-            physicalQuantity: 0,
-            reservedQuantity: 0,
-            shortage: Math.max(1, toInt(item.quantity, 1)),
-          });
+            requestedQuantity: 0,
+            inputIndexes: [],
+            lines: [],
+          };
+          group.requestedQuantity += Math.max(1, toInt(item.quantity, 1));
+          group.inputIndexes.push(inputIndex);
+          group.lines.push(item);
+          retiredGroups.set(key, group);
         }
-        if (retiredFreshShortages.length) {
-          throw new OrderStockShortageError(retiredFreshShortages);
+        const approvedRetiredInputIndexes = new Set<number>();
+        const retiredFreshShortages = [];
+        for (const group of retiredGroups.values()) {
+          const approved = group.lines.every(item => (
+            item.shortageAcknowledged
+            && item.shortageDecision?.inventorySource === group.source
+            && item.shortageDecision.variantId === 0
+            && item.shortageDecision.physicalQuantity === 0
+            && item.shortageDecision.reservedQuantity === 0
+            && item.shortageDecision.requestedQuantity === group.requestedQuantity
+          ));
+          if (approved) {
+            group.inputIndexes.forEach(index => approvedRetiredInputIndexes.add(index));
+          } else {
+            retiredFreshShortages.push({
+              inventorySource: group.source,
+              variantId: 0,
+              inputIndexes: [...new Set(group.inputIndexes)].sort((a, b) => a - b),
+              productName: group.productName,
+              requestedQuantity: group.requestedQuantity,
+              physicalQuantity: 0,
+              reservedQuantity: 0,
+              shortage: group.requestedQuantity,
+            });
+          }
         }
+        if (retiredFreshShortages.length) throw new OrderStockShortageError(retiredFreshShortages);
 
         const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
         const observedByVariant = new Map<string, number>();
@@ -975,6 +1008,14 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             ? await resolveWorkshopCatalogProductOnly(db, item)
             : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
           preResolvedCatalog.push(resolved);
+          // A valid retired-generation consent was taken before catalog mutation
+          // while no new variant ID existed. Bind it to the actual resolved ID
+          // and let the normal fresh-stock check reject any intervening changes.
+          const inputIndex = Math.max(0, toInt(item.inputIndex, normalizedItems.indexOf(item)));
+          if (approvedRetiredInputIndexes.has(inputIndex)
+              && resolved.variantId && item.shortageDecision?.variantId === 0) {
+            item.shortageDecision = { ...item.shortageDecision, variantId: resolved.variantId };
+          }
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
             throw new OrderInputValidationError(`Нельзя подтверждать фактический остаток для «${item.productName}», пока товар или одна из характеристик не распознаны системой.`);
@@ -1870,7 +1911,6 @@ export async function updateOrderCritical(
         for (const item of nextItems) {
           if (!item.isWorkshop) {
             item.observedPhysicalQuantity = null;
-            item.shortageAcknowledged = true;
           }
         }
       }

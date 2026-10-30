@@ -656,7 +656,7 @@ export class OrderStockShortageError extends Error {
     const first = shortages[0]
     const suffix = shortages.length > 1 ? ` Ещё проблемных позиций: ${shortages.length - 1}.` : ''
     super(first
-      ? `По свежим данным для «${first.productName}» не хватает ${first.shortage} шт. Посчитайте фактическое количество или выберите «Сейчас проверить не могу».${suffix}`
+      ? `По свежим данным для «${first.productName}» не хватает ${first.shortage} шт. Перед сохранением подтвердите резерв при нехватке в форме заказа.${suffix}`
       : 'Перед сохранением заказа нужно уточнить складской остаток.')
     this.name = 'OrderStockShortageError'
     this.shortages = shortages
@@ -676,7 +676,7 @@ export async function assertCreateOrderShortageDecisions(
     requestedQuantity: number;
     productName: string;
     hasObservation: boolean;
-    acknowledged: boolean;
+    decisions: Array<{ acknowledged: boolean; snapshot: ReturnType<typeof normalizeOrderItems>[number]['shortageDecision'] }>;
   }>();
 
   for (const [index, item] of items.entries()) {
@@ -693,23 +693,23 @@ export async function assertCreateOrderShortageDecisions(
       requestedQuantity: 0,
       productName: item.productName,
       hasObservation: false,
-      acknowledged: true,
+      decisions: [],
     };
     current.inputIndexes.push(Math.max(0, toInt(item.inputIndex, index)));
     current.requestedQuantity += Math.max(0, toInt(item.quantity, 0));
     current.hasObservation = current.hasObservation || item.observedPhysicalQuantity !== null;
-    current.acknowledged = current.acknowledged && Boolean(item.shortageAcknowledged);
+    current.decisions.push({ acknowledged: Boolean(item.shortageAcknowledged), snapshot: item.shortageDecision });
     grouped.set(key, current);
   }
 
-  const unresolvedDecisionGroups = [...grouped.values()].filter(group => (
-    group.requestedQuantity > 0 && !group.hasObservation && !group.acknowledged
-  ));
-  if (!unresolvedDecisionGroups.length) return;
+  // Check every requested SKU, including purportedly acknowledged shortages.
+  // A client-supplied Boolean never by itself constitutes a stock decision.
+  const decisionGroups = [...grouped.values()].filter(group => group.requestedQuantity > 0);
+  if (!decisionGroups.length) return;
 
   const shortages: OrderStockShortage[] = [];
   const excludedOrderId = Math.max(0, toInt(options.excludeOrderId, 0));
-  for (const chunk of chunksOf(unresolvedDecisionGroups, 30)) {
+  for (const chunk of chunksOf(decisionGroups, 30)) {
     const valuesSql = chunk.map(() => '(?, ?, ?)').join(', ');
     const binds: Array<string | number> = [];
     for (const group of chunk) {
@@ -757,6 +757,15 @@ export async function assertCreateOrderShortageDecisions(
       const reserved = Math.max(0, toInt(row?.reserved_quantity, 0));
       const freeAfterReservation = physical - reserved - group.requestedQuantity;
       if (freeAfterReservation < 0) {
+        const confirmedAtCurrentSnapshot = group.decisions.length > 0 && group.decisions.every(({ acknowledged, snapshot }) => (
+          acknowledged && snapshot
+          && snapshot.inventorySource === group.inventorySource
+          && snapshot.variantId === group.variantId
+          && snapshot.requestedQuantity === group.requestedQuantity
+          && snapshot.physicalQuantity === physical
+          && snapshot.reservedQuantity === reserved
+        ));
+        if (confirmedAtCurrentSnapshot) continue;
         shortages.push({
           inventorySource: group.inventorySource,
           variantId: group.variantId,
