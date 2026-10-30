@@ -401,6 +401,11 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       size: selected.sizeLabel || '',
       stockObservationEnabled: false,
       observedPhysicalQuantity: null,
+      // A product picker bypasses updateCreateItem/updateEditorItem. Never
+      // carry a confirmation for a different SKU into the new product.
+      shortageAcknowledged: false,
+      shortageDecision: null,
+      serverShortage: undefined,
     }
   }
 
