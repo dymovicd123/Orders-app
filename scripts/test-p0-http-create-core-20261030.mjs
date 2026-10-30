@@ -43,11 +43,20 @@ function stmt(statement,params=[]){
   async all(){return {results:sql.prepare(statement).all(...params)}},
   async run(){
    const m=sql.prepare(statement).run(...params)
+   // Simulate failure AFTER the completion UPDATE committed but BEFORE
+   // the caller received its result. This is a real persisted critical op.
+   if(loseCriticalCompleteResponseOnce
+       && statement.includes('UPDATE critical_operations')
+       && statement.includes("SET status = 'completed'")){
+     loseCriticalCompleteResponseOnce=false
+     throw new Error('INJECTED: lost response after critical-operation completion')
+   }
    return {success:true,meta:{changes:Number(m.changes),last_row_id:Number(m.lastInsertRowid)}}
   },
  }
 }
 let loseReservationBatchResponseOnce=false
+let loseCriticalCompleteResponseOnce=false
 const db={
  prepare:q=>stmt(q),
  async batch(stmts){
@@ -229,4 +238,26 @@ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='active'").get(savedId).n,1)
 assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2)
-console.log('P0_HTTP_CREATE_EDIT_PASSED: migrations '+migrations.length+', create, shortage, metadata, source transfer, item removal, idempotency and committed-but-lost HTTP response')
+// Critical operation is fully completed, but the HTTP request failed before
+// the response and would historically skip all POST-completion audit writes.
+// The retry will return the cached response WITHOUT running the create body.
+loseCriticalCompleteResponseOnce=true
+const completedLost=await http('POST','/api/orders',payload('create-complete-lost'))
+assert.equal(completedLost.status,409,'Injected committed operation should return safe retry guidance')
+assert.equal(loseCriticalCompleteResponseOnce,false,'Critical-completion fault hook must fire')
+const recoveredCompleted=await http('POST','/api/orders',payload('create-complete-lost'))
+assert.equal(recoveredCompleted.status,201,'Finished critical-op replay: '+JSON.stringify(recoveredCompleted))
+const completedOrderId=Number(recoveredCompleted.data.orderId)
+assert.equal(sql.prepare('SELECT status FROM critical_operations WHERE target_id=? AND operation_type=?').get(completedOrderId,'order_create').status,'completed')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_manager_audit WHERE order_id=? AND action=?').get(completedOrderId,'created').n,1,
+ 'Audit must survive a lost response just AFTER critical completion')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type=?').get(completedOrderId,'order_created').n,1,
+ 'Activity event must survive a lost response just AFTER critical completion')
+const repeatedCompleted=await http('POST','/api/orders',payload('create-complete-lost'))
+assert.equal(repeatedCompleted.status,201)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM orders WHERE id=?').get(completedOrderId).n,1)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_manager_audit WHERE order_id=? AND action=?').get(completedOrderId,'created').n,1)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type=?').get(completedOrderId,'order_created').n,1)
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2,
+ 'A post-commit failure must never synthesize physical stock')
+console.log('P0_HTTP_CREATE_EDIT_PASSED: migrations '+migrations.length+', create, shortage, metadata, source transfer, item removal, idempotency and both reservation and critical-completion lost HTTP responses')
