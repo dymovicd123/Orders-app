@@ -57,9 +57,17 @@ function stmt(statement,params=[]){
 }
 let loseReservationBatchResponseOnce=false
 let loseCriticalCompleteResponseOnce=false
+let stealCreateLeaseAtBatchOnce=false
 const db={
  prepare:q=>stmt(q),
  async batch(stmts){
+  // Simulate a concurrent retry stealing the lease immediately before the
+  // atomic header INSERT+target UPDATE (not before request validation).
+  if(stealCreateLeaseAtBatchOnce && stmts.some(st=>st.sql?.includes('INSERT INTO orders ('))){
+   stealCreateLeaseAtBatchOnce=false
+   const changed=sql.prepare("UPDATE critical_operations SET lease_token='other-owner', lease_until_ms=? WHERE request_id=? AND step='validated'").run(Date.now()+45000,'create-stolen-lease')
+   assert.equal(Number(changed.changes),1,'Create lease fault must actually run')
+  }
   sql.exec('BEGIN IMMEDIATE')
   let committed=false
   try{
@@ -127,6 +135,20 @@ assert.equal(stock.quantity,2)
 assert.equal(stock.reserved_quantity,1)
 const createdId=Number(created.data.orderId)
 assert(createdId>0)
+// An expired/reclaimed lease must not let the old worker commit an orphan
+// order header merely because its guarded target UPDATE changes zero rows.
+stealCreateLeaseAtBatchOnce=true
+const stolenLease=await http('POST','/api/orders',payload('create-stolen-lease'))
+assert.equal(stolenLease.status,409,'Stolen header lease should give retry guidance: '+JSON.stringify(stolenLease))
+assert.equal(stealCreateLeaseAtBatchOnce,false,'Lease fault injection must fire')
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-stolen-lease'").get().n,0,
+ 'Stale lease cannot commit orphan order header')
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1,
+ 'Stale lease cannot create a reservation')
+const leaseRow=sql.prepare('SELECT target_id,step,status FROM critical_operations WHERE request_id=?').get('create-stolen-lease')
+assert.equal(leaseRow.target_id,null)
+assert.equal(leaseRow.step,'validated')
+assert.equal(leaseRow.status,'started')
 const getOrderResponse=await http('GET','/api/orders/'+createdId)
 assert.equal(getOrderResponse.status,200,'GET must read the newly created itemized order: '+JSON.stringify(getOrderResponse))
 const current=getOrderResponse.data.order
