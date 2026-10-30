@@ -1,10 +1,22 @@
-name: Cloudflare deploy monitor
+name: Cloudflare native build monitor
 
 on:
   push:
     branches:
       - branch2
       - main
+    # A documentation, test or CI-only merge must never become a deploy request.
+    # External Cloudflare auto-build settings still need independent review.
+    paths:
+      - 'src/**'
+      - 'worker/**'
+      - 'public/**'
+      - 'index.html'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.*'
+      - 'tsconfig*.json'
 
 permissions:
   contents: read
@@ -12,7 +24,7 @@ permissions:
 
 jobs:
   monitor:
-    name: Cloudflare deploy / ${{ github.ref_name }}
+    name: Cloudflare native build / ${{ github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -39,8 +51,8 @@ jobs:
               ;;
             branch2)
               grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-              grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-              grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
+              grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+              grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
               if grep -Fq 'orders_db_prod' wrangler.jsonc || grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc; then
                 echo "Production D1 binding leaked into branch2. Refusing deploy." >&2
                 exit 11
@@ -122,11 +134,7 @@ jobs:
               fi
             else
               echo "Waiting for Cloudflare build for $GITHUB_SHA (attempt $attempt/48)..."
-              if [[ "$GITHUB_REF_NAME" == "main" && "$attempt" -ge 12 ]]; then
-                echo "fallback_required=true" >> "$GITHUB_OUTPUT"
-                echo "No matching native Cloudflare build appeared for main after 2 minutes; switching to the guarded direct Production deploy fallback."
-                exit 0
-              fi
+              # Fail closed if the native build never appears. Never publish from a monitor.
             fi
             sleep 10
           done
@@ -143,12 +151,6 @@ jobs:
           echo "build_uuid=$build_uuid" >> "$GITHUB_OUTPUT"
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
 
-          if [[ "$outcome" == "skipped" && "$GITHUB_REF_NAME" == "main" ]]; then
-            echo "fallback_required=true" >> "$GITHUB_OUTPUT"
-            echo "Native Cloudflare build was skipped for main; switching to the guarded direct Production deploy fallback."
-            exit 0
-          fi
-          echo "fallback_required=false" >> "$GITHUB_OUTPUT"
 
           if [[ "$outcome" != "success" ]]; then
             echo "Cloudflare build failed with outcome: ${outcome:-unknown}" >&2
@@ -172,45 +174,11 @@ jobs:
             done
             echo "----- end Cloudflare build log -----"
 
-            if [[ "$GITHUB_REF_NAME" == "main" && "$stale_build_token" == "true" ]]; then
-              echo "fallback_required=true" >> "$GITHUB_OUTPUT"
-              echo "Cloudflare native build token is unavailable for main; switching to the guarded direct Production deploy fallback."
-              exit 0
-            fi
+            # A stale Cloudflare token is an external deployment failure, not
+            # authorization for a second unsupervised production publisher.
 
             exit 7
           fi
-
-      - name: Setup Node 24 for Production direct deploy fallback
-        if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'main'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-
-      - name: Install locked dependencies for Production direct deploy fallback
-        if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'main'
-        run: npm ci
-
-      - name: Verify and deploy exact main commit after native skip
-        if: steps.wait.outputs.fallback_required == 'true' && github.ref_name == 'main'
-        shell: bash
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_REF_NAME" == "main" ]]
-          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          grep -Fq '"name": "orders-app"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
-          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
-          if grep -Fq 'orders_db_branch2' wrangler.jsonc || grep -Fq '40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc; then
-            echo "Branch2 D1 identity detected in Production fallback. Refusing deploy." >&2
-            exit 41
-          fi
-          npm run release:check
-          npm run deploy
 
       - name: Mark deploy success
         if: success()
@@ -226,7 +194,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-            -d "$(jq -nc --arg c "cloudflare-deploy/$GITHUB_REF_NAME" --arg d "Cloudflare deploy succeeded" --arg u "$RUN_URL" '{state:"success",context:$c,description:$d,target_url:$u}')" >/dev/null
+            -d "$(jq -nc --arg c "cloudflare-deploy/$GITHUB_REF_NAME" --arg d "Cloudflare native build succeeded; monitor did not deploy" --arg u "$RUN_URL" '{state:"success",context:$c,description:$d,target_url:$u}')" >/dev/null
 
       - name: Mark deploy failure
         if: failure()

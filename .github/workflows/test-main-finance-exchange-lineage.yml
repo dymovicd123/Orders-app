@@ -6,7 +6,6 @@ on:
       - 'worker/domains/finance-reports.ts'
       - 'scripts/test-finance-exchange-payment-lineage-20261021.mjs'
       - 'scripts/test-main-finance-lineage-release-20261021.mjs'
-      - 'package.json'
       - '.github/workflows/test-main-finance-exchange-lineage.yml'
   push:
     branches: [main]
@@ -14,7 +13,6 @@ on:
       - 'worker/domains/finance-reports.ts'
       - 'scripts/test-finance-exchange-payment-lineage-20261021.mjs'
       - 'scripts/test-main-finance-lineage-release-20261021.mjs'
-      - 'package.json'
 permissions:
   contents: read
 jobs:
