@@ -14,6 +14,15 @@ for(const name of migrations){
  try {sql.exec(fs.readFileSync('migrations/'+name,'utf8'));last=name}
  catch(error){throw new Error('Fresh SQLite migration '+name+' failed after '+last+': '+(error?.message||error))}
 }
+// Test-only compatibility shim for confirmed migration debt #648.
+// Never execute this against production or a connected D1 binding.
+const orderColumns=new Set(sql.prepare("PRAGMA table_info(orders)").all().map(x=>x.name))
+const localSchemaGaps=[]
+if(!orderColumns.has('manager_snapshot_name')){
+  localSchemaGaps.push('orders.manager_snapshot_name')
+  sql.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
+}
+console.log('P0_HTTP_LOCAL_SCHEMA_GAPS: '+JSON.stringify(localSchemaGaps)+' (tracked in #648)')
 const tables=()=>new Set(sql.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
 for(const n of ['app_users','app_sessions','inventory_stock','inventory_reservations','critical_operations','orders','order_items','catalog_products','catalog_variants']){
  assert(tables().has(n),'Fresh complete schema must have '+n)
