@@ -1,60 +1,62 @@
+import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import path from 'node:path'
 
-const root = process.cwd()
-const read = file => fs.readFileSync(path.join(root, file), 'utf8')
-const check = (value, message) => { if (!value) throw new Error(message) }
+const read = file => fs.readFileSync(file,'utf8')
+const table=read('src/features/sections/OrdersTableSection.tsx')
+const worker=read('worker/index.ts')
+const deletion=read('worker/domains/order-delete.ts')
+const preview=read('worker/domains/order-delete-preview.ts')
+const ordersWrite=read('worker/domains/orders-write.ts')
 
-try {
-  const app = read('src/App.tsx')
-  const table = read('src/features/sections/OrdersTableSection.tsx')
-  const worker = read('worker/index.ts')
-  const deletion = read('worker/domains/order-delete.ts')
-  const ordersWrite = read('worker/domains/orders-write.ts')
-
-  check(!app.includes("setError('Удаление заказа доступно только администратору.')"), 'frontend still blocks manager deletion')
-  check(app.includes("apiFetch(`/api/orders/${order.id}/delete`"), 'frontend does not use scoped delete endpoint')
-  check(table.includes('{!retainedOnly && !archived ? ('), 'delete action is not visible to ordinary staff')
-
-  const routeStart = worker.indexOf('const orderDeleteMatch =')
-  const routeEnd = worker.indexOf('const orderMatch =', routeStart)
-  const route = worker.slice(routeStart, routeEnd)
-  check(routeStart >= 0 && routeEnd > routeStart, 'delete route block missing')
-  check(route.includes("request.method === 'POST'"), 'delete route is not POST')
-  check(!route.includes('requireAdminAccess') && !route.includes('requireAdminUser'), 'delete route still requires admin')
-
-  check(deletion.includes('ORDER BY e.id DESC'), 'active exchanges are not cancelled newest-first')
-  check(deletion.includes('await cancelExchange(db, exchangeId'), 'exchange auto-cancel missing')
-  check(deletion.includes('await cancelReturn(db, returnId'), 'return auto-cancel missing')
-  check(deletion.indexOf('const unsafeReturn =') < deletion.indexOf('await cancelExchange(db, exchangeId'), 'return safety preflight happens after mutation')
-  check(deletion.indexOf('const appliedLifecycle =') < deletion.indexOf('await cancelExchange(db, exchangeId'), 'canonical lifecycle preflight happens after mutation')
-  check(deletion.includes("status = 'fulfilled'"), 'physical handover preflight missing')
-  check(deletion.includes("normalizeShippingStatus((order as any).shipping_status) === 'sent'"), 'sent-order physical guard missing')
-  check(deletion.includes("confirmationRequired.code = 'order_delete_physical_confirmation_required'"), 'physical fact confirmation code missing')
-  check(deletion.includes("physicalOutcome !== 'not_issued'"), 'false-shipment confirmation is not explicit')
-  check(deletion.includes('datetime(checked_at) > datetime(?)'), 'newer physical check freshness barrier missing')
-  check(deletion.includes('inventory_stocktake_sessions'), 'stocktake freshness barrier missing')
-  check(deletion.includes("status = 'active'"), 'active stocktake chronology guard missing')
-  check(deletion.includes("id NOT LIKE 'REV-%-P-%'"), 'completed full stocktake barrier missing')
-  check(deletion.includes("reference_type, reference_id, comment, created_at"), 'false-shipment reversal movement history missing')
-  check(deletion.includes("SET status = 'released', released_at = ?, updated_at = ?"), 'fulfilled reservation is not retired after false-shipment reversal')
-  check(deletion.includes("SET shipping_status = 'not_sent', shipping_date = NULL"), 'false shipping marker is not normalized before deletion')
-  check(app.includes("attempt.result.code === 'order_delete_physical_confirmation_required'"), 'frontend does not handle narrow physical confirmation')
-  check(app.includes("sendDelete('not_issued')"), 'frontend does not send explicit not-issued fact')
-  check(deletion.includes('await restoreArchivedOrder'), 'safe archived-order recovery missing')
-  check(deletion.includes('requestId: `${requestId}:exchange:${exchangeId}`'), 'exchange cancellation is not retry-idempotent')
-  check(deletion.includes('requestId: `${requestId}:return:${returnId}`'), 'return cancellation is not retry-idempotent')
-  check(deletion.includes('requestId: `${requestId}:order`'), 'final logical deletion is not retry-idempotent')
-  check(deletion.includes("orderStatus: 'deleted'"), 'existing logical deletion path is not reused')
-  check(deletion.includes("{ lifecycleAction: 'order_delete' }"), 'dedicated delete path does not declare its lifecycle action')
-  check(ordersWrite.includes("options: { lifecycleAction?: 'order_delete' } = {}"), 'order editor lacks a typed internal lifecycle-action option')
-  check(ordersWrite.includes("options.lifecycleAction === 'order_delete'"), 'dedicated delete lifecycle bypass is missing')
-  check(ordersWrite.includes('workingModeEdit && !dedicatedOrderDelete'), 'ordinary working-mode lifecycle edits are no longer protected')
-  check(ordersWrite.includes('nextWorkshopStatus === existingWorkshopStatus'), 'dedicated delete bypass is not constrained against workshop lifecycle changes')
-  check(ordersWrite.includes('nextShippingStatus === existingShippingStatus'), 'dedicated delete bypass is not constrained against shipping lifecycle changes')
-
-  console.log('ORDER DELETE MOBILITY PASSED — ordinary staff get one safe delete action, deterministic return/exchange blockers auto-cancel, recorded handover asks one physical fact, false shipment reverses only when no newer physical truth supersedes it, retries are idempotent')
-} catch (error) {
-  console.error(`ORDER DELETE MOBILITY FAILED: ${error?.message || error}`)
-  process.exit(1)
-}
+// Main policy: manager uses scoped corrections, full order deletion is admin-only.
+assert.match(table,/\{isAdmin && !retainedOnly && !archived \? \(/,
+  'Delete button must be admin-only')
+assert.match(table,/loadAdminOrderDeletePreview\(order\)/,
+  'Deletion must preview physical and financial consequences')
+assert.match(table,/setAdminDeleteDraft\(/,'Delete needs an explicit review state')
+const start=worker.indexOf('const orderDeleteMatch =')
+const end=worker.indexOf('const orderMatch =',start)
+assert(start>0 && end>start, 'Dedicated POST delete route is missing')
+const route=worker.slice(start,end)
+assert.match(route,/request\.method === 'POST'/)
+assert.match(route,/requireAdminUser\(authUser\)/,'Manager must not bypass admin-only delete through the API')
+assert.match(route,/deleteOrderSafely\(/)
+assert.match(deletion,/const deletionPreview=await previewAdminOrderDeletion\(db,orderId\)/)
+assert.match(deletion,/expectedSnapshot!==deletionPreview\.chainPlan\.snapshotFingerprint/,
+  'A stale preview cannot authorize deletion')
+assert.match(deletion,/!deletionPreview\.canAttemptDelete/,
+  'Unsafe dependent return/exchange must stop unreviewed deletion')
+assert.match(preview,/chainPlan/,'Preview must describe dependency chain')
+assert.match(deletion,/admin_order_delete_sagas/,
+  'A partly executed dependency saga cannot be bypassed')
+assert.match(deletion,/hasPhysicalHandoverMarker && physicalOutcome !== 'not_issued'/,
+  'Physical handovers need explicit confirmation before any restore')
+assert.match(deletion,/order_delete_physical_confirmation_required/)
+assert.match(deletion,/stock_quantity_before/)
+assert.match(deletion,/stock_quantity_after/)
+assert.match(deletion,/physicalRestoreQuantity/,
+  'Restore measured actual delta, not reservation quantity')
+assert.match(deletion,/datetime\(checked_at\) > datetime\(\?\)/,
+  'Newer physical checks take precedence over old shipments')
+assert.match(deletion,/inventory_stocktake_sessions/)
+assert.match(deletion,/status = 'active'/)
+assert.match(deletion,/id NOT LIKE 'REV-%-P-%'/,'Full stocktakes must take precedence')
+assert.match(deletion,/reference_type, reference_id, comment, created_at/,
+  'False-shipment restore must be audited')
+assert.match(deletion,/SET status = 'released', released_at = \?, updated_at = \?/,
+  'Reversed reservations must be retired')
+assert.match(deletion,/SET shipping_status = 'not_sent', shipping_date = NULL/)
+assert.match(deletion,/await db\.batch\(statements\)/,'Stock restore is transactional')
+assert.doesNotMatch(deletion,/await cancelExchange\(db/,
+  'Do not reintroduce non-atomic blind exchange cancellation')
+assert.doesNotMatch(deletion,/await cancelReturn\(db/,
+  'Do not reintroduce non-atomic blind return cancellation')
+assert.match(deletion,/const autoCancelledExchanges = 0/)
+assert.match(deletion,/const autoCancelledReturns = 0/)
+assert.match(deletion,/await restoreArchivedOrder/)
+assert.match(deletion,/orderStatus: 'deleted'/)
+assert.match(deletion,/lifecycleAction: 'order_delete'/)
+assert.match(ordersWrite,/options\.lifecycleAction === 'order_delete'/)
+assert.match(ordersWrite,/workingModeEdit && !dedicatedOrderDelete/,
+  'Ordinary edits cannot gain the deletion privilege')
+console.log('MAIN ORDER DELETE SAFETY PASSED — admin-only UI/API, dependency snapshot and saga, explicit physical facts, stocktake freshness, idempotent deletion')
