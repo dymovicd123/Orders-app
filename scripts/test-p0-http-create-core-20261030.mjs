@@ -47,7 +47,7 @@ sql.prepare("INSERT INTO catalog_variants (id,product_id,gender,color,material,l
 for(const [id,source] of [[9041,'warehouse'],[9042,'boutique']]){
  sql.prepare("INSERT INTO inventory_stock (id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(?,?,9021,9031,'P0 HTTP ТОВАР','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',2,0)").run(id,source)
 }
-sql.prepare("INSERT INTO inventory_model_meta (key,value) VALUES('human_inventory_v2','active') ON CONFLICT(key) DO UPDATE SET value='active'").run()
+sql.prepare("INSERT INTO inventory_model_meta (key,value,updated_at) VALUES('human_inventory_v2','active','2026-10-30T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active',updated_at=excluded.updated_at").run()
 async function http(method,path,payload){
  const headers={'Cookie':'orders_session='+token}
  if(payload)headers['Content-Type']='application/json'
