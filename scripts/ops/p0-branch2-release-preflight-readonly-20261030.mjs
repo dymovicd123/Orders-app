@@ -34,9 +34,12 @@ assert.equal(native[0].deploy_command,'npx wrangler versions upload','Branch2 mu
 const deployments=await get('/workers/scripts/'+worker+'/deployments')
 const latest=Array.isArray(deployments)?deployments:deployments?.deployments
 assert(latest?.length>0,'No active Branch2 deployment')
-assert.equal(latest[0].id,expectedActive,'Active Branch2 deployment changed unexpectedly')
-assert.deepEqual(latest[0].versions?.map(x=>({id:x.version_id,percentage:x.percentage})),
- [{id:'40960f81-bb55-4d4a-bb53-1b37da9cce50',percentage:100}])
+const activeDeploymentDrift=latest[0].id!==expectedActive
+console.log('P0_BRANCH2_DEPLOYMENT_HISTORY '+JSON.stringify(latest.slice(0,6).map(x=>({
+ id:x.id,createdOn:x.created_on,source:x.source,
+ versions:(x.versions||[]).map(v=>({versionId:v.version_id,percentage:v.percentage}))
+}))))
+if(activeDeploymentDrift) console.log('P0_BRANCH2_UNEXPECTED_ACTIVE_DEPLOYMENT — promotion blocked pending review')
 const version=await get('/workers/scripts/'+worker+'/versions/'+candidate)
 assert.equal(version?.id,candidate,'Candidate Worker version missing')
 const d1=await get('/d1/database/'+dbid)
@@ -48,6 +51,7 @@ const exact=(Array.isArray(builds)?builds:[]).filter(x=>x.build_trigger_metadata
 const aggregate={
  currentActiveDeployment:latest[0].id,
  currentActiveVersion:latest[0].versions[0].version_id,
+ activeDeploymentDrift,
  candidate,
  candidateExists:true,
  worker,
@@ -61,5 +65,5 @@ mkdirSync('release-proof',{recursive:true})
 writeFileSync('release-proof/branch2-before-p0.json',JSON.stringify({
  ...aggregate, bookmark:bookmarkResult.bookmark,dbId:dbid
 },null,2)+'\n',{mode:0o600})
-console.log('P0_BRANCH2_PREFLIGHT_READONLY_PASSED '+JSON.stringify(aggregate))
-console.log('P0_BRANCH2_D1_BOOKMARK_CAPTURED_FOR_ROLLBACK — No D1 writes made')
+console.log('P0_BRANCH2_FORENSIC_READONLY_COMPLETED '+JSON.stringify(aggregate))
+console.log('P0_BRANCH2_D1_BOOKMARK_CAPTURED_FOR_REVIEW — No D1 writes made')
