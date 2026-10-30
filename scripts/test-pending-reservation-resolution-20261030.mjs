@@ -91,6 +91,8 @@ assert.match(worker,/resolvePendingReservation\(env\.DB,orderId,orderItemId,inpu
 assert.match(view,/Подтвердить резерв при нехватке/)
 assert.match(view,/Закрепить доступный резерв/)
 assert.match(view,/item\.stockWriteoffStatus==='pending_reservation'/)
+assert.match(worker,/authUser!\.employeeRole === 'Упаковщик'/, 'Packing-only account must not approve a shortage')
+assert.match(view,/canResolvePendingReservation&&/, 'Hide action for packing-only accounts')
 assert.match(view,/Обновить данные/)
 assert.match(view,/pendingReservationDraft\.preview\.snapshot/)
 console.log('PENDING_RESERVATION_RESOLUTION_PASSED: explicit snapshot, no auto-overbook, stale race, idempotency, durable evidence, current stock, sent/return/source blocks and manager UI')
