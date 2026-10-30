@@ -38,6 +38,9 @@ const queries={
  CACHED_RESERVATION_DRIFT: "SELECT COUNT(*) AS n FROM inventory_stock s WHERE s.variant_id IS NOT NULL AND COALESCE(s.reserved_quantity,0)<>COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id),0)",
  UNIDENTIFIED_STOCK: "SELECT inventory_source,COUNT(*) AS rows,SUM(quantity) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock WHERE variant_id IS NULL AND quantity>0 GROUP BY inventory_source",
  UNIDENTIFIED_RESERVED: "SELECT COUNT(*) AS n FROM inventory_stock WHERE variant_id IS NULL AND COALESCE(reserved_quantity,0)>0",
+ DEFICIT_SOURCE_TOTALS: "SELECT inventory_source,COUNT(*) AS affected_variants,SUM(reserved_quantity-quantity) AS shortage_units FROM inventory_stock WHERE variant_id IS NOT NULL AND quantity<reserved_quantity GROUP BY inventory_source",
+ DEFICIT_EXACT_POSITIONS: "SELECT inventory_source,variant_id,quantity AS physical,reserved_quantity AS reserved,(reserved_quantity-quantity) AS shortage,COALESCE(last_action,'') AS last_action FROM inventory_stock WHERE variant_id IS NOT NULL AND quantity<reserved_quantity ORDER BY shortage DESC,inventory_source,variant_id LIMIT 20",
+ PENDING_IDENTITY_LIFECYCLE: "SELECT status,direction,COUNT(*) AS n FROM inventory_lifecycle_events WHERE status='pending' GROUP BY status,direction",
  ACTIVE_RESERVATION_VARIANT_EXAMPLES: "SELECT inventory_source,variant_id,COUNT(*) AS n,SUM(quantity) AS reserved FROM inventory_reservations WHERE status='active' GROUP BY inventory_source,variant_id ORDER BY n DESC LIMIT 8"
 }
 for(const [name,query] of Object.entries(queries))await select(name,query)
