@@ -1,14 +1,8 @@
 name: 'One-off guarded two zero-stock color names 1469 1584'
+# Archived 2026-10-30: completed historical Production one-off; intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'scripts/ops/oneoff-production-color-pair-1469-1584-20261016.mjs'
-      - '.github/workflows/oneoff-color-1469-1584.yml'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-color-1469-1584.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -16,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inspect-or-apply:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 14
     env:

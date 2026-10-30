@@ -1,14 +1,8 @@
 name: One-off guarded hide retired СВЕТЛО СЕРЫЙ color
+# Archived 2026-10-30: completed historical Production one-off; intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'scripts/ops/oneoff-hide-retired-light-gray-reference-20261016.mjs'
-      - '.github/workflows/oneoff-hide-retired-light-gray-reference-20261016.yml'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-hide-retired-light-gray-reference-20261016.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -16,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   guarded-reference-retirement:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:
