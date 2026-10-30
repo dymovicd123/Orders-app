@@ -6,7 +6,6 @@ import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogCombinationV3, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
-import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
 import { admitOrderReservationAtomically } from './reservation-admission.ts'
@@ -873,17 +872,17 @@ export async function reserveOrderItemV2(
   const admission = await admitOrderReservationAtomically(db, {
     orderId,
     orderItemId,
-    source: item.inventorySource,
+    source: item.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
     stockId: stock.id,
     productId: canonicalProductId,
     variantId,
     quantity: item.quantity,
     productName: canonical.productName,
-    gender: canonical.gender,
-    color: canonical.color,
-    material: canonical.material,
-    length: canonical.length,
-    size: canonical.size,
+    gender: canonical.gender || '',
+    color: canonical.color || '',
+    material: canonical.material || '',
+    length: canonical.length || '',
+    size: canonical.size || '',
     referenceType,
     referenceId: safeReferenceId,
     timestamp,
