@@ -41,7 +41,25 @@ const queries={
  DEFICIT_SOURCE_TOTALS: "SELECT inventory_source,COUNT(*) AS affected_variants,SUM(reserved_quantity-quantity) AS shortage_units FROM inventory_stock WHERE variant_id IS NOT NULL AND quantity<reserved_quantity GROUP BY inventory_source",
  DEFICIT_EXACT_POSITIONS: "SELECT inventory_source,variant_id,quantity AS physical,reserved_quantity AS reserved,(reserved_quantity-quantity) AS shortage,COALESCE(last_action,'') AS last_action FROM inventory_stock WHERE variant_id IS NOT NULL AND quantity<reserved_quantity ORDER BY shortage DESC,inventory_source,variant_id LIMIT 20",
  PENDING_IDENTITY_LIFECYCLE: "SELECT status,direction,COUNT(*) AS n FROM inventory_lifecycle_events WHERE status='pending' GROUP BY status,direction",
+ ACTIVE_RESERVATION_ITEM_IDENTITY: "SELECT COUNT(*) AS n FROM inventory_reservations r JOIN order_items oi ON oi.id=r.order_item_id WHERE r.status='active' AND (COALESCE(r.variant_id,0)<>COALESCE(oi.variant_id,0) OR COALESCE(r.inventory_source,'')<>COALESCE(oi.inventory_source,''))",
  ACTIVE_RESERVATION_VARIANT_EXAMPLES: "SELECT inventory_source,variant_id,COUNT(*) AS n,SUM(quantity) AS reserved FROM inventory_reservations WHERE status='active' GROUP BY inventory_source,variant_id ORDER BY n DESC LIMIT 8"
 }
 for(const [name,query] of Object.entries(queries))await select(name,query)
+const variants=await select('ACTIVE_SKU_SEMANTIC_INPUT',"SELECT id,product_id,category,gender,color,material,length,size_label FROM catalog_variants WHERE is_active=1")
+const canon=value=>String(value??'').trim().toUpperCase().replace(/\s+/g,' ')
+const skuKey=row=>[
+ row.product_id,canon(row.category||'adult'),
+ canon(row.gender).includes('ЖЕН')?'ЖЕН':canon(row.gender).includes('МУЖ')?'МУЖ':canon(row.gender),
+ canon(row.color||'БЕЗ ЦВЕТА').replace(/[‐‑‒–—-]+/g,' ').replace(/\s+/g,' '),
+ canon(row.material||'СТАНДАРТ'),canon(row.length||'СТАНДАРТ'),
+ ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(canon(row.size_label))?'':canon(row.size_label)
+].join('||')
+const byKey=new Map()
+for(const row of variants){
+ const k=skuKey(row); const ids=byKey.get(k)||[]; ids.push(row.id);byKey.set(k,ids)
+}
+const collisions=[...byKey.entries()].filter(([,ids])=>ids.length>1).map(([key,ids])=>({
+ productId:Number(key.split('||')[0]),variantIds:ids,groupSize:ids.length
+}))
+console.log('WAREHOUSE_D1_READONLY_SEMANTIC_ACTIVE_SKU_COLLISIONS '+JSON.stringify({scanned:variants.length,collisions:collisions.length,examples:collisions.slice(0,20)}))
 console.log('BRANCH2_BARCODE_INTEGRITY_READONLY_COMPLETE — only SELECT statements; no D1 writes')
