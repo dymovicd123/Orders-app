@@ -49,7 +49,7 @@ assert.equal(stock().reserved_quantity,1)
 assert.equal(stock().quantity,1)
 assert.equal(mark(1),'reserved')
 assert.equal(mark(2),'pending_reservation')
-assert.deepEqual(booking(2),{status:'unresolved',unresolved_reason:'concurrent_shortage',quantity:1})
+assert.deepEqual({...booking(2)},{status:'unresolved',unresolved_reason:'concurrent_shortage',quantity:1})
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE status='active' AND variant_id=101").get().n,1)
 // Only a fresh per-SKU decision can intentionally create an over-reservation.
 const stale=await admitOrderReservationAtomically(adapter,item(3,300,{
