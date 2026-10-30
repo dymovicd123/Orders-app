@@ -243,7 +243,7 @@ assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').g
 // The retry will return the cached response WITHOUT running the create body.
 loseCriticalCompleteResponseOnce=true
 const completedLost=await http('POST','/api/orders',payload('create-complete-lost'))
-assert.equal(completedLost.status,500,'Injected error must happen after durable critical completion')
+assert.equal(completedLost.status,409,'Injected committed operation should return safe retry guidance')
 assert.equal(loseCriticalCompleteResponseOnce,false,'Critical-completion fault hook must fire')
 const recoveredCompleted=await http('POST','/api/orders',payload('create-complete-lost'))
 assert.equal(recoveredCompleted.status,201,'Finished critical-op replay: '+JSON.stringify(recoveredCompleted))
