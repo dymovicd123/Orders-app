@@ -15,7 +15,8 @@ for (const text of [
   "!sourceIds.has(Number(variant.id))",
   "quantity: 0",
   "reservedQuantity: 0",
-  "return [...sourceRows, ...untracked]",
+  ": [...sourceRows, ...untracked]",
+  "sourceRows.filter(row => activeProductIds.has(Number(row.productId))",
   "[inventoryData, catalogData, inventoryDraft.source",
 ])
   assert(view.includes(text), 'Catalog-only SKU missing in writeoff picker: '+text)
