@@ -4340,8 +4340,6 @@ function App() {
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
           workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-          shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
-          shortageDecision: item.sourceType !== 'workshop' ? item.shortageDecision ?? null : undefined,
         })),
         payments: createDraft.payments.map((payment, index) => ({
           paymentDate: payment.paymentDate,
@@ -4410,38 +4408,6 @@ function App() {
           return
         }
         await createOrderFromDraft(confirmationKeys)
-        return
-      }
-      if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
-        const shortageByInputIndex = new Map<number, CreateOrderShortage>()
-        for (const shortage of result.shortages) {
-          for (const inputIndex of shortage.inputIndexes || []) {
-            if (Number.isInteger(Number(inputIndex)) && Number(inputIndex) >= 0) shortageByInputIndex.set(Number(inputIndex), shortage)
-          }
-        }
-        setCreateDraft((current) => ({
-          ...current,
-          items: current.items.map((item, inputIndex) => {
-            const shortage = shortageByInputIndex.get(inputIndex)
-            if (!shortage || item.sourceType === 'workshop') return item
-            return {
-              ...item,
-              stockObservationEnabled: false,
-              observedPhysicalQuantity: null,
-              shortageAcknowledged: false,
-              shortageDecision: null,
-              serverShortage: {
-                inventorySource: shortage.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
-                variantId: Number(shortage.variantId || 0),
-                physicalQuantity: Number(shortage.physicalQuantity || 0),
-                reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
-                requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
-                shortage: Math.max(1, Number(shortage.shortage || 1)),
-              },
-            }
-          }),
-        }))
-        setMessage('Найдена нехватка по свежим данным. В отмеченной позиции нажмите «Подтвердить резерв при нехватке», если товар физически есть, затем сохраните заказ повторно. Остаток автоматически не увеличится.')
         return
       }
       if (!response.ok) {
@@ -6608,8 +6574,6 @@ function removeDebtPayment(index: number) {
             workshopUrgent: Boolean(item.workshopUrgent),
             workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
             workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
-            shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
-            shortageDecision: item.sourceType !== 'workshop' ? item.shortageDecision ?? null : undefined,
           })),
         }
       }
@@ -6667,7 +6631,6 @@ function removeDebtPayment(index: number) {
           workshopUrgent: Boolean(item.workshopUrgent),
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
           workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
-          shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
         })),
         paymentCorrections,
       }
@@ -6703,38 +6666,6 @@ function removeDebtPayment(index: number) {
         shortages?: EditOrderShortage[]
         stockWriteOff?: OrderStockWriteResult[]
       }>(response, 'Сохранение заказа', { allowHttpError: true })
-      if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
-        const shortageByInputIndex = new Map<number, EditOrderShortage>()
-        for (const shortage of result.shortages) {
-          for (const inputIndex of shortage.inputIndexes || []) {
-            if (Number.isInteger(Number(inputIndex)) && Number(inputIndex) >= 0) shortageByInputIndex.set(Number(inputIndex), shortage)
-          }
-        }
-        setEditorDraft((current) => current ? ({
-          ...current,
-          items: current.items.map((item, inputIndex) => {
-            const shortage = shortageByInputIndex.get(inputIndex)
-            if (!shortage || item.sourceType === 'workshop') return item
-            return {
-              ...item,
-              stockObservationEnabled: false,
-              observedPhysicalQuantity: null,
-              shortageAcknowledged: false,
-              shortageDecision: null,
-              serverShortage: {
-                inventorySource: shortage.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
-                variantId: Number(shortage.variantId || 0),
-                physicalQuantity: Number(shortage.physicalQuantity || 0),
-                reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
-                requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
-                shortage: Math.max(1, Number(shortage.shortage || 1)),
-              },
-            }
-          }),
-        }) : current)
-        setMessage('Найдена нехватка по свежим данным. В отмеченной позиции нажмите «Подтвердить резерв при нехватке», если товар физически есть, затем сохраните заказ повторно. Остаток автоматически не увеличится.')
-        return null
-      }
       if (!response.ok) {
         throw new Error(result.message || `Save failed: ${response.status}`)
       }
