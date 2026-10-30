@@ -4165,10 +4165,12 @@ function App() {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (field === 'quantity') {
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (orderPanel === 'zammler' && field === 'sourceType' && value === 'workshop') {
@@ -4339,6 +4341,7 @@ function App() {
           workshopDueDate: item.workshopUrgent ? item.workshopDueDate : '',
           workshopDueTime: item.workshopUrgent ? item.workshopDueTime : '',
           shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
+          shortageDecision: item.sourceType !== 'workshop' ? item.shortageDecision ?? null : undefined,
         })),
         payments: createDraft.payments.map((payment, index) => ({
           paymentDate: payment.paymentDate,
@@ -4363,6 +4366,8 @@ function App() {
         reservedQuantity?: number
         requestedQuantity?: number
         shortage?: number
+        inventorySource?: 'warehouse' | 'boutique'
+        variantId?: number
       }
       type CreateOrderRetiredCatalogItem = {
         inputIndex?: number
@@ -4383,7 +4388,7 @@ function App() {
         code?: string
         shortages?: CreateOrderShortage[]
         retiredItems?: CreateOrderRetiredCatalogItem[]
-        stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; shortageAfter?: number }>
+        stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; pendingShortage?: boolean; shortageAfter?: number }>
         message?: string
       }>(response, 'Создание заказа')
       if (!response.ok && result.code === 'order_retired_catalog_confirmation_required' && Array.isArray(result.retiredItems) && result.retiredItems.length) {
@@ -4424,7 +4429,10 @@ function App() {
               stockObservationEnabled: false,
               observedPhysicalQuantity: null,
               shortageAcknowledged: false,
+              shortageDecision: null,
               serverShortage: {
+                inventorySource: shortage.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
+                variantId: Number(shortage.variantId || 0),
                 physicalQuantity: Number(shortage.physicalQuantity || 0),
                 reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
                 requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
@@ -4445,12 +4453,15 @@ function App() {
 
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
+      const pendingReservations = (result.stockWriteOff || []).filter((entry) => entry.pendingShortage)
       const createdOrderId = Number(result.orderId || 0)
       const createdExternalId = String(result.externalId || '').trim()
       if (!Number.isInteger(createdOrderId) || createdOrderId <= 0 || !createdExternalId) {
         invalidateFinanceReadCaches()
         invalidateInventoryStockCaches(true)
-        if (concurrentShortages.length) {
+        if (pendingReservations.length) {
+          setMessage('Заказ сохранён, но резерв не закреплён: свободное количество изменилось. Проверьте остатки и разберите резерв этого заказа до отправки. Обновляю список заказов.')
+        } else if (concurrentShortages.length) {
           setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки». Обновляю список заказов.')
         } else if (postSaveShortages.length) {
           setMessage('Заказ сохранён с нехваткой свободного остатка. Физический учёт не изменён; проверьте «Склад → Остатки». Обновляю список заказов.')
@@ -4526,7 +4537,9 @@ function App() {
       // Step 188A: order creation changes reservations. Do not keep a stale stock cache
       // that would later make Warehouse or the next availability hint show the pre-order number.
       invalidateInventoryStockCaches(true)
-      if (concurrentShortages.length) {
+      if (pendingReservations.length) {
+        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки; физические остатки не менялись.`)
+      } else if (concurrentShortages.length) {
         setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
         setMessage(`Заказ ${createdOrder.external_id} создан, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
@@ -5582,10 +5595,12 @@ function App() {
           nextItem.stockObservationEnabled = false
           nextItem.observedPhysicalQuantity = null
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (field === 'quantity') {
           nextItem.shortageAcknowledged = false
+          nextItem.shortageDecision = null
           nextItem.serverShortage = undefined
         }
         if (field === 'audienceType') {
@@ -6594,6 +6609,7 @@ function removeDebtPayment(index: number) {
             workshopDueDate: item.workshopUrgent ? (item.workshopDueDate || '') : '',
             workshopDueTime: item.workshopUrgent ? (item.workshopDueTime || '') : '',
             shortageAcknowledged: item.sourceType !== 'workshop' ? Boolean(item.shortageAcknowledged) : undefined,
+            shortageDecision: item.sourceType !== 'workshop' ? item.shortageDecision ?? null : undefined,
           })),
         }
       }
@@ -6670,10 +6686,13 @@ function removeDebtPayment(index: number) {
         reservedQuantity?: number
         requestedQuantity?: number
         shortage?: number
+        inventorySource?: 'warehouse' | 'boutique'
+        variantId?: number
       }
       type OrderStockWriteResult = {
         productName?: string
         concurrentShortage?: boolean
+        pendingShortage?: boolean
         shortageAfter?: number
       }
       const result = await readJsonResponse<{
@@ -6701,7 +6720,10 @@ function removeDebtPayment(index: number) {
               stockObservationEnabled: false,
               observedPhysicalQuantity: null,
               shortageAcknowledged: false,
+              shortageDecision: null,
               serverShortage: {
+                inventorySource: shortage.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
+                variantId: Number(shortage.variantId || 0),
                 physicalQuantity: Number(shortage.physicalQuantity || 0),
                 reservedQuantity: Math.max(0, Number(shortage.reservedQuantity || 0)),
                 requestedQuantity: Math.max(0, Number(shortage.requestedQuantity || 0)),
@@ -6723,10 +6745,13 @@ function removeDebtPayment(index: number) {
       const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
+      const pendingReservations = (result.stockWriteOff || []).filter((entry) => entry.pendingShortage)
       invalidateFinanceReadCaches()
       // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
       if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
-      if (concurrentShortages.length) {
+      if (pendingReservations.length) {
+        setMessage(`Заказ ${order.external_id} обновлён, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки.`)
+      } else if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
@@ -8971,7 +8996,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, markExchangeReplacementSent, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, markExchangeReplacementSent, canResolvePendingReservation: isAdmin || (authUser?.role === 'manager' && authUser?.employeeRole !== 'Упаковщик'), apiFetch, setMessage, onPendingReservationResolved: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false, filters, 0); void loadWarehouseAttention(false, true) }, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">

@@ -4,7 +4,7 @@ import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normal
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
 import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
-import { resolveActiveManagerId, writeActivityLog } from './activity.ts'
+import { activityLogStatement, resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import type { CriticalOperationHandle } from './critical.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
@@ -617,7 +617,7 @@ export async function createWorkshopTaskForOrderItem(
 
 
 
-export async function writeOrderManagerAudit(
+export function orderManagerAuditStatement(
   db: D1Database,
   input: {
     orderId: number;
@@ -634,7 +634,7 @@ export async function writeOrderManagerAudit(
   },
 ) {
   const createdAt = input.createdAt || new Date().toISOString();
-  await db.prepare(
+  return db.prepare(
     `INSERT INTO order_manager_audit (
       order_id, external_id, previous_manager_id, previous_manager_name,
       new_manager_id, new_manager_name, action, source,
@@ -653,7 +653,13 @@ export async function writeOrderManagerAudit(
     cleanText(input.actor?.displayName || input.actor?.email) || null,
     cleanText(input.details) || null,
     createdAt,
-  ).run();
+  );
+}
+
+export async function writeOrderManagerAudit(
+  db: D1Database, input: Parameters<typeof orderManagerAuditStatement>[1],
+) {
+  await orderManagerAuditStatement(db,input).run();
 }
 
 
@@ -852,11 +858,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           throw new OrderInputValidationError('Для itemized_v1 итог заказа рассчитывается сервером по позициям. Не передавайте отдельную цену заказа.');
         }
         // Ordering is a promise/reservation, not a full physical stock count.
-        // Older clients may still submit observedPhysicalQuantity: ignore it rather than
-        // silently changing the Warehouse/Boutique truth. A shortage is kept as a
-        // negative available balance and surfaced for warehouse attention.
+        // Physical quantities are never set by creating an order. A shortage
+        // requires a deliberate, snapshot-bound decision from the employee;
+        // the server must not manufacture acknowledgement on their behalf.
         let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
-          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
+          item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null }
         ));
         let normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
@@ -943,29 +949,62 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           throw new OrderRetiredCatalogConfirmationError(retiredConfirmationItems);
         }
 
-        // A confirmed retired identity starts a fresh generation with Physical=0 and Reserved=0.
-        // If the caller has not supplied/acknowledged a stock decision, stop here before any
-        // Catalog row is recreated. This keeps failed order attempts read-only.
-        const retiredFreshShortages = [];
+        // A retired SKU starts a new catalog generation with no physical/reserved stock.
+        // It has no active variant ID yet, so the initial consent is bound to variantId=0,
+        // the *verified retired identity*, source and aggregate quantity. Do not create any
+        // catalog row until the explicit decision is validated for every matching line.
+        const retiredGroups = new Map<string, {
+          source: 'warehouse' | 'boutique';
+          productName: string;
+          requestedQuantity: number;
+          inputIndexes: number[];
+          lines: typeof normalizedItems;
+        }>();
         for (const [index, item] of normalizedItems.entries()) {
-          if (item.isWorkshop || item.observedPhysicalQuantity !== null || item.shortageAcknowledged) continue;
+          if (item.isWorkshop) continue;
           const inputIndex = Math.max(0, toInt(item.inputIndex, index));
           const retiredCandidate = retiredCandidateByInputIndex.get(inputIndex);
           if (!retiredCandidate || !confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) continue;
-          retiredFreshShortages.push({
-            inventorySource: item.inventorySource,
-            variantId: 0,
-            inputIndexes: [inputIndex],
+          const key = `${item.inventorySource}:${retiredCandidate.confirmationKey}`;
+          const group = retiredGroups.get(key) || {
+            source: item.inventorySource,
             productName: item.productName,
-            requestedQuantity: Math.max(1, toInt(item.quantity, 1)),
-            physicalQuantity: 0,
-            reservedQuantity: 0,
-            shortage: Math.max(1, toInt(item.quantity, 1)),
-          });
+            requestedQuantity: 0,
+            inputIndexes: [],
+            lines: [],
+          };
+          group.requestedQuantity += Math.max(1, toInt(item.quantity, 1));
+          group.inputIndexes.push(inputIndex);
+          group.lines.push(item);
+          retiredGroups.set(key, group);
         }
-        if (retiredFreshShortages.length) {
-          throw new OrderStockShortageError(retiredFreshShortages);
+        const approvedRetiredInputIndexes = new Set<number>();
+        const retiredFreshShortages = [];
+        for (const group of retiredGroups.values()) {
+          const approved = group.lines.every(item => (
+            item.shortageAcknowledged
+            && item.shortageDecision?.inventorySource === group.source
+            && item.shortageDecision.variantId === 0
+            && item.shortageDecision.physicalQuantity === 0
+            && item.shortageDecision.reservedQuantity === 0
+            && item.shortageDecision.requestedQuantity === group.requestedQuantity
+          ));
+          if (approved) {
+            group.inputIndexes.forEach(index => approvedRetiredInputIndexes.add(index));
+          } else {
+            retiredFreshShortages.push({
+              inventorySource: group.source,
+              variantId: 0,
+              inputIndexes: [...new Set(group.inputIndexes)].sort((a, b) => a - b),
+              productName: group.productName,
+              requestedQuantity: group.requestedQuantity,
+              physicalQuantity: 0,
+              reservedQuantity: 0,
+              shortage: group.requestedQuantity,
+            });
+          }
         }
+        if (retiredFreshShortages.length) throw new OrderStockShortageError(retiredFreshShortages);
 
         const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
         const observedByVariant = new Map<string, number>();
@@ -975,6 +1014,14 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             ? await resolveWorkshopCatalogProductOnly(db, item)
             : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
           preResolvedCatalog.push(resolved);
+          // A valid retired-generation consent was taken before catalog mutation
+          // while no new variant ID existed. Bind it to the actual resolved ID
+          // and let the normal fresh-stock check reject any intervening changes.
+          const inputIndex = Math.max(0, toInt(item.inputIndex, normalizedItems.indexOf(item)));
+          if (approvedRetiredInputIndexes.has(inputIndex)
+              && resolved.variantId && item.shortageDecision?.variantId === 0) {
+            item.shortageDecision = { ...item.shortageDecision, variantId: resolved.variantId };
+          }
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
             throw new OrderInputValidationError(`Нельзя подтверждать фактический остаток для «${item.productName}», пока товар или одна из характеристик не распознаны системой.`);
@@ -1053,22 +1100,26 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
             delivery_type, order_payment_method, source_type, workshop_status, order_status, pricing_mode, total_amount,
             received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?
+          FROM critical_operations
+          WHERE request_id = ? AND status = 'started' AND step = 'validated' AND lease_token = ?`
         ).bind(
           externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null, orderPaymentMethod || null,
           sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-          comment || null, createdAt, createdAt,
+          comment || null, createdAt, createdAt, criticalOperation.requestId, criticalOperation.leaseToken,
         )
         : db.prepare(
           `INSERT INTO orders (
             external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
             delivery_type, order_payment_method, source_type, workshop_status, order_status, total_amount,
             received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?
+          FROM critical_operations
+          WHERE request_id = ? AND status = 'started' AND step = 'validated' AND lease_token = ?`
         ).bind(
           externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null, orderPaymentMethod || null,
           sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-          comment || null, createdAt, createdAt,
+          comment || null, createdAt, createdAt, criticalOperation.requestId, criticalOperation.leaseToken,
         );
       orderId = await updateCriticalOperationTargetFromLastInsert(
         db, criticalOperation, 'order', externalId, orderStatement, 'order_created',
@@ -1121,19 +1172,9 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       stockWriteOff: stockResults,
       workshopCount,
     };
-    await completeCriticalOperation(db, criticalOperation, response);
-
-    // Exact reconciliation is deliberately post-commit: it repairs historical counter drift (including
-    // an old pre-192B2A4 retry that incremented before creating the target) but can never make an
-    // otherwise valid order report failure.
-    if (customerId) {
-      try {
-        await recalculateCustomersAfterStorageCleanup(db, [customerId]);
-      } catch (error) {
-        console.warn('Customer statistics reconciliation after safe create failed', error);
-      }
-    }
-
+    // Durable order evidence MUST be attempted before the idempotent response
+    // is finalized. A lost response just after 'completed' otherwise skips
+    // both audit writes forever because cached retries return immediately.
     try {
       const existingCreateAudit = await db.prepare(
         `SELECT id FROM order_manager_audit WHERE order_id = ? AND action = 'created' AND source = 'order_create' ORDER BY id ASC LIMIT 1`
@@ -1156,8 +1197,13 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     } catch (error) {
       console.warn('Order manager audit after safe create failed', error);
     }
+    // This activity record also needs to exist before the saga is finalized.
+    // A retry of an interrupted create must not duplicate a recorded event.
     try {
-      await writeActivityLog(db, {
+      const existingCreateEvent = await db.prepare(
+        `SELECT id FROM activity_log WHERE order_id = ? AND event_type = 'order_created' AND entity_type = 'order' ORDER BY id ASC LIMIT 1`
+      ).bind(orderId).first<{id:number}>();
+      if (!existingCreateEvent?.id) await writeActivityLog(db, {
         eventType: 'order_created',
         entityType: 'order',
         entityId: orderId,
@@ -1171,6 +1217,20 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     } catch (error) {
       console.warn('Order activity log after safe create failed', error);
     }
+
+    await completeCriticalOperation(db, criticalOperation, response);
+
+    // Exact reconciliation is deliberately post-commit: it repairs historical counter drift (including
+    // an old pre-192B2A4 retry that incremented before creating the target) but can never make an
+    // otherwise valid order report failure.
+    if (customerId) {
+      try {
+        await recalculateCustomersAfterStorageCleanup(db, [customerId]);
+      } catch (error) {
+        console.warn('Customer statistics reconciliation after safe create failed', error);
+      }
+    }
+
     return response;
   } catch (error) {
     const contentAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'content_written';
@@ -1870,7 +1930,6 @@ export async function updateOrderCritical(
         for (const item of nextItems) {
           if (!item.isWorkshop) {
             item.observedPhysicalQuantity = null;
-            item.shortageAcknowledged = true;
           }
         }
       }
@@ -2465,6 +2524,30 @@ export async function updateOrderCritical(
       inventoryDelivery: operationContext.inventoryDelivery ?? inventoryDelivery,
       paymentCorrectionCount,
     };
+    // Insert evidence atomically with critical-operation entity keys BEFORE
+    // declaring the operation completed. A retry after a lost response cannot
+    // duplicate an event even if the DB insert finished before HTTP replied.
+    if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
+      try {
+        await insertCriticalMappedEntity(db, criticalOperation, 'order_manager_audit', 'manager_changed', orderManagerAuditStatement(db, {
+          orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
+          previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
+          action: 'changed', source: 'admin_order_edit', actor,
+          details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
+        }));
+      } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
+    }
+    try {
+      await insertCriticalMappedEntity(db, criticalOperation, 'activity_log', 'order_updated', activityLogStatement(db, {
+        eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
+        title: `Изменён заказ ${p.externalId}`,
+        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${Array.isArray(p.priceAudit) && p.priceAudit.length ? p.priceAudit.map((item: {itemId: number; from: number; to: number}) => `позиция #${item.itemId}: ${item.from} → ${item.to} ₸`).join('; ') + '; ' : ''}${p.recordedPriceOnlyRequest ? `сотрудник: ${cleanText(actor?.displayName || actor?.email || checkedBy) || 'не указан'}; ` : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
+        amount: p.totals.totalAmount, createdAt: p.timestamp,
+      }));
+    } catch (error) {
+      console.warn('Order activity log after safe edit failed', error);
+    }
+
     await completeCriticalOperation(db, criticalOperation, completedResponse);
 
     try {
@@ -2483,26 +2566,6 @@ export async function updateOrderCritical(
       ? { ...completedResponse, order: updatedOrder, refreshRequired: false }
       : completedResponse;
 
-    if (p.existingManagerId !== p.nextManagerId || upperText(p.previousManagerName) !== upperText(p.nextManager)) {
-      try {
-        await writeOrderManagerAudit(db, {
-          orderId: id, externalId: p.externalId, previousManagerId: p.existingManagerId,
-          previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
-          action: 'changed', source: 'admin_order_edit', actor,
-          details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
-        });
-      } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
-    }
-    try {
-      await writeActivityLog(db, {
-        eventType: 'order_updated', entityType: 'order', entityId: id, orderId: id, externalOrderId: p.externalId,
-        title: `Изменён заказ ${p.externalId}`,
-        details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${Array.isArray(p.priceAudit) && p.priceAudit.length ? p.priceAudit.map((item: {itemId: number; from: number; to: number}) => `позиция #${item.itemId}: ${item.from} → ${item.to} ₸`).join('; ') + '; ' : ''}${p.recordedPriceOnlyRequest ? `сотрудник: ${cleanText(actor?.displayName || actor?.email || checkedBy) || 'не указан'}; ` : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
-        amount: p.totals.totalAmount, createdAt: p.timestamp,
-      });
-    } catch (error) {
-      console.warn('Order activity log after safe edit failed', error);
-    }
     return response;
   } catch (error) {
     const editAlreadyWritten = criticalOperation?.row.status === 'started' && criticalOperation.row.step === 'shipping_committed';

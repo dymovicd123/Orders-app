@@ -9,7 +9,14 @@ assert(start >= 0, 'Shipping blocker query not found')
 const implementation = source.slice(start)
 const matched = implementation.match(/const unresolvedResult = await db\.prepare\(\s*`([\s\S]*?)`\s*\)\.bind\(orderId\)\.all/)
 assert(matched, 'Could not extract current unresolved-shipping SQL')
-const sql = matched[1]
+// Resolve the genuine current SQL fragment, including pending exchange dispatch.
+// The previous test passed a literal ${...} template into SQLite and failed
+// with "unrecognized token: $", before any reservation scenario was tested.
+const exclusion = source.match(/const pendingExchangeReplacementExclusionSql = [^\n]+ => `([\s\S]*?)`;/)
+assert(exclusion, 'Current pending-exchange exclusion SQL not found')
+const exclusionSql = exclusion[1].replaceAll('${orderItemReference}', 'oi.id')
+const sql = matched[1].replace("${pendingExchangeReplacementExclusionSql('oi.id')}", exclusionSql)
+assert(!sql.includes('${'), 'Unexpanded current SQL interpolation in shipping blocker fixture')
 const db = new DatabaseSync(':memory:')
 db.exec(`
   CREATE TABLE order_items (
@@ -23,6 +30,11 @@ db.exec(`
   CREATE TABLE catalog_products (id INTEGER PRIMARY KEY, name TEXT);
   CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY, product_id INTEGER);
   CREATE TABLE inventory_stock (id INTEGER PRIMARY KEY, inventory_source TEXT, variant_id INTEGER);
+  CREATE TABLE exchanges (id INTEGER PRIMARY KEY, status TEXT);
+  CREATE TABLE inventory_lifecycle_events (
+    id INTEGER PRIMARY KEY, order_item_id INTEGER, operation_type TEXT,
+    operation_id INTEGER, event_type TEXT, status TEXT, pending_reason TEXT
+  );
   INSERT INTO catalog_products VALUES (11, 'ЭТНО КАРДИГАН');
   INSERT INTO catalog_variants VALUES (1498, 11);
   INSERT INTO order_items VALUES (101, 1775, 11, 1498, 'ЭТНО КАРДИГАН', 1, 0, 'reserved');
@@ -64,5 +76,9 @@ scenario('Missing active variant identity must block',
   "UPDATE inventory_reservations SET variant_id = NULL WHERE status = 'active'", 1)
 scenario('Wrong stock source must block',
   "UPDATE inventory_reservations SET inventory_source = 'boutique' WHERE status = 'active'", 1)
+scenario('Pending exchange replacement must not be treated as ready for dispatch',
+  "DELETE FROM inventory_reservations; INSERT INTO exchanges VALUES (11,'pending'); INSERT INTO inventory_lifecycle_events VALUES (11,101,'exchange',11,'exchange_new_out','pending','awaiting_dispatch')", 0)
+scenario('Cancelled exchange does not exclude an unresolved ordinary order item',
+  "DELETE FROM inventory_reservations; INSERT INTO exchanges VALUES (11,'cancelled'); INSERT INTO inventory_lifecycle_events VALUES (11,101,'exchange',11,'exchange_new_out','pending','awaiting_dispatch')", 1)
 db.close()
-console.log('SHIPPING_CURRENT_RESERVATION_ONLY_PASSED: 10 actual SQLite cases; no production data touched')
+console.log('SHIPPING_CURRENT_RESERVATION_ONLY_PASSED: 12 actual SQLite cases; no production data touched')

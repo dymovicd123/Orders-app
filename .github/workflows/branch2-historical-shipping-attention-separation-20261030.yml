@@ -1,0 +1,37 @@
+name: Branch2 history vs actionable stock checks
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/warehouse-attention.ts'
+      - 'worker/domains/inventory-stocktake.ts'
+      - 'src/features/inventory/views/renderInventoryAttentionPanel.tsx'
+      - 'src/features/inventory/views/StockVariantTimeline.tsx'
+      - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/sections/OrdersHeaderSection.tsx'
+      - 'shared/api-contracts.ts'
+      - 'scripts/test-w16-source-attention-correction.mjs'
+      - 'scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs'
+      - 'scripts/test-branch2-historical-attention-separation-20261030.mjs'
+      - '.github/workflows/branch2-historical-shipping-attention-separation-20261030.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Historical evidence and live stock task separation
+        run: node scripts/test-branch2-historical-attention-separation-20261030.mjs
+      - name: Warehouse correction navigation regression
+        run: node --experimental-strip-types scripts/test-w16-source-attention-correction.mjs
+      - name: Shipping evidence and inventory integrity regression
+        run: node --experimental-strip-types scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs
+      - name: Verify complete typecheck and frontend build
+        run: npm run build

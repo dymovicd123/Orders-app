@@ -6,8 +6,9 @@ const migrationPath = 'migrations/0083_v72_workshop_settlement_foundation.sql'
 const sql = fs.readFileSync(migrationPath, 'utf8')
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8')
 assert.match(wrangler, /"name"\s*:\s*"orders-app-branch2"/)
-assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2"/)
-assert.match(wrangler, /"database_id"\s*:\s*"40065052-854e-44b8-bcd5-251bdd488301"/)
+// Current Branch2 runtime uses an isolated Oct27 mirror; historical migration workflow below is checked as historical evidence.
+assert.match(wrangler, /"database_name"\s*:\s*"orders_db_branch2_mirror_20261027"/)
+assert.match(wrangler, /"database_id"\s*:\s*"0904a573-21ff-44d8-93b0-c9200f771702"/)
 assert.doesNotMatch(wrangler, /orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
 assert.doesNotMatch(sql, /(?:ALTER|DROP)\s+TABLE\s+(?:orders|order_items|payments|workshop_tasks)\b/i)
 assert.doesNotMatch(sql, /(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:orders|order_items|payments|workshop_tasks)\b/i)

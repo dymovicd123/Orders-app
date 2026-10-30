@@ -22,7 +22,16 @@ export type OrderItem = {
   shipmentState?: '' | 'sent' | 'pending'
   observedPhysicalQuantity?: number | null
   shortageAcknowledged?: boolean
+  shortageDecision?: {
+    inventorySource: 'warehouse' | 'boutique'
+    variantId: number
+    requestedQuantity: number
+    physicalQuantity: number
+    reservedQuantity: number
+  } | null
   serverShortage?: {
+    inventorySource: 'warehouse' | 'boutique'
+    variantId: number
     physicalQuantity: number
     reservedQuantity: number
     requestedQuantity: number

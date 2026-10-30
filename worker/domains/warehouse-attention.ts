@@ -73,7 +73,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
        AND UPPER(TRIM(COALESCE(v.size_label, ''))) = UPPER(TRIM(COALESCE(s.size_snapshot, '')))
      ORDER BY v.id ASC LIMIT 1)`
 
-  const [summary, handoverRows, shippedUntrackedCountRow] = await Promise.all([
+  const [summary, handoverRows] = await Promise.all([
     details ? Promise.resolve(null) : db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM (
@@ -116,16 +116,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
          (SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id IS NULL AND s.quantity > 0 AND s.last_source_ref LIKE 'stocktake-unresolved:%') AS found_count`
     ).first<Record<string, unknown>>(),
     fetchOrderStockHandoverRows(db, [], { allActive: true, listFlagsOnly: !details }),
-    // Outbound evidence survives fulfillment: reservation shortage alone would disappear.
-    db.prepare(
-      `SELECT COUNT(*) AS count
-       FROM inventory_operation_evidence evidence
-       JOIN orders o ON o.external_id = evidence.operation_reference
-       WHERE evidence.operation_type = 'shipping'
-         AND evidence.unexplained_quantity > 0
-         AND COALESCE(o.shipping_status, 'not_sent') = 'sent'
-         AND COALESCE(o.order_status, 'active') <> 'deleted'`
-    ).first<{ count: number }>(),
   ])
 
   const handovers = details
@@ -165,7 +155,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     const lifecycleTotalCount = Math.max(0, toInt(summary?.lifecycle_total_count, 0))
     const counts = {
       shortage: Math.max(0, rawShortageCount - fullyExplainedShortageKeys.size),
-      shippedUntracked: Math.max(0, toInt(shippedUntrackedCountRow?.count, 0)),
       intake: intakeCount,
       lifecycle: Math.max(0, lifecycleTotalCount - intakeCount),
       catalog: Math.max(0, toInt(summary?.catalog_count, 0)),
@@ -175,7 +164,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     }
     return {
       ok: true,
-      total: counts.shortage + counts.shippedUntracked + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
+      total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
       counts,
     }
   }
@@ -311,39 +300,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     ).first<Record<string, unknown>>(),
   ])
 
-  const shippedUntrackedRows = await db.prepare(
-    `SELECT evidence.id AS evidence_id, evidence.inventory_source, evidence.variant_id,
-            evidence.tracked_physical_before, evidence.confirmed_operation_quantity,
-            evidence.unexplained_quantity, evidence.occurred_at,
-            o.id AS order_id, o.external_id, o.order_date,
-            COALESCE(p.name, oi.product_name_snapshot, 'Неизвестный товар') AS product_name,
-            COALESCE(v.product_id, oi.product_id) AS product_id,
-            COALESCE(v.category, 'adult') AS category,
-            COALESCE(v.gender, oi.gender_snapshot, '') AS gender,
-            COALESCE(v.color, oi.color_snapshot, '') AS color,
-            COALESCE(NULLIF(v.material, ''), NULLIF(oi.material_snapshot, ''), 'СТАНДАРТ') AS material,
-            COALESCE(NULLIF(v.length, ''), NULLIF(oi.length_snapshot, ''), 'СТАНДАРТ') AS length,
-            COALESCE(v.size_label, oi.size_snapshot, '') AS size_label
-     FROM inventory_operation_evidence evidence
-     JOIN orders o ON o.external_id = evidence.operation_reference
-     LEFT JOIN catalog_variants v ON v.id = evidence.variant_id
-     LEFT JOIN catalog_products p ON p.id = v.product_id
-     LEFT JOIN order_items oi ON oi.id = (
-       SELECT oi2.id
-       FROM order_items oi2
-       JOIN inventory_reservations r2 ON r2.order_item_id = oi2.id AND r2.order_id = o.id
-       WHERE r2.variant_id = evidence.variant_id
-         AND r2.inventory_source = evidence.inventory_source
-       ORDER BY oi2.id DESC LIMIT 1
-     )
-     WHERE evidence.operation_type = 'shipping'
-       AND evidence.unexplained_quantity > 0
-       AND COALESCE(o.shipping_status, 'not_sent') = 'sent'
-       AND COALESCE(o.order_status, 'active') <> 'deleted'
-     ORDER BY evidence.occurred_at DESC, evidence.id DESC
-     LIMIT ?`
-  ).bind(limit).all<Record<string, unknown>>()
-
   const foundResult = await db.prepare(
     `WITH found_stock AS (
        SELECT s.id AS stock_id, s.inventory_source, s.product_id, s.product_name_snapshot,
@@ -379,7 +335,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   const foundCount = Math.max(0, toInt((foundResult.results || [])[0]?.found_count, 0))
   const counts = {
     shortage: Math.max(0, rawShortageCount - fullyExplainedShortageKeys.size),
-      shippedUntracked: Math.max(0, toInt(shippedUntrackedCountRow?.count, 0)),
     intake: intakeCount,
     lifecycle: Math.max(0, lifecycleTotalCount - intakeCount),
     catalog: catalogCount,
@@ -389,7 +344,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   }
   const response: Record<string, unknown> = {
     ok: true,
-    total: counts.shortage + counts.shippedUntracked + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
+    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
     counts,
   }
 
@@ -459,26 +414,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
 
   response.items = {
     shortages: shortageItems,
-    shippedUntracked: (shippedUntrackedRows.results || []).map((row) => ({
-      evidenceId: toInt(row.evidence_id, 0),
-      source: normalizeSourceType(row.inventory_source),
-      variantId: toInt(row.variant_id, 0),
-      orderId: toInt(row.order_id, 0) || null,
-      externalId: cleanText(row.external_id),
-      orderDate: cleanText(row.order_date),
-      productId: toInt(row.product_id, 0),
-      productName: cleanText(row.product_name),
-      category: normalizeAudienceCategory(row.category, row.size_label),
-      gender: cleanText(row.gender),
-      color: cleanText(row.color),
-      material: canonicalStockPositionValue(row.material) || 'СТАНДАРТ',
-      length: canonicalStockPositionValue(row.length) || 'СТАНДАРТ',
-      size: cleanText(row.size_label),
-      trackedPhysicalBefore: Math.max(0, toInt(row.tracked_physical_before, 0)),
-      shippedQuantity: Math.max(1, toInt(row.confirmed_operation_quantity, 1)),
-      untrackedQuantity: Math.max(1, toInt(row.unexplained_quantity, 1)),
-      occurredAt: cleanText(row.occurred_at),
-    })),
     intake: lifecycleItems.filter((row) => row.exactKnown),
     lifecycle: lifecycleItems.filter((row) => !row.exactKnown),
     catalog: (catalogResult.results || []).map((row) => ({

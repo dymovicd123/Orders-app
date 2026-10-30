@@ -6,9 +6,9 @@ import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogCombinationV3, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
-import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
+import { admitOrderReservationAtomically } from './reservation-admission.ts'
 
 export async function resolveCatalogProductAndVariantLegacy(
   db: D1Database,
@@ -656,7 +656,7 @@ export class OrderStockShortageError extends Error {
     const first = shortages[0]
     const suffix = shortages.length > 1 ? ` Ещё проблемных позиций: ${shortages.length - 1}.` : ''
     super(first
-      ? `По свежим данным для «${first.productName}» не хватает ${first.shortage} шт. Посчитайте фактическое количество или выберите «Сейчас проверить не могу».${suffix}`
+      ? `По свежим данным для «${first.productName}» не хватает ${first.shortage} шт. Перед сохранением подтвердите резерв при нехватке в форме заказа.${suffix}`
       : 'Перед сохранением заказа нужно уточнить складской остаток.')
     this.name = 'OrderStockShortageError'
     this.shortages = shortages
@@ -676,7 +676,7 @@ export async function assertCreateOrderShortageDecisions(
     requestedQuantity: number;
     productName: string;
     hasObservation: boolean;
-    acknowledged: boolean;
+    decisions: Array<{ acknowledged: boolean; snapshot: ReturnType<typeof normalizeOrderItems>[number]['shortageDecision'] }>;
   }>();
 
   for (const [index, item] of items.entries()) {
@@ -693,23 +693,23 @@ export async function assertCreateOrderShortageDecisions(
       requestedQuantity: 0,
       productName: item.productName,
       hasObservation: false,
-      acknowledged: true,
+      decisions: [],
     };
     current.inputIndexes.push(Math.max(0, toInt(item.inputIndex, index)));
     current.requestedQuantity += Math.max(0, toInt(item.quantity, 0));
     current.hasObservation = current.hasObservation || item.observedPhysicalQuantity !== null;
-    current.acknowledged = current.acknowledged && Boolean(item.shortageAcknowledged);
+    current.decisions.push({ acknowledged: Boolean(item.shortageAcknowledged), snapshot: item.shortageDecision });
     grouped.set(key, current);
   }
 
-  const unresolvedDecisionGroups = [...grouped.values()].filter(group => (
-    group.requestedQuantity > 0 && !group.hasObservation && !group.acknowledged
-  ));
-  if (!unresolvedDecisionGroups.length) return;
+  // Check every requested SKU, including purportedly acknowledged shortages.
+  // A client-supplied Boolean never by itself constitutes a stock decision.
+  const decisionGroups = [...grouped.values()].filter(group => group.requestedQuantity > 0);
+  if (!decisionGroups.length) return;
 
   const shortages: OrderStockShortage[] = [];
   const excludedOrderId = Math.max(0, toInt(options.excludeOrderId, 0));
-  for (const chunk of chunksOf(unresolvedDecisionGroups, 30)) {
+  for (const chunk of chunksOf(decisionGroups, 30)) {
     const valuesSql = chunk.map(() => '(?, ?, ?)').join(', ');
     const binds: Array<string | number> = [];
     for (const group of chunk) {
@@ -757,6 +757,15 @@ export async function assertCreateOrderShortageDecisions(
       const reserved = Math.max(0, toInt(row?.reserved_quantity, 0));
       const freeAfterReservation = physical - reserved - group.requestedQuantity;
       if (freeAfterReservation < 0) {
+        const confirmedAtCurrentSnapshot = group.decisions.length > 0 && group.decisions.every(({ acknowledged, snapshot }) => (
+          acknowledged && snapshot
+          && snapshot.inventorySource === group.inventorySource
+          && snapshot.variantId === group.variantId
+          && snapshot.requestedQuantity === group.requestedQuantity
+          && snapshot.physicalQuantity === physical
+          && snapshot.reservedQuantity === reserved
+        ));
+        if (confirmedAtCurrentSnapshot) continue;
         shortages.push({
           inventorySource: group.inventorySource,
           variantId: group.variantId,
@@ -787,8 +796,8 @@ export async function reserveOrderItemV2(
 ) {
   if (!orderItemId) throw new Error('Не удалось связать резерв с позицией заказа.');
   const existingReservation = await db.prepare(
-    `SELECT id, status, quantity, inventory_source, variant_id FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
-  ).bind(orderItemId).first<{ id: number; status: string; quantity: number; inventory_source: string; variant_id: number | null }>();
+    `SELECT id, status, quantity, inventory_source, variant_id, unresolved_reason FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
+  ).bind(orderItemId).first<{ id: number; status: string; quantity: number; inventory_source: string; variant_id: number | null; unresolved_reason?: string | null }>();
   if (existingReservation?.id) {
     const existingVariantId = toInt(existingReservation.variant_id, toInt(variantId, 0));
     const existingSource = normalizeSourceType(existingReservation.inventory_source || item.inventorySource);
@@ -812,8 +821,11 @@ export async function reserveOrderItemV2(
       referenceType,
       referenceId: cleanText(referenceId) || externalId,
       reservationStatus: cleanText(existingReservation.status),
-      concurrentShortage: !item.shortageAcknowledged && cleanText(existingReservation.status) === 'active' && committedAvailable < 0,
-      shortageAfter: cleanText(existingReservation.status) === 'active' ? Math.max(0, -committedAvailable) : 0,
+      concurrentShortage: cleanText(existingReservation.unresolved_reason) === 'concurrent_shortage'
+        || (!item.shortageAcknowledged && cleanText(existingReservation.status) === 'active' && committedAvailable < 0),
+      pendingShortage: cleanText(existingReservation.unresolved_reason) === 'concurrent_shortage',
+      shortageAfter: Math.max(0, (cleanText(existingReservation.unresolved_reason) === 'concurrent_shortage'
+        ? Math.max(0, toInt(existingReservation.quantity, 0)) : 0) - committedAvailable),
       physicalAfter: committedPhysical,
       reservedAfter: committedReserved,
       alreadyApplied: true,
@@ -857,108 +869,46 @@ export async function reserveOrderItemV2(
   // Treat both null and undefined as ‘no physical count supplied’; never bind undefined into D1.
   // No reservation, including an exchange, may ever act as a physical stocktake.
   // Outbound possession is confirmed against the *operation*, not a whole-SKU count.
-  const observedPhysical: null = null;
-  const physicalForReservation = observedPhysical === null ? physicalBefore : observedPhysical;
-  const stockAction = observedPhysical === null ? 'Резерв заказа' : 'Сверено менеджером при заказе';
-  const statements: D1PreparedStatement[] = [
-    db.prepare(
-      `UPDATE inventory_stock
-       SET quantity = CASE WHEN ? IS NULL THEN quantity ELSE ? END,
-           reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) + ?),
-           product_id = ?, variant_id = ?, product_name_snapshot = ?, gender_snapshot = ?, color_snapshot = ?,
-           material_snapshot = ?, length_snapshot = ?, size_snapshot = ?,
-           last_action = ?, last_source_ref = ?, updated_at = ?
-       WHERE id = ?`
-    ).bind(
-      observedPhysical,
-      observedPhysical,
-      item.quantity,
-      canonicalProductId,
-      variantId,
-      canonical.productName,
-      canonical.gender,
-      canonical.color,
-      canonical.material,
-      canonical.length,
-      canonical.size,
-      stockAction,
-      `${referenceType}:${safeReferenceId}`,
-      timestamp,
-      stock.id,
-    ),
-  ];
-
-  if (observedPhysical !== null) {
-    statements.push(db.prepare(
-      `INSERT INTO inventory_movements (
-        inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
-        color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
-        reference_type, reference_id, comment, created_at
-      ) VALUES (?, 'revision', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'order_observation', ?, ?, ?)`
-    ).bind(
-      item.inventorySource,
-      canonicalProductId,
-      variantId,
-      canonical.productName,
-      canonical.gender,
-      canonical.color,
-      canonical.material,
-      canonical.length,
-      canonical.size,
-      observedPhysical - physicalBefore,
-      observedPhysical,
-      safeReferenceId,
-      `Менеджер подтвердил фактическое количество при заказе ${externalId}: ${observedPhysical} шт. По учёту до сверки: ${physicalBefore} шт. Резервы не изменялись этой сверкой.`,
-      timestamp,
-    ));
-
-    statements.push(inventoryPhysicalCheckStatement(db, {
-      source: item.inventorySource,
-      productId: canonicalProductId,
-      variantId,
-      expectedQuantity: physicalBefore,
-      countedQuantity: observedPhysical,
-      reservedQuantity: reservedBefore,
-      checkType: referenceType === 'exchange_new' ? 'exchange_observation' : 'order_observation',
-      referenceType: 'order_observation',
-      referenceId: safeReferenceId,
-      checkedAt: timestamp,
-    }));
-  }
-
-  statements.push(
-    db.prepare(
-      `INSERT INTO inventory_reservations (
-        order_id, order_item_id, inventory_source, product_id, variant_id, quantity, status,
-        reference_type, reference_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
-    ).bind(orderId, orderItemId, item.inventorySource, canonicalProductId, variantId, item.quantity, referenceType, safeReferenceId, timestamp, timestamp),
-    db.prepare(
-      `UPDATE order_items SET stock_writeoff_status = 'reserved', stock_quantity_before = NULL, stock_quantity_after = NULL WHERE id = ?`
-    ).bind(orderItemId),
-  );
-  await db.batch(statements);
-
+  const admission = await admitOrderReservationAtomically(db, {
+    orderId,
+    orderItemId,
+    source: item.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
+    stockId: stock.id,
+    productId: canonicalProductId,
+    variantId,
+    quantity: item.quantity,
+    productName: canonical.productName,
+    gender: canonical.gender || '',
+    color: canonical.color || '',
+    material: canonical.material || '',
+    length: canonical.length || '',
+    size: canonical.size || '',
+    referenceType,
+    referenceId: safeReferenceId,
+    timestamp,
+    shortageAcknowledged: item.shortageAcknowledged,
+    shortageDecision: item.shortageDecision,
+  });
   const committedStock = await db.prepare(
     `SELECT quantity, reserved_quantity FROM inventory_stock WHERE id = ? LIMIT 1`
   ).bind(stock.id).first<{ quantity: number; reserved_quantity: number }>();
-  const committedPhysical = toInt(committedStock?.quantity, physicalForReservation);
-  const committedReserved = Math.max(0, toInt(committedStock?.reserved_quantity, reservedBefore + item.quantity));
+  const committedPhysical = toInt(committedStock?.quantity, physicalBefore);
+  const committedReserved = Math.max(0, toInt(committedStock?.reserved_quantity, reservedBefore));
   const committedAvailable = committedPhysical - committedReserved;
-  const concurrentShortage = !item.shortageAcknowledged && committedAvailable < 0;
+  const pendingShortage = admission.status === 'unresolved' && admission.reason === 'concurrent_shortage';
 
   return {
     source: item.inventorySource,
     productName: item.productName,
     variantId,
-    quantityBefore: physicalForReservation - reservedBefore,
+    quantityBefore: physicalBefore - reservedBefore,
     quantityAfter: committedAvailable,
     referenceType,
     referenceId: safeReferenceId,
-    reservationStatus: 'active',
-    observedPhysicalQuantity: observedPhysical,
-    concurrentShortage,
-    shortageAfter: Math.max(0, -committedAvailable),
+    reservationStatus: admission.status,
+    concurrentShortage: pendingShortage,
+    pendingShortage,
+    shortageAfter: Math.max(0, committedReserved + (pendingShortage ? item.quantity : 0) - committedPhysical),
     physicalAfter: committedPhysical,
     reservedAfter: committedReserved,
   };

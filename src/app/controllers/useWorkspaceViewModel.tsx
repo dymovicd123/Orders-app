@@ -907,6 +907,26 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
     const hasPhysicalCounts = Boolean(serverShortage || availability.canObservePhysical)
     const free = Math.max(0, physical - reserved)
     const existingReservationDeficit = Math.max(0, reserved - Math.max(0, physical))
+    const approveCurrentSnapshot = () => {
+      if (!serverShortage || itemIndex === undefined) return
+      const key = itemIdentityKey(item)
+      const approve = (draft: EditorDraft): EditorDraft => ({
+        ...draft,
+        items: draft.items.map(candidate => itemIdentityKey(candidate) === key ? ({
+          ...candidate,
+          shortageAcknowledged: true,
+          shortageDecision: {
+            inventorySource: serverShortage.inventorySource,
+            variantId: serverShortage.variantId,
+            requestedQuantity: serverShortage.requestedQuantity,
+            physicalQuantity: serverShortage.physicalQuantity,
+            reservedQuantity: serverShortage.reservedQuantity,
+          },
+        }) : candidate),
+      })
+      if (mode === 'create') setCreateDraft(current => approve(current))
+      else setEditorDraft(current => current ? approve(current) : current)
+    }
     return (
       <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsShortageDecision ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={needsShortageDecision || undefined}>
         <summary>
@@ -927,6 +947,18 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
           ) : <p>{availability.note}</p>}
           {needsShortageDecision ? (
             <p className="field-hint">Заказ можно сохранить. Физический остаток автоматически не изменится. Если учёт неверный, количество исправляют отдельно в «Склад → Остатки».</p>
+          ) : null}
+          {serverShortage ? (
+            <div className="order-source-shortage-decision">
+              <p className="field-hint">Это подтверждение касается только указанного товара, точки и показателей. Сотрудник разрешает создать резерв сверх свободного количества; на месте товары автоматически не прибавятся.</p>
+              {item.shortageAcknowledged && item.shortageDecision ? (
+                <strong>Нехватка подтверждена для этих показателей. Нажмите «Сохранить» ещё раз.</strong>
+              ) : (
+                <button className="secondary compact" type="button" onClick={approveCurrentSnapshot}>
+                  Подтвердить резерв при нехватке
+                </button>
+              )}
+            </div>
           ) : null}
           {availability.rows.length ? (
             <div className="order-source-availability-list">
