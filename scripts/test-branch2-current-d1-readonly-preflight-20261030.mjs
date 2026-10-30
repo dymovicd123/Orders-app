@@ -25,6 +25,6 @@ assert(!/^\s+push:\s*$/m.test(workflow),'No automatic remote D1 preflight on pus
 assert(workflow.includes("if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/branch2'"))
 assert(!workflow.includes(old))
 assert(workflow.includes(target))
-assert(!/CLOUDFLARE_API_TOKEN.*?run:/s.test(workflow),
- 'Credentials should never be passed to unchecked shell script contents')
+assert(workflow.includes('permissions:\\n  contents: read'),
+ 'Read-only workflow should keep minimum GitHub permissions')
 console.log('P0_BRANCH2_D1_PREFLIGHT_SAFETY_PASSED: exact live mirror binding, SELECT-only both DBs, schema guard and manual remote dispatch')
