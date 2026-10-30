@@ -24,8 +24,10 @@ Goods arrive from Kyrgyzstan. The warehouse lead identifies **each physical garm
 7. **Operator UI.** Identify a SKU visually by human-friendly product characteristics and source, show in-stock, reserved and free quantities. For ambiguity/missing variant: block commit and direct to product catalog/resolver. For existing physical/reservation conflicts: show action and related orders in warehouse problems/history.
 8. **Release gates.** Real SQLite tests, production build, authenticated manager/warehouse UI acceptance, SELECT-only D1 before/after audits, known Worker version/rollback, then explicit Branch2 promotion. **Main is frozen** until everything—including full order intake—is accepted.
 
-### Small targeted code change in this PR
+### Two small targeted code changes in this PR
 
 `reconcileFoundInventoryStock()`, used for physical pieces found during stocktakes, now fails closed for multiple matching SKU identities, duplicate stock records, and unresolved rows with active reserved quantity. It checks the number of affected rows and blocks a stale operation instead of reporting false success. [SQLite regression in this PR](../scripts/test-found-stock-unique-identity-barcode-readiness-20261030.mjs) checks seven cases.
+
+**Existing-variant Arrival guard:** when a warehouse lead selects a known `variantId`, the server now verifies that the actual entered type, gender, color, material, length and size still match that canonical active SKU, while accepting harmless color-hyphen/spacing normalization. The original product ID / trusted alias checks remain. A stale picker cannot credit goods to a different size or color. [Exact-variant regression](../scripts/test-arrival-canonical-barcode-sku-20261030.mjs) covers the accepted match and six attribute mismatches.
 
 **Not implemented in this PR:** physical-label or barcode tables, scanner API, barcode format, label printing, shipment intake drafts, automated data repairs, or changes to old orders/exchanges. This is a narrow prerequisite, not a claim that barcode rollout is ready.
