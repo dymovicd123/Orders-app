@@ -27,6 +27,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [returnCancelDraft,setReturnCancelDraft]=useState<{
     order:any;choices:any[];selectedId:number;loading:boolean;submitting:boolean;error:string;
   }|null>(null)
+  const [pendingReservationDraft,setPendingReservationDraft] = useState<{
+    order:any;item:any;preview:any|null;error:string;loading:boolean;submitting:boolean;
+  }|null>(null)
   const [adminDeleteDraft,setAdminDeleteDraft] = useState<{
     order:any;preview:any|null;error:string;loading:boolean;submitting:boolean;progress?:string;
     physicalAnswer?:'undecided'|'not_issued'|'issued';
@@ -61,6 +64,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     ManagerBadge,
     markOrderSentToClient,
     markExchangeReplacementSent,
+    apiFetch,
+    onPendingReservationResolved,
+    canResolvePendingReservation,
+    setMessage,
     openOrderStockHandover,
     normalizeSuggestion,
     ordinaryOrdersSeparated = false,
@@ -85,6 +92,46 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     orderPageInfo,
     workspaceSector = 'orders',
   } = ctx
+
+  const openPendingReservation=(order:any,item:any)=>{
+    const draft={order,item,preview:null,error:'',loading:true,submitting:false}
+    setPendingReservationDraft(draft)
+    void (async()=>{
+      try{
+        const response=await apiFetch(`/api/orders/${order.id}/items/${item.id}/pending-reservation`)
+        const result=await response.json()
+        if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось проверить резерв.')
+        setPendingReservationDraft(current=>current?.order.id===order.id&&current?.item.id===item.id
+          ? {...current,preview:result,loading:false,error:''}:current)
+      }catch(error){
+        setPendingReservationDraft(current=>current?.order.id===order.id&&current?.item.id===item.id
+          ? {...current,loading:false,error:error instanceof Error?error.message:'Ошибка проверки резерва'}:current)
+      }
+    })()
+  }
+  const submitPendingReservation=(allowShortage:boolean)=>{
+    if(!pendingReservationDraft?.preview?.pending||pendingReservationDraft.submitting)return
+    const {order,item,preview}=pendingReservationDraft
+    setPendingReservationDraft(current=>current?{...current,submitting:true,error:''}:current)
+    void (async()=>{
+      try{
+        const response=await apiFetch(`/api/orders/${order.id}/items/${item.id}/pending-reservation`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({snapshot:preview.snapshot,allowShortage}),
+        })
+        const result=await response.json()
+        if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось закрепить резерв.')
+        setPendingReservationDraft(null)
+        setMessage(`Заказ ${order.external_id}: резерв позиции «${item.productName}» закреплён. Физический остаток не изменялся.`)
+        await onPendingReservationResolved()
+      }catch(error){
+        setPendingReservationDraft(current=>current?{
+          ...current,submitting:false,
+          error:(error instanceof Error?error.message:'Ошибка сохранения')+' Обновите данные перед повторным решением.',
+        }:current)
+      }
+    })()
+  }
 
   const priceItems = priceDraft ? (priceDraft.order.items || []).filter(
     (item:any)=>Number(item.id)>0 && Number(item.quantity)>0,
@@ -446,6 +493,18 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   }}
                                 >Отправить замену: {item.productName} × {item.quantity}</button>
                               )) : null}
+                            {canResolvePendingReservation&&!retainedOnly&&!archived&&!projection.deleted&&order.shipping_status!=='sent'
+                              ? (order.items||[]).filter((item:any)=>
+                                item.stockWriteoffStatus==='pending_reservation'&&Number(item.id)>0
+                              ).map((item:any)=>(
+                                <button key={`pending-reservation-${item.id}`}
+                                  type="button" className="secondary compact"
+                                  disabled={savingOrder}
+                                  onClick={event=>{event.stopPropagation();openPendingReservation(order,item)}}>
+                                  <span>Резерв не закреплён: {item.productName} × {item.quantity}</span>
+                                  <span> · Проверить</span>
+                                </button>
+                              )):null}
                             {projection.canOpenStockHandover ? (
                               <button
                                 className="secondary compact order-stock-handover-trigger"
@@ -672,6 +731,57 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" disabled={busy || !orderPageInfo?.hasMore} onClick={() => void changeOrderPage('next')}>Дальше</button>
                 </div>
               </div>
+              {pendingReservationDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={event=>{if(event.target===event.currentTarget&&!pendingReservationDraft.submitting)setPendingReservationDraft(null)}}>
+                  <div className="modal-card" role="dialog" aria-modal="true"
+                    aria-label="Проверить незакреплённый резерв"
+                    style={{maxWidth:560,maxHeight:'88vh',overflowY:'auto'}}>
+                    <div className="modal-head">
+                      <div>
+                        <div className="card-label">Резерв ещё не закреплён</div>
+                        <h3>{pendingReservationDraft.order.external_id}</h3>
+                      </div>
+                      <button type="button" className="ghost compact"
+                        disabled={pendingReservationDraft.submitting}
+                        onClick={()=>setPendingReservationDraft(null)}>Закрыть</button>
+                    </div>
+                    <p><strong>{pendingReservationDraft.item.productName}</strong> · {pendingReservationDraft.item.quantity} шт.</p>
+                    {pendingReservationDraft.loading ? <p>Проверяю актуальный остаток…</p>:null}
+                    {pendingReservationDraft.preview?.alreadyResolved ? (
+                      <p>Резерв уже закреплён. Обновите список заказов.</p>
+                    ):null}
+                    {pendingReservationDraft.preview?.pending ? (
+                      <>
+                        <p>Точка: <strong>{pendingReservationDraft.preview.snapshot.inventorySource==='boutique'?'Бутик':'Склад'}</strong></p>
+                        <p>По системе на месте: <strong>{pendingReservationDraft.preview.snapshot.physicalQuantity} шт.</strong></p>
+                        <p>Уже зарезервировано: <strong>{pendingReservationDraft.preview.snapshot.reservedQuantity} шт.</strong></p>
+                        <p>Нужно этому заказу: <strong>{pendingReservationDraft.preview.snapshot.requestedQuantity} шт.</strong></p>
+                        {pendingReservationDraft.preview.shortage>0 ? (
+                          <p role="status">Нехватка: <strong>{pendingReservationDraft.preview.shortage} шт.</strong> Подтверждение закрепит резерв сверх свободного остатка, но не добавит товар на полку.</p>
+                        ):(
+                          <p>Свободного количества достаточно. Можно закрепить резерв без исключения.</p>
+                        )}
+                      </>
+                    ):null}
+                    {pendingReservationDraft.error ? <p role="alert" className="error">{pendingReservationDraft.error}</p>:null}
+                    <div className="toolbar-actions">
+                      <button type="button" className="secondary"
+                        disabled={pendingReservationDraft.submitting}
+                        onClick={()=>openPendingReservation(pendingReservationDraft.order,pendingReservationDraft.item)}>Обновить данные</button>
+                      {pendingReservationDraft.preview?.pending ? (
+                        <button type="button" className="primary"
+                          disabled={pendingReservationDraft.loading||pendingReservationDraft.submitting}
+                          onClick={()=>submitPendingReservation(pendingReservationDraft.preview.shortage>0)}>
+                          {pendingReservationDraft.submitting?'Сохраняю…':
+                            pendingReservationDraft.preview.shortage>0?'Подтвердить резерв при нехватке':'Закрепить доступный резерв'}
+                        </button>
+                      ):null}
+                    </div>
+                    <p className="muted">Решение касается только этой позиции и текущих чисел. При изменении остатка сервер потребует повторную проверку.</p>
+                  </div>
+                </div>
+              ):null}
               {adminDeleteDraft ? (
                 <div className="modal-backdrop" role="presentation" onMouseDown={(event)=>{
                   if(event.target===event.currentTarget&&!adminDeleteDraft.submitting)setAdminDeleteDraft(null)

@@ -32,6 +32,8 @@ const groups = [
     'scripts/test-branch2-environment.mjs',
     'scripts/test-order-shortage-explicit-decision-20261030.mjs',
     'scripts/test-atomic-reservation-admission-20261030.mjs',
+    'scripts/test-pending-reservation-resolution-20261030.mjs',
+    'scripts/test-p0-critical-order-reservation-retry-20261030.mjs',
     'scripts/test-branch2-cd-safety-20261030.mjs',
   ]],
   ['Orders, shipment and reservations', [
