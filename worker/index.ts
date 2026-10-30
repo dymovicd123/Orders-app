@@ -2032,6 +2032,11 @@ export default {
 
       const pendingReservationMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/items\/(\d+)\/pending-reservation$/);
       if (pendingReservationMatch && (request.method === 'GET' || request.method === 'POST')) {
+        // Packing-only accounts cannot approve over-reservation or move stock
+        // obligations. Admin, manager and warehouse supervisor retain access.
+        if (authUser!.role !== 'admin' && authUser!.employeeRole === 'Упаковщик') {
+          return json({ok:false,message:'Подтверждение резерва доступно менеджеру или заведующему складом.'},{status:403});
+        }
         const orderId = toInt(pendingReservationMatch[1],0);
         const orderItemId = toInt(pendingReservationMatch[2],0);
         try {
