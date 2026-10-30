@@ -607,6 +607,21 @@ export async function resolveInventoryCreatableItemsBulk(
 }
 
 
+// The selected catalog variant must describe the garment physically received.
+// Prevent stale Arrival forms from adding an item to another size/color/gender SKU.
+export function arrivalFactsMatchCanonicalSku(
+  raw: ReturnType<typeof normalizeInventoryItem>,
+  canonical: InventoryResolvedItem,
+) {
+  return raw.category === canonical.category
+    && normalizeCatalogCombinationGender(raw.gender) === normalizeCatalogCombinationGender(canonical.gender)
+    && catalogColorIdentity(raw.color) === catalogColorIdentity(canonical.color)
+    && canonicalStockPositionValue(raw.material) === canonicalStockPositionValue(canonical.material)
+    && canonicalStockPositionValue(raw.length) === canonicalStockPositionValue(canonical.length)
+    && normalizeCatalogCombinationSize(raw.size) === normalizeCatalogCombinationSize(canonical.size);
+}
+
+
 export async function applyInventoryMovement(
   db: D1Database,
   input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
@@ -831,6 +846,9 @@ export async function applyInventoryMovement(
           if (enteredProductKey && enteredProductKey !== canonicalProductKey
               && !validArrivalAliasPairs.has(`${enteredProductKey}:${toInt(item.productId, 0)}`)) {
             throw new Error(`Приход «${raw.productName}»: выбранный размер относится к «${item.productName}». Выберите правильный вариант заново. Склад не изменён.`);
+          }
+          if (!arrivalFactsMatchCanonicalSku(raw, item)) {
+            throw new Error(`Приход «${raw.productName}»: пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом. Выберите комбинацию заново. Склад не изменён.`);
           }
         }
         if (strictOperationName) {
