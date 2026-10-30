@@ -77,22 +77,26 @@ const run = (command, args) => {
     stdio: 'inherit', shell: false, env: process.env, timeout: 150_000,
   })
   if (result.error || result.status !== 0) {
-    fail('Current Branch2 regression failed: ' + command + ' ' + args.join(' ') +
+    console.error('FAILED ' + command + ' ' + args.join(' ') +
       ' (' + (result.error?.message || result.status) + ')')
+    return false
   }
+  return true
 }
+const failures = []
 let total = 0
 for (const [group, files] of groups) {
   console.log('\n=== Current Branch2: ' + group + ' ===')
   for (const file of files) {
     if (!fs.existsSync(file)) fail('Required current regression missing: ' + file)
     console.log('CHECK ' + file)
-    run(process.execPath, ['--experimental-strip-types', file])
+    if (!run(process.execPath, ['--experimental-strip-types', file])) failures.push(file)
     total++
   }
 }
 console.log('\n=== Current Branch2: TypeScript, Vite and Worker build ===')
-run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'])
-if (!fs.existsSync('dist/client/assets')) fail('Current build output missing')
+if (!run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'])) failures.push('TypeScript/Vite build')
+if (!fs.existsSync('dist/client/assets')) failures.push('Current build output missing')
+if (failures.length) fail('Current Branch2 gate: ' + failures.length + ' failures: ' + failures.join(', '))
 console.log('BRANCH2_CURRENT_SEMANTIC_RELEASE_PASSED — ' + total +
   ' current regressions + production build; historical frozen replay is separate')
