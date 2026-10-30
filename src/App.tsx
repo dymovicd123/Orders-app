@@ -4388,7 +4388,7 @@ function App() {
         code?: string
         shortages?: CreateOrderShortage[]
         retiredItems?: CreateOrderRetiredCatalogItem[]
-        stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; shortageAfter?: number }>
+        stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; pendingShortage?: boolean; shortageAfter?: number }>
         message?: string
       }>(response, 'Создание заказа')
       if (!response.ok && result.code === 'order_retired_catalog_confirmation_required' && Array.isArray(result.retiredItems) && result.retiredItems.length) {
@@ -4453,12 +4453,15 @@ function App() {
 
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
+      const pendingReservations = (result.stockWriteOff || []).filter((entry) => entry.pendingShortage)
       const createdOrderId = Number(result.orderId || 0)
       const createdExternalId = String(result.externalId || '').trim()
       if (!Number.isInteger(createdOrderId) || createdOrderId <= 0 || !createdExternalId) {
         invalidateFinanceReadCaches()
         invalidateInventoryStockCaches(true)
-        if (concurrentShortages.length) {
+        if (pendingReservations.length) {
+          setMessage('Заказ сохранён, но резерв не закреплён: свободное количество изменилось. Проверьте остатки и разберите резерв этого заказа до отправки. Обновляю список заказов.')
+        } else if (concurrentShortages.length) {
           setMessage('Заказ сохранён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки». Обновляю список заказов.')
         } else if (postSaveShortages.length) {
           setMessage('Заказ сохранён с нехваткой свободного остатка. Физический учёт не изменён; проверьте «Склад → Остатки». Обновляю список заказов.')
@@ -4534,7 +4537,9 @@ function App() {
       // Step 188A: order creation changes reservations. Do not keep a stale stock cache
       // that would later make Warehouse or the next availability hint show the pre-order number.
       invalidateInventoryStockCaches(true)
-      if (concurrentShortages.length) {
+      if (pendingReservations.length) {
+        setMessage(`Заказ ${createdOrder.external_id} создан, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки; физические остатки не менялись.`)
+      } else if (concurrentShortages.length) {
         setMessage(`Заказ ${createdOrder.external_id} создан. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
         setMessage(`Заказ ${createdOrder.external_id} создан, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
@@ -6687,6 +6692,7 @@ function removeDebtPayment(index: number) {
       type OrderStockWriteResult = {
         productName?: string
         concurrentShortage?: boolean
+        pendingShortage?: boolean
         shortageAfter?: number
       }
       const result = await readJsonResponse<{
@@ -6739,10 +6745,13 @@ function removeDebtPayment(index: number) {
       const pendingEditorPayments = nextDraft.payments.filter((payment) => !payment.id)
       const postSaveShortages = (result.stockWriteOff || []).filter((entry) => Number(entry.shortageAfter || 0) > 0)
       const concurrentShortages = postSaveShortages.filter((entry) => entry.concurrentShortage)
+      const pendingReservations = (result.stockWriteOff || []).filter((entry) => entry.pendingShortage)
       invalidateFinanceReadCaches()
       // Metadata/payment/price-only itemized correction leaves inventory intact; H8E content rewrite does not.
       if (!isItemizedEdit || isItemizedContentRewrite) invalidateInventoryStockCaches(true)
-      if (concurrentShortages.length) {
+      if (pendingReservations.length) {
+        setMessage(`Заказ ${order.external_id} обновлён, но по ${pendingReservations.length} поз. резерв не закреплён из-за изменения доступного количества. Проверьте остатки и разберите резерв этого заказа до отправки.`)
+      } else if (concurrentShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён. Пока он сохранялся, доступный остаток изменился; проверьте «Склад → Остатки».`)
       } else if (postSaveShortages.length) {
         setMessage(`Заказ ${order.external_id} обновлён, но по ${postSaveShortages.length} поз. резерв превысил свободный остаток. Физический остаток не менялся; проверьте «Склад → Остатки».`)
