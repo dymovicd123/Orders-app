@@ -7,7 +7,7 @@ import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { activityLogStatement, resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import type { CriticalOperationHandle } from './critical.ts'
-import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
+import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, prepareCriticalMappedInsert, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertItemizedOrderMoneyNotOverpaid, buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
@@ -439,8 +439,9 @@ export async function insertOrderContent(
       item.lineTotal,
     ];
     const itemizedLine = itemizedWritePlan?.lines[itemIndex];
+    const criticalItemKey = `${criticalEntityPrefix}:item:${itemIndex + 1}`;
     const orderItemInsert = itemizedWritePlan
-      ? db.prepare(
+      ? prepareCriticalMappedInsert(db,
         `INSERT INTO order_items (
           order_id, product_id, variant_id, product_name_snapshot, audience_type,
           gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
@@ -448,7 +449,7 @@ export async function insertOrderContent(
           source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
           inventory_obligation_key, inventory_obligation_origin_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
+      , [
         ...commonOrderItemValues,
         itemizedLine?.catalogPriceSnapshot ?? null,
         item.isWorkshop ? 1 : 0,
@@ -461,8 +462,8 @@ export async function insertOrderContent(
         timestamp,
         inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
         inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
-      )
-      : db.prepare(
+      ], criticalOperation, 'order_item', criticalItemKey)
+      : prepareCriticalMappedInsert(db,
         `INSERT INTO order_items (
           order_id, product_id, variant_id, product_name_snapshot, audience_type,
           gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
@@ -470,7 +471,7 @@ export async function insertOrderContent(
           source_type, workshop_comment, workshop_urgent, workshop_due_date, workshop_due_time, stock_writeoff_status, created_at,
           inventory_obligation_key, inventory_obligation_origin_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
+      , [
         ...commonOrderItemValues,
         item.isWorkshop ? 1 : 0,
         item.isWorkshop ? 'warehouse' : item.inventorySource,
@@ -482,14 +483,14 @@ export async function insertOrderContent(
         timestamp,
         inventoryObligationLineage?.[itemIndex]?.key || `${externalId}:${stockReferenceType}:${timestamp}:item:${itemIndex + 1}`,
         inventoryObligationLineage?.[itemIndex]?.originAt || timestamp,
-      );
+      ], criticalOperation, 'order_item', criticalItemKey);
     let orderItemId: number | null = null;
     if (criticalOperation) {
       const mapped = await insertCriticalMappedEntity(
         db,
         criticalOperation,
         'order_item',
-        `${criticalEntityPrefix}:item:${itemIndex + 1}`,
+        criticalItemKey,
         orderItemInsert,
       );
       orderItemId = mapped.id;
@@ -632,15 +633,16 @@ export function orderManagerAuditStatement(
     details?: string | null;
     createdAt?: string;
   },
+  guard?: { handle: CriticalOperationHandle; entityType: string; entityKey: string },
 ) {
   const createdAt = input.createdAt || new Date().toISOString();
-  return db.prepare(
+  return prepareCriticalMappedInsert(db,
     `INSERT INTO order_manager_audit (
       order_id, external_id, previous_manager_id, previous_manager_name,
       new_manager_id, new_manager_name, action, source,
       actor_role, actor_label, details, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
+  , [
     input.orderId,
     input.externalId,
     input.previousManagerId ?? null,
@@ -653,7 +655,7 @@ export function orderManagerAuditStatement(
     cleanText(input.actor?.displayName || input.actor?.email) || null,
     cleanText(input.details) || null,
     createdAt,
-  );
+  ], guard?.handle, guard?.entityType || 'order_manager_audit', guard?.entityKey || 'unguarded');
 }
 
 export async function writeOrderManagerAudit(
@@ -2534,7 +2536,7 @@ export async function updateOrderCritical(
           previousManagerName: p.previousManagerName, newManagerId: p.nextManagerId, newManagerName: p.nextManager,
           action: 'changed', source: 'admin_order_edit', actor,
           details: 'Менеджер исправлен через полное редактирование заказа.', createdAt: p.timestamp,
-        }));
+        }, { handle: criticalOperation, entityType: 'order_manager_audit', entityKey: 'manager_changed' }));
       } catch (error) { console.warn('Order manager audit after safe edit failed', error); }
     }
     try {
@@ -2543,7 +2545,7 @@ export async function updateOrderCritical(
         title: `Изменён заказ ${p.externalId}`,
         details: `${p.deletingOrder ? (p.humanInventoryModelEnabled ? 'Заказ удалён; резерв освобождён; цех снят; ' : 'Заказ удалён; остатки возвращены; цех снят; ') : ''}${p.rewriteItems ? 'Товары обновлены; ' : ''}${p.priceOnlyItemsEdit ? 'Цены позиций исправлены без движения склада; ' : ''}${Array.isArray(p.priceAudit) && p.priceAudit.length ? p.priceAudit.map((item: {itemId: number; from: number; to: number}) => `позиция #${item.itemId}: ${item.from} → ${item.to} ₸`).join('; ') + '; ' : ''}${p.recordedPriceOnlyRequest ? `сотрудник: ${cleanText(actor?.displayName || actor?.email || checkedBy) || 'не указан'}; ` : ''}${p.rewritePayments ? 'оплаты обновлены; ' : ''}${paymentCorrectionCount ? `оплаты исправлены: ${paymentCorrectionCount}; ` : ''}статус отправки: ${p.nextShippingStatus}`,
         amount: p.totals.totalAmount, createdAt: p.timestamp,
-      }));
+      }, { handle: criticalOperation, entityType: 'activity_log', entityKey: 'order_updated' }));
     } catch (error) {
       console.warn('Order activity log after safe edit failed', error);
     }
