@@ -1,20 +1,8 @@
 name: One-off Asiya 23 Kaspi historical paid flags (production guarded)
 
+# Archived 2026-10-30: historical Production operation; all jobs intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-main-asiya-23-kaspi-paid-20261019.yml'
-      - 'scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql'
-      - 'scripts/ops/asiya-23-kaspi-legacy-paid-preflight-20261019.sql'
-      - 'scripts/test-asiya-23-kaspi-paid-20261019.mjs'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-main-asiya-23-kaspi-paid-20261019.yml'
-      - 'scripts/ops/asiya-23-kaspi-legacy-paid-20261019.sql'
-      - 'scripts/ops/asiya-23-kaspi-legacy-paid-preflight-20261019.sql'
-      - 'scripts/test-asiya-23-kaspi-paid-20261019.mjs'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,6 +13,7 @@ concurrency:
 
 jobs:
   verify:
+    if: false # archived historical Production operation; never execute
     name: Exact cohort and rerun safety on isolated SQLite
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -36,6 +25,7 @@ jobs:
       - run: node --experimental-strip-types scripts/test-asiya-23-kaspi-paid-20261019.mjs
 
   production:
+    if: false # archived historical Production operation; never execute
     name: Audit current production; apply only on merged main; verify
     needs: verify
     runs-on: ubuntu-latest

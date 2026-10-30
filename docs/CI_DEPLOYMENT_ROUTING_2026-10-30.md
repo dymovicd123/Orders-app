@@ -49,3 +49,10 @@ Confirmed high-risk examples:
 ### Actual D1 schema compatibility (separate completed read-only audit)
 
 [GET/SELECT-only #41085359069](https://github.com/dymovicd123/Orders-app/actions/runs/41085359069) found Main and Branch2 mirror each have 138 tables, 388 schema objects and the critical-operation/manager audit schema, with zero schema differences. **Do not run any order-manager ALTER or CREATE** against these two working databases. The fresh-install 114-migration gap remains open as #648; release decision must not conflate it with current D1 schema.
+
+
+### Draft archive candidate: 21 legacy Production one-off workflows (2026-10-30)
+
+Stacked candidate `safety/p0-freeze-legacy-prod-workflows-20261030` changes **only workflow trigger/job guards** plus the existing CI safety regression. The old YAML logic, SQL and scripts remain visible, but each selected workflow now has only a `workflow_dispatch` trigger **and all its jobs have `if: false`**. Neither a push nor an accidental manual click can run its historical database mutation. The scope covers historic Auth 0080-0081, Catalog 0090-0105, CLIENT-ZAMMLER 0075, Kaspi 0082 and backfill, Main editor 0110-0112, Ethno 0109, retired-SKU 0113-0114, Stage04 dormant schema, Stage03 0072-0074, duplicate order 1734, Asiya 23 Kaspi paid, Kaspi sent history, and seven old catalog-color one-offs. The safety gate asserts each named workflow stays manual-only and every job remains disabled.
+
+**The archive PR itself must NOT be merged until #656 is resolved.** Even when GitHub workflows are inert, the existing native Cloudflare trigger still publishes on a push to `main`; independent publication policy is unchanged. Remaining current/historical selective workflows outside these 21 still require separate review. Re-enabling a historical one-off later is not a normal deployment: it must be a new, specific change with explicit database approval and a dry-run; never re-run blindly.

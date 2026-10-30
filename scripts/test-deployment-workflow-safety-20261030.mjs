@@ -26,3 +26,45 @@ assert.doesNotMatch(head(kpi),/branches: \[release-product-kpi-leads-20261027, m
 assert.doesNotMatch(head(finance),/package\.json/,
   'Package-only security updates must not trigger a historical finance selective release')
 console.log('DEPLOYMENT_WORKFLOW_SAFETY_PASSED — no implicit prod fallback; scoped historic gates; explicit Branch2 mirror')
+
+
+// Historical Production one-offs must remain present for audit, but inert.
+const retiredProductionWorkflows = [
+  "auth-production-migrations-0080-0081",
+  "catalog-reference-production-schema-0090-0105",
+  "client-zammler-production-migration-0075",
+  "kaspi-production-migration-0082",
+  "kaspi-production-post-deploy-reconcile",
+  "main-admin-editor-schema-0110-0112",
+  "main-ethno-manual-finalization-schema-0109",
+  "main-retired-sku-schema-0113-0114",
+  "main-stage04-dormant-schema-20261018",
+  "one-off-prod-1734-targeted-cleanup",
+  "oneoff-main-asiya-23-kaspi-paid-20261019",
+  "oneoff-main-kaspi-sent-history-20261018",
+  "stage03-production-migration-0072",
+  "stage03-production-migrations-0073-0074",
+  "oneoff-production-color-canary-1464",
+  "oneoff-remaining26-colors-20261016",
+  "oneoff-add-two-colors-rename23-20261016",
+  "oneoff-batch8-color-20261016",
+  "oneoff-color-1469-1584",
+  "oneoff-ethno-four-keeper-colors-20261016",
+  "oneoff-hide-retired-light-gray-reference-20261016"
+]
+for (const name of retiredProductionWorkflows) {
+  const yaml=read(name)
+  const events=yaml.slice(0,yaml.indexOf('\npermissions:')>=0?yaml.indexOf('\npermissions:'):yaml.indexOf('\njobs:'))
+  assert.match(events,/on:\s*\n\s*workflow_dispatch:\s*\n/, name+' must have manual-only trigger')
+  assert.doesNotMatch(events,/^\s*(?:push|pull_request|schedule|workflow_run):/m,
+    name+' must never start automatically')
+  const jobs=yaml.slice(yaml.indexOf('\njobs:')+1)
+  const jobHeadings=(jobs.match(/^  [A-Za-z_][A-Za-z0-9_-]*:\s*$/gm)||[])
+  const disabled=(jobs.match(/^    if: false # archived historical Production operation; never execute$/gm)||[])
+  assert(jobHeadings.length>0,name+' must retain historical job definitions')
+  assert.equal(disabled.length,jobHeadings.length,name+' all jobs must be hard-disabled')
+  assert(!/^    if:(?! false # archived historical Production operation; never execute)/m.test(jobs),
+    name+' must not have executable job conditions')
+}
+console.log('P0_LEGACY_PRODUCTION_WORKFLOWS_ARCHIVED: '+retiredProductionWorkflows.length+
+  ' workflows, all job gates disabled and no push/PR triggers')

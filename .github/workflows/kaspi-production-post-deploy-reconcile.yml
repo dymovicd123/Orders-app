@@ -1,12 +1,8 @@
 name: Kaspi Production post-deploy reconcile
 
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'scripts/kaspi-production-runtime-20261007-manifest.json'
-      - '.github/workflows/kaspi-production-post-deploy-reconcile.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +10,7 @@ permissions:
 
 jobs:
   reconcile:
+    if: false # archived historical Production operation; never execute
     name: Reconcile Kaspi history after exact Production deploy
     runs-on: ubuntu-latest
     timeout-minutes: 15

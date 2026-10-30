@@ -1,14 +1,8 @@
 name: 'One-off: create two colors and guarded rename of 23 SKU'
+# Archived 2026-10-30: completed historical Production one-off; intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'scripts/ops/oneoff-add-two-colors-rename23-20261016.mjs'
-      - '.github/workflows/oneoff-add-two-colors-rename23-20261016.yml'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/oneoff-add-two-colors-rename23-20261016.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -16,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inspect-or-apply:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:

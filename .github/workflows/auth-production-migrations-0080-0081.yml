@@ -1,19 +1,15 @@
 name: Auth Production migrations 0080-0081
 
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/auth-production-migrations-0080-0081.yml'
-      - 'migrations/0080_v72_auth_login_identity.sql'
-      - 'migrations/0081_v72_auth_hardening.sql'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   apply:
+    if: false # archived historical Production operation; never execute
     name: Apply Auth 0080-0081 to Production D1
     runs-on: ubuntu-latest
     timeout-minutes: 15

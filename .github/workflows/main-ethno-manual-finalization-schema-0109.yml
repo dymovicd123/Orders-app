@@ -1,14 +1,8 @@
 name: Main Ethno manual-history finalization empty schema 0109
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'migrations/0109_v72_catalog_manual_movement_finalization.sql'
-      - '.github/workflows/main-ethno-manual-finalization-schema-0109.yml'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/main-ethno-manual-finalization-schema-0109.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -16,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   migrate:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
