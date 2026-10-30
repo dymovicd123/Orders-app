@@ -1,0 +1,74 @@
+name: P0 Branch2 exact SHA inactive Worker version upload
+
+# One-shot release-candidate upload. NOT a deployment or D1 migration.
+on:
+  push:
+    branches: [safe/p0-d1-readonly-inspection-20261030]
+    paths:
+      - '.github/workflows/p0-branch2-pinned-version-upload-once-20261030.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  upload-inactive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PINNED_SHA: 41a467e0cf66379ba0f2711139b61ce1466ec48c
+      TARGET_WORKER: orders-app-branch2
+    steps:
+      - name: Checkout exact consolidated tested P0 release commit
+        uses: actions/checkout@v4
+        with:
+          ref: 41a467e0cf66379ba0f2711139b61ce1466ec48c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify exact commit, target and isolated D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$PINNED_SHA" ]]
+          [[ "$GITHUB_REF" == "refs/heads/safe/p0-d1-readonly-inspection-20261030" ]]
+          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          grep -Fq '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"' wrangler.jsonc
+          ! grep -Fq 'orders_db_prod' wrangler.jsonc
+          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
+          node scripts/test-branch2-no-implicit-deploy-20261030.mjs
+      - name: Capture currently serving Branch2 deployment (GET only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TARGET_WORKER/deployments"
+          response="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
+          id="$(jq -r '.result.deployments[0].id // .result[0].id // empty' <<< "$response")"
+          [[ "$id" =~ ^[a-f0-9-]{36}$ ]] || { echo 'Cannot verify active deployment' >&2; exit 10; }
+          echo "ACTIVE_BEFORE=$id" >> "$GITHUB_ENV"
+          echo "Existing active Branch2 deployment ID: $id"
+      - name: Install locked dependencies and run complete current Branch2 regression gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run release:check
+      - name: Upload an INACTIVE Branch2 Worker version only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler versions upload --config wrangler.jsonc --message "P0 Branch2 SHA $PINNED_SHA inactive candidate"
+          echo 'P0_BRANCH2_INACTIVE_VERSION_UPLOADED'
+      - name: Prove live Branch2 deployment did NOT change (GET only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TARGET_WORKER/deployments"
+          response="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
+          id="$(jq -r '.result.deployments[0].id // .result[0].id // empty' <<< "$response")"
+          [[ "$id" == "$ACTIVE_BEFORE" ]] || { echo 'Active deployment changed during INACTIVE upload; investigate' >&2; exit 11; }
+          echo "P0_BRANCH2_INACTIVE_UPLOAD_CONFIRMED active_id=$id candidate_sha=$PINNED_SHA"
