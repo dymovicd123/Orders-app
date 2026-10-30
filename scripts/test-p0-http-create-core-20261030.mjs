@@ -66,9 +66,13 @@ const db={
 }
 const token='test-local-http-create-token'
 const tokenHash=createHash('sha256').update(token).digest('base64url')
+const staffToken='test-local-http-staff-token'
+const staffTokenHash=createHash('sha256').update(staffToken).digest('base64url')
 sql.prepare("INSERT INTO managers (id,name,is_active) VALUES(9001,'HTTP Manager',1)").run()
 sql.prepare("INSERT INTO app_users (id,login,email,password_hash,role,manager_id,display_name,is_active,must_change_password) VALUES(9001,'httpmanager','local@invalid','fixture-inert-hash','admin',9001,'HTTP Admin',1,0)").run()
+sql.prepare("INSERT INTO app_users (id,login,email,password_hash,role,manager_id,display_name,is_active,must_change_password) VALUES(9002,'httpstaff','staff@invalid','fixture-inert-hash','manager',9001,'HTTP Staff',1,0)").run()
 sql.prepare("INSERT INTO app_sessions (user_id,token_hash,expires_at) VALUES(9001,?,'2099-01-01')").run(tokenHash)
+sql.prepare("INSERT INTO app_sessions (user_id,token_hash,expires_at) VALUES(9002,?,'2099-01-01')").run(staffTokenHash)
 sql.prepare("INSERT INTO catalog_products (id,name,category,is_active) VALUES(9021,'P0 HTTP ТОВАР','adult',1)").run()
 sql.prepare("INSERT INTO catalog_variants (id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9031,9021,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50','adult',1)").run()
 sql.prepare("INSERT INTO catalog_stock_positions (product_id,category,gender_scope,material,length,is_default,is_active,sort_order,created_at,updated_at) VALUES(9021,'adult','unisex','СТАНДАРТ','СТАНДАРТ',0,1,0,'2026-10-30T00:00:00Z','2026-10-30T00:00:00Z')").run()
@@ -79,8 +83,8 @@ for(const [id,source] of [[9041,'warehouse'],[9042,'boutique']]){
  sql.prepare("INSERT INTO inventory_stock (id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(?,?,9021,9031,'P0 HTTP ТОВАР','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',2,0)").run(id,source)
 }
 sql.prepare("INSERT INTO inventory_model_meta (key,value,updated_at) VALUES('human_inventory_v2','active','2026-10-30T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active',updated_at=excluded.updated_at").run()
-async function http(method,path,payload){
- const headers={'Cookie':'orders_session='+token}
+async function http(method,path,payload,identity='admin'){
+ const headers={'Cookie':'orders_session='+(identity==='staff'?staffToken:token)}
  if(payload)headers['Content-Type']='application/json'
  const request=new Request('https://test.invalid'+path,{method,headers,...(payload?{body:JSON.stringify(payload)}:{})})
  const response=await worker.fetch(request,{DB:db})
@@ -102,9 +106,13 @@ const payload=(requestId,items=[item()])=>({
 const created=await http('POST','/api/orders',payload('create-one'))
 assert.equal(created.status,201,'Actual POST /api/orders must succeed: '+JSON.stringify(created))
 assert.equal(created.data.ok,true,JSON.stringify(created.data))
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM order_manager_audit WHERE action='created' AND source='order_create'").get().n,1,
+ 'Order manager audit must be durable after creation')
 const same=await http('POST','/api/orders',payload('create-one'))
 assert.equal(same.status,201,'HTTP idempotent retry: '+JSON.stringify(same))
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-one'").get().n,1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM order_manager_audit WHERE action='created' AND source='order_create'").get().n,1,
+ 'Idempotent retry must not duplicate manager audit')
 const stock=sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041").get()
 assert.equal(stock.quantity,2)
 assert.equal(stock.reserved_quantity,1)
@@ -162,6 +170,8 @@ const replacementPayload={
   items:[{...originalItem,sourceType:'boutique'}],
  },
 }
+const deniedManagerRewrite=await http('PATCH','/api/orders/'+createdId,replacementPayload,'staff')
+assert.equal(deniedManagerRewrite.status,409,'Manager must not bypass admin-only full item edit')
 const moved=await http('PATCH','/api/orders/'+createdId,replacementPayload)
 assert.equal(moved.status,200,'Change one SKU warehouse to boutique through HTTP PATCH: '+JSON.stringify(moved))
 const movedRetry=await http('PATCH','/api/orders/'+createdId,replacementPayload)
