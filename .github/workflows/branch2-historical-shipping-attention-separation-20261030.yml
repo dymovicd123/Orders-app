@@ -8,8 +8,10 @@ on:
       - 'src/features/inventory/views/renderInventoryAttentionPanel.tsx'
       - 'src/features/inventory/views/StockVariantTimeline.tsx'
       - 'src/features/sections/InventorySection.tsx'
+      - 'src/features/sections/OrdersHeaderSection.tsx'
       - 'shared/api-contracts.ts'
       - 'scripts/test-w16-source-attention-correction.mjs'
+      - 'scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs'
       - 'scripts/test-branch2-historical-attention-separation-20261030.mjs'
       - '.github/workflows/branch2-historical-shipping-attention-separation-20261030.yml'
 permissions:
@@ -29,5 +31,7 @@ jobs:
         run: node scripts/test-branch2-historical-attention-separation-20261030.mjs
       - name: Warehouse correction navigation regression
         run: node --experimental-strip-types scripts/test-w16-source-attention-correction.mjs
+      - name: Shipping evidence and inventory integrity regression
+        run: node --experimental-strip-types scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs
       - name: Verify complete typecheck and frontend build
         run: npm run build
