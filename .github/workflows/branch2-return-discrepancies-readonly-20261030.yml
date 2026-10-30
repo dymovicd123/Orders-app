@@ -1,0 +1,22 @@
+name: Branch2 forensic return discrepancies (SELECT only)
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/audit-return-discrepancies-20261030.mjs'
+      - '.github/workflows/branch2-return-discrepancies-readonly-20261030.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Forensic SELECT-only audit on frozen Branch2 mirror
+        run: node scripts/audit-return-discrepancies-20261030.mjs
