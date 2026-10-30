@@ -48,7 +48,7 @@ async function book(id,variant,stockId){
 assert.equal((await book(1,101,1)).status,'unresolved')
 assert.equal((await book(2,101,1)).status,'unresolved')
 assert.equal((await book(3,102,2)).status,'active')
-assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get(),{quantity:0,reserved_quantity:0})
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=1').get()},{quantity:0,reserved_quantity:0})
 assert.equal(sql.prepare("SELECT count(*) AS n FROM inventory_reservations WHERE status='unresolved' AND unresolved_reason='concurrent_shortage'").get().n,2)
 assert.equal(sql.prepare("SELECT count(*) AS n FROM inventory_reservations WHERE status='active'").get().n,1)
 console.log('ORDER_SHORTAGE_NONBLOCKING_PASSED')
