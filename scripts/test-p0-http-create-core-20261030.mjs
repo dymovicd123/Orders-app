@@ -37,6 +37,7 @@ for(const n of ['app_users','app_sessions','inventory_stock','inventory_reservat
 }
 function stmt(statement,params=[]){
  return {
+  sql:statement,
   bind(...values){return stmt(statement,values)},
   async first(){return sql.prepare(statement).get(...params)??null},
   async all(){return {results:sql.prepare(statement).all(...params)}},
@@ -46,12 +47,21 @@ function stmt(statement,params=[]){
   },
  }
 }
+let loseReservationBatchResponseOnce=false
 const db={
  prepare:q=>stmt(q),
  async batch(stmts){
   sql.exec('BEGIN IMMEDIATE')
-  try{const out=[];for(const st of stmts)out.push(await st.run());sql.exec('COMMIT');return out}
-  catch(error){sql.exec('ROLLBACK');throw error}
+  let committed=false
+  try{
+   const out=[];for(const st of stmts)out.push(await st.run())
+   sql.exec('COMMIT');committed=true
+   if(loseReservationBatchResponseOnce && stmts.some(st=>st.sql?.includes('INSERT INTO inventory_reservations'))){
+     loseReservationBatchResponseOnce=false
+     throw new Error('INJECTED: committed reservation but client lost the response')
+   }
+   return out
+  }catch(error){if(!committed)sql.exec('ROLLBACK');throw error}
  }
 }
 const token='test-local-http-create-token'
@@ -166,4 +176,47 @@ const shortage=await http('POST','/api/orders',payload('create-short',[item(),it
 assert.equal(shortage.status,409,'Shortage response: '+JSON.stringify(shortage))
 assert.equal(shortage.data.code,'order_stock_shortage')
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-short'").get().n,0)
-console.log('P0_HTTP_CREATE_CORE_PASSED: full migrations '+migrations.length+', actual authenticated POST/retry/shortage, no physical mutation')
+// Remove one item from an itemized order: exactly its old active reserve
+// disappears, without changing the other line or either physical stock.
+const two=await http('POST','/api/orders',payload('create-two',[item('warehouse'),item('boutique')]))
+assert.equal(two.status,201,'Two-source order create: '+JSON.stringify(two))
+const twoId=Number(two.data.orderId)
+const twoRead=await http('GET','/api/orders/'+twoId)
+assert.equal(twoRead.status,200)
+const snapshots=twoRead.data.order.items.map(row=>({
+ ...originalItem,
+ orderItemId:Number(row.id),
+ sourceType:String(row.sourceType||'warehouse'),
+ unitPrice:Number(row.unitPrice||1000),
+ lineTotal:Number(row.lineTotal||1000),
+ catalogPriceSnapshot:row.catalogPriceSnapshot??null,
+}))
+assert.equal(snapshots.length,2)
+const keepBoutique=snapshots.find(row=>row.sourceType==='boutique')
+assert(keepBoutique,'The survivor must be the boutique line')
+const deletePayload={requestId:'p0-delete-one-line',itemContentReplacement:{
+ expectedItems:snapshots,items:[keepBoutique],
+}}
+const deleteResult=await http('PATCH','/api/orders/'+twoId,deletePayload)
+assert.equal(deleteResult.status,200,'Removing warehouse line through actual PATCH: '+JSON.stringify(deleteResult))
+const deleteReplay=await http('PATCH','/api/orders/'+twoId,deletePayload)
+assert.equal(deleteReplay.status,200)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,0)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9042').get().reserved_quantity,2)
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2)
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9042').get().quantity,2)
+// Drop the server's response just AFTER an atomic D1.batch commits the
+// reservation. The same HTTP requestId must recover the existing order/item.
+loseReservationBatchResponseOnce=true
+const lost=await http('POST','/api/orders',payload('create-lost-response'))
+assert.equal(lost.status,500,'Fault injection must drop response after DB COMMIT: '+JSON.stringify(lost))
+assert.equal(loseReservationBatchResponseOnce,false,'The reservation COMMIT fault must actually fire')
+const resumed=await http('POST','/api/orders',payload('create-lost-response'))
+assert.equal(resumed.status,201,'Safe replay after committed-but-lost response: '+JSON.stringify(resumed))
+const savedId=Number(resumed.data.orderId)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-lost-response'").get().n,1)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(savedId).n,1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='active'").get(savedId).n,1)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1)
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2)
+console.log('P0_HTTP_CREATE_EDIT_PASSED: migrations '+migrations.length+', create, shortage, metadata, source transfer, item removal, idempotency and committed-but-lost HTTP response')
