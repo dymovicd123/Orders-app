@@ -171,7 +171,7 @@ export async function resolvePendingReservation(
        (event_type,entity_type,entity_id,order_id,external_order_id,title,details,amount,created_at)
        SELECT 'order_pending_reservation_resolved','order_item',?,?,
               ?,'Подтверждён резерв заказа',?,0,?
-       WHERE EXISTS(SELECT 1 FROM inventory_reservations r
+       WHERE changes()=1 AND EXISTS(SELECT 1 FROM inventory_reservations r
          JOIN order_items oi ON oi.id=r.order_item_id
          WHERE r.id=? AND r.status='active'
            AND oi.stock_writeoff_status='reserved')`
