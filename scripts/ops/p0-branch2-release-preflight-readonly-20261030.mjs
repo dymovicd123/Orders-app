@@ -6,7 +6,7 @@ const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API
 assert(/^[a-f0-9]{32}$/.test(account||'')&&token,'CF secrets unavailable')
 const worker='orders-app-branch2'
 const dbid='0904a573-21ff-44d8-93b0-c9200f771702'
-const expectedActive='1b9a4341-3bca-4356-be91-f9d85aa4bed0'
+const expectedActive='a400a419-de33-4880-ad58-7c93634ce4b0'
 const candidate='56d81b89-4929-44c6-b5f8-b2b55a5610b5'
 const mergedSha='459cfe0fdb552e20dc76392265067dd82688b655'
 const base='https://api.cloudflare.com/client/v4/accounts/'+account
@@ -35,6 +35,8 @@ const deployments=await get('/workers/scripts/'+worker+'/deployments')
 const latest=Array.isArray(deployments)?deployments:deployments?.deployments
 assert(latest?.length>0,'No active Branch2 deployment')
 const activeDeploymentDrift=latest[0].id!==expectedActive
+assert(!activeDeploymentDrift,'Active deployment changed again after emergency safeguards')
+assert.deepEqual(latest[0].versions?.map(v=>({id:v.version_id,percentage:v.percentage})),[{id:'2781a20c-e430-4bbd-bfd2-47c500056a00',percentage:100}],'Active version unexpectedly changed')
 console.log('P0_BRANCH2_DEPLOYMENT_HISTORY '+JSON.stringify(latest.slice(0,6).map(x=>({
  id:x.id,createdOn:x.created_on,source:x.source,
  versions:(x.versions||[]).map(v=>({versionId:v.version_id,percentage:v.percentage}))
