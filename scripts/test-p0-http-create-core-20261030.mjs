@@ -153,6 +153,34 @@ assert.equal(updated.status,200,'Actual PATCH metadata correction: '+JSON.string
 const updatedRetry=await http('PATCH','/api/orders/'+createdId,editPayload)
 assert.equal(updatedRetry.status,200,'Metadata edit idempotent retry: '+JSON.stringify(updatedRetry))
 assert.equal(sql.prepare('SELECT city FROM orders WHERE id=?').get(createdId).city,'Алматы')
+ // Admin reassigns a manager in a real itemized PATCH. Artificially lose
+ // the HTTP result AFTER critical_operations is marked completed in SQLite.
+ // Both manager audit and activity must already be mapped to the same
+ // requestId, and cached replay must not create duplicate evidence.
+sql.prepare("INSERT INTO managers (id,name,is_active) VALUES(9003,'New Manager',1)").run()
+const activityBeforeManagerChange=Number(sql.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type='order_updated'").get(createdId).n)
+loseCriticalCompleteResponseOnce=true
+const managerChange={requestId:'p0-admin-manager-reassignment-lost',
+ managerId:9003,managerName:'New Manager'}
+const lostManagerChange=await http('PATCH','/api/orders/'+createdId,managerChange)
+assert.equal(lostManagerChange.status,409,'Committed edit should request safe retry')
+assert.equal(loseCriticalCompleteResponseOnce,false)
+assert.equal(sql.prepare('SELECT manager_id FROM orders WHERE id=?').get(createdId).manager_id,9003)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM order_manager_audit WHERE order_id=? AND action='changed'").get(createdId).n,1,
+ 'Manager-change audit must exist even when final HTTP response is lost')
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type='order_updated'").get(createdId).n,activityBeforeManagerChange+1,
+ 'Edit activity must exist even when final HTTP response is lost')
+const managerChangeRetry=await http('PATCH','/api/orders/'+createdId,managerChange)
+assert.equal(managerChangeRetry.status,200,'Replay after completed edit: '+JSON.stringify(managerChangeRetry))
+const managerChangeThird=await http('PATCH','/api/orders/'+createdId,managerChange)
+assert.equal(managerChangeThird.status,200)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM order_manager_audit WHERE order_id=? AND action='changed'").get(createdId).n,1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type='order_updated'").get(createdId).n,activityBeforeManagerChange+1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM critical_operation_entities WHERE request_id=? AND entity_type='order_manager_audit' AND entity_key='manager_changed'").get(managerChange.requestId).n,1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM critical_operation_entities WHERE request_id=? AND entity_type='activity_log' AND entity_key='order_updated'").get(managerChange.requestId).n,1)
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1,
+ 'Manager reassignment does not modify stock')
+
 assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1,
  'Metadata edit must not rewrite stock or reserve')
 const rawItem=current.items[0]
@@ -260,4 +288,4 @@ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_manager_audit WHERE or
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type=?').get(completedOrderId,'order_created').n,1)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2,
  'A post-commit failure must never synthesize physical stock')
-console.log('P0_HTTP_CREATE_EDIT_PASSED: migrations '+migrations.length+', create, shortage, metadata, source transfer, item removal, idempotency and both reservation and critical-completion lost HTTP responses')
+console.log('P0_HTTP_CREATE_EDIT_PASSED: migrations '+migrations.length+', create, shortage, metadata, source transfer, item removal, idempotency and loss after reserve/create/edit critical completion')
