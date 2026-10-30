@@ -1,18 +1,15 @@
 name: CLIENT-ZAMMLER Production migration 0075
 
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/client-zammler-production-migration-0075.yml'
-      - 'migrations/0075_v72_zammler_workshop_due_time.sql'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   apply:
+    if: false # archived historical Production operation; never execute
     name: Apply CLIENT-ZAMMLER 0075 to Production D1
     runs-on: ubuntu-latest
     timeout-minutes: 12

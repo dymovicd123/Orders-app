@@ -1,9 +1,8 @@
 name: Catalog reference schema Production 0090-0105
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/catalog-reference-production-schema-0090-0105.yml'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -11,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   additive-production-schema:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

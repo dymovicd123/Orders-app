@@ -1,11 +1,8 @@
 name: Production retired SKU journals 0113-0114
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths: ['.github/workflows/main-retired-sku-schema-0113-0114.yml', 'migrations/0113_retired_order_item_actual_handover.sql', 'migrations/0114_retired_item_one_line_corrections.sql']
-  push:
-    branches: [main]
-    paths: ['.github/workflows/main-retired-sku-schema-0113-0114.yml', 'migrations/0113_retired_order_item_actual_handover.sql', 'migrations/0114_retired_item_one_line_corrections.sql']
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -13,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   schema:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

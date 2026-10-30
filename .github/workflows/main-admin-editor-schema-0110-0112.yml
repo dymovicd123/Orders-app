@@ -1,19 +1,8 @@
 name: Production order editing and delete schema 0110-0112
+# Archived 2026-10-30: historical Production migration; all jobs intentionally disabled.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/main-admin-editor-schema-0110-0112.yml'
-      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
-      - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
-      - 'migrations/0112_v72_order_client_name_override.sql'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/main-admin-editor-schema-0110-0112.yml'
-      - 'migrations/0110_v72_exchange_order_item_price_correction_audit.sql'
-      - 'migrations/0111_v72_admin_order_delete_saga_journal.sql'
-      - 'migrations/0112_v72_order_client_name_override.sql'
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -21,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   schema:
+    if: false # archived historical Production operation; never execute
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
