@@ -59,14 +59,22 @@ await check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:deci
 // Source-specific: boutique remains free; no warehouse shortage should leak.
 await check([item(1,'boutique')],[101])
 await mustShortage(()=>check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(1,2,3)})],[102]),1)
+// Zero-stock SKU and an entirely missing inventory_stock row both need consent.
+await mustShortage(()=>check([item()],[102]),1)
+await mustShortage(()=>check([item()],[103]),1)
+// The new retired-generation marker (variant=0) must NOT authorize ordinary SKU=101.
+await mustShortage(()=>check([item(1,'warehouse',{shortageAcknowledged:true,shortageDecision:decision(1,2,3,'warehouse',0)})],[101]),2)
 // Editor re-write excludes this order's own reserved obligation.
 await check([item(1,'warehouse')],[101],{excludeOrderId:999})
 await check([item(2,'workshop')],[null])
 assert.deepEqual(quantity(),before,'Server shortage check must never change the shelf')
-const write=fs.readFileSync('worker/domains/orders-write.ts','utf8')
 const reserve=fs.readFileSync('worker/domains/order-reservations.ts','utf8')
 const view=fs.readFileSync('src/app/controllers/useWorkspaceViewModel.tsx','utf8')
 const app=fs.readFileSync('src/App.tsx','utf8')
+const write=fs.readFileSync('worker/domains/orders-write.ts','utf8')
+assert.match(write,/const retiredGroups = new Map/, 'Retired SKU must aggregate duplicate order lines BEFORE recreation')
+assert.match(write,/approvedRetiredInputIndexes/, 'Retired SKU consent must be checked before catalog mutation')
+assert.match(write,/item.shortageDecision = \{ \.\.\.item.shortageDecision, variantId: resolved.variantId \}/, 'Validated retired consent must link to the new canonical SKU')
 assert.doesNotMatch(write,/shortageAcknowledged\s*:\s*true/, 'Create/Edit must never silently override employee decision')
 assert.doesNotMatch(write,/item\.shortageAcknowledged\s*=\s*true/, 'No forced edit acknowledgement')
 assert.match(reserve,/confirmedAtCurrentSnapshot/,'Server must compare current precise shortage state')
