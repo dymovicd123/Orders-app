@@ -144,3 +144,5 @@ Do not treat secondary readback/history failures as proof that a completed criti
 - CLIENT-ZAMMLER uses the existing Orders/Workshop model and is not roadmap Stage04.
 - Resolver R11/R12/R13 is considered stable; change only for a concrete defect.
 - Full Stage03 Production promotion requires explicit user authorization and fresh reconciliation from current main.
+
+- [Реестр 47 GitHub Actions и рисков production-write](PRODUCTION_WORKFLOW_REGISTER_2026-10-30.md) — срез 30.10, статусы кандидатов #639–#642 и требования к ручному выпуску.
