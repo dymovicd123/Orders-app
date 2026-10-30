@@ -30,9 +30,8 @@ const groups = [
   ['DB isolation and safety', [
     'scripts/verify-database-safety.mjs',
     'scripts/test-branch2-environment.mjs',
-    'scripts/test-order-shortage-explicit-decision-20261030.mjs',
-    'scripts/test-p0-shortage-confirmation-reachable-20261030.mjs',
     'scripts/test-atomic-reservation-admission-20261030.mjs',
+    'scripts/test-order-shortage-pending-without-confirmation-20261031.mjs',
     'scripts/test-pending-reservation-resolution-20261030.mjs',
     'scripts/test-p0-critical-order-reservation-retry-20261030.mjs',
     'scripts/test-p0-http-pending-reservation-20261030.mjs',

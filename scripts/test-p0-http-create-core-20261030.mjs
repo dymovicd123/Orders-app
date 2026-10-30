@@ -241,10 +241,6 @@ assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9042').get().quantity,2)
 assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9042').get().reserved_quantity,1,
  'Changing source must reserve exactly one boutique SKU')
-const shortage=await http('POST','/api/orders',payload('create-short',[item(),item(),item()]))
-assert.equal(shortage.status,409,'Shortage response: '+JSON.stringify(shortage))
-assert.equal(shortage.data.code,'order_stock_shortage')
-assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-short'").get().n,0)
 // Remove one item from an itemized order: exactly its old active reserve
 // disappears, without changing the other line or either physical stock.
 const two=await http('POST','/api/orders',payload('create-two',[item('warehouse'),item('boutique')]))
@@ -310,4 +306,20 @@ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_manager_audit WHERE or
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM activity_log WHERE order_id=? AND event_type=?').get(completedOrderId,'order_created').n,1)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2,
  'A post-commit failure must never synthesize physical stock')
+ // Shortage no longer blocks an order, but it never creates physical goods
+// or quietly overbooks an active reserve. Run LAST to keep other isolated
+// idempotency/edit assertions independent of deliberate pending stock.
+const shortage=await http('POST','/api/orders',payload('create-short',[item(),item(),item()]))
+assert.equal(shortage.status,201,'A shortage is not a reason to reject order creation: '+JSON.stringify(shortage))
+const shortageOrderId=Number(shortage.data.orderId)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-short'").get().n,1)
+assert(sql.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='unresolved' AND unresolved_reason='concurrent_shortage'").get(shortageOrderId).n>=1,
+ 'Insufficient SKU must be visible as a pending obligation')
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2,
+ 'Shortage never increments recorded physical stock')
+const shortageReplay=await http('POST','/api/orders',payload('create-short',[item(),item(),item()]))
+assert.equal(shortageReplay.status,201,'Replaying same create must be idempotent')
+assert.equal(Number(shortageReplay.data.orderId),shortageOrderId)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0-create-short'").get().n,1)
+
 console.log('P0_HTTP_CREATE_EDIT_PASSED: migrations '+migrations.length+', create, shortage, metadata, source transfer, item removal, idempotency and loss after reserve/create/edit critical completion')

@@ -905,35 +905,15 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       currentReserved: serverShortage.reservedQuantity,
     } : null)
     if (!availability) return null
-    const needsShortageDecision = Boolean(serverShortage) || Boolean('needsAttention' in availability && availability.needsAttention)
+    const needsStockAttention = Boolean(serverShortage) || Boolean('needsAttention' in availability && availability.needsAttention)
     const physical = serverShortage ? Number(serverShortage.physicalQuantity || 0) : Number(availability.currentPhysical || 0)
     const reserved = serverShortage ? Math.max(0, Number(serverShortage.reservedQuantity || 0)) : Math.max(0, Number(availability.currentReserved || 0))
     const requested = serverShortage ? Math.max(1, Number(serverShortage.requestedQuantity || 1)) : Math.max(1, requiredInOrder)
     const hasPhysicalCounts = Boolean(serverShortage || availability.canObservePhysical)
     const free = Math.max(0, physical - reserved)
     const existingReservationDeficit = Math.max(0, reserved - Math.max(0, physical))
-    const approveCurrentSnapshot = () => {
-      if (!serverShortage || itemIndex === undefined) return
-      const key = itemIdentityKey(item)
-      const approve = (draft: EditorDraft): EditorDraft => ({
-        ...draft,
-        items: draft.items.map(candidate => itemIdentityKey(candidate) === key ? ({
-          ...candidate,
-          shortageAcknowledged: true,
-          shortageDecision: {
-            inventorySource: serverShortage.inventorySource,
-            variantId: serverShortage.variantId,
-            requestedQuantity: serverShortage.requestedQuantity,
-            physicalQuantity: serverShortage.physicalQuantity,
-            reservedQuantity: serverShortage.reservedQuantity,
-          },
-        }) : candidate),
-      })
-      if (mode === 'create') setCreateDraft(current => approve(current))
-      else setEditorDraft(current => current ? approve(current) : current)
-    }
     return (
-      <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsShortageDecision ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={needsShortageDecision || undefined}>
+      <details className={`order-source-availability is-${serverShortage ? 'danger' : availability.tone}${needsStockAttention ? ' needs-attention' : ''}`} key={`${keyPrefix}-availability`} open={needsStockAttention || undefined}>
         <summary>
           <span className="order-source-availability-dot" aria-hidden="true" />
           <span>{serverShortage ? 'Недостаточно свободного остатка' : availability.label}</span>
@@ -950,20 +930,8 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
               ) : null}
             </>
           ) : <p>{availability.note}</p>}
-          {needsShortageDecision ? (
-            <p className="field-hint">Заказ можно сохранить. Физический остаток автоматически не изменится. Если учёт неверный, количество исправляют отдельно в «Склад → Остатки».</p>
-          ) : null}
-          {serverShortage ? (
-            <div className="order-source-shortage-decision">
-              <p className="field-hint">Товар действительно есть физически? Подтвердите резерв только в этом случае. Это не прибавит его к учтённому остатку: расхождение исправляется отдельно в «Склад → Остатки». Если товара фактически нет, выберите другой источник или «Цех».</p>
-              {item.shortageAcknowledged && item.shortageDecision ? (
-                <strong>Физическое наличие подтверждено для этих показателей. Нажмите «Сохранить» ещё раз.</strong>
-              ) : (
-                <button className="secondary compact" type="button" onClick={approveCurrentSnapshot}>
-                  Подтвердить резерв при нехватке — товар физически есть
-                </button>
-              )}
-            </div>
+          {needsStockAttention ? (
+            <p className="field-hint">Заказ можно сохранить без подтверждения физического наличия. Если свободного остатка не хватает, резерв будет ожидать уточнения. Физический остаток автоматически не изменится.</p>
           ) : null}
           {availability.rows.length ? (
             <div className="order-source-availability-list">
