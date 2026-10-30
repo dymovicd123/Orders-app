@@ -54,12 +54,12 @@ try {
     SmartPickerInput:({value,placeholder})=>React.createElement('input',{value,placeholder,readOnly:true}),
     sourceLabel:()=> 'Цех',
   }
-  function render(newProduct, stockObservationEnabled=false, currentPhysical=2, sourceType='workshop') {
+  function render(newProduct, stockObservationEnabled=false, currentPhysical=2, sourceType='workshop', shipmentState='sent') {
     const draft={
       workflowMode:'pair',orderId:2541,oldItemId:31,oldQuantity:1,
       oldPhysicalState:'no_stock',exchangeDate:'2026-10-17',
       newItem:{
-        productName:newProduct,quantity:1,sourceType,
+        productName:newProduct,quantity:1,sourceType,shipmentState,
         audienceType:'ВЗРОСЛЫЙ',gender:'МУЖ',color:'СВЕТЛО-БЕЖЕВЫЙ',
         material:'ЗАМША ВЕЛЮР',length:'СТАНДАРТ',size:'54',
         stockObservationEnabled,
@@ -79,9 +79,11 @@ try {
   const buttonOf=(html)=>html.match(/<button[^>]*>Добавить ещё позицию<\/button>/)?.[0] || ''
   assert(buttonOf(initial).includes('disabled'), 'Cannot queue empty new item')
   assert(buttonOf(selected)&&!buttonOf(selected).includes('disabled'), 'Valid selected product must enable queueing')
-  const shortage=render('КОЗЫ КОРПЕШ ШАПАН',false,0,'warehouse')
+  const undecided=render('КОЗЫ КОРПЕШ ШАПАН',false,2,'warehouse','')
+  assert(buttonOf(undecided).includes('disabled'), 'A stocked replacement still requires an explicit shipment-state choice')
+  const shortage=render('КОЗЫ КОРПЕШ ШАПАН',false,0,'warehouse','sent')
   assert(buttonOf(shortage).includes('disabled'), 'Insufficient stock requires explicit confirmation')
-  const confirmed=render('КОЗЫ КОРПЕШ ШАПАН',true,0,'warehouse')
+  const confirmed=render('КОЗЫ КОРПЕШ ШАПАН',true,0,'warehouse','sent')
   assert(buttonOf(confirmed)&&!buttonOf(confirmed).includes('disabled'),
     'Confirmed physical presence must unblock queue without a numeric recount')
   console.log('LEGACY_EXCHANGE_PICK_RENDER_AND_SHORTAGE_CONFIRMATION_PASSED')
