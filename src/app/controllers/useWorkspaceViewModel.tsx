@@ -401,6 +401,11 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
       size: selected.sizeLabel || '',
       stockObservationEnabled: false,
       observedPhysicalQuantity: null,
+      // A product picker bypasses updateCreateItem/updateEditorItem. Never
+      // carry a confirmation for a different SKU into the new product.
+      shortageAcknowledged: false,
+      shortageDecision: null,
+      serverShortage: undefined,
     }
   }
 
@@ -950,12 +955,12 @@ const sectorStyle = (sector: typeof activeSector) => ({ display: activeSector ==
           ) : null}
           {serverShortage ? (
             <div className="order-source-shortage-decision">
-              <p className="field-hint">Это подтверждение касается только указанного товара, точки и показателей. Сотрудник разрешает создать резерв сверх свободного количества; на месте товары автоматически не прибавятся.</p>
+              <p className="field-hint">Товар действительно есть физически? Подтвердите резерв только в этом случае. Это не прибавит его к учтённому остатку: расхождение исправляется отдельно в «Склад → Остатки». Если товара фактически нет, выберите другой источник или «Цех».</p>
               {item.shortageAcknowledged && item.shortageDecision ? (
-                <strong>Нехватка подтверждена для этих показателей. Нажмите «Сохранить» ещё раз.</strong>
+                <strong>Физическое наличие подтверждено для этих показателей. Нажмите «Сохранить» ещё раз.</strong>
               ) : (
                 <button className="secondary compact" type="button" onClick={approveCurrentSnapshot}>
-                  Подтвердить резерв при нехватке
+                  Подтвердить резерв при нехватке — товар физически есть
                 </button>
               )}
             </div>

@@ -4390,7 +4390,7 @@ function App() {
         retiredItems?: CreateOrderRetiredCatalogItem[]
         stockWriteOff?: Array<{ productName?: string; concurrentShortage?: boolean; pendingShortage?: boolean; shortageAfter?: number }>
         message?: string
-      }>(response, 'Создание заказа')
+      }>(response, 'Создание заказа', { allowHttpError: true })
       if (!response.ok && result.code === 'order_retired_catalog_confirmation_required' && Array.isArray(result.retiredItems) && result.retiredItems.length) {
         completeCriticalRequest(criticalKey, critical.requestId)
         if (retiredCatalogRecreateKeys.length) {
@@ -4441,7 +4441,7 @@ function App() {
             }
           }),
         }))
-        setError(result.message || 'Перед сохранением уточните отмеченные складские позиции.')
+        setMessage('Найдена нехватка по свежим данным. В отмеченной позиции нажмите «Подтвердить резерв при нехватке», если товар физически есть, затем сохраните заказ повторно. Остаток автоматически не увеличится.')
         return
       }
       if (!response.ok) {
@@ -6702,7 +6702,7 @@ function removeDebtPayment(index: number) {
         code?: string
         shortages?: EditOrderShortage[]
         stockWriteOff?: OrderStockWriteResult[]
-      }>(response, 'Сохранение заказа')
+      }>(response, 'Сохранение заказа', { allowHttpError: true })
       if (!response.ok && result.code === 'order_stock_shortage' && Array.isArray(result.shortages) && result.shortages.length) {
         const shortageByInputIndex = new Map<number, EditOrderShortage>()
         for (const shortage of result.shortages) {
@@ -6732,7 +6732,7 @@ function removeDebtPayment(index: number) {
             }
           }),
         }) : current)
-        setError(result.message || 'Перед сохранением уточните отмеченные складские позиции.')
+        setMessage('Найдена нехватка по свежим данным. В отмеченной позиции нажмите «Подтвердить резерв при нехватке», если товар физически есть, затем сохраните заказ повторно. Остаток автоматически не увеличится.')
         return null
       }
       if (!response.ok) {
