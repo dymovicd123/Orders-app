@@ -1100,22 +1100,26 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
             delivery_type, order_payment_method, source_type, workshop_status, order_status, pricing_mode, total_amount,
             received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'itemized_v1', ?, ?, ?, 0, ?, 'not_sent', ?, ?
+          FROM critical_operations
+          WHERE request_id = ? AND status = 'started' AND step = 'validated' AND lease_token = ?`
         ).bind(
           externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null, orderPaymentMethod || null,
           sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-          comment || null, createdAt, createdAt,
+          comment || null, createdAt, createdAt, criticalOperation.requestId, criticalOperation.leaseToken,
         )
         : db.prepare(
           `INSERT INTO orders (
             external_id, order_date, manager_id, manager_snapshot_name, customer_id, city,
             delivery_type, order_payment_method, source_type, workshop_status, order_status, total_amount,
             received_amount, debt_amount, return_amount, comment, shipping_status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?)`
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'not_sent', ?, ?
+          FROM critical_operations
+          WHERE request_id = ? AND status = 'started' AND step = 'validated' AND lease_token = ?`
         ).bind(
           externalId, orderDate, managerId, managerName, customerId, city || null, deliveryType || null, orderPaymentMethod || null,
           sourceType, workshopStatus, orderStatus, totals.totalAmount, totals.receivedAmount, totals.debtAmount,
-          comment || null, createdAt, createdAt,
+          comment || null, createdAt, createdAt, criticalOperation.requestId, criticalOperation.leaseToken,
         );
       orderId = await updateCriticalOperationTargetFromLastInsert(
         db, criticalOperation, 'order', externalId, orderStatement, 'order_created',
