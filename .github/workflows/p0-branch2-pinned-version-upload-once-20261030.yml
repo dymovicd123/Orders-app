@@ -46,8 +46,8 @@ jobs:
         run: |
           set -euo pipefail
           url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TARGET_WORKER/deployments"
-          response="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
-          id="$(jq -r '.result.deployments[0].id // .result[0].id // empty' <<< "$response")"
+          response="$(curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
+          id="$(jq -r 'if (.result | type)=="array" then .result[0].id // empty else .result.deployments[0].id // empty end' <<< "$response")"
           [[ "$id" =~ ^[a-f0-9-]{36}$ ]] || { echo 'Cannot verify active deployment' >&2; exit 10; }
           echo "ACTIVE_BEFORE=$id" >> "$GITHUB_ENV"
           echo "Existing active Branch2 deployment ID: $id"
@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$TARGET_WORKER/deployments"
-          response="$(curl --fail-with-body -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
-          id="$(jq -r '.result.deployments[0].id // .result[0].id // empty' <<< "$response")"
+          response="$(curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")"
+          id="$(jq -r 'if (.result | type)=="array" then .result[0].id // empty else .result.deployments[0].id // empty end' <<< "$response")"
           [[ "$id" == "$ACTIVE_BEFORE" ]] || { echo 'Active deployment changed during INACTIVE upload; investigate' >&2; exit 11; }
           echo "P0_BRANCH2_INACTIVE_UPLOAD_CONFIRMED active_id=$id candidate_sha=$PINNED_SHA"
