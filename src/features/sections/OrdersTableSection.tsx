@@ -66,6 +66,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     markExchangeReplacementSent,
     apiFetch,
     onPendingReservationResolved,
+    canResolvePendingReservation,
     setMessage,
     openOrderStockHandover,
     normalizeSuggestion,
@@ -492,7 +493,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   }}
                                 >Отправить замену: {item.productName} × {item.quantity}</button>
                               )) : null}
-                            {!retainedOnly&&!archived&&!projection.deleted&&order.shipping_status!=='sent'
+                            {canResolvePendingReservation&&!retainedOnly&&!archived&&!projection.deleted&&order.shipping_status!=='sent'
                               ? (order.items||[]).filter((item:any)=>
                                 item.stockWriteoffStatus==='pending_reservation'&&Number(item.id)>0
                               ).map((item:any)=>(
