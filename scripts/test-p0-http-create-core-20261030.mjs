@@ -90,6 +90,36 @@ assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM orders WHERE external_id='P0
 const stock=sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041").get()
 assert.equal(stock.quantity,2)
 assert.equal(stock.reserved_quantity,1)
+const createdId=Number(created.data.orderId)
+assert(createdId>0)
+const getOrderResponse=await http('GET','/api/orders/'+createdId)
+assert.equal(getOrderResponse.status,200,'GET must read the newly created itemized order: '+JSON.stringify(getOrderResponse))
+const current=getOrderResponse.data.order
+assert(current?.items?.length===1,'Expected one persisted SKU in actual order readback')
+const expectedFields={
+ orderDate:String(current.order_date||''),customerPhone:String(current.customer_phone||''),
+ customerName:String(current.customer_name||''),city:String(current.city||''),
+ deliveryType:String(current.delivery_type||''),comment:String(current.comment||''),
+}
+const editPayload={
+ requestId:'p0-meta-edit',
+ metadataCorrection:{
+  expected:expectedFields,
+  next:{...expectedFields,city:'Алматы'},
+  expectedState:{
+   totalAmount:Number(current.total_amount||0),receivedAmount:Number(current.received_amount||0),
+   debtAmount:Number(current.debt_amount||0),returnAmount:Number(current.return_amount||0),
+   shippingStatus:String(current.shipping_status||''),orderStatus:String(current.order_status||''),
+  },
+ },
+}
+const updated=await http('PATCH','/api/orders/'+createdId,editPayload)
+assert.equal(updated.status,200,'Actual PATCH metadata correction: '+JSON.stringify(updated))
+const updatedRetry=await http('PATCH','/api/orders/'+createdId,editPayload)
+assert.equal(updatedRetry.status,200,'Metadata edit idempotent retry: '+JSON.stringify(updatedRetry))
+assert.equal(sql.prepare('SELECT city FROM orders WHERE id=?').get(createdId).city,'Алматы')
+assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9041').get().reserved_quantity,1,
+ 'Metadata edit must not rewrite stock or reserve')
 const shortage=await http('POST','/api/orders',payload('create-short',[item(),item()]))
 assert.equal(shortage.status,409,'Shortage response: '+JSON.stringify(shortage))
 assert.equal(shortage.data.code,'order_stock_shortage')
