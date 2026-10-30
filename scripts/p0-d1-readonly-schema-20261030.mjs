@@ -29,14 +29,19 @@ const colNames = rows => new Set(rows.map(x=>String(x.name||'')))
 const fingerprint = sql => createHash('sha256').update(sql||'').digest('hex').slice(0,16)
 
 function assertMainTargetConfig() {
+  // Wrangler is JSONC: block/line comments AND trailing commas are legal.
+  // Extract only the exact target identifiers; do not guess or modify config.
   const content=readFileSync('wrangler.jsonc','utf8')
-  const config=JSON.parse(content.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,''))
-  const bound=config.d1_databases?.filter(x=>x.binding==='DB')||[]
-  assert.equal(config.name,'orders-app','Refusing unknown Worker')
-  assert.equal(bound.length,1,'Refusing multiple DB bindings')
-  assert.equal(bound[0].database_id,MAIN.id,'Main database ID changed')
-  assert.equal(bound[0].database_name,MAIN.name,'Main database name changed')
-  assert.notEqual(bound[0].database_id,BRANCH2.id,'Worker must not bind mirror')
+    .replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'')
+  const value=(key)=>{
+    const pattern=new RegExp('"'+key+'"\\s*:\\s*"([^"]+)"','g')
+    return [...content.matchAll(pattern)].map(x=>x[1])
+  }
+  assert.deepEqual(value('name'),['orders-app'],'Refusing unknown Worker')
+  assert.deepEqual(value('binding'),['DB'],'Refusing unknown/multiple bindings')
+  assert.deepEqual(value('database_id'),[MAIN.id],'Main database ID changed')
+  assert.deepEqual(value('database_name'),[MAIN.name],'Main database name changed')
+  assert.notEqual(value('database_id')[0],BRANCH2.id,'Worker must not bind mirror')
 }
 
 function checkRequest(db,method,path,body) {
