@@ -4,8 +4,8 @@ const token=process.env.CLOUDFLARE_API_TOKEN
 const account=process.env.CLOUDFLARE_ACCOUNT_ID
 assert(token&&/^[a-f0-9]{32}$/.test(account||''),'Cloudflare GET credentials unavailable')
 const base='https://api.cloudflare.com/client/v4/accounts/'+account
-const sha='e75604432ed11729129e811afda3ee879496a268'
-const mergeAt=Date.parse('2026-10-30T16:36:38Z')
+const sha='459cfe0fdb552e20dc76392265067dd82688b655'
+const mergeAt=Date.parse('2026-10-30T16:49:14Z')
 async function get(path){
   assert(path==='/workers/scripts'||path==='/workers/scripts/orders-app-branch2/deployments'||
     /^\/builds\/workers\/[a-f0-9-]{8,}\/(triggers|builds)$/.test(path),'Unknown API path')
@@ -26,6 +26,8 @@ console.log('P0_BRANCH2_NATIVE_TRIGGER_STILL_UPLOAD_ONLY')
 const builds=await get('/builds/workers/'+target.tag+'/builds')
 const match=(Array.isArray(builds)?builds:[]).filter(b=>b.build_trigger_metadata?.commit_hash===sha &&
  b.build_trigger_metadata?.branch==='branch2').sort((a,b)=>String(b.created_on).localeCompare(String(a.created_on)))[0]
+if(!match) throw Error('Exact P0 merge build absent')
+if(match.status!=='stopped' || match.build_outcome!=='success') throw Error('Exact merged version upload did not succeed: '+match.status+'/'+match.build_outcome)
 console.log('P0_BRANCH2_MERGED_BUILD '+JSON.stringify(match?{
  status:match.status,outcome:match.build_outcome||null,
  deployCommand:match.build_trigger_metadata?.deploy_command||null,
