@@ -1,0 +1,55 @@
+name: P0 D1 order schema read-only inspection
+
+# Inspection is never automatic. PR events execute ONLY the credential-free local guard.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/p0-d1-readonly-schema-20261030.mjs'
+      - '.github/workflows/p0-d1-readonly-schema-20261030.yml'
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type READ_ONLY_D1 to inspect Main and Branch2 mirror schema (no writes)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-main-branch2-d1-schema-inspection
+  cancel-in-progress: false
+
+jobs:
+  static-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate read-only inspector with no Cloudflare secrets
+        run: |
+          node --check scripts/p0-d1-readonly-schema-20261030.mjs
+          node scripts/p0-d1-readonly-schema-20261030.mjs --self-test
+
+  inspect-live:
+    # The new workflow must first be registered on default/main. Never run a
+    # PR's unreviewed code with credentials. A user must explicitly dispatch
+    # the registered workflow on main with the exact acknowledgement.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'READ_ONLY_D1'
+    needs: static-safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Observe only D1 metadata and aggregate counts for exact allowlisted IDs
+        run: node scripts/p0-d1-readonly-schema-20261030.mjs
