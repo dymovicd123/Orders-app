@@ -1,20 +1,21 @@
-name: Branch2 hanging Cloudflare native fallback safety
+name: Branch2 implicit deploy disabled safety check
 on:
-  push:
-    branches:
-      - fix/branch2-cloudflare-hanging-build-fallback-20261021
   pull_request:
     branches: [branch2]
     paths:
       - '.github/workflows/cloudflare-deploy-monitor.yml'
-      - 'scripts/test-branch2-cloudflare-hung-native-fallback-20261021.mjs'
       - '.github/workflows/branch2-cloudflare-hung-native-fallback-test.yml'
+      - 'scripts/test-branch2-no-implicit-deploy-20261030.mjs'
+
+permissions:
+  contents: read
+
 jobs:
-  immutable-main-and-branch2-isolation:
+  no-hidden-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node scripts/test-branch2-cloudflare-hung-native-fallback-20261021.mjs
+      - run: node scripts/test-branch2-no-implicit-deploy-20261030.mjs
