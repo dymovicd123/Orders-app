@@ -30,7 +30,7 @@ const fingerprint = sql => createHash('sha256').update(sql||'').digest('hex').sl
 
 function assertMainTargetConfig() {
   const content=readFileSync('wrangler.jsonc','utf8')
-  const config=JSON.parse(content.replace(/\/\*[\s\S]*?\*\//g,''))
+  const config=JSON.parse(content.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,''))
   const bound=config.d1_databases?.filter(x=>x.binding==='DB')||[]
   assert.equal(config.name,'orders-app','Refusing unknown Worker')
   assert.equal(bound.length,1,'Refusing multiple DB bindings')
