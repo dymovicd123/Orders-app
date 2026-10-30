@@ -2,6 +2,7 @@
 // Executed on a disposable GitHub Actions runner. NEVER runs a D1 write.
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
+import { planOrderManagerSchemaReconciliation } from './order-manager-schema-reconciliation-20261030.mjs'
 
 const MAIN_ID='17e68a41-1d58-4a36-8a63-47c3e32443c4'
 const EXPECTED_TEST_ID='0904a573-21ff-44d8-93b0-c9200f771702'
@@ -23,7 +24,7 @@ async function request(id,method,endpoint,body){
   assert([MAIN_ID,TEST_ID].includes(id),'Unexpected database identifier')
   // Production calls are GET metadata or POST SELECT-only. This script has no
   // import, restore, update, delete or SQL mutation entrypoint.
-  assert(method==='GET' || (
+  assert((method==='GET' && endpoint==='') || (
     method==='POST' && endpoint==='/query' && typeof body?.sql==='string'
     && /^SELECT\b/i.test(body.sql.trim()) && !body.sql.includes(';')
   ), 'D1 read-only preflight: only one SELECT allowed for either database')
@@ -53,6 +54,30 @@ console.log('DATABASE_METADATA '+JSON.stringify({
 assert(mainInfo?.name==='orders_db_prod' && testInfo?.name==='orders_db_branch2_mirror_20261027','Remote databases have unexpected names; abort')
 const schemaSql="SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%' AND name != '_cf_KV' ORDER BY type,name"
 const [mainSchema,testSchema]=await Promise.all([sqlRead(MAIN_ID,schemaSql),sqlRead(TEST_ID,schemaSql)])
+
+// SELECT from table-valued SQLite PRAGMAs is read-only and permitted by the
+// strict API guard above. Do not query private order rows, only schema names.
+// Report all required steps but never execute a D1 mutation here.
+async function readOrderManagerPlan(label,id,schemaRows) {
+  const hasTable=schemaRows.some(row=>row.type==='table' && row.name==='order_manager_audit')
+  const ordersColumns=await sqlRead(id,"SELECT name, pk FROM pragma_table_info('orders')")
+  const auditColumns=hasTable
+    ? await sqlRead(id,"SELECT name, pk FROM pragma_table_info('order_manager_audit')")
+    : []
+  const plan=planOrderManagerSchemaReconciliation({ordersColumns,auditTableExists:hasTable,auditColumns})
+  console.log('ORDER_MANAGER_SCHEMA_'+label+' '+JSON.stringify({
+    needsReconciliation:plan.needsReconciliation,
+    missingObjects:plan.steps.map(step=>step.object),
+  }))
+  return plan
+}
+const [mainOrderPlan,branchOrderPlan]=await Promise.all([
+  readOrderManagerPlan('MAIN',MAIN_ID,mainSchema),
+  readOrderManagerPlan('BRANCH2',TEST_ID,testSchema),
+])
+assert(!mainOrderPlan.needsReconciliation && !branchOrderPlan.needsReconciliation,
+  'Release blocked: D1 order manager schema requires approved additive reconciliation (#648)')
+
 const userTables=items=>items.filter(x=>x.type==='table').map(x=>x.name)
 const sourceTables=userTables(mainSchema),targetTables=userTables(testSchema)
 assert(sourceTables.includes('orders') && sourceTables.includes('inventory_stock') && sourceTables.includes('app_users'),'Unexpected main schema')
