@@ -4,13 +4,16 @@ import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 
 const MAIN_ID='17e68a41-1d58-4a36-8a63-47c3e32443c4'
-const TEST_ID='40065052-854e-44b8-bcd5-251bdd488301'
-assert.notEqual(MAIN_ID,TEST_ID)
-const wrangler=readFileSync('wrangler.jsonc','utf8')
-assert(wrangler.includes('"name": "orders-app-branch2"'))
-assert(wrangler.includes('"database_name": "orders_db_branch2"'))
-assert(wrangler.includes(TEST_ID))
-assert(!wrangler.includes(MAIN_ID))
+const EXPECTED_TEST_ID='0904a573-21ff-44d8-93b0-c9200f771702'
+const wrangler=JSON.parse(
+  readFileSync('wrangler.jsonc','utf8').replace(/\/\*[\s\S]*?\*\//g,'')
+)
+const target=wrangler?.d1_databases?.find(entry=>entry.binding==='DB')
+const TEST_ID=target?.database_id
+assert(wrangler.name==='orders-app-branch2','Unexpected Worker target')
+assert(target?.database_name==='orders_db_branch2_mirror_20261027','Unknown Branch2 mirror; do not inspect')
+assert(TEST_ID===EXPECTED_TEST_ID,'Branch2 D1 target changed; review and update preflight explicitly')
+assert.notEqual(MAIN_ID,TEST_ID,'Production D1 must not be bound as Branch2')
 const token=process.env.CLOUDFLARE_API_TOKEN
 const account=process.env.CLOUDFLARE_ACCOUNT_ID
 assert(token && account,'Cloudflare Actions credentials unavailable; no database was accessed')
@@ -20,7 +23,10 @@ async function request(id,method,endpoint,body){
   assert([MAIN_ID,TEST_ID].includes(id),'Unexpected database identifier')
   // Production calls are GET metadata or POST SELECT-only. This script has no
   // import, restore, update, delete or SQL mutation entrypoint.
-  if (id===MAIN_ID) assert(method==='GET'||(method==='POST' && endpoint==='/query' && typeof body?.sql==='string' && /^SELECT\b/i.test(body.sql.trim())),'Production cannot be written')
+  assert(method==='GET' || (
+    method==='POST' && endpoint==='/query' && typeof body?.sql==='string'
+    && /^SELECT\b/i.test(body.sql.trim()) && !body.sql.includes(';')
+  ), 'D1 read-only preflight: only one SELECT allowed for either database')
   const r=await fetch(root+id+endpoint,{
     method,
     headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -44,7 +50,7 @@ console.log('DATABASE_METADATA '+JSON.stringify({
   main:{name:mainInfo?.name,version:mainInfo?.version,size:mainInfo?.file_size||mainInfo?.num_bytes||null},
   branch2:{name:testInfo?.name,version:testInfo?.version,size:testInfo?.file_size||testInfo?.num_bytes||null}
 }))
-assert(mainInfo?.name==='orders_db_prod' && testInfo?.name==='orders_db_branch2','Remote databases have unexpected names; abort')
+assert(mainInfo?.name==='orders_db_prod' && testInfo?.name==='orders_db_branch2_mirror_20261027','Remote databases have unexpected names; abort')
 const schemaSql="SELECT name, type, sql FROM sqlite_schema WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%' AND name != '_cf_KV' ORDER BY type,name"
 const [mainSchema,testSchema]=await Promise.all([sqlRead(MAIN_ID,schemaSql),sqlRead(TEST_ID,schemaSql)])
 const userTables=items=>items.filter(x=>x.type==='table').map(x=>x.name)
