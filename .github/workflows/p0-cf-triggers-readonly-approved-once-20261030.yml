@@ -1,0 +1,29 @@
+name: P0 one-time Cloudflare build trigger GET-only inspection
+
+on:
+  push:
+    branches:
+      - safe/p0-d1-readonly-inspection-20261030
+    paths:
+      - '.github/workflows/p0-cf-triggers-readonly-approved-once-20261030.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/safe/p0-d1-readonly-inspection-20261030'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate GET-only Cloudflare metadata inspector
+        run: node --check scripts/p0-cloudflare-build-triggers-readonly-20261030.mjs
+      - name: Inspect Workers Builds trigger configuration (GET only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/p0-cloudflare-build-triggers-readonly-20261030.mjs
