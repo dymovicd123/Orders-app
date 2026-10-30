@@ -1,106 +1,15 @@
-name: W13 Branch2 Stock Catalog Release
+name: "Archived Branch2 legacy job - w13-stock-catalog-release.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/w13-stock-catalog-release.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  push:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/w13-stock-catalog-release.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  deploy:
-    name: W13 safe stock-only branch2 release
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 22
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Verify strict W13 file scope and isolated D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = "branch2"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          baseline="a36bfc664939af3c6ec46185e783be3d6c363000"
-          git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
-          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
-          test -n "$changes"
-          while IFS= read -r file;do
-            [[ -z "$file" ]] && continue
-            case "$file" in
-              src/features/inventory/stockBrowseLayout.ts|\
-              src/features/inventory/views/StockBrowseDetail.tsx|\
-              src/features/inventory/views/renderInventoryOverviewPanel.tsx|\
-              src/styles/w13-stock-catalog-browse.css|\
-              scripts/test-w13-stock-catalog-browse.mjs|\
-              scripts/test-w12-stock-overview.mjs|\
-              .github/workflows/w13-stock-catalog-browse.yml|\
-              .github/workflows/w13-stock-catalog-release.yml) ;;
-              *) echo "Unexpected change outside W13: $file" >&2;exit 11 ;;
-            esac
-          done <<< "$changes"
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then exit 12;fi
-          if grep -Eq '^(worker/|migrations/|wrangler.jsonc|package.*json)' <<< "$changes";then exit 13;fi
-      - run: npm ci
-      - name: Audit dependencies and stock UX
-        run: |
-          npm audit --omit=dev --audit-level=moderate
-          npm audit --audit-level=high
-          node --experimental-strip-types scripts/test-w13-stock-catalog-browse.mjs
-          node scripts/test-w12-stock-overview.mjs
-      - name: "Regression: correction, transfer, stocktake"
-        run: |
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          node scripts/test-step191d-transfer-runtime-safety.mjs
-          node scripts/test-stocktake-functional-acceptance.mjs
-      - name: Full app and Worker build
-        run: npm run build
-      - name: Check new stock markup is built into current app
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs'
-          const assets=fs.readdirSync('dist/client/assets')
-          if(!assets.some(file=>file.endsWith('.js') && fs.readFileSync('dist/client/assets/'+file,'utf8').includes('stock-v13-master-list'))) {
-            throw Error('Current catalog-style stock page missing from compiled assets')
-          }
-          console.log('W13_STOCK_CATALOG_LAYOUT_COMPILED')
-          NODE
-      - name: Deploy branch2 only — no migrations
-        run: npx wrangler deploy
-      - name: Confirm new lazy-loaded stock UI is live
-        run: |
-          node --input-type=module <<'NODE'
-          const host='https://orders-app-branch2.orders-clothes.workers.dev'
-          let verified=false
-          for(let attempt=0;attempt<7;attempt++){
-            try{
-              const response=await fetch(host+'/?w13='+Date.now(),{cache:'no-store'})
-              if(!response.ok)throw Error('HTTP '+response.status)
-              const html=await response.text()
-              const path=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)
-              if(!path)throw Error('Index entry script not found')
-              const entry=await (await fetch(host+path[1],{cache:'no-store'})).text()
-              const chunk=entry.match(/InventorySection-[A-Za-z0-9_-]+\.js/)
-              if(!chunk)throw Error('InventorySection chunk name missing')
-              const stock=await (await fetch(host+'/assets/'+chunk[0],{cache:'no-store'})).text()
-              if(!stock.includes('stock-v13-master-list'))throw Error('Stale stock page in deployed chunk')
-              verified=true
-              console.log('W13_CATALOG_STOCK_UI_LIVE')
-              break
-            }catch(err){
-              console.warn(String(err))
-              if(attempt<6)await new Promise(resolve=>setTimeout(resolve,4000))
-            }
-          }
-          if(!verified)throw Error('New stock interface was not verified live')
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

@@ -1,48 +1,15 @@
-name: Branch2 Event8 read-only deletion diagnostic
+name: "Archived Branch2 legacy job - branch2-event8-readonly-diagnostic-20261018.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/branch2-event8-readonly-diagnostic-20261018.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  push:
-    branches: ['fix/branch2-admin-delete-event8-return-20261018']
-    paths: ['.github/workflows/branch2-event8-readonly-diagnostic-20261018.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  diagnose:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: Fail-closed Branch2-only identity and SQL
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = 'fix/branch2-admin-delete-event8-return-20261018'
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          ! grep -Fq 'orders_db_prod' wrangler.jsonc
-          test -n "$CLOUDFLARE_ACCOUNT_ID"
-          test -n "$CLOUDFLARE_API_TOKEN"
-      - run: npm ci
-      - name: Exact order and event8 SELECT-only diagnostic
-        shell: bash
-        run: |
-          set -euo pipefail
-          for sql in \
-          "SELECT id,order_status,shipping_status,total_amount,received_amount,return_amount FROM orders WHERE external_id='ORD-20261002152013-75BF3354' LIMIT 1" \
-          "SELECT e.id,e.status,e.old_order_item_id,e.new_order_item_id,e.exchange_date,e.financial_action,e.financial_amount FROM exchanges e WHERE e.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354') ORDER BY e.id" \
-          "SELECT le.id,le.order_item_id,le.operation_id,le.operation_type,le.operation_item_id,le.event_type,le.direction,le.status,le.quantity,le.variant_id,le.inventory_source,le.movement_id,le.applied_at,le.created_at,le.reversal_movement_id FROM inventory_lifecycle_events le WHERE le.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354') ORDER BY le.id" \
-          "SELECT ei.id,ei.exchange_id,ei.role,ei.quantity,ei.physical_tracking,ei.physical_received_at,ei.order_item_id,oi.stock_writeoff_status FROM exchange_items ei LEFT JOIN order_items oi ON oi.id=ei.order_item_id WHERE ei.exchange_id=3 ORDER BY ei.id" \
-          "SELECT r.id,r.order_item_id,r.status,r.inventory_source,r.variant_id,r.quantity,r.fulfilled_at,r.released_at,oi.quantity AS item_quantity,oi.stock_writeoff_status FROM inventory_reservations r LEFT JOIN order_items oi ON oi.id=r.order_item_id WHERE r.order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354') ORDER BY r.id" \
-          "SELECT m.id,m.created_at,m.inventory_source,m.variant_id,m.movement_type,m.quantity_delta,m.quantity_after,m.reference_type,m.reference_id FROM inventory_movements m WHERE m.id IN (SELECT movement_id FROM inventory_lifecycle_events WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354')) OR (m.variant_id IN (SELECT variant_id FROM inventory_lifecycle_events WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354')) AND m.created_at>='2026-10-17') ORDER BY m.id DESC LIMIT 35" \
-          "SELECT st.variant_id,st.inventory_source,st.quantity,st.reserved_quantity,st.last_action FROM inventory_stock st WHERE st.variant_id IN (SELECT variant_id FROM inventory_lifecycle_events WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354')) ORDER BY st.variant_id,st.inventory_source" \
-          "SELECT ch.id,ch.variant_id,ch.inventory_source,ch.checked_at,ch.check_type FROM inventory_stock_checks ch WHERE ch.variant_id IN (SELECT variant_id FROM inventory_lifecycle_events WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261002152013-75BF3354')) AND ch.checked_at>='2026-10-17' ORDER BY ch.id DESC LIMIT 30"
-          do
-            echo "::group::READ ONLY SQL RESULT"
-            npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "$sql" --json | jq -c '.[0].results'
-            echo "::endgroup::"
-          done
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

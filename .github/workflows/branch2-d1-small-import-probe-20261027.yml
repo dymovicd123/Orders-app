@@ -1,103 +1,15 @@
-name: Branch2 remote D1 tiny SQL diagnostic (read-only)
+name: "Archived Branch2 legacy job - branch2-d1-small-import-probe-20261027.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/branch2-d1-small-import-probe-20261027.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  pull_request:
-    branches: [branch2]
-    paths: ['.github/workflows/branch2-d1-small-import-probe-20261027.yml']
-  push:
-    branches: [branch2]
-    paths: ['.github/workflows/branch2-d1-small-import-probe-20261027.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  probe:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/branch2'
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 8
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: '24', cache: npm}
-      - run: npm ci
-      - name: Verify target branch2 only
-        run: |
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          ! grep -Fq '17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
-          test -n "$CLOUDFLARE_API_TOKEN"
-      - name: Remote select via CLI and SQL file without business mutations
-        shell: bash
-        run: |
-          printf 'SELECT 1 AS probe;\n' >/tmp/branch2-probe.sql
-          echo '=== Wrangler version ==='
-          npx wrangler --version
-          echo '=== Remote SQL command ==='
-          npx wrangler d1 execute orders_db_branch2 --remote --command='SELECT 1 AS probe;' --yes --json
-          echo '=== Remote SQL file ==='
-          npx wrangler d1 execute orders_db_branch2 --remote --file=/tmp/branch2-probe.sql --yes --json
-          echo 'BRANCH2_REMOTE_D1_TINY_IMPORT_PASSED'
-      - name: Inspect D1 import init response structure (no upload or ingestion)
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import {createHash} from 'node:crypto'
-          const id='40065052-854e-44b8-bcd5-251bdd488301'
-          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/d1/database/'+id+'/import'
-          const etag=createHash('md5').update('SELECT 1 AS probe; -- '+new Date().toISOString()).digest('hex')
-          const res=await fetch(root,{method:'POST',headers:{
-            Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,
-            'Content-Type':'application/json'
-          },body:JSON.stringify({action:'init',etag}),signal:AbortSignal.timeout(30000)})
-          const data=await res.json()
-          console.log('INIT_SHAPE '+JSON.stringify({
-            http:res.status,apiSuccess:data.success,resultType:typeof data.result,
-            resultKeys:Object.keys(data.result||{}),
-            status:data.result?.status,innerSuccess:data.result?.success,
-            errorCode:(data.errors||[]).map(e=>e.code),
-            errorMessage:(data.errors||[]).map(e=>String(e.message).slice(0,150)),
-            innerError:String(data.result?.error||'').slice(0,180),
-            filenamePresent:Boolean(data.result?.filename),
-            uploadUrlPresent:Boolean(data.result?.upload_url)
-          }))
-          NODE
-      - name: Test complete D1 REST init-upload-ingest-poll on harmless SELECT
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import {createHash} from 'node:crypto'
-          import assert from 'node:assert/strict'
-          const sql='SELECT 1 AS probe; -- '+new Date().toISOString()+'\n'
-          const etag=createHash('md5').update(sql).digest('hex')
-          const endpoint='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+
-            '/d1/database/40065052-854e-44b8-bcd5-251bdd488301/import'
-          async function act(body){
-            const res=await fetch(endpoint,{method:'POST',headers:{
-              Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'
-            },body:JSON.stringify(body)})
-            const data=await res.json()
-            console.log('REST_PHASE '+JSON.stringify({
-              action:body.action,http:res.status,topSuccess:data.success,
-              keys:Object.keys(data.result||{}),status:data.result?.status,
-              success:data.result?.success,bookmarkPresent:Boolean(data.result?.at_bookmark),
-              error:data.result?.error||null,errors:data.errors?.map(e=>e.message)
-            }))
-            assert(res.ok&&data.success!==false,'HTTP failure')
-            return data.result
-          }
-          const init=await act({action:'init',etag})
-          assert(init.filename&&init.upload_url,'Missing upload URL')
-          const upload=await fetch(init.upload_url,{method:'PUT',body:sql})
-          assert(upload.ok)
-          assert((upload.headers.get('etag')||'').replaceAll('"','')===etag)
-          console.log('REST_TINY_UPLOAD_OK')
-          let state=await act({action:'ingest',etag,filename:init.filename})
-          for(let i=0;i<12 && state?.status!=='complete' && state?.status!=='error';i++){
-            assert(state.at_bookmark,'Missing poll bookmark')
-            await new Promise(resolve=>setTimeout(resolve,1000))
-            state=await act({action:'poll',current_bookmark:state.at_bookmark})
-          }
-          assert(state?.status==='complete','Tiny REST import not completed')
-          console.log('REST_TINY_IMPORT_OK')
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

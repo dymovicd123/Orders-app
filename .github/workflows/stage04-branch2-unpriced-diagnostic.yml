@@ -1,125 +1,15 @@
-name: Stage04 Branch2 read-only unpriced identity diagnostic
+name: "Archived Branch2 legacy job - stage04-branch2-unpriced-diagnostic.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/stage04-branch2-unpriced-diagnostic.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  push:
-    branches: [branch2]
-    paths: ['.github/workflows/stage04-branch2-unpriced-diagnostic.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  diagnostic:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: Verify remote access restricted to isolated Branch2
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_REF_NAME" == branch2 ]]
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          ! grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc
-      - run: npm ci
-      - name: Diagnose missing-price identity with booleans only (no writes, no PII)
-        shell: bash
-        run: |
-          set -euo pipefail
-          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            WITH missing AS (
-              SELECT c.* FROM workshop_settlement_events c
-              WHERE c.event_type='completion' AND c.amount_delta IS NULL
-                AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events r WHERE r.related_event_id=c.id AND r.event_type='completion_reversal')
-                AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events a WHERE a.related_event_id=c.id AND a.event_type='price_adjustment')
-              ORDER BY c.id DESC LIMIT 1
-            )
-            SELECT
-              (SELECT COUNT(*) FROM workshop_settlement_events x WHERE x.event_type='completion' AND x.amount_delta IS NULL AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events r WHERE r.related_event_id=x.id AND r.event_type='completion_reversal') AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events a WHERE a.related_event_id=x.id AND a.event_type='price_adjustment')) AS unresolved_count,
-              wt.id IS NOT NULL AS task_exists,
-              wt.order_id=c.order_id AS task_order_matches,
-              wt.status IN ('ready','done') AS task_ready,
-              wt.quantity=c.quantity AS task_quantity_matches,
-              wt.product_name_snapshot=c.product_name_snapshot AS task_name_matches,
-              c.order_item_id IS NULL AS completion_missing_item_pointer,
-              wt.order_item_id IS NULL AS task_missing_item_pointer,
-              c.order_item_id IS NULL OR c.order_item_id=wt.order_item_id AS item_pointer_consistent,
-              oi.id IS NOT NULL AS order_item_exists,
-              oi.order_id=c.order_id AS order_item_correct_order,
-              oi.variant_id IS NOT NULL AS order_item_has_variant,
-              wt.variant_id IS NOT NULL AS task_has_variant,
-              cv.id IS NOT NULL AS resolved_variant_exists,
-              wt.variant_id IS NULL OR oi.variant_id IS NULL OR wt.variant_id=oi.variant_id AS variant_pointer_consistent,
-              wt.product_id IS NULL OR wt.product_id=cv.product_id AS task_product_matches_variant,
-              oi.product_id IS NULL OR oi.product_id=cv.product_id AS item_product_matches_variant,
-              COALESCE(wt.gender_snapshot,'')=COALESCE(json_extract(c.details_snapshot,'$.gender'),'') AS gender_matches,
-              COALESCE(wt.color_snapshot,'')=COALESCE(json_extract(c.details_snapshot,'$.color'),'') AS color_matches,
-              COALESCE(wt.material_snapshot,'')=COALESCE(json_extract(c.details_snapshot,'$.material'),'') AS material_matches,
-              COALESCE(wt.length_snapshot,'')=COALESCE(json_extract(c.details_snapshot,'$.length'),'') AS length_matches,
-              COALESCE(wt.size_snapshot,'')=COALESCE(json_extract(c.details_snapshot,'$.size'),'') AS size_matches,
-              cv.stock_position_id IS NOT NULL AS resolved_stock_position,
-              ep.stock_position_id IS NOT NULL AS price_row_exists,
-              ep.cost_price IS NOT NULL AS cost_assigned_to_resolved_variant,
-              (SELECT COUNT(*) FROM catalog_products p WHERE UPPER(TRIM(p.name))=UPPER(TRIM(c.product_name_snapshot))) AS matching_catalog_product_names
-            FROM missing c
-            LEFT JOIN workshop_tasks wt ON wt.id=c.workshop_task_id
-            LEFT JOIN order_items oi ON oi.id=c.order_item_id
-            LEFT JOIN catalog_variants cv ON cv.id=COALESCE(oi.variant_id,wt.variant_id)
-            LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=cv.category
-          " --json)"
-          jq -e '.[0].results | length==1' <<<"$result" >/dev/null
-          echo 'BRANCH2 READ-ONLY DIAGNOSTIC (identity flags only; no customer/order or price values):'
-          jq '.[0].results[0]' <<<"$result"
-
-      - name: Check unique price execution candidates without revealing product fields
-        shell: bash
-        run: |
-          set -euo pipefail
-          result="$(npx wrangler d1 execute orders_db_branch2 --remote --config wrangler.jsonc --command "
-            WITH target AS (
-              SELECT c.id, c.order_id, c.order_item_id, c.product_name_snapshot, c.details_snapshot,
-                     oi.product_id, oi.audience_type,
-                     json_extract(c.details_snapshot,'$.color') AS color,
-                     json_extract(c.details_snapshot,'$.size') AS size,
-                     json_extract(c.details_snapshot,'$.material') AS material,
-                     json_extract(c.details_snapshot,'$.length') AS length,
-                     json_extract(c.details_snapshot,'$.gender') AS gender
-              FROM workshop_settlement_events c
-              LEFT JOIN order_items oi ON oi.id=c.order_item_id AND oi.order_id=c.order_id
-              WHERE c.event_type='completion' AND c.amount_delta IS NULL
-              AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events r WHERE r.related_event_id=c.id AND r.event_type='completion_reversal')
-              AND NOT EXISTS(SELECT 1 FROM workshop_settlement_events a WHERE a.related_event_id=c.id AND a.event_type='price_adjustment')
-              ORDER BY c.id DESC LIMIT 1
-            ),
-            variants AS (
-              SELECT v.id, v.stock_position_id, v.category, v.gender, v.color, v.size_label, v.material, v.length, v.is_active, ep.cost_price,
-                (UPPER(TRIM(COALESCE(v.color,'')))=UPPER(TRIM(COALESCE(t.color,'')))) AS color_ok,
-                (UPPER(TRIM(COALESCE(v.size_label,'')))=UPPER(TRIM(COALESCE(t.size,'')))) AS size_ok,
-                (UPPER(TRIM(COALESCE(v.material,'')))=UPPER(TRIM(COALESCE(t.material,'')))) AS material_ok,
-                (UPPER(TRIM(COALESCE(v.length,'')))=UPPER(TRIM(COALESCE(t.length,'')))) AS length_ok,
-                (UPPER(TRIM(COALESCE(v.gender,'')))=UPPER(TRIM(COALESCE(t.gender,'')))) AS gender_ok
-              FROM target t
-              JOIN catalog_products p ON (p.id=t.product_id OR
-                (t.product_id IS NULL AND UPPER(TRIM(p.name))=UPPER(TRIM(t.product_name_snapshot))))
-              JOIN catalog_variants v ON v.product_id=p.id
-              LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=v.stock_position_id AND ep.category=v.category
-            )
-            SELECT
-              (SELECT product_id IS NOT NULL FROM target) AS order_item_product_linked,
-              (SELECT COUNT(*) FROM variants) AS product_variant_count,
-              (SELECT COUNT(*) FROM variants WHERE is_active=1) AS active_variant_count,
-              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok) AS color_size_matches,
-              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok) AS color_size_material_length_matches,
-              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND gender_ok) AS all_attributes_match,
-              (SELECT COUNT(DISTINCT CAST(stock_position_id AS TEXT) || ':' || category) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND gender_ok AND is_active=1) AS distinct_matching_executions,
-              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND gender_ok AND is_active=1 AND cost_price IS NOT NULL) AS priced_full_matches,
-              (SELECT COUNT(*) FROM variants WHERE color_ok AND size_ok AND material_ok AND length_ok AND is_active=1 AND cost_price IS NOT NULL) AS priced_without_gender_check
-          " --json)"
-          echo 'BRANCH2 READ-ONLY PRICE SCOPE (aggregate counts only):'
-          jq -e '.[0].results | length==1' <<<"$result" >/dev/null
-          jq '.[0].results[0]' <<<"$result"
+      - run: echo "Archived. No Cloudflare or D1 operations will run."

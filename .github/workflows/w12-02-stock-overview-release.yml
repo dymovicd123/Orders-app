@@ -1,86 +1,15 @@
-name: W12.2 Branch2 Stock Overview Release
+name: "Archived Branch2 legacy job - w12-02-stock-overview-release.yml"
+# Archived for P0 safety on 2026-10-30.
+# Original audit source: git show 459cfe0fdb552e20dc76392265067dd82688b655:.github/workflows/w12-02-stock-overview-release.yml
+# Re-enable ONLY via a separately reviewed PR with explicit release approval.
+# This file is inert even if someone manually dispatches it.
 on:
-  push:
-    branches: [branch2]
-    paths:
-      - '.github/workflows/w12-02-stock-overview-release.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  deploy:
+  archived:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 22
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Require exact W12.2 source scope and branch2 D1
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF_NAME" = "branch2"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          baseline="af9e5c159f66a26748dba8fe8bbc461c1b6c9753"
-          git merge-base --is-ancestor "$baseline" "$GITHUB_SHA"
-          changes="$(git diff --name-only "$baseline" "$GITHUB_SHA")"
-          test -n "$changes"
-          while IFS= read -r file; do
-            [[ -z "$file" ]] && continue
-            case "$file" in
-              src/features/inventory/views/renderInventoryOverviewPanel.tsx|\
-              src/styles/w8-1-stock-overview.css|\
-              scripts/test-w12-stock-overview.mjs|\
-              .github/workflows/w12-stock-overview.yml|\
-              .github/workflows/w12-02-stock-overview-release.yml) ;;
-              *) echo "Out-of-scope change: $file" >&2; exit 11 ;;
-            esac
-          done <<< "$changes"
-          grep -Fq '"name": "orders-app-branch2"' wrangler.jsonc
-          grep -Fq '"database_name": "orders_db_branch2"' wrangler.jsonc
-          grep -Fq '"database_id": "40065052-854e-44b8-bcd5-251bdd488301"' wrangler.jsonc
-          if grep -Eq 'orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4' wrangler.jsonc;then exit 12;fi
-      - run: npm ci
-      - name: Verify dependency security
-        run: |
-          npm audit --omit=dev --audit-level=moderate
-          npm audit --audit-level=high
-      - name: Test W12.2 stock summary and existing operations
-        run: |
-          node scripts/test-w12-stock-overview.mjs
-          node --experimental-strip-types scripts/test-w11-manual-correction-runtime.mjs
-          node scripts/test-step191d-transfer-runtime-safety.mjs
-          node scripts/test-stocktake-functional-acceptance.mjs
-      - name: Build entire app and Worker
-        run: npm run build
-      - name: Ensure W12.2 candidate build contains new SKU view
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs'
-          const assets=fs.readdirSync('dist/client/assets')
-          if(!assets.some(file=>file.endsWith('.js') && fs.readFileSync('dist/client/assets/'+file,'utf8').includes('inventory-stock-flat-table')))throw Error('Flat stock table not present in candidate build')
-          console.log('W12_2_SKU_TABLE_COMPILED')
-          NODE
-      - name: Publish to branch2 only
-        run: npx wrangler deploy
-      - name: Check deployed stock module (no data mutation)
-        run: |
-          node --input-type=module <<'NODE'
-          const base='https://orders-app-branch2.orders-clothes.workers.dev'
-          for(let attempt=0;attempt<7;attempt++){
-            try{
-              const response=await fetch(base+'/?w12_2='+Date.now(),{cache:'no-store'})
-              if(!response.ok)throw Error('HTTP '+response.status)
-              const html=await response.text()
-              if(!html.includes('/assets/'))throw Error('HTML entrypoint missing')
-              console.log('W12_2_PUBLIC_BRANCH2_HEALTHY')
-              process.exit(0)
-            }catch(error){if(attempt===6)throw error;await new Promise(resolve=>setTimeout(resolve,4000))}
-          }
-          NODE
+      - run: echo "Archived. No Cloudflare or D1 operations will run."
