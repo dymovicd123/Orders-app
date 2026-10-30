@@ -1,0 +1,53 @@
+name: Main one-off return #1563 reservation reconciliation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/repair-return-1563-sql-20261030.mjs'
+      - 'scripts/repair-return-1563-main-20261030.mjs'
+      - '.github/workflows/main-1563-historical-return-reserves-20261030.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/repair-return-1563-sql-20261030.mjs'
+      - 'scripts/repair-return-1563-main-20261030.mjs'
+      - '.github/workflows/main-1563-historical-return-reserves-20261030.yml'
+permissions:
+  contents: read
+concurrency:
+  group: return-1563-main-only
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Check exact one-off scripts compile
+        run: |
+          node --check scripts/repair-return-1563-sql-20261030.mjs
+          node --check scripts/repair-return-1563-main-20261030.mjs
+      - name: Read live production and assert all six returns plus stocktake invariants
+        run: node scripts/repair-return-1563-main-20261030.mjs --check
+  release:
+    needs: verify
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, 'Apply main #1563 return reservation closure #636')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      REPAIR_1563_EXPLICIT_APPROVAL: main-1563-return-closure-20261030
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Apply single guarded batch to production D1 only
+        run: node scripts/repair-return-1563-main-20261030.mjs --apply
