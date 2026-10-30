@@ -1,0 +1,33 @@
+name: P0 one-time approved read-only D1 structure observation
+
+# One-shot branch-local run. Not a publish/release or D1 migration workflow.
+# Scoped to this new workflow file added on the isolated non-deploy branch.
+on:
+  push:
+    branches:
+      - safe/p0-d1-readonly-inspection-20261030
+    paths:
+      - '.github/workflows/p0-d1-readonly-approved-once-20261030.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/safe/p0-d1-readonly-inspection-20261030'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate hardcoded database identities and SELECT-only guard without credentials
+        run: |
+          node --check scripts/p0-d1-readonly-schema-20261030.mjs
+          node scripts/p0-d1-readonly-schema-20261030.mjs --self-test
+      - name: Read schema and aggregate counts of Main and isolated Branch2 mirror
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/p0-d1-readonly-schema-20261030.mjs
