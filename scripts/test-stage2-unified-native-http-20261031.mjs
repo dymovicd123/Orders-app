@@ -20,6 +20,44 @@ async function api(route,method,body,status){
  if(status!==undefined)assert.equal(x.status,status,method+' '+route+': '+JSON.stringify(x.data))
  return x
 }
+// Isolated first: authenticated route for a found-but-unidentified physical
+// item. Read durable revision before touching the follow-up endpoint.
+const unknownProduct=await api('/api/catalog/products','POST',{
+ name:'CI STAGE2 FOUND UNKNOWN',category:'adult',genderScope:'female'
+},201)
+const unknownProductId=Number(unknownProduct.data.id)
+const unknownStarted=await api('/api/inventory/stocktakes','POST',{source:'warehouse'},201)
+const unknownSessionId=unknownStarted.data.session.id
+const deferred=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/items/combination','POST',{
+ productId:unknownProductId,category:'adult',gender:'ЖЕН',
+ color:'CI UNKNOWN COLOR',material:'СТАНДАРТ',length:'СТАНДАРТ',size:'97',deferUnknown:true
+},201)
+assert.equal(deferred.data.deferredUnknownCount,1)
+const foundItem=deferred.data.session.items.find(x=>Number(x.productId)===unknownProductId&&!Number(x.variantId))
+assert(foundItem?.stockId>0,'Unknown item must be persisted in a stock row without SKU')
+await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/items/'+foundItem.id,
+ 'PATCH',{countedQuantity:1},200)
+const unknownCompleted=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/complete','POST',{},200)
+assert.equal(unknownCompleted.data.unresolvedFoundCount,1)
+await new Promise(resolve=>setTimeout(resolve,300))
+const durable=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId),'GET',undefined,200)
+assert.equal(durable.data.session.status,'completed')
+await new Promise(resolve=>setTimeout(resolve,300))
+let foundResult=await call('/api/inventory/found-stock/'+foundItem.stockId+'/reconcile','POST',{},cookie)
+// The local ProxyWorker sometimes drops a connection immediately after
+// stocktake commit. This specific negative lookup is read-only and safe to
+// retry once; a committed link would instead return the idempotent 'already'.
+if(foundResult.status===500){
+ await new Promise(resolve=>setTimeout(resolve,500))
+ foundResult=await call('/api/inventory/found-stock/'+foundItem.stockId+'/reconcile','POST',{},cookie)
+}
+assert.equal(foundResult.status,200,'Found-stock reconcile HTTP route unavailable: '+JSON.stringify(foundResult.data))
+assert.equal(foundResult.data.code,'identity_unresolved',
+ 'No active exact SKU must not turn a found unit into a guessed variant')
+console.log('BRANCH2_STAGE2_FOUND_UNIDENTIFIED_NATIVE_HTTP_PASS',JSON.stringify({
+ stockId:foundItem.stockId,unresolvedFoundCount:1,code:foundResult.data.code,physical:1
+}))
+
 const name='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
 const p=await api('/api/catalog/products','POST',{name,category:'adult',genderScope:'female'},201)
 const productId=Number(p.data.id)
