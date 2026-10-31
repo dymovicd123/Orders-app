@@ -1,0 +1,46 @@
+name: Branch2 stage3.7 live D1 identification diagnostic READ ONLY
+on:
+  push:
+    branches: [audit/branch2-stage37-remote-d1-diagnostics-20261101]
+    paths: [.github/workflows/branch2-stage37-live-d1-diagnostic-20261101.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: SELECT-only live test D1 diagnosis; no prod access
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          const id='0904a573-21ff-44d8-93b0-c9200f771702'
+          const ref=process.env.GITHUB_REF
+          assert.equal(ref,'refs/heads/audit/branch2-stage37-remote-d1-diagnostics-20261101')
+          const token=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID
+          assert(token&&/^[a-f\d]{32}$/i.test(account||''),'Cloudflare Branch2 credentials missing')
+          const target='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+id
+          async function run(sql){
+            assert(sql.startsWith('SELECT ')&&!sql.includes(';'),'SQL is SELECT-only')
+            const r=await fetch(target+'/query',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sql}),signal:AbortSignal.timeout(25000)})
+            const j=await r.json()
+            assert(r.ok&&j.success!==false,'D1 query failed '+r.status+': '+(j.errors||[]).map(e=>e.code).join(','))
+            return (Array.isArray(j.result)?j.result:[j.result]).flatMap(x=>x?.results||[])
+          }
+          for(const [name,sql] of [
+            ['pending_lifecycle_types',"SELECT direction,event_type,COALESCE(pending_reason,'') AS pending_reason, COUNT(*) AS n FROM inventory_lifecycle_events WHERE status='pending' GROUP BY direction,event_type,pending_reason ORDER BY n DESC"],
+            ['pending_lifecycle_safe_metadata',"SELECT e.id,e.order_id,e.order_item_id,e.direction,e.event_type,e.pending_reason,e.product_id,e.variant_id,e.inventory_source,e.created_at,oi.product_id AS current_product_id,oi.variant_id AS current_variant_id FROM inventory_lifecycle_events e LEFT JOIN order_items oi ON oi.id=e.order_item_id WHERE e.status='pending' ORDER BY e.id LIMIT 25"],
+            ['unresolved_by_status',"SELECT COALESCE(oi.stock_writeoff_status,'') AS status,COALESCE(o.shipping_status,'') AS shipping,COALESCE(o.order_status,'') AS order_status,COUNT(*) AS n FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.quantity>0 AND (oi.product_id IS NULL OR oi.variant_id IS NULL OR oi.stock_writeoff_status IN ('catalog_unresolved','catalog_retired')) GROUP BY oi.stock_writeoff_status,o.shipping_status,o.order_status ORDER BY n DESC LIMIT 30"],
+            ['active_recent_identification',"SELECT oi.id,oi.order_id,oi.is_workshop,oi.product_id,oi.variant_id,oi.stock_writeoff_status,o.shipping_status,o.order_status,oi.created_at FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.quantity>0 AND (oi.product_id IS NULL OR oi.variant_id IS NULL OR oi.stock_writeoff_status IN ('catalog_unresolved','catalog_retired')) AND COALESCE(o.order_status,'active') NOT IN ('deleted','archived') AND COALESCE(o.archived_at,'')='' AND COALESCE(oi.stock_writeoff_status,'') NOT IN ('catalog_excluded','catalog_excluded_history','workshop_no_catalog','legacy_unknown_gender') AND datetime(COALESCE(NULLIF(oi.created_at,''),NULLIF(o.created_at,''),o.order_date||'T00:00:00Z')) >= datetime('now','-30 days') ORDER BY oi.id DESC LIMIT 35"],
+            ['unresolved_reservation_reasons',"SELECT status,COALESCE(unresolved_reason,'') AS reason,COUNT(*) AS n FROM inventory_reservations WHERE status='unresolved' GROUP BY status,unresolved_reason ORDER BY n DESC"],
+            ['started_critical_by_step',"SELECT operation_type,step,COUNT(*) AS n FROM critical_operations WHERE status='started' GROUP BY operation_type,step ORDER BY n DESC"],
+            ['history_schema',"SELECT name FROM pragma_table_info('inventory_movements') ORDER BY cid"],
+          ]){
+            const rows=await run(sql)
+            console.log('BRANCH2_LIVE_D1_'+name.toUpperCase(),JSON.stringify(rows))
+          }
+          console.log('BRANCH2_LIVE_D1_STAGE37_DIAGNOSTIC_PASS; no writes, no MAIN access')
+          NODE
