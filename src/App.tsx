@@ -1820,6 +1820,16 @@ function App() {
     return data
   }
 
+  // Post-commit stock truth, not an activity-log event. Discard stale cached
+  // counters and any older in-flight summary. No extra D1 reads while working
+  // in Orders; the Warehouse fetches fresh truth on the next visit.
+  function invalidateWarehouseAttentionAfterCommit() {
+    warehouseAttentionRequestToken += 1
+    warehouseAttentionSummaryCache = null
+    warehouseAttentionSummaryInFlight = null
+    setWarehouseAttention(null)
+  }
+
   function invalidateInventoryStockCaches(includeCatalogReview = false) {
     setInventoryData({ warehouse: null, boutique: null })
     inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }
@@ -1829,7 +1839,7 @@ function App() {
     // W3.1A: mutations invalidate Warehouse Attention truth, but do not spend a D1 read
     // unless the user actually opens/refreshes the recovery surface. Its own effect/action
     // remains the single owner of detailed refreshes (W2.1 race invariant).
-    warehouseAttentionSummaryCache = null
+    invalidateWarehouseAttentionAfterCommit()
   }
 
   async function loadCatalogData(force = false) {
@@ -7509,6 +7519,7 @@ function removeDebtPayment(index: number) {
       // The return is already durably completed on the server. Clear its retry token before any
       // secondary refresh so a read failure cannot make the UI treat a committed return as unsaved.
       completeCriticalRequest(criticalKey, critical.requestId)
+        invalidateWarehouseAttentionAfterCommit()
 
       if (result.order) {
         upsertOrderInState(result.order)
@@ -7693,6 +7704,7 @@ function removeDebtPayment(index: number) {
         }>(response, 'Обмен')
         if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
         completeCriticalRequest(criticalKey, critical.requestId)
+        invalidateWarehouseAttentionAfterCommit()
 
         if (result.order) upsertOrderInState(result.order)
         setExchangeSelectedOrderId(null)
@@ -7904,6 +7916,7 @@ function removeDebtPayment(index: number) {
         }>(response, 'Обмен · несколько позиций')
         if (!response.ok) throw new Error(result.message || `Exchange batch failed: ${response.status}`)
         completeCriticalRequest(batchKey, critical.requestId)
+        invalidateWarehouseAttentionAfterCommit()
 
         if (result.order) {
           upsertOrderInState(result.order)
@@ -7970,6 +7983,7 @@ function removeDebtPayment(index: number) {
         const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; exchangeId?: number; pendingInventoryCount?: number }>(response, `Обмен · позиция ${pair.index + 1}`)
         if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
         completeCriticalRequest(criticalKey, critical.requestId)
+        invalidateWarehouseAttentionAfterCommit()
         savedThisAttempt += 1
         pendingInventoryCount += Math.max(0, Number(result.pendingInventoryCount || 0))
         exchangeTouchesWorkshop = exchangeTouchesWorkshop || pair.selectedOldItem.sourceType === 'workshop' || pair.effectiveNewItem.sourceType === 'workshop'
@@ -8139,6 +8153,7 @@ function removeDebtPayment(index: number) {
       const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Отмена возврата')
       if (!response.ok) throw new Error(result.message || `Cancel return failed: ${response.status}`)
       completeCriticalRequest(criticalKey, critical.requestId)
+        invalidateWarehouseAttentionAfterCommit()
       if (result.order) {
         upsertOrderInState(result.order)
         setReturnSelectedOrderId(result.order.id)
@@ -8244,6 +8259,7 @@ function removeDebtPayment(index: number) {
       const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Отмена обмена')
       if (!response.ok) throw new Error(result.message || `Cancel exchange failed: ${response.status}`)
       completeCriticalRequest(criticalKey, critical.requestId)
+        invalidateWarehouseAttentionAfterCommit()
       if (result.order) {
         upsertOrderInState(result.order)
         setSelectedOrderId(result.order.id)
