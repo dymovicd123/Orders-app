@@ -25,9 +25,17 @@ sqlite.exec([
   "INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity) VALUES(5,'warehouse',77,1,1)",
   "INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,variant_id,status,unresolved_reason,reference_type,quantity) VALUES(10,33,330,'warehouse',77,'unresolved','concurrent_shortage','order',1)",
 ].join(';\n')+';')
+// Entire authorization fixture remains confined to disposable in-memory SQLite.
+sqlite.exec([
+ "ALTER TABLE app_users ADD COLUMN created_at TEXT",
+ "ALTER TABLE app_users ADD COLUMN last_login_at TEXT",
+ "INSERT INTO managers VALUES(3,'Warehouse Test','Завсклад',1),(4,'Disabled Test','Менеджер',0)",
+ "INSERT INTO app_users (id,login,email,role,manager_id,display_name,is_active,must_change_password) VALUES(13,'admin','test.admin@invalid','admin',NULL,'Admin',1,0),(14,'warehouse','test.warehouse@invalid','manager',3,'Warehouse',1,0),(15,'inactive','test.disabled@invalid','manager',4,'Disabled',0,0),(16,'passwordreset','test.reset@invalid','manager',1,'Reset',1,1)",
+ "CREATE TABLE app_settings(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT)",
+].join(';\n')+';')
 const token=(name)=>'local-e2e-token-'+name
 const hash=(token)=>createHash('sha256').update(token).digest('base64url')
-for(const [id,name] of [[11,'manager'],[12,'packer']]){
+for(const [id,name] of [[11,'manager'],[12,'packer'],[13,'admin'],[14,'warehouse'],[15,'inactive'],[16,'passwordreset']]){
  sqlite.prepare('INSERT INTO app_sessions VALUES(?,?,?)').run(id,hash(token(name)),'2099-01-01T00:00:00.000Z')
 }
 function stmt(sql,args=[]){
@@ -46,10 +54,11 @@ const db={
   catch(error){sqlite.exec('ROLLBACK');throw error}
  }
 }
-async function http(method,path,as='manager',payload=null){
+async function http(method,path,as='manager',payload=null,extraHeaders={}){
  const headers=new Headers()
  if(as!=='anonymous')headers.set('Cookie','orders_session='+token(as))
  if(payload!==null)headers.set('Content-Type','application/json')
+ for(const [name,value] of Object.entries(extraHeaders))headers.set(name,value)
  const request=new Request('https://test.invalid'+path,{method,headers,
    ...(payload!==null?{body:JSON.stringify(payload)}:{})})
  const response=await worker.fetch(request,{DB:db})
@@ -73,9 +82,20 @@ const unconfirmed=await http('POST',path,'manager',{...choice,allowShortage:fals
 assert.equal(unconfirmed.status,409,'Manager must explicitly approve shortage')
 const stale=await http('POST',path,'manager',{...choice,snapshot:{...choice.snapshot,reservedQuantity:0}})
 assert.equal(stale.status,409)
-const success=await http('POST',path,'manager',choice)
-assert.equal(success.status,200,JSON.stringify(success.data))
-assert.equal(success.data.resolved,true)
+// Real authenticated Worker commits, but the simulated transport discards its
+// HTTP response. GET and the idempotent replay must recover without new writes.
+let injectedDrops=0
+await assert.rejects(async()=>{
+ const committed=await http('POST',path,'manager',choice)
+ assert.equal(committed.status,200,JSON.stringify(committed.data))
+ assert.equal(committed.data.resolved,true)
+ injectedDrops++
+ throw new Error('INJECTED_HTTP_RESPONSE_LOST_AFTER_WORKER_COMMIT')
+},/INJECTED_HTTP_RESPONSE_LOST_AFTER_WORKER_COMMIT/)
+assert.equal(injectedDrops,1)
+const readAfterLoss=await http('GET',path,'manager')
+assert.equal(readAfterLoss.status,200)
+assert.equal(readAfterLoss.data.pending,false,'GET must reveal a persisted commit after lost response')
 const replay=await http('POST',path,'manager',choice)
 assert.equal(replay.status,200)
 assert.equal(replay.data.alreadyResolved,true)
@@ -87,4 +107,37 @@ assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE
 assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type='order_pending_reservation_resolved'").get().n,1)
 const notFound=await http('GET','/api/orders/33/items/999/pending-reservation')
 assert.equal(notFound.status,409)
+
+// Direct HTTP role matrix (not merely hidden frontend controls).
+const usersPath='/api/auth/users'
+assert.equal((await http('GET',usersPath,'anonymous',null,{'X-Access-Role':'admin'})).status,401)
+assert.equal((await http('GET',usersPath,'manager')).status,403)
+assert.equal((await http('GET',usersPath,'packer')).status,403)
+assert.equal((await http('GET',usersPath,'warehouse')).status,403,'Warehouse supervisor cannot manage app users')
+assert.equal((await http('GET',usersPath,'manager',null,{'X-Access-Role':'admin','X-Access-User':'fake-admin'})).status,403)
+assert.equal((await http('POST',usersPath,'manager',{login:'intruder',password:'pretend-pass',role:'admin'},{'X-Access-Role':'admin'})).status,403)
+const adminUsers=await http('GET',usersPath,'admin')
+assert.equal(adminUsers.status,200,JSON.stringify(adminUsers.data))
+assert.equal(adminUsers.data.items.length,6)
+assert.equal((await http('GET','/api/admin/storage','manager',null,{'X-Access-Role':'admin'})).status,403)
+assert.equal((await http('GET','/api/admin/storage','warehouse')).status,403)
+assert.equal((await http('PATCH','/api/inventory/settings','manager',{autoWriteoffEnabled:false},{'X-Access-Role':'admin'})).status,403)
+assert.equal((await http('PATCH','/api/inventory/settings','packer',{autoWriteoffEnabled:false})).status,403)
+const warehouseSetting=await http('PATCH','/api/inventory/settings','warehouse',{autoWriteoffEnabled:false})
+assert.equal(warehouseSetting.status,200,JSON.stringify(warehouseSetting.data))
+assert.equal(warehouseSetting.data.autoWriteoffEnabled,false)
+const adminSetting=await http('PATCH','/api/inventory/settings','admin',{autoWriteoffEnabled:true})
+assert.equal(adminSetting.status,200,JSON.stringify(adminSetting.data))
+assert.equal(adminSetting.data.autoWriteoffEnabled,true)
+assert.equal(sqlite.prepare("SELECT value FROM app_settings WHERE key='inventory_auto_writeoff_enabled'").get().value,'1')
+assert.equal((await http('GET','/api/auth/me','inactive')).status,401,'Disabled account session cannot act')
+assert.equal((await http('GET','/api/auth/me','passwordreset')).status,200,'Account self-read remains available during forced password change')
+assert.equal((await http('GET','/api/inventory/settings','passwordreset')).status,403,'Forced password change blocks normal business endpoints')
+sqlite.exec('UPDATE managers SET is_active=0 WHERE id=3')
+assert.equal((await http('PATCH','/api/inventory/settings','warehouse',{autoWriteoffEnabled:false})).status,403,
+ 'Disabled warehouse employee cannot borrow supervisor permissions')
+sqlite.exec('UPDATE managers SET is_active=1 WHERE id=3')
+console.log('WORKER_HTTP_ROLE_BOUNDARY_PASS: manager/packer/warehouse/admin and disabled/forced reset, spoofed headers denied')
+console.log('WORKER_HTTP_LOST_RESPONSE_PASS: Worker committed once, response dropped, GET recovered, replay harmless')
+
 console.log('P0_HTTP_PENDING_RESERVATION_PASSED: actual Worker HTTP session, manager/packer/anonymous, snapshot conflict, consent, evidence, retry, no physical stock mutation')
