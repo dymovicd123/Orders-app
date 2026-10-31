@@ -80,3 +80,8 @@ console.log('MAIN_UNRESOLVED_RESERVATIONS_VISIBILITY '+JSON.stringify({
  d1Writes:0,noCustomerData:true
 }))
 
+
+const recentReserve=await select("SELECT r.id AS reservation_id,r.order_id,r.order_item_id,r.quantity AS reserved_units,r.created_at AS reservation_created,r.status,oi.stock_writeoff_status,oi.created_at AS item_created,o.order_date,o.shipping_status,o.order_status,s.quantity AS physical,s.reserved_quantity,s.updated_at AS last_stock_update,s.last_action FROM inventory_reservations r JOIN orders o ON o.id=r.order_id JOIN order_items oi ON oi.id=r.order_item_id LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.status='active' AND r.inventory_source='boutique' AND r.variant_id=1784 ORDER BY r.id LIMIT 8")
+const recentChecks=await select("SELECT id,checked_at,counted_quantity,check_type FROM inventory_stock_checks WHERE inventory_source='boutique' AND variant_id=1784 ORDER BY checked_at DESC LIMIT 5")
+const recentMovements=await select("SELECT id,movement_type,quantity,created_at FROM inventory_movements WHERE inventory_source='boutique' AND variant_id=1784 ORDER BY id DESC LIMIT 8")
+console.log('MAIN_NEW_BOUTIQUE_1784_READONLY_PROVENANCE '+JSON.stringify({reservations:recentReserve,checks:recentChecks,movements:recentMovements,customerData:false,D1Writes:0}))
