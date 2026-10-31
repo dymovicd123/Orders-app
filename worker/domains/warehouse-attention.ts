@@ -81,6 +81,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
             FROM inventory_reservations r
             LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
             WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+              AND (s.quantity IS NULL OR s.quantity >= 0)
             GROUP BY r.inventory_source, r.variant_id
             HAVING SUM(r.quantity) > COALESCE(MAX(s.quantity), 0)
           )) AS shortage_count,
@@ -188,6 +189,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
          FROM reservation_totals rt
          LEFT JOIN inventory_stock s ON s.inventory_source = rt.inventory_source AND s.variant_id = rt.variant_id
          WHERE rt.reserved > COALESCE(s.quantity, 0)
+           AND (s.quantity IS NULL OR s.quantity >= 0)
        )
        SELECT pk.inventory_source, pk.variant_id,
               COALESCE(v.product_id, s.product_id) AS product_id,
@@ -281,6 +283,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
             FROM inventory_reservations r
             LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
             WHERE r.status = 'active' AND r.variant_id IS NOT NULL
+              AND (s.quantity IS NULL OR s.quantity >= 0)
             GROUP BY r.inventory_source, r.variant_id
             HAVING SUM(r.quantity) > COALESCE(MAX(s.quantity), 0)
           )) AS shortage_count,
