@@ -20,6 +20,7 @@ sql.exec(`
 `)
 function statement(query,args=[]){
  return {
+  sql: query,
   bind(...values){return statement(query,values)},
   async first(){return sql.prepare(query).get(...args)||null},
   async run(){const result=sql.prepare(query).run(...args);return {meta:{changes:Number(result.changes),last_row_id:Number(result.lastInsertRowid)}}}
@@ -35,6 +36,7 @@ const db={
    // Emulate native local D1: the reported INSERT meta.changes is 4 when
    // one direct order row and three auxiliary trigger rows are affected.
    if(results[0]?.meta?.changes===1)results[0].meta.changes=4
+   if(statements[1]?.sql?.includes('INSERT INTO critical_operation_entities') && results[1]?.meta?.changes===1)results[1].meta.changes=3
    sql.exec('COMMIT')
    return results
   }catch(error){sql.exec('ROLLBACK');throw error}
