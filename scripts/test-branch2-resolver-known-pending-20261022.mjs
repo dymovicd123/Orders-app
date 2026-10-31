@@ -62,4 +62,38 @@ assert(stock.includes('admitOrderReservationAtomically(db, {'),'Known SKU must u
 assert(!admission.includes('SET quantity ='),'Reserving stock must never invent physical stock')
 assert(admission.includes('quantity >= COALESCE(reserved_quantity, 0) + ?'),'Concurrency admission must guard available stock')
 assert(router.includes("await reconcileCatalogReviewOrder(env.DB, id)"),'Shipping does not retry reservation recovery before blocking')
-console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: exact SKU, concurrent pending visible, 10 negative cases, idempotency and no physical writes')
+// Stage 1.5: an HTTP response may be lost after the resolver POST commits.
+// The same modal session must recheck with GET and resume the original action
+// exactly once; a new order has a completely independent completion latch.
+const { createResolutionSession } = await import('../src/features/orders/catalogResolutionFlow.ts')
+const modal=readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx','utf8')
+assert(modal.includes('owner.markUncertainWrite()') && modal.includes('setNeedsRecheck(true)'),
+ 'A lost mutation response must allow read-only retry from the modal')
+assert(modal.includes('if (needsRecheck) await owner.run(null, load'),
+ 'Read-only retry must never resubmit the original mutation')
+const firstOrder=createResolutionSession()
+let firstWrites=0, firstShipments=0, firstReads=0
+await assert.rejects(()=>firstOrder.run(async()=>{
+ firstWrites++ // POST persisted on server, but client response was lost
+ throw new Error('network response lost')
+},async()=>{ firstReads++;return true },async()=>{firstShipments++}),/response lost/)
+firstOrder.markUncertainWrite()
+assert.equal(firstWrites,1)
+assert.equal(firstShipments,0)
+await firstOrder.run(null,async()=>{firstReads++;return true},async()=>{firstShipments++;return true})
+await firstOrder.run(null,async()=>{firstReads++;return true},async()=>{firstShipments++;return true})
+assert.equal(firstWrites,1,'Retry must not duplicate SKU/reservation mutation')
+assert.equal(firstShipments,1,'Committed write can resume shipping only once after GET recheck')
+assert.equal(firstReads,1,'Completed session must not reread/re-ship')
+const unresolvedOrder=createResolutionSession()
+unresolvedOrder.markUncertainWrite()
+let blockedShipping=0
+await unresolvedOrder.run(null,async()=>false,async()=>{blockedShipping++})
+assert.equal(blockedShipping,0,'Existing unresolved issues must block automatic shipping')
+const secondOrder=createResolutionSession()
+let secondWrites=0,secondShips=0
+await secondOrder.run(async()=>{secondWrites++},async()=>true,async()=>{secondShips++})
+assert.deepEqual([secondWrites,secondShips],[1,1],
+ 'A second order must not inherit the first order completion latch')
+
+console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: known SKU and reservation truth, lost response GET recovery, two independent order sessions')
