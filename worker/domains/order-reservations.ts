@@ -2600,7 +2600,25 @@ export async function fulfillOrderReservationsV2(
     ).bind(options.shippingDate, timestamp, orderId));
   }
 
-  const results = statements.length ? await db.batch(statements) : [];
+  let results: D1Result[] = [];
+  try {
+    results = statements.length ? await db.batch(statements) : [];
+  } catch (error) {
+    // An overlapping handover may have read the active reservation before the
+    // first request committed. The fail-closed conflict probe deliberately
+    // inserts a duplicate inventory_model_meta.key, rolling back the entire
+    // batch. This is a *concurrent operation conflict*, not a corrupt database.
+    // Preserve that atomic barrier; only translate its known constraint into
+    // a useful 409 for the staff member.
+    const message = cleanText(error instanceof Error ? error.message : error);
+    if (/unique constraint failed:\s*inventory_model_meta\.key|inventory_model_meta\.key.*sqlite_constraint/i.test(message)) {
+      const conflict = new Error('Этот товар уже выдали или остаток изменился другим действием. Обновите заказ и проверьте текущую выдачу.') as Error & { status: number; code: string };
+      conflict.status = 409;
+      conflict.code = 'inventory_handover_changed';
+      throw conflict;
+    }
+    throw error;
+  }
   const shippingCommitted = shippingStatementIndex >= 0 && toInt(results[shippingStatementIndex]?.meta?.changes, 0) > 0;
   return {
     fulfilled: options.shippingDate && !shippingCommitted ? 0 : activeReservationPayloads.length,
