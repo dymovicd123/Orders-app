@@ -105,6 +105,38 @@ jobs:
             echo "BRANCH2_NATIVE_D1_FIXTURE_ONLY_MANAGER_SNAPSHOT_ADAPTER_APPLIED"
           fi
           npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
+          # Fixture-only manager: historical orders FK points to managers_step126_old.
+          # Mirror a synthetic manager into BOTH local tables before workerd boots.
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readdirSync} from 'node:fs'
+          import path from 'node:path'
+          import {DatabaseSync} from 'node:sqlite'
+          let seeded=0
+          const root=process.env.LOCAL_STATE
+          for(const rel of readdirSync(root,{recursive:true}).map(String).filter(x=>/\.sqlite$/.test(x))){
+            const db=new DatabaseSync(path.join(root,rel))
+            const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
+            if(!tables.has('orders')||!tables.has('managers_step126_old')){db.close();continue}
+            const refs=db.prepare('SELECT "table" AS parent FROM pragma_foreign_key_list(\'orders\') WHERE "from"=\'manager_id\'').all()
+            assert.deepEqual(refs.map(x=>x.parent),['managers_step126_old'])
+            db.exec('BEGIN IMMEDIATE')
+            try{
+              db.prepare("INSERT INTO managers(id,name,role,phone,salary_base,comment,color_key,hired_at,birth_date,dismissed_at,is_active,created_at,updated_at) VALUES(9000,'CI NATIVE RESERVATION MANAGER','Менеджер',NULL,0,NULL,'#475569','2026-10-31',NULL,NULL,1,'2026-10-31T00:00:00Z','2026-10-31T00:00:00Z')").run()
+              const baseCols=new Set(db.prepare('PRAGMA table_info(managers)').all().map(x=>x.name))
+              const common=db.prepare('PRAGMA table_info(managers_step126_old)').all().map(x=>x.name).filter(x=>baseCols.has(x))
+              assert(common.includes('id')&&common.includes('name'))
+              const keys=common.map(x=>'"'+x.replaceAll('"','""')+'"').join(',')
+              db.prepare('INSERT INTO managers_step126_old('+keys+') SELECT '+keys+' FROM managers WHERE id=9000').run()
+              assert.equal(db.prepare('SELECT COUNT(*) AS n FROM managers_step126_old WHERE id=9000').get().n,1)
+              db.exec('COMMIT')
+              seeded++
+              console.log('CI_LOCAL_LEGACY_MANAGER_FK_FIXTURE_PASS',JSON.stringify({id:9000,mirroredColumns:common.length}))
+            }catch(e){db.exec('ROLLBACK');throw e}
+            finally{db.close()}
+          }
+          assert.equal(seeded,1,'Exactly one disposable native D1 must receive the synthetic manager')
+          NODE
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
           import { readFileSync } from 'node:fs'
