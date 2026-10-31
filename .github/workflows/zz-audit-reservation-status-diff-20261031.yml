@@ -1,0 +1,66 @@
+name: "One-shot cross-DB reservation status diff and completed-return lineage"
+on:
+  push:
+    branches: [audit/main-branch2-legacy-closure-crosscheck-20261031]
+    paths: [.github/workflows/zz-audit-reservation-status-diff-20261031.yml]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: SELECT-only diff of matching old reservations and return chains
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-branch2-legacy-closure-crosscheck-20261031')
+          const dbs={main:'17e68a41-1d58-4a36-8a63-47c3e32443c4',branch2:'0904a573-21ff-44d8-93b0-c9200f771702'}
+          const queries={"reservations":"SELECT r.id,r.order_id,r.order_item_id,r.status,r.unresolved_reason,r.inventory_source,r.variant_id,r.quantity,oi.stock_writeoff_status,o.shipping_status,o.order_status FROM inventory_reservations r LEFT JOIN order_items oi ON oi.id=r.order_item_id LEFT JOIN orders o ON o.id=r.order_id WHERE r.id>=1000 ORDER BY r.id","return_headers":"SELECT id,order_id,status,amount,created_at FROM returns WHERE id IN (43,46) ORDER BY id","return_items":"SELECT return_id,order_item_id,quantity FROM return_items WHERE return_id IN (43,46) ORDER BY return_id,order_item_id","related":"SELECT r.id,r.order_id,r.order_item_id,r.status,r.unresolved_reason,r.variant_id,r.inventory_source,r.quantity,oi.stock_writeoff_status,o.shipping_status FROM inventory_reservations r JOIN order_items oi ON oi.id=r.order_item_id JOIN orders o ON o.id=r.order_id WHERE r.order_id=1563 ORDER BY r.id"}
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(account||'')&&token)
+          async function select(env,sql){
+            assert(Object.hasOwn(dbs,env)&&sql.startsWith('SELECT ')&&!sql.includes(';'))
+            const r=await fetch('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+dbs[env]+'/query',{
+              method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+              body:JSON.stringify({sql}),signal:AbortSignal.timeout(45000)
+            })
+            const j=await r.json()
+            assert(r.ok&&j.success!==false,'D1 HTTP '+env+' '+r.status)
+            const rows=(Array.isArray(j.result)?j.result:[j.result])
+            assert(rows.every(x=>x.success!==false))
+            return rows.flatMap(x=>x.results||[])
+          }
+          const m=await select('main',queries.reservations)
+          const b=await select('branch2',queries.reservations)
+          const mm=new Map(m.map(r=>[r.id,r])),bm=new Map(b.map(r=>[r.id,r]))
+          const conflicts=[],mainOnly=[],branchOnly=[]
+          for(const [id,a] of mm){
+            const z=bm.get(id)
+            if(!z){mainOnly.push(id);continue}
+            if(a.order_id!==z.order_id||a.order_item_id!==z.order_item_id){
+              conflicts.push({id,kind:'different_identity',mainOrder:a.order_id,branchOrder:z.order_id})
+            }else if(a.status!==z.status||a.unresolved_reason!==z.unresolved_reason||a.stock_writeoff_status!==z.stock_writeoff_status||a.shipping_status!==z.shipping_status){
+              conflicts.push({id,orderId:a.order_id,itemId:a.order_item_id,variantId:a.variant_id||z.variant_id,
+                main:{status:a.status,reason:a.unresolved_reason,itemState:a.stock_writeoff_status,shipping:a.shipping_status},
+                branch2:{status:z.status,reason:z.unresolved_reason,itemState:z.stock_writeoff_status,shipping:z.shipping_status}})
+            }
+          }
+          for(const [id] of bm)if(!mm.has(id))branchOnly.push(id)
+          console.log('HISTORICAL_RESERVATION_DIFF '+JSON.stringify({mainCount:m.length,branch2Count:b.length,
+            changedCount:conflicts.length,diffs:conflicts.slice(0,65),
+            mainOnlyCount:mainOnly.length,mainOnly:mainOnly.slice(0,20),
+            branchOnlyCount:branchOnly.length,branchOnly:branchOnly.slice(0,20),
+            readonly:true}))
+          for(const env of ['main','branch2']){
+            console.log('RETURN_1563_'+env.toUpperCase()+' '+JSON.stringify({
+              returns:await select(env,queries.return_headers),
+              returnItems:await select(env,queries.return_items),
+              reserves:await select(env,queries.related)
+            }))
+          }
+          console.log('HISTORICAL_RESERVATION_DIFF_SELECT_ONLY_COMPLETE')
+          NODE
