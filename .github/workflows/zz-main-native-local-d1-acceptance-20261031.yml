@@ -47,13 +47,13 @@ jobs:
           if(!source.includes(token))throw Error('Main D1 binding changed; stop')
           mkdirSync('.d1-acceptance-migrations',{recursive:true})
           let drops=0
-          for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\\.sql$/.test(x))){
+          for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x))){
             const original=readFileSync(path.join('migrations',file),'utf8')
-            const sanitized=original.replace(/^\\s*PRAGMA\\s+foreign_keys\\s*=\\s*(?:ON|OFF)\\s*;\\s*$/gmi,()=>{drops++;return ''})
+            const sanitized=original.replace(/^\s*PRAGMA\s+foreign_keys\s*=\s*(?:ON|OFF)\s*;\s*$/gmi,()=>{drops++;return ''})
             writeFileSync(path.join('.d1-acceptance-migrations',file),sanitized)
           }
           if(drops<3)throw Error('Expected historical foreign_keys PRAGMA fixture mismatch')
-          const config=source.replace(token,token+',\\n     "migrations_dir": ".d1-acceptance-migrations"')
+          const config=source.replace(token,token+',\n     "migrations_dir": ".d1-acceptance-migrations"')
           writeFileSync('.d1-acceptance-config.jsonc',config)
           console.log('NATIVE_D1_EPHEMERAL_MIGRATION_PRAGMA_STRIPPED',drops)
           NODE
