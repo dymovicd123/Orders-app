@@ -259,6 +259,21 @@ const snapshots=twoRead.data.order.items.map(row=>({
 assert.equal(snapshots.length,2)
 const keepBoutique=snapshots.find(row=>row.sourceType==='boutique')
 assert(keepBoutique,'The survivor must be the boutique line')
+const removedWarehouse=snapshots.find(row=>row.sourceType==='warehouse')
+assert(removedWarehouse,'The removed line must be the warehouse line')
+const beforeBoutiqueReserve=sql.prepare(
+ "SELECT id,variant_id,inventory_source,quantity,status FROM inventory_reservations WHERE order_item_id=? LIMIT 1"
+).get(keepBoutique.orderItemId)
+const beforeWarehouseReserve=sql.prepare(
+ "SELECT id,variant_id,inventory_source,quantity,status FROM inventory_reservations WHERE order_item_id=? LIMIT 1"
+).get(removedWarehouse.orderItemId)
+assert.equal(beforeBoutiqueReserve?.status,'active')
+assert.equal(beforeWarehouseReserve?.status,'active')
+const historicalWarehouse=sql.prepare(
+ "SELECT id,product_id,variant_id,product_name_snapshot,source_type,inventory_obligation_key,inventory_obligation_origin_at FROM order_items WHERE id=?"
+).get(removedWarehouse.orderItemId)
+const beforeMovementCount=Number(sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n)
+
 const deletePayload={requestId:'p0-delete-one-line',itemContentReplacement:{
  expectedItems:snapshots,items:[keepBoutique],
 }}
@@ -270,6 +285,31 @@ assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id
 assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id=9042').get().reserved_quantity,2)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9041').get().quantity,2)
 assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE id=9042').get().quantity,2)
+const survivingLine=sql.prepare('SELECT id,quantity,product_id,variant_id,source_type FROM order_items WHERE id=?').get(keepBoutique.orderItemId)
+assert.equal(survivingLine?.id,keepBoutique.orderItemId,'Unchanged order line must retain exact original item ID')
+assert.equal(survivingLine?.quantity,1,'Unchanged order line quantity must remain one')
+assert.equal(survivingLine?.variant_id,beforeBoutiqueReserve.variant_id)
+const afterBoutiqueReserve=sql.prepare(
+ "SELECT id,variant_id,inventory_source,quantity,status FROM inventory_reservations WHERE order_item_id=? LIMIT 1"
+).get(keepBoutique.orderItemId)
+assert.deepEqual(afterBoutiqueReserve,beforeBoutiqueReserve,
+ 'Untouched item must retain SAME reservation row/identity/source/status, not release and recreate')
+const afterWarehouseReserve=sql.prepare(
+ "SELECT id,status,variant_id,inventory_source FROM inventory_reservations WHERE order_item_id=? LIMIT 1"
+).get(removedWarehouse.orderItemId)
+assert.equal(afterWarehouseReserve?.id,beforeWarehouseReserve.id)
+assert.equal(afterWarehouseReserve?.status,'released','Removed item must release its own reservation')
+assert.equal(afterWarehouseReserve?.variant_id,beforeWarehouseReserve.variant_id)
+assert.equal(afterWarehouseReserve?.inventory_source,beforeWarehouseReserve.inventory_source)
+const retiredWarehouse=sql.prepare(
+ "SELECT id,product_id,variant_id,product_name_snapshot,source_type,inventory_obligation_key,inventory_obligation_origin_at,quantity FROM order_items WHERE id=?"
+).get(removedWarehouse.orderItemId)
+assert.equal(retiredWarehouse.quantity,0,'Inactive historical line remains linked for downstream audit')
+for(const key of Object.keys(historicalWarehouse))
+ assert.equal(retiredWarehouse[key],historicalWarehouse[key],'Retirement must preserve original item identity: '+key)
+assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n),beforeMovementCount,
+ 'Removing unshipped order line must not invent a physical stock movement')
+console.log('STAGE3_ITEMIZED_PARTIAL_EDIT_IDENTITY_PASS: untouched item/reservation ID unchanged, removed item historical SKU intact and reserve released, no physical movement')
 // Drop the server's response just AFTER an atomic D1.batch commits the
 // reservation. The same HTTP requestId must recover the existing order/item.
 loseReservationBatchResponseOnce=true
