@@ -34,7 +34,8 @@ jobs:
         run: node --experimental-strip-types scripts/test-v2-exchange-price-audit-r1.mjs
       - name: Existing independent Return price correction
         run: node scripts/test-order-standalone-return-price-correction-r2.mjs
-      - name: Cumulative historical regression with immutable Stage04 baseline
-        run: node scripts/catalog-integrity-branch2-preserved-gate.mjs
+      # Archived source-blob replay belongs on its historic commit, not a PR
+      # modifying orders-write.ts. The consolidated current semantic release
+      # gate runs once per Branch2 PR; direct V2/Return assertions remain above.
       - name: TypeScript and frontend build
         run: npm run build
