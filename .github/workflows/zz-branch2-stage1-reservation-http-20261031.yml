@@ -1,0 +1,29 @@
+name: "Stage 1.6 Branch2 real HTTP reservation admission (NO DEPLOY)"
+on:
+  push:
+    branches: [test/branch2-stage1-reservation-http-20261031]
+    paths:
+      - '.github/workflows/zz-branch2-stage1-reservation-http-20261031.yml'
+      - 'scripts/test-branch2-stage1-reservation-worker-http-20261031.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - run: npm ci
+      - name: Real Worker HTTP + current Branch2 reservation safety suite
+        run: |
+          node scripts/test-branch2-stage1-reservation-worker-http-20261031.mjs
+          node scripts/test-atomic-reservation-admission-20261030.mjs
+          node scripts/test-order-shortage-pending-without-confirmation-20261031.mjs
+          node scripts/test-pending-reservation-resolution-20261030.mjs
+          node scripts/test-p0-http-pending-reservation-20261030.mjs
+      - name: Typecheck and application build
+        run: npm run build
