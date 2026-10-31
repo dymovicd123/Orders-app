@@ -2377,9 +2377,12 @@ export async function updateOrderCritical(
         );
         const newlyWritten = <T,>(rows: T[] | undefined): T[] =>
           (Array.isArray(rows) ? rows : []).filter((_, index) => !keptIndexes.has(index));
-        const newLines = p.rewriteItems ? newlyWritten(p.nextItems) : [];
-        const newCatalog = p.rewriteItems ? newlyWritten(p.rewritePreResolvedCatalog) : [];
-        const newLineage = p.rewriteItems ? newlyWritten(p.inventoryObligationLineage) : [];
+        const newLines: ReturnType<typeof normalizeOrderItems> =
+          p.rewriteItems ? newlyWritten(p.nextItems as ReturnType<typeof normalizeOrderItems>) : [];
+        const newCatalog: Array<{ productId: number | null; variantId: number | null }> =
+          p.rewriteItems ? newlyWritten(p.rewritePreResolvedCatalog as Array<{ productId: number | null; variantId: number | null }>) : [];
+        const newLineage: Array<{ key: string; originAt: string } | null> =
+          p.rewriteItems ? newlyWritten(p.inventoryObligationLineage as Array<{ key: string; originAt: string } | null>) : [];
         const newPricing = p.rewriteItems && p.itemizedRewritePlan
           ? { ...p.itemizedRewritePlan, lines: newlyWritten(p.itemizedRewritePlan.lines) }
           : null;
