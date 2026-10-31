@@ -1,0 +1,41 @@
+name: Stage 4 native isolated Worker and D1 acceptance
+
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-stage4-native-workerd-d1-20261101.mjs'
+      - '.github/workflows/stage4-native-isolated-d1.yml'
+      - 'worker/index.ts'
+      - 'worker/domains/auth.ts'
+      - 'worker/domains/inventory-attempts.ts'
+      - 'worker/domains/inventory-movement.ts'
+      - 'worker/domains/inventory-stocktake.ts'
+      - 'worker/domains/warehouse-attention.ts'
+      - 'migrations/0117_v72_inventory_manual_operation_receipts.sql'
+      - 'migrations/0118_v72_inventory_operation_attempts.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  native-stage4:
+    name: Real local workerd + D1 (no remote credentials)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_ACCOUNT_ID: ''
+      CLOUDFLARE_API_TOKEN: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Verify only disposable local wrangler and local database identifiers
+        run: |
+          node -e "const fs=require('fs');const s=fs.readFileSync('scripts/test-stage4-native-workerd-d1-20261101.mjs','utf8');if(!s.includes('--local')||!s.includes('stage4_local_d1_fixture_only')||s.includes('--remote')||s.includes('orders_db_prod')||s.includes('orders_db_branch2_mirror'))process.exit(1)"
+      - name: Native Worker + D1 end-to-end
+        run: node scripts/test-stage4-native-workerd-d1-20261101.mjs
