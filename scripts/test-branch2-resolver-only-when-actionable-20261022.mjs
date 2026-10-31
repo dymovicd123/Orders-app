@@ -23,6 +23,7 @@ CREATE TABLE inventory_reservations (
 );
 CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,name TEXT);
 CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER);
+ALTER TABLE catalog_variants ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;
 CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER);
 CREATE TABLE exchanges (id INTEGER PRIMARY KEY,status TEXT);
 CREATE TABLE inventory_lifecycle_events (id INTEGER PRIMARY KEY,order_item_id INTEGER,operation_id INTEGER,operation_type TEXT,event_type TEXT,status TEXT,pending_reason TEXT);
@@ -30,7 +31,7 @@ CREATE TABLE returns(id INTEGER PRIMARY KEY,status TEXT);
 CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);
 CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,order_item_id INTEGER,quantity INTEGER,status TEXT);
 INSERT INTO catalog_products VALUES(75,'ЭТНО КАРДИГАН');
-INSERT INTO catalog_variants VALUES(1498,75);
+INSERT INTO catalog_variants(id,product_id) VALUES(1498,75);
 INSERT INTO orders VALUES(1775,'TEST-RESOLVER','2026-10-22',NULL,'not_sent','active',NULL,'2026-10-22T08:00:00Z');
 INSERT INTO order_items VALUES(
  4348,1775,75,1498,'ЭТНО КАРДИГАН','adult','ЖЕН','СВЕТЛО-БЕЖЕВЫЙ',
