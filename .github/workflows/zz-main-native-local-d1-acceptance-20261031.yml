@@ -94,7 +94,7 @@ jobs:
           if test "$ready" -ne 1; then tail -n 100 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; fi
           status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 'http://127.0.0.1:8799/api/orders?limit=1')"
           test "$status" = 401 || { echo "Anonymous orders response $status"; exit 1; }
-          node scripts/test-main-native-local-d1-http-20261031.mjs
+          node scripts/test-main-native-local-d1-http-20261031.mjs || { tail -n 140 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; }
           kill "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
           trap - EXIT
