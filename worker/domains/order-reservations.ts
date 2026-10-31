@@ -1289,10 +1289,10 @@ export async function fetchOrderStockHandoverRows(
                    WHERE c.inventory_source = si.inventory_source
                      AND c.variant_id = si.variant_id
                      AND (
-                       (datetime(c.checked_at) < datetime(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date) AND date(si.order_date) < date(si.origin_at, '+5 hours'))
-                       OR (date(c.checked_at, '+5 hours') >= date(si.order_date) AND datetime(c.checked_at) > datetime(si.origin_at))
+                       (julianday(c.checked_at) < julianday(si.origin_at) AND date(c.checked_at, '+5 hours') >= date(si.order_date) AND date(si.order_date) < date(si.origin_at, '+5 hours'))
+                       OR (date(c.checked_at, '+5 hours') >= date(si.order_date) AND julianday(c.checked_at) > julianday(si.origin_at))
                      )
-                   ORDER BY datetime(c.checked_at) DESC, c.id DESC
+                   ORDER BY julianday(c.checked_at) DESC, c.id DESC
                    LIMIT 1) AS check_point,
                   (SELECT json_array(-s.rowid, s.completed_at)
                    FROM inventory_stocktake_sessions s
@@ -1300,7 +1300,7 @@ export async function fetchOrderStockHandoverRows(
                      AND s.status = 'completed'
                      AND s.completed_at IS NOT NULL
                      AND s.id NOT LIKE 'REV-%-P-%'
-                     AND ((datetime(s.started_at) <= datetime(si.origin_at) AND date(si.order_date) < date(si.origin_at, '+5 hours')) OR datetime(s.completed_at) > datetime(si.origin_at))
+                     AND ((julianday(s.started_at) <= julianday(si.origin_at) AND date(si.order_date) < date(si.origin_at, '+5 hours')) OR julianday(s.completed_at) > julianday(si.origin_at))
                      AND date(s.completed_at, '+5 hours') >= date(si.order_date)
                      AND NOT EXISTS (
                        SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1309,14 +1309,14 @@ export async function fetchOrderStockHandoverRows(
                          AND exact_sku.reference_type = 'stocktake'
                          AND exact_sku.reference_id = s.id
                      )
-                   ORDER BY datetime(s.completed_at) DESC, s.rowid DESC
+                   ORDER BY julianday(s.completed_at) DESC, s.rowid DESC
                    LIMIT 1) AS full_point,
                   (SELECT json_array(hr.checkpoint_id, hr.checkpoint_at)
                    FROM inventory_handover_reviews hr
                    JOIN order_items reviewed_item ON reviewed_item.id = hr.order_item_id
                    WHERE hr.order_id = si.order_id
                      AND COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id) = si.obligation_key
-                   ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
+                   ORDER BY julianday(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
                    LIMIT 1) AS review_point
            FROM scoped_items si
          ),
@@ -1325,9 +1325,9 @@ export async function fetchOrderStockHandoverRows(
                   CASE
                     WHEN l.check_point IS NULL THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
                     WHEN l.full_point IS NULL THEN CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
-                    WHEN datetime(json_extract(l.full_point, '$[1]')) > datetime(json_extract(l.check_point, '$[1]'))
+                    WHEN julianday(json_extract(l.full_point, '$[1]')) > julianday(json_extract(l.check_point, '$[1]'))
                       THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
-                    WHEN datetime(json_extract(l.full_point, '$[1]')) = datetime(json_extract(l.check_point, '$[1]'))
+                    WHEN julianday(json_extract(l.full_point, '$[1]')) = julianday(json_extract(l.check_point, '$[1]'))
                       AND CAST(json_extract(l.full_point, '$[0]') AS INTEGER) > CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
                       THEN CAST(json_extract(l.full_point, '$[0]') AS INTEGER)
                     ELSE CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
@@ -1335,9 +1335,9 @@ export async function fetchOrderStockHandoverRows(
                   CASE
                     WHEN l.check_point IS NULL THEN json_extract(l.full_point, '$[1]')
                     WHEN l.full_point IS NULL THEN json_extract(l.check_point, '$[1]')
-                    WHEN datetime(json_extract(l.full_point, '$[1]')) > datetime(json_extract(l.check_point, '$[1]'))
+                    WHEN julianday(json_extract(l.full_point, '$[1]')) > julianday(json_extract(l.check_point, '$[1]'))
                       THEN json_extract(l.full_point, '$[1]')
-                    WHEN datetime(json_extract(l.full_point, '$[1]')) = datetime(json_extract(l.check_point, '$[1]'))
+                    WHEN julianday(json_extract(l.full_point, '$[1]')) = julianday(json_extract(l.check_point, '$[1]'))
                       AND CAST(json_extract(l.full_point, '$[0]') AS INTEGER) > CAST(json_extract(l.check_point, '$[0]') AS INTEGER)
                       THEN json_extract(l.full_point, '$[1]')
                     ELSE json_extract(l.check_point, '$[1]')
@@ -1443,7 +1443,7 @@ export async function fetchOrderStockHandoverRows(
          fs.completed_at AS full_stocktake_completed_at,
          CASE
            WHEN c.id IS NULL THEN NULL
-           WHEN datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+           WHEN julianday(c.checked_at) < julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
                 AND date(c.checked_at, '+5 hours') >= date(o.order_date) THEN 'late_entry'
            ELSE 'checkpoint_after_order'
          END AS checkpoint_reason
@@ -1463,7 +1463,7 @@ export async function fetchOrderStockHandoverRows(
          WHERE hr.order_id = oi.order_id
            AND COALESCE(NULLIF(reviewed_item.inventory_obligation_key, ''), 'legacy-order-item:' || reviewed_item.id)
                = COALESCE(NULLIF(oi.inventory_obligation_key, ''), 'legacy-order-item:' || oi.id)
-         ORDER BY datetime(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
+         ORDER BY julianday(hr.checkpoint_at) DESC, hr.checkpoint_id DESC, hr.id DESC
          LIMIT 1
        )
        LEFT JOIN inventory_stock_checks c ON c.id = (
@@ -1472,13 +1472,13 @@ export async function fetchOrderStockHandoverRows(
          WHERE c2.inventory_source = r.inventory_source
            AND c2.variant_id = r.variant_id
            AND (
-             (datetime(c2.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             (julianday(c2.checked_at) < julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
               AND date(c2.checked_at, '+5 hours') >= date(o.order_date) AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
              OR
              (date(c2.checked_at, '+5 hours') >= date(o.order_date)
-              AND datetime(c2.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+              AND julianday(c2.checked_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            )
-         ORDER BY datetime(c2.checked_at) DESC, c2.id DESC
+         ORDER BY julianday(c2.checked_at) DESC, c2.id DESC
          LIMIT 1
        )
        LEFT JOIN inventory_stocktake_sessions fs ON fs.rowid = (
@@ -1488,9 +1488,9 @@ export async function fetchOrderStockHandoverRows(
            AND s2.status = 'completed'
            AND s2.completed_at IS NOT NULL
            AND s2.id NOT LIKE 'REV-%-P-%'
-           AND ((datetime(s2.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+           AND ((julianday(s2.started_at) <= julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
              AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
-             OR datetime(s2.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+             OR julianday(s2.completed_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s2.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
              SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1499,7 +1499,7 @@ export async function fetchOrderStockHandoverRows(
                AND exact_sku.reference_type = 'stocktake'
                AND exact_sku.reference_id = s2.id
            )
-         ORDER BY datetime(s2.completed_at) DESC, s2.rowid DESC
+         ORDER BY julianday(s2.completed_at) DESC, s2.rowid DESC
          LIMIT 1
        )
        WHERE ${orderScope}
@@ -1675,11 +1675,11 @@ export function handoverReviewCasGuardStatement(
            WHERE c.id = ? AND c.checked_at = ?
              AND c.inventory_source = r.inventory_source AND c.variant_id = r.variant_id
              AND (
-               (datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+               (julianday(c.checked_at) < julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
                  AND date(c.checked_at, '+5 hours') >= date(o.order_date)
                  AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
                OR (date(c.checked_at, '+5 hours') >= date(o.order_date)
-                 AND datetime(c.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+                 AND julianday(c.checked_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
              )
          )
          OR EXISTS (
@@ -1690,15 +1690,15 @@ export function handoverReviewCasGuardStatement(
            JOIN orders o ON o.id = r.order_id
            WHERE c.inventory_source = r.inventory_source AND c.variant_id = r.variant_id
              AND (
-               datetime(c.checked_at) > datetime(?)
-               OR (datetime(c.checked_at) = datetime(?) AND c.id > ?)
+               julianday(c.checked_at) > julianday(?)
+               OR (julianday(c.checked_at) = julianday(?) AND c.id > ?)
              )
              AND (
-               (datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+               (julianday(c.checked_at) < julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
                  AND date(c.checked_at, '+5 hours') >= date(o.order_date)
                  AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
                OR (date(c.checked_at, '+5 hours') >= date(o.order_date)
-                 AND datetime(c.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+                 AND julianday(c.checked_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
              )
          )
          OR EXISTS (
@@ -1711,10 +1711,10 @@ export function handoverReviewCasGuardStatement(
              AND s.status = 'completed'
              AND s.completed_at IS NOT NULL
              AND s.id NOT LIKE 'REV-%-P-%'
-             AND datetime(s.completed_at) > datetime(?)
-             AND ((datetime(s.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             AND julianday(s.completed_at) > julianday(?)
+             AND ((julianday(s.started_at) <= julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
              AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
-             OR datetime(s.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+             OR julianday(s.completed_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
              AND date(s.completed_at, '+5 hours') >= date(o.order_date)
              AND NOT EXISTS (
                SELECT 1 FROM inventory_stock_checks selected_check
@@ -1753,9 +1753,9 @@ export function handoverReviewCasGuardStatement(
            AND s.completed_at = ?
            AND s.completed_at IS NOT NULL
            AND s.id NOT LIKE 'REV-%-P-%'
-           AND ((datetime(s.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+           AND ((julianday(s.started_at) <= julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
              AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
-             OR datetime(s.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+             OR julianday(s.completed_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
              SELECT 1 FROM inventory_stock_checks exact_sku
@@ -1772,13 +1772,13 @@ export function handoverReviewCasGuardStatement(
          JOIN order_items oi ON oi.id = r.order_item_id
          JOIN orders o ON o.id = r.order_id
          WHERE c.inventory_source = r.inventory_source AND c.variant_id = r.variant_id
-           AND datetime(c.checked_at) >= datetime(?)
+           AND julianday(c.checked_at) >= julianday(?)
            AND (
-             (datetime(c.checked_at) < datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+             (julianday(c.checked_at) < julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
                  AND date(c.checked_at, '+5 hours') >= date(o.order_date)
                  AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
                OR (date(c.checked_at, '+5 hours') >= date(o.order_date)
-                 AND datetime(c.checked_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+                 AND julianday(c.checked_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            )
        )
        OR EXISTS (
@@ -1792,12 +1792,12 @@ export function handoverReviewCasGuardStatement(
            AND s.completed_at IS NOT NULL
            AND s.id NOT LIKE 'REV-%-P-%'
            AND (
-             datetime(s.completed_at) > datetime(?)
-             OR (datetime(s.completed_at) = datetime(?) AND s.rowid > ?)
+             julianday(s.completed_at) > julianday(?)
+             OR (julianday(s.completed_at) = julianday(?) AND s.rowid > ?)
            )
-           AND ((datetime(s.started_at) <= datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
+           AND ((julianday(s.started_at) <= julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at))
              AND date(o.order_date) < date(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at), '+5 hours'))
-             OR datetime(s.completed_at) > datetime(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
+             OR julianday(s.completed_at) > julianday(COALESCE(NULLIF(oi.inventory_obligation_origin_at, ''), oi.created_at)))
            AND date(s.completed_at, '+5 hours') >= date(o.order_date)
            AND NOT EXISTS (
              SELECT 1 FROM inventory_stock_checks exact_sku
