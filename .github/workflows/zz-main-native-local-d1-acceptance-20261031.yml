@@ -126,7 +126,7 @@ jobs:
             if(!exists){db.close();continue}
             const stock=db.prepare("SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source").all()
             if(stock.length){
-              const moves=db.prepare("SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type").all()
+              const moves=db.prepare("SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity_delta)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type").all()
               matches.push({rel,stock,moves})
             }
             db.close()
