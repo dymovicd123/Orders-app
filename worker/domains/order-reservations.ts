@@ -1031,14 +1031,21 @@ export async function reactivateReleasedOrderReservationV2(
 }
 
 
-export async function releaseOrderReservationsV2(db: D1Database, orderId: number, timestamp: string, reason = 'Заказ изменён') {
+export async function releaseOrderReservationsV2(
+  db: D1Database, orderId: number, timestamp: string, reason = 'Заказ изменён',
+  preserveOrderItemIds: number[] = [],
+) {
   const rows = await db.prepare(
     `SELECT id, order_item_id, inventory_source, variant_id, quantity, status
      FROM inventory_reservations
      WHERE order_id = ? AND status IN ('active', 'unresolved')
      ORDER BY id ASC`
   ).bind(orderId).all<Record<string, unknown>>();
-  const reservations = rows.results || [];
+  // During a partial itemized edit, untouched exact-SKU rows retain their
+  // original reservation. This keeps other orders from stealing a temporarily
+  // released last piece between the edit's durable critical-operation steps.
+  const preserve = new Set(preserveOrderItemIds.filter(id => Number.isSafeInteger(id) && id > 0));
+  const reservations = (rows.results || []).filter(row => !preserve.has(toInt(row.order_item_id, 0)));
   if (!reservations.length) return 0;
 
   // Step 191E: release the whole order set-wise instead of calling the single-item helper in a

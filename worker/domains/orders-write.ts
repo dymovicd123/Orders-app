@@ -187,9 +187,10 @@ export async function reverseOrderStockWriteOffsForEdit(
   orderId: number,
   externalId: string,
   timestamp: string,
+  preserveOrderItemIds: number[] = [],
 ) {
   if (await isHumanInventoryModelEnabled(db)) {
-    await releaseOrderReservationsV2(db, orderId, timestamp, `Редактирование заказа ${externalId}`);
+    await releaseOrderReservationsV2(db, orderId, timestamp, `Редактирование заказа ${externalId}`, preserveOrderItemIds);
     return [];
   }
   const oldItems = await db.prepare(
@@ -360,7 +361,9 @@ export async function inventoryObligationLineageForRewrite(
 }
 
 
-export async function retireOrderItemsForRewrite(db: D1Database, orderId: number, timestamp: string) {
+export async function retireOrderItemsForRewrite(
+  db: D1Database, orderId: number, timestamp: string, preserveOrderItemIds: number[] = [],
+) {
   // Step 74: do not DELETE order_items during order editing.
   // Returns and exchanges keep foreign keys to historical order_items, so deleting rows can break saving
   // even when the admin only changed a harmless field like the order comment.
@@ -381,8 +384,9 @@ export async function retireOrderItemsForRewrite(db: D1Database, orderId: number
            ELSE COALESCE(NULLIF(stock_writeoff_status, ''), 'replaced_edit')
          END
      WHERE order_id = ?
-       AND quantity > 0`
-  ).bind(orderId).run();
+       AND quantity > 0
+       AND id NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+  ).bind(orderId, JSON.stringify(preserveOrderItemIds)).run();
   await db.prepare(
     `UPDATE workshop_tasks
      SET status = 'cancelled', updated_at = ?
@@ -2054,6 +2058,48 @@ export async function updateOrderCritical(
         }
       }
 
+      // Stage 1.6: keep EXACT unchanged itemized rows and their reservations.
+      // No inference from a name alone. The current persisted order item and
+      // committed reservation must agree with the same active canonical SKU,
+      // source, quantity, business attributes, unit price and catalog snapshot.
+      // Legacy, workshop, sent and uncertain rows still use the old safe path.
+      const preservedRewriteIndexes: number[] = [];
+      const preservedRewriteItemIds: number[] = [];
+      if (rewriteItems && humanInventoryModelEnabled && itemContentReplacementRequested
+          && replacementItems && rewritePreResolvedCatalog && existingShippingStatus !== 'sent') {
+        const previousById = new Map<number, Record<string, unknown>>(
+          ((existingAny.items || []) as Array<Record<string, unknown>>)
+            .map(row => [toInt(row.id, 0), row])
+        );
+        for (const [index, incoming] of replacementItems.entries()) {
+          const oldId = toInt(incoming?.orderItemId, 0);
+          const previous = previousById.get(oldId);
+          const existingVariantId = toInt(previous?.variantId, 0);
+          if (!oldId || !previous || !existingVariantId || Boolean(previous.isWorkshop)) continue;
+          const oldNormalized = normalizeOrderItems([previous as any], nextSource);
+          const newNormalized = normalizeOrderItems([incoming as any], nextSource);
+          if (!sameNormalizedOrderItemsForEdit(oldNormalized, newNormalized)) continue;
+          const priorSnapshot = previous.catalogPriceSnapshot == null
+            ? null : toInt(previous.catalogPriceSnapshot, 0);
+          const nextSnapshot = incoming.catalogPriceSnapshot == null
+            ? null : toInt(incoming.catalogPriceSnapshot, 0);
+          if (priorSnapshot !== nextSnapshot) continue;
+          const resolved = rewritePreResolvedCatalog[index];
+          if (toInt(resolved?.variantId, 0) !== existingVariantId
+              || toInt(resolved?.productId, 0) !== toInt(previous.productId, 0)) continue;
+          const hold = await db.prepare(
+            `SELECT status, variant_id, inventory_source, quantity
+             FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
+          ).bind(oldId).first<Record<string, unknown>>();
+          if (!hold || !['active', 'unresolved'].includes(cleanText(hold.status))
+              || toInt(hold.variant_id, 0) !== existingVariantId
+              || normalizeSourceType(hold.inventory_source) !== newNormalized[0].inventorySource
+              || toInt(hold.quantity, 0) !== newNormalized[0].quantity) continue;
+          preservedRewriteIndexes.push(index);
+          preservedRewriteItemIds.push(oldId);
+        }
+      }
+
       // Metadata edits belong to this order only: do not mutate shared clients.
       // New phone identities are created inside the final atomic CAS batch.
       nextCustomerId = isolatedMetadataRequest ? null
@@ -2110,7 +2156,7 @@ export async function updateOrderCritical(
         rewritePayments, deletingOrder, deferShippingCommit,
         paymentCorrections,
         nextItems, nextPayments, totals, rewritePreResolvedCatalog: rewritePreResolvedCatalog || null,
-        itemizedRewritePlan,
+        itemizedRewritePlan, preservedRewriteIndexes, preservedRewriteItemIds,
         inventoryObligationLineage, humanInventoryModelEnabled,
       };
       operationContext = { ...operationContext, plan };
@@ -2121,7 +2167,8 @@ export async function updateOrderCritical(
     let stockReversals = Array.isArray(operationContext.stockReversals) ? operationContext.stockReversals : [];
     if (criticalOperation.row.step === 'validated') {
       stockReversals = (p.rewriteItems || p.deletingOrder)
-        ? await reverseOrderStockWriteOffsForEdit(db, id, p.externalId, p.timestamp)
+        ? await reverseOrderStockWriteOffsForEdit(db, id, p.externalId, p.timestamp,
+            p.rewriteItems && Array.isArray(p.preservedRewriteItemIds) ? p.preservedRewriteItemIds : [])
         : [];
       if (p.deletingOrder) {
         await db.batch([
@@ -2132,7 +2179,8 @@ export async function updateOrderCritical(
           db.prepare(`UPDATE workshop_tasks SET status = 'cancelled', updated_at = ? WHERE order_id = ? AND status = 'active'`).bind(p.timestamp, id),
         ]);
       }
-      if (p.rewriteItems) await retireOrderItemsForRewrite(db, id, p.timestamp);
+      if (p.rewriteItems) await retireOrderItemsForRewrite(db, id, p.timestamp,
+        Array.isArray(p.preservedRewriteItemIds) ? p.preservedRewriteItemIds : []);
       if (p.deletingOrder) {
         // Deletion is logical for the order and must preserve original payment rows as historical facts.
         // Append one idempotent reversal per payment; the existing cash order-delete trigger owns physical cash out.
@@ -2324,15 +2372,26 @@ export async function updateOrderCritical(
     let insertedContent = operationContext.insertedContent || { stockResults: [], workshopCount: 0 };
     if (criticalOperation.row.step === 'order_updated') {
       if (p.rewriteItems || p.rewritePayments) {
+        const keptIndexes = new Set<number>(
+          Array.isArray(p.preservedRewriteIndexes) ? p.preservedRewriteIndexes : []
+        );
+        const newlyWritten = <T,>(rows: T[] | undefined): T[] =>
+          (Array.isArray(rows) ? rows : []).filter((_, index) => !keptIndexes.has(index));
+        const newLines = p.rewriteItems ? newlyWritten(p.nextItems) : [];
+        const newCatalog = p.rewriteItems ? newlyWritten(p.rewritePreResolvedCatalog) : [];
+        const newLineage = p.rewriteItems ? newlyWritten(p.inventoryObligationLineage) : [];
+        const newPricing = p.rewriteItems && p.itemizedRewritePlan
+          ? { ...p.itemizedRewritePlan, lines: newlyWritten(p.itemizedRewritePlan.lines) }
+          : null;
         insertedContent = await insertOrderContent(
           db, id, p.externalId,
-          p.rewriteItems ? p.nextItems : [], p.rewritePayments ? p.nextPayments : [], p.timestamp,
+          newLines, p.rewritePayments ? p.nextPayments : [], p.timestamp,
           'order_edit_new', p.externalId,
           p.rewriteItems ? `Новый резерв после редактирования заказа ${p.externalId}` : undefined,
-          p.rewriteItems && Array.isArray(p.rewritePreResolvedCatalog) ? p.rewritePreResolvedCatalog : undefined,
+          newCatalog,
           criticalOperation, 'order_edit',
-          Array.isArray(p.inventoryObligationLineage) ? p.inventoryObligationLineage : undefined,
-          p.itemizedRewritePlan || null,
+          newLineage,
+          newPricing,
         );
       }
       operationContext = { ...operationContext, insertedContent };
