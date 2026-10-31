@@ -15,6 +15,20 @@ const stale=warehouseOperationFeedback(
  'manual_set','manual-test-1234')
 assert.equal(stale.status,409)
 assert.equal(stale.code,'warehouse_stock_stale')
+for(const [suffix,details] of [
+ ['product','выбранный размер относится к другому товару'],
+ ['gender','пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом'],
+ ['color','пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом'],
+ ['size','выбранный размер относится к другой комбинации'],
+]){
+ const issue=warehouseOperationFeedback(new Error('Приход «АБАЙКА»: '+details+'. Склад не изменён.'),'arrival','synthetic-'+suffix)
+ assert.equal(issue.status,409,'Known invalid arrival SKU must return actionable conflict')
+ assert.equal(issue.code,'warehouse_sku_mismatch')
+ assert.match(issue.message,/Склад не изменён/)
+}
+assert.equal(warehouseOperationFeedback(new Error('D1_ERROR: SQLITE_CONSTRAINT Приход «АБАЙКА»: problem'),'arrival','x').status,500,
+ 'Actual persistence errors must stay server failures')
+
 assert.match(stale.message,/60, сейчас 55/)
 assert.match(stale.message,/обновите/i)
 
