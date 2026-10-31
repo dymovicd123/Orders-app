@@ -293,6 +293,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyRows, setHistoryRows] = useState<InventoryHistoryResponse['movements']>([])
   const [historyCheckRows, setHistoryCheckRows] = useState<InventoryCheckHistoryRow[]>([])
   const [historyCheckEvidence, setHistoryCheckEvidence] = useState<InventoryCheckHistoryResponse | null>(null)
+  // Active reservations are a separate CURRENT obligation, never a historic
+  // movement or a claim about how many items were physically counted.
+  const [historyActiveOrders, setHistoryActiveOrders] = useState<InventoryReservation[]>([])
+  const [historyActiveOrdersBusy, setHistoryActiveOrdersBusy] = useState(false)
+  const [historyActiveOrdersError, setHistoryActiveOrdersError] = useState('')
   const [historyCheckHasMore, setHistoryCheckHasMore] = useState(false)
   const [historyCheckNextBeforeId, setHistoryCheckNextBeforeId] = useState<number | null>(null)
   const [historyChecksPagingBusy, setHistoryChecksPagingBusy] = useState(false)
@@ -1723,6 +1728,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setHistoryRows([])
       setHistoryCheckRows([])
       setHistoryCheckEvidence(null)
+      setHistoryActiveOrders([])
+      setHistoryActiveOrdersBusy(Boolean(historyVariantFilter?.variantId))
+      setHistoryActiveOrdersError('')
       setHistoryCheckHasMore(false)
       setHistoryCheckNextBeforeId(null)
       setHistoryChecksPageError('')
@@ -1765,10 +1773,29 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
           setHistoryCheckHasMore(false)
           setHistoryChecksUnavailable(true)
         }
+        // Read exact live reservations after the same variant history load.
+        // Failure must never make historic movement/check data disappear.
+        try {
+          const source = historyVariantFilter?.source === 'boutique' ? 'boutique' : 'warehouse'
+          const variantId = Number(historyVariantFilter?.variantId || 0)
+          const active = await loadInventoryReservations(source, variantId, 0)
+          if (requestId !== historyRequestRef.current) return
+          const orders = Array.isArray(active?.reservations) ? active.reservations : []
+          setHistoryActiveOrders(orders.filter((order: InventoryReservation) =>
+            Number(order.variantId) === variantId && order.source === source && order.status === 'active'))
+          setHistoryActiveOrdersError('')
+        } catch {
+          if (requestId !== historyRequestRef.current) return
+          setHistoryActiveOrders([])
+          setHistoryActiveOrdersError('Не удалось проверить действующие резервы. История движений доступна; обновите её для повторной попытки.')
+        } finally {
+          if (requestId === historyRequestRef.current) setHistoryActiveOrdersBusy(false)
+        }
       }
     } catch (err) {
       if (requestId !== historyRequestRef.current) return
       setHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю склада.')
+      if (requestId === historyRequestRef.current) setHistoryActiveOrdersBusy(false)
     } finally {
       if (requestId === historyRequestRef.current) setHistoryBusy(false)
     }
@@ -2886,6 +2913,12 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyCheckLabel,
         historyCheckRows,
         historyCheckEvidence,
+        historyActiveOrders,
+        historyActiveOrdersBusy,
+        historyActiveOrdersError,
+        openHistoryReserveOrder: (order: InventoryReservation) => void openOrderFromFinance({
+          orderId: order.orderId, externalId: order.externalOrderId, orderDate: order.orderDate,
+        }),
         historyCheckHasMore,
         historyChecksPagingBusy,
         historyChecksPageError,
