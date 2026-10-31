@@ -1,0 +1,40 @@
+name: Branch2 single current semantic release gate (NO DEPLOY)
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/**'
+      - 'src/**'
+      - 'shared/**'
+      - 'migrations/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.jsonc'
+      - '.github/workflows/**'
+  push:
+    branches: [ci/branch2-consolidate-valid-current-gates-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  current-semantic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Current Branch2 source, worker SQLite and build
+        run: npm run release:check
+      - name: Current HTTP pending-reservation and resolver regression
+        run: |
+          node --experimental-strip-types scripts/test-p0-http-pending-reservation-20261030.mjs
+          node --experimental-strip-types scripts/test-branch2-resolver-only-when-actionable-20261022.mjs
+          node --experimental-strip-types scripts/test-branch2-resolver-historic-reserve-20261022.mjs

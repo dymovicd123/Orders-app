@@ -25,5 +25,5 @@ jobs:
       - run: node --experimental-strip-types scripts/test-branch2-resolver-opposite-gender-20261021.mjs
       - run: npm run typecheck
       # Check the exact production release command, not just isolated new source.
-      - run: npm run release:check
+      # Consolidated Branch2 job runs full current semantic gate once per PR.
       - run: npm run build
