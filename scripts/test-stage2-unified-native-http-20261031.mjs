@@ -265,6 +265,33 @@ console.log('BRANCH2_STAGE2_RETIRED_ARRIVAL_RECOVERY_HTTP_PASS',JSON.stringify({
  restorationReplay:true,receiptReplay:true
 }))
 
+// Found at inspection but not in any known SKU: retain physical proof
+// without inventing a barcode or a reference. Real authorized Worker + D1.
+const unknownProduct=await api('/api/catalog/products','POST',{
+ name:'CI STAGE2 FOUND UNKNOWN',category:'adult',genderScope:'female'
+},201)
+const unknownProductId=Number(unknownProduct.data.id)
+const unknownSessionStart=await api('/api/inventory/stocktakes','POST',{source:'warehouse'},201)
+const unknownSessionId=unknownSessionStart.data.session.id
+const deferred=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/items/combination','POST',{
+ productId:unknownProductId,category:'adult',gender:'ЖЕН',
+ color:'CI UNKNOWN COLOR',material:'СТАНДАРТ',length:'СТАНДАРТ',
+ size:'97',deferUnknown:true
+},201)
+assert.equal(deferred.data.deferredUnknownCount,1,'Unknown reference must be deferred, not minted')
+const foundItem=deferred.data.session?.items?.find(x=>Number(x.productId)===unknownProductId&&x.variantId==null)
+assert(foundItem?.stockId>0,'Unidentified item must carry its own physical stock row')
+await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/items/'+foundItem.id,
+ 'PATCH',{countedQuantity:1},200)
+const unknownComplete=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/complete',
+ 'POST',{},200)
+assert.equal(unknownComplete.data.unresolvedFoundCount,1)
+const notGuessed=await api('/api/inventory/found-stock/'+foundItem.stockId+'/reconcile','POST',{},200)
+assert.equal(notGuessed.data.code,'identity_unresolved','No matching canonical SKU means no automatic barcode')
+console.log('BRANCH2_STAGE2_UNKNOWN_FOUND_STOCK_HTTP_PASS',JSON.stringify({
+ unknownProductId,stockId:foundItem.stockId,unresolvedFoundCount:1,barcodeNotGuessed:true
+}))
+
 console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_HTTP_PASS',JSON.stringify({
  transferOnce:true,writeoffOnce:true,correctionOnce:true,staleRejected:true,
  quickCount:true,revisionOnce:true,sourceIsolation:true,workerAuth:true
