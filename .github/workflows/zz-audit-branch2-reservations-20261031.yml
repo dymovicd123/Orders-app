@@ -23,3 +23,5 @@ jobs:
         run: |
           node --check scripts/ops/warehouse-reservation-lifecycle-chain-readonly-20261031.mjs
           node scripts/ops/warehouse-reservation-lifecycle-chain-readonly-20261031.mjs
+
+# Read-only historical pending workshop intake event references 80 and 85.
