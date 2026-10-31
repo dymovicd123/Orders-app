@@ -93,6 +93,7 @@ const groups = [
     'scripts/test-w12-sku-history.mjs',
     'scripts/test-w16-source-attention-correction.mjs',
     'scripts/test-stage4-human-stock-problems-ui-20261101.mjs',
+    'scripts/test-stage4-human-only-problems-20261101.mjs',
     'scripts/test-w17-optional-stock-notes-clear.mjs',
     'scripts/test-w18-variant-history-investigation.mjs',
     'scripts/test-stage4-atomic-manual-actor-20261101.mjs',
