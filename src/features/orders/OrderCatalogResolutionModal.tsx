@@ -196,6 +196,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     if (!order || !item || !next || resolving || busy || error || previewPending.current || mutationPending.current) return
     mutationPending.current = true
     const owner = session.current, ticket = generation.current
+    let postStarted = false
     setResolving(true); setError('')
     try {
       await owner.run(async () => {
@@ -203,10 +204,22 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         if (needsAdminCatalogMutation && !isAdmin) throw new Error('Нужен администратор, чтобы добавить это в каталог.')
         const path = variantId ? `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-existing`
           : `/api/orders/${order.id}/catalog-review/${item.orderItemId}/resolve-facts`
+        postStarted = true
         await read<CatalogResolutionResponse>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(variantId ? { variantId } : { ...next, legacyUnknownGender: legacy }) })
         if (ticket === generation.current) { setNeedsRecheck(true); setNotice('Товар уточнён ✓ Проверяю остальные позиции…') }
       }, async () => ticket === generation.current ? load() : false, async () => owner === session.current ? await onCompleted(order) : false)
-    } catch (value) { if (owner === session.current) setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.') }
+    } catch (value) {
+      if (owner === session.current) {
+        if (postStarted) {
+          // A failed response does not prove the server rolled back this POST.
+          // Retrying only GET cannot create duplicate reservations or SKU writes.
+          owner.markUncertainWrite()
+          setNeedsRecheck(true)
+          setNotice('Проверим, сохранилось ли уточнение, прежде чем продолжить отправку.')
+        }
+        setError(value instanceof Error ? value.message : 'Не удалось сохранить товар.')
+      }
+    }
     finally { mutationPending.current = false; if (owner === session.current) setResolving(false) }
   }
 
@@ -599,7 +612,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
     {!minimalFieldQuestion && notice ? <div role="status" aria-live="polite" className="resolution-feedback">{notice}</div> : null}
     {error ? <div role="alert" className="resolution-error"><p>{error}</p><button type="button" className="secondary-button" disabled={busy || resolving} onClick={() => void retry()}>{needsRecheck ? 'Проверить оставшиеся позиции' : 'Повторить проверку'}</button></div> : null}
     {busy ? <p role="status">Проверяю товар…</p> : null}
-    {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}><div className="resolution-question-label">{needsRecheck ? 'Проверка' : 'Нужно уточнить'}</div>{!needsRecheck ? renderQuestion() : <p>Товар сохранён. Проверяем, остались ли ещё вопросы.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
+    {!advancedOpen ? <fieldset disabled={disabled || Boolean(error)} className="resolution-question" aria-busy={disabled}><div className="resolution-question-label">{needsRecheck ? 'Проверка' : 'Нужно уточнить'}</div>{!needsRecheck ? renderQuestion() : <p>Проверяем актуальное состояние заказа перед продолжением.</p>}</fieldset> : draft && context ? <section className="resolution-advanced">
       <h4>{draft.createProduct ? 'Новый товар' : 'Исправить товар вручную'}</h4>
       <fieldset disabled={disabled}>
         {draft.createProduct ? <>
