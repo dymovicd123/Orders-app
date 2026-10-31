@@ -1,7 +1,15 @@
 name: Main staff roles, DOB and city orders selective release
 on:
+  # Historical staff/city selective release; never gate unrelated SKU/return PRs.
   pull_request:
     branches: [main]
+    paths:
+      - 'src/features/sections/TeamSection.tsx'
+      - 'src/features/renderers/CityOrdersExplorer.tsx'
+      - 'worker/domains/team.ts'
+      - 'migrations/0115_team_birth_date.sql'
+      - 'scripts/test-main-city-staff-20261025.mjs'
+      - '.github/workflows/main-city-staff-release-20261025.yml'
   push:
     branches: [main]
     paths:
