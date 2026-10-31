@@ -58,6 +58,7 @@ const groups = [
     'scripts/test-stage3-return-receipt-fractional-checkpoint-20261031.mjs',
     'scripts/test-stage3-legacy-partial-exchange-http-20261031.mjs',
     'scripts/test-stage3-partial-return-http-20261031.mjs',
+    'scripts/test-stage3-issued-partial-exchange-http-20261031.mjs',
     'scripts/test-return-active-reserve-p0-20261021.mjs',
     'scripts/test-branch2-partial-return-atomic-and-exchange-ui-20261028.mjs',
     'scripts/test-branch2-pending-exchange-initial-shipping-20261028.mjs',
