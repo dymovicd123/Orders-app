@@ -6,6 +6,12 @@ let cookie=''
 async function api(url,method='GET',input,expected){
  const response=await fetch(origin+url,{method,headers:{...(cookie?{cookie}:{}),...(input?{'Content-Type':'application/json'}:{})},...(input?{body:JSON.stringify(input)}:{})})
  const data=await response.json().catch(()=>({}))
+ if(!response.ok){
+  console.log('NATIVE_D1_SYNTHETIC_REJECTION',JSON.stringify({route:url,status:response.status,code:data.code||null,message:String(data.message||'').slice(0,290)}))
+  // Let native Workerd's async logger flush the underlying server exception
+  // before the parent process captures a failed-HTTP diagnostic.
+  await new Promise(resolve=>setTimeout(resolve,1000))
+ }
  if(expected!==undefined)assert.equal(response.status,expected,method+' '+url+': '+JSON.stringify(data))
  else assert(response.ok,method+' '+url+' HTTP '+response.status+': '+JSON.stringify(data))
  return {response,data}
