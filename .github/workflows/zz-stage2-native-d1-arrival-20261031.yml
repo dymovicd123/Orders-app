@@ -141,6 +141,8 @@ jobs:
               JOIN catalog_products p ON p.id=v.product_id
               WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
               ORDER BY s.inventory_source,v.size_label`).all()
+            if(!stock.length){db.close();continue}
+            found++
             assert.deepEqual(stock.map(x=>[x.inventory_source,x.size_label,Number(x.quantity),Number(x.reserved_quantity)]),
               [['boutique','46',2,0],['warehouse','46',1,0],['warehouse','48',1,0]])
             const moves=db.prepare(`SELECT movement_type,quantity_delta,reference_type
