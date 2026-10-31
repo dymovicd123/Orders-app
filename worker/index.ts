@@ -4,7 +4,7 @@ import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
 import { finalizeEthnoSize52History, previewEthnoSize52HistoryFinalization } from './domains/catalog-manual-history-finalization.ts'
-import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders } from './domains/auth.ts'
+import { authUserPayload, createAuthUser, deleteAuthUser, getCurrentAuthUser, handleAuthChangePassword, handleAuthLogin, handleAuthLogout, handleAuthSetup, handleAuthStatus, isDiagnosticsEnabled, listAuthUsers, normalizeAccessRole, passwordChangeOnlyPath, publicAuthPath, requireAdminAccess, requireAdminUser, updateAuthUser, withAuthenticatedHeaders, authenticatedActor } from './domains/auth.ts'
 import { activateCashRegister, addManualCashRegisterMovement, getCashRegisterState, listCashRegisterCycles, listFinancialHistory, reconcileCashRegister, resetCashRegisterCycle, reverseManualCashRegisterMovement, setCashAutoTracking, setupCashRegister } from './domains/cash.ts'
 import { createCatalogProduct, createCatalogVariant, isHumanInventoryModelEnabled, listCatalog, saveCatalogExecutionPrice, updateCatalogProduct, updateCatalogVariant } from './domains/catalog.ts'
 import { listCatalogRetirements, previewCatalogRetirement, previewCatalogVariantGroupRetirement, restoreCatalogRetirement, retireCatalogEntity, retireCatalogVariantGroup } from './domains/catalog-retirement.ts'
@@ -895,7 +895,7 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         const input = await readJson<ArchiveRuleInput>(request);
-        const actor = cleanText(request.headers.get('X-Archive-Actor')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request, 'X-Archive-Actor') || normalizeAccessRole(request.headers.get('X-Access-Role'));
         return json(await archiveOrders(env.DB, input, actor));
       }
 
@@ -980,7 +980,7 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         const input = await readJson<{ comment?: unknown }>(request);
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const result = await reverseInventoryMovementOperation(
           env.DB,
@@ -1007,7 +1007,7 @@ export default {
         const denied = requireAdminAccess(request);
         if (denied) return denied;
         const input = await readJson<{ issueKey?: unknown; resolved?: unknown; comment?: unknown }>(request);
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const resolved = input.resolved !== false && cleanText(input.resolved).toLowerCase() !== 'false' && cleanText(input.resolved) !== '0';
         const result = await setInventoryAuditResolution(env.DB, cleanText(input.issueKey), resolved, actor, cleanText(input.comment));
         await writeActivityLog(env.DB, {
@@ -1025,7 +1025,7 @@ export default {
 
       if (url.pathname === '/api/inventory/cycle-counts/apply' && request.method === 'POST') {
         const input = await request.json<Record<string, unknown>>();
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktakeBatch(env.DB, input, { actor, checkType: 'cycle_count', referenceType: 'cycle_count' });
         if (result.ok) {
           await writeActivityLog(env.DB, { eventType: 'inventory_cycle_count', entityType: 'inventory', title: 'Короткая циклическая сверка', details: `${cleanText(input.source)}; проверено: ${Array.isArray(input.items) ? input.items.length : 0}; расхождений: ${result.changedCount || 0}` });
@@ -1039,7 +1039,7 @@ export default {
 
       if (url.pathname === '/api/inventory/stocktakes' && request.method === 'POST') {
         const input = await readJson<{ source?: unknown }>(request);
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await createInventoryStocktakeSession(env.DB, input, actor);
         if (!result.ok) return json(result, { status: 409 });
         const session = result.session;
@@ -1054,7 +1054,7 @@ export default {
 
       if (url.pathname === '/api/inventory/stocktakes/quick-batch' && request.method === 'POST') {
         const input = await request.json<Record<string, unknown>>();
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktakeBatch(env.DB, input, { actor });
         if (result.ok) {
           await writeActivityLog(env.DB, { eventType: 'inventory_quick_stocktake', entityType: 'inventory', title: 'Быстрая сверка остатков', details: `${cleanText(input.source)}; позиций: ${Array.isArray(input.items) ? input.items.length : 0}; изменений: ${result.changedCount || 0}` });
@@ -1064,7 +1064,7 @@ export default {
 
       if (url.pathname === '/api/inventory/stocktakes/quick' && request.method === 'POST') {
         const input = await readJson<{ source?: unknown; variantId?: unknown; expectedQuantity?: unknown; countedQuantity?: unknown }>(request);
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const result = await quickInventoryStocktake(env.DB, input, { actor });
         if (result.ok) {
           await writeActivityLog(env.DB, { eventType: 'inventory_quick_stocktake', entityType: 'inventory', title: 'Точечная сверка остатка', details: `${cleanText(input.source)}; variant ${toInt(input.variantId, 0)}; ${result.previousQuantity} → ${result.physical}` });
@@ -1449,7 +1449,7 @@ export default {
             expectedVariantId: toInt(input.expectedVariantId, 0),
             expectedQuantity: toInt(input.expectedQuantity, 0),
             confirmedPhysicallyDelivered: input.confirmedPhysicallyDelivered === true,
-            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+            actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
           });
           if (!result.alreadyConfirmed) {
             try {
@@ -1713,7 +1713,7 @@ export default {
         if (!orderItemId) return json({ ok: false, message: 'Не выбрана позиция заказа.' }, { status: 400 });
         const item = state.items.find((row) => row.orderItemId === orderItemId);
         if (!item) return json({ ok: false, message: 'Этой складской позиции больше нет в заказе. Обновите страницу.' }, { status: 409 });
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role'));
         const activeStocktake = await activeStocktakeSessionForHandover(env.DB, item.source);
         if (activeStocktake) {
           const sourceLabel = item.source === 'warehouse' ? 'Склад' : 'Бутик';
@@ -1825,7 +1825,7 @@ export default {
         try {
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
-            actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+            actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
           });
           let updatedOrder = null;
           try {
@@ -1954,7 +1954,7 @@ export default {
           ? await fulfillOrderReservationsV2(env.DB, id, cleanText(existing.external_id), timestamp, {
               stockConfirmations: normalizedStockConfirmations,
               shippingDate: nextShippingDate,
-              checkedBy: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+              checkedBy: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
             })
           : null;
         if (inventoryDelivery?.unresolved) {
@@ -2065,7 +2065,7 @@ export default {
             id,
             input,
             authUser,
-            cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+            authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
           ));
         } catch (error) {
           const criticalResponse = criticalOperationErrorResponse(error);
@@ -2123,7 +2123,7 @@ export default {
           try {
             const result = await updateOrderCritical(
               env.DB, id, input, authUser,
-              cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
+              authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
             );
             return json(result);
           } catch (error) {
@@ -2380,7 +2380,7 @@ export default {
             newUnitPrice:Number(body.newUnitPrice),
             requestId,
             actorLabel:cleanText(authUser?.displayName)||cleanText(authUser?.email)
-              ||cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
+              ||authenticatedActor(request)||'Сотрудник',
           }));
         } catch(error) {
           const criticalResponse=criticalOperationErrorResponse(error);
