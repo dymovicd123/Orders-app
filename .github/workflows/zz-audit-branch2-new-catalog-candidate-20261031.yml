@@ -1,0 +1,89 @@
+name: "One-shot verify PR668 Cloudflare uploaded candidate Branch2 20261031"
+on:
+  push:
+    branches:
+      - audit/branch2-activation-readonly-20261031
+    paths:
+      - .github/workflows/zz-audit-branch2-new-catalog-candidate-20261031.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Wait for Cloudflare upload-only build then inspect immutable preview via GET
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/branch2-activation-readonly-20261031')
+          const sha='81ebdd8f2533e891d8f3f899813d4751bb0e51be'
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(account||'')&&token)
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account
+          async function get(path){
+            assert(path==='/workers/scripts'||path==='/workers/scripts/orders-app-branch2/deployments'||
+              path==='/workers/scripts/orders-app-branch2/versions'||/^\/builds\/workers\/[0-9a-f-]+\/(builds|triggers)$/.test(path))
+            const r=await fetch(base+path,{method:'GET',headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)})
+            const p=await r.json()
+            if(!r.ok||p.success!==true)throw Error('GET '+path.split('/').at(-1)+' status '+r.status)
+            return p.result
+          }
+          const workers=(await get('/workers/scripts')).filter(x=>x.id==='orders-app-branch2')
+          assert.equal(workers.length,1)
+          const triggers=await get('/builds/workers/'+workers[0].tag+'/triggers')
+          assert.equal(triggers.length,1)
+          assert.equal(triggers[0].deploy_command,'npx wrangler versions upload')
+          assert.deepEqual(triggers[0].branch_includes,['branch2'])
+          const oldVersion='23b5f04d-9340-4a0c-af53-4968527f821f'
+          const d=await get('/workers/scripts/orders-app-branch2/deployments')
+          const active=(Array.isArray(d)?d:d.deployments)[0]
+          assert.equal(active.versions.length,1)
+          assert.equal(active.versions[0].version_id,oldVersion)
+          assert.equal(active.versions[0].percentage,100)
+          let ready=null,versions=null
+          for(let attempt=0;attempt<35;attempt++){
+            const builds=await get('/builds/workers/'+workers[0].tag+'/builds')
+            const matches=(Array.isArray(builds)?builds:builds.builds||[]).filter(x=>x.build_trigger_metadata?.branch==='branch2')
+            assert.equal(matches[0]?.build_trigger_metadata?.commit_hash,sha,'Unexpected newer branch2 commit')
+            assert.notEqual(matches[0]?.build_outcome,'fail','Native build failed')
+            const v=await get('/workers/scripts/orders-app-branch2/versions')
+            versions=Array.isArray(v)?v:v.items||v.versions||[]
+            if(matches[0].status==='stopped'&&matches[0].build_outcome==='success'&&versions[0].id!==oldVersion){
+              ready=matches[0]
+              break
+            }
+            await new Promise(resolve=>setTimeout(resolve,6000))
+          }
+          assert(ready,'Cloudflare Branch2 upload candidate not ready within bounded GET checks')
+          const candidate=versions[0].id
+          assert.notEqual(candidate,oldVersion)
+          assert.equal(versions[0].number,644)
+          const host='https://'+candidate.slice(0,8)+'-orders-app-branch2.orders-clothes.workers.dev'
+          let entry=''
+          for(let i=0;i<3;i++){
+            const root=await fetch(host+'/?old-reserve-check='+i,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+            assert.equal(root.status,200)
+            const found=(await root.text()).match(/src=["'](\/assets\/index-[^"']+\.js)["']/)?.[1]
+            assert(found)
+            if(entry)assert.equal(found,entry)
+            entry=found
+            const js=await fetch(host+entry,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+            assert.equal(js.status,200)
+            const bundle=await js.text()
+            assert(bundle.includes('Заказ можно сохранить без подтверждения физического наличия'))
+            assert(!bundle.includes('Подтвердить резерв при нехватке — товар физически есть'))
+          }
+          for(const path of ['/api/orders?limit=1','/api/inventory?source=warehouse']){
+            const r=await fetch(host+path,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+            assert.equal(r.status,401)
+          }
+          console.log('BRANCH2_PR668_CANDIDATE_VERIFIED '+JSON.stringify({
+            sha,candidate,candidateNumber:versions[0].number,created:versions[0].metadata?.created_on,
+            oldVersion,oldDeployment:active.id,
+            status:ready.status,outcome:ready.build_outcome,entry,preview:host,anonymousApi:401,mutations:0
+          }))
+          NODE
