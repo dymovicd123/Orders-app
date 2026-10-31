@@ -77,10 +77,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     details ? Promise.resolve(null) : db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM (
-            SELECT s.inventory_source, s.variant_id
-            FROM inventory_stock s
-            WHERE s.quantity < 0
-            UNION
             SELECT r.inventory_source, r.variant_id
             FROM inventory_reservations r
             LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
@@ -188,8 +184,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
            AND COALESCE(o.order_status, 'active') NOT IN ('deleted', 'archived')
            AND COALESCE(o.archived_at, '') = ''
        ), problem_keys AS (
-         SELECT inventory_source, variant_id FROM inventory_stock WHERE quantity < 0 AND variant_id IS NOT NULL
-         UNION
          SELECT rt.inventory_source, rt.variant_id
          FROM reservation_totals rt
          LEFT JOIN inventory_stock s ON s.inventory_source = rt.inventory_source AND s.variant_id = rt.variant_id
@@ -283,10 +277,6 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     db.prepare(
       `SELECT
          (SELECT COUNT(*) FROM (
-            SELECT s.inventory_source, s.variant_id
-            FROM inventory_stock s
-            WHERE s.quantity < 0
-            UNION
             SELECT r.inventory_source, r.variant_id
             FROM inventory_reservations r
             LEFT JOIN inventory_stock s ON s.inventory_source = r.inventory_source AND s.variant_id = r.variant_id
@@ -379,7 +369,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       countRelevantReserved,
       free: physical - reserved,
     }
-  }).filter((row) => row.physical < 0 || row.countRelevantReserved > row.physical).slice(0, limit)
+  }).filter((row) => row.countRelevantReserved > row.physical).slice(0, limit)
 
   const lifecycleItems = (lifecycleResult.results || []).map((row) => {
     const exactVariantId = toInt(row.exact_variant_id, 0)
