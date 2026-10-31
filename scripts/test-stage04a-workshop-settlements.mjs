@@ -14,12 +14,14 @@ assert.doesNotMatch(sql, /(?:ALTER|DROP)\s+TABLE\s+(?:orders|order_items|payment
 assert.doesNotMatch(sql, /(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:orders|order_items|payments|workshop_tasks)\b/i)
 
 const migrationWorkflow = fs.readFileSync('.github/workflows/stage04-branch2-migration-0083.yml', 'utf8')
-assert.match(migrationWorkflow, /GITHUB_REF_NAME" == "branch2"/)
-assert.match(migrationWorkflow, /d1 execute orders_db_branch2 --remote --config wrangler\.jsonc/)
-assert.match(migrationWorkflow, /database_id": "40065052-854e-44b8-bcd5-251bdd488301/)
-assert.match(migrationWorkflow, /Production D1 identity detected/)
-assert.match(migrationWorkflow, /stage04a-before\.json/)
-assert.doesNotMatch(migrationWorkflow, /d1 execute orders_db_prod/)
+// This one-off Oct09 migration was deliberately archived on Oct30. It must
+// remain inert even under manual workflow_dispatch: do not re-enable old remote
+// D1 commands just to satisfy a frozen historical workflow-source assertion.
+assert.match(migrationWorkflow, /Archived Branch2 legacy job/)
+assert.match(migrationWorkflow, /workflow_dispatch:/)
+assert.match(migrationWorkflow, /archived:\s*\n\s*if: false/)
+assert.doesNotMatch(migrationWorkflow, /d1 execute[^\n]*--remote|wrangler deploy|wrangler versions deploy/)
+assert.doesNotMatch(migrationWorkflow, /orders_db_prod|17e68a41-1d58-4a36-8a63-47c3e32443c4/)
 const db = new DatabaseSync(':memory:')
 db.exec('PRAGMA foreign_keys = ON;')
 db.exec('CREATE TABLE orders (id INTEGER PRIMARY KEY, total_amount INTEGER NOT NULL); INSERT INTO orders VALUES (1,12345)')
