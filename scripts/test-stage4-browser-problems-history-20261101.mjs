@@ -56,8 +56,13 @@ export async function startStage4Browser({origin,sessionToken,variantId}){
     const mTask=phone.locator('.inventory-attention-task').filter({hasText:skuName})
     await mTask.waitFor()
     await mTask.getByRole('button',{name:'Посмотреть историю'}).click()
-    await phone.locator(`.stock-variant-timeline[data-stock-variant-timeline="${variantId}"]`).waitFor()
-    assert.equal(await phone.locator('.stock-variant-timeline').count(),1,'Mobile also opens the correct SKU investigation')
+    // UI first paints the target and then temporarily swaps it for a loading
+    // state while the concurrent history/check/reservation requests settle.
+    await phone.waitForTimeout(700)
+    const mobileTimeline=phone.locator(`.stock-variant-timeline[data-stock-variant-timeline="${variantId}"]`)
+    await mobileTimeline.waitFor({state:'visible',timeout:30000})
+    assert.equal(await mobileTimeline.getAttribute('data-stock-variant-timeline'),String(variantId),
+      'Mobile settles on the exact same source/SKU investigation')
    }finally {await mobile.close()}
    console.log('STAGE4_BROWSER_BEFORE_RECEIPT_PASS: desktop/mobile active problem → exact SKU timeline/order')
   },
