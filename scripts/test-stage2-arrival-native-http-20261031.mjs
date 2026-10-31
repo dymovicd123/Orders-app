@@ -22,12 +22,12 @@ const productId=Number(p.data.id)
 assert(productId>0)
 const variants={}
 for(const sizeLabel of ['46','48']){
- const v=await api('/api/catalog/variants','POST',{productId,category:'adult',gender:'ЖЕН',color:'СЕРО-ГОЛУБОЙ',material:'ДАК',length:'СТАНДАРТ',sizeLabel},201)
+ const v=await api('/api/catalog/variants','POST',{productId,category:'adult',gender:'ЖЕН',color:'ЧЕРНЫЙ',material:'СТАНДАРТ',length:'СТАНДАРТ',sizeLabel},201)
  variants[sizeLabel]=Number(v.data.id);assert(variants[sizeLabel]>0)
 }
 function item(size,quantity=1,patch={}){
  return {productId,variantId:variants[size],productName:name,category:'adult',gender:'ЖЕН',
- color:'СЕРО ГОЛУБОЙ',material:'ДАК',length:'СТАНДАРТ',size,quantity,...patch}
+ color:'ЧЕРНЫЙ',material:'СТАНДАРТ',length:'СТАНДАРТ',size,quantity,...patch}
 }
 const route='/api/inventory/movements?returnInventory=0'
 async function arrival(requestId,source,items,status=201){
