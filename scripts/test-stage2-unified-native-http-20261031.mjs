@@ -114,7 +114,12 @@ for(const row of session.items.filter(x=>[variants['46'],variants['48']].include
 }
 const completed=await api('/api/inventory/stocktakes/'+encodeURIComponent(session.id)+'/complete','POST',{},200)
 assert.equal(completed.data.ok,true)
-const completedAgain=await api('/api/inventory/stocktakes/'+encodeURIComponent(session.id)+'/complete','POST',{},200)
+const readback=await api('/api/inventory/stocktakes/'+encodeURIComponent(session.id),'GET',undefined,200)
+assert.equal(readback.data.session?.status,'completed','A successful response must be durable')
+await new Promise(resolve=>setTimeout(resolve,250))
+const completedAgain=await call('/api/inventory/stocktakes/'+encodeURIComponent(session.id)+'/complete','POST',{},cookie)
+console.log('NATIVE_STOCKTAKE_REPLAY_OBSERVED',JSON.stringify({status:completedAgain.status,code:completedAgain.data?.code||'',message:completedAgain.data?.message||''}))
+assert.equal(completedAgain.status,200,'Native Worker must accept harmless retry after completed stocktake')
 assert.equal(completedAgain.data.ok,true,'Revision completion replay must be harmless')
 
 console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_HTTP_PASS',JSON.stringify({
