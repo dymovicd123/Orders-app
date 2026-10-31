@@ -228,15 +228,19 @@ export function nextQuestion(context: CatalogResolutionContext, draft: Draft, op
 
 // One owner per modal session. Re-check failure can be retried without replaying the write.
 export function createResolutionSession() {
-  let locked = false, completed = false, changed = false
+  let locked = false, completed = false, changed = false, uncertainWrite = false
   return {
-    get changed() { return changed },
+    get changed() { return changed || uncertainWrite },
+    // A POST can commit on the server while the response is lost. Never replay
+    // the write on Retry: check the server's current order state first, and
+    // continue only when it proves there are no remaining resolver tasks.
+    markUncertainWrite() { uncertainWrite = true },
     async run(write: (() => Promise<void>) | null, recheck: () => Promise<boolean>, complete: () => Promise<void | boolean>) {
       if (locked || completed) return
       locked = true
       try {
-        if (write) { await write(); changed = true }
-        if (await recheck() && changed && !completed) {
+        if (write) { await write(); changed = true; uncertainWrite = false }
+        if (await recheck() && (changed || uncertainWrite) && !completed) {
           const completion = await complete()
           if (completion !== false) completed = true
         }
