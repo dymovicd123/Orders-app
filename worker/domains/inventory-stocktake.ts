@@ -1793,6 +1793,44 @@ export async function listInventoryCheckHistory(db: D1Database, url: URL) {
          AND (c.checked_at < ? OR (c.checked_at = ? AND c.id < ?))
        ORDER BY c.checked_at DESC, c.id DESC LIMIT 1`
     ).bind(...exactBindings, cleanText(first.checked_at), cleanText(first.checked_at), toInt(first.id, 0)).first<Record<string, unknown>>() : null;
+    // For the working investigation, the *latest* physical check matters,
+    // not the first mismatch since the beginning of time. A later matching
+    // check closes an earlier discrepancy episode; a subsequent mismatch
+    // starts a NEW episode. All queries are for the exact source + variant.
+    const latest = await db.prepare(
+      `SELECT c.id,c.checked_at,c.expected_quantity,c.counted_quantity,c.checked_by,c.reference_id
+       FROM inventory_stock_checks c
+       WHERE c.variant_id = ? ${exactSourceClause}
+       ORDER BY c.checked_at DESC,c.id DESC LIMIT 1`
+    ).bind(...exactBindings).first<Record<string, unknown>>();
+    const latestDiffers = Boolean(latest && toInt(latest.expected_quantity,0) !== toInt(latest.counted_quantity,0));
+    const lastMatchBeforeLatest = latestDiffers ? await db.prepare(
+      `SELECT c.id,c.checked_at,c.expected_quantity,c.counted_quantity,c.checked_by,c.reference_id
+       FROM inventory_stock_checks c
+       WHERE c.variant_id = ? ${exactSourceClause} AND c.expected_quantity = c.counted_quantity
+         AND (c.checked_at < ? OR (c.checked_at = ? AND c.id < ?))
+       ORDER BY c.checked_at DESC,c.id DESC LIMIT 1`
+    ).bind(...exactBindings,cleanText(latest!.checked_at),cleanText(latest!.checked_at),
+      toInt(latest!.id,0)).first<Record<string,unknown>>() : null;
+    const episodeClause = lastMatchBeforeLatest
+      ? 'AND (c.checked_at > ? OR (c.checked_at = ? AND c.id > ?))' : '';
+    const episodeBind = lastMatchBeforeLatest
+      ? [cleanText(lastMatchBeforeLatest.checked_at),cleanText(lastMatchBeforeLatest.checked_at),toInt(lastMatchBeforeLatest.id,0)] : [];
+    const episodeFirst = latestDiffers ? await db.prepare(
+      `SELECT c.id,c.checked_at,c.expected_quantity,c.counted_quantity,c.checked_by,c.reference_id
+       FROM inventory_stock_checks c
+       WHERE c.variant_id = ? ${exactSourceClause}
+         AND c.expected_quantity <> c.counted_quantity ${episodeClause}
+       ORDER BY c.checked_at ASC,c.id ASC LIMIT 1`
+    ).bind(...exactBindings,...episodeBind).first<Record<string,unknown>>() : null;
+    const observation = (row: Record<string,unknown> | null) => row ? ({
+      id: String(toInt(row.id,0)),
+      checkedAt: cleanText(row.checked_at),
+      expectedQuantity: toInt(row.expected_quantity,0),
+      countedQuantity: toInt(row.counted_quantity,0),
+      checkedBy: cleanText(row.checked_by) || null,
+      referenceId: cleanText(row.reference_id) || null,
+    }) : null;
     const lastMatchingBeforeDifference = previousMatch ? {
       id: String(toInt(previousMatch.id, 0)),
       checkedAt: cleanText(previousMatch.checked_at),
@@ -1816,6 +1854,9 @@ export async function listInventoryCheckHistory(db: D1Database, url: URL) {
       differenceCount: Math.max(0, toInt(summary?.difference_count, 0)),
       firstConfirmedDifference: earliest,
       lastMatchingBeforeDifference,
+      latestCheck: observation(latest),
+      currentEpisodeFirstDifference: observation(episodeFirst),
+      currentEpisodeLastMatchingCheck: observation(lastMatchBeforeLatest),
       rows: page.map(row => ({
         kind: 'check', id: String(toInt(row.id, 0)), source: normalizeSourceType(row.inventory_source),
         scope: null, checkedAt: cleanText(row.checked_at), checkedBy: cleanText(row.checked_by) || null,

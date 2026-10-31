@@ -57,6 +57,36 @@ const otherLocation=await listInventoryCheckHistory(d1,
 assert.equal(otherLocation.firstConfirmedDifference?.referenceId,'B1')
 assert.equal(otherLocation.totalChecks,1)
 
+// The oldest mismatch is historical. The latest check determines whether
+// another unresolved-by-checks episode exists, including after 50-row paging.
+assert.equal(first.latestCheck?.id,'70')
+assert.equal(first.currentEpisodeFirstDifference,null,
+  'Latest physical check matches: historic mismatches are not an active count discrepancy')
+assert.equal(first.currentEpisodeLastMatchingCheck,null)
+insert.run(55,'warehouse','selective_stocktake','stocktake','REV-71',5,3,-2,'Менеджер','2026-10-19T07:00:00')
+insert.run(55,'warehouse','selective_stocktake','stocktake','REV-72',5,4,-1,'Менеджер','2026-10-19T08:00:00')
+const episode1=await listInventoryCheckHistory(d1,url())
+assert.equal(episode1.latestCheck?.referenceId,'REV-72')
+assert.equal(episode1.currentEpisodeFirstDifference?.referenceId,'REV-71',
+  'A new episode starts with the first mismatch AFTER latest matching check')
+assert.equal(episode1.currentEpisodeLastMatchingCheck?.id,'70')
+assert.equal(episode1.firstConfirmedDifference?.id,'8',
+  'Old historical first mismatch still available, but not used as active episode')
+insert.run(55,'warehouse','selective_stocktake','stocktake','REV-73',5,5,0,'Менеджер','2026-10-19T09:00:00')
+const resolved=await listInventoryCheckHistory(d1,url())
+assert.equal(resolved.latestCheck?.referenceId,'REV-73')
+assert.equal(resolved.currentEpisodeFirstDifference,null,
+  'A later matching check closes old discrepancies')
+insert.run(55,'warehouse','selective_stocktake','stocktake','REV-74',5,2,-3,'Менеджер','2026-10-19T10:00:00')
+const episode2=await listInventoryCheckHistory(d1,url())
+assert.equal(episode2.latestCheck?.referenceId,'REV-74')
+assert.equal(episode2.currentEpisodeFirstDifference?.referenceId,'REV-74')
+assert.equal(episode2.currentEpisodeLastMatchingCheck?.referenceId,'REV-73')
+const isolatedBoutique=await listInventoryCheckHistory(d1,new URL('https://test.invalid/api/inventory/check-history?source=boutique&variantId=55'))
+assert.equal(isolatedBoutique.latestCheck?.referenceId,'B1')
+assert.equal(isolatedBoutique.currentEpisodeFirstDifference?.referenceId,'B1',
+  'A warehouse matching check must never close a Boutique discrepancy')
+
 const section=fs.readFileSync('src/features/sections/InventorySection.tsx','utf8')
 const view=fs.readFileSync('src/features/inventory/views/StockVariantTimeline.tsx','utf8')
 const frontend=fs.readFileSync('src/App.tsx','utf8')
@@ -70,4 +100,5 @@ assert.match(view,/Показать более ранние сверки/)
 assert.match(view,/Это день <b>обнаружения<\/b>/)
 assert.match(view,/проведённые/)
 assert.match(view,/отклонённые попытки/i)
+console.log('STAGE4_LATEST_CHECK_EPISODE_SQL_PASS: historical vs active mismatch, later match closes episode, source isolation')
 console.log('W18 HISTORY PASSED: real SQL paging, global first mismatch, prior confirmed matching count, branch/source isolation and frontend controls')

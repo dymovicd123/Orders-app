@@ -22,6 +22,9 @@ type Props = {
   reservations: InventoryReservation[]
   reservationsBusy: boolean
   reservationsError: string
+  reservationsTotalQuantity: number
+  reservationsTotalCount: number
+  reservationsHasMore: boolean
   openReserveOrder: (order: InventoryReservation) => void
   checksUnavailable: boolean
   checksHasMore: boolean
@@ -40,20 +43,27 @@ const quantity = (value: number) => `${value} шт.`
 
 export function StockVariantTimeline({
   variant, movements, checks, evidence, reservations, reservationsBusy, reservationsError,
+  reservationsTotalQuantity, reservationsTotalCount, reservationsHasMore,
   openReserveOrder, checksUnavailable, checksHasMore, checksPagingBusy,
   checksPageError, loadMoreChecks, hasMore, busy, loadMore, momentLabel, movementLabel,
 }: Props) {
   const { events, firstObservedDifference } = buildStockVariantTimeline(movements, checks, variant.source, variant.variantId)
   const firstConfirmedDifference = evidence?.firstConfirmedDifference === undefined
     ? firstObservedDifference : evidence.firstConfirmedDifference
-  const previousMatch = evidence?.lastMatchingBeforeDifference || null
-  const latestCheck = [...checks].sort((a, b) =>
+  const latestCheck = evidence?.latestCheck || [...checks].sort((a, b) =>
     b.checkedAt.localeCompare(a.checkedAt) || Number(b.id) - Number(a.id))[0] || null
+  const latestCheckDiffers = Boolean(latestCheck
+    && Number(latestCheck.expectedQuantity) !== Number(latestCheck.countedQuantity))
+  const currentEpisode = evidence?.currentEpisodeFirstDifference === undefined
+    ? (latestCheckDiffers ? firstObservedDifference : null) : evidence.currentEpisodeFirstDifference
+  const previousMatch = evidence?.currentEpisodeLastMatchingCheck
+    || (evidence?.currentEpisodeFirstDifference === undefined ? evidence?.lastMatchingBeforeDifference : null)
+    || null
   const activeOrders = reservations.filter(order =>
     order.status === 'active' && order.source === variant.source && Number(order.variantId) === variant.variantId)
-  const totalCommitted = activeOrders.reduce((sum, order) => sum + Math.max(0, Number(order.quantity) || 0), 0)
-  const latestCheckIsAfterFirstDifference = Boolean(firstConfirmedDifference && latestCheck
-    && latestCheck.checkedAt > firstConfirmedDifference.checkedAt)
+  const totalCommitted = reservationsTotalCount > activeOrders.length
+    ? reservationsTotalQuantity
+    : activeOrders.reduce((sum, order) => sum + Math.max(0, Number(order.quantity) || 0), 0)
 
   const identity = [variant.color, variant.material && variant.material !== 'СТАНДАРТ' ? variant.material : '',
     variant.length && variant.length !== 'СТАНДАРТ' ? variant.length : '',
@@ -83,14 +93,15 @@ export function StockVariantTimeline({
         Последняя загруженная физическая сверка: <b>{momentLabel(latestCheck.checkedAt)}</b>.
         По системе <b>{quantity(numeric(latestCheck.expectedQuantity))}</b>,
         посчитано <b>{quantity(numeric(latestCheck.countedQuantity))}</b>.
-        {stockCheckHasDifference(latestCheck) ? ' На той проверке было несовпадение; это не текущий физический остаток.' : ' Тогда количество совпало.'}
+        {latestCheckDiffers ? ' На той проверке было несовпадение; это не текущий физический остаток.' : ' Тогда количество совпало.'}
       </p> : null}
       <section className="w18-active-reservations" aria-label="Текущие резервы по конкретному варианту">
         <strong>Для каких заказов сейчас отложен этот товар</strong>
         {reservationsBusy ? <p>Проверяю текущие резервы…</p>
           : reservationsError ? <p role="alert">{reservationsError}</p>
           : activeOrders.length ? <>
-              <p>В активных резервах: <b>{quantity(totalCommitted)}</b> для {activeOrders.length} {activeOrders.length === 1 ? 'записи' : 'записей'} по этому источнику и SKU. Это обязательства по заказам, а не результат физического пересчёта.</p>
+              <p>В активных резервах: <b>{quantity(totalCommitted)}</b> по {reservationsTotalCount || activeOrders.length} {reservationsTotalCount === 1 || (!reservationsTotalCount && activeOrders.length === 1) ? 'записи' : 'записям'} на этом источнике и SKU. Это обязательства по заказам, а не результат физического пересчёта.</p>
+              {reservationsHasMore ? <p role="note">Ниже показаны только первые {activeOrders.length} резервов из {reservationsTotalCount}. Общее количество выше посчитано по всем действующим резервам.</p> : null}
               <ul className="w18-reservation-orders">{activeOrders.map(order => (
                 <li key={order.id}>
                   <span>Заказ {order.externalOrderId || order.orderId} · {quantity(Number(order.quantity))}</span>
@@ -102,18 +113,20 @@ export function StockVariantTimeline({
       {checksUnavailable ? <div className="stock-variant-no-gap" role="note">
         <strong>Сверки сейчас недоступны.</strong>
         <p>Не делайте вывод об отсутствии расхождений. Обновите историю.</p>
-      </div> : firstConfirmedDifference ? <div className="stock-variant-first-gap" role="note">
-        <strong>{evidence ? 'Первая зафиксированная нехватка или излишек за всю доступную историю проверок' : 'Первое несовпадение среди загруженных сверок'}: {momentLabel(firstConfirmedDifference.checkedAt)}</strong>
-        <p>По системе: {quantity(numeric(firstConfirmedDifference.expectedQuantity))}.
-        Фактически: {quantity(numeric(firstConfirmedDifference.countedQuantity))}.
-        {firstConfirmedDifference.checkedBy ? ` Проверил(а): ${firstConfirmedDifference.checkedBy}.` : ''}
-        Это день <b>обнаружения</b>, не обязательно день возникновения ошибки.</p>
-        {previousMatch && <p>До этого товар совпадал с учётом при сверке <b>{momentLabel(previousMatch.checkedAt)}</b>
-          . Проверьте движения и связанные документы <b>между двумя проверками</b> — это наиболее полезный известный интервал.</p>}
-        {!previousMatch && <p>Более ранней подтверждённой сверки с совпадением нет. Точную дату возникновения ошибки по одним записям определить нельзя.</p>}
-        {latestCheckIsAfterFirstDifference && latestCheck && !stockCheckHasDifference(latestCheck) ? (
-          <p><b>Более поздняя загруженная сверка совпала с учётом.</b> Это историческое расхождение, не доказательство действующей недостачи. Текущие обязательства по заказам проверяются отдельно.</p>
-        ) : null}
+      </div> : currentEpisode ? <div className="stock-variant-first-gap" role="note">
+        <strong>Последний незакрытый по сверкам период расхождения — обнаружен {momentLabel(currentEpisode.checkedAt)}</strong>
+        <p>На той проверке: по системе {quantity(numeric(currentEpisode.expectedQuantity))},
+        сотрудник насчитал {quantity(numeric(currentEpisode.countedQuantity))}.
+        {currentEpisode.checkedBy ? ` Проверил(а): ${currentEpisode.checkedBy}.` : ''}
+        Это день <b>обнаружения</b>, а не доказанная дата возникновения расхождения.</p>
+        {previousMatch ? <p>Последняя предыдущая совпавшая сверка: <b>{momentLabel(previousMatch.checkedAt)}</b>.
+          Изучите операции и документы между ней и обнаружением расхождения.</p>
+          : <p>До расхождения нет подтверждённой совпавшей сверки. Начало периода по записям установить нельзя.</p>}
+        <p>После последней загруженной сверки остаток мог измениться. Без новой проверки нельзя утверждать, что расхождение сохраняется физически прямо сейчас.</p>
+      </div> : firstConfirmedDifference ? <div className="stock-variant-no-gap" role="note">
+        <strong>Ранее было расхождение, но последняя сохранённая сверка совпала с учётом.</strong>
+        <p>Исторический пример: {momentLabel(firstConfirmedDifference.checkedAt)}.
+          Это не текущая проблема склада. Новое расхождение может выявить только следующая проверка.</p>
       </div> : <div className="stock-variant-no-gap" role="note">
         <strong>Подтверждённых расхождений в сохранённых сверках нет.</strong>
         <p>Это не гарантия правильных остатков сегодня: отсутствующий приход или выдача без оформления не отражаются в журнале.</p>

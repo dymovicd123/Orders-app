@@ -22,7 +22,7 @@ assert(timeline.includes('order.externalOrderId || order.orderId'))
 assert(timeline.includes('onClick={() => openReserveOrder(order)}'))
 assert(timeline.includes('Это обязательства по заказам, а не результат физического пересчёта.'))
 assert(timeline.includes('reservationsError ? <p role="alert">'), 'Reservation load error must be visible, not false zero count')
-assert(timeline.includes('Более поздняя загруженная сверка совпала с учётом.'),
+assert(timeline.includes('Ранее было расхождение, но последняя сохранённая сверка совпала с учётом.'),
   'Historical difference must not be falsely labelled active')
 assert(timeline.includes("derivedBefore >= 0 ? quantity(derivedBefore) : 'не установлен по этой записи'"),
   'Historical inconsistent before quantity cannot be displayed as verified negative physical')

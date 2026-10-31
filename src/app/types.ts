@@ -1238,6 +1238,9 @@ export type InventoryCheckHistoryResponse = {
   differenceCount?: number
   firstConfirmedDifference?: InventoryCheckHistoryObservation | null
   lastMatchingBeforeDifference?: InventoryCheckHistoryObservation | null
+  latestCheck?: InventoryCheckHistoryObservation | null
+  currentEpisodeFirstDifference?: InventoryCheckHistoryObservation | null
+  currentEpisodeLastMatchingCheck?: InventoryCheckHistoryObservation | null
 }
 export type InventoryCheckHistoryObservation = {
   id: string

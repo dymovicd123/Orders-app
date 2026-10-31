@@ -21,7 +21,11 @@ export async function listInventoryReservations(db: D1Database, url: URL): Promi
 
   const where = variantId ? 'r.variant_id = ?' : 'r.product_id = ?';
   const targetId = variantId || productId;
-  const result = await db.prepare(
+  // The display is capped at 120 orders, but the obligation amount must
+  // account for ALL active reservations. Never report a truncated page sum
+  // as the true reserved quantity: that can conceal a real shortage.
+  const [result, aggregate] = await Promise.all([
+    db.prepare(
     `SELECT
        r.id, r.order_id, r.order_item_id, r.inventory_source, r.product_id, r.variant_id, r.quantity, r.status,
        o.external_id, o.order_date, o.shipping_status,
@@ -38,7 +42,13 @@ export async function listInventoryReservations(db: D1Database, url: URL): Promi
      WHERE r.inventory_source = ? AND ${where} AND r.status = 'active'
      ORDER BY o.order_date DESC, r.id DESC
      LIMIT 120`
-  ).bind(source, targetId).all<Record<string, unknown>>();
+  ).bind(source, targetId).all<Record<string, unknown>>(),
+    db.prepare(
+      `SELECT COUNT(*) AS total_count, COALESCE(SUM(r.quantity),0) AS total_quantity
+       FROM inventory_reservations r
+       WHERE r.inventory_source = ? AND ${where} AND r.status = 'active'`
+    ).bind(source,targetId).first<Record<string, unknown>>(),
+  ]);
 
   const reservations = (result.results || []).map(row => ({
     id: toInt(row.id, 0),
@@ -67,7 +77,9 @@ export async function listInventoryReservations(db: D1Database, url: URL): Promi
     source,
     variantId,
     productId,
-    totalQuantity: reservations.reduce((sum, row) => sum + row.quantity, 0),
+    totalQuantity: Math.max(0, toInt(aggregate?.total_quantity, 0)),
+    totalCount: Math.max(0, toInt(aggregate?.total_count, 0)),
+    hasMore: Math.max(0, toInt(aggregate?.total_count, 0)) > reservations.length,
     reservations,
   };
 }
