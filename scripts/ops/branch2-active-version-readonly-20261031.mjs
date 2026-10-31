@@ -40,7 +40,7 @@ async function publicSmoke(root,label){
     method:'GET',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)})
   assert.equal(htmlResponse.status,200,label+' root GET failed')
   const body=await htmlResponse.text()
-  const asset=body.match(/src=["'](\\/assets\\/index-[^"']+\\.js)["']/)?.[1]
+  const asset=body.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)?.[1]
   assert(asset,label+' HTML has no app bundle')
   const script=await fetch(root+asset,{method:'GET',signal:AbortSignal.timeout(20000)})
   assert.equal(script.status,200,label+' bundle missing')
