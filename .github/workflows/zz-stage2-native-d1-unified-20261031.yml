@@ -96,6 +96,10 @@ jobs:
           NODE
           )"
           echo "BRANCH2_NATIVE_D1_HISTORIC_MIGRATION_MANAGER_SNAPSHOT_COLUMN=$has_snapshot"
+          # Synthetic-only FK introspection before order creation; no writes.
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT 'orders' AS subject,\"table\" AS parent,\"from\" AS child_column,\"to\" AS parent_column FROM pragma_foreign_key_list('orders') UNION ALL SELECT 'order_items',\"table\",\"from\",\"to\" FROM pragma_foreign_key_list('order_items')" --json > "$RUNNER_TEMP/synthetic-fks.json"
+          cat "$RUNNER_TEMP/synthetic-fks.json"
+
           if test "$has_snapshot" = no; then
             npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT"
             echo "BRANCH2_NATIVE_D1_FIXTURE_ONLY_MANAGER_SNAPSHOT_ADAPTER_APPLIED"
