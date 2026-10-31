@@ -24,3 +24,12 @@
   .w18-investigation-metrics strong{font-size:17px}
   .w18-investigation-metrics span{font-size:10px}
 }
+
+/* Stage 4: current order commitments are distinct from historical movement facts. */
+.w18-active-reservations{display:grid;gap:9px;padding:12px 14px;border-radius:10px;border:1px solid #d8e3ef;background:#fff}
+.w18-active-reservations>strong{font-size:14px;line-height:1.4;color:#243a56}
+.w18-active-reservations>p{margin:0;color:#546b85;font-size:12px;line-height:1.6}
+.w18-reservation-orders{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.w18-reservation-orders>li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;background:#f6f9fd;border:1px solid #e3eaf3;border-radius:8px}
+.w18-reservation-orders>li span{font-size:13px;color:#344c67;overflow-wrap:anywhere}
+@media(max-width:540px){.w18-reservation-orders>li{align-items:flex-start;flex-direction:column;gap:8px}}
