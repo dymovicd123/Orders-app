@@ -525,6 +525,33 @@ async function main() {
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements WHERE reference_type = 'quick_stocktake' AND variant_id = 103`)?.qty) === 0, 'Failed quick-check race left a partial movement')
   check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_stock_checks WHERE reference_id = 'stock-check:quick_stocktake:warehouse:qa-race-1'`)?.qty) === 0, 'Failed quick-check race left replay evidence for an unapplied mutation')
 
+  // A second employee starts a full revision *after* quick-check preflight,
+  // but *before* its atomic batch. No quick-check physical fact may commit.
+  db.beforeNextBatch = (owner) => {
+    owner.run(`INSERT INTO inventory_stocktake_sessions
+      (id, inventory_source, status, created_by, started_at, updated_at)
+      VALUES ('qa-midflight-active', 'warehouse', 'active', 'qa-manager', '2026-10-31', '2026-10-31')`)
+  }
+  const blockedMidflight = await quickInventoryStocktakeBatch(db, {
+    source: 'warehouse',
+    requestId: 'qa-midflight-quick',
+    items: [{ variantId: 102, expectedQuantity: 8, countedQuantity: 7 }],
+  }, { actor: 'qa-manager' })
+  check(blockedMidflight.ok === false && blockedMidflight.code === 'stocktake_active'
+    && blockedMidflight.sessionId === 'qa-midflight-active',
+    'Quick check committed despite a full revision starting inside its transaction window')
+  check(Number(db.row(`SELECT quantity FROM inventory_stock
+    WHERE inventory_source = 'warehouse' AND variant_id = 102`)?.quantity) === 8,
+    'Midflight stocktake race changed physical stock')
+  check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_movements
+    WHERE reference_type = 'quick_stocktake' AND reference_id LIKE 'stock-check:%qa-midflight-quick%'`)?.qty) === 0,
+    'Rejected midflight quick check left a physical movement')
+  check(Number(db.row(`SELECT COUNT(*) AS qty FROM inventory_stock_checks
+    WHERE reference_id = 'stock-check:quick_stocktake:warehouse:qa-midflight-quick'`)?.qty) === 0,
+    'Rejected midflight quick check left an accepted check')
+  const midflightCancelled = await cancelInventoryStocktakeSession(db, 'qa-midflight-active')
+  check(midflightCancelled.ok, 'Failed to close the competing revision after test')
+
   const guardSession = await createInventoryStocktakeSession(db, { source: 'warehouse' }, 'qa-manager')
   const blockedQuick = await quickInventoryStocktakeBatch(db, {
     source: 'warehouse',
@@ -538,7 +565,7 @@ async function main() {
   const cancelledReplay = await cancelInventoryStocktakeSession(db, guardSession.session.id)
   check(cancelledReplay.ok && cancelledReplay.session?.status === 'cancelled', 'Cancellation replay did not remain idempotent')
 
-  console.log('STOCKTAKE FUNCTIONAL ACCEPTANCE PASSED — start/resume, evidence replay, CAS recount, atomic completion, completion replay, exact history, quick-check replay/race, active-session guard and cancellation are verified on real SQLite semantics')
+  console.log('STOCKTAKE FUNCTIONAL ACCEPTANCE PASSED — start/resume, evidence replay, CAS recount, atomic completion, completion replay, exact history, quick-check replay/race, midflight revision guard, active-session guard and cancellation are verified on real SQLite semantics')
 }
 
 main().catch((error) => {
