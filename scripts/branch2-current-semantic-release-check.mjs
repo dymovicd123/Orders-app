@@ -87,6 +87,25 @@ const groups = [
     'scripts/test-stage04-fast-workshop-settlements.mjs',
   ]],
 ]
+// Short developer feedback without weakening the full release gate.
+// Examples: npm run check:focused -- --focus=reservations
+//           npm run check:focused -- --focus=warehouse --build
+// CI always calls release:check with no focus and therefore checks everything.
+const focuses = ['db', 'reservations', 'returns', 'warehouse', 'catalog'];
+const argumentsList = process.argv.slice(2);
+const focusArgument = argumentsList.find(arg => arg.startsWith('--focus='));
+const unexpected = argumentsList.filter(arg => !arg.startsWith('--focus=') && arg !== '--build' && arg !== '--all-errors');
+if (unexpected.length || argumentsList.filter(arg => arg.startsWith('--focus=')).length > 1) {
+  fail('Usage: [--focus=db|reservations|returns|warehouse|catalog] [--build] [--all-errors]');
+}
+const focused = focusArgument?.slice('--focus='.length) || null;
+if (focused && !focuses.includes(focused)) fail('Unknown focus: ' + focused);
+if (focused && process.env.CI === 'true') fail('CI cannot bypass the full Branch2 release gate with --focus');
+const selectedGroups = focused ? groups.filter((_, i) => focuses[i] === focused) : groups;
+const shouldBuild = !focused || argumentsList.includes('--build');
+const stopOnFirstFailure = !argumentsList.includes('--all-errors');
+if (focused) console.log('FAST_FOCUSED_BRANCH2_CHECK ' + focused + ' (full release acceptance remains separate)');
+
 const run = (command, args) => {
   const result = spawnSync(command, args, {
     stdio: 'inherit', shell: false, env: process.env, timeout: 150_000,
@@ -100,18 +119,30 @@ const run = (command, args) => {
 }
 const failures = []
 let total = 0
-for (const [group, files] of groups) {
+for (const [group, files] of selectedGroups) {
   console.log('\n=== Current Branch2: ' + group + ' ===')
   for (const file of files) {
     if (!fs.existsSync(file)) fail('Required current regression missing: ' + file)
     console.log('CHECK ' + file)
-    if (!run(process.execPath, ['--experimental-strip-types', file])) failures.push(file)
+    if (!run(process.execPath, ['--experimental-strip-types', file])) {
+      failures.push(file)
+      // Never report a failure as green; exit immediately to avoid wasting
+      // minutes on unrelated groups when a single regression is already red.
+      if (stopOnFirstFailure) fail('Failed current regression: ' + file);
+    }
     total++
   }
 }
-console.log('\n=== Current Branch2: TypeScript, Vite and Worker build ===')
-if (!run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'])) failures.push('TypeScript/Vite build')
-if (!fs.existsSync('dist/client/assets')) failures.push('Current build output missing')
+if (shouldBuild) {
+  console.log('\n=== Current Branch2: TypeScript, Vite and Worker build ===')
+  if (!run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'])) failures.push('TypeScript/Vite build')
+  if (!fs.existsSync('dist/client/assets')) failures.push('Current build output missing')
+}
 if (failures.length) fail('Current Branch2 gate: ' + failures.length + ' failures: ' + failures.join(', '))
-console.log('BRANCH2_CURRENT_SEMANTIC_RELEASE_PASSED — ' + total +
-  ' current regressions + production build; historical frozen replay is separate')
+if (focused) {
+  console.log('BRANCH2_FOCUSED_CHECK_PASSED — ' + focused + ': ' + total +
+    ' tests' + (shouldBuild ? ' + build' : '') + '; full release acceptance NOT performed')
+} else {
+  console.log('BRANCH2_CURRENT_SEMANTIC_RELEASE_PASSED — ' + total +
+    ' current regressions + production build; historical frozen replay is separate')
+}
