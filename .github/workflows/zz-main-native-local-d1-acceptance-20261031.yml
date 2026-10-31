@@ -1,12 +1,19 @@
 name: "Main warehouse native local workerd D1 baseline (no credentials, no deploy)"
 on:
   push:
-    branches: [fix/main-warehouse-integrated-safety-20261031]
+    branches: [fix/main-warehouse-integrated-safety-20261031, test/main-stage1-final-acceptance-20261031]
     paths:
       - '.github/workflows/zz-main-native-local-d1-acceptance-20261031.yml'
       - 'worker/domains/warehouse-operation-feedback.ts'
       - 'scripts/test-main-native-local-d1-http-20261031.mjs'
       - 'scripts/test-main-warehouse-sku-feedback-20261031.mjs'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/zz-main-native-local-d1-acceptance-20261031.yml'
+      - 'scripts/test-main-native-local-d1-http-20261031.mjs'
+      - 'worker/domains/catalog-review.ts'
+      - 'worker/domains/inventory-movement.ts'
 permissions:
   contents: read
 jobs:
@@ -30,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/fix/main-warehouse-integrated-safety-20261031"
+          test "$GITHUB_REF" = "refs/heads/fix/main-warehouse-integrated-safety-20261031" || test "${GITHUB_HEAD_REF:-}" = "test/main-stage1-final-acceptance-20261031" || test "$GITHUB_REF" = "refs/heads/test/main-stage1-final-acceptance-20261031"
           test -z "${CLOUDFLARE_API_TOKEN:-}"
           test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -d migrations
@@ -75,6 +82,20 @@ jobs:
             tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
             exit 1
           }
+          # Keep the Main test fixture compatible with older checked-in migrations;
+          # local disposable D1 ONLY, never apply an ALTER to the actual Main DB.
+          npx wrangler d1 execute orders_db_prod --local --persist-to="$state" --command="SELECT name FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'" --json > "$RUNNER_TEMP/main-columns.json"
+          has_snapshot="$(node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs'
+          const v=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/main-columns.json','utf8'))
+          const rows=Array.isArray(v)?v.flatMap(x=>x.results||[]):(v.results||[])
+          console.log(rows.some(x=>x.name==='manager_snapshot_name')?'yes':'no')
+          NODE
+          )"
+          if test "$has_snapshot" = no; then
+            npx wrangler d1 execute orders_db_prod --local --persist-to="$state" --command="ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT"
+            echo MAIN_NATIVE_FIXTURE_ONLY_SNAPSHOT_COLUMN_ADDED
+          fi
           npx wrangler d1 execute orders_db_prod --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
