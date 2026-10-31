@@ -103,11 +103,14 @@ jobs:
           status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 'http://127.0.0.1:8799/api/orders?limit=1')"
           test "$status" = 401 || { echo "Anonymous orders response $status"; exit 1; }
           node scripts/test-main-native-local-d1-http-20261031.mjs || { tail -n 140 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; }
+          echo NATIVE_D1_HTTP_SUCCEEDED_PREPARING_SQL_READBACK
           kill "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
           trap - EXIT
-          npx wrangler d1 execute orders_db_prod --local --persist-to="$LOCAL_STATE" --command="SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source" --json > "$RUNNER_TEMP/main-real-operation-stock.json"
-          npx wrangler d1 execute orders_db_prod --local --persist-to="$LOCAL_STATE" --command="SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type" --json > "$RUNNER_TEMP/main-real-operation-movements.json"
+          echo NATIVE_D1_RUNNING_STOCK_READBACK
+          npx wrangler d1 execute orders_db_prod --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --command="SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source" --json > "$RUNNER_TEMP/main-real-operation-stock.json"
+          npx wrangler d1 execute orders_db_prod --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --command="SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type" --json > "$RUNNER_TEMP/main-real-operation-movements.json"
+          echo NATIVE_D1_SQL_READBACK_OK
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
           import {readFileSync} from 'node:fs'
