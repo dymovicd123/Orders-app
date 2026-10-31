@@ -1,0 +1,25 @@
+name: "One-shot current Branch2 D1 reserve and inbound SELECT audit 20261031"
+on:
+  push:
+    branches:
+      - audit/branch2-activation-readonly-20261031
+    paths:
+      - .github/workflows/zz-audit-branch2-reservations-20261031.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout isolated audit without deploy permissions
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict SELECT-only Branch2 D1 queries; never write inventory or Main
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --check scripts/ops/warehouse-reservation-lifecycle-chain-readonly-20261031.mjs
+          node scripts/ops/warehouse-reservation-lifecycle-chain-readonly-20261031.mjs
