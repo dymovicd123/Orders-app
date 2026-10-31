@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { initialDraft, canonicalizePreviewDraft, nextQuestion } from '../src/features/orders/catalogResolutionFlow.ts'
+import { initialDraft, canonicalizePreviewDraft, nextQuestion, needsReference, sameReferenceValue } from '../src/features/orders/catalogResolutionFlow.ts'
 
 // Execute the actual production UI decision functions, not a source-string search.
 // The server has already validated a canonical active SKU and hydrated its facts.
@@ -53,4 +53,19 @@ const noDim={
 const dimensionless=initialDraft({productName:'ЭТНО КАРДИГАН',variantId:1666,color:'',size:''},noDim)
 assert.equal(dimensionless.color,'БЕЗ ЦВЕТА')
 assert.equal(dimensionless.size,'БЕЗ РАЗМЕРА')
+// Task 1.4: a catalog-backed reference with harmless punctuation differences
+// is not a new color. Do not ask staff to create or confirm it again.
+const aliasContext = {
+ ...ctx, exactVariant:null, existingVariantId:null,
+ references:{...ctx.references,colors:['ТЕМНО СЕРЫЙ']},
+ facts:{...facts,color:'ТЕМНО-СЕРЫЙ'},
+}
+const aliasDraft={...linked,color:'ТЕМНО-СЕРЫЙ'}
+assert.equal(sameReferenceValue('ТЕМНО-СЕРЫЙ','ТЕМНО СЕРЫЙ'),true)
+assert.equal(sameReferenceValue('ТЕМНО—СЕРЫЙ','ТЕМНО СЕРЫЙ'),true)
+assert.equal(needsReference(aliasContext,aliasDraft,'color'),false,'Known catalog color is not a new reference')
+assert.equal(nextQuestion(aliasContext,aliasDraft,opts).kind,'ready','Alias-only formatting cannot block resolver')
+assert.equal(needsReference(aliasContext,{...aliasDraft,color:'ТЕМНО СИНИЙ'},'color'),true,'Different color is NOT a known alias')
+assert.deepEqual(nextQuestion(aliasContext,{...aliasDraft,color:'ТЕМНО СИНИЙ'},opts),{kind:'reference',field:'color'})
+assert.equal(sameReferenceValue('ТЕМНО СЕРИЙ','ТЕМНО СЕРЫЙ'),false,'Fuzzy typos must not auto-confirm a reference')
 console.log('MAIN_RESOLVER_PROVEN_SKU_HYDRATION_PASS: proven variant skips duplicate questions, unlinked or wrong ID never guesses')
