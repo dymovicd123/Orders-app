@@ -129,11 +129,10 @@ assert.equal(completedAgain.data.ok,true,'Revision completion replay must be har
 
 // Stage 1.6 + 2.5/2.6: run actual order admission and a physical correction
 // against its active reservation on the *same* authorized Worker and local D1.
-const staff=await api('/api/team/employees','POST',{
- name:'CI NATIVE RESERVATION MANAGER',role:'Менеджер',isActive:true
-},201)
-const managerId=Number(staff.data.employeeId)
-assert(managerId>0,'Fixture requires a real active manager')
+// This synthetic manager is seeded into both managers and the legacy
+// migration shadow solely in the disposable D1 fixture before Workerd boots.
+// The old fixture's orders FK still points at the shadow table.
+const managerId=9000
 function orderPayload(requestId,source,size,suffix){
  return {
   requestId,orderDate:'2026-10-31',managerId,
