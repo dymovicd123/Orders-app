@@ -298,6 +298,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyActiveOrders, setHistoryActiveOrders] = useState<InventoryReservation[]>([])
   const [historyActiveOrdersBusy, setHistoryActiveOrdersBusy] = useState(false)
   const [historyActiveOrdersError, setHistoryActiveOrdersError] = useState('')
+  const [historyActiveOrdersTotalQuantity, setHistoryActiveOrdersTotalQuantity] = useState(0)
+  const [historyActiveOrdersTotalCount, setHistoryActiveOrdersTotalCount] = useState(0)
+  const [historyActiveOrdersHasMore, setHistoryActiveOrdersHasMore] = useState(false)
   const [historyCheckHasMore, setHistoryCheckHasMore] = useState(false)
   const [historyCheckNextBeforeId, setHistoryCheckNextBeforeId] = useState<number | null>(null)
   const [historyChecksPagingBusy, setHistoryChecksPagingBusy] = useState(false)
@@ -1729,6 +1732,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setHistoryCheckRows([])
       setHistoryCheckEvidence(null)
       setHistoryActiveOrders([])
+      setHistoryActiveOrdersTotalQuantity(0)
+      setHistoryActiveOrdersTotalCount(0)
+      setHistoryActiveOrdersHasMore(false)
       setHistoryActiveOrdersBusy(Boolean(historyVariantFilter?.variantId))
       setHistoryActiveOrdersError('')
       setHistoryCheckHasMore(false)
@@ -1783,10 +1789,16 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
           const orders = Array.isArray(active?.reservations) ? active.reservations : []
           setHistoryActiveOrders(orders.filter((order: InventoryReservation) =>
             Number(order.variantId) === variantId && order.source === source && order.status === 'active'))
+          setHistoryActiveOrdersTotalQuantity(Number(active?.totalQuantity || 0))
+          setHistoryActiveOrdersTotalCount(Number(active?.totalCount ?? orders.length))
+          setHistoryActiveOrdersHasMore(Boolean(active?.hasMore))
           setHistoryActiveOrdersError('')
         } catch {
           if (requestId !== historyRequestRef.current) return
           setHistoryActiveOrders([])
+          setHistoryActiveOrdersTotalQuantity(0)
+          setHistoryActiveOrdersTotalCount(0)
+          setHistoryActiveOrdersHasMore(false)
           setHistoryActiveOrdersError('Не удалось проверить действующие резервы. История движений доступна; обновите её для повторной попытки.')
         } finally {
           if (requestId === historyRequestRef.current) setHistoryActiveOrdersBusy(false)
@@ -2916,6 +2928,9 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyActiveOrders,
         historyActiveOrdersBusy,
         historyActiveOrdersError,
+        historyActiveOrdersTotalQuantity,
+        historyActiveOrdersTotalCount,
+        historyActiveOrdersHasMore,
         openHistoryReserveOrder: (order: InventoryReservation) => void openOrderFromFinance({
           orderId: order.orderId, externalId: order.externalOrderId, orderDate: order.orderDate,
         }),
