@@ -107,13 +107,13 @@ jobs:
           npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
           # Fixture-only manager: historical orders FK points to managers_step126_old.
           # Mirror a synthetic manager into BOTH local tables before workerd boots.
-          node --input-type=module <<'NODE'
+          STATE_DIR="$state" node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
           import {readdirSync} from 'node:fs'
           import path from 'node:path'
           import {DatabaseSync} from 'node:sqlite'
           let seeded=0
-          const root=process.env.LOCAL_STATE
+          const root=process.env.STATE_DIR
           for(const rel of readdirSync(root,{recursive:true}).map(String).filter(x=>/\.sqlite$/.test(x))){
             const db=new DatabaseSync(path.join(root,rel))
             const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
