@@ -160,10 +160,13 @@ try{
  }))
  const newItems=expectedItems.map(row=>({...row}))
  newItems[1].size='54';newItems[1].sourceType='boutique'
- const changed=await api('/api/orders/'+editOrder.orderId,'PATCH',{
+ const editPayload={
   requestId:'b2-edit-switch-second-source-20261031',
   itemContentReplacement:{expectedItems,items:newItems}
- },200)
+ }
+ const changed=await api('/api/orders/'+editOrder.orderId,'PATCH',editPayload,200)
+ const retry=await api('/api/orders/'+editOrder.orderId,'PATCH',editPayload,200)
+ assert(retry.ok!==false,'Idempotent edit replay must remain successful')
  assert(changed.ok!==false,'Edit returned an error')
  const current=await api('/api/orders/'+editOrder.orderId)
  assert.equal(current.order.items.length,2)
@@ -172,6 +175,15 @@ try{
  assert.equal(current.order.items[1].sourceType,'boutique')
  assert.equal(Number(current.order.items[0].id),Number(before[0].id),
    'Untouched itemized line must retain its original order item and active reservation, never release a last unit');
+ // A competing order after the edit cannot claim the already-held last piece.
+ const competitor=await api('/api/orders','POST',{
+  ...active.payload,requestId:'b2-edit-competitor-first-sku-20261031',
+  customerPhone:'77019999110',items:[item('50','warehouse')],payments:[]
+ },201)
+ const competitorState=await api('/api/orders/'+competitor.orderId)
+ assert.equal(competitorState.order.items.length,1)
+ assert.equal(competitorState.order.items[0].stockWriteoffStatus,'pending_reservation')
+ console.log('B2_EDIT_RESERVATION_COMPETITOR_PENDING_PASS',JSON.stringify({orderId:competitor.orderId,heldOriginalItemId:before[0].id}))
  console.log('B2_EDIT_NATIVE_D1_CURRENT_LINEAGE',JSON.stringify({
   orderId:editOrder.orderId,
   before:before.map(row=>({id:row.id,variantId:row.variantId,source:row.sourceType,size:row.size})),
