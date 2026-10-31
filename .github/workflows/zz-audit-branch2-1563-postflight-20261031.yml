@@ -1,0 +1,55 @@
+name: "Independent SELECT-only postflight Branch2 old return 1563 reconciliation"
+on:
+  push:
+    branches: [audit/main-branch2-legacy-closure-crosscheck-20261031]
+    paths: [.github/workflows/zz-audit-branch2-1563-postflight-20261031.yml]
+permissions:
+  contents: read
+jobs:
+  postflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Independent check of released reserves, physical stock and no cache drift
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-branch2-legacy-closure-crosscheck-20261031')
+          const queries={"totals":"SELECT (SELECT COUNT(*) FROM inventory_reservations WHERE status='active') AS active_reserves,(SELECT COUNT(*) FROM inventory_reservations WHERE status='unresolved') AS unresolved_reserves,(SELECT COUNT(*) FROM inventory_stock WHERE variant_id IS NOT NULL AND reserved_quantity>quantity) AS deficit_positions,(SELECT COALESCE(SUM(reserved_quantity-quantity),0) FROM inventory_stock WHERE variant_id IS NOT NULL AND reserved_quantity>quantity) AS deficit_units,(SELECT COUNT(*) FROM inventory_stock s WHERE s.variant_id IS NOT NULL AND COALESCE(s.reserved_quantity,0)<>COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id),0)) AS cached_reserve_drift,(SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status='pending' AND pending_reason='workshop_intake') AS pending_workshop_intakes","released":"SELECT id,order_item_id,status,unresolved_reason FROM inventory_reservations WHERE id IN (1226,1227,1228,1229) ORDER BY id","stock":"SELECT inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE (inventory_source='warehouse' AND variant_id IN (853,1444)) OR (inventory_source='boutique' AND variant_id=212) ORDER BY inventory_source,variant_id","log":"SELECT id,event_type,entity_id FROM activity_log WHERE order_id=1563 AND event_type='return_reservations_reconciled_1563_branch2_20261031'","order":"SELECT id,order_status,shipping_status,total_amount,received_amount,return_amount FROM orders WHERE id=1563"}
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(account||'')&&token)
+          async function select(sql){
+            assert(sql.startsWith('SELECT ')&&!sql.includes(';'))
+            const r=await fetch('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/0904a573-21ff-44d8-93b0-c9200f771702/query',{
+              method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+              body:JSON.stringify({sql}),signal:AbortSignal.timeout(30000)
+            })
+            const p=await r.json()
+            assert(r.ok&&p.success!==false)
+            const chunks=Array.isArray(p.result)?p.result:[p.result]
+            assert(chunks.every(x=>x?.success!==false))
+            return chunks.flatMap(x=>x?.results||[])
+          }
+          const result={}
+          for(const [key,sql] of Object.entries(queries))result[key]=await select(sql)
+          assert.equal(result.released.length,4)
+          assert(result.released.every(r=>r.status==='released'&&r.unresolved_reason==='historic_return_43_46_reconciled_after_stocktake'))
+          assert.equal(result.log.length,1)
+          assert.equal(result.totals[0].cached_reserve_drift,0)
+          assert.equal(result.totals[0].pending_workshop_intakes,2)
+          assert.equal(result.totals[0].active_reserves,28)
+          assert.equal(result.totals[0].unresolved_reserves,8)
+          assert.equal(result.totals[0].deficit_positions,9)
+          assert.equal(result.totals[0].deficit_units,12)
+          assert.deepEqual(result.stock.map(s=>[s.inventory_source,s.variant_id,s.quantity,s.reserved_quantity]),[
+            ['boutique',212,0,0],['warehouse',853,10,0],['warehouse',1444,0,0]])
+          assert.deepEqual([result.order[0].total_amount,result.order[0].received_amount,result.order[0].return_amount],[100000,100000,100000])
+          console.log('BRANCH2_1563_INDEPENDENT_POSTFLIGHT_PASS '+JSON.stringify({
+            summary:result.totals[0],reservationIds:result.released.map(x=>x.id),
+            threePhysical:result.stock.map(x=>({source:x.inventory_source,variantId:x.variant_id,quantity:x.quantity,reserved:x.reserved_quantity})),
+            historyRows:result.log.length,financeUnchanged:true,MainUntouched:true
+          }))
+          NODE
