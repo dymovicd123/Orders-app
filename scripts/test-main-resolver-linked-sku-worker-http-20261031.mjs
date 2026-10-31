@@ -137,6 +137,8 @@ try{
  assert.deepEqual({...initialStock},{quantity:0,reserved_quantity:0})
  const denied=await api('/api/orders/'+orderId+'/shipping','PATCH',{shippingStatus:'sent'},409)
  assert.equal(denied.data.ok,false)
+ assert.equal(denied.data.code,'inventory_reservation_pending','Known SKU cannot invoke unrelated Catalog Resolver')
+ assert.match(String(denied.data.message||''),/Подтвердить резерв при нехватке/)
  assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(orderId).shipping_status,'not_sent')
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,0)
  console.log('BRANCH2_REAL_WORKER_RESOLVER_UNLINKED_AMBIGUOUS_AND_PENDING_PASS',JSON.stringify({variantId,orderId,unresolvedStatus:initial.status,physical:0,reserved:0,shipBlockCode:denied.data.code||null}))
