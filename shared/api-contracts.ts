@@ -265,6 +265,8 @@ export type InventoryReservationsResponse = ApiOkResponse & {
   variantId: number
   productId: number
   totalQuantity: number
+  totalCount?: number
+  hasMore?: boolean
   reservations: InventoryReservation[]
 }
 
