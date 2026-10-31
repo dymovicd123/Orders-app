@@ -126,7 +126,7 @@ jobs:
             if(!exists){db.close();continue}
             const stock=db.prepare("SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source").all()
             if(stock.length){
-              const moves=db.prepare("SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity_delta)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type").all()
+              const moves=db.prepare("SELECT id, inventory_source, movement_type, reference_type, reference_id, quantity_delta, quantity_after, created_at FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' ORDER BY id").all()
               matches.push({rel,stock,moves})
             }
             db.close()
@@ -135,8 +135,9 @@ jobs:
           const {stock,moves}=matches[0]
           assert.deepEqual(stock.map(x=>[x.inventory_source,Number(x.quantity),Number(x.reserved_quantity)]),
             [['boutique',1,0],['warehouse',2,0]],'Physical stock must be 3 total after arrival and transfer, not 4')
-          assert.equal(moves.filter(x=>x.movement_type==='arrival').reduce((s,x)=>s+Number(x.n),0),1,'Arrival replay cannot add a second movement')
-          assert.equal(moves.reduce((s,x)=>s+Number(x.units),0),5,'3 incoming +1 outbound +1 inbound transfer units must have exact movement ledger')
+          console.log('MAIN_D1_MOVEMENT_INSPECT',JSON.stringify({stock,moves}))
+          assert.equal(moves.filter(x=>x.movement_type==='arrival').length,1,'Arrival replay cannot add a second movement')
+          assert.equal(moves.reduce((s,x)=>s+Math.abs(Number(x.quantity_delta)),0),5,'3 incoming +1 outbound +1 inbound transfer units must have exact movement ledger')
           console.log('MAIN_NATIVE_LOCAL_D1_PHYSICAL_INVARIANTS_PASS',JSON.stringify({stock,moves}))
           NODE
           echo 'MAIN_NATIVE_WORKER_LOCAL_D1_HTTP_PASS: authenticated real Worker + local D1, idempotent arrival+transfer, negative SKU guards'
