@@ -279,7 +279,7 @@ const deferred=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknown
  size:'97',deferUnknown:true
 },201)
 assert.equal(deferred.data.deferredUnknownCount,1,'Unknown reference must be deferred, not minted')
-const foundItem=deferred.data.session?.items?.find(x=>Number(x.productId)===unknownProductId&&x.variantId==null)
+const foundItem=deferred.data.session?.items?.find(x=>Number(x.productId)===unknownProductId&&!Number(x.variantId))
 assert(foundItem?.stockId>0,'Unidentified item must carry its own physical stock row')
 await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/items/'+foundItem.id,
  'PATCH',{countedQuantity:1},200)
