@@ -32,7 +32,7 @@ assert(!w12.includes('worker/domains/inventory-movement.ts')&&!w12.includes('wor
 const quality=source('quality-check.yml')
 assert(quality.includes('npm audit --omit=dev --audit-level=moderate'))
 assert(quality.includes('npm audit --audit-level=high'))
-assert(quality.includes('npm run release:check'))
+assert(quality.includes('node scripts/test-main-current-business-release-20261031.mjs'))
 assert(quality.includes('npm run build'))
 assert(source('main-product-kpi-20261027.yml').includes('branches: [release-product-kpi-leads-20261027, main]'),'KPI production push trigger changed')
 for(const file of ['main-city-staff-release-20261025.yml','main-w12-operations-only-20261024.yml']){
