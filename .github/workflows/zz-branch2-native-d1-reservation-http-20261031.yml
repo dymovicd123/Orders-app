@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/fix/main-warehouse-integrated-safety-20261031"
+          test "$GITHUB_REF" = "refs/heads/test/branch2-stage1-reservation-http-20261031"
           test -z "${CLOUDFLARE_API_TOKEN:-}"
           test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -d migrations
