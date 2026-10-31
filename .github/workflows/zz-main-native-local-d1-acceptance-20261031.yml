@@ -4,6 +4,9 @@ on:
     branches: [fix/main-warehouse-integrated-safety-20261031]
     paths:
       - '.github/workflows/zz-main-native-local-d1-acceptance-20261031.yml'
+      - 'worker/domains/warehouse-operation-feedback.ts'
+      - 'scripts/test-main-native-local-d1-http-20261031.mjs'
+      - 'scripts/test-main-warehouse-sku-feedback-20261031.mjs'
 permissions:
   contents: read
 jobs:
