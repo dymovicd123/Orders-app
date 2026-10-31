@@ -1,4 +1,5 @@
 import type { InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse } from '../../../app/types'
+import type { InventoryReservation } from '../../../../shared/api-contracts.ts'
 import { buildStockVariantTimeline, stockCheckHasDifference } from '../stockVariantTimelineModel'
 import '../../../styles/w18-history-investigation.css'
 
@@ -18,6 +19,10 @@ type Props = {
   movements: Movement[]
   checks: InventoryCheckHistoryRow[]
   evidence: InventoryCheckHistoryResponse | null
+  reservations: InventoryReservation[]
+  reservationsBusy: boolean
+  reservationsError: string
+  openReserveOrder: (order: InventoryReservation) => void
   checksUnavailable: boolean
   checksHasMore: boolean
   checksPagingBusy: boolean
@@ -34,7 +39,8 @@ const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(valu
 const quantity = (value: number) => `${value} шт.`
 
 export function StockVariantTimeline({
-  variant, movements, checks, evidence, checksUnavailable, checksHasMore, checksPagingBusy,
+  variant, movements, checks, evidence, reservations, reservationsBusy, reservationsError,
+  openReserveOrder, checksUnavailable, checksHasMore, checksPagingBusy,
   checksPageError, loadMoreChecks, hasMore, busy, loadMore, momentLabel, movementLabel,
 }: Props) {
   const { events, firstObservedDifference } = buildStockVariantTimeline(movements, checks, variant.source, variant.variantId)
@@ -43,6 +49,11 @@ export function StockVariantTimeline({
   const previousMatch = evidence?.lastMatchingBeforeDifference || null
   const latestCheck = [...checks].sort((a, b) =>
     b.checkedAt.localeCompare(a.checkedAt) || Number(b.id) - Number(a.id))[0] || null
+  const activeOrders = reservations.filter(order =>
+    order.status === 'active' && order.source === variant.source && Number(order.variantId) === variant.variantId)
+  const totalCommitted = activeOrders.reduce((sum, order) => sum + Math.max(0, Number(order.quantity) || 0), 0)
+  const latestCheckIsAfterFirstDifference = Boolean(firstConfirmedDifference && latestCheck
+    && latestCheck.checkedAt > firstConfirmedDifference.checkedAt)
 
   const identity = [variant.color, variant.material && variant.material !== 'СТАНДАРТ' ? variant.material : '',
     variant.length && variant.length !== 'СТАНДАРТ' ? variant.length : '',
@@ -72,8 +83,22 @@ export function StockVariantTimeline({
         Последняя загруженная физическая сверка: <b>{momentLabel(latestCheck.checkedAt)}</b>.
         По системе <b>{quantity(numeric(latestCheck.expectedQuantity))}</b>,
         посчитано <b>{quantity(numeric(latestCheck.countedQuantity))}</b>.
-        {stockCheckHasDifference(latestCheck) ? ' Есть подтверждённое несовпадение.' : ' Тогда количество совпало.'}
+        {stockCheckHasDifference(latestCheck) ? ' На той проверке было несовпадение; это не текущий физический остаток.' : ' Тогда количество совпало.'}
       </p> : null}
+      <section className="w18-active-reservations" aria-label="Текущие резервы по конкретному варианту">
+        <strong>Для каких заказов сейчас отложен этот товар</strong>
+        {reservationsBusy ? <p>Проверяю текущие резервы…</p>
+          : reservationsError ? <p role="alert">{reservationsError}</p>
+          : activeOrders.length ? <>
+              <p>В активных резервах: <b>{quantity(totalCommitted)}</b> для {activeOrders.length} {activeOrders.length === 1 ? 'записи' : 'записей'} по этому источнику и SKU. Это обязательства по заказам, а не результат физического пересчёта.</p>
+              <ul className="w18-reservation-orders">{activeOrders.map(order => (
+                <li key={order.id}>
+                  <span>Заказ {order.externalOrderId || order.orderId} · {quantity(Number(order.quantity))}</span>
+                  <button type="button" className="secondary compact" onClick={() => openReserveOrder(order)}>Открыть заказ</button>
+                </li>
+              ))}</ul>
+            </> : <p>Сейчас активных резервов по этому варианту и источнику не найдено. Это не означает, что физический остаток проверен.</p>}
+      </section>
       {checksUnavailable ? <div className="stock-variant-no-gap" role="note">
         <strong>Сверки сейчас недоступны.</strong>
         <p>Не делайте вывод об отсутствии расхождений. Обновите историю.</p>
@@ -86,6 +111,9 @@ export function StockVariantTimeline({
         {previousMatch && <p>До этого товар совпадал с учётом при сверке <b>{momentLabel(previousMatch.checkedAt)}</b>
           . Проверьте движения и связанные документы <b>между двумя проверками</b> — это наиболее полезный известный интервал.</p>}
         {!previousMatch && <p>Более ранней подтверждённой сверки с совпадением нет. Точную дату возникновения ошибки по одним записям определить нельзя.</p>}
+        {latestCheckIsAfterFirstDifference && latestCheck && !stockCheckHasDifference(latestCheck) ? (
+          <p><b>Более поздняя загруженная сверка совпала с учётом.</b> Это историческое расхождение, не доказательство действующей недостачи. Текущие обязательства по заказам проверяются отдельно.</p>
+        ) : null}
       </div> : <div className="stock-variant-no-gap" role="note">
         <strong>Подтверждённых расхождений в сохранённых сверках нет.</strong>
         <p>Это не гарантия правильных остатков сегодня: отсутствующий приход или выдача без оформления не отражаются в журнале.</p>
@@ -117,7 +145,11 @@ export function StockVariantTimeline({
         const movement = event.movement
         const delta = numeric(movement.quantityDelta)
         const after = numeric(movement.quantityAfter)
-        const before = after - delta
+        const derivedBefore = after - delta
+        // Some pre-baseline stocktake rows keep a zero "after" snapshot and
+        // positive difference. Their reverse arithmetic would imply negative
+        // quantities, which is NOT reliable evidence of physical stock.
+        const before = derivedBefore >= 0 ? quantity(derivedBefore) : 'не установлен по этой записи'
         const isCancelled = Boolean(movement.reversedAt)
         return <li key={event.key} className={isCancelled ? 'is-cancelled' : ''}>
           <div className="stock-variant-event-head">
@@ -125,10 +157,13 @@ export function StockVariantTimeline({
             <b>{movementLabel(movement)} {isCancelled ? '· отменено позднее' : ''}</b>
           </div>
           <div className="stock-variant-event-numbers">
-            <span>Было <strong>{quantity(before)}</strong></span><span>→</span>
+            <span>Было <strong>{before}</strong></span><span>→</span>
             <span>Стало <strong>{quantity(after)}</strong></span>
             <em className={delta < 0 ? 'is-negative' : ''}>{delta >= 0 ? '+' : ''}{delta}</em>
           </div>
+          {derivedBefore < 0 ? <p className="stock-variant-event-warning">
+            У этой исторической записи изменение и итог не позволяют достоверно восстановить остаток «до». Это несогласованность записей, а не доказательство ошибки сотрудника или отрицательного физического остатка.
+          </p> : null}
           {numeric(movement.unexplainedQuantity) > 0 ? <p className="stock-variant-event-warning">
             При этой операции учётного остатка не хватало на {quantity(numeric(movement.unexplainedQuantity))}. Это исторический факт, а не свидетельство текущей недостачи. Текущее количество определяется последующими движениями и физическими сверками.
           </p> : null}
