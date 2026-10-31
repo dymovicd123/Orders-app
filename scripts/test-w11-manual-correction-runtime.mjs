@@ -49,6 +49,10 @@ CREATE TABLE inventory_stock_checks(id INTEGER PRIMARY KEY AUTOINCREMENT,check_k
  difference_quantity INTEGER,reserved_quantity INTEGER,check_type TEXT,reference_type TEXT,
  reference_id TEXT,checked_by TEXT,checked_at TEXT,created_at TEXT);
 CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,status TEXT);
+ CREATE TABLE inventory_operation_evidence(evidence_key TEXT PRIMARY KEY,inventory_source TEXT,
+  variant_id INTEGER,operation_type TEXT,operation_reference TEXT,tracked_physical_before INTEGER,
+  confirmed_operation_quantity INTEGER,explained_quantity INTEGER,unexplained_quantity INTEGER,
+  confirmed_by TEXT,occurred_at TEXT,created_at TEXT);
 INSERT INTO catalog_products(id,name,category,gender_scope,is_active,external_id)
 VALUES(1,'АБАЙ ТАКИЯ','adult','male',1,'TEST-ABA');
 INSERT INTO catalog_stock_positions(id,product_id,category,gender_scope,material,length,is_active)
@@ -121,6 +125,28 @@ assert.equal(db.get("SELECT count(*) AS n FROM catalog_variants WHERE size_label
   'Failed multi-row operation must not create first variant')
 assert.equal(db.get("SELECT count(*) AS n FROM inventory_operations WHERE operation_id='w11-atomic-mixed-failure'").n,0,
   'Rejected operation must not leave a completed movement')
+// Stage 2.2: real SQLite atomic writeoff + stale-form + replay + source isolation.
+// No new infrastructure or historical snapshot tests.
+const doWriteoff=(id,source,rows)=>applyInventoryMovement(db,{
+ requestId:id,inventorySource:source,movementType:'writeoff',comment:'',items:rows
+},false,'QA')
+const removal={...normal,expectedQuantity:5,quantity:2}
+const writeoff=await doWriteoff('w11-writeoff-exact','warehouse',[removal])
+assert.equal(writeoff.ok,true)
+assert.equal(db.get('SELECT quantity FROM inventory_stock WHERE variant_id=7 AND inventory_source=?','warehouse').quantity,3)
+assert.equal(db.get("SELECT quantity_delta FROM inventory_movements WHERE reference_id='w11-writeoff-exact'").quantity_delta,-2)
+const writeoffReplay=await doWriteoff('w11-writeoff-exact','warehouse',[removal])
+assert.equal(writeoffReplay.duplicate,true)
+assert.equal(db.get("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id='w11-writeoff-exact'").n,1)
+assert.equal(db.get('SELECT quantity FROM inventory_stock WHERE variant_id=7 AND inventory_source=?','warehouse').quantity,3)
+await assert.rejects(()=>doWriteoff('w11-writeoff-exact','warehouse',[{...removal,quantity:1}]),/уже была сохранена|отличается от исходной/i)
+await assert.rejects(()=>doWriteoff('w11-writeoff-stale','warehouse',[{...removal,quantity:1}]),/остаток изменился/i)
+assert.equal(db.get('SELECT quantity FROM inventory_stock WHERE variant_id=7 AND inventory_source=?','warehouse').quantity,3)
+const boutiqueUntracked=await doWriteoff('w11-writeoff-other-source','boutique',[{...removal,expectedQuantity:0,quantity:1}])
+assert.equal(boutiqueUntracked.code,'stock_resolution_required','Other source cannot consume warehouse stock')
+assert.equal(db.get("SELECT COUNT(*) AS n FROM inventory_stock WHERE inventory_source='boutique' AND variant_id=7").n,0)
+assert.equal(db.get("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id='w11-writeoff-other-source'").n,0)
+
 const appSource=(await import('node:fs')).readFileSync('src/App.tsx','utf8')
 const inventoryUi=(await import('node:fs')).readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
 assert.ok(appSource.includes('const alreadyInDraft = current.items.some(item =>'),'Double-click cannot create duplicated correction draft')
@@ -128,4 +154,4 @@ assert.ok(appSource.includes('if(alreadyInDraft)return current'),'Second click i
 assert.ok(inventoryUi.includes('Впишите число вещей, переносимых в другую точку.') ||
  inventoryUi.includes('переносимых в другую точку.'),'Transfer progress describes moved units')
 assert.ok(inventoryUi.includes('Впишите, сколько вещей перемещаете.'),'Transfer numeric input does not pretend to be a correction')
-console.log('W11_REAL_SQL_CORRECTION_CREATE_ZERO_MULTIROW_REPLAY_RETIRED_PASSED')
+console.log('W11_REAL_SQL_CORRECTION_WRITE_OFF_STALE_REPLAY_SOURCE_PASSED')
