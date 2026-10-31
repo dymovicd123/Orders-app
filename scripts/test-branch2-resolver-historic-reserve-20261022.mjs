@@ -41,6 +41,9 @@ db.exec(`
   INSERT INTO inventory_stock VALUES (1, 'warehouse', 1498);
   INSERT INTO inventory_reservations VALUES (1, 1775, 101, 'warehouse', 1498, 'released', 1);
   INSERT INTO inventory_reservations VALUES (2, 1775, 101, 'warehouse', 1498, 'active', 1);
+  ALTER TABLE order_items ADD COLUMN source_type TEXT DEFAULT 'warehouse';
+  ALTER TABLE inventory_reservations ADD COLUMN unresolved_reason TEXT;
+  ALTER TABLE catalog_variants ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;
 `)
 const blockers = () => db.prepare(sql).all(1775)
 assert.equal(blockers().length, 0,
