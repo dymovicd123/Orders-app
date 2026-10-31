@@ -34,6 +34,27 @@ assert(current?.id,'Missing active deployment')
 const versions=(current.versions||[]).map(x=>({id:x.version_id,percentage:x.percentage}))
 assert(versions.length>0,'No active traffic assignment')
 assert(versions.every(x=>typeof x.id==='string'&&Number.isFinite(x.percentage)))
+// Compare public immutable build assets and anonymous API boundaries; GET only.
+async function publicSmoke(root,label){
+  const htmlResponse=await fetch(root+'/?read-only-version-audit=20261031',{
+    method:'GET',redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)})
+  assert.equal(htmlResponse.status,200,label+' root GET failed')
+  const body=await htmlResponse.text()
+  const asset=body.match(/src=["'](\\/assets\\/index-[^"']+\\.js)["']/)?.[1]
+  assert(asset,label+' HTML has no app bundle')
+  const script=await fetch(root+asset,{method:'GET',signal:AbortSignal.timeout(20000)})
+  assert.equal(script.status,200,label+' bundle missing')
+  const denied=await fetch(root+'/api/orders?limit=1',{method:'GET',
+    redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(20000)})
+  assert.equal(denied.status,401,label+' anonymous order read must be denied')
+  return {label,bundle:asset,anonymousOrdersStatus:401}
+}
+const live=await publicSmoke('https://orders-app-branch2.orders-clothes.workers.dev','live')
+const previewSmoke=await publicSmoke('https://b92e1432-orders-app-branch2.orders-clothes.workers.dev','preview')
+console.log('BRANCH2_READ_ONLY_LIVE_PREVIEW_SMOKE_PASS '+JSON.stringify({
+ live,preview:previewSmoke,sameBundle:live.bundle===previewSmoke.bundle,noWrites:true
+}))
+
 console.log('BRANCH2_CLOUDFLARE_GET_ONLY_RELEASE_STATE '+JSON.stringify({
  currentDeployment:current.id,
  traffic:versions,
