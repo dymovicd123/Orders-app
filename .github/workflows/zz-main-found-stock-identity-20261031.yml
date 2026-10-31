@@ -1,0 +1,29 @@
+name: "Main candidate-only real SQLite found stocktake SKU identity guard 20261031"
+on:
+  push:
+    branches: [fix/main-found-stocktake-identity-race-20261031]
+    paths: [.github/workflows/zz-main-found-stock-identity-20261031.yml]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Confirm this is isolated Main-derived test only; no deploy
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/fix/main-found-stocktake-identity-race-20261031"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+      - name: Real SQLite seven-case found-stock resolution tests
+        run: |
+          node scripts/test-main-found-stocktake-identity-race-20261031.mjs
+      - name: Production TypeScript and frontend build without publication
+        run: npm run build
