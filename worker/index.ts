@@ -1157,10 +1157,10 @@ export default {
           if (denied) return denied;
         }
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
-        const actor = cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role'));
+        const actor = cleanText(authUser?.displayName || authUser?.managerName || authUser?.login);
         let result;
         try {
-          result = await applyInventoryMovement(env.DB, input, returnInventory, actor);
+          result = await applyInventoryMovement(env.DB, input, returnInventory, actor, authUser?.id || 0);
         } catch (error) {
           if (error instanceof ArrivalRecoveryRequiredError) {
             return json({
