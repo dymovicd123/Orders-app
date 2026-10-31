@@ -1,0 +1,69 @@
+name: "Main warehouse native local workerd D1 baseline (no credentials, no deploy)"
+on:
+  push:
+    branches: [fix/main-warehouse-integrated-safety-20261031]
+    paths:
+      - '.github/workflows/zz-main-native-local-d1-acceptance-20261031.yml'
+permissions:
+  contents: read
+jobs:
+  d1-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Deliberate: NEVER provide Cloudflare credentials to this isolated test.
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - name: Reproducible dependencies and current Worker/client build
+        run: |
+          npm ci
+          npm run build
+      - name: Strict local-only D1 database migration and canonical schema smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/fix/main-warehouse-integrated-safety-20261031"
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+          test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -d migrations
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          state="$RUNNER_TEMP/main-warehouse-disposable-d1-$GITHUB_RUN_ID"
+          mkdir -p "$state"
+          echo "LOCAL_STATE=$state" >> "$GITHUB_ENV"
+          npx wrangler d1 migrations apply orders_db_prod --local --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
+            tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
+            exit 1
+          }
+          npx wrangler d1 execute orders_db_prod --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+          const raw=readFileSync(process.env.RUNNER_TEMP+'/local-d1-check.json','utf8').trim()
+          const v=JSON.parse(raw)
+          const rows=Array.isArray(v)?v.flatMap(x=>x.results||[]):(v.results||[])
+          const expected=['catalog_variants','inventory_movements','inventory_reservations','inventory_stock','inventory_stock_checks']
+          assert.deepEqual(rows.map(x=>x.name),expected)
+          console.log('MAIN_LOCAL_CLOUDFLARE_D1_SCHEMA_PASS',JSON.stringify({tables:rows.length,remoteCredentials:false}))
+          NODE
+      - name: Boot the actual Main Worker with disposable local D1; ensure anonymous orders forbidden
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler dev --local --persist-to="$LOCAL_STATE" --ip 127.0.0.1 --port 8799 > "$RUNNER_TEMP/main-local-workerd.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 'http://127.0.0.1:8799/' || true)"
+            if test "$code" = 200; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" -ne 1; then tail -n 100 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; fi
+          status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 'http://127.0.0.1:8799/api/orders?limit=1')"
+          test "$status" = 401 || { echo "Anonymous orders response $status"; exit 1; }
+          echo 'MAIN_NATIVE_WORKER_LOCAL_D1_HTTP_PASS: real worker, D1 bound, local-only, HTTP200 root, HTTP401 private orders'
