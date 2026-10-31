@@ -55,14 +55,14 @@ async function fillOrder(name,phone){
  await candidate.first().click()
  // Product picker should fill catalog-backed attributes without a manual
  // re-entry of known canonical color/material/size.
+ // SmartPickerInput keeps a local search query synchronized in a React effect.
+ // Wait for the controlled input to paint the chosen canonical value; an
+ // immediate read here falsely observes the prior empty search query.
+ await page.waitForFunction(() => document.querySelector('#create .order-line-card input[placeholder="Цвет"]')?.value==='ЧЕРНЫЙ',null,{timeout:6000})
  const color=await line.locator('input[placeholder="Цвет"]').inputValue()
  const size=await line.locator('select').first().inputValue()
- console.log('B2_UI_PICK_STATE',JSON.stringify({name, color, size}))
- if(color!=='ЧЕРНЫЙ'){
-  console.warn('B2_UI_PRODUCT_PICKER_COLOR_NOT_FILLED',JSON.stringify({expected:'ЧЕРНЫЙ',actual:color,skuSize:size}))
-  await line.locator('input[placeholder="Цвет"]').fill('ЧЕРНЫЙ')
- }
- assert.equal(await line.locator('input[placeholder="Цвет"]').inputValue(),'ЧЕРНЫЙ','Explicit color must survive the form')
+ console.log('B2_UI_PICK_STATE',JSON.stringify({name,color,size}))
+ assert.equal(color,'ЧЕРНЫЙ','Product picker must present the canonical catalog color after React synchronization')
  assert.equal(size,'46','Product picker must keep existing canonical size')
  await line.locator('input[placeholder="Введите итоговую цену"]').fill('10000')
  const save=create.getByRole('button',{name:'Сохранить заказ'})
