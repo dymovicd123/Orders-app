@@ -25,3 +25,5 @@ jobs:
         run: |
           node --check scripts/ops/warehouse-attention-coverage-readonly-20261031.mjs
           node --experimental-strip-types scripts/ops/warehouse-attention-coverage-readonly-20261031.mjs
+
+# Include classification of nine unresolved reservation records.
