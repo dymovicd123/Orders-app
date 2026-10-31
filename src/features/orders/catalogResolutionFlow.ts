@@ -124,6 +124,25 @@ export function initialDraft(source: Partial<Record<Field, string>> & { productN
   }
 }
 
+
+/**
+ * Preserve existing exact SKU identity when an unrelated resolver field is rechecked.
+ * A server preview for an unlinked/new/mismatched SKU must never invent a missing color/size.
+ */
+export function canonicalizePreviewDraft(next: Draft, context: CatalogResolutionContext, orderItemVariantId: number | null | undefined): Draft {
+  const linkedVariantProven = Number(orderItemVariantId || 0) > 0
+    && Number(orderItemVariantId) === Number(context.exactVariant?.id || 0)
+  return {
+    ...next,
+    genderScope: context.product?.genderScope || '',
+    gender: context.facts?.gender || next.gender,
+    material: context.facts?.material || next.material,
+    length: context.facts?.length || next.length,
+    color: clean(next.color) || linkedVariantProven ? context.facts?.color || next.color : '',
+    size: clean(next.size) || linkedVariantProven ? context.facts?.size || next.size : '',
+  }
+}
+
 export function referenceValues(context: CatalogResolutionContext, draft: Draft, field: Field) {
   const refs = context.references
   if (field === 'material') return refs?.materials || []
