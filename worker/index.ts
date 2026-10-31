@@ -25,7 +25,6 @@ import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWr
 import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
-import {previewHistoricalReservations,releaseHistoricalReservation} from './domains/historical-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
@@ -148,21 +147,6 @@ export default {
 
       if (url.pathname === '/api/auth/me' && request.method === 'GET') {
         return json({ ok: true, user: authUser ? authUserPayload(authUser) : null });
-      }
-
-      // Strictly admin-led transition cleanup for orders issued before the
-      // modern shipment UI. No blanket date write and no physical movement.
-      if (url.pathname === '/api/admin/historical-reservations' && request.method === 'GET') {
-        const denied = requireAdminUser(authUser);
-        if (denied) return denied;
-        return json(await previewHistoricalReservations(env.DB,url));
-      }
-      if (url.pathname === '/api/admin/historical-reservations/release' && request.method === 'POST') {
-        const denied = requireAdminUser(authUser);
-        if (denied) return denied;
-        const input = await readJson(request);
-        const result = await releaseHistoricalReservation(env.DB,input,authUser as AuthUser);
-        return json(result.body,{status:result.status});
       }
 
       if (url.pathname === '/api/admin/storage' && request.method === 'GET') {
