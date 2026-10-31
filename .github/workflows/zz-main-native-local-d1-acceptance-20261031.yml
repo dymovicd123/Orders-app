@@ -1,0 +1,155 @@
+name: "Main warehouse native local workerd D1 baseline (no credentials, no deploy)"
+on:
+  push:
+    branches: [fix/main-warehouse-integrated-safety-20261031]
+    paths:
+      - '.github/workflows/zz-main-native-local-d1-acceptance-20261031.yml'
+      - 'worker/domains/warehouse-operation-feedback.ts'
+      - 'scripts/test-main-native-local-d1-http-20261031.mjs'
+      - 'scripts/test-main-warehouse-sku-feedback-20261031.mjs'
+permissions:
+  contents: read
+jobs:
+  d1-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Deliberate: NEVER provide Cloudflare credentials to this isolated test.
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - name: Reproducible dependencies and current Worker/client build
+        run: |
+          npm ci
+          npm run build
+      - name: Strict local-only D1 database migration and canonical schema smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/fix/main-warehouse-integrated-safety-20261031"
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+          test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -d migrations
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          state="$RUNNER_TEMP/main-warehouse-disposable-d1-$GITHUB_RUN_ID"
+          mkdir -p "$state"
+          echo "LOCAL_STATE=$state" >> "$GITHUB_ENV"
+          # Historical SQL migrations include PRAGMA foreign_keys=ON/OFF,
+          # which the native D1 authorizer rejects (SQLITE_AUTH). Remove only
+          # those no-op-for-D1 PRAGMA lines in an EPHEMERAL fixture copy;
+          # NEVER edit checked-in migrations or Main D1.
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs'
+          import path from 'node:path'
+          const source=readFileSync('wrangler.jsonc','utf8')
+          const token='"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'
+          if(!source.includes(token))throw Error('Main D1 binding changed; stop')
+          mkdirSync('.d1-acceptance-migrations',{recursive:true})
+          let drops=0,temporaryTables=0,legacyManagerShadow=0
+          for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x))){
+            const original=readFileSync(path.join('migrations',file),'utf8')
+            const sanitized=original
+              .replace(/^\s*PRAGMA\s+foreign_keys\s*=\s*(?:ON|OFF)\s*;\s*$/gmi,()=>{drops++;return ''})
+              // D1 disallows CREATE TEMP TABLE (SQLITE_AUTH); fixture-only staging.
+              .replace(/\bCREATE\s+TEMP(?:ORARY)?\s+TABLE\b/gi,()=>{temporaryTables++;return 'CREATE TABLE'})
+              // Historical 0035 needs PRAGMA foreign_keys=OFF during managers
+              // rebuild. Native D1 authorizer rejects that toggle, so SQLite
+              // automatically redirects FK references to the OLD table.
+              // Preserve that shadow table only in this synthetic fixture to
+              // let the isolated auth bootstrap run; no production SQL altered.
+              // Do NOT use this fixture to certify managerial FK migrations.
+              .replace(/DROP TABLE managers_step126_old\s*;/gi,()=>{legacyManagerShadow++;return '-- Local D1 test only: keep FK-compatible manager shadow'})
+            writeFileSync(path.join('.d1-acceptance-migrations',file),sanitized)
+          }
+          if(drops<3||temporaryTables<1||legacyManagerShadow!==1)throw Error('Unexpected ephemeral SQL fixture compatibility needs')
+          const config=source.replace(token,token+',\n     "migrations_dir": ".d1-acceptance-migrations"')
+            .replace('"assets": {','"assets": {\n    "directory": "./dist/client",')
+          writeFileSync('.d1-acceptance-config.jsonc',config)
+          console.log('NATIVE_D1_EPHEMERAL_MIGRATION_AUTHORIZE_COMPAT',JSON.stringify({drops,temporaryTables,legacyManagerShadow}))
+          NODE
+          npx wrangler d1 migrations apply orders_db_prod --local --config .d1-acceptance-config.jsonc --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
+            tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
+            exit 1
+          }
+          npx wrangler d1 execute orders_db_prod --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+          const raw=readFileSync(process.env.RUNNER_TEMP+'/local-d1-check.json','utf8').trim()
+          const v=JSON.parse(raw)
+          const rows=Array.isArray(v)?v.flatMap(x=>x.results||[]):(v.results||[])
+          const expected=['catalog_variants','inventory_movements','inventory_reservations','inventory_stock','inventory_stock_checks']
+          assert.deepEqual(rows.map(x=>x.name),expected)
+          console.log('MAIN_LOCAL_CLOUDFLARE_D1_SCHEMA_PASS',JSON.stringify({tables:rows.length,remoteCredentials:false}))
+          NODE
+      - name: Boot the actual Main Worker with disposable local D1; ensure anonymous orders forbidden
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler dev --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --ip 127.0.0.1 --port 8799 --var ADMIN_MODE_LOGIN:admin --var ADMIN_MODE_PASSWORD:local-synthetic-bootstrap-2026 > "$RUNNER_TEMP/main-local-workerd.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 'http://127.0.0.1:8799/' || true)"
+            if test "$code" = 200; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" -ne 1; then tail -n 100 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; fi
+          status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 'http://127.0.0.1:8799/api/orders?limit=1')"
+          test "$status" = 401 || { echo "Anonymous orders response $status"; exit 1; }
+          node scripts/test-main-native-local-d1-http-20261031.mjs || { tail -n 140 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; }
+          echo NATIVE_D1_HTTP_SUCCEEDED_PREPARING_SQL_READBACK
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          # Wrangler's second local-D1 process sometimes silently exits while the
+          # just-stopped Workerd still holds its storage lease. Read the exact
+          # locally-persisted SQLite backing file directly instead (SELECT ONLY).
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readdirSync} from 'node:fs'
+          import path from 'node:path'
+          import {DatabaseSync} from 'node:sqlite'
+          const root=process.env.LOCAL_STATE
+          const files=readdirSync(root,{recursive:true})
+            .map(x=>String(x)).filter(x=>/\.sqlite$/.test(x))
+          assert(files.length>0,'Native local D1 did not persist a SQLite file')
+          const matches=[]
+          for(const rel of files){
+            const db=new DatabaseSync(path.join(root,rel),{readOnly:true})
+            const exists=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_stock'").get()
+            if(!exists){db.close();continue}
+            const stock=db.prepare("SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source").all()
+            if(stock.length){
+              const moves=db.prepare("SELECT id, inventory_source, movement_type, reference_type, reference_id, quantity_delta, quantity_after, created_at FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' ORDER BY id").all()
+              matches.push({rel,stock,moves})
+            }
+            db.close()
+          }
+          assert.equal(matches.length,1,'Expected one native local D1 containing the synthetic operations')
+          const {stock,moves}=matches[0]
+          assert.deepEqual(stock.map(x=>[x.inventory_source,Number(x.quantity),Number(x.reserved_quantity)]),
+            [['boutique',1,0],['warehouse',2,0]],'Physical stock must be 3 total after arrival and transfer, not 4')
+          // Transfer-in is historically represented as an 'arrival' movement,
+          // but has reference_type='transfer_in'. Do not mistake it for a duplicate manual arrival.
+          const physicalReceipt=moves.filter(x=>x.reference_type==='manual' && x.movement_type==='arrival')
+          const transferOut=moves.filter(x=>x.reference_type==='transfer_out' && x.movement_type==='writeoff')
+          const transferIn=moves.filter(x=>x.reference_type==='transfer_in' && x.movement_type==='arrival')
+          assert.equal(physicalReceipt.length,1,'Same arrival requestId must create exactly one physical receipt movement')
+          assert.equal(physicalReceipt[0].reference_id,'main-native-arrival-20261031-1')
+          assert.equal(Number(physicalReceipt[0].quantity_delta),3)
+          assert.equal(transferOut.length,1,'Transfer replay cannot create a second warehouse out movement')
+          assert.equal(transferIn.length,1,'Transfer replay cannot create a second boutique in movement')
+          assert.equal(transferOut[0].reference_id,transferIn[0].reference_id,'Both transfer movements share one document reference')
+          assert.equal(Number(transferOut[0].quantity_delta),-1)
+          assert.equal(Number(transferIn[0].quantity_delta),1)
+          assert.equal(moves.length,3,'No other movements may be generated by invalid SKU/replays')
+          assert.equal(moves.reduce((sum,x)=>sum+Math.abs(Number(x.quantity_delta)),0),5,'Expected receipt 3 plus transfer 1+1')
+          console.log('MAIN_NATIVE_LOCAL_D1_PHYSICAL_INVARIANTS_PASS',JSON.stringify({stock,moves}))
+          NODE
+          echo 'MAIN_NATIVE_WORKER_LOCAL_D1_HTTP_PASS: authenticated real Worker + local D1, idempotent arrival+transfer, negative SKU guards'
