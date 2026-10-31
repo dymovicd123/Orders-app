@@ -46,23 +46,27 @@ jobs:
           const token='"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'
           if(!source.includes(token))throw Error('Main D1 binding changed; stop')
           mkdirSync('.d1-acceptance-migrations',{recursive:true})
-          let drops=0,temporaryTables=0
+          let drops=0,temporaryTables=0,legacyManagerShadow=0
           for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x))){
             const original=readFileSync(path.join('migrations',file),'utf8')
             const sanitized=original
               .replace(/^\s*PRAGMA\s+foreign_keys\s*=\s*(?:ON|OFF)\s*;\s*$/gmi,()=>{drops++;return ''})
-              // D1 disallows CREATE TEMP TABLE (SQLITE_AUTH). Historical migration 0048
-              // uses transient staging tables and drops them before exit; make
-              // exactly those private disposable DB tables ordinary staging tables.
-              // Production SQL and database are NEVER modified.
+              // D1 disallows CREATE TEMP TABLE (SQLITE_AUTH); fixture-only staging.
               .replace(/\bCREATE\s+TEMP(?:ORARY)?\s+TABLE\b/gi,()=>{temporaryTables++;return 'CREATE TABLE'})
+              // Historical 0035 needs PRAGMA foreign_keys=OFF during managers
+              // rebuild. Native D1 authorizer rejects that toggle, so SQLite
+              // automatically redirects FK references to the OLD table.
+              // Preserve that shadow table only in this synthetic fixture to
+              // let the isolated auth bootstrap run; no production SQL altered.
+              // Do NOT use this fixture to certify managerial FK migrations.
+              .replace(/DROP TABLE managers_step126_old\s*;/gi,()=>{legacyManagerShadow++;return '-- Local D1 test only: keep FK-compatible manager shadow'})
             writeFileSync(path.join('.d1-acceptance-migrations',file),sanitized)
           }
-          if(drops<3||temporaryTables<1)throw Error('Expected historical PRAGMA and TEMP TABLE staging incompatibilities')
+          if(drops<3||temporaryTables<1||legacyManagerShadow!==1)throw Error('Unexpected ephemeral SQL fixture compatibility needs')
           const config=source.replace(token,token+',\n     "migrations_dir": ".d1-acceptance-migrations"')
             .replace('"assets": {','"assets": {\n    "directory": "./dist/client",')
           writeFileSync('.d1-acceptance-config.jsonc',config)
-          console.log('NATIVE_D1_EPHEMERAL_MIGRATION_AUTHORIZE_COMPAT',JSON.stringify({drops,temporaryTables}))
+          console.log('NATIVE_D1_EPHEMERAL_MIGRATION_AUTHORIZE_COMPAT',JSON.stringify({drops,temporaryTables,legacyManagerShadow}))
           NODE
           npx wrangler d1 migrations apply orders_db_prod --local --config .d1-acceptance-config.jsonc --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
             tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
