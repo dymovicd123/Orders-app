@@ -35,7 +35,29 @@ jobs:
           state="$RUNNER_TEMP/main-warehouse-disposable-d1-$GITHUB_RUN_ID"
           mkdir -p "$state"
           echo "LOCAL_STATE=$state" >> "$GITHUB_ENV"
-          npx wrangler d1 migrations apply orders_db_prod --local --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
+          # Historical SQL migrations include PRAGMA foreign_keys=ON/OFF,
+          # which the native D1 authorizer rejects (SQLITE_AUTH). Remove only
+          # those no-op-for-D1 PRAGMA lines in an EPHEMERAL fixture copy;
+          # NEVER edit checked-in migrations or Main D1.
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs'
+          import path from 'node:path'
+          const source=readFileSync('wrangler.jsonc','utf8')
+          const token='"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'
+          if(!source.includes(token))throw Error('Main D1 binding changed; stop')
+          mkdirSync('.d1-acceptance-migrations',{recursive:true})
+          let drops=0
+          for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\\.sql$/.test(x))){
+            const original=readFileSync(path.join('migrations',file),'utf8')
+            const sanitized=original.replace(/^\\s*PRAGMA\\s+foreign_keys\\s*=\\s*(?:ON|OFF)\\s*;\\s*$/gmi,()=>{drops++;return ''})
+            writeFileSync(path.join('.d1-acceptance-migrations',file),sanitized)
+          }
+          if(drops<3)throw Error('Expected historical foreign_keys PRAGMA fixture mismatch')
+          const config=source.replace(token,token+',\\n     "migrations_dir": ".d1-acceptance-migrations"')
+          writeFileSync('.d1-acceptance-config.jsonc',config)
+          console.log('NATIVE_D1_EPHEMERAL_MIGRATION_PRAGMA_STRIPPED',drops)
+          NODE
+          npx wrangler d1 migrations apply orders_db_prod --local --config .d1-acceptance-config.jsonc --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
             tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
             exit 1
           }
