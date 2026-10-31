@@ -69,6 +69,7 @@ const groups = [
     'scripts/test-w8-warehouse-operation-integrity.mjs',
     'scripts/test-w11-manual-correction-runtime.mjs',
     'scripts/test-w12-stock-issues.mjs',
+    'scripts/test-older-unresolved-catalog-attention-20261031.mjs',
     'scripts/test-w12-sku-history.mjs',
     'scripts/test-w16-source-attention-correction.mjs',
     'scripts/test-w17-optional-stock-notes-clear.mjs',
