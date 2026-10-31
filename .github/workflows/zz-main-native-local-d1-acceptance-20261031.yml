@@ -94,4 +94,22 @@ jobs:
           if test "$ready" -ne 1; then tail -n 100 "$RUNNER_TEMP/main-local-workerd.log"; exit 1; fi
           status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 'http://127.0.0.1:8799/api/orders?limit=1')"
           test "$status" = 401 || { echo "Anonymous orders response $status"; exit 1; }
-          echo 'MAIN_NATIVE_WORKER_LOCAL_D1_HTTP_PASS: real worker, D1 bound, local-only, HTTP200 root, HTTP401 private orders'
+          node scripts/test-main-native-local-d1-http-20261031.mjs
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          npx wrangler d1 execute orders_db_prod --local --persist-to="$LOCAL_STATE" --command="SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source" --json > "$RUNNER_TEMP/main-real-operation-stock.json"
+          npx wrangler d1 execute orders_db_prod --local --persist-to="$LOCAL_STATE" --command="SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type" --json > "$RUNNER_TEMP/main-real-operation-movements.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const rows=(file)=>JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/'+file,'utf8')).flatMap(x=>x.results||[])
+          const stock=rows('main-real-operation-stock.json')
+          assert.deepEqual(stock.map(x=>[x.inventory_source,Number(x.quantity),Number(x.reserved_quantity)]),
+            [['boutique',1,0],['warehouse',2,0]],'Physical stock must be 3 total after one arrival and one transfer; no replay or invalid SKU credit')
+          const moves=rows('main-real-operation-movements.json')
+          assert.equal(moves.filter(x=>x.movement_type==='arrival').reduce((s,x)=>s+Number(x.n),0),1,'Arrival replay cannot create second movement')
+          assert.equal(moves.reduce((s,x)=>s+Number(x.units),0),5,'3 arrival units and 1+1 transfer units; no accidental extra movements')
+          console.log('MAIN_NATIVE_LOCAL_D1_PHYSICAL_INVARIANTS_PASS',JSON.stringify({stock,moves}))
+          NODE
+          echo 'MAIN_NATIVE_WORKER_LOCAL_D1_HTTP_PASS: authenticated real Worker + local D1, idempotent arrival+transfer, negative SKU guards'
