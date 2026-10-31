@@ -96,6 +96,7 @@ const groups = [
     'scripts/test-w17-optional-stock-notes-clear.mjs',
     'scripts/test-w18-variant-history-investigation.mjs',
     'scripts/test-stage4-issue-history-order-linkage-20261101.mjs',
+    'scripts/test-stage4-historical-stale-reservations-http-20261101.mjs',
     'scripts/test-inventory-writeoff-review.mjs',
   ]],
   ['Catalog, stock writeoff and workshop financial ledger', [
