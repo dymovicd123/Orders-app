@@ -50,7 +50,7 @@ stamp.run('warehouse-op-1', 42, 'Работник из сеанса', '2026-11-0
 db.exec('COMMIT')
 assert.equal(db.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=77").get().quantity, 6)
 let receipt = db.prepare("SELECT actor_user_id,actor_label FROM inventory_manual_operation_receipts WHERE operation_id='warehouse-op-1'").get()
-assert.deepEqual(receipt, { actor_user_id:42, actor_label:'Работник из сеанса' })
+assert.deepEqual({ ...receipt }, { actor_user_id:42, actor_label:'Работник из сеанса' })
 // A lost response must return prior result, not attribute the operation to a retrying colleague.
 assert.equal(db.prepare("SELECT COUNT(*) AS n FROM inventory_manual_operation_receipts").get().n, 1)
 assert.equal(db.prepare("SELECT actor_user_id FROM inventory_manual_operation_receipts WHERE operation_id='warehouse-op-1'").get().actor_user_id, 42)
