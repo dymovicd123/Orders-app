@@ -1994,8 +1994,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const warehouseShortageCount = Number(warehouseAttention?.counts?.shortage || 0)
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
   const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
-    + Number(warehouseAttention?.counts?.lifecycle || 0)
-    + Number(warehouseAttention?.counts?.catalog || 0)
     + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
@@ -2491,6 +2489,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
 
               {renderInventoryAttentionPanel({
+        openInventoryPanel,
         attentionCategory,
         attentionError,
         attentionIntakeBusyId,
