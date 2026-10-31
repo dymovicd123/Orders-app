@@ -91,13 +91,14 @@ try{
  },201)
  const variantId=Number(variant.id)
  assert(variantId>0)
- const catalogLoaded=page.waitForResponse(res=>res.url()===origin+'/api/catalog'&&res.request().method()==='GET'&&res.status()===200,{timeout:30000})
  await page.reload({waitUntil:'domcontentloaded'})
- await catalogLoaded
  await page.locator('main.erp-shell').waitFor({timeout:30000})
- // A completed HTTP response is not yet committed React state; wait for
- // the catalog's read pass without starting another request.
- await page.waitForTimeout(500)
+ const catalogLoaded=page.waitForResponse(res=>res.url().split('?')[0]===origin+'/api/catalog'&&res.request().method()==='GET'&&res.status()===200,{timeout:30000})
+ // The catalog fetch is triggered by entering the CREATE panel, not by the
+ // orders-list page reload. Confirm the actual panel's first fetch.
+ await page.locator('#orders-tabs').getByRole('button',{name:'Создать заказ'}).click()
+ await catalogLoaded
+ await page.waitForTimeout(400)
  const pending=await fillOrder(name,'77019999101')
  await validateRetry(pending)
  await api('/api/inventory/movements?returnInventory=0','POST',{
