@@ -560,8 +560,15 @@ export async function applyCanonicalInventoryLifecycleEvent(
           .bind(canonical.productId, toInt(event.order_item_id, 0), event.id),
       );
     } else {
+      // An inbound Return / old Exchange may be received as a different current SKU.
+      // That decision belongs to this physical lifecycle event, not to the original
+      // sold order_item. Never rewrite a positive historical variant_id, even if
+      // the inbound variant differs or the original variant is now retired.
+      // Only an item with NO recorded SKU may learn its canonical identity here.
       statements.push(
-        db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ? WHERE id = ? AND EXISTS (SELECT 1 FROM inventory_lifecycle_events WHERE id = ? AND status = 'pending')`)
+        db.prepare(`UPDATE order_items SET product_id = ?, variant_id = ?
+         WHERE id = ? AND variant_id IS NULL
+           AND EXISTS (SELECT 1 FROM inventory_lifecycle_events WHERE id = ? AND status = 'pending')`)
           .bind(canonical.productId, canonical.variantId, toInt(event.order_item_id, 0), event.id),
       );
     }
