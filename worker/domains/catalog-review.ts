@@ -234,6 +234,32 @@ export type CatalogReviewFactsInput = {
 };
 
 
+// Product gender_scope describes a catalogue default, not the gender of an
+// unknown physical item. Only a single *active exact SKU* is safe evidence.
+export async function inferUnambiguousCatalogReviewGender(
+  db: D1Database,
+  input: {productId:number; category:string; material:string; length:string; color:string; size:string},
+) {
+  if (!input.productId || !cleanText(input.color) || !cleanText(input.size)) return '';
+  const candidate = await db.prepare(
+    `SELECT v.gender
+     FROM catalog_variants v
+     JOIN catalog_products p ON p.id = v.product_id
+     WHERE v.product_id = ? AND v.is_active = 1 AND p.is_active = 1
+       AND COALESCE(v.category, p.category, 'adult') = ?
+       AND COALESCE(NULLIF(UPPER(TRIM(v.material)), ''), 'СТАНДАРТ') = ?
+       AND COALESCE(NULLIF(UPPER(TRIM(v.length)), ''), 'СТАНДАРТ') = ?
+       AND UPPER(TRIM(COALESCE(v.color, ''))) = ?
+       AND UPPER(TRIM(COALESCE(v.size_label, ''))) = ?
+     LIMIT 2`
+  ).bind(input.productId, input.category, canonicalStockPositionValue(input.material),
+    canonicalStockPositionValue(input.length), upperText(input.color), upperText(input.size)).all<{gender:string}>();
+  const rows = candidate.results || [];
+  if (rows.length !== 1) return '';
+  const gender = normalizeCatalogCombinationGender(rows[0].gender);
+  return gender === 'ЖЕН' || gender === 'МУЖ' ? gender : '';
+}
+
 export async function getCatalogReviewContext(db: D1Database, orderItemId: number, preview: CatalogReviewFactsInput = {}): Promise<CatalogResolutionContext> {
   let anchor = await db.prepare(
     `SELECT oi.*, o.external_id, o.shipping_status, o.shipping_date, o.order_status, o.archived_at
@@ -283,7 +309,13 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
     ? await db.prepare(`SELECT id, name, category FROM catalog_products WHERE id = ? AND is_active = 1 LIMIT 1`).bind(toInt(preview.productId ?? anchor.product_id, 0)).first<{ id: number; name: string; category: string }>()
     : preview.productId !== undefined ? null : await findCatalogProductByIdentity(db, facts.productName, 0, { activeOnly: true }) as { id: number; name: string; category: string } | null;
   const productGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : 'unisex';
-  if (product?.id) facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope);
+  if (product?.id && !facts.gender && cleanText(preview.color ?? anchor.color_snapshot)
+      && cleanText(preview.size ?? anchor.size_snapshot)) {
+    facts.gender = await inferUnambiguousCatalogReviewGender(db, {
+      productId: product.id, category, material: facts.material, length: facts.length,
+      color: facts.color, size: facts.size,
+    });
+  }
 
   const referencesResult = await db.prepare(
     `SELECT kind, value FROM reference_values WHERE is_active = 1 AND kind IN ('material','length','color','size','child_age') ORDER BY sort_order, value`
@@ -368,7 +400,7 @@ export async function getCatalogReviewContext(db: D1Database, orderItemId: numbe
       // combination is allowed to proceed without asking the manager to reconfirm facts.
       if (!knownMaterial) unknownFields.push('material');
       if (!knownLength) unknownFields.push('length');
-      if ((productGenderScope === 'unisex' && !facts.gender) || (facts.gender && facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
+      if (!facts.gender || (facts.gender !== 'ЖЕН' && facts.gender !== 'МУЖ')) unknownFields.push('gender');
       if (!knownColor) unknownFields.push('color');
       if (!knownSize) unknownFields.push('size');
     }
@@ -458,9 +490,17 @@ export async function resolveCatalogReviewFacts(
   const length = await resolveCatalogValueAlias(db, 'length', canonicalStockPositionValue(input.length ?? anchor.length_snapshot));
   const requestedGenderScope = product?.id ? await getCatalogProductGenderScope(db, product.id) : (cleanText(input.genderScope) ? normalizeCatalogProductGenderScope(input.genderScope) : null);
   if (!product?.id && !requestedGenderScope) throw new Error('Для нового товара выберите назначение по полу: Женский, Мужской или Унисекс.');
-  const gender = normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot) || catalogGenderForProductScope(requestedGenderScope || 'unisex');
   const color = await resolveCatalogValueAlias(db, 'color', normalizeCatalogCombinationColor(input.color ?? anchor.color_snapshot));
   const size = await resolveCatalogValueAlias(db, category === 'child' ? 'child_age' : 'size', normalizeCatalogCombinationSize(input.size ?? anchor.size_snapshot));
+  let gender = normalizeCatalogCombinationGender(input.gender ?? anchor.gender_snapshot);
+  if (!gender && product?.id && normalRows.length
+      && cleanText(input.color ?? anchor.color_snapshot)
+      && cleanText(input.size ?? anchor.size_snapshot)) {
+    gender = await inferUnambiguousCatalogReviewGender(db, {
+      productId: product.id, category, material, length, color, size,
+    });
+  }
+  if (!gender && !product?.id) gender = catalogGenderForProductScope(requestedGenderScope || 'unisex');
 
   // Pure workshop tasks intentionally stop at the base product and never validate/create a warehouse SKU.
   if (!normalRows.length) {
@@ -489,7 +529,7 @@ export async function resolveCatalogReviewFacts(
   if (legacyUnknownGender && !legacyGenderException) {
     throw new Error('«Не удалось выяснить пол» доступно только когда существующий товар действительно требует выбора пола, а данных нет.');
   }
-  if (!legacyGenderException && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Для товара «Унисекс» выберите пол конкретной вещи: ЖЕН или МУЖ.');
+  if (!legacyGenderException && gender !== 'ЖЕН' && gender !== 'МУЖ') throw new Error('Укажите пол конкретной вещи: Женский или Мужской. Пол базового товара не заменяет эту характеристику.');
 
   // Read-only preflight first. A missing checkbox must fail before creating a product,
   // reference value, execution, alias or touching any order/workshop row.
