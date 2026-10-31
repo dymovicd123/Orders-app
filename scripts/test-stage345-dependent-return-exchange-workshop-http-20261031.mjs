@@ -139,7 +139,6 @@ const count=(table,where,params=[])=>Number(sql.prepare('SELECT COUNT(*) AS n FR
 
 const stock=id=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=?').get(id)})
 const reserve=id=>sql.prepare("SELECT status,quantity,variant_id,inventory_source FROM inventory_reservations WHERE order_item_id=? ORDER BY id DESC LIMIT 1").get(id)
-const count=(table,where,params=[])=>Number(sql.prepare('SELECT COUNT(*) n FROM '+table+' WHERE '+where).get(...params).n)
 const create=async(key,items)=>{
  const r=await http('POST','/api/orders',payload(key,items))
  assert.equal(r.status,201,'Create: '+JSON.stringify(r))
