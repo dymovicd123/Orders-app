@@ -29,6 +29,18 @@ for(const [suffix,details] of [
 assert.equal(warehouseOperationFeedback(new Error('D1_ERROR: SQLITE_CONSTRAINT Приход «АБАЙКА»: problem'),'arrival','x').status,500,
  'Actual persistence errors must stay server failures')
 
+// Invalid canonical SKU from a stale form is a business rejection, not SQL failure.
+for (const kind of ['writeoff','manual_set']) {
+ const name=kind==='writeoff'?'Списание':'Корректировка'
+ const issue=warehouseOperationFeedback(new Error(name+': характеристики не соответствуют выбранному варианту. Выберите существующую комбинацию заново.'),kind,'w8-'+kind)
+ assert.equal(issue.status,409)
+ assert.equal(issue.code,'warehouse_sku_mismatch')
+ assert.match(issue.message,/характеристики не соответствуют/)
+}
+assert.equal(warehouseOperationFeedback(
+ new Error('D1_ERROR: SQLITE_CONSTRAINT Списание: характеристики не соответствуют выбранному варианту. Выберите существующую комбинацию заново.'),
+ 'writeoff','w8-sql').status,500,'Actual SQL write errors stay 500')
+
 assert.match(stale.message,/60, сейчас 55/)
 assert.match(stale.message,/обновите/i)
 

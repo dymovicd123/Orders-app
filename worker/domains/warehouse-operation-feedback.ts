@@ -21,6 +21,13 @@ export function warehouseOperationFeedback(
   if (kind === 'arrival' && /^Приход «[^»]+»:/.test(raw) && raw.endsWith('Склад не изменён.')) {
     return {status:409,code:'warehouse_sku_mismatch',message:raw.slice(0,420)}
   }
+  // Correct SKU identity rejections from write-off/correction are safe 409s.
+  // A manager must reselect the variant, not treat this as a database outage.
+  // Scope to the exact domain validation phrase so SQL/D1 errors remain 500.
+  if ((kind === 'writeoff' || kind === 'manual_set')
+      && /^(?:Списание|Корректировка): характеристики не соответствуют выбранному варианту\. Выберите существующую комбинацию заново\.$/.test(raw)) {
+    return {status:409,code:'warehouse_sku_mismatch',message:raw}
+  }
   if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
     return {
       status:409,code:'warehouse_stock_stale',
