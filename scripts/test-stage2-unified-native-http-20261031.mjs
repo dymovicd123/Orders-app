@@ -217,6 +217,54 @@ console.log('BRANCH2_STAGE1_2_ORDER_RESERVATION_HTTP_PASS',JSON.stringify({
  afterReviewNeeded:handoverAfter.data?.items?.some(x=>x.reviewNeeded)??null
 }))
 
+// Retired product during an open Arrival form: reject stale SKU, restore only
+// via audited admin action, then retry the SAME physical receipt once.
+const retiredName='CI STAGE2 RETIRED RECOVERY'
+const retiredProduct=await api('/api/catalog/products','POST',{name:retiredName,category:'adult',genderScope:'female'},201)
+const retiredProductId=Number(retiredProduct.data.id)
+const staleVariant=await api('/api/catalog/variants','POST',{
+ productId:retiredProductId,category:'adult',gender:'ЖЕН',color:'СИНИЙ',
+ material:'СТАНДАРТ',length:'СТАНДАРТ',sizeLabel:'50'
+},201)
+const staleVariantId=Number(staleVariant.data.id)
+const staleArrivalItem={
+ productId:retiredProductId,variantId:staleVariantId,productName:retiredName,
+ category:'adult',gender:'ЖЕН',color:'СИНИЙ',material:'СТАНДАРТ',
+ length:'СТАНДАРТ',size:'50',quantity:1
+}
+const previewRetirement=await api('/api/catalog/products/'+retiredProductId+'/retirement-preview','GET',undefined,200)
+assert.equal(previewRetirement.data.physicalQuantity,0)
+assert.equal(previewRetirement.data.activeReservationQuantity,0)
+const retired=await api('/api/catalog/products/'+retiredProductId+'/retire','POST',{
+ requestId:'s2-retire-empty-product',reason:'Synthetic zero-stock test'
+},200)
+assert.equal(retired.data.ok,true)
+const rejected=await arrival('s2-retired-physical-receipt','warehouse',[staleArrivalItem],409)
+assert.equal(rejected.data.code,'arrival_retired_product')
+assert.equal(Number(rejected.data.productId),retiredProductId)
+const retirementId=Number(rejected.data.retirementId)
+assert(retirementId>0,'A valid completed retirement must be offered for restoration')
+const restoration=await api('/api/catalog/retirements/'+retirementId+'/restore','POST',{
+ requestId:'s2-retired-restore-admin'
+},200)
+assert.equal(restoration.data.ok,true)
+const restorationReplay=await api('/api/catalog/retirements/'+retirementId+'/restore','POST',{
+ requestId:'s2-retired-restore-admin'
+},200)
+assert.equal(restorationReplay.data.replayed,true,'Restoring again cannot create another active SKU')
+const recovered=await arrival('s2-retired-physical-receipt','warehouse',[
+ {...staleArrivalItem,variantId:''}
+],201)
+assert.equal(recovered.data.duplicate,false)
+const recoveredReplay=await arrival('s2-retired-physical-receipt','warehouse',[
+ {...staleArrivalItem,variantId:''}
+],200)
+assert.equal(recoveredReplay.data.duplicate,true,'Retried receipt must be idempotent')
+console.log('BRANCH2_STAGE2_RETIRED_ARRIVAL_RECOVERY_HTTP_PASS',JSON.stringify({
+ retiredProductId,staleVariantId,retirementId,retiredConflict409:true,
+ restorationReplay:true,receiptReplay:true
+}))
+
 console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_HTTP_PASS',JSON.stringify({
  transferOnce:true,writeoffOnce:true,correctionOnce:true,staleRejected:true,
  quickCount:true,revisionOnce:true,sourceIsolation:true,workerAuth:true
