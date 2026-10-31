@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {DatabaseSync} from 'node:sqlite'
 import {
  beginCriticalOperation, advanceCriticalOperation,
- updateCriticalOperationTargetFromLastInsert, CriticalOperationBusyError
+ updateCriticalOperationTargetFromLastInsert, insertCriticalMappedEntity, CriticalOperationBusyError
 } from '../worker/domains/critical.ts'
 
 // Real SQLite statements, with D1's trigger-inclusive reported changes count.
@@ -15,6 +15,8 @@ sql.exec(`
  context_json TEXT,response_json TEXT,lease_token TEXT,lease_until_ms INTEGER,
  last_error TEXT,created_at TEXT,updated_at TEXT,completed_at TEXT);
  CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT);
+ CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER);
+ CREATE TABLE critical_operation_entities(request_id TEXT,entity_type TEXT,entity_key TEXT,entity_id INTEGER,created_at TEXT,PRIMARY KEY(request_id,entity_type,entity_key));
 `)
 function statement(query,args=[]){
  return {
@@ -53,6 +55,21 @@ const id=await updateCriticalOperationTargetFromLastInsert(
 assert.equal(id,1)
 assert.equal(first.row.target_id,1)
 assert.equal(sql.prepare("SELECT external_id FROM orders WHERE id=1").get().external_id,'META-OK')
+const createdItem=await insertCriticalMappedEntity(
+ db,first,'order_item','item:0',
+ db.prepare('INSERT INTO order_items(order_id) VALUES(?)').bind(id)
+)
+assert.equal(createdItem.created,true)
+assert.equal(createdItem.id,1)
+assert.equal(sql.prepare("SELECT entity_id FROM critical_operation_entities WHERE request_id='native-meta-success' AND entity_key='item:0'").get().entity_id,1)
+const itemReplay=await insertCriticalMappedEntity(
+ db,first,'order_item','item:0',
+ db.prepare('INSERT INTO order_items(order_id) VALUES(?)').bind(id)
+)
+assert.equal(itemReplay.created,false)
+assert.equal(itemReplay.id,1)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items').get().n,1)
+
 // Even with an active lease, a skipped insert cannot advance that lease.
 const skipped=await op('native-meta-zero')
 await assert.rejects(
@@ -74,5 +91,5 @@ await assert.rejects(
 )
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM orders').get().n,1)
 assert.equal(sql.prepare("SELECT target_id FROM critical_operations WHERE request_id='native-meta-stale'").get().target_id,null)
-console.log('CRITICAL_NATIVE_D1_TRIGGER_INCLUSIVE_META_ACCEPTANCE_PASS: direct INSERT 1/meta 4 allowed, zero/stale INSERT rejected with no phantom orders')
+console.log('CRITICAL_NATIVE_D1_TRIGGER_INCLUSIVE_META_ACCEPTANCE_PASS: direct INSERT 1/meta 4 allowed for order and item mapping; zero/stale INSERT rejected with no phantom orders')
 sql.close()
