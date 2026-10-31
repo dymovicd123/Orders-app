@@ -286,6 +286,11 @@ await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/it
 const unknownComplete=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId)+'/complete',
  'POST',{},200)
 assert.equal(unknownComplete.data.unresolvedFoundCount,1)
+// Completion may recycle the local ProxyWorker. Read durable session state
+// before the next operation, as with the previously confirmed retry path.
+const foundReadback=await api('/api/inventory/stocktakes/'+encodeURIComponent(unknownSessionId),'GET',undefined,200)
+assert.equal(foundReadback.data.session?.status,'completed')
+await new Promise(resolve=>setTimeout(resolve,250))
 const notGuessed=await api('/api/inventory/found-stock/'+foundItem.stockId+'/reconcile','POST',{},200)
 assert.equal(notGuessed.data.code,'identity_unresolved','No matching canonical SKU means no automatic barcode')
 console.log('BRANCH2_STAGE2_UNKNOWN_FOUND_STOCK_HTTP_PASS',JSON.stringify({
