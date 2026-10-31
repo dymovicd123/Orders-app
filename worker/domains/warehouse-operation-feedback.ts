@@ -15,6 +15,12 @@ export function warehouseOperationFeedback(
   const base = publicApiError(error)
   const lower = raw.toLocaleLowerCase('ru')
   const reference = cleanText(requestId).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)
+  // A rejected canonical SKU on Arrival is a correct business validation
+  // failure, not a database outage. Physical stock was not modified.
+  // Keep this exact scoped marker narrow; SQL or persistence errors must stay 500.
+  if (kind === 'arrival' && /^Приход «[^»]+»:/.test(raw) && raw.endsWith('Склад не изменён.')) {
+    return {status:409,code:'warehouse_sku_mismatch',message:raw.slice(0,420)}
+  }
   if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
     return {
       status:409,code:'warehouse_stock_stale',
