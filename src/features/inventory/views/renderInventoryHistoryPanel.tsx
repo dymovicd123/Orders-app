@@ -194,6 +194,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                                     <strong>Фактически: {entry.row.confirmedOperationQuantity} шт. · учётный остаток изменился на {entry.row.quantityDelta >= 0 ? '+' : ''}{entry.row.quantityDelta} шт.{Number(entry.row.unexplainedQuantity || 0) > 0 ? ` Сверх учтённого остатка подтверждено ${entry.row.unexplainedQuantity} шт.` : ''}</strong>
                                   </div>
                                 ) : null}
+                                {entry.row.referenceType === 'manual' ? <div className="history-note"><span>Исполнитель</span><strong>{entry.row.performedBy || 'Не зафиксирован в момент операции'}</strong></div> : null}
                                 {entry.row.comment ? <div className="history-note"><span>Комментарий</span><strong>{entry.row.comment}</strong></div> : null}
                                 <div className="history-card-actions">{entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}</div>
                               </div>
