@@ -1912,9 +1912,6 @@ export async function updateOrderCritical(
         }
       }
       if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
-      const inventoryObligationLineage = rewriteItems
-        ? await inventoryObligationLineageForRewrite(db, id, nextItems, rewritePreResolvedCatalog || [])
-        : [];
       let rewritePreResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> | undefined;
       if (rewriteItems) {
         for (const item of nextItems) {
@@ -1948,6 +1945,11 @@ export async function updateOrderCritical(
           }
         }
       }
+      // Resolve catalog identity first, then decide whether historical
+      // obligation keys belong to the exact same SKU on the new line.
+      const inventoryObligationLineage = rewriteItems
+        ? await inventoryObligationLineageForRewrite(db, id, nextItems, rewritePreResolvedCatalog || [])
+        : [];
       if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent') {
         if (rewriteItems) {
           const unresolvedNames = nextItems
