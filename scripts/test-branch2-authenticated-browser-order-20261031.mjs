@@ -57,6 +57,7 @@ async function fillOrder(name,phone){
  // re-entry of known canonical color/material/size.
  const color=await line.locator('input[placeholder="Цвет"]').inputValue()
  const size=await line.locator('select').first().inputValue()
+ console.log('B2_UI_PICK_STATE',JSON.stringify({name, color, size}))
  assert.equal(color,'ЧЕРНЫЙ','Product picker must keep existing canonical color')
  assert.equal(size,'46','Product picker must keep existing canonical size')
  await line.locator('input[placeholder="Введите итоговую цену"]').fill('10000')
@@ -90,8 +91,13 @@ try{
  },201)
  const variantId=Number(variant.id)
  assert(variantId>0)
+ const catalogLoaded=page.waitForResponse(res=>res.url()===origin+'/api/catalog'&&res.request().method()==='GET'&&res.status()===200,{timeout:30000})
  await page.reload({waitUntil:'domcontentloaded'})
+ await catalogLoaded
  await page.locator('main.erp-shell').waitFor({timeout:30000})
+ // A completed HTTP response is not yet committed React state; wait for
+ // the catalog's read pass without starting another request.
+ await page.waitForTimeout(500)
  const pending=await fillOrder(name,'77019999101')
  await validateRetry(pending)
  await api('/api/inventory/movements?returnInventory=0','POST',{
