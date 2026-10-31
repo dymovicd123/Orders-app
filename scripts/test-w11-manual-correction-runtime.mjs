@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { applyInventoryMovement } from '../worker/domains/inventory-movement.ts'
+import { fetchOrderStockHandoverRows, getOrderStockHandoverState } from '../worker/domains/order-reservations.ts'
 
 class Statement {
   constructor(owner,sql,args=[]){this.owner=owner;this.sql=sql;this.args=args}
@@ -48,7 +49,13 @@ CREATE TABLE inventory_stock_checks(id INTEGER PRIMARY KEY AUTOINCREMENT,check_k
  product_id INTEGER,variant_id INTEGER,expected_quantity INTEGER,counted_quantity INTEGER,
  difference_quantity INTEGER,reserved_quantity INTEGER,check_type TEXT,reference_type TEXT,
  reference_id TEXT,checked_by TEXT,checked_at TEXT,created_at TEXT);
-CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,status TEXT);
+CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,status TEXT,order_id INTEGER,order_item_id INTEGER,created_at TEXT);
+CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_date TEXT,created_at TEXT,order_status TEXT DEFAULT 'active',archived_at TEXT,shipping_status TEXT DEFAULT 'not_sent',workshop_status TEXT,customer_id INTEGER);
+CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER DEFAULT 1,is_workshop INTEGER DEFAULT 0,created_at TEXT,inventory_obligation_key TEXT,inventory_obligation_origin_at TEXT,product_name_snapshot TEXT,gender_snapshot TEXT,color_snapshot TEXT,material_snapshot TEXT,length_snapshot TEXT,size_snapshot TEXT,source_type TEXT,stock_writeoff_status TEXT,product_id INTEGER,variant_id INTEGER);
+CREATE TABLE inventory_stocktake_sessions(id TEXT PRIMARY KEY,inventory_source TEXT,status TEXT,started_at TEXT,completed_at TEXT);
+CREATE TABLE inventory_handover_reviews(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,reservation_id INTEGER,decision TEXT,checkpoint_id INTEGER,checkpoint_at TEXT);
+CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT);
+CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,status TEXT);
  CREATE TABLE inventory_operation_evidence(evidence_key TEXT PRIMARY KEY,inventory_source TEXT,
   variant_id INTEGER,operation_type TEXT,operation_reference TEXT,tracked_physical_before INTEGER,
   confirmed_operation_quantity INTEGER,explained_quantity INTEGER,unexplained_quantity INTEGER,
@@ -147,6 +154,60 @@ assert.equal(boutiqueUntracked.code,'stock_resolution_required','Other source ca
 assert.equal(db.get("SELECT COUNT(*) AS n FROM inventory_stock WHERE inventory_source='boutique' AND variant_id=7").n,0)
 assert.equal(db.get("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_id='w11-writeoff-other-source'").n,0)
 
+// Stages 2.5+2.6: execute an actual correction and inspect the same
+// order-handover projection used by Orders. No fake checkpoint inserted.
+db.exec(`
+INSERT INTO orders(id,external_id,order_date,created_at,shipping_status)
+ VALUES(901,'QA-STAGE2-HANDOVER','2026-10-14','2026-10-14T08:00:00Z','not_sent');
+INSERT INTO order_items(id,order_id,quantity,is_workshop,created_at,inventory_obligation_origin_at,
+ product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,
+ source_type,stock_writeoff_status,product_id,variant_id)
+ VALUES(902,901,2,0,'2026-10-14T08:00:00Z','2026-10-14T08:00:00Z',
+ 'АБАЙ ТАКИЯ','МУЖ','БЕЖЕВЫЙ','ДРАП КАШЕМИР','СТАНДАРТ','58',
+ 'warehouse','reserved',1,7);
+INSERT INTO inventory_reservations(id,inventory_source,variant_id,quantity,status,order_id,order_item_id,created_at)
+ VALUES(903,'warehouse',7,2,'active',901,902,'2026-10-14T08:00:00Z');
+UPDATE inventory_stock SET reserved_quantity=2 WHERE inventory_source='warehouse' AND variant_id=7;
+`)
+// Older corrections from this same W11 fixture have already created later
+// checkpoints. Mark the last one reviewed, so this test measures only the
+// newly performed physical correction, not an unrelated historical warning.
+const priorHandover=(await getOrderStockHandoverState(db,901)).items[0]
+assert.equal(priorHandover.reviewNeeded,true,'Fixture should see older stock check')
+db.db.prepare(`INSERT INTO inventory_handover_reviews
+ (id,order_id,order_item_id,reservation_id,decision,checkpoint_id,checkpoint_at)
+ VALUES(1,901,902,903,'still_here',?,?)`).run(priorHandover.checkpointId,priorHandover.checkpointAt)
+const beforeHandover=(await getOrderStockHandoverState(db,901)).items[0]
+assert.equal(beforeHandover.reviewNeeded,false,'Reviewed prior checkpoint must not prompt twice')
+assert.equal(beforeHandover.reservationStatus,'active')
+const actualCorrection=await save('w11-handover-correction',[
+ {...normal,expectedQuantity:3,quantity:1}
+])
+assert.equal(actualCorrection.ok,true)
+assert.equal(db.get("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=7").quantity,1)
+assert.equal(db.get("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=7").reserved_quantity,2,'Physical correction must never consume live reservation')
+assert.equal(db.get("SELECT status FROM inventory_reservations WHERE id=903").status,'active','Physical correction must not silently fulfill reservation')
+const correctionMovement=db.get("SELECT quantity_delta,quantity_after FROM inventory_movements WHERE reference_id='w11-handover-correction'")
+assert.deepEqual([correctionMovement.quantity_delta,correctionMovement.quantity_after],[-2,1],
+ 'Correction movement should explain exact physical delta')
+const correctionCheck=db.get("SELECT id,expected_quantity,counted_quantity,reserved_quantity FROM inventory_stock_checks WHERE reference_id='w11-handover-correction'")
+assert.deepEqual([correctionCheck.expected_quantity,correctionCheck.counted_quantity,correctionCheck.reserved_quantity],[3,1,2],
+ 'Exact correction check must preserve before/after and live reserve context')
+const handover=(await getOrderStockHandoverState(db,901)).items[0]
+const listHandover=(await fetchOrderStockHandoverRows(db,[901],{listFlagsOnly:true}))[0]
+assert.equal(handover.reviewNeeded,true,'Actual correction must prompt order handover decision')
+assert.equal(handover.checkpointId,correctionCheck.id,'Handover must reference exact correction checkpoint')
+assert.equal(handover.variantId,7,'Handover must retain exact SKU')
+assert.equal(handover.source,'warehouse','Handover must retain source')
+assert.equal(handover.physicalQuantity,1)
+assert.equal(handover.totalReservedQuantity,2)
+assert.equal(Number(listHandover.review_needed),1,'Order-table handover badge must agree with detailed order')
+const again=await save('w11-handover-correction',[{...normal,expectedQuantity:3,quantity:1}])
+assert.equal(again.duplicate,true)
+assert.equal(db.get("SELECT COUNT(*) n FROM inventory_stock_checks WHERE reference_id='w11-handover-correction'").n,1)
+assert.equal(db.get("SELECT COUNT(*) n FROM inventory_movements WHERE reference_id='w11-handover-correction'").n,1)
+assert.equal(db.get("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=7").quantity,1)
+
 const appSource=(await import('node:fs')).readFileSync('src/App.tsx','utf8')
 const inventoryUi=(await import('node:fs')).readFileSync('src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx','utf8')
 assert.ok(appSource.includes('const alreadyInDraft = current.items.some(item =>'),'Double-click cannot create duplicated correction draft')
@@ -154,4 +215,4 @@ assert.ok(appSource.includes('if(alreadyInDraft)return current'),'Second click i
 assert.ok(inventoryUi.includes('Впишите число вещей, переносимых в другую точку.') ||
  inventoryUi.includes('переносимых в другую точку.'),'Transfer progress describes moved units')
 assert.ok(inventoryUi.includes('Впишите, сколько вещей перемещаете.'),'Transfer numeric input does not pretend to be a correction')
-console.log('W11_REAL_SQL_CORRECTION_WRITE_OFF_STALE_REPLAY_SOURCE_PASSED')
+console.log('W11_REAL_SQL_CORRECTION_HANDOVER_INVARIANTS_PASSED')
