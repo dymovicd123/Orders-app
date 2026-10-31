@@ -86,7 +86,7 @@ writeFileSync(seedPath,[
  "INSERT INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-01T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active';",
  "INSERT INTO orders(id,external_id,order_date,created_at,shipping_status,order_status) VALUES(9790,'STAGE4-NATIVE-RESERVE','2026-10-31','2026-10-31T08:00:00Z','not_sent','active');",
  "INSERT INTO order_items(id,order_id,quantity,is_workshop,created_at,inventory_obligation_origin_at,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,source_type,stock_writeoff_status,product_id,variant_id) VALUES(9791,9790,3,0,'2026-10-31T08:00:00Z','2026-10-31T08:00:00Z','STAGE4 NATIVE TEST SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50','warehouse','reserved',9782,9783);",
- "INSERT INTO inventory_reservations(id,inventory_source,variant_id,quantity,status,order_id,order_item_id,created_at) VALUES(9792,'warehouse',9783,3,'active',9790,9791,'2026-10-31T08:00:00Z');",
+ "INSERT INTO inventory_reservations(id,inventory_source,variant_id,quantity,status,order_id,order_item_id,created_at,updated_at) VALUES(9792,'warehouse',9783,3,'active',9790,9791,'2026-10-31T08:00:00Z','2026-10-31T08:00:00Z');",
  "UPDATE inventory_stock SET reserved_quantity=3 WHERE inventory_source='warehouse' AND variant_id=9783;",
 ].join('\n'))
 function localD1(file){
