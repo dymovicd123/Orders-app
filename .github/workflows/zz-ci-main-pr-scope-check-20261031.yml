@@ -9,10 +9,14 @@ permissions:
 jobs:
   trigger-scope:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
       - uses: actions/setup-node@v4
         with: {node-version: 24}
       - run: node scripts/test-ci-scope-main-release-20261031.mjs
+      - name: Install dependencies and execute current Main Worker/SQLite regression
+        run: |
+          npm ci
+          node scripts/test-main-current-business-release-20261031.mjs
