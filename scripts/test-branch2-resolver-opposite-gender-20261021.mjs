@@ -6,6 +6,7 @@ import {
   resolveCatalogGenderForProduct,
 } from '../worker/domains/catalog.ts'
 import { resolveCatalogProductAndVariantV2 } from '../worker/domains/order-reservations.ts'
+import { inferUnambiguousCatalogReviewGender } from '../worker/domains/catalog-review.ts'
 
 // Actual domain SQL against a disposable SQLite database, not a source-string
 // substitute. One product scope is a default; concrete opposite-gender SKUs
@@ -105,6 +106,25 @@ assert.equal(sql.prepare('SELECT gender FROM catalog_variants WHERE id=?').get(f
 const secondResolved=await resolveCatalogProductAndVariantV2(db,maleKnown,{timestamp})
 assert.equal(secondResolved.variantId,firstResolved.variantId)
 assert.equal(secondResolved.matchStatus,'matched')
+// If a product offers male and female for the same physical characteristics,
+// an absent order-item gender is genuinely ambiguous. A female product scope
+// is NOT evidence that a particular piece is female.
+const knownDimensions={productId:11,category:'adult',material:'СТАНДАРТ',length:'СТАНДАРТ',
+ color:'ОРАНЖЕВЫЙ',size:'52'}
+assert.equal(await inferUnambiguousCatalogReviewGender(db,knownDimensions),'',
+ 'Ambiguous gender must not be guessed from female product scope')
+assert.equal(await inferUnambiguousCatalogReviewGender(db,{...knownDimensions,productId:12}),'МУЖ',
+ 'One exact active male SKU must win even under a female-scope product')
+assert.equal(await inferUnambiguousCatalogReviewGender(db,{...knownDimensions,productId:13}),'',
+ 'No matching active SKU must not synthesize a product-scope gender')
+assert.equal(await inferUnambiguousCatalogReviewGender(db,{...knownDimensions,color:''}),'',
+ 'Missing color must never be mistaken for a fully identified variant')
+assert.equal(await inferUnambiguousCatalogReviewGender(db,{...knownDimensions,size:''}),'',
+ 'Missing size must never be mistaken for a fully identified variant')
+sql.exec("UPDATE catalog_variants SET is_active=0 WHERE product_id=12 AND gender='МУЖ'")
+assert.equal(await inferUnambiguousCatalogReviewGender(db,{...knownDimensions,productId:12}),'',
+ 'Inactive SKUs may not supply gender evidence')
+sql.exec("UPDATE catalog_variants SET is_active=1 WHERE product_id=12 AND gender='МУЖ'")
 const countBefore=sql.prepare('SELECT COUNT(*) AS n FROM catalog_variants').get().n
 const unknown=await resolveCatalogProductAndVariantV2(db,{...maleKnown,color:'НЕИЗВЕСТНЫЙ ЦВЕТ'},{timestamp})
 assert.equal(unknown.matchStatus,'unresolved_attribute')
@@ -129,5 +149,7 @@ assert(!ui.includes('genderScopeConflict'), 'Resolver must not present the remov
 assert(ui.includes('Сохранить и продолжить') && ui.includes('Проверить снова'),
  'Resolver save and stale-result retry remain accessible')
 assert(review.includes('const productGenderScope'), 'Human resolver must still inspect product defaults')
+assert(!review.includes('facts.gender = facts.gender || catalogGenderForProductScope(productGenderScope)'),
+ 'Human resolver must not guess missing item gender from product-level default')
 assert(review.includes("unknownFields.push('gender')"), 'Genuinely unknown gender must still ask')
 console.log('BRANCH2_OPPOSITE_GENDER_REAL_SQL_AND_RESOLVER_CONTRACT_PASSED')
