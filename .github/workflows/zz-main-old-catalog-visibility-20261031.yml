@@ -1,0 +1,26 @@
+name: "Main candidate-only unresolved old SKU visibility SQLite 20261031"
+on:
+  push:
+    branches: [fix/main-older-active-unresolved-catalog-20261031]
+    paths: [.github/workflows/zz-main-old-catalog-visibility-20261031.yml]
+permissions:
+  contents: read
+jobs:
+  visibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: SQLite actual Main predicate and warehouse attention wiring
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/fix/main-older-active-unresolved-catalog-20261031"
+          node scripts/test-main-older-unresolved-warehouse-attention-20261031.mjs
+      - name: Production Main TypeScript/frontend build, no deploy
+        run: npm run build
