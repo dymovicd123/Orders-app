@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/zz-branch2-authenticated-ui-d1-20261031.yml'
       - 'scripts/test-branch2-authenticated-browser-order-20261031.mjs'
+      - 'src/App.tsx'
       - 'scripts/test-branch2-critical-native-d1-metadata-20261031.mjs'
       - 'worker/domains/critical.ts'
 
