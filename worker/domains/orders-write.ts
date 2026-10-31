@@ -7,7 +7,7 @@ import type { AuthUser, OrderInput, OrderListRow } from '../core/types.ts'
 import { activityLogStatement, resolveActiveManagerId, writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
 import type { CriticalOperationHandle } from './critical.ts'
-import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, prepareCriticalMappedInsert, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
+import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, prepareCriticalMappedInsert, parseCriticalContext, updateCriticalOperationTargetFromLastInsert, refreshCriticalOperation } from './critical.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, financialOperationTypeFromPaymentKind, removeOrderPaymentsWithMoneyEvents } from './money.ts'
 import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput, calculateTotals, completedOrderOperationCounts, normalizeOrderItems, normalizeOrderPayments, OrderInputValidationError, sameNormalizedOrderItemsExceptPriceForEdit, sameNormalizedOrderItemsForEdit, sameNormalizedOrderPaymentsForEdit } from './order-core.ts'
 import { assertItemizedOrderMoneyNotOverpaid, buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
@@ -1429,7 +1429,10 @@ export async function updateOrderCritical(
       if (existingPricingMode === 'itemized_v1' && options.lifecycleAction !== 'order_delete' && !itemizedMetadataOnlyEdit) {
         throw new CriticalOperationConflictError('Этот заказ использует построчную itemized-цену. Реквизиты, проведённые оплаты, цены продажи и состав можно исправлять из редактора; жизненный цикл меняется отдельными штатными действиями.');
       }
-      const timestamp = new Date().toISOString();
+      // A content edit must always advance the version, even within one millisecond.
+      const previousUpdatedMs = Date.parse(cleanText(existingAny.updated_at));
+      const timestamp = new Date(Math.max(Date.now(),
+        Number.isFinite(previousUpdatedMs) ? previousUpdatedMs + 1 : 0)).toISOString();
       const nextOrderDate = normalizeDate(input.orderDate ?? existingAny.order_date);
       const existingManagerId = toInt(existingAny.manager_id ?? existingAny.managerId, 0) || null;
       const existingManagerName = cleanText(existingAny.manager_snapshot_name || existingAny.manager_name);
@@ -2134,6 +2137,7 @@ export async function updateOrderCritical(
 
       plan = {
         timestamp,
+        expectedOrderUpdatedAt: cleanText(existingAny.updated_at),
         externalId: cleanText(existingAny.external_id),
         existingManagerId, existingCustomerId: toInt(existingAny.customer_id, 0) || null,
         previousManagerName: cleanText(existingAny.manager_name || existingAny.manager_snapshot_name),
@@ -2191,7 +2195,51 @@ export async function updateOrderCritical(
 
     const p = plan!;
     let stockReversals = Array.isArray(operationContext.stockReversals) ? operationContext.stockReversals : [];
-    if (criticalOperation.row.step === 'validated') {
+    if (criticalOperation.row.step === 'validated' && p.rewriteItems) {
+      // Two independent request IDs may both validate the same old items. Claim
+      // the order version atomically before retiring any row or reservation.
+      // The claim and saga step share one D1 batch for crash-safe resumption.
+      const expectedUpdatedAt = cleanText(p.expectedOrderUpdatedAt);
+      if (!expectedUpdatedAt || cleanText(p.timestamp) === expectedUpdatedAt)
+        throw new CriticalOperationConflictError('Не удалось подтвердить исходную версию заказа. Обновите его перед изменением состава.');
+      const now = new Date().toISOString();
+      try {
+        await db.batch([
+          db.prepare(`UPDATE orders SET updated_at = ?
+            WHERE id = ? AND COALESCE(updated_at, '') = ?
+              AND EXISTS (
+                SELECT 1 FROM critical_operations me
+                WHERE me.request_id = ? AND me.operation_type = 'order_edit'
+                  AND me.status = 'started' AND me.step = 'validated'
+                  AND me.lease_token = ?
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM critical_operations other
+                WHERE other.request_id <> ? AND other.operation_type = 'order_edit'
+                  AND other.target_type = 'order' AND other.target_id = ?
+                  AND other.status = 'started'
+                  AND other.step NOT IN ('started', 'validated')
+              )`
+          ).bind(p.timestamp, id, expectedUpdatedAt, criticalOperation.requestId,
+            criticalOperation.leaseToken, criticalOperation.requestId, id),
+          db.prepare(`SELECT json('ORDER_REWRITE_STALE') WHERE changes() <> 1`),
+          db.prepare(`UPDATE critical_operations
+            SET step = 'rewrite_claimed', updated_at = ?, lease_until_ms = ?
+            WHERE request_id = ? AND operation_type = 'order_edit'
+              AND status = 'started' AND step = 'validated' AND lease_token = ?`
+          ).bind(now, Date.now() + 45000, criticalOperation.requestId, criticalOperation.leaseToken),
+          db.prepare(`SELECT json('ORDER_REWRITE_STALE') WHERE changes() <> 1`),
+        ]);
+      } catch (error) {
+        if (/ORDER_REWRITE_STALE|malformed JSON/i.test(String(error)))
+          throw new CriticalOperationConflictError(
+            'Другой сотрудник уже изменил этот заказ или завершает сохранение. Обновите заказ перед заменой состава.'
+          );
+        throw error;
+      }
+      await refreshCriticalOperation(db, criticalOperation);
+    }
+    if (criticalOperation.row.step === 'validated' || criticalOperation.row.step === 'rewrite_claimed') {
       stockReversals = (p.rewriteItems || p.deletingOrder)
         ? await reverseOrderStockWriteOffsForEdit(db, id, p.externalId, p.timestamp,
             p.rewriteItems && Array.isArray(p.preservedRewriteItemIds) ? p.preservedRewriteItemIds : [])
