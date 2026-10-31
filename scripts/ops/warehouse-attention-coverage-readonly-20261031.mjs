@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {getWarehouseAttentionSummary} from '../../worker/domains/warehouse-attention.ts'
+import {catalogReviewBasePredicate,catalogReviewOperationalPredicate} from '../../worker/domains/catalog-review.ts'
 assert.equal(process.env.GITHUB_REF,'refs/heads/audit/branch2-activation-readonly-20261031')
 const c=JSON.parse(readFileSync('wrangler.jsonc','utf8').replace(/\/\*[\s\S]*?\*\//g,''))
 const dbId='0904a573-21ff-44d8-93b0-c9200f771702'
@@ -55,3 +56,26 @@ assert.equal(missing.length,0,'Real deficit SKU missing from both Problems and H
 assert.equal(summary.counts.shortage,detailed.counts.shortage,'Warehouse counts differ between summary and detail')
 assert.equal(summary.counts.handover,detailed.counts.handover,'Handover counts differ between summary and detail')
 console.log('BRANCH2_WAREHOUSE_ATTENTION_REAL_D1_COVERAGE_PASSED')
+const base=catalogReviewBasePredicate('oi','o'),operational=catalogReviewOperationalPredicate('oi','o')
+const unresolved=await select(`SELECT r.id AS reservation_id,r.order_item_id,r.unresolved_reason,
+  r.inventory_source,r.variant_id,r.quantity,o.order_status,o.shipping_status,
+  oi.stock_writeoff_status,oi.created_at,
+  CASE WHEN ${base} AND ${operational} THEN 1 ELSE 0 END AS in_current_catalog_attention,
+  CASE WHEN datetime(COALESCE(NULLIF(oi.created_at,''),o.created_at))<datetime('now','-30 days') THEN 1 ELSE 0 END AS older_than_30_days
+ FROM inventory_reservations r
+ JOIN orders o ON o.id=r.order_id
+ JOIN order_items oi ON oi.id=r.order_item_id AND oi.order_id=r.order_id
+ WHERE r.status='unresolved' ORDER BY r.id ASC LIMIT 50`)
+console.log('BRANCH2_UNRESOLVED_RESERVATIONS_VISIBILITY '+JSON.stringify({
+ total:unresolved.length,
+ rows:unresolved.map(x=>({
+  reservationId:x.reservation_id,orderItemId:x.order_item_id,
+  reason:x.unresolved_reason,stockStatus:x.stock_writeoff_status,
+  orderStatus:x.order_status,shipping:x.shipping_status,
+  inCatalogAttention:Boolean(x.in_current_catalog_attention),
+  olderThan30Days:Boolean(x.older_than_30_days),
+ })),
+ hiddenFromCurrentCatalogAttention:unresolved.filter(x=>!x.in_current_catalog_attention).length,
+ d1Writes:0,noCustomerData:true
+}))
+
