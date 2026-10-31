@@ -107,20 +107,36 @@ jobs:
           kill "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
           trap - EXIT
-          echo NATIVE_D1_RUNNING_STOCK_READBACK
-          npx wrangler d1 execute orders_db_prod --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --command="SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source" --json > "$RUNNER_TEMP/main-real-operation-stock.json"
-          npx wrangler d1 execute orders_db_prod --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --command="SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type" --json > "$RUNNER_TEMP/main-real-operation-movements.json"
-          echo NATIVE_D1_SQL_READBACK_OK
+          # Wrangler's second local-D1 process sometimes silently exits while the
+          # just-stopped Workerd still holds its storage lease. Read the exact
+          # locally-persisted SQLite backing file directly instead (SELECT ONLY).
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
-          import {readFileSync} from 'node:fs'
-          const rows=(file)=>JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/'+file,'utf8')).flatMap(x=>x.results||[])
-          const stock=rows('main-real-operation-stock.json')
+          import {readdirSync} from 'node:fs'
+          import path from 'node:path'
+          import {DatabaseSync} from 'node:sqlite'
+          const root=process.env.LOCAL_STATE
+          const files=readdirSync(root,{recursive:true})
+            .map(x=>String(x)).filter(x=>/\\.sqlite$/.test(x))
+          assert(files.length>0,'Native local D1 did not persist a SQLite file')
+          const matches=[]
+          for(const rel of files){
+            const db=new DatabaseSync(path.join(root,rel),{readOnly:true})
+            const exists=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_stock'").get()
+            if(!exists){db.close();continue}
+            const stock=db.prepare("SELECT s.inventory_source, s.quantity, s.reserved_quantity FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id JOIN catalog_products p ON p.id=v.product_id WHERE p.name='CI LOCAL D1 WAREHOUSE SKU' ORDER BY s.inventory_source").all()
+            if(stock.length){
+              const moves=db.prepare("SELECT movement_type,COUNT(*) AS n,SUM(ABS(quantity)) AS units FROM inventory_movements WHERE product_name_snapshot='CI LOCAL D1 WAREHOUSE SKU' GROUP BY movement_type ORDER BY movement_type").all()
+              matches.push({rel,stock,moves})
+            }
+            db.close()
+          }
+          assert.equal(matches.length,1,'Expected one native local D1 containing the synthetic operations')
+          const {stock,moves}=matches[0]
           assert.deepEqual(stock.map(x=>[x.inventory_source,Number(x.quantity),Number(x.reserved_quantity)]),
-            [['boutique',1,0],['warehouse',2,0]],'Physical stock must be 3 total after one arrival and one transfer; no replay or invalid SKU credit')
-          const moves=rows('main-real-operation-movements.json')
-          assert.equal(moves.filter(x=>x.movement_type==='arrival').reduce((s,x)=>s+Number(x.n),0),1,'Arrival replay cannot create second movement')
-          assert.equal(moves.reduce((s,x)=>s+Number(x.units),0),5,'3 arrival units and 1+1 transfer units; no accidental extra movements')
+            [['boutique',1,0],['warehouse',2,0]],'Physical stock must be 3 total after arrival and transfer, not 4')
+          assert.equal(moves.filter(x=>x.movement_type==='arrival').reduce((s,x)=>s+Number(x.n),0),1,'Arrival replay cannot add a second movement')
+          assert.equal(moves.reduce((s,x)=>s+Number(x.units),0),5,'3 incoming +1 outbound +1 inbound transfer units must have exact movement ledger')
           console.log('MAIN_NATIVE_LOCAL_D1_PHYSICAL_INVARIANTS_PASS',JSON.stringify({stock,moves}))
           NODE
           echo 'MAIN_NATIVE_WORKER_LOCAL_D1_HTTP_PASS: authenticated real Worker + local D1, idempotent arrival+transfer, negative SKU guards'
