@@ -79,10 +79,11 @@ export async function startStage4Browser({origin,sessionToken,variantId}){
    assert(text.includes('Тест Завсклад'),'Authenticated Cyrillic actor visible in physical history')
    assert(text.includes('Накладная NATIVE-E2E')||text.includes('native-stage4-arrival'),
     'History still exposes actual arrival reference or document')
+   const attentionResponse=page.waitForResponse(r=>r.url().startsWith(origin+'/api/inventory/attention')&&r.status()===200,
+    {timeout:30000})
    await page.reload({waitUntil:'domcontentloaded'})
    await page.locator('section#inventory').waitFor()
-   await page.waitForResponse(r=>r.url().startsWith(origin+'/api/inventory/attention')&&r.status()===200,
-    {timeout:15000}).catch(()=>null)
+   await attentionResponse
    // The current *server* state has no actionable shortage. Refreshing the UI
    // must not resurrect the task from a historical movement/old check.
    assert.equal(await page.locator('.warehouse-w2-recovery').filter({hasText:'Проверить остаток'}).count(),0,
