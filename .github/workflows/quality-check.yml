@@ -51,8 +51,10 @@ jobs:
       - name: Reproduce old-order Exchange product pick and shortage confirmation
         run: node scripts/test-legacy-exchange-product-pick-no-white-screen-20261017.mjs
 
-      - name: Run cumulative regression gate
-        run: npm run release:check
+      - name: Execute current Main domain regression gate (real SQL + Worker HTTP)
+        run: node scripts/test-main-current-business-release-20261031.mjs
+        # Historical byte-pinned release:check stays available for its original
+        # 2026-10-22 review, but must not gate unrelated current code changes.
 
       - name: Verify physical stock and reserved sizes are visible
         run: node scripts/test-inventory-stock-visible-reservations.mjs

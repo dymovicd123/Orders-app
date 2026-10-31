@@ -1,0 +1,24 @@
+name: "CI 20261031 scoped historical release triggers — no deploy"
+on:
+  push:
+    branches: [ci/scope-obsolete-main-selective-pr-checks-20261031]
+    paths:
+      - '.github/workflows/zz-ci-main-pr-scope-check-20261031.yml'
+      - 'scripts/test-main-current-business-release-20261031.mjs'
+      - 'scripts/test-ci-scope-main-release-20261031.mjs'
+permissions:
+  contents: read
+jobs:
+  trigger-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: node scripts/test-ci-scope-main-release-20261031.mjs
+      - name: Install dependencies and execute current Main Worker/SQLite regression
+        run: |
+          npm ci
+          node scripts/test-main-current-business-release-20261031.mjs
