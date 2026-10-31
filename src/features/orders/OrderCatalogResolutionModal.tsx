@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogReviewItem, CatalogReviewResponse, CatalogVariantRecord, OrderRecord } from '../../app/types'
 import { readJsonResponse } from '../../app/utils'
 import type { CatalogResolutionContext, CatalogResolutionProduct, CatalogResolutionResponse } from '../../../shared/api-contracts'
-import { clean, normalize, fields, fieldLabel, initialDraft, nextQuestion, compoundRemainder, rankedProducts, rankedReferenceValues, referenceValues, segmentCompoundRemainder, needsReference, createResolutionSession } from './catalogResolutionFlow'
+import { clean, normalize, fields, fieldLabel, initialDraft, canonicalizePreviewDraft, nextQuestion, compoundRemainder, rankedProducts, rankedReferenceValues, referenceValues, segmentCompoundRemainder, needsReference, createResolutionSession } from './catalogResolutionFlow'
 import type { Draft, Field } from './catalogResolutionFlow'
 import './OrderCatalogResolutionModal.css'
 
@@ -153,9 +153,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
         if (ticket !== generation.current) return
         setContext(data)
         // Only canonicalize supplied facts; blank source color/size stay unconfirmed.
-        setDraft({ ...next, genderScope: data.product?.genderScope || '', gender: data.facts?.gender || next.gender,
-          material: data.facts?.material || next.material, length: data.facts?.length || next.length,
-          color: next.color ? data.facts?.color || next.color : '', size: next.size ? data.facts?.size || next.size : '' })
+        setDraft(canonicalizePreviewDraft(next, data, item.variantId))
         if (data.products?.length) setChoices(data.products)
       }
     } catch (value) {
