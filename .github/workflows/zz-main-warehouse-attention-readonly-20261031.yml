@@ -24,3 +24,5 @@ jobs:
           test "${GITHUB_REF}" = "refs/heads/audit/main-warehouse-actionability-readonly-20261031"
           node --check scripts/ops/main-warehouse-attention-readonly-20261031.mjs
           node --experimental-strip-types scripts/ops/main-warehouse-attention-readonly-20261031.mjs
+
+# Recheck after Main wrangler JSONC parser adjustment.
