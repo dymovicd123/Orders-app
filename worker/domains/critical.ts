@@ -313,22 +313,22 @@ export async function insertCriticalMappedEntity(
   ]);
   const inserted = toInt(insertResult.meta?.changes, 0);
   const mapped = toInt(mapResult.meta?.changes, 0);
-  // Native D1 metadata includes trigger side effects: one direct INSERT can
-  // report changes=4. The preceding SQL changes()=1 in the mapping INSERT
-  // already proves exactly one direct row was inserted in this same batch.
-  if (inserted >= 1 && mapped === 1) {
-    const id = toInt(insertResult.meta?.last_row_id, 0);
-    if (!id) throw new Error(`Не удалось безопасно определить ${entityType}.`);
+  const id = toInt(insertResult.meta?.last_row_id, 0);
+  // D1's meta.changes can include trigger/cumulative effects, so a SQL
+  // changes()=1 inside the same batch is the direct-row guard. Verify its
+  // resulting exact request/entity mapping, not an assumed aggregate count.
+  const linkedId = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
+  if (inserted > 0 && mapped > 0 && id > 0 && linkedId === id) {
     return { id, created: true };
   }
-  // A missing row due to a concurrent duplicate is safe ONLY when there is
-  // an established mapping; never fall back to last_insert_rowid() after
-  // a zero-row insert (it may be from a previous, unrelated statement).
   if (inserted === 0 && mapped === 0) {
-    const existingId = await criticalOperationEntityId(db, handle.requestId, entityType, entityKey);
-    if (existingId) return { id: existingId, created: false };
+    if (linkedId) return { id: linkedId, created: false };
     throw new CriticalOperationBusyError('Действие было перехвачено другим запросом. Обновите страницу и повторите.');
   }
+  // Non-sensitive diagnostic on isolated test branch only; remove once native D1 is proven.
+  console.warn('NATIVE_D1_ITEM_MAPPING_DIAG', JSON.stringify({
+    entityType, inserted, mapped, id, linkedId,
+  }));
   throw new Error(`Не согласованы запись и привязка ${entityType}; требуется проверка операции.`);
 }
 
