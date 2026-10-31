@@ -100,8 +100,25 @@ export function catalogReviewRecentEntryPredicate(oi = 'oi', o = 'o') {
 
 export function catalogReviewOperationalPredicate(oi = 'oi', o = 'o') {
   const recent = catalogReviewRecentEntryPredicate(oi, o);
+  // An active, unshipped order with an unresolved catalogue identity remains
+  // actionable even after the normal recent-order window has expired.
+  // Only existing unresolved reservation rows can bypass that date window:
+  // no archival resurrection, fabricated SKU or stock write is permitted.
+  const historicalUnresolved = `(
+    COALESCE(${oi}.is_workshop, 0) = 0
+    AND COALESCE(${o}.order_status, 'active') = 'active'
+    AND COALESCE(${o}.archived_at, '') = ''
+    AND COALESCE(${o}.shipping_status, 'not_sent') <> 'sent'
+    AND EXISTS (
+      SELECT 1 FROM inventory_reservations historic_unresolved
+      WHERE historic_unresolved.order_item_id = ${oi}.id
+        AND historic_unresolved.order_id = ${oi}.order_id
+        AND historic_unresolved.status = 'unresolved'
+        AND historic_unresolved.unresolved_reason IN ('product', 'variant')
+    )
+  )`;
   return `(
-    ${recent}
+    (${recent} OR ${historicalUnresolved})
     AND (
       (COALESCE(${oi}.is_workshop, 0) = 1
         AND ${oi}.product_id IS NULL
