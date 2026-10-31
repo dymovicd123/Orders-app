@@ -1,0 +1,121 @@
+name: "Stage 4 one-time Branch2-only release (migration 0117/0118 + Worker)"
+
+# This file is intentionally the ONLY release trigger. No schedule, generic
+# push build/deploy, or pull_request deployment. Merge exactly once with
+# commit title "release(stage4-branch2): ...". All other commits are inert.
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-stage4-one-shot-release-20261101.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage4-branch2-one-shot-release
+  cancel-in-progress: false
+
+jobs:
+  branch2-release:
+    if: github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(stage4-branch2):')
+    name: "EXACT Branch2 D1 only; fail closed before Worker deploy"
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Checkout exact merged Branch2 commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Build and run current semantic integration gate
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run release:check
+      - name: Validate release target, credentials and prepare ephemeral Worker config
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const original=readFileSync('wrangler.jsonc','utf8')
+          for(const required of [
+            '"name": "orders-app-branch2"',
+            '"database_name": "orders_db_branch2_mirror_20261027"',
+            '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"',
+          ])assert(original.includes(required),'Missing exact Branch2 binding: '+required)
+          for(const forbidden of ['orders_db_prod','17e68a41-1d58-4a36-8a63-47c3e32443c4','orders-app.orders-clothes.workers.dev']){
+            assert(!original.includes(forbidden),'Production target detected; fail closed')
+          }
+          assert(original.includes('"assets": {'),'Missing assets stanza')
+          const patched=original.replace('"assets": {','"assets": {\n    "directory": "./dist/client",')
+          writeFileSync('.stage4-branch2-release.jsonc',patched)
+          console.log('STAGE4_BRANCH2_RELEASE_CONFIG_PASS: exact isolated D1 and Worker, never Main')
+          NODE
+          npm run build
+          npx wrangler deploy --dry-run --outdir .stage4-branch2-dry-run --config .stage4-branch2-release.jsonc
+      - name: Read-only remote Branch2 migration prerequisite gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config .stage4-branch2-release.jsonc \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_operations','inventory_movements','inventory_stock','inventory_reservations','catalog_variants') ORDER BY name" --json > "$RUNNER_TEMP/stage4-before.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const raw=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/stage4-before.json','utf8'))
+          const rows=Array.isArray(raw)?raw.flatMap(x=>x.results||[]):(raw.results||[])
+          const actual=rows.map(x=>x.name).sort()
+          const expected=['catalog_variants','inventory_movements','inventory_operations','inventory_reservations','inventory_stock']
+          assert.deepEqual(actual,expected,'Branch2 prerequisites missing. No schema changes and no Worker deploy.')
+          console.log('STAGE4_BRANCH2_PREMIGRATION_PASS',actual.length)
+          NODE
+      - name: Apply ONLY additive Stage4 migrations to exact Branch2 D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote \
+            --config .stage4-branch2-release.jsonc --file migrations/0117_v72_inventory_manual_operation_receipts.sql
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote \
+            --config .stage4-branch2-release.jsonc --file migrations/0118_v72_inventory_operation_attempts.sql
+      - name: Verify remote schema BEFORE publishing Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config .stage4-branch2-release.jsonc \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_manual_operation_receipts','inventory_operation_attempts') ORDER BY name" --json > "$RUNNER_TEMP/stage4-after.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const raw=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/stage4-after.json','utf8'))
+          const rows=Array.isArray(raw)?raw.flatMap(x=>x.results||[]):(raw.results||[])
+          assert.deepEqual(rows.map(x=>x.name),['inventory_manual_operation_receipts','inventory_operation_attempts'])
+          console.log('STAGE4_BRANCH2_REMOTE_D1_MIGRATION_SUCCESS')
+          NODE
+      - name: Deploy exact test Worker only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config .stage4-branch2-release.jsonc
+      - name: Anonymous post-deploy availability smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin='https://orders-app-branch2.orders-clothes.workers.dev'
+          code="$(curl -sS --max-time 20 -o "$RUNNER_TEMP/stage4-branch2-auth.json" -w '%{http_code}' "$origin/api/auth/status")"
+          test "$code" = 200
+          code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "$origin/api/inventory/operation-attempts?source=warehouse&variantId=1")"
+          test "$code" = 401
+          echo 'STAGE4_BRANCH2_DEPLOY_SMOKE_PASS: auth=200; guarded journal=401; no Main operation'
