@@ -110,7 +110,7 @@ assert((stockAttentionUI.match(/className="inventory-attention-task-help"/g) || 
 assert(stockAttentionUI.includes('Это данные учёта, <strong>не свежий пересчёт</strong>'),
   'Shortage card must not present database stock as a physical count')
 assert(!stockAttentionUI.includes('не добавляйте его повторно на склад'), 'Avoid vague historical-shipment instruction')
-assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Корректировать остаток'), 'Keep current stock actions')
+assert(stockAttentionUI.includes('Оформить фактический приход') && stockAttentionUI.includes('Корректировка после пересчёта') && stockAttentionUI.includes('openAttentionCorrection(item)'), 'Keep current stock actions gated behind physical verification')
 
 assert(!readFileSync('src/features/sections/OrdersHeaderSection.tsx','utf8').includes('shippedUntracked'))
 assert(readFileSync('worker/domains/order-reservations.ts','utf8').includes("stockConfirmationOperation === 'handover' && bounded.requiresResolution && !stockConfirmation"))
