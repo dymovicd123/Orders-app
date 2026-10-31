@@ -26,3 +26,5 @@ jobs:
           node --experimental-strip-types scripts/ops/main-warehouse-attention-readonly-20261031.mjs
 
 # Recheck after Main wrangler JSONC parser adjustment.
+
+# Inspect current newly changed boutique SKU 1784 as read-only provenance.
