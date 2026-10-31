@@ -36,3 +36,19 @@
 .inventory-attention-task .inventory-attention-task-reason strong{font-size:16px}
 .inventory-attention-task .inventory-attention-actions{align-content:center;max-width:400px}
 @media(max-width:900px){.inventory-attention-guide-steps{grid-template-columns:1fr}.inventory-attention-guide{margin:12px 12px 4px;padding:14px}.inventory-attention-group.is-shortage .inventory-attention-list,.inventory-attention-group.is-shipped-untracked .inventory-attention-list{padding:8px 12px 14px}.inventory-attention-group.is-shortage .inventory-attention-list article.inventory-attention-task,.inventory-attention-group.is-shipped-untracked .inventory-attention-list article.inventory-attention-task{gap:12px}.inventory-attention-task .inventory-attention-actions{justify-content:flex-start}}
+
+/* Stage 4: human-readable actionable issues, not an admin error console. */
+.inventory-attention-group.is-shortage .inventory-attention-list article.inventory-attention-task{align-items:start;grid-template-columns:minmax(0,1fr) minmax(195px,275px);gap:20px;padding:19px}
+.inventory-attention-balance{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:5px 0}
+.inventory-attention-balance>div{min-width:0;border:1px solid var(--line);border-radius:10px;padding:11px 12px;display:grid;gap:5px;background:var(--card)}
+.inventory-attention-balance span{font-size:12px;line-height:1.4;color:var(--muted)}
+.inventory-attention-balance strong{font-size:18px;line-height:1.3;font-variant-numeric:tabular-nums;color:var(--text)}
+.inventory-attention-task .inventory-attention-task-help{max-width:750px;font-size:13px}
+.inventory-attention-task .inventory-attention-actions{display:flex;flex-wrap:wrap;align-content:start;gap:8px;max-width:none}
+.inventory-attention-task .inventory-attention-safe-operations{width:100%;padding:10px 0 0;border-top:1px solid var(--line);color:var(--muted)}
+.inventory-attention-safe-operations summary{cursor:pointer;font-size:13px;line-height:1.4;font-weight:600;color:var(--text);list-style-position:inside}
+.inventory-attention-safe-operations p{margin:8px 0;font-size:12px;line-height:1.5}
+.inventory-attention-safe-operations>div{display:flex;flex-wrap:wrap;gap:7px}
+.inventory-attention-safe-operations button{white-space:normal;text-align:left}
+@media(max-width:980px){.inventory-attention-group.is-shortage .inventory-attention-list article.inventory-attention-task{grid-template-columns:1fr;gap:12px}.inventory-attention-task .inventory-attention-actions{justify-content:flex-start}}
+@media(max-width:520px){.inventory-attention-balance{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-attention-balance>div:last-child{grid-column:span 2}.inventory-attention-balance strong{font-size:17px}}
