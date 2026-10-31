@@ -92,6 +92,39 @@ try{
  assert.equal(answer.kind,'ready','Known reference/variant ID must not ask for duplicate fields')
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variants WHERE product_id=?').get(productId).n,1)
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,0,'Resolver context must not mutate physical stock')
+ // 1.4: exact known historical facts can resolve without a persisted variant_id,
+ // but a missing color/size is never guessed merely because a tentative candidate exists.
+ const alternative=await api('/api/catalog/variants','POST',{
+  productId,category:'adult',gender:'ЖЕН',color:'БЕЛЫЙ',
+  material:'СТАНДАРТ',length:'СТАНДАРТ',sizeLabel:'48'
+ },201)
+ assert.notEqual(Number(alternative.data.id),variantId)
+ sqlite.prepare("UPDATE order_items SET product_id=NULL,variant_id=NULL,color_snapshot='ЧЕРНЫЙ',size_snapshot='46' WHERE id=?").run(line.id)
+ const {data:unlinkedKnown}=await api('/api/orders/'+orderId+'/catalog-review/'+line.id+'/context')
+ assert.equal(unlinkedKnown.exactVariant?.id,variantId,'Complete unlinked facts identify exact canonical SKU')
+ const unlinkedDraft=initialDraft({productName:name,variantId:null,color:'ЧЕРНЫЙ',size:'46'},unlinkedKnown)
+ assert.equal(nextQuestion(unlinkedKnown,unlinkedDraft,{remainder:'',classified:false,confirmed:{},legacy:false,editing:null}).kind,'ready')
+ assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=?').get(line.id).variant_id,null,'Preview never writes identity')
+ sqlite.prepare("UPDATE order_items SET color_snapshot='',size_snapshot='46' WHERE id=?").run(line.id)
+ const {data:missingColor}=await api('/api/orders/'+orderId+'/catalog-review/'+line.id+'/context')
+ const colorDraft=initialDraft({productName:name,variantId:null,color:'',size:'46'},missingColor)
+ assert.equal(colorDraft.color,'','Missing unlinked color must remain missing')
+ assert.deepEqual(nextQuestion(missingColor,colorDraft,{remainder:'',classified:false,confirmed:{},legacy:false,editing:null}),{kind:'field',field:'color'})
+ sqlite.prepare("UPDATE order_items SET color_snapshot='ЧЕРНЫЙ',size_snapshot='' WHERE id=?").run(line.id)
+ const {data:missingSize}=await api('/api/orders/'+orderId+'/catalog-review/'+line.id+'/context')
+ const sizeDraft=initialDraft({productName:name,variantId:null,color:'ЧЕРНЫЙ',size:''},missingSize)
+ assert.equal(sizeDraft.size,'','Missing unlinked size must remain missing')
+ assert.deepEqual(nextQuestion(missingSize,sizeDraft,{remainder:'',classified:false,confirmed:{},legacy:false,editing:null}),{kind:'field',field:'size'})
+ sqlite.prepare("UPDATE order_items SET color_snapshot='',size_snapshot='' WHERE id=?").run(line.id)
+ const {data:ambiguous}=await api('/api/orders/'+orderId+'/catalog-review/'+line.id+'/context')
+ const ambiguousDraft=initialDraft({productName:name,variantId:null,color:'',size:''},ambiguous)
+ assert.equal(ambiguousDraft.color,'')
+ assert.equal(ambiguousDraft.size,'')
+ assert.equal(nextQuestion(ambiguous,ambiguousDraft,{remainder:'',classified:false,confirmed:{},legacy:false,editing:null}).kind,'field')
+ // Restore exact synthetic record for the subsequent shipping/reservation scenario.
+ sqlite.prepare("UPDATE order_items SET product_id=?,variant_id=?,color_snapshot='',size_snapshot='' WHERE id=?").run(productId,variantId,line.id)
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,0)
+ console.log('MAIN_RESOLVER_UNLINKED_KNOWN_VS_AMBIGUOUS_HTTP_PASS',JSON.stringify({variantId,alternativeId:Number(alternative.data.id)}))
  // Task 1.5: reproduce interrupted old order reservation, then exercise the
  // REAL shipping API recovery and persisted SQLite records. No fake physical receipt.
  const starting=sqlite.prepare('SELECT id,status,variant_id,quantity FROM inventory_reservations WHERE order_item_id=?').all(line.id)
