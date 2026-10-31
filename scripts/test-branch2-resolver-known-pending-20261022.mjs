@@ -125,6 +125,7 @@ persistent.exec([
  "CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER)",
  "CREATE TABLE returns(id INTEGER PRIMARY KEY,status TEXT)",
  "CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER)",
+ "CREATE TABLE workshop_tasks(id INTEGER PRIMARY KEY,order_item_id INTEGER,quantity INTEGER,status TEXT)",
  "INSERT INTO orders VALUES(2195,'CI-2195','2026-10-31','2026-10-31T15:35:14Z','not_sent',NULL,'active',NULL)",
  "INSERT INTO order_items VALUES(5301,2195,1,0,75,962,'pending_reservation','АБАЙ ТАКИЯ','ВЗРОСЛЫЙ','МУЖ','ТЕМНО-СИНИЙ','СТАНДАРТ','СТАНДАРТ','57','warehouse','2026-10-31T15:35:14Z')",
  "INSERT INTO inventory_reservations VALUES(2203,2195,5301,'warehouse',75,962,1,'unresolved','concurrent_shortage','2026-10-31T15:35:14Z')",
