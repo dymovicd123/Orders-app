@@ -65,12 +65,28 @@ assert(router.includes("await reconcileCatalogReviewOrder(env.DB, id)"),'Shippin
 // Stage 1.5: an HTTP response may be lost after the resolver POST commits.
 // The same modal session must recheck with GET and resume the original action
 // exactly once; a new order has a completely independent completion latch.
-const { createResolutionSession } = await import('../src/features/orders/catalogResolutionFlow.ts')
+const { createResolutionSession, isRecognizedPendingCatalogReservation } = await import('../src/features/orders/catalogResolutionFlow.ts')
+assert.equal(isRecognizedPendingCatalogReservation({
+  stockWriteoffStatus:'pending_reservation',productId:75,variantId:1498,
+}),true,'A fully recognized SKU with queued shortage is NOT a catalog identity problem')
+for(const value of [
+  {stockWriteoffStatus:'catalog_unresolved',productId:75,variantId:1498},
+  {stockWriteoffStatus:'pending_reservation',productId:75,variantId:null},
+  {stockWriteoffStatus:'pending_reservation',productId:null,variantId:1498},
+  null,
+]) assert.equal(isRecognizedPendingCatalogReservation(value),false,'Only known exact pending SKU gets stock-shortage route')
+
 const modal=readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx','utf8')
 assert(modal.includes('owner.markUncertainWrite()') && modal.includes('setNeedsRecheck(true)'),
  'A lost mutation response must allow read-only retry from the modal')
 assert(modal.includes('if (needsRecheck) await owner.run(null, load'),
  'Read-only retry must never resubmit the original mutation')
+assert(modal.includes('if (pendingKnownShortage)') &&
+ modal.includes('Изменить заказ') && modal.includes('Повторный выбор того же SKU не создаст свободный остаток'),
+ 'Modal must lead known shortage to existing order flow, never broken Save-and-continue')
+assert(review.includes("cleanText(anchor.stock_writeoff_status) === 'pending_reservation'") &&
+ review.includes("повторное уточнение каталога не поможет"),
+ 'Direct API stale resolver writes must explain stock shortage without manufacturing inventory')
 const firstOrder=createResolutionSession()
 let firstWrites=0, firstShipments=0, firstReads=0
 await assert.rejects(()=>firstOrder.run(async()=>{
@@ -96,4 +112,4 @@ await secondOrder.run(async()=>{secondWrites++},async()=>true,async()=>{secondSh
 assert.deepEqual([secondWrites,secondShips],[1,1],
  'A second order must not inherit the first order completion latch')
 
-console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: known SKU and reservation truth, lost response GET recovery, two independent order sessions')
+console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: known shortage routes to order edit, no fake catalog resolution, lost response recovery, two independent orders')
