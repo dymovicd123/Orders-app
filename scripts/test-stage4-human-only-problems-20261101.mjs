@@ -5,6 +5,9 @@ import { DatabaseSync } from 'node:sqlite'
 const backend=readFileSync(new URL('../worker/domains/warehouse-attention.ts',import.meta.url),'utf8')
 const ui=readFileSync(new URL('../src/features/inventory/views/renderInventoryAttentionPanel.tsx',import.meta.url),'utf8')
 const controller=readFileSync(new URL('../src/features/sections/InventorySection.tsx',import.meta.url),'utf8')
+const app=readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8')
+assert.ok(app.includes('Promise.allSettled([...refreshes, loadWarehouseAttention(false, true)])'),
+  'Committed manual warehouse movement refreshes server live problem counts without repeating the operation')
 assert.ok(ui.includes("identify: Number(counts?.found || 0)"),'Only physically discovered things belong in staff identify queue')
 assert.ok(!ui.includes('items.lifecycle.length') && !ui.includes('items.catalog.length'),'Engineering SKU/lifecycle incidents cannot be staff tasks')
 assert.ok(ui.includes("openInventoryPanel('settings')"),'Administrator retains a route to engineering diagnostics')
