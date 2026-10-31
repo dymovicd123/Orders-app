@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
+import { readFileSync } from 'node:fs'
 import { applyInventoryMovement } from '../worker/domains/inventory-movement.ts'
 import { fetchOrderStockHandoverRows, getOrderStockHandoverState } from '../worker/domains/order-reservations.ts'
 
@@ -70,6 +71,8 @@ INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_
  material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity,created_at,updated_at)
 VALUES('warehouse',1,7,'АБАЙ ТАКИЯ','МУЖ','БЕЖЕВЫЙ','ДРАП КАШЕМИР','СТАНДАРТ','58',4,0,'now','now');
 `)
+// Mirror the additive Stage 4.2 migration in this isolated SQL fixture before executing real handler writes.
+db.exec(readFileSync(new URL('../migrations/0117_v72_inventory_manual_operation_receipts.sql', import.meta.url), 'utf8'))
 const item=(size,quantity,extra={})=>({
  productId:1,productName:'АБАЙ ТАКИЯ',category:'adult',gender:'МУЖ',
  color:'БЕЖЕВЫЙ',material:'ДРАП КАШЕМИР',length:'СТАНДАРТ',size,
