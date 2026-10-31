@@ -1196,6 +1196,27 @@ export type InventoryMovementRecord = {
 
 
 
+export type InventoryOperationAttempt = {
+  id: number
+  requestId: string
+  operationType: 'arrival' | 'writeoff' | 'manual_set' | 'transfer'
+  outcome: 'rejected' | 'uncertain' | 'replayed'
+  source: 'warehouse' | 'boutique'
+  variantId: number
+  reasonCode: string
+  reasonMessage: string
+  actorUserId: number | null
+  actor: string | null
+  recordedAt: string
+}
+
+export type InventoryOperationAttemptsResponse = {
+  ok: boolean
+  attempts: InventoryOperationAttempt[]
+  hasMore: boolean
+  nextBeforeId?: number | null
+}
+
 export type InventoryHistoryResponse = {
   ok: boolean
   hasMore: boolean
