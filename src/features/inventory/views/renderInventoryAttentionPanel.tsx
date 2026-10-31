@@ -212,7 +212,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
 
       {items && attentionCategory === 'identify' ? (
         <section className="inventory-attention-group is-identify">
-          <div className="inventory-attention-group-head"><div><strong>Найденные вещи и вопросы привязки</strong><span>Физически найденные вещи требуют идентификации. Технические сбои распознавания существующих товаров должны исправляться в программе; сотрудника нельзя считать виновным в них.</span></div><b>{categoryCounts.identify}</b></div>
+          <div className="inventory-attention-group-head"><div><strong>Найденные вещи и вопросы привязки</strong><span>Не все вопросы здесь требуют действий склада. Физически найденные вещи требуют идентификации. Технические сбои распознавания существующих товаров должны исправляться в программе; сотрудника нельзя считать виновным в них.</span></div><b>{categoryCounts.identify}</b></div>
           {((items.found?.length || 0) || items.lifecycle.length || items.catalog.length) ? <div className="inventory-attention-list">
             {items.found?.length ? <section className="inventory-attention-subgroup">
               <div className="inventory-attention-subgroup-head"><div><strong>Найдено при проверке</strong><span>Физический факт уже сохранён. Осталось связать вещь с точным вариантом товара.</span></div><b>{items.found.length}</b></div>
