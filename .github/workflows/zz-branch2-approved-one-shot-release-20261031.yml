@@ -57,11 +57,32 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Current regression and production build
         run: npm run check:focused
-      - name: Publish directly to active Branch2 Worker (NO D1 migrations)
+      - name: Verify generated Vite/Cloudflare production artifact is Branch2-only
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config wrangler.jsonc
+          test -f dist/orders_app_branch2/wrangler.json
+          test -f dist/orders_app_branch2/index.js
+          test -f dist/client/index.html
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const cfg=JSON.parse(readFileSync('dist/orders_app_branch2/wrangler.json','utf8'))
+          assert.equal(cfg.name,'orders-app-branch2','Generated Worker cannot be Main')
+          assert.equal(cfg.d1_databases?.length,1,'Must have exactly one isolated DB')
+          assert.equal(cfg.d1_databases[0].binding,'DB')
+          assert.equal(cfg.d1_databases[0].database_name,'orders_db_branch2_mirror_20261027')
+          assert.equal(cfg.d1_databases[0].database_id,'0904a573-21ff-44d8-93b0-c9200f771702')
+          assert.equal(typeof cfg.assets?.directory,'string','Only built Vite config with assets directory may deploy')
+          assert(!JSON.stringify(cfg).includes('orders_db_prod'))
+          assert(!JSON.stringify(cfg).includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'))
+          console.log('VITE_BUILT_BRANCH2_ONLY_CONFIG_VERIFIED',JSON.stringify({name:cfg.name,assets:cfg.assets.directory,d1:cfg.d1_databases[0].database_name}))
+          NODE
+      - name: Publish built Vite Worker/assets to active Branch2 (NO D1 migrations)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config dist/orders_app_branch2/wrangler.json
       - name: Verify Branch2 public health endpoint
         shell: bash
         run: |
