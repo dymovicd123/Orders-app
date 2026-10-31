@@ -26,4 +26,6 @@ jobs:
       - name: Install pinned dependencies without deploy
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Only unresolved found-stock physical identity scenarios
-        run: node scripts/test-found-unidentified-stock-focused-20261031.mjs
+        run: |
+          node scripts/test-found-unidentified-stock-focused-20261031.mjs
+          node scripts/test-arrival-save-reliability.mjs
