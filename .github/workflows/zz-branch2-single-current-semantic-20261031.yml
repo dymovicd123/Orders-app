@@ -15,6 +15,10 @@ on:
   push:
     branches: [ci/branch2-consolidate-valid-current-gates-20261031]
   workflow_dispatch:
+# A superseding commit makes old PR checks irrelevant; stop wasting runners.
+concurrency:
+  group: branch2-current-semantic-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
