@@ -1664,7 +1664,7 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
        m.length_snapshot, m.size_snapshot, m.quantity_delta, m.quantity_after,
        m.reference_type, m.reference_id, m.comment, m.created_at,
        manual_receipt.actor_user_id AS performed_by_user_id,
-       manual_receipt.actor_label AS performed_by,
+       COALESCE(manual_receipt.actor_label, td.created_by) AS performed_by,
        r.reversed_at, r.reversal_movement_id,
        CASE WHEN rr.original_movement_id IS NOT NULL THEN 1 ELSE 0 END AS is_reversal,
        td.from_source AS transfer_from_source, td.to_source AS transfer_to_source,
