@@ -966,13 +966,26 @@ export async function deleteAuthUser(db: D1Database, userId: number, currentUser
 }
 
 
+// Fetch Headers are ByteString, not arbitrary Unicode. Real employee names
+// (e.g. Завсклад) cannot be written raw into internal authenticated headers.
+function encodeAuthenticatedHeader(value: string): string {
+  return /^[\x20-\x7e]*$/.test(value) ? value : 'utf8:' + encodeURIComponent(value);
+}
+
+export function authenticatedActor(request: Request, key: 'X-Access-User' | 'X-Archive-Actor' = 'X-Access-User'): string {
+  const value = cleanText(request.headers.get(key));
+  if (!value.startsWith('utf8:')) return value;
+  try { return cleanText(decodeURIComponent(value.slice(5))); }
+  catch { return ''; }
+}
+
 export function withAuthenticatedHeaders(request: Request, user: AuthUser) {
   const headers = new Headers(request.headers);
   const actor = user.displayName || user.managerName || user.login;
   headers.set('X-Access-Role', user.role);
-  headers.set('X-Access-Login', user.login);
+  headers.set('X-Access-Login', encodeAuthenticatedHeader(user.login));
   headers.delete('X-Access-Email');
-  headers.set('X-Access-User', actor);
-  headers.set('X-Archive-Actor', actor);
+  headers.set('X-Access-User', encodeAuthenticatedHeader(actor));
+  headers.set('X-Archive-Actor', encodeAuthenticatedHeader(actor));
   return new Request(request, { headers });
 }
