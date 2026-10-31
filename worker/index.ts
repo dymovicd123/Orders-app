@@ -1224,7 +1224,7 @@ export default {
         const actor = cleanText(authUser?.displayName || authUser?.managerName || authUser?.login);
         const targets = (Array.isArray(input.items) ? input.items : []).flatMap((item) => [
           { source: input.fromSource, variantId: item?.variantId },
-          { source: input.toSource, variantId: item?.variantId },
+          { source: cleanText(input.toSource) || (cleanText(input.fromSource) === 'warehouse' ? 'boutique' : 'warehouse'), variantId: item?.variantId },
         ]);
         const attempt = (outcome: 'rejected' | 'uncertain' | 'replayed', code: string, message: string) =>
           safelyRecordWarehouseAttempt(env.DB, {
