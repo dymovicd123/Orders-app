@@ -2,7 +2,7 @@ name: "Main unified warehouse safety runtime acceptance (NO deploy)"
 on:
   push:
     branches: [fix/main-warehouse-integrated-safety-20261031]
-    paths: ['.github/workflows/zz-main-warehouse-unified-acceptance-20261031.yml']
+    paths: ['.github/workflows/zz-main-warehouse-unified-acceptance-20261031.yml','worker/domains/warehouse-operation-feedback.ts','scripts/test-main-warehouse-sku-feedback-20261031.mjs']
 permissions:
   contents: read
 jobs:
@@ -30,6 +30,7 @@ jobs:
           node scripts/test-main-transfer-canonical-sku-20261031.mjs
           node scripts/test-main-found-stocktake-identity-race-20261031.mjs
           node scripts/test-main-older-unresolved-warehouse-attention-20261031.mjs
+          node scripts/test-main-warehouse-sku-feedback-20261031.mjs
       - name: Adjacent existing SQL and runtime guards (selected current, not outdated string-replay baselines)
         run: |
           node scripts/test-step191d-transfer-runtime-safety.mjs
