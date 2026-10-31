@@ -345,23 +345,26 @@ export async function updateCriticalOperationTargetFromLastInsert(
     db.prepare(
       `UPDATE critical_operations
        SET target_type = ?, target_id = last_insert_rowid(), target_ref = ?, step = ?, lease_until_ms = ?, updated_at = ?, last_error = NULL
-       WHERE request_id = ? AND status = 'started' AND lease_token = ? AND step = 'validated'`
+       WHERE request_id = ? AND status = 'started' AND lease_token = ? AND step = 'validated' AND changes() = 1`
     ).bind(targetType, targetRef, nextStep, leaseUntil, now, handle.requestId, handle.leaseToken),
   ]);
-  // A zero-row guarded INSERT/UPDATE is not a SQL error: db.batch would
-  // otherwise commit an orphan order after an expired/reclaimed lease.
-  if (toInt(insertResult.meta?.changes, 0) !== 1 || toInt(updateResult.meta?.changes, 0) !== 1) {
-    // TEMPORARY DIAGNOSTIC ONLY, test branch — remove after native D1 investigation.
-    console.warn('NATIVE_D1_HEADER_LEASE_DIAG', JSON.stringify({
-      inserted: insertResult.meta?.changes, advanced: updateResult.meta?.changes,
-      insertRowId: insertResult.meta?.last_row_id, updateRowId: updateResult.meta?.last_row_id,
-      requestId: handle.requestId,
-    }));
+  // D1 meta.changes includes auxiliary trigger changes (1 order INSERT may report 4).
+  // SQLite changes() inside this SAME batch is the precise direct-row count and
+  // guards the lease update against a zero-row/multiple-row business INSERT.
+  if (toInt(insertResult.meta?.changes, 0) < 1 || toInt(updateResult.meta?.changes, 0) !== 1) {
     throw new CriticalOperationBusyError('Сохранение заказа было перехвачено другим запросом. Обновите страницу и повторите действие.');
   }
   const id = toInt(insertResult.meta?.last_row_id, 0);
   await refreshCriticalOperation(db, handle);
-  const targetId = toInt(handle.row.target_id, 0) || id;
-  if (!targetId) throw new Error(`Не удалось безопасно создать ${targetType}.`);
+  const targetId = toInt(handle.row.target_id, 0);
+  if (!id || !targetId || targetId !== id || handle.row.step !== nextStep || handle.row.target_type !== targetType || handle.row.target_ref !== targetRef) {
+    throw new CriticalOperationBusyError('Сохранение заказа потеряло подтверждение записи. Повторите действие после обновления.');
+  }
+  if (targetType === 'order') {
+    const proof = await db.prepare(
+      'SELECT id FROM orders WHERE id = ? AND external_id = ? LIMIT 1'
+    ).bind(targetId, targetRef).first<{ id: number }>();
+    if (toInt(proof?.id, 0) !== targetId) throw new CriticalOperationBusyError('Связь нового заказа с безопасной операцией не подтверждена.');
+  }
   return targetId;
 }
