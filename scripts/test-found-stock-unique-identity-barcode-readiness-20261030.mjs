@@ -101,4 +101,26 @@ const addTarget=(db,id=2,qty=5)=>db.run(
  assert.equal(db.row('SELECT quantity FROM inventory_stock WHERE id=2').quantity,5)
  assert.equal(db.row('SELECT COUNT(*) n FROM inventory_movements').n,0)
 }
+// Real Stocktake identity safety above + the operator's exact-product
+// navigation contract. A found row must never open an unrelated prior model.
+const {readFileSync}=await import('node:fs')
+const ui=readFileSync('src/features/sections/InventorySection.tsx','utf8')
+const start=ui.indexOf('async function openFoundInventoryCatalog(item: any)')
+const end=ui.indexOf('async function openStocktakeOrders(',start)
+assert(start>=0 && end>start,'The found-item catalog action disappeared')
+const route=ui.slice(start,end)
+for(const fact of [
+ 'Number(item?.productId || 0)',
+ 'await loadCatalogData(true)',
+ 'Number(candidate.id) === productId',
+ "setCatalogCategoryFilter('all')",
+ 'setCatalogOnlyWithoutVariants(false)',
+ "setInventoryQuery('')",
+ 'setExpandedCatalogProducts({ [String(productId)]: true, __w6_variant_editor: true })',
+ 'setCatalogVariantDraft({',
+ "openInventoryPanel('catalog')",
+]) assert(route.includes(fact),'Found-item navigation lost exact-product/editor preselection: '+fact)
+assert(route.indexOf('setExpandedCatalogProducts(')<route.indexOf("openInventoryPanel('catalog')"),
+ 'Preselect exact found product BEFORE navigating to catalog')
+
 console.log('WAREHOUSE_BARCODE_FOUND_STOCK_SKU_GUARD_PASSED — seven SQLite cases; no phantom stock or ambiguous SKU identity')
