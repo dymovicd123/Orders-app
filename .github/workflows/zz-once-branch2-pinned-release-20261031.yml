@@ -46,3 +46,5 @@ jobs:
           path: release-proof/branch2-20261031-before-switch.json
           if-no-files-found: ignore
           retention-days: 7
+
+# Reattempt only after read-only rollback verification and bounded live propagation.
