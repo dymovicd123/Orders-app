@@ -92,6 +92,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
          (SELECT COUNT(*) FROM inventory_lifecycle_events e
           WHERE e.status = 'pending' AND e.direction = 'in'
             AND COALESCE(e.pending_reason, '') <> 'retired_historical'
+            AND COALESCE(e.operation_type, '') <> 'workshop_intake'
             AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
          (SELECT COUNT(*) FROM (
             SELECT 1
@@ -164,7 +165,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     }
     return {
       ok: true,
-      total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
+      total: counts.shortage + counts.intake + counts.handover + counts.stocktake + counts.found,
       counts,
     }
   }
@@ -221,7 +222,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
     ).bind(shortageFetchLimit).all<Record<string, unknown>>(),
     db.prepare(
       `WITH pending_lifecycle AS (
-         SELECT e.id, e.event_type, e.direction, e.order_id, e.order_item_id, e.inventory_source, e.quantity,
+         SELECT e.id, e.event_type, e.operation_type, e.direction, e.order_id, e.order_item_id, e.inventory_source, e.quantity,
                 e.product_id, e.variant_id, e.product_name_snapshot, e.audience_type, e.gender_snapshot,
                 e.color_snapshot, e.material_snapshot, e.length_snapshot, e.size_snapshot, e.is_workshop,
                 e.pending_reason, e.created_at, o.external_id, o.order_date, ${exactLifecycleVariantSql} AS exact_variant_id
@@ -295,7 +296,10 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
           )) AS shortage_count,
          (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status = 'pending') AS lifecycle_total_count,
          (SELECT COUNT(*) FROM inventory_lifecycle_events e
-          WHERE e.status = 'pending' AND e.direction = 'in' AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
+          WHERE e.status = 'pending' AND e.direction = 'in'
+             AND COALESCE(e.pending_reason, '') <> 'retired_historical'
+             AND COALESCE(e.operation_type, '') <> 'workshop_intake'
+             AND ${exactLifecycleVariantSql} IS NOT NULL) AS intake_count,
          (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status = 'active') AS stocktake_count`
     ).first<Record<string, unknown>>(),
   ])
@@ -344,7 +348,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
   }
   const response: Record<string, unknown> = {
     ok: true,
-    total: counts.shortage + counts.intake + counts.lifecycle + counts.catalog + counts.handover + counts.stocktake + counts.found,
+    total: counts.shortage + counts.intake + counts.handover + counts.stocktake + counts.found,
     counts,
   }
 
@@ -383,6 +387,7 @@ export async function getWarehouseAttentionSummary(db: D1Database, url?: URL) {
       exactVariantId
       && cleanText(row.direction) === 'in'
       && cleanText(row.pending_reason) !== 'retired_historical'
+      && cleanText(row.operation_type) !== 'workshop_intake'
     )
     return {
       id: toInt(row.id, 0),
