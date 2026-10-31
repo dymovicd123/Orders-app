@@ -1,0 +1,44 @@
+name: "One-shot read-only Main vs Branch2 historical closure 20261031"
+on:
+  push:
+    branches: [audit/main-branch2-legacy-closure-crosscheck-20261031]
+    paths: [.github/workflows/zz-audit-main-branch2-legacy-20261031.yml]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Compare history by bounded SELECT only on two independent D1 databases
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-branch2-legacy-closure-crosscheck-20261031')
+          const ids={main:'17e68a41-1d58-4a36-8a63-47c3e32443c4',branch2:'0904a573-21ff-44d8-93b0-c9200f771702'}
+          const queries={"unresolved":"SELECT r.id AS reservation_id,r.order_id,r.order_item_id,r.status AS reservation_status,r.unresolved_reason,oi.quantity AS item_quantity,oi.product_id,oi.variant_id,oi.stock_writeoff_status,oi.is_workshop,o.order_status,o.shipping_status,o.archived_at,o.order_date,(SELECT COUNT(*) FROM return_items ri JOIN returns ret ON ret.id=ri.return_id WHERE ri.order_item_id=oi.id AND COALESCE(ret.status,'completed')<>'cancelled') AS returns_count FROM inventory_reservations r LEFT JOIN order_items oi ON oi.id=r.order_item_id LEFT JOIN orders o ON o.id=r.order_id WHERE r.id IN (1201,1229,1256) ORDER BY r.id","inbound":"SELECT e.id,e.status,e.direction,e.quantity,e.pending_reason,e.is_workshop,e.order_id,e.order_item_id,e.variant_id,oi.variant_id AS item_variant,oi.quantity AS item_quantity,oi.stock_writeoff_status,o.shipping_status,o.order_status FROM inventory_lifecycle_events e LEFT JOIN order_items oi ON oi.id=e.order_item_id LEFT JOIN orders o ON o.id=e.order_id WHERE e.id IN (80,85) ORDER BY e.id","inbound_totals":"SELECT status,direction,COALESCE(pending_reason,'') AS reason,COUNT(*) AS n FROM inventory_lifecycle_events WHERE is_workshop=1 AND direction='in' GROUP BY status,direction,COALESCE(pending_reason,'') ORDER BY n DESC LIMIT 20","reservation_totals":"SELECT status,COALESCE(unresolved_reason,'') AS reason,COUNT(*) AS n FROM inventory_reservations WHERE status IN ('unresolved','active') GROUP BY status,COALESCE(unresolved_reason,'') ORDER BY status,reason LIMIT 20","old_orders":"SELECT o.id,o.order_status,o.shipping_status,o.order_date,o.archived_at,(SELECT COUNT(*) FROM inventory_reservations r WHERE r.order_id=o.id AND r.status='active') AS active_reservations,(SELECT COUNT(*) FROM inventory_reservations r WHERE r.order_id=o.id AND r.status='unresolved') AS unresolved_reservations FROM orders o WHERE o.id IN (682,1112,1658) ORDER BY o.id"}
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(account||'')&&token)
+          async function select(env,sql){
+            assert(Object.hasOwn(ids,env))
+            assert(sql.startsWith('SELECT ')&&!sql.includes(';')&&!/\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|PRAGMA|ATTACH|DETACH)\b/i.test(sql))
+            const r=await fetch('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+ids[env]+'/query',{
+              method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+              body:JSON.stringify({sql}),signal:AbortSignal.timeout(35000)
+            })
+            const j=await r.json()
+            assert(r.ok&&j.success!==false,'Read-only D1 query '+env+' failed HTTP '+r.status)
+            const results=Array.isArray(j.result)?j.result:[j.result]
+            assert(results.every(v=>v?.success!==false),'SQL returned failure '+env)
+            return results.flatMap(v=>v?.results||[])
+          }
+          for(const env of ['main','branch2']){
+            for(const [key,sql] of Object.entries(queries)){
+              console.log('HISTORICAL_CROSSCHECK_'+env.toUpperCase()+'_'+key.toUpperCase()+' '+JSON.stringify(await select(env,sql)))
+            }
+          }
+          console.log('HISTORICAL_CROSSCHECK_SELECT_ONLY_COMPLETE: No database writes')
+          NODE
