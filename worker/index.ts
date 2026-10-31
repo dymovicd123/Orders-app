@@ -1867,7 +1867,11 @@ export default {
           }
           let blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
           let unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
-          if (unresolvedBlockers.length) {
+          if (unresolvedBlockers.length && unresolvedBlockers.some(row => toInt(row.known_pending_reservation, 0) !== 1)) {
+            // Every blocker already known as pending shortage has a canonical
+            // identity and a current unresolved reservation. A catalog repair
+            // would only churn that reservation ID; allow the existing
+            // explicit confirmation/edit flow to handle physical availability.
             try {
               await reconcileCatalogReviewOrder(env.DB, id);
             } catch (error) {
