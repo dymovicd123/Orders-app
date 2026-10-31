@@ -1,0 +1,91 @@
+name: "One-shot Branch2 candidate immutable preview verification 20261031"
+on:
+  push:
+    branches:
+      - audit/branch2-activation-readonly-20261031
+    paths:
+      - .github/workflows/zz-audit-branch2-candidate-preview-20261031.yml
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect exact candidate version, compare preview to live without mutations
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/branch2-activation-readonly-20261031')
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(account||'')&&token)
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account
+          async function get(path){
+            assert(['/workers/scripts','/workers/scripts/orders-app-branch2/versions','/workers/scripts/orders-app-branch2/deployments',
+              '/workers/scripts/orders-app-branch2/versions/23b5f04d-9340-4a0c-af53-4968527f821f',
+              '/workers/scripts/orders-app-branch2/versions/57ff180b-0036-4aa7-a562-d4b53249d245'].includes(path)
+              || /^\/builds\/workers\/[a-f0-9-]{8,}\/builds$/.test(path))
+            const r=await fetch(base+path,{method:'GET',headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)})
+            const p=await r.json()
+            if(!r.ok||p.success!==true)throw Error('Cloudflare '+path.split('/').at(-1)+' '+r.status)
+            return p.result
+          }
+          const workers=(await get('/workers/scripts')).filter(x=>x.id==='orders-app-branch2')
+          assert.equal(workers.length,1)
+          const builds=await get('/builds/workers/'+workers[0].tag+'/builds')
+          const latest=(Array.isArray(builds)?builds:builds.builds||[]).filter(x=>x.build_trigger_metadata?.branch==='branch2')
+          assert.equal(latest[0].build_trigger_metadata.commit_hash,'c6295401e0777121a4760beb44ba87e8a4a19b94')
+          assert.equal(latest[0].build_outcome,'success')
+          const versionList=await get('/workers/scripts/orders-app-branch2/versions')
+          const versions=(Array.isArray(versionList)?versionList:versionList.items||versionList.versions||[])
+          assert.equal(versions[0].id,'23b5f04d-9340-4a0c-af53-4968527f821f')
+          assert.equal(versions[1].id,'57ff180b-0036-4aa7-a562-d4b53249d245')
+          const details=[]
+          for(const id of [versions[0].id,versions[1].id]){
+            const v=await get('/workers/scripts/orders-app-branch2/versions/'+id)
+            details.push({id,keys:Object.keys(v),metadata:v.metadata,annotations:v.annotations,
+              created:v.created_on,modified:v.modified_on})
+          }
+          async function asset(host) {
+            let entry=''
+            let flags
+            for(let i=0;i<3;i++){
+              const r=await fetch(host+'/?candidate-check='+i,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+              assert.equal(r.status,200)
+              const html=await r.text()
+              const parsed=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)?.[1]
+              assert(parsed)
+              if(entry)assert.equal(parsed,entry)
+              entry=parsed
+              const jr=await fetch(host+entry,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+              assert.equal(jr.status,200)
+              const js=await jr.text()
+              const next={
+                newCopy:js.includes('Заказ можно сохранить без подтверждения физического наличия'),
+                oldButton:js.includes('Подтвердить резерв при нехватке — товар физически есть')
+              }
+              if(flags)assert.deepEqual(next,flags)
+              flags=next
+            }
+            const denied=await fetch(host+'/api/orders?limit=1',{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+            assert.equal(denied.status,401)
+            return {host,entry,flags,api:denied.status}
+          }
+          const current=(await get('/workers/scripts/orders-app-branch2/deployments'))
+          const active=(Array.isArray(current)?current:current.deployments)[0]
+          assert.equal(active.versions[0].version_id,'1fa6e7a3-32d4-4f77-b625-e044db46015a')
+          const live=await asset('https://orders-app-branch2.orders-clothes.workers.dev')
+          const preview=await asset('https://23b5f04d-9340-4a0c-af53-4968527f821f-orders-app-branch2.orders-clothes.workers.dev')
+          assert.equal(live.flags.oldButton,true)
+          assert.equal(live.flags.newCopy,false)
+          assert.equal(preview.flags.newCopy,true)
+          assert.equal(preview.flags.oldButton,false)
+          console.log('BRANCH2_CANDIDATE_IMMUTABLE_PREVIEW_PASSED '+JSON.stringify({
+            expectedBranchSha:'c6295401e0777121a4760beb44ba87e8a4a19b94',activeVersion:active.versions[0].version_id,
+            candidate:versions[0].id,latestBuildStatus:latest[0].status,latestBuildOutcome:latest[0].build_outcome,
+            details,live,preview,mutations:0}))
+          NODE
