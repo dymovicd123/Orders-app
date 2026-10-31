@@ -23,6 +23,8 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Identify exact historical SQL incompatibility on disposable native D1 first
+        run: node scripts/test-main-native-d1-migration-bisect-20261031.mjs
       - name: Strict local-only D1 database migration and canonical schema smoke
         shell: bash
         run: |
