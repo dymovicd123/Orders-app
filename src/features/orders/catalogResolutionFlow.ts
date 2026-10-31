@@ -15,7 +15,8 @@ export const normalize = (v: unknown) => clean(v).toUpperCase().replace(/\s+/g, 
 const identity = (v: unknown) => normalize(v).replace(/[^0-9A-ZА-ЯЁӘҒҚҢӨҰҮҺІ]+/g, ' ').trim()
 // Equivalent punctuation/spacing is a known reference, not a new characteristic.
 // This is exact identity only; fuzzy suggestions must still require a choice.
-export const sameReferenceValue = (left: unknown, right: unknown) => Boolean(identity(left)) && identity(left) === identity(right)
+const referenceIdentity = (value: unknown) => normalize(value).replace(/[‐‑‒–—-]+/g, ' ').replace(/\s+/g, ' ').trim()
+export const sameReferenceValue = (left: unknown, right: unknown) => Boolean(referenceIdentity(left)) && referenceIdentity(left) === referenceIdentity(right)
 
 export function compoundRemainder(rawName: string, productName: string) {
   const rawTokens = identity(rawName).split(' ')
