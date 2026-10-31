@@ -87,3 +87,5 @@ jobs:
             mutations:0
           }))
           NODE
+
+# Recheck after controlled activation rollback on 2026-10-31.
