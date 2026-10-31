@@ -38,6 +38,6 @@ jobs:
           node scripts/test-old-order-post-stocktake-handover-r1.mjs
           node scripts/test-return-active-reserve-p0-20261021.mjs
       - name: Main Worker HTTP and isolated SQL business acceptance
-        run: node scripts/test-main-foundation-worker-sqlite-20261020.mjs
+        run: node scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs
       - name: Typecheck and build (no publish)
         run: npm run build
