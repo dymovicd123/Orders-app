@@ -169,8 +169,16 @@ INSERT INTO inventory_reservations(id,inventory_source,variant_id,quantity,statu
  VALUES(903,'warehouse',7,2,'active',901,902,'2026-10-14T08:00:00Z');
 UPDATE inventory_stock SET reserved_quantity=2 WHERE inventory_source='warehouse' AND variant_id=7;
 `)
+// Older corrections from this same W11 fixture have already created later
+// checkpoints. Mark the last one reviewed, so this test measures only the
+// newly performed physical correction, not an unrelated historical warning.
+const priorHandover=(await getOrderStockHandoverState(db,901)).items[0]
+assert.equal(priorHandover.reviewNeeded,true,'Fixture should see older stock check')
+db.db.prepare(`INSERT INTO inventory_handover_reviews
+ (id,order_id,order_item_id,reservation_id,decision,checkpoint_id,checkpoint_at)
+ VALUES(1,901,902,903,'still_here',?,?)`).run(priorHandover.checkpointId,priorHandover.checkpointAt)
 const beforeHandover=(await getOrderStockHandoverState(db,901)).items[0]
-assert.equal(beforeHandover.reviewNeeded,false,'Unreviewed order must not be flagged before correction')
+assert.equal(beforeHandover.reviewNeeded,false,'Reviewed prior checkpoint must not prompt twice')
 assert.equal(beforeHandover.reservationStatus,'active')
 const actualCorrection=await save('w11-handover-correction',[
  {...normal,expectedQuantity:3,quantity:1}
