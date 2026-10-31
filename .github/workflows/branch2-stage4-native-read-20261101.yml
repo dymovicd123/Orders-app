@@ -1,0 +1,68 @@
+name: "Stage4 exact-SKU native Cloudflare Branch2 D1 read smoke (SELECT ONLY)"
+on:
+  push:
+    branches: [audit/branch2-stage4-history-native-d1-20261101]
+    paths: [.github/workflows/branch2-stage4-native-read-20261101.yml]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Native Cloudflare D1 exact-SKU check history and complete reservation queries
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/branch2-stage4-history-native-d1-20261101')
+          const token=process.env.CLOUDFLARE_API_TOKEN
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID
+          assert(token && /^[a-f0-9]{32}$/i.test(account||''))
+          const uuid='0904a573-21ff-44d8-93b0-c9200f771702'
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+uuid
+          async function request(path,sql){
+            assert(path===''&&sql===undefined || path==='/query'&&typeof sql==='string'&&/^SELECT\s/.test(sql)&&!sql.includes(';')&&!/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH)\b/i.test(sql))
+            const response=await fetch(base+path,{method:sql===undefined?'GET':'POST',
+              headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+              ...(sql===undefined?{}:{body:JSON.stringify({sql})}),signal:AbortSignal.timeout(25000)})
+            const data=await response.json()
+            assert(response.ok&&data.success!==false,'D1 HTTP '+response.status+' '+JSON.stringify(data.errors))
+            return data.result
+          }
+          const info=await request('')
+          assert.equal(info.name,'orders_db_branch2_mirror_20261027')
+          async function rows(sql){
+            const r=await request('/query',sql)
+            return (Array.isArray(r)?r:[r]).flatMap(x=>x?.results||[])
+          }
+          const groups=await rows("SELECT inventory_source AS source,variant_id,COUNT(*) AS total FROM inventory_stock_checks WHERE variant_id IS NOT NULL GROUP BY inventory_source,variant_id ORDER BY total DESC LIMIT 1")
+          assert.equal(groups.length,1)
+          const group=groups[0]
+          assert(['warehouse','boutique'].includes(group.source)&&Number.isInteger(group.variant_id))
+          const filter="inventory_source='"+group.source+"' AND variant_id="+group.variant_id
+          const latest=(await rows("SELECT id,checked_at,expected_quantity,counted_quantity FROM inventory_stock_checks WHERE "+filter+" ORDER BY checked_at DESC,id DESC LIMIT 1"))[0]
+          assert(latest)
+          const first=(await rows("SELECT id,checked_at FROM inventory_stock_checks WHERE "+filter+" AND expected_quantity<>counted_quantity ORDER BY checked_at ASC,id ASC LIMIT 1"))[0]||null
+          let episode=null
+          if(latest.expected_quantity!==latest.counted_quantity){
+            const lastMatching=(await rows("SELECT id,checked_at FROM inventory_stock_checks WHERE "+filter+" AND expected_quantity=counted_quantity AND (checked_at<'"+latest.checked_at+"' OR (checked_at='"+latest.checked_at+"' AND id<"+latest.id+")) ORDER BY checked_at DESC,id DESC LIMIT 1"))[0]||null
+            const since=lastMatching?" AND (checked_at>'"+lastMatching.checked_at+"' OR (checked_at='"+lastMatching.checked_at+"' AND id>"+lastMatching.id+"))":''
+            episode=(await rows("SELECT id,checked_at FROM inventory_stock_checks WHERE "+filter+" AND expected_quantity<>counted_quantity"+since+" ORDER BY checked_at ASC,id ASC LIMIT 1"))[0]||null
+            assert(episode,'Current mismatch must have a first recorded mismatch')
+          }
+          const reserves=await rows("SELECT COUNT(*) AS total_count,COALESCE(SUM(quantity),0) AS total_quantity FROM inventory_reservations WHERE inventory_source='"+group.source+"' AND variant_id="+group.variant_id+" AND status='active'")
+          const displayed=await rows("SELECT id,quantity FROM inventory_reservations WHERE inventory_source='"+group.source+"' AND variant_id="+group.variant_id+" AND status='active' ORDER BY id DESC LIMIT 120")
+          assert(reserves[0].total_count>=displayed.length)
+          assert(reserves[0].total_quantity>=displayed.reduce((n,x)=>n+x.quantity,0))
+          console.log('BRANCH2_NATIVE_D1_STAGE4_SELECT_PASS',JSON.stringify({
+            source:group.source,variantId:group.variant_id,totalCheckCount:group.total,
+            latestCheckId:latest.id,earliestHistoricalMismatchId:first?.id||null,
+            latestEpisodeFirstMismatchId:episode?.id||null,
+            activeReservationRows:reserves[0].total_count,activeReservedPieces:reserves[0].total_quantity,
+            visibleReservationRows:displayed.length,
+            remoteD1ReadOnly:true,mainNotAccessed:true
+          }))
+          NODE
