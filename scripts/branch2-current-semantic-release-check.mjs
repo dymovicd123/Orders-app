@@ -49,6 +49,7 @@ const groups = [
     'scripts/test-old-order-post-stocktake-handover-r1.mjs',
     'scripts/test-branch2-resolver-historic-reserve-20261022.mjs',
     'scripts/test-branch2-resolver-known-pending-20261022.mjs',
+    'scripts/test-stage3-1-exact-obligation-lineage-20261031.mjs',
     'scripts/test-branch2-resolver-only-when-actionable-20261022.mjs',
     'scripts/test-branch2-resolver-opposite-gender-20261021.mjs',
   ]],
