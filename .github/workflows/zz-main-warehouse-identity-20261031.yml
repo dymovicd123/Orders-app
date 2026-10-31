@@ -1,0 +1,48 @@
+name: "Main candidate-only warehouse canonical identity and regression 20261031"
+on:
+  push:
+    branches:
+      - fix/main-warehouse-prewrite-sku-identity-20261031
+    paths:
+      - .github/workflows/zz-main-warehouse-identity-20261031.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  warehouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install pinned dependencies, no deploy
+        run: npm ci
+      - name: Verify current Main-derived candidate only
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/fix/main-warehouse-prewrite-sku-identity-20261031"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+      - name: Exercise arrival and transfer canonical SKU decisions
+        run: |
+          node scripts/test-main-arrival-canonical-sku-20261031.mjs
+          node scripts/test-main-transfer-canonical-sku-20261031.mjs
+      - name: Adjacent warehouse regression tests
+        run: |
+          node scripts/test-arrival-variant-integrity-r2.mjs
+          node scripts/test-arrival-canonical-product-alias-r1.mjs
+          node scripts/test-w1-warehouse-reliability.mjs
+          # Historical standalone W2/W4 only assert outdated interface/release
+          # structure and are not the current runtime safety gate.
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          # Historical standalone W8 has an old localized transfer-comment label.
+          # The active Main transfer SQL regression above covers transactional invariants.
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
+      - name: Main candidate production build without deploy
+        run: npm run build
