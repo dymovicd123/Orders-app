@@ -252,6 +252,14 @@ jobs:
               WHERE product_name_snapshot='CI STAGE2 RETIRED RECOVERY'`).get()
             assert.equal(Number(retiredMoves.n),1,'Recovered receipt and replay must only create one movement')
             console.log('BRANCH2_STAGE2_RETIRED_ARRIVAL_RECOVERY_D1_PASS',JSON.stringify({retiredRows,restore:restore[0],movements:1}))
+            const unresolved=db.prepare(`SELECT s.id,s.variant_id,s.quantity,s.reserved_quantity
+              FROM inventory_stock s JOIN catalog_products p ON p.id=s.product_id
+              WHERE p.name='CI STAGE2 FOUND UNKNOWN'`).all()
+            assert.equal(unresolved.length,1)
+            assert.equal(unresolved[0].variant_id,null,'Cannot assign a barcode without an exact active SKU')
+            assert.equal(Number(unresolved[0].quantity),1)
+            assert.equal(Number(unresolved[0].reserved_quantity),0)
+            console.log('BRANCH2_STAGE2_FOUND_UNIDENTIFIED_NATIVE_D1_PASS',JSON.stringify(unresolved[0]))
             db.close()
           }
           assert.equal(found,1,'One and only one isolated D1 backing database must contain synthetic results')
