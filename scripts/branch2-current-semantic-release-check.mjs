@@ -98,6 +98,7 @@ const groups = [
     'scripts/test-w18-variant-history-investigation.mjs',
     'scripts/test-stage4-atomic-manual-actor-20261101.mjs',
     'scripts/test-stage4-operation-attempts-20261101.mjs',
+    'scripts/test-stage4-return-exchange-attention-cache-20261101.mjs',
     'scripts/test-stage4-6-http-stock-issue-lifecycle-20261101.mjs',
     'scripts/test-stage4-reservations-full-aggregate-20261101.mjs',
     'scripts/test-stage4-issue-history-order-linkage-20261101.mjs',
