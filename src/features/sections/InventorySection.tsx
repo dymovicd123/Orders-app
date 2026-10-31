@@ -1960,10 +1960,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     attentionError,
     attentionIntakeBusyId,
     attentionLoading,
-    openAttentionCatalog,
     openAttentionHandover,
     openAttentionIntake,
-    openAttentionLifecycle,
     refreshWarehouseAttention,
     setAttentionCategory,
   } = useInventoryAttentionActions({
@@ -1994,8 +1992,6 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const warehouseShortageCount = Number(warehouseAttention?.counts?.shortage || 0)
   const warehousePendingIntakeCount = Number(warehouseAttention?.counts?.intake || 0)
   const warehouseClarificationCount = Number(warehouseAttention?.counts?.handover || 0)
-    + Number(warehouseAttention?.counts?.lifecycle || 0)
-    + Number(warehouseAttention?.counts?.catalog || 0)
     + Number(warehouseAttention?.counts?.found || 0)
 
   useEffect(() => {
@@ -2491,6 +2487,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
               <div style={inventoryPanelStyle('statistics')}><InventoryDemandStatistics active={inventoryModuleVisible && inventoryPanel === 'statistics'} /></div>
 
               {renderInventoryAttentionPanel({
+        openInventoryPanel,
         attentionCategory,
         attentionError,
         attentionIntakeBusyId,
@@ -2498,10 +2495,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         formatDateShort,
         inventoryPanelStyle,
         isAdmin,
-        openAttentionCatalog,
         openAttentionHandover,
         openAttentionIntake,
-        openAttentionLifecycle,
         openAttentionFoundCatalog: openFoundInventoryCatalog,
         openAttentionOrder: (item: any) => void openOrderFromFinance({ orderId: item.orderId, externalId: item.externalId, orderDate: item.orderDate }),
         openAttentionArrival: (item: any) => { if (isAdmin) { setInventoryDraft((draft: any) => ({ ...draft, source: item.source, movementType: 'arrival' })); openInventoryPanel('movement') } },
