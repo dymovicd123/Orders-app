@@ -325,10 +325,6 @@ export async function insertCriticalMappedEntity(
     if (linkedId) return { id: linkedId, created: false };
     throw new CriticalOperationBusyError('Действие было перехвачено другим запросом. Обновите страницу и повторите.');
   }
-  // Non-sensitive diagnostic on isolated test branch only; remove once native D1 is proven.
-  console.warn('NATIVE_D1_ITEM_MAPPING_DIAG', JSON.stringify({
-    entityType, inserted, mapped, id, linkedId,
-  }));
   throw new Error(`Не согласованы запись и привязка ${entityType}; требуется проверка операции.`);
 }
 
