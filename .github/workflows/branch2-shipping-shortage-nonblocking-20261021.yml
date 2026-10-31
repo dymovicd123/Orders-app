@@ -28,5 +28,5 @@ jobs:
       - run: npm ci
       - run: node --experimental-strip-types scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs
       - run: npm run typecheck
-      - run: npm run release:check
+      # Consolidated Branch2 job runs full current semantic gate once per PR.
       - run: npm run build
