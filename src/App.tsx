@@ -1458,6 +1458,9 @@ function App() {
       if (canManageWarehouse && !inventoryAdminPanels.includes(inventoryPanel)) setInventoryPanel('overview')
     }
     if ((activeSector === 'orders' && (orderPanel === 'create' || orderPanel === 'edit' || orderPanel === 'exchange'))) {
+      // Manager choices and business dictionaries are required by these forms.
+      // Orders-list loading may not have completed yet after sign-in or reload.
+      void loadReferencesData()
       // R7.5: order forms may reuse a very recent stock snapshot instead of rescanning both sources
       // on every panel transition. The server still performs the authoritative stock/CAS validation
       // on every write, and committed inventory mutations invalidate this snapshot explicitly.
