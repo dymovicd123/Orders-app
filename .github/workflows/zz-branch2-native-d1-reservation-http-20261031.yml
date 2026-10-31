@@ -74,6 +74,22 @@ jobs:
             tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
             exit 1
           }
+          # Historical migrations may be older than the live deployed D1 schema.
+          # Test-only compatibility already documented by the in-memory HTTP fixture:
+          # do NOT apply this ALTER to checked-in migrations or any remote D1.
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'" --json > "$RUNNER_TEMP/order-columns.json"
+          has_snapshot="$(node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs'
+          const result=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/order-columns.json','utf8'))
+          const rows=Array.isArray(result)?result.flatMap(x=>x.results||[]):(result.results||[])
+          console.log(rows.some(row=>row.name==='manager_snapshot_name')?'yes':'no')
+          NODE
+          )"
+          echo "BRANCH2_NATIVE_D1_HISTORIC_MIGRATION_MANAGER_SNAPSHOT_COLUMN=$has_snapshot"
+          if test "$has_snapshot" = no; then
+            npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT"
+            echo "BRANCH2_NATIVE_D1_FIXTURE_ONLY_MANAGER_SNAPSHOT_ADAPTER_APPLIED"
+          fi
           npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
