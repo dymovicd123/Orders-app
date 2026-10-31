@@ -89,3 +89,5 @@ jobs:
           NODE
 
 # Recheck after controlled activation rollback on 2026-10-31.
+
+# Recheck post-PR668 Branch2 upload-only candidate.
