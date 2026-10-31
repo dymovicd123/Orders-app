@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/zz-branch2-native-d1-reservation-http-20261031.yml'
       - 'scripts/test-branch2-native-d1-reservation-http-20261031.mjs'
+      - 'worker/domains/critical.ts'
       - 'scripts/test-branch2-stage1-reservation-worker-http-20261031.mjs'
 permissions:
   contents: read
