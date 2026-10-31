@@ -105,16 +105,22 @@ export function rankedReferenceValues(values: string[], source: string, field: F
   }).sort((a, b) => b.score - a.score || a.value.localeCompare(b.value, 'ru'))
 }
 
-export function initialDraft(source: Partial<Record<Field, string>> & { productName: string }, context: CatalogResolutionContext): Draft {
+export function initialDraft(source: Partial<Record<Field, string>> & { productName: string; variantId?: number | null }, context: CatalogResolutionContext): Draft {
   const f = context.facts
+  // Only the exact, ACTIVE catalog SKU already linked to this order line may
+  // supply dimensions missing from an old manager-entered snapshot.
+  // An unlinked candidate or generic no-color placeholder is never evidence.
+  const linkedVariantProven = Number(source.variantId || 0) > 0
+    && Number(source.variantId) === Number(context.exactVariant?.id || 0)
   return {
     productId: context.product?.id || 0, productName: source.productName, createProduct: false,
     genderScope: context.product?.genderScope || '',
     category: f?.category || 'adult', gender: f?.gender || '',
     material: f?.material || '', length: f?.length || '',
-    // Normalized placeholders are not evidence that the person supplied these facts.
-    color: clean(source.color) ? f?.color || source.color! : '',
-    size: clean(source.size) ? f?.size || source.size! : '',
+    // Missing dimensions are known only when an already-linked canonical SKU proves them.
+    // Never fill them from an unlinked tentative exactVariant: it may be a placeholder.
+    color: clean(source.color) || linkedVariantProven ? f?.color || source.color || '' : '',
+    size: clean(source.size) || linkedVariantProven ? f?.size || source.size || '' : '',
   }
 }
 
