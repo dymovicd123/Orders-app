@@ -23,9 +23,9 @@ assert.ok(overview.includes('Остатки какой точки?'))
 assert.ok(overview.includes('aria-pressed={simpleStockSource === entry.value}'))
 assert.ok(css.includes('.stock-v16-source-switch button.is-active'))
 assert.ok(css.includes('background:#2466ae'))
-assert.ok(attention.includes('Корректировать остаток'))
+assert.ok(attention.includes('Корректировка после пересчёта'))
 assert.ok(!attention.includes('Посмотреть данные учёта'))
-assert.equal(attention.split('>История варианта</button>').length-1,1,
+assert.equal(attention.split('>Посмотреть историю</button>').length-1,1,
  'Only active shortage retains its context shortcut; old shipment evidence stays in SKU History')
 assert.ok(!attention.includes('onClick={() => openAttentionStocktake(item)}'))
 assert.ok(attention.includes('openAttentionCorrection(item)'))

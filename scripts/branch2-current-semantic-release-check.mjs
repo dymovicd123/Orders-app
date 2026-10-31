@@ -92,6 +92,7 @@ const groups = [
     'scripts/test-older-unresolved-catalog-attention-20261031.mjs',
     'scripts/test-w12-sku-history.mjs',
     'scripts/test-w16-source-attention-correction.mjs',
+    'scripts/test-stage4-human-stock-problems-ui-20261101.mjs',
     'scripts/test-w17-optional-stock-notes-clear.mjs',
     'scripts/test-w18-variant-history-investigation.mjs',
     'scripts/test-inventory-writeoff-review.mjs',
