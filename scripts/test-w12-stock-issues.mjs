@@ -20,7 +20,7 @@ assert.match(css,/orders-stock-attention-counts/)
 
 // Warehouse attention must preserve specific problem-resolution actions.
 assert.match(issues,/openAttentionHistory\(item\)/)
-assert.match(issues,/По системе не хватает/)
+assert.match(issues,/Для заказов не хватает/)
 assert.match(issues,/Посмотреть историю/)
 assert.match(issues,/Корректировка после пересчёта/)
 assert.match(issues,/openAttentionCorrection\(item\)/)
