@@ -23,6 +23,7 @@ import { listWarehouseDemand } from './domains/warehouse-demand.ts'
 import { listProductKpis, removeProductKpi, saveProductKpi } from './domains/product-kpi.ts'
 import { applyInventoryMovement, applyInventoryTransfer, applyPendingInventoryWriteoffs, ArrivalRecoveryRequiredError, getInventoryControlSettings, reverseInventoryMovementOperation, updateInventoryControlSettings } from './domains/inventory-movement.ts'
 import { warehouseOperationFeedback } from './domains/warehouse-operation-feedback.ts'
+import { listWarehouseOperationAttempts, safelyRecordWarehouseAttempt } from './domains/inventory-attempts.ts'
 import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventoryAuditResolution } from './domains/inventory-read.ts'
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
@@ -1138,6 +1139,11 @@ export default {
         return json(await listInventoryCheckHistory(env.DB, url));
       }
 
+      if (url.pathname === '/api/inventory/operation-attempts' && request.method === 'GET') {
+        const result = await listWarehouseOperationAttempts(env.DB, url);
+        return json(result, { status: result.ok ? 200 : 400 });
+      }
+
       if (url.pathname === '/api/inventory/reservations' && request.method === 'GET') {
         return json(await listInventoryReservations(env.DB, url));
       }
@@ -1158,11 +1164,18 @@ export default {
         }
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
         const actor = cleanText(authUser?.displayName || authUser?.managerName || authUser?.login);
+        const targets = (Array.isArray(input.items) ? input.items : []).map((item) => ({ source: input.inventorySource, variantId: item?.variantId }));
+        const attempt = (outcome: 'rejected' | 'uncertain' | 'replayed', code: string, message: string) =>
+          safelyRecordWarehouseAttempt(env.DB, {
+            requestId: input.requestId, kind: movementType as 'arrival' | 'writeoff' | 'manual_set',
+            outcome, reasonCode: code, message, actorId: authUser?.id, actor, targets,
+          });
         let result;
         try {
           result = await applyInventoryMovement(env.DB, input, returnInventory, actor, authUser?.id || 0);
         } catch (error) {
           if (error instanceof ArrivalRecoveryRequiredError) {
+            await attempt('rejected', error.code, error.message);
             return json({
               ok: false,
               code: error.code,
@@ -1176,6 +1189,7 @@ export default {
           const safe = warehouseOperationFeedback(error,
             movementType === 'manual_set' ? 'manual_set' : movementType === 'writeoff' ? 'writeoff' : 'arrival',
             input.requestId);
+          await attempt(safe.status === 409 || safe.status === 400 ? 'rejected' : 'uncertain', safe.code, safe.message);
           console.error(JSON.stringify({
             event:'warehouse_movement_failed', operation:movementType,
             requestId:cleanText(input.requestId), code:safe.code,
@@ -1184,9 +1198,11 @@ export default {
           return json({ok:false,code:safe.code,message:safe.message,...(safe.reference ? {reference:safe.reference} : {})},{status:safe.status});
         }
         if ('code' in result && result.code === 'stock_resolution_required') {
+          await attempt('rejected', 'stock_resolution_required', cleanText(result.message) || 'Требуется разрешение по складу.');
           return json(result, { status: 409 });
         }
         if (!('duplicate' in result)) throw new Error('Некорректный ответ складской операции.');
+        if (result.duplicate) await attempt('replayed', 'same_request', 'Повтор запроса: исходная операция уже проведена, второе движение не создавалось.');
         if (!result.duplicate) {
           try {
             await writeActivityLog(env.DB, {
@@ -1205,11 +1221,22 @@ export default {
       if (url.pathname === '/api/inventory/transfer' && request.method === 'POST') {
         const input = await readJson<{ requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown }>(request);
         const returnInventory = url.searchParams.get('returnInventory') !== '0';
+        const actor = cleanText(authUser?.displayName || authUser?.managerName || authUser?.login);
+        const targets = (Array.isArray(input.items) ? input.items : []).flatMap((item) => [
+          { source: input.fromSource, variantId: item?.variantId },
+          { source: input.toSource, variantId: item?.variantId },
+        ]);
+        const attempt = (outcome: 'rejected' | 'uncertain' | 'replayed', code: string, message: string) =>
+          safelyRecordWarehouseAttempt(env.DB, {
+            requestId: input.requestId, kind: 'transfer', outcome, reasonCode: code, message,
+            actorId: authUser?.id, actor, targets,
+          });
         let result;
         try {
-          result = await applyInventoryTransfer(env.DB, input, authUser?.displayName || '', returnInventory);
+          result = await applyInventoryTransfer(env.DB, input, actor, returnInventory);
         } catch(error) {
           const safe = warehouseOperationFeedback(error,'transfer',input.requestId);
+          await attempt(safe.status === 409 || safe.status === 400 ? 'rejected' : 'uncertain', safe.code, safe.message);
           console.error(JSON.stringify({
             event:'warehouse_transfer_failed',
             requestId:cleanText(input.requestId), code:safe.code,
@@ -1218,9 +1245,11 @@ export default {
           return json({ok:false,code:safe.code,message:safe.message,...(safe.reference ? {reference:safe.reference} : {})},{status:safe.status});
         }
         if ('code' in result && result.code === 'stock_resolution_required') {
+          await attempt('rejected', 'stock_resolution_required', cleanText(result.message) || 'Требуется разрешение по складу.');
           return json(result, { status: 409 });
         }
         if (!('duplicate' in result)) throw new Error('Некорректный ответ перемещения.');
+        if (result.duplicate) await attempt('replayed', 'same_request', 'Повтор запроса: исходное перемещение уже проведено, второе движение не создавалось.');
         if (!result.duplicate) {
           try {
             await writeActivityLog(env.DB, {
