@@ -68,6 +68,8 @@ assert.equal(nextQuestion(aliasContext,aliasDraft,opts).kind,'ready','Alias-only
 assert.equal(needsReference(aliasContext,{...aliasDraft,color:'ТЕМНО СИНИЙ'},'color'),true,'Different color is NOT a known alias')
 assert.deepEqual(nextQuestion(aliasContext,{...aliasDraft,color:'ТЕМНО СИНИЙ'},opts),{kind:'reference',field:'color'})
 assert.equal(sameReferenceValue('ТЕМНО СЕРИЙ','ТЕМНО СЕРЫЙ'),false,'Fuzzy typos must not auto-confirm a reference')
+assert.equal(sameReferenceValue('100% ХЛОПОК','100 ХЛОПОК'),false,'Meaningful material punctuation is not an alias')
+assert.equal(sameReferenceValue('4/6','4-6'),false,'A slash is not a safe age-range hyphen alias')
 // A preview is not proof of identity. A tentative server candidate must NEVER
 // overwrite an explicit, different field from an unlinked order or an employee edit.
 const staleCandidate={
