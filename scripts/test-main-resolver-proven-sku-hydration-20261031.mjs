@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { initialDraft, nextQuestion } from '../src/features/orders/catalogResolutionFlow.ts'
+import { initialDraft, canonicalizePreviewDraft, nextQuestion } from '../src/features/orders/catalogResolutionFlow.ts'
 
 // Execute the actual production UI decision functions, not a source-string search.
 // The server has already validated a canonical active SKU and hydrated its facts.
@@ -17,6 +17,19 @@ const linked = initialDraft({productName:'ЭТНО КАРДИГАН',variantId:1
 assert.equal(linked.color,'СВЕТЛО-БЕЖЕВЫЙ','Exact linked SKU MUST hydrate known color despite empty stale snapshot')
 assert.equal(linked.size,'52','Exact linked SKU MUST hydrate known size despite empty stale snapshot')
 assert.equal(nextQuestion(ctx,linked,opts).kind,'ready','Exact linked SKU cannot ask to re-enter catalog facts')
+const rechecked = canonicalizePreviewDraft({...linked,color:'',size:''},ctx,1498)
+assert.equal(rechecked.color,'СВЕТЛО-БЕЖЕВЫЙ','Rechecking material must not clear proven canonical color')
+assert.equal(rechecked.size,'52','Rechecking material must not clear proven canonical size')
+assert.equal(nextQuestion(ctx,rechecked,opts).kind,'ready')
+for (const otherId of [0,1499,undefined]) {
+  const unverifiable=canonicalizePreviewDraft({...linked,color:'',size:''},ctx,otherId)
+  assert.equal(unverifiable.color,'','A different/unlinked SKU must not infer old missing color')
+  assert.equal(unverifiable.size,'','A different/unlinked SKU must not infer old missing size')
+}
+const explicitlyChosen=canonicalizePreviewDraft({...linked,color:'СВЕТЛО-БЕЖЕВЫЙ',size:'52'},ctx,1499)
+assert.equal(explicitlyChosen.color,'СВЕТЛО-БЕЖЕВЫЙ','Explicitly confirmed user facts should survive preview')
+assert.equal(explicitlyChosen.size,'52')
+
 
 // The same context without a PROVEN order-item variant cannot infer absent dimensions.
 // Important: matching a default БЕЗ ЦВЕТА placeholder is not physical evidence of its identity.
