@@ -92,5 +92,45 @@ try{
  assert.equal(answer.kind,'ready','Known reference/variant ID must not ask for duplicate fields')
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_variants WHERE product_id=?').get(productId).n,1)
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,0,'Resolver context must not mutate physical stock')
+ // Task 1.5: reproduce interrupted old order reservation, then exercise the
+ // REAL shipping API recovery and persisted SQLite records. No fake physical receipt.
+ const starting=sqlite.prepare('SELECT id,status,variant_id,quantity FROM inventory_reservations WHERE order_item_id=?').all(line.id)
+ assert.equal(starting.length,1)
+ assert.equal(starting[0].status,'active')
+ assert.equal(Number(starting[0].variant_id),variantId)
+ const physicalBefore=sqlite.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?").get(variantId)?.quantity
+ assert.equal(physicalBefore,0,'Synthetic test starts with no physical stock')
+ sqlite.prepare('DELETE FROM inventory_reservations WHERE order_item_id=?').run(line.id)
+ sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=0 WHERE inventory_source='warehouse' AND variant_id=?").run(variantId)
+ sqlite.prepare("UPDATE order_items SET stock_writeoff_status='pending_reservation' WHERE id=?").run(line.id)
+ const firstShipping=await api('/api/orders/'+orderId+'/shipping','PATCH',{shippingStatus:'sent'},409)
+ assert.notEqual(firstShipping.data.code,'catalog_review_required','A known SKU must not be sent to a redundant resolver')
+ assert.notEqual(firstShipping.data.code,'inventory_reservation_inconsistent','Known pending SKU should be recovered')
+ const recovered=sqlite.prepare('SELECT status,quantity,variant_id,inventory_source FROM inventory_reservations WHERE order_item_id=?').all(line.id)
+ assert.equal(recovered.length,1,'Exactly one repaired reservation is persisted')
+ assert.deepEqual([recovered[0].status,recovered[0].quantity,recovered[0].variant_id,recovered[0].inventory_source],
+  ['active',1,variantId,'warehouse'])
+ const stockAfter=sqlite.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?").get(variantId)
+ assert.equal(stockAfter.quantity,0,'Reservation recovery must not invent an arrival')
+ assert.equal(stockAfter.reserved_quantity,1)
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,0)
+ const retry=await api('/api/orders/'+orderId+'/shipping','PATCH',{shippingStatus:'sent'},409)
+ assert.notEqual(retry.data.code,'catalog_review_required')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_item_id=?').get(line.id).n,1)
+ assert.equal(sqlite.prepare("SELECT reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?").get(variantId).reserved_quantity,1,'Retried shipping must not double-reserve')
+ assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(orderId).shipping_status,'not_sent')
+ // A historical closed row is NOT the missing-reservation scenario. Fail safely,
+ // keep the old record immutable, and never turn it active to make shipping pass.
+ for(const historicalStatus of ['released','fulfilled']){
+  sqlite.prepare('UPDATE inventory_reservations SET status=? WHERE order_item_id=?').run(historicalStatus,line.id)
+  sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=0 WHERE inventory_source='warehouse' AND variant_id=?").run(variantId)
+  sqlite.prepare("UPDATE order_items SET stock_writeoff_status='pending_reservation' WHERE id=?").run(line.id)
+  const historical=await api('/api/orders/'+orderId+'/shipping','PATCH',{shippingStatus:'sent'},409)
+  assert.equal(historical.data.code,'inventory_reservation_inconsistent','Historical '+historicalStatus+' is not an active reservation')
+  assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?').get(line.id).status,historicalStatus)
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_item_id=?').get(line.id).n,1)
+  assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?").get(variantId).quantity,0)
+ }
+ console.log('MAIN_RESOLVER_PENDING_KNOWN_SHIPPING_HTTP_PASS: repaired pending exact SKU, replay dedupe, immutable released/fulfilled, physical zero')
  console.log('MAIN_RESOLVER_REAL_WORKER_HTTP_EXISTING_SKU_PASS',JSON.stringify({orderId,itemId:line.id,variantId,color:d.color,size:d.size,nextQuestion:answer.kind,physicalMovements:0}))
 } finally {sqlite.close()}
