@@ -117,7 +117,7 @@ jobs:
           import {DatabaseSync} from 'node:sqlite'
           const root=process.env.LOCAL_STATE
           const files=readdirSync(root,{recursive:true})
-            .map(x=>String(x)).filter(x=>/\\.sqlite$/.test(x))
+            .map(x=>String(x)).filter(x=>/\.sqlite$/.test(x))
           assert(files.length>0,'Native local D1 did not persist a SQLite file')
           const matches=[]
           for(const rel of files){
