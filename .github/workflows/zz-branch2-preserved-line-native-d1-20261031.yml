@@ -8,6 +8,8 @@ on:
       - 'src/App.tsx'
       - 'scripts/test-branch2-critical-native-d1-metadata-20261031.mjs'
       - 'worker/domains/critical.ts'
+      - 'worker/domains/orders-write.ts'
+      - 'worker/domains/order-reservations.ts'
 
 permissions:
   contents: read
