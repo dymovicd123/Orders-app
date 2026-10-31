@@ -154,8 +154,9 @@ for(let attempt=0;attempt<3;attempt++){
  assert.deepEqual(after,before,'Blocked shipment must retain the existing pending reservation ID')
 }
 assert.equal(attemptedMutation,0,'Repeated unresolved known-SKU shipment attempts must be read-only')
-assert.deepEqual(persistent.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=12').get(),
- {quantity:0,reserved_quantity:0},'Physical and reserved quantities remain unchanged')
+const unchangedStock=persistent.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=12').get()
+assert.equal(unchangedStock.quantity,0,'No phantom physical units during pending shipment')
+assert.equal(unchangedStock.reserved_quantity,0,'No stock reservation was added by pending shipment')
 assert(router.includes("unresolvedBlockers.some(row => toInt(row.known_pending_reservation, 0) !== 1)"),
  'Shipping must skip catalog repair entirely when all blockers are already-known shortages')
 console.log('PENDING_KNOWN_SKU_RESERVATION_ID_STABLE_PASS: 3 retries preserve ID 2203, no writes, no phantom physical stock')
