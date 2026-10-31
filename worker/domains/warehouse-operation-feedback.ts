@@ -15,6 +15,11 @@ export function warehouseOperationFeedback(
   const base = publicApiError(error)
   const lower = raw.toLocaleLowerCase('ru')
   const reference = cleanText(requestId).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)
+  // A user-selected SKU with old/wrong characteristics is a deterministic
+  // client conflict, never a persistence failure. No stock write has occurred.
+  if (/характеристики не соответствуют выбранному варианту|пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом|выбранная вещь больше не соответствует характеристикам варианта/.test(lower)) {
+    return { status:409,code:'warehouse_sku_mismatch',message:raw.slice(0,420) }
+  }
   if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
     return {
       status:409,code:'warehouse_stock_stale',

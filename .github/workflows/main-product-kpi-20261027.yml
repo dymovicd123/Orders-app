@@ -7,8 +7,20 @@ on:
       - 'src/App.tsx'
       - 'src/app/controllers/useOperationalViewModel.ts'
       - 'src/features/inventory/views/InventoryUnifiedQuantityWorkspace.tsx'
+  # Historical KPI-specific release gate: avoid running it on every warehouse/resolver PR.
+  # The global Quality check and domain-specific current tests still run.
   pull_request:
     branches: [main]
+    paths:
+      - 'worker/domains/product-kpi.ts'
+      - 'src/features/sections/ProductKpiSection.tsx'
+      - 'src/features/sections/KpiCharacteristicPicker.tsx'
+      - 'src/features/sections/PlanSection.tsx'
+      - 'src/features/sections/LeadsSection.tsx'
+      - 'src/app/managerWorkspaceAccess.ts'
+      - 'migrations/0116_monthly_product_kpi.sql'
+      - 'scripts/test-main-product-kpi-20261027.mjs'
+      - '.github/workflows/main-product-kpi-20261027.yml'
   workflow_dispatch:
 permissions:
   contents: read

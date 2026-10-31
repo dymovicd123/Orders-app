@@ -1,0 +1,55 @@
+name: "Stage 1 combined Main-derived candidate — functional + security (NO DEPLOY)"
+on:
+  push:
+    branches: [test/main-stage1-integrated-candidate-20261031, test/main-stage1-final-acceptance-20261031]
+    paths:
+      - '.github/workflows/zz-stage1-integrated-main-candidate-20261031.yml'
+      - 'worker/**'
+      - 'src/features/orders/**'
+      - 'scripts/test-main-*.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - 'src/features/orders/**'
+      - 'scripts/test-main-*.mjs'
+      - '.github/workflows/zz-stage1-integrated-main-candidate-20261031.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stage1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - name: Reproducible dependency install and real security audits
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=moderate
+          npm audit --audit-level=high
+      - name: Run combined Main Warehouse+Resolver real code/SQLite/HTTP regressions
+        run: |
+          node scripts/test-main-arrival-canonical-sku-20261031.mjs
+          node scripts/test-main-transfer-canonical-sku-20261031.mjs
+          node scripts/test-main-found-stocktake-identity-race-20261031.mjs
+          node scripts/test-main-older-unresolved-warehouse-attention-20261031.mjs
+          node scripts/test-main-warehouse-sku-feedback-20261031.mjs
+          node scripts/test-main-resolver-proven-sku-hydration-20261031.mjs
+          node scripts/test-main-resolver-existing-reference-real-sqlite-20261031.mjs
+          node scripts/test-main-resolver-linked-sku-worker-http-20261031.mjs
+          node scripts/test-main-stage1-final-resolver-20261031.mjs
+          node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+          node scripts/test-main-current-business-release-20261031.mjs
+          node scripts/test-ci-scope-main-release-20261031.mjs
+      - name: Full application typecheck and Vite build
+        run: npm run build

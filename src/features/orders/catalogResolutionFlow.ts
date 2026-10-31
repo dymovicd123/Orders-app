@@ -13,6 +13,10 @@ export function fieldLabel(field: Field, category?: string) {
 export const clean = (v: unknown) => String(v ?? '').trim()
 export const normalize = (v: unknown) => clean(v).toUpperCase().replace(/\s+/g, ' ')
 const identity = (v: unknown) => normalize(v).replace(/[^0-9A-ZА-ЯЁӘҒҚҢӨҰҮҺІ]+/g, ' ').trim()
+// Equivalent punctuation/spacing is a known reference, not a new characteristic.
+// This is exact identity only; fuzzy suggestions must still require a choice.
+const referenceIdentity = (value: unknown) => normalize(value).replace(/[‐‑‒–—-]+/g, ' ').replace(/\s+/g, ' ').trim()
+export const sameReferenceValue = (left: unknown, right: unknown) => Boolean(referenceIdentity(left)) && referenceIdentity(left) === referenceIdentity(right)
 
 export function compoundRemainder(rawName: string, productName: string) {
   const rawTokens = identity(rawName).split(' ')
@@ -105,16 +109,41 @@ export function rankedReferenceValues(values: string[], source: string, field: F
   }).sort((a, b) => b.score - a.score || a.value.localeCompare(b.value, 'ru'))
 }
 
-export function initialDraft(source: Partial<Record<Field, string>> & { productName: string }, context: CatalogResolutionContext): Draft {
+export function initialDraft(source: Partial<Record<Field, string>> & { productName: string; variantId?: number | null }, context: CatalogResolutionContext): Draft {
   const f = context.facts
+  // Only the exact, ACTIVE catalog SKU already linked to this order line may
+  // supply dimensions missing from an old manager-entered snapshot.
+  // An unlinked candidate or generic no-color placeholder is never evidence.
+  const linkedVariantProven = Number(source.variantId || 0) > 0
+    && Number(source.variantId) === Number(context.exactVariant?.id || 0)
   return {
     productId: context.product?.id || 0, productName: source.productName, createProduct: false,
     genderScope: context.product?.genderScope || '',
     category: f?.category || 'adult', gender: f?.gender || '',
     material: f?.material || '', length: f?.length || '',
-    // Normalized placeholders are not evidence that the person supplied these facts.
-    color: clean(source.color) ? f?.color || source.color! : '',
-    size: clean(source.size) ? f?.size || source.size! : '',
+    // Missing dimensions are known only when an already-linked canonical SKU proves them.
+    // Never fill them from an unlinked tentative exactVariant: it may be a placeholder.
+    color: linkedVariantProven ? (f?.color || clean(source.color)) : clean(source.color),
+    size: linkedVariantProven ? (f?.size || clean(source.size)) : clean(source.size),
+  }
+}
+
+
+/**
+ * Preserve existing exact SKU identity when an unrelated resolver field is rechecked.
+ * A server preview for an unlinked/new/mismatched SKU must never invent a missing color/size.
+ */
+export function canonicalizePreviewDraft(next: Draft, context: CatalogResolutionContext, orderItemVariantId: number | null | undefined): Draft {
+  const linkedVariantProven = Number(orderItemVariantId || 0) > 0
+    && Number(orderItemVariantId) === Number(context.exactVariant?.id || 0)
+  return {
+    ...next,
+    genderScope: context.product?.genderScope || '',
+    gender: context.facts?.gender || next.gender,
+    material: context.facts?.material || next.material,
+    length: context.facts?.length || next.length,
+    color: linkedVariantProven ? (context.facts?.color || clean(next.color)) : clean(next.color),
+    size: linkedVariantProven ? (context.facts?.size || clean(next.size)) : clean(next.size),
   }
 }
 
@@ -165,7 +194,7 @@ export function needsReference(context: CatalogResolutionContext, draft: Draft, 
   if (field === 'category' || field === 'gender' || !clean(draft[field])) return false
   if ((field === 'material' || field === 'length') && normalize(draft[field]) === 'СТАНДАРТ') return false
   if (field === 'size' && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(normalize(draft[field]))) return false
-  return !referenceValues(context, draft, field).some(v => normalize(v) === normalize(draft[field]))
+  return !referenceValues(context, draft, field).some(v => sameReferenceValue(v, draft[field]))
 }
 
 export type Question = { kind: 'product' | 'compound' | 'combined' | 'ready' | 'workshop' | 'legacy' } | { kind: 'field' | 'reference'; field: Field }
@@ -199,15 +228,19 @@ export function nextQuestion(context: CatalogResolutionContext, draft: Draft, op
 
 // One owner per modal session. Re-check failure can be retried without replaying the write.
 export function createResolutionSession() {
-  let locked = false, completed = false, changed = false
+  let locked = false, completed = false, changed = false, uncertainWrite = false
   return {
-    get changed() { return changed },
+    get changed() { return changed || uncertainWrite },
+    // A POST can commit on the server while the response is lost. Never replay
+    // the write on Retry: check the server's current order state first, and
+    // continue only when it proves there are no remaining resolver tasks.
+    markUncertainWrite() { uncertainWrite = true },
     async run(write: (() => Promise<void>) | null, recheck: () => Promise<boolean>, complete: () => Promise<void | boolean>) {
       if (locked || completed) return
       locked = true
       try {
-        if (write) { await write(); changed = true }
-        if (await recheck() && changed && !completed) {
+        if (write) { await write(); changed = true; uncertainWrite = false }
+        if (await recheck() && (changed || uncertainWrite) && !completed) {
           const completion = await complete()
           if (completion !== false) completed = true
         }
