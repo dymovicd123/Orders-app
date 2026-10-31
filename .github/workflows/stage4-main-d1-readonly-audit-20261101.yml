@@ -1,0 +1,62 @@
+name: "Stage4 MAIN D1 audit - strictly SELECT only"
+on:
+  push:
+    branches: [audit/stage4-main-d1-readonly-20261101]
+    paths: [.github/workflows/stage4-main-d1-readonly-audit-20261101.yml]
+permissions:
+  contents: read
+jobs:
+  observe-main-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: MAIN database facts - no writes, no deploy
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/stage4-main-d1-readonly-20261101')
+          const token=process.env.CLOUDFLARE_API_TOKEN, account=process.env.CLOUDFLARE_ACCOUNT_ID
+          assert(token&&/^[a-f0-9]{32}$/i.test(account||''),'Missing D1 credentials')
+          const id='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+          const endpoint='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+id
+          async function call(path,sql){
+            assert(sql===undefined ? path==='' : path==='/query'&&/^SELECT\s/i.test(sql)&&!sql.includes(';')&&!/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|VACUUM)\b/i.test(sql),'Only approved read-only SQL allowed')
+            const response=await fetch(endpoint+path,{method:sql===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(sql===undefined?{}:{body:JSON.stringify({sql})}),signal:AbortSignal.timeout(24000)})
+            const json=await response.json()
+            assert(response.ok&&json.success!==false,'D1 query error '+response.status+' '+(json.errors||[]).map(e=>e.code).join(','))
+            return json.result
+          }
+          const meta=await call('')
+          assert.equal(meta?.name,'orders_db_prod','Unexpected database; abort')
+          console.log('MAIN_D1_AUDIT_AUTH_OK',JSON.stringify({name:meta.name,id}))
+          async function rows(sql){
+            const r=await call('/query',sql)
+            return (Array.isArray(r)?r:[r]).flatMap(x=>x?.results||[])
+          }
+          const tables=await rows("SELECT name FROM sqlite_schema WHERE type='table' AND name IN ('orders','order_items','inventory_stock','inventory_reservations','inventory_movements','inventory_stock_checks','inventory_lifecycle_events','returns','exchanges','critical_operations') ORDER BY name")
+          assert.equal(tables.length,10,'MAIN database missing history or problem tables')
+          console.log('MAIN_D1_AUDIT_REQUIRED_SCHEMA_PASS',tables.length)
+          for(const [label,sql] of [
+            ['overview',"SELECT (SELECT COUNT(*) FROM orders) AS orders,(SELECT COUNT(*) FROM order_items) AS order_items,(SELECT COUNT(*) FROM inventory_movements) AS movements,(SELECT COUNT(*) FROM inventory_reservations WHERE status='active') AS active_reservations,(SELECT COUNT(*) FROM inventory_stock_checks) AS checks,(SELECT COUNT(*) FROM inventory_lifecycle_events WHERE status='pending') AS pending_events"],
+            ['shortage_by_source',"SELECT inventory_source,COUNT(*) AS problem_skus,SUM(reserved-physical) AS missing_units FROM (SELECT r.inventory_source,r.variant_id,SUM(r.quantity) AS reserved,COALESCE(MAX(s.quantity),0) AS physical FROM inventory_reservations r LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.status='active' AND r.variant_id IS NOT NULL GROUP BY r.inventory_source,r.variant_id HAVING SUM(r.quantity)>COALESCE(MAX(s.quantity),0)) GROUP BY inventory_source"],
+            ['shortage_examples',"SELECT inventory_source,variant_id,reserved,physical,(reserved-physical) AS missing_units FROM (SELECT r.inventory_source,r.variant_id,SUM(r.quantity) AS reserved,COALESCE(MAX(s.quantity),0) AS physical FROM inventory_reservations r LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.status='active' AND r.variant_id IS NOT NULL GROUP BY r.inventory_source,r.variant_id HAVING SUM(r.quantity)>COALESCE(MAX(s.quantity),0)) ORDER BY missing_units DESC,variant_id LIMIT 18"],
+            ['active_reserve_age',"SELECT CASE WHEN julianday('now')-julianday(created_at)>90 THEN 'older_than_90d' WHEN julianday('now')-julianday(created_at)>30 THEN '31_to_90d' ELSE 'recent_or_undated' END AS age,COUNT(*) AS reservations,SUM(quantity) AS quantity FROM inventory_reservations WHERE status='active' GROUP BY age ORDER BY age"],
+            ['unresolved_reserves',"SELECT COALESCE(unresolved_reason,'') AS reason,COUNT(*) AS rows,SUM(quantity) AS units FROM inventory_reservations WHERE status='unresolved' GROUP BY unresolved_reason ORDER BY rows DESC"],
+            ['pending_events',"SELECT direction,event_type,COALESCE(pending_reason,'') AS reason,COUNT(*) AS rows FROM inventory_lifecycle_events WHERE status='pending' GROUP BY direction,event_type,pending_reason ORDER BY rows DESC"],
+            ['unsent_catalog_issues',"SELECT oi.id AS order_item_id,oi.order_id,oi.product_id,oi.variant_id,oi.stock_writeoff_status,oi.created_at FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.quantity>0 AND COALESCE(oi.is_workshop,0)=0 AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND COALESCE(o.order_status,'active')='active' AND COALESCE(o.archived_at,'')='' AND (oi.product_id IS NULL OR oi.variant_id IS NULL OR oi.stock_writeoff_status IN ('catalog_unresolved','catalog_retired')) ORDER BY oi.created_at DESC LIMIT 30"],
+            ['found_stock',"SELECT inventory_source,COUNT(*) AS rows,SUM(quantity) AS units FROM inventory_stock WHERE variant_id IS NULL AND quantity>0 GROUP BY inventory_source"],
+            ['active_stocktakes',"SELECT status,COUNT(*) AS rows FROM inventory_stocktake_sessions GROUP BY status"],
+            ['unfinished_operations',"SELECT operation_type,step,COUNT(*) AS rows FROM critical_operations WHERE status='started' GROUP BY operation_type,step ORDER BY rows DESC"],
+            ['movement_quality',"SELECT inventory_source,COUNT(*) AS movements,SUM(CASE WHEN variant_id IS NULL THEN 1 ELSE 0 END) AS missing_sku,SUM(CASE WHEN quantity_after IS NULL THEN 1 ELSE 0 END) AS missing_after,SUM(CASE WHEN reference_id IS NULL OR TRIM(reference_id)='' THEN 1 ELSE 0 END) AS missing_document,SUM(CASE WHEN quantity_after-quantity_delta<0 THEN 1 ELSE 0 END) AS negative_before FROM inventory_movements GROUP BY inventory_source"],
+            ['movement_types',"SELECT COALESCE(reference_type,'') AS reference_type,COALESCE(movement_type,'') AS movement_type,COUNT(*) AS rows FROM inventory_movements GROUP BY reference_type,movement_type ORDER BY rows DESC LIMIT 24"],
+            ['physical_check_quality',"SELECT inventory_source,COUNT(*) AS checks,SUM(CASE WHEN counted_quantity<>expected_quantity THEN 1 ELSE 0 END) AS different FROM inventory_stock_checks GROUP BY inventory_source"],
+            ['historical_negative_examples',"SELECT id,inventory_source,variant_id,quantity_delta,quantity_after,reference_type,reference_id,created_at FROM inventory_movements WHERE quantity_after-quantity_delta<0 OR quantity_after<0 ORDER BY id DESC LIMIT 12"]
+          ]){
+            const result=await rows(sql)
+            console.log('MAIN_D1_AUDIT_'+label.toUpperCase(),JSON.stringify(result))
+          }
+          console.log('MAIN_D1_AUDIT_READONLY_PASS')
+          NODE
