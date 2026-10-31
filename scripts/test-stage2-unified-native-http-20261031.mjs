@@ -122,6 +122,62 @@ console.log('NATIVE_STOCKTAKE_REPLAY_OBSERVED',JSON.stringify({status:completedA
 assert.equal(completedAgain.status,200,'Native Worker must accept harmless retry after completed stocktake')
 assert.equal(completedAgain.data.ok,true,'Revision completion replay must be harmless')
 
+
+// Stage 1.6 + 2.5/2.6: run actual order admission and a physical correction
+// against its active reservation on the *same* authorized Worker and local D1.
+const staff=await api('/api/team/employees','POST',{
+ name:'CI NATIVE RESERVATION MANAGER',role:'Менеджер',isActive:true
+},201)
+const managerId=Number(staff.data.employeeId)
+assert(managerId>0,'Fixture requires a real active manager')
+function orderPayload(requestId,source,size,suffix){
+ return {
+  requestId,orderDate:'2026-10-31',managerId,
+  customerPhone:'7701555'+suffix,city:'АЛМАТЫ',pricingMode:'itemized_v1',
+  workshopStatus:'ready',orderStatus:'active',sourceType:source,
+  items:[{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',
+   color:'ЧЕРНЫЙ',material:'СТАНДАРТ',length:'СТАНДАРТ',size,
+   sourceType:source,quantity:1,unitPrice:10000,catalogPriceSnapshot:null}],
+  payments:[]
+ }
+}
+const orderA=await api('/api/orders','POST',orderPayload('s2-reservation-order-a','boutique','48','0001'),201)
+const orderB=await api('/api/orders','POST',orderPayload('s2-reservation-order-b','boutique','48','0002'),201)
+const orderC=await api('/api/orders','POST',orderPayload('s2-reservation-order-c','warehouse','46','0003'),201)
+const orderAId=Number(orderA.data.orderId),orderBId=Number(orderB.data.orderId),orderCId=Number(orderC.data.orderId)
+assert(orderAId>0&&orderBId>0&&orderCId>0,'Orders were not committed')
+const a=await api('/api/orders/'+orderAId,'GET',undefined,200)
+const b=await api('/api/orders/'+orderBId,'GET',undefined,200)
+const cOrder=await api('/api/orders/'+orderCId,'GET',undefined,200)
+assert.equal(a.data.order?.items?.length,1)
+assert.equal(b.data.order?.items?.length,1)
+assert.equal(cOrder.data.order?.items?.length,1)
+const orderAItemId=Number(a.data.order.items[0].id)
+const orderBItemId=Number(b.data.order.items[0].id)
+assert(orderAItemId>0&&orderBItemId>0)
+const pending=await api('/api/orders/'+orderBId+'/items/'+orderBItemId+'/pending-reservation','GET',undefined,200)
+assert.equal(pending.data.pending,true,'Second customer must get pending reservation, not fictitious active stock')
+assert.equal(pending.data.snapshot.inventorySource,'boutique')
+assert.equal(pending.data.snapshot.variantId,variants['48'])
+assert.equal(pending.data.shortage,1)
+const orderRetry=await api('/api/orders','POST',orderPayload('s2-reservation-order-b','boutique','48','0002'),201)
+assert.equal(Number(orderRetry.data.orderId),orderBId,'Same requestId must not create a third customer order')
+const handoverBefore=await api('/api/orders/'+orderAId+'/stock-handover','GET',undefined,200)
+const physicalCorrection=await api(route,'POST',{
+ requestId:'s2-correction-reserved-boutique48',inventorySource:'boutique',
+ movementType:'manual_set',items:[item('48',0,{expectedQuantity:1})]
+},201)
+assert.equal(physicalCorrection.data.duplicate,false)
+const handoverAfter=await api('/api/orders/'+orderAId+'/stock-handover','GET',undefined,200)
+assert.equal(handoverAfter.data.ok,true)
+console.log('BRANCH2_STAGE1_2_ORDER_RESERVATION_HTTP_PASS',JSON.stringify({
+ orderAId,orderBId,orderCId,
+ activeOrderItemId:orderAItemId,pendingOrderItemId:orderBItemId,
+ shortagePending:true,orderReplay:true,
+ beforeReviewNeeded:handoverBefore.data?.items?.some(x=>x.reviewNeeded)??null,
+ afterReviewNeeded:handoverAfter.data?.items?.some(x=>x.reviewNeeded)??null
+}))
+
 console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_HTTP_PASS',JSON.stringify({
  transferOnce:true,writeoffOnce:true,correctionOnce:true,staleRejected:true,
  quickCount:true,revisionOnce:true,sourceIsolation:true,workerAuth:true
