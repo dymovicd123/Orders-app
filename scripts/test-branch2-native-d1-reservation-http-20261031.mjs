@@ -29,8 +29,8 @@ const variant=await api('/api/catalog/variants','POST',{
 },201)
 const variantId=Number(variant.data.id)
 assert(variantId>0)
-const manager=await api('/api/managers')
-const managerId=Number((manager.data.managers||[]).find(x=>x.isActive!==false)?.id||1)
+// Historical migrations seed an active test manager #1 in the local fixture.
+const managerId=1
 const payload=(id)=>({
  requestId:'b2-native-admission-'+id+'-20261031',orderDate:'2026-10-31',
  managerId,customerPhone:'77019990000',city:'АЛМАТЫ',pricingMode:'itemized_v1',
