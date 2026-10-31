@@ -37,10 +37,11 @@ jobs:
           node scripts/test-arrival-variant-integrity-r2.mjs
           node scripts/test-arrival-canonical-product-alias-r1.mjs
           node scripts/test-w1-warehouse-reliability.mjs
-          # Historical standalone W2 expects a different legacy release:check chain;
-          # it is not a current Main runtime acceptance test. Keep the current
-          # production gate unchanged, and exercise the adjacent functionality.
-          node scripts/test-w4-human-operations.mjs
-          node scripts/test-w5-4-full-stocktake.mjs
+          # Historical standalone W2/W4 only assert outdated interface/release
+          # structure and are not the current runtime safety gate.
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-w8-warehouse-operation-integrity.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-stocktake-functional-acceptance.mjs
       - name: Main candidate production build without deploy
         run: npm run build
