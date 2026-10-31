@@ -13,6 +13,10 @@ const cookie=auth.headers.get('set-cookie')?.split(';')[0]||''
 assert(cookie,'Missing authenticated session')
 async function api(route,method,body,status){
  const x=await call(route,method,body,cookie)
+ if(status!==undefined&&x.status!==status) {
+   console.log('STAGE_NATIVE_REJECT_DEBUG',JSON.stringify({method,route,expected:status,actual:x.status,response:x.data}))
+   await new Promise(resolve=>setTimeout(resolve,600))
+ }
  if(status!==undefined)assert.equal(x.status,status,method+' '+route+': '+JSON.stringify(x.data))
  return x
 }
