@@ -56,5 +56,11 @@ jobs:
           await query('FOUR_VARIANT_RECENT_CHECKS',"SELECT inventory_source,variant_id,expected_quantity,counted_quantity,checked_at FROM inventory_stock_checks WHERE inventory_source='warehouse' AND variant_id IN (207,1241,1300,1821) ORDER BY checked_at DESC LIMIT 35")
           await query('FOUR_ORDER_COMPLETED_OPS',"SELECT operation_type,status,step,target_type,target_id,created_at,updated_at FROM critical_operations WHERE target_id IN (943,1118,1417,1540) ORDER BY created_at DESC LIMIT 35")
           await query('FOUR_ORDER_LATER_INTERACTIONS',"SELECT 'exchange' AS kind,order_id,exchange_date AS action_date FROM exchanges WHERE order_id IN (943,1118,1417,1540) UNION ALL SELECT 'return',order_id,return_date FROM returns WHERE order_id IN (943,1118,1417,1540) ORDER BY order_id,action_date")
+          await query('SCHEMA_RESERVATION',"SELECT name,type FROM pragma_table_info('inventory_reservations') ORDER BY cid")
+          await query('SCHEMA_STOCK',"SELECT name,type FROM pragma_table_info('inventory_stock') ORDER BY cid")
+          await query('SCHEMA_ACTIVITY',"SELECT name,type FROM pragma_table_info('activity_log') ORDER BY cid")
+          await query('RELATED_TRIGGERS',"SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND (tbl_name='inventory_reservations' OR tbl_name='inventory_stock') ORDER BY name")
+          await query('TWO_CANDIDATES_LIVE',"SELECT r.id,r.order_id,r.order_item_id,r.inventory_source,r.variant_id,r.quantity,r.status,r.created_at,r.updated_at,o.order_date,o.shipping_status,oi.quantity AS item_quantity,oi.stock_writeoff_status FROM inventory_reservations r JOIN orders o ON o.id=r.order_id JOIN order_items oi ON oi.id=r.order_item_id WHERE r.id IN (557,997) ORDER BY r.id")
+          await query('TWO_VARIANT_COUNTS',"SELECT s.inventory_source,s.variant_id,s.quantity,s.reserved_quantity,(SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations r WHERE r.status='active' AND r.inventory_source=s.inventory_source AND r.variant_id=s.variant_id) AS active_reserved_sum FROM inventory_stock s WHERE s.inventory_source='warehouse' AND s.variant_id IN (207,1300)")
           console.log('MAIN_LEGACY_READ_ONLY_PASS')
           NODE
