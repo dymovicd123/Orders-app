@@ -351,6 +351,12 @@ export async function updateCriticalOperationTargetFromLastInsert(
   // A zero-row guarded INSERT/UPDATE is not a SQL error: db.batch would
   // otherwise commit an orphan order after an expired/reclaimed lease.
   if (toInt(insertResult.meta?.changes, 0) !== 1 || toInt(updateResult.meta?.changes, 0) !== 1) {
+    // TEMPORARY DIAGNOSTIC ONLY, test branch — remove after native D1 investigation.
+    console.warn('NATIVE_D1_HEADER_LEASE_DIAG', JSON.stringify({
+      inserted: insertResult.meta?.changes, advanced: updateResult.meta?.changes,
+      insertRowId: insertResult.meta?.last_row_id, updateRowId: updateResult.meta?.last_row_id,
+      requestId: handle.requestId,
+    }));
     throw new CriticalOperationBusyError('Сохранение заказа было перехвачено другим запросом. Обновите страницу и повторите действие.');
   }
   const id = toInt(insertResult.meta?.last_row_id, 0);
