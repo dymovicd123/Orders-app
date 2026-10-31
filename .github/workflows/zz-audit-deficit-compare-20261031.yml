@@ -1,0 +1,42 @@
+name: "One-shot physical deficit comparison Main vs Branch2 SELECT only"
+on:
+  push:
+    branches: [audit/main-branch2-legacy-closure-crosscheck-20261031]
+    paths: [.github/workflows/zz-audit-deficit-compare-20261031.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Read only physical and reserved counts from separated databases
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-branch2-legacy-closure-crosscheck-20261031')
+          const dbs={main:'17e68a41-1d58-4a36-8a63-47c3e32443c4',branch2:'0904a573-21ff-44d8-93b0-c9200f771702'}
+          const queries={"deficits":"SELECT inventory_source,variant_id,quantity AS physical,reserved_quantity AS reserved,CASE WHEN reserved_quantity>quantity THEN reserved_quantity-quantity ELSE 0 END AS shortage FROM inventory_stock WHERE variant_id IS NOT NULL AND reserved_quantity>quantity ORDER BY shortage DESC,inventory_source,variant_id LIMIT 60","targeted":"SELECT inventory_source,variant_id,quantity AS physical,reserved_quantity AS reserved,last_action,updated_at FROM inventory_stock WHERE (inventory_source='warehouse' AND variant_id IN (853,1444,1241,1541,1716,178,207,209,1300,1821)) OR (inventory_source='boutique' AND variant_id IN (212,1800)) ORDER BY inventory_source,variant_id","returned_reservations":"SELECT r.id,r.order_id,r.order_item_id,r.status,r.unresolved_reason,r.inventory_source,r.variant_id,r.quantity,r.updated_at,oi.stock_writeoff_status FROM inventory_reservations r LEFT JOIN order_items oi ON oi.id=r.order_item_id WHERE r.id IN (1226,1227,1228,1229) ORDER BY r.id"}
+          const a=process.env.CLOUDFLARE_ACCOUNT_ID,t=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(a||'')&&t)
+          async function read(db,sql){
+            assert(Object.hasOwn(dbs,db)&&sql.startsWith('SELECT ')&&!sql.includes(';'))
+            const response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+a+'/d1/database/'+dbs[db]+'/query',{
+              method:'POST',headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},
+              body:JSON.stringify({sql}),signal:AbortSignal.timeout(45000)
+            })
+            const obj=await response.json()
+            assert(response.ok&&obj.success!==false,'read query failure '+db)
+            const chunks=Array.isArray(obj.result)?obj.result:[obj.result]
+            assert(chunks.every(x=>x?.success!==false))
+            return chunks.flatMap(x=>x?.results||[])
+          }
+          for(const db of ['main','branch2'])for(const [q,sql] of Object.entries(queries)){
+            const v=await read(db,sql)
+            console.log('WAREHOUSE_CROSS_COMPARE_'+db.toUpperCase()+'_'+q.toUpperCase()+' '+JSON.stringify(v))
+          }
+          console.log('WAREHOUSE_CROSS_COMPARE_READ_ONLY_PASS')
+          NODE
