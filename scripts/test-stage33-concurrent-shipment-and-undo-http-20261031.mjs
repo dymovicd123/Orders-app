@@ -143,7 +143,7 @@ const getReserve=id=>sql.prepare("SELECT id,status,quantity,variant_id,inventory
 const qty=id=>Number(sql.prepare("SELECT quantity FROM order_items WHERE id=?").get(id)?.quantity)
 const count=(table,where,params=[])=>Number(sql.prepare('SELECT COUNT(*) AS n FROM '+table+' WHERE '+where).get(...params)?.n)
 
-const stock=id=>sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=?').get(id)
+const stock=id=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=?').get(id)})
 const reserve=id=>sql.prepare('SELECT status,quantity,variant_id,inventory_source FROM inventory_reservations WHERE order_item_id=?').get(id)
 const create=await http('POST','/api/orders',payload('stage33-dual-source',[item('warehouse'),item('boutique')]))
 assert.equal(create.status,201)
