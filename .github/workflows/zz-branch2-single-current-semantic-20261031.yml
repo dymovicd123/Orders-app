@@ -38,3 +38,5 @@ jobs:
           node --experimental-strip-types scripts/test-p0-http-pending-reservation-20261030.mjs
           node --experimental-strip-types scripts/test-branch2-resolver-only-when-actionable-20261022.mjs
           node --experimental-strip-types scripts/test-branch2-resolver-historic-reserve-20261022.mjs
+          node --experimental-strip-types scripts/test-stage04a-workshop-settlements.mjs
+          node --experimental-strip-types scripts/test-stage04b-workshop-status-capture.mjs
