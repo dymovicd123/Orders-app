@@ -1,0 +1,120 @@
+name: "One-time MAIN release two PRE-OCT reservations, exact ID guards"
+on:
+  push:
+    branches: [ops/main-release-two-preoct-reserves-20261101]
+    paths: [.github/workflows/one-time-main-release-preoct-two-20261101.yml]
+permissions:
+  contents: read
+jobs:
+  exact-id-release-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: One time exact Aug/Sep cleanup - NO October rows, NO physical stock changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/ops/main-release-two-preoct-reserves-20261101')
+          const token=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID
+          assert(token&&/^[a-f0-9]{32}$/i.test(account||''),'No D1 token or account')
+          const dbid='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+dbid
+          const headers={Authorization:'Bearer '+token,'Content-Type':'application/json'}
+          async function api(path,method,body){
+            const response=await fetch(base+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(25000)})
+            const data=await response.json()
+            if(!response.ok||data.success===false)throw new Error('Cloudflare D1 API error '+response.status+' '+JSON.stringify((data.errors||[]).map(e=>e.code)))
+            if(Array.isArray(data.result)&&data.result.some(x=>x?.success===false))
+              throw new Error('D1 statement failure '+JSON.stringify(data.result.filter(x=>x?.success===false).map(x=>x.error)).slice(0,800))
+            return data.result
+          }
+          const metadata=await api('','GET')
+          assert.equal(metadata.name,'orders_db_prod','Wrong database, abort')
+          async function select(sql){
+            assert(/^SELECT\s/.test(sql)&&!sql.includes(';'))
+            const r=await api('/query','POST',{sql})
+            return (Array.isArray(r)?r:[r]).flatMap(x=>x?.results||[])
+          }
+          const expected=[
+            {id:557,order:943,item:2341,variant:207,qty:1,created:'2026-08-08T14:43:23.171Z',updated:'2026-08-14 07:35:53'},
+            {id:997,order:1417,item:3571,variant:1300,qty:1,created:'2026-09-13T14:21:51.965Z',updated:'2026-09-13T14:21:51.965Z'}
+          ]
+          const auditExisting=await select("SELECT entity_id FROM activity_log WHERE event_type='historical_reservation_released' AND entity_id IN (557,997)")
+          assert.equal(auditExisting.length,0,'Previous audit exists; refuse to perform duplicate one-time cleanup')
+          const rows=await select(
+            "SELECT r.id,r.order_id,r.order_item_id,r.inventory_source,r.variant_id,r.quantity,r.status,r.created_at,r.updated_at,"
+            +"o.order_date,o.shipping_status,oi.stock_writeoff_status,"
+            +"(SELECT COUNT(*) FROM exchanges e WHERE e.order_id=r.order_id AND e.exchange_date>='2026-10-01') AS newer_exchanges,"
+            +"(SELECT COUNT(*) FROM returns t WHERE t.order_id=r.order_id AND t.return_date>='2026-10-01') AS newer_returns "
+            +"FROM inventory_reservations r JOIN orders o ON o.id=r.order_id JOIN order_items oi ON oi.id=r.order_item_id "
+            +"WHERE r.id IN (557,997) ORDER BY r.id"
+          )
+          assert.equal(rows.length,2)
+          for(let i=0;i<2;i++){
+            const e=expected[i],r=rows[i]
+            assert.deepEqual(
+              {id:r.id,order:r.order_id,item:r.order_item_id,variant:r.variant_id,qty:r.quantity,source:r.inventory_source,
+               status:r.status,created:r.created_at,updated:r.updated_at,newEx:r.newer_exchanges,newRet:r.newer_returns},
+              {id:e.id,order:e.order,item:e.item,variant:e.variant,qty:e.qty,source:'warehouse',status:'active',
+               created:e.created,updated:e.updated,newEx:0,newRet:0})
+            assert(r.order_date<'2026-10-01'&&r.created_at<'2026-10-01','Only pre-October-created reservations')
+          }
+          const octoberBefore=await select("SELECT id,order_id,variant_id,quantity,status,created_at,updated_at FROM inventory_reservations WHERE id IN (1856,1878) ORDER BY id")
+          assert.equal(octoberBefore.length,2)
+          assert(octoberBefore.every(r=>r.created_at>='2026-10-01'&&r.status==='active'))
+          const stocks=await select("SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id IN (207,1300) ORDER BY variant_id")
+          assert.equal(stocks.length,2)
+          assert(stocks.every(r=>r.quantity===0&&r.reserved_quantity===1))
+          const active=await select("SELECT variant_id,COUNT(*) AS n,SUM(quantity) AS units FROM inventory_reservations WHERE status='active' AND inventory_source='warehouse' AND variant_id IN (207,1300) GROUP BY variant_id ORDER BY variant_id")
+          assert.deepEqual(active.map(r=>({variant:r.variant_id,n:r.n,units:r.units})),[{variant:207,n:1,units:1},{variant:1300,n:1,units:1}])
+          console.log('MAIN_PREOCT_EXACT_PREFLIGHT_PASS',JSON.stringify({reservations:[557,997],octoberExclusions:[1856,1878],physical:stocks.map(r=>({variantId:r.variant_id,quantity:r.quantity})),stockCommittedBefore:[1,1]}))
+          const invalid="SELECT json('HISTORICAL_CLEANUP_ABORT') WHERE changes() <> 1"
+          const statements=[]
+          for(const e of expected){
+            const update="UPDATE inventory_reservations SET status='released',released_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
+              +"WHERE id="+e.id+" AND order_id="+e.order+" AND order_item_id="+e.item
+              +" AND inventory_source='warehouse' AND variant_id="+e.variant+" AND quantity=1"
+              +" AND status='active' AND created_at='"+e.created+"' AND updated_at='"+e.updated+"'"
+              +" AND EXISTS(SELECT 1 FROM orders o WHERE o.id="+e.order+" AND o.order_date<'2026-10-01')"
+              +" AND NOT EXISTS(SELECT 1 FROM exchanges x WHERE x.order_id="+e.order+" AND x.exchange_date>='2026-10-01')"
+              +" AND NOT EXISTS(SELECT 1 FROM returns t WHERE t.order_id="+e.order+" AND t.return_date>='2026-10-01')"
+            statements.push(update,invalid)
+          }
+          for(const e of expected){
+            const cached="UPDATE inventory_stock SET reserved_quantity=COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r "
+              +"WHERE r.inventory_source='warehouse' AND r.variant_id="+e.variant+" AND r.status='active'),0),"
+              +"last_action='Разовая очистка старого резерва',last_source_ref='legacy-reservation:"+e.id+"',updated_at=CURRENT_TIMESTAMP "
+              +"WHERE inventory_source='warehouse' AND variant_id="+e.variant+" AND quantity=0 AND reserved_quantity=1"
+            statements.push(cached,invalid)
+          }
+          const externalIds={557:'ORD-20260808144323-4561',997:'ORD-20260913142151-EAF3190D'}
+          for(const e of expected){
+            const audit="INSERT INTO activity_log(event_type,entity_type,entity_id,order_id,external_order_id,title,details,amount,created_at) "
+              +"VALUES('historical_reservation_released','inventory_reservation',"+e.id+","+e.order+",'"+externalIds[e.id]+"',"
+              +"'Разовая очистка исторического резерва',"
+              +"'Резерв создан до октября 2026; по правилу владельца заказ выдан; точный резерв "+e.id
+              +" закрыт; физический остаток, заказ, деньги и складские движения не менялись',0,CURRENT_TIMESTAMP)"
+            statements.push(audit,invalid)
+          }
+          // Cloudflare REST /query accepts a batch of SQL statements; the D1
+          // batch is transactional. Any failed exact-row assertion aborts it.
+          const result=await api('/query','POST',{batch:statements.map(sql=>({sql}))})
+          assert.equal(Array.isArray(result)?result.length:0,statements.length,'Unexpected D1 batch response')
+          console.log('MAIN_PREOCT_ONE_OFF_ATOMIC_BATCH_APPLIED',JSON.stringify({ids:[557,997],statements:statements.length}))
+          const released=await select("SELECT id,status,order_id,order_item_id,variant_id,quantity FROM inventory_reservations WHERE id IN (557,997) ORDER BY id")
+          assert.deepEqual(released.map(x=>x.status),['released','released'])
+          const oct=await select("SELECT id,order_id,variant_id,quantity,status,created_at,updated_at FROM inventory_reservations WHERE id IN (1856,1878) ORDER BY id")
+          assert.deepEqual(oct,octoberBefore,'OCTOBER reservations MUST remain bit-identical')
+          const afterStocks=await select("SELECT id,inventory_source,variant_id,quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id IN (207,1300) ORDER BY variant_id")
+          assert.deepEqual(afterStocks.map(r=>r.quantity),[0,0],'Physical quantities not touched')
+          assert.deepEqual(afterStocks.map(r=>r.reserved_quantity),[0,0],'Only pre-Oct commitment removed')
+          const audits=await select("SELECT entity_id FROM activity_log WHERE event_type='historical_reservation_released' AND entity_id IN (557,997)")
+          assert.equal(audits.length,2,'Audit entries must persist')
+          const shortages=await select("SELECT COUNT(*) AS groups,SUM(reserved-physical) AS missing_units FROM (SELECT r.inventory_source,r.variant_id,SUM(r.quantity) AS reserved,COALESCE(MAX(s.quantity),0) AS physical FROM inventory_reservations r LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.status='active' AND r.variant_id IS NOT NULL GROUP BY r.inventory_source,r.variant_id HAVING SUM(r.quantity)>COALESCE(MAX(s.quantity),0))")
+          console.log('MAIN_PREOCT_RELEASE_VERIFIED',JSON.stringify({releasedIds:[557,997],preservedOctoberIds:[1856,1878],currentShortage:shortages[0],physicalQuantityUnchanged:true,auditEntries:audits.length}))
+          NODE
