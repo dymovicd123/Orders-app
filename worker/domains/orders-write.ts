@@ -339,27 +339,51 @@ export async function inventoryObligationLineageForRewrite(
   db: D1Database,
   orderId: number,
   nextItems: ReturnType<typeof normalizeOrderItems>,
+  nextCanonical: Array<{ productId: number | null; variantId: number | null }>,
 ) {
+  // Stage 3.1: the immutable obligation origin is tied to the *exact*
+  // canonical SKU, not merely human-readable snapshots. Two variants can
+  // temporarily have identical labels during catalog merge/retirement.
+  // Carrying the old key to a different SKU would make a new sale inherit
+  // another physical unit's original evidence and checkpoint time.
   const existing = await db.prepare(
-    `SELECT id, product_name_snapshot, audience_type, gender_snapshot, color_snapshot, material_snapshot, length_snapshot,
-            size_snapshot, quantity, is_workshop, source_type, created_at, inventory_obligation_key, inventory_obligation_origin_at
+    `SELECT id, product_id, variant_id, product_name_snapshot, audience_type, gender_snapshot,
+            color_snapshot, material_snapshot, length_snapshot, size_snapshot,
+            quantity, is_workshop, source_type, created_at,
+            inventory_obligation_key, inventory_obligation_origin_at
      FROM order_items WHERE order_id = ? AND quantity > 0 ORDER BY id ASC`
   ).bind(orderId).all<Record<string, unknown>>();
-  const pools = new Map<string, Array<{ key: string; originAt: string }>>();
+  type Prior = { key: string; originAt: string; productId: number; variantId: number; workshop: boolean };
+  const pools = new Map<string, Prior[]>();
   for (const row of existing.results || []) {
     const identity = inventoryObligationIdentityKey(row);
     if (!pools.has(identity)) pools.set(identity, []);
     pools.get(identity)!.push({
       key: cleanText(row.inventory_obligation_key) || `legacy-order-item:${toInt(row.id, 0)}`,
       originAt: cleanText(row.inventory_obligation_origin_at) || cleanText(row.created_at),
+      productId: toInt(row.product_id, 0),
+      variantId: toInt(row.variant_id, 0),
+      workshop: Boolean(toInt(row.is_workshop, 0)),
     });
   }
-  return nextItems.map((item) => {
+  return nextItems.map((item, index) => {
+    const canonical = nextCanonical[index];
+    const nextProductId = toInt(canonical?.productId, 0);
+    const nextVariantId = toInt(canonical?.variantId, 0);
+    // Unknown catalog identity is not evidence that it is the SAME physical
+    // variant. Workshop may have a product-only obligation, but still requires
+    // an exact positive product ID and consistent null/exact variant.
+    if (!nextProductId || (!item.isWorkshop && !nextVariantId)) return null;
     const queue = pools.get(inventoryObligationIdentityKey(item as unknown as Record<string, unknown>));
-    return queue?.length ? queue.shift()! : null;
+    if (!queue?.length) return null;
+    const matched = queue.findIndex(previous =>
+      previous.productId === nextProductId
+      && previous.variantId === nextVariantId
+      && previous.workshop === item.isWorkshop
+      && (item.isWorkshop || previous.variantId > 0));
+    return matched < 0 ? null : queue.splice(matched, 1)[0];
   });
 }
-
 
 export async function retireOrderItemsForRewrite(
   db: D1Database, orderId: number, timestamp: string, preserveOrderItemIds: number[] = [],
@@ -1888,9 +1912,6 @@ export async function updateOrderCritical(
         }
       }
       if (rewriteItems && nextItems.some(item => item.isWorkshop)) await assertWorkshopTaskDetailSchema(db);
-      const inventoryObligationLineage = rewriteItems
-        ? await inventoryObligationLineageForRewrite(db, id, nextItems)
-        : [];
       let rewritePreResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> | undefined;
       if (rewriteItems) {
         for (const item of nextItems) {
@@ -1924,6 +1945,11 @@ export async function updateOrderCritical(
           }
         }
       }
+      // Resolve catalog identity first, then decide whether historical
+      // obligation keys belong to the exact same SKU on the new line.
+      const inventoryObligationLineage = rewriteItems
+        ? await inventoryObligationLineageForRewrite(db, id, nextItems, rewritePreResolvedCatalog || [])
+        : [];
       if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && nextShippingStatus === 'sent') {
         if (rewriteItems) {
           const unresolvedNames = nextItems
