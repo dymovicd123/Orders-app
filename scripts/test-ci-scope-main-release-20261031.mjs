@@ -34,7 +34,8 @@ assert(quality.includes('npm audit --omit=dev --audit-level=moderate'))
 assert(quality.includes('npm audit --audit-level=high'))
 assert(quality.includes('npm run release:check'))
 assert(quality.includes('npm run build'))
-for(const file of ['main-product-kpi-20261027.yml','main-city-staff-release-20261025.yml','main-w12-operations-only-20261024.yml']){
+assert(source('main-product-kpi-20261027.yml').includes('branches: [release-product-kpi-leads-20261027, main]'),'KPI production push trigger changed')
+for(const file of ['main-city-staff-release-20261025.yml','main-w12-operations-only-20261024.yml']){
  assert.match(source(file),/push:\s*\n\s+branches:\s*\[main\]/,'main push safety trigger changed in '+file)
 }
 console.log('MAIN_CI_RELEASE_GATE_SCOPE_PASS — unrelated legacy PR checks scoped; global production audits, main push security and build remain enabled')
