@@ -173,6 +173,42 @@ const physicalCorrection=await api(route,'POST',{
 assert.equal(physicalCorrection.data.duplicate,false)
 const handoverAfter=await api('/api/orders/'+orderAId+'/stock-handover','GET',undefined,200)
 assert.equal(handoverAfter.data.ok,true)
+// Follow-up 1.6: replace the pending line's identity AND source through the
+// real itemized order editor, preserving history and re-admitting a free SKU.
+const originalPending=b.data.order.items[0]
+const expectedItem={
+ orderItemId:Number(originalPending.id),productName:originalPending.productName,
+ audienceType:originalPending.audienceType,gender:originalPending.gender,
+ color:originalPending.color,material:originalPending.material,
+ length:originalPending.length,size:originalPending.size,
+ quantity:originalPending.quantity,unitPrice:originalPending.unitPrice,
+ lineTotal:originalPending.lineTotal,catalogPriceSnapshot:originalPending.catalogPriceSnapshot,
+ sourceType:originalPending.sourceType
+}
+const movedItem={
+ ...expectedItem,size:'46',sourceType:'warehouse'
+}
+delete movedItem.lineTotal
+delete movedItem.orderItemId
+const edited=await api('/api/orders/'+orderBId,'PATCH',{
+ requestId:'s2-order-b-switch-source-and-sku',
+ itemContentReplacement:{expectedItems:[expectedItem],items:[movedItem]}
+},200)
+assert.equal(edited.data.ok,true,'Order edit with exact new source/SKU must commit')
+const refreshedB=await api('/api/orders/'+orderBId,'GET',undefined,200)
+const refreshedItem=refreshedB.data.order.items[0]
+assert.equal(refreshedItem.sourceType,'warehouse')
+assert.equal(refreshedItem.size,'46')
+assert.equal(Number(refreshedItem.variantId),variants['46'])
+const repeatedEdit=await api('/api/orders/'+orderBId,'PATCH',{
+ requestId:'s2-order-b-switch-source-and-sku',
+ itemContentReplacement:{expectedItems:[expectedItem],items:[movedItem]}
+},200)
+assert.equal(repeatedEdit.data.ok,true,'Lost response retry must not edit or reserve twice')
+console.log('BRANCH2_STAGE1_ORDER_SOURCE_SKU_REPLACEMENT_HTTP_PASS',
+ JSON.stringify({orderBId,oldVariant:variants['48'],newVariant:variants['46'],
+  source:'warehouse',orderItemId:refreshedItem.id}))
+
 console.log('BRANCH2_STAGE1_2_ORDER_RESERVATION_HTTP_PASS',JSON.stringify({
  orderAId,orderBId,orderCId,
  activeOrderItemId:orderAItemId,pendingOrderItemId:orderBItemId,
