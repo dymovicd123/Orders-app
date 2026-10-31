@@ -53,6 +53,7 @@ for(const name of migrations.filter(x=>x<'0117_')) {
 }
 const ddl=snapshot.prepare(`SELECT type,name,sql FROM sqlite_master
  WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+ AND name NOT GLOB '*_fts_*'
  AND type IN ('table','index','view','trigger')
  ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 WHEN 'view' THEN 2 ELSE 3 END,name`).all()
 assert(ddl.length>100,'Expected actual comprehensive persistent D1 table/index schema')
