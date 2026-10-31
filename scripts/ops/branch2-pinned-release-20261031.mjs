@@ -8,7 +8,7 @@ const expectedRef='refs/heads/ops/branch2-release-shortage-and-transfer-20261031
 const expectedSha='c6295401e0777121a4760beb44ba87e8a4a19b94'
 const version='23b5f04d-9340-4a0c-af53-4968527f821f'
 const previousVersion='1fa6e7a3-32d4-4f77-b625-e044db46015a'
-const previousDeployment='f1e5c4e3-fbed-49c7-888c-7e6d4f3e8f44'
+const previousDeployment='e00291a0-4689-41bf-b3c6-2df876a8d5da'
 const dbId='0904a573-21ff-44d8-93b0-c9200f771702'
 const name='orders-app-branch2'
 assert.equal(process.env.GITHUB_REF,expectedRef,'Not an approved isolated release ref')
@@ -109,8 +109,21 @@ try{
  const after=await active()
  assert.equal(after.version,version,'Live version changed to unexpected target')
  assert.notEqual(after.deployment,previousDeployment,'No new deployment created')
- const liveAsset=await inspect(liveUrl)
- assert.equal(liveAsset,pinnedAsset,'Live asset does not match pinned immutable candidate')
+ let liveAsset=null
+ let lastLiveError=''
+ for(let attempt=1;attempt<=12;attempt++){
+  try{
+   const observed=await active()
+   assert.equal(observed.version,version,'Active Worker drift while waiting for public propagation')
+   liveAsset=await inspect(liveUrl)
+   assert.equal(liveAsset,pinnedAsset,'Live asset does not match pinned immutable candidate')
+   break
+  }catch(error){
+   lastLiveError=String(error?.message||error)
+   if(attempt===12)throw Error('Active-version UI failed after bounded propagation checks: '+lastLiveError)
+   await new Promise(resolve=>setTimeout(resolve,2000))
+  }
+ }
  console.log('BRANCH2_RELEASE_20261031_SUCCESS '+JSON.stringify({
   sourceSha:expectedSha,activeDeployment:after.deployment,activeVersion:after.version,
   previousVersion,asset:liveAsset,anonymousApi:401,physicalStockWrites:0,d1Writes:0,mainWrites:0}))
