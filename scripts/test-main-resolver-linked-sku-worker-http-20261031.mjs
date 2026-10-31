@@ -164,6 +164,26 @@ try{
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_item_id=?').get(line.id).n,1)
   assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?").get(variantId).quantity,0)
  }
+ // 1.5 positive completion: after a single valid shipment click, missing known
+ // reservation is recovered and fulfilled. Client replay must not double-write.
+ sqlite.prepare('DELETE FROM inventory_reservations WHERE order_item_id=?').run(line.id)
+ sqlite.prepare("UPDATE inventory_stock SET quantity=1,reserved_quantity=0 WHERE inventory_source='warehouse' AND variant_id=?").run(variantId)
+ sqlite.prepare("UPDATE order_items SET stock_writeoff_status='pending_reservation' WHERE id=?").run(line.id)
+ const shipped=await api('/api/orders/'+orderId+'/shipping','PATCH',{shippingStatus:'sent'},200)
+ assert.equal(shipped.data.ok,true)
+ assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(orderId).shipping_status,'sent')
+ const shippedReservation=sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?').get(line.id)
+ assert.equal(shippedReservation.status,'fulfilled')
+ const stockAfterShipment=sqlite.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?").get(variantId)
+ assert.deepEqual({...stockAfterShipment},{quantity:0,reserved_quantity:0})
+ const sentMovements=sqlite.prepare("SELECT id,quantity_delta FROM inventory_movements WHERE variant_id=?").all(variantId)
+ assert.equal(sentMovements.length,1,'Real shipment must emit exactly one physical movement')
+ assert.equal(sentMovements[0].quantity_delta,-1)
+ const repeatSent=await api('/api/orders/'+orderId+'/shipping','PATCH',{shippingStatus:'sent'},200)
+ assert.equal(repeatSent.data.alreadySent,true,'Lost response retry must not send again')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=?').get(variantId).n,1)
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_item_id=?').get(line.id).n,1)
+ console.log('MAIN_RESOLVER_SHIPPING_SINGLE_ACTION_FULFILL_REPLAY_HTTP_PASS',JSON.stringify({orderId,variantId,physicalAfter:0,movements:1}))
  console.log('MAIN_RESOLVER_PENDING_KNOWN_SHIPPING_HTTP_PASS: repaired pending exact SKU, replay dedupe, immutable released/fulfilled, physical zero')
  console.log('MAIN_RESOLVER_REAL_WORKER_HTTP_EXISTING_SKU_PASS',JSON.stringify({orderId,itemId:line.id,variantId,color:d.color,size:d.size,nextQuestion:answer.kind,physicalMovements:0}))
 } finally {sqlite.close()}
