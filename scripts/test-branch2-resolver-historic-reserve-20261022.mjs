@@ -39,8 +39,8 @@ db.exec(`
   INSERT INTO catalog_variants VALUES (1498, 11);
   INSERT INTO order_items VALUES (101, 1775, 11, 1498, 'ЭТНО КАРДИГАН', 1, 0, 'reserved');
   INSERT INTO inventory_stock VALUES (1, 'warehouse', 1498);
-  INSERT INTO inventory_reservations VALUES (1, 1775, 101, 'warehouse', 1498, 'released', 1);
-  INSERT INTO inventory_reservations VALUES (2, 1775, 101, 'warehouse', 1498, 'active', 1);
+  INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,variant_id,status,quantity) VALUES (1, 1775, 101, 'warehouse', 1498, 'released', 1);
+  INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,variant_id,status,quantity) VALUES (2, 1775, 101, 'warehouse', 1498, 'active', 1);
   ALTER TABLE order_items ADD COLUMN source_type TEXT DEFAULT 'warehouse';
   ALTER TABLE inventory_reservations ADD COLUMN unresolved_reason TEXT;
   ALTER TABLE catalog_variants ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;
@@ -64,9 +64,9 @@ scenario('No active reservation is a genuine blocker',
 scenario('An active reservation with no stock row is a blocker',
   'DELETE FROM inventory_stock WHERE id = 1', 1)
 scenario('A fulfilled historical reservation beside the active one is harmless',
-  "INSERT INTO inventory_reservations VALUES (3, 1775, 101, 'warehouse', 1498, 'fulfilled', 1)", 0)
+  "INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,variant_id,status,quantity) VALUES (3, 1775, 101, 'warehouse', 1498, 'fulfilled', 1)", 0)
 scenario('An unresolved historical reservation beside active one is harmless',
-  "INSERT INTO inventory_reservations VALUES (3, 1775, 101, 'warehouse', 1498, 'unresolved', 1)", 0)
+  "INSERT INTO inventory_reservations(id,order_id,order_item_id,inventory_source,variant_id,status,quantity) VALUES (3, 1775, 101, 'warehouse', 1498, 'unresolved', 1)", 0)
 scenario('A zero-quantity order item cannot block shipping',
   'UPDATE order_items SET quantity = 0 WHERE id = 101', 0)
 scenario('Workshop items do not participate in warehouse reservation blockers',
