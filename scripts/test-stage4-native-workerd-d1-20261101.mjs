@@ -33,6 +33,7 @@ writeFileSync(config,JSON.stringify({
  main:resolve('worker/index.ts'),
  compatibility_date:'2026-07-06',
  compatibility_flags:['nodejs_compat'],
+ assets:{directory:resolve('dist/client'),not_found_handling:'single-page-application',run_worker_first:['/api/*']},
  d1_databases:[{
   binding:'DB',database_name:database,
   database_id:'00000000-0000-4000-8000-000000000046',
@@ -83,6 +84,10 @@ writeFileSync(seedPath,[
  "INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9785,'boutique',9782,9783,'STAGE4 NATIVE TEST SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',8,0);",
  "INSERT INTO catalog_identity_meta(key,value,updated_at) VALUES('catalog_identity_v3','active','2026-11-01T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active';",
  "INSERT INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-01T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active';",
+ "INSERT INTO orders(id,external_id,order_date,created_at,shipping_status,order_status) VALUES(9790,'STAGE4-NATIVE-RESERVE','2026-10-31','2026-10-31T08:00:00Z','not_sent','active');",
+ "INSERT INTO order_items(id,order_id,quantity,is_workshop,created_at,inventory_obligation_origin_at,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,source_type,stock_writeoff_status,product_id,variant_id) VALUES(9791,9790,3,0,'2026-10-31T08:00:00Z','2026-10-31T08:00:00Z','STAGE4 NATIVE TEST SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50','warehouse','reserved',9782,9783);",
+ "INSERT INTO inventory_reservations(id,inventory_source,variant_id,quantity,status,order_id,order_item_id,created_at) VALUES(9792,'warehouse',9783,3,'active',9790,9791,'2026-10-31T08:00:00Z');",
+ "UPDATE inventory_stock SET reserved_quantity=3 WHERE inventory_source='warehouse' AND variant_id=9783;",
 ].join('\n'))
 function localD1(file){
  const result=spawnSync(process.execPath,[cli,'d1','execute',database,
@@ -144,6 +149,14 @@ try{
  const history='/api/inventory/history?source=warehouse&variantId=9783'
  const attention=await api('GET','/api/inventory/attention?details=1&limit=10')
  assert.equal(attention.status,200,'Native D1 real Problems query: '+JSON.stringify(attention)+' '+logs.slice(-2000))
+ assert((attention.data.items?.shortages||[]).some(x=>x.source==='warehouse'&&Number(x.variantId)===9783),
+  'Native D1 must expose one actual linked-order shortage before receipt')
+ let browserAcceptance=null
+ if(process.argv.includes('--browser')){
+  const {startStage4Browser}=await import('./test-stage4-browser-problems-history-20261101.mjs')
+  browserAcceptance=await startStage4Browser({origin:base,sessionToken,variantId:9783})
+  await browserAcceptance.beforeReceipt()
+ }
  const rejected=await api('POST',path,{
   requestId:'native-stage4-rejected',inventorySource:'warehouse',
   movementType:'arrival',items:[{...item,color:'НЕВЕРНЫЙ'}],
@@ -169,6 +182,16 @@ try{
  assert.equal(evidence[0].performedBy,actorName,'Real Cyrillic authenticated actor must survive headers and native D1')
  assert.equal(Number(evidence[0].quantityDelta),2)
  assert.equal(Number(evidence[0].quantityAfter),4)
+ const currentAttention=await api('GET','/api/inventory/attention?details=1&limit=10')
+ assert.equal(currentAttention.status,200,JSON.stringify(currentAttention))
+ assert(!(currentAttention.data.items?.shortages||[]).some(x=>x.source==='warehouse'&&Number(x.variantId)===9783),
+  'Confirmed native D1 receipt must remove the live shortage without touching reservation')
+ const liveReserve=await api('GET','/api/inventory/reservations?source=warehouse&variantId=9783')
+ assert.equal(liveReserve.status,200,JSON.stringify(liveReserve))
+ if(browserAcceptance){
+  try { await browserAcceptance.afterReceipt() }
+  finally { await browserAcceptance.close() }
+ }
  const replay=await api('POST',path,movement)
  assert.equal(replay.status,200,'Native D1 retry must replay, not move: '+JSON.stringify(replay))
  assert.equal(replay.data.duplicate,true)
