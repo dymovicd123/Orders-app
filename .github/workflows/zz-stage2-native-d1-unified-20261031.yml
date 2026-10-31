@@ -149,18 +149,18 @@ jobs:
             if(!stock.length){db.close();continue}
             found++
             assert.deepEqual(stock.map(x=>[x.inventory_source,x.size_label,Number(x.quantity),Number(x.reserved_quantity)]),
-              [['boutique','46',1,0],['boutique','48',1,0],['warehouse','46',4,0],['warehouse','48',0,0]])
+              [['boutique','46',1,0],['boutique','48',0,1],['warehouse','46',4,1],['warehouse','48',0,0]])
             const moves=db.prepare(`SELECT inventory_source,movement_type,quantity_delta,reference_type
               FROM inventory_movements WHERE product_name_snapshot='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
               ORDER BY id`).all()
-            assert.equal(moves.length,9,'One D1 movement per real physical fact; transfer has two halves, retries none')
+            assert.equal(moves.length,10,'One D1 movement per actual physical action, no replay duplicates')
             const count=(type)=>moves.filter(x=>x.reference_type===type).length
-            assert.equal(count('manual'),5,'Three arrivals, one correction, one writeoff')
+            assert.equal(count('manual'),6,'Three arrivals, two corrections, one writeoff')
             assert.equal(count('transfer_out'),1)
             assert.equal(count('transfer_in'),1)
             assert.equal(count('quick_stocktake'),1)
             assert.equal(count('stocktake'),1)
-            assert.equal(moves.reduce((sum,x)=>sum+Number(x.quantity_delta),0),6,
+            assert.equal(moves.reduce((sum,x)=>sum+Number(x.quantity_delta),0),5,
               'Physical movement total must reconcile with four ending positions')
             const checks=db.prepare(`SELECT check_type,variant_id,expected_quantity,counted_quantity
               FROM inventory_stock_checks
@@ -172,12 +172,23 @@ jobs:
               'Quick physical check missing')
             assert(checks.some(x=>x.check_type==='full_stocktake'&&Number(x.counted_quantity)===1),
               'Full revision checkpoint missing')
-            const pending=db.prepare(`SELECT COUNT(*) AS n FROM inventory_reservations
-              WHERE variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
-                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')`).get()
-            assert.equal(Number(pending.n),0,'Physical operations must not fabricate a reservation')
+            const reservations=db.prepare(`SELECT r.inventory_source,r.variant_id,r.status,r.quantity,
+              o.external_id FROM inventory_reservations r JOIN orders o ON o.id=r.order_id
+              WHERE r.variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')
+              ORDER BY r.id`).all()
+            assert.equal(reservations.length,3,'Three orders must have exactly three reservation obligations')
+            assert.equal(reservations.filter(x=>x.status==='active').length,2)
+            assert.equal(reservations.filter(x=>x.status==='unresolved').length,1)
+            assert.equal(reservations.filter(x=>x.status==='fulfilled').length,0)
+            assert.equal(Number(stock.find(x=>x.inventory_source==='boutique'&&x.size_label==='48').reserved_quantity),1)
+            assert.equal(Number(stock.find(x=>x.inventory_source==='warehouse'&&x.size_label==='46').reserved_quantity),1)
+            assert(checks.some(x=>x.check_type==='manual_set'&&Number(x.expected_quantity)===1
+              &&Number(x.counted_quantity)===0),'Physical correction under reservation missing')
             console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_D1_READBACK_PASS',JSON.stringify({
-              stock,movementCount:moves.length,checkCount:checks.length,reserved:0,replayDelta:0
+              stock,movementCount:moves.length,checkCount:checks.length,
+              reservations:reservations.map(x=>({source:x.inventory_source,status:x.status,quantity:x.quantity})),
+              replayDelta:0
             }))
             db.close()
           }
