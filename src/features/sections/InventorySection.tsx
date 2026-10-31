@@ -1960,10 +1960,8 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     attentionError,
     attentionIntakeBusyId,
     attentionLoading,
-    openAttentionCatalog,
     openAttentionHandover,
     openAttentionIntake,
-    openAttentionLifecycle,
     refreshWarehouseAttention,
     setAttentionCategory,
   } = useInventoryAttentionActions({
