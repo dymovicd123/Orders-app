@@ -336,6 +336,7 @@ export async function updateCriticalOperationTargetFromLastInsert(
   targetRef: string | null,
   insertStatement: D1PreparedStatement,
   nextStep: string,
+  atomicClaims: D1PreparedStatement[] = [],
 ) {
   const now = new Date().toISOString();
   const leaseUntil = Date.now() + 45_000;
@@ -346,6 +347,10 @@ export async function updateCriticalOperationTargetFromLastInsert(
        SET target_type = ?, target_id = last_insert_rowid(), target_ref = ?, step = ?, lease_until_ms = ?, updated_at = ?, last_error = NULL
        WHERE request_id = ? AND status = 'started' AND lease_token = ? AND step = 'validated' AND changes() = 1`
     ).bind(targetType, targetRef, nextStep, leaseUntil, now, handle.requestId, handle.leaseToken),
+    // An itemized Exchange must claim all original units in this same
+    // transaction as its header, before Return can observe an unclaimed item.
+    // A zero-row claim deliberately aborts the entire batch, including header.
+    ...atomicClaims,
   ]);
   // D1 meta.changes includes auxiliary trigger changes (1 order INSERT may report 4).
   // SQLite changes() inside this SAME batch is the precise direct-row count and
