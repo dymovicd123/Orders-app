@@ -1,0 +1,54 @@
+name: "One-time MAIN legacy reservation analysis - SELECT only"
+on:
+  push:
+    branches:
+      - audit/one-time-main-reservations-20261101
+    paths:
+      - .github/workflows/one-time-main-legacy-reservations-read-20261101.yml
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Production D1 exact database - READ ONLY, no deploy
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/one-time-main-reservations-20261101')
+          const t=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID
+          assert(t&&/^[a-f0-9]{32}$/i.test(account||''))
+          const id='17e68a41-1d58-4a36-8a63-47c3e32443c4'
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+id
+          async function request(method,path,sql){
+            assert((method==='GET'&&path===''&&sql===undefined)||
+             (method==='POST'&&path==='/query'&&/^SELECT\s/i.test(sql)&&!sql.includes(';')
+              &&!/\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|REPLACE|ATTACH|DETACH|VACUUM)\b/i.test(sql)))
+            const response=await fetch(base+path,{method,headers:{Authorization:'Bearer '+t,'Content-Type':'application/json'},
+             ...(sql?{body:JSON.stringify({sql})}:{}),signal:AbortSignal.timeout(24000)})
+            const json=await response.json()
+            assert(response.ok && json.success!==false,'D1 HTTP '+response.status+' '+JSON.stringify(json.errors))
+            return json.result
+          }
+          const info=await request('GET','')
+          assert.equal(info?.name,'orders_db_prod')
+          async function query(name,sql) {
+            const reply=await request('POST','/query',sql)
+            const rows=(Array.isArray(reply)?reply:[reply]).flatMap(x=>x?.results||[])
+            console.log('MAIN_LEGACY_'+name,JSON.stringify(rows))
+            return rows
+          }
+          await query('BY_MONTH',"SELECT substr(o.order_date,1,7) AS month,COALESCE(o.shipping_status,'') AS shipping,COUNT(*) AS reserved_rows,SUM(r.quantity) AS reserved_units,COUNT(DISTINCT r.order_id) AS orders FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE r.status='active' GROUP BY month,shipping ORDER BY month,shipping")
+          await query('OLD_BY_SOURCE',"SELECT r.inventory_source AS source,COUNT(*) AS reservation_rows,SUM(r.quantity) AS units,COUNT(DISTINCT r.order_id) AS orders,COUNT(DISTINCT r.variant_id) AS variants FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE r.status='active' AND o.order_date<'2026-10-01' GROUP BY r.inventory_source")
+          await query('LATE_EXCEPTIONS',"SELECT r.inventory_source AS source,COUNT(*) AS rows,SUM(r.quantity) AS units,SUM(CASE WHEN EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=r.order_id AND e.exchange_date>='2026-10-01') THEN 1 ELSE 0 END) AS late_exchange_rows,SUM(CASE WHEN EXISTS(SELECT 1 FROM returns t WHERE t.order_id=r.order_id AND t.return_date>='2026-10-01') THEN 1 ELSE 0 END) AS late_return_rows,SUM(CASE WHEN r.created_at>='2026-10-01' THEN 1 ELSE 0 END) AS made_after_cutoff FROM inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE r.status='active' AND o.order_date<'2026-10-01' GROUP BY r.inventory_source")
+          await query('SCREENSHOT_ORDER',"SELECT o.id AS order_id,o.external_id,o.order_date,o.shipping_status,oi.id AS item_id,oi.variant_id AS item_variant_id,oi.stock_writeoff_status,r.id AS reservation_id,r.inventory_source,r.variant_id,r.quantity,r.status,r.created_at AS reserve_created FROM orders o JOIN order_items oi ON oi.order_id=o.id LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id WHERE o.external_id='ORD-20260808144323-4561' ORDER BY oi.id,r.id LIMIT 30")
+          await query('OLD_EXAMPLES',"SELECT r.id AS reserve_id,r.order_id,r.order_item_id,r.inventory_source AS source,r.variant_id,r.quantity,r.created_at AS reserve_created,o.order_date,o.shipping_status,oi.stock_writeoff_status FROM inventory_reservations r JOIN orders o ON o.id=r.order_id JOIN order_items oi ON oi.id=r.order_item_id WHERE r.status='active' AND o.order_date<'2026-10-01' ORDER BY r.quantity DESC,r.id LIMIT 45")
+          await query('SHORTAGE_BEFORE_AFTER',"SELECT COUNT(*) AS total_sku_groups,SUM(CASE WHEN total_r>physical THEN 1 ELSE 0 END) AS shortage_now_groups,SUM(CASE WHEN total_r>physical THEN total_r-physical ELSE 0 END) AS missing_now_units,SUM(CASE WHEN newer_r>physical THEN 1 ELSE 0 END) AS shortage_without_pre_oct_groups,SUM(CASE WHEN newer_r>physical THEN newer_r-physical ELSE 0 END) AS shortage_without_pre_oct_units FROM (SELECT r.inventory_source,r.variant_id,SUM(r.quantity) AS total_r,SUM(CASE WHEN o.order_date>='2026-10-01' THEN r.quantity ELSE 0 END) AS newer_r,COALESCE(MAX(s.quantity),0) AS physical FROM inventory_reservations r JOIN orders o ON o.id=r.order_id LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.status='active' AND r.variant_id IS NOT NULL GROUP BY r.inventory_source,r.variant_id)")
+          await query('SHORTAGE_DETAILS',"SELECT r.inventory_source AS source,r.variant_id,COALESCE(MAX(s.quantity),0) AS stock_quantity,SUM(r.quantity) AS total_reserved,SUM(CASE WHEN o.order_date<'2026-10-01' THEN r.quantity ELSE 0 END) AS historic_reserved,SUM(CASE WHEN o.order_date>='2026-10-01' THEN r.quantity ELSE 0 END) AS modern_reserved FROM inventory_reservations r JOIN orders o ON o.id=r.order_id LEFT JOIN inventory_stock s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id WHERE r.status='active' AND r.variant_id IS NOT NULL GROUP BY r.inventory_source,r.variant_id HAVING SUM(r.quantity)>COALESCE(MAX(s.quantity),0) ORDER BY SUM(r.quantity)-COALESCE(MAX(s.quantity),0) DESC LIMIT 30")
+          console.log('MAIN_LEGACY_READ_ONLY_PASS')
+          NODE
