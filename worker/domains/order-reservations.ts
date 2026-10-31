@@ -2913,11 +2913,19 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
             oi.stock_writeoff_status,
             r.status AS reservation_status, r.variant_id AS reservation_variant_id,
             stock.id AS inventory_stock_id,
+            CASE WHEN pending_r.id IS NOT NULL AND order_variant.is_active = 1
+                AND COALESCE(oi.stock_writeoff_status,'') = 'pending_reservation'
+              THEN 1 ELSE 0 END AS known_pending_reservation,
             'unresolved' AS blocker_reason,
             NULL AS required_quantity,
             NULL AS physical_quantity
      FROM order_items oi
      LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id AND r.status = 'active'
+     LEFT JOIN inventory_reservations pending_r
+       ON pending_r.order_item_id = oi.id AND pending_r.status = 'unresolved'
+       AND pending_r.unresolved_reason = 'concurrent_shortage'
+       AND pending_r.variant_id = oi.variant_id
+       AND pending_r.inventory_source = oi.source_type
      LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
      LEFT JOIN catalog_products variant_product ON variant_product.id = order_variant.product_id
      LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id

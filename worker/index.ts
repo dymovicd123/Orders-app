@@ -1877,6 +1877,18 @@ export default {
             unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           }
           if (unresolvedBlockers.length) {
+            // A known active SKU with a genuinely pending shortage is not a
+            // Catalog Resolver problem. Do not guess or silently over-reserve;
+            // use the existing explicit pending-reservation action instead.
+            if (unresolvedBlockers.every(row => toInt(row.known_pending_reservation, 0) === 1)) {
+              const first = unresolvedBlockers[0];
+              const name = cleanText(first.product_name_snapshot) || `позиция #${toInt(first.id, 0)}`;
+              return json({
+                ok: false,
+                code: 'inventory_reservation_pending',
+                message: `Заказ не отправлен: товар «${name}» уже распознан, но его резерв ожидает проверки нехватки. Откройте заказ и нажмите «Подтвердить резерв при нехватке», только если проверили фактическое наличие вещи. Повторно выбирать товар в Каталоге не нужно.`,
+              }, { status: 409 });
+            }
             // A broken/missing stock row or active reservation is not necessarily an
             // unidentified product. Never open an empty Catalog Resolver.
             // Read the EXACT order-scoped review queue that the modal itself loads.
