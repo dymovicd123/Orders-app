@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/zz-branch2-native-d1-reservation-http-20261031.yml'
       - 'scripts/test-branch2-native-d1-reservation-http-20261031.mjs'
+      - 'scripts/test-branch2-critical-native-d1-metadata-20261031.mjs'
       - 'worker/domains/critical.ts'
       - 'scripts/test-branch2-stage1-reservation-worker-http-20261031.mjs'
 permissions:
@@ -25,6 +26,8 @@ jobs:
       - name: Reproducible dependencies and current Worker/client build
         run: |
           npm ci
+          node scripts/test-branch2-critical-native-d1-metadata-20261031.mjs
+          node scripts/test-p0-critical-order-reservation-retry-20261030.mjs
           npm run build
       - name: Strict local-only D1 database migration and canonical schema smoke
         shell: bash
