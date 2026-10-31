@@ -31,7 +31,7 @@ function item(size,quantity=1,patch={}){
 }
 const route='/api/inventory/movements?returnInventory=0'
 async function arrival(requestId,source,items,status=201){
- return api(route,'POST',{requestId,inventorySource:source,movementType:'arrival',items},status)
+ return api(route,'POST',{requestId,inventorySource:source,movementType:'arrival',items},status===null?undefined:status)
 }
 const first=await arrival('s2-arrival-wh-46','warehouse',[item('46')])
 assert.equal(first.data.duplicate,false)
@@ -47,7 +47,7 @@ for(const [suffix,patch] of [
  ['wrong-material',{material:'АТЛАС'}],
  ['wrong-size',{size:'50'}],
 ]){
- const response=await arrival('s2-arrival-reject-'+suffix,'warehouse',[item('46',1,patch)],undefined)
+ const response=await arrival('s2-arrival-reject-'+suffix,'warehouse',[item('46',1,patch)],null)
  assert(response.status>=400,'Wrong SKU '+suffix+' must never be accepted: '+JSON.stringify(response))
  console.log('STAGE2_ARRIVAL_SKU_REJECTION',JSON.stringify({suffix,status:response.status,code:response.data.code||null}))
 }
