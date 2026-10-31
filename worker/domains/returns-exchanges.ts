@@ -1472,12 +1472,32 @@ export async function createExchange(
   }
 
   if (!operationContext.baselineCaptured && humanInventoryModelEnabled && !oldItemIsWorkshop && oldWasNotIssued) {
-    await releaseOrderReservationV2(
-      db,
-      oldItemId,
-      timestamp,
-      `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
-    );
+    if (oldQuantity < rawOldQuantity) {
+      // Keep the unexchanged old unit reserved; persist the pre-change identity and quantity
+      // before writing so a lost response cannot subtract the same reserve a second time.
+      let snapshot = operationContext.legacyPartialReservationSnapshot as ReservationSnapshot | undefined;
+      if (!snapshot) {
+        snapshot = await loadReservationSnapshot(db, oldItemId, oldQuantity, rawOldQuantity) || undefined;
+        if (!snapshot) {
+          throw new CriticalOperationConflictError('У оставшейся невыданной позиции нет действующего резерва. Обмен остановлен без изменений.');
+        }
+        operationContext = { ...operationContext, legacyPartialReservationSnapshot: snapshot };
+        await advanceCriticalOperation(db, criticalOperation, 'legacy_partial_reservation_validated', { context: operationContext });
+      }
+      await applyNotIssuedReservationReduction(
+        db,
+        { orderItemId: oldItemId, quantity: oldQuantity, reservationSnapshot: snapshot },
+        timestamp,
+        cleanText((existing as any).external_id),
+      );
+    } else {
+      await releaseOrderReservationV2(
+        db,
+        oldItemId,
+        timestamp,
+        `Обмен без физической выдачи старой позиции ${cleanText((existing as any).external_id)}`,
+      );
+    }
   }
 
   // Legacy recovery path: if the operator explicitly says that the customer has/returned the item
@@ -2843,16 +2863,44 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
   ).run();
 
   if (exchangeOldWasNotIssued && !Boolean(toInt(oldItem.is_workshop, 0))) {
-    const reactivated = await reactivateReleasedOrderReservationV2(
-      db,
-      toInt(exchange.old_order_item_id, 0),
-      timestamp,
-      `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
-    );
-    if (!reactivated) {
-      throw new CriticalOperationConflictError(
-        'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+    const creator = await db.prepare(
+      `SELECT context_json FROM critical_operations
+       WHERE operation_type = 'exchange_create' AND target_type = 'exchange' AND target_id = ?
+       ORDER BY created_at DESC LIMIT 1`
+    ).bind(exchangeId).first<{ context_json: string | null }>();
+    let savedPartial: ReservationSnapshot | null = null;
+    if (creator?.context_json) {
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(creator.context_json) as Record<string, unknown>;
+      } catch {
+        throw new CriticalOperationConflictError('Снимок исходного обмена повреждён. Отмена остановлена без изменения резерва.');
+      }
+      savedPartial = (parsed.legacyPartialReservationSnapshot as ReservationSnapshot | null) || null;
+    }
+    if (savedPartial) {
+      if (savedPartial.quantity !== restoredOldQuantity || savedPartial.targetQuantity !== restoredOldQuantity - oldQuantity) {
+        throw new CriticalOperationConflictError('Количество исходного резерва не совпадает с отменяемым обменом.');
+      }
+      await restoreNotIssuedReservation(
+        db,
+        { orderItemId: toInt(exchange.old_order_item_id, 0), quantity: oldQuantity, reservationSnapshot: savedPartial },
+        timestamp,
+        exchangeId,
       );
+    } else {
+      // Legacy full-quantity exchange or previously recorded exchange without a partial snapshot.
+      const reactivated = await reactivateReleasedOrderReservationV2(
+        db,
+        toInt(exchange.old_order_item_id, 0),
+        timestamp,
+        `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
+      );
+      if (!reactivated) {
+        throw new CriticalOperationConflictError(
+          'Не удалось безопасно восстановить резерв старой невыданной позиции. Отмена остановлена — обновите заказ и повторите.'
+        );
+      }
     }
   }
 
@@ -3142,7 +3190,7 @@ async function loadReservationSnapshot(
 
 async function applyNotIssuedReservationReduction(
   db: D1Database,
-  plan: ExchangeSetOldPlan,
+  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
   timestamp: string,
   externalOrderId: string,
 ) {
@@ -3205,7 +3253,7 @@ async function applyNotIssuedReservationReduction(
 
 async function restoreNotIssuedReservation(
   db: D1Database,
-  plan: ExchangeSetOldPlan,
+  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
   timestamp: string,
   exchangeId: number,
 ) {
