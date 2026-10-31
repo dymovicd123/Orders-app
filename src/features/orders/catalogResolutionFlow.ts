@@ -13,6 +13,9 @@ export function fieldLabel(field: Field, category?: string) {
 export const clean = (v: unknown) => String(v ?? '').trim()
 export const normalize = (v: unknown) => clean(v).toUpperCase().replace(/\s+/g, ' ')
 const identity = (v: unknown) => normalize(v).replace(/[^0-9A-ZА-ЯЁӘҒҚҢӨҰҮҺІ]+/g, ' ').trim()
+// Equivalent punctuation/spacing is a known reference, not a new characteristic.
+// This is exact identity only; fuzzy suggestions must still require a choice.
+export const sameReferenceValue = (left: unknown, right: unknown) => Boolean(identity(left)) && identity(left) === identity(right)
 
 export function compoundRemainder(rawName: string, productName: string) {
   const rawTokens = identity(rawName).split(' ')
@@ -190,7 +193,7 @@ export function needsReference(context: CatalogResolutionContext, draft: Draft, 
   if (field === 'category' || field === 'gender' || !clean(draft[field])) return false
   if ((field === 'material' || field === 'length') && normalize(draft[field]) === 'СТАНДАРТ') return false
   if (field === 'size' && ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(normalize(draft[field]))) return false
-  return !referenceValues(context, draft, field).some(v => normalize(v) === normalize(draft[field]))
+  return !referenceValues(context, draft, field).some(v => sameReferenceValue(v, draft[field]))
 }
 
 export type Question = { kind: 'product' | 'compound' | 'combined' | 'ready' | 'workshop' | 'legacy' } | { kind: 'field' | 'reference'; field: Field }
