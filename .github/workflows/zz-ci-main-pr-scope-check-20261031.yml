@@ -1,0 +1,18 @@
+name: "CI 20261031 scoped historical release triggers — no deploy"
+on:
+  push:
+    branches: [ci/scope-obsolete-main-selective-pr-checks-20261031]
+    paths:
+      - '.github/workflows/zz-ci-main-pr-scope-check-20261031.yml'
+permissions:
+  contents: read
+jobs:
+  trigger-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: node scripts/test-ci-scope-main-release-20261031.mjs
