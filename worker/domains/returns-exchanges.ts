@@ -747,8 +747,8 @@ export async function receiveReturnedItem(
           const check = await db.prepare(
             `SELECT id, checked_at, expected_quantity, counted_quantity
              FROM inventory_stock_checks
-             WHERE inventory_source = ? AND variant_id = ? AND datetime(checked_at) >= datetime(?)
-             ORDER BY datetime(checked_at) DESC, id DESC
+             WHERE inventory_source = ? AND variant_id = ? AND julianday(checked_at) >= julianday(?)
+             ORDER BY julianday(checked_at) DESC, id DESC
              LIMIT 1`
           ).bind(destination, variantId, registeredAt).first<Record<string, unknown>>();
           if (check?.id) {
