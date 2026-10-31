@@ -41,6 +41,19 @@ assert.equal(warehouseOperationFeedback(
  new Error('D1_ERROR: SQLITE_CONSTRAINT Списание: характеристики не соответствуют выбранному варианту. Выберите существующую комбинацию заново.'),
  'writeoff','w8-sql').status,500,'Actual SQL write errors stay 500')
 
+// Stage 2.3: transfer must reject a form whose displayed source stock is stale,
+// even when there is still enough quantity for the movement.
+const staleTransfer=warehouseOperationFeedback(new Error(
+ 'Остатки изменились после открытия перемещения: ШАПАН 46. Было 5, сейчас 6. Обновите остатки и повторите перемещение.'
+),'transfer','w8-transfer-stale')
+assert.equal(staleTransfer.status,409)
+assert.equal(staleTransfer.code,'warehouse_stock_stale')
+const movementSource=read('../worker/domains/inventory-movement.ts')
+assert.ok(movementSource.includes('entry.expectedQuantity !== null && entry.expectedQuantity !== sourceCurrent'),
+ 'Transfer must reject a stale displayed source count before its atomic batch')
+assert.ok(movementSource.includes('await assertNoActiveStocktakeForTransfer(db, fromSource, toSource)'),
+ 'Transfer retains its active revision guard')
+
 assert.match(stale.message,/60, сейчас 55/)
 assert.match(stale.message,/обновите/i)
 
