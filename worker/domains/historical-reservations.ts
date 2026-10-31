@@ -80,7 +80,7 @@ export async function releaseHistoricalReservation(db:D1Database,input:RequestSh
  ).bind(source,variantId,'legacy-reservation:'+id,at,source,variantId)
  const audit=db.prepare(
   "INSERT INTO activity_log(event_type,entity_type,entity_id,order_id,external_order_id,title,details,amount,created_at) "
-  +"VALUES('historical_reservation_released','inventory_reservation',?,?,?,?,?,?,0,?)"
+  +"VALUES('historical_reservation_released','inventory_reservation',?,?,?,?,?,0,?)"
  ).bind(id,orderId,actual.externalId,'Устранение исторического резерва',
   'Администратор: '+cleanText(actor.displayName||String(actor.id))
   +'; резерв '+id+'; позиция '+itemId+'; SKU '+variantId+'; '+source
