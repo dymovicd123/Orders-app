@@ -1,0 +1,167 @@
+name: "Branch2 itemized edit reservation two-source native D1 acceptance (NO DEPLOY)"
+on:
+  push:
+    branches: [test/branch2-stage1-itemized-edit-d1-20261031]
+    paths:
+      - '.github/workflows/zz-branch2-itemized-edit-native-d1-20261031.yml'
+      - 'scripts/test-branch2-authenticated-browser-order-20261031.mjs'
+      - 'src/App.tsx'
+      - 'scripts/test-branch2-critical-native-d1-metadata-20261031.mjs'
+      - 'worker/domains/critical.ts'
+
+permissions:
+  contents: read
+jobs:
+  d1-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      # Deliberate: NEVER provide Cloudflare credentials to this isolated test.
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - name: Reproducible dependencies and current Worker/client build
+        run: |
+          npm ci
+          node scripts/test-branch2-critical-native-d1-metadata-20261031.mjs
+          node scripts/test-p0-critical-order-reservation-retry-20261030.mjs
+          npm run build
+          npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.56.1
+          command -v google-chrome || command -v chromium || command -v chromium-browser
+      - name: Strict local-only D1 database migration and canonical schema smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/test/branch2-stage1-itemized-edit-d1-20261031"
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+          test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -d migrations
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          state="$RUNNER_TEMP/branch2-reservation-disposable-d1-$GITHUB_RUN_ID"
+          mkdir -p "$state"
+          echo "LOCAL_STATE=$state" >> "$GITHUB_ENV"
+          # Historical SQL migrations include PRAGMA foreign_keys=ON/OFF,
+          # which the native D1 authorizer rejects (SQLITE_AUTH). Remove only
+          # those no-op-for-D1 PRAGMA lines in an EPHEMERAL fixture copy;
+          # NEVER edit checked-in migrations or Branch2 D1.
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs'
+          import path from 'node:path'
+          const source=readFileSync('wrangler.jsonc','utf8')
+          const token='"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"'
+          if(!source.includes(token))throw Error('Branch2 D1 binding changed; stop')
+          mkdirSync('.d1-acceptance-migrations',{recursive:true})
+          let drops=0,temporaryTables=0,legacyManagerShadow=0
+          for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x))){
+            const original=readFileSync(path.join('migrations',file),'utf8')
+            const sanitized=original
+              .replace(/^\s*PRAGMA\s+foreign_keys\s*=\s*(?:ON|OFF)\s*;\s*$/gmi,()=>{drops++;return ''})
+              // D1 disallows CREATE TEMP TABLE (SQLITE_AUTH); fixture-only staging.
+              .replace(/\bCREATE\s+TEMP(?:ORARY)?\s+TABLE\b/gi,()=>{temporaryTables++;return 'CREATE TABLE'})
+              // Historical 0035 needs PRAGMA foreign_keys=OFF during managers
+              // rebuild. Native D1 authorizer rejects that toggle, so SQLite
+              // automatically redirects FK references to the OLD table.
+              // Preserve that shadow table only in this synthetic fixture to
+              // let the isolated auth bootstrap run; no production SQL altered.
+              // Do NOT use this fixture to certify managerial FK migrations.
+              .replace(/DROP TABLE managers_step126_old\s*;/gi,()=>{legacyManagerShadow++;return '-- Local D1 test only: keep FK-compatible manager shadow'})
+            writeFileSync(path.join('.d1-acceptance-migrations',file),sanitized)
+          }
+          if(drops<3||temporaryTables<1||legacyManagerShadow!==1)throw Error('Unexpected ephemeral SQL fixture compatibility needs')
+          const config=source.replace(token,token+',\n     "migrations_dir": ".d1-acceptance-migrations"')
+            .replace('"assets": {','"assets": {\n    "directory": "./dist/client",')
+          writeFileSync('.d1-acceptance-config.jsonc',config)
+          console.log('NATIVE_D1_EPHEMERAL_MIGRATION_AUTHORIZE_COMPAT',JSON.stringify({drops,temporaryTables,legacyManagerShadow}))
+          NODE
+          npx wrangler d1 migrations apply orders_db_branch2_mirror_20261027 --local --config .d1-acceptance-config.jsonc --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
+            tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
+            exit 1
+          }
+          # Historical migrations may be older than the live deployed D1 schema.
+          # Test-only compatibility already documented by the in-memory HTTP fixture:
+          # do NOT apply this ALTER to checked-in migrations or any remote D1.
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'" --json > "$RUNNER_TEMP/order-columns.json"
+          has_snapshot="$(node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs'
+          const result=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/order-columns.json','utf8'))
+          const rows=Array.isArray(result)?result.flatMap(x=>x.results||[]):(result.results||[])
+          console.log(rows.some(row=>row.name==='manager_snapshot_name')?'yes':'no')
+          NODE
+          )"
+          echo "BRANCH2_NATIVE_D1_HISTORIC_MIGRATION_MANAGER_SNAPSHOT_COLUMN=$has_snapshot"
+          if test "$has_snapshot" = no; then
+            npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT"
+            echo "BRANCH2_NATIVE_D1_FIXTURE_ONLY_MANAGER_SNAPSHOT_ADAPTER_APPLIED"
+          fi
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+          const raw=readFileSync(process.env.RUNNER_TEMP+'/local-d1-check.json','utf8').trim()
+          const v=JSON.parse(raw)
+          const rows=Array.isArray(v)?v.flatMap(x=>x.results||[]):(v.results||[])
+          const expected=['catalog_variants','inventory_movements','inventory_reservations','inventory_stock','inventory_stock_checks']
+          assert.deepEqual(rows.map(x=>x.name),expected)
+          console.log('BRANCH2_LOCAL_CLOUDFLARE_D1_SCHEMA_PASS',JSON.stringify({tables:rows.length,remoteCredentials:false}))
+          NODE
+      - name: Native workerd HTTP requests and persisted D1 readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler dev --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --ip 127.0.0.1 --port 8798 --var ADMIN_MODE_LOGIN:admin --var ADMIN_MODE_PASSWORD:synthetic-bootstrap-ui-2026 > "$RUNNER_TEMP/b2-native-workerd.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 'http://127.0.0.1:8798/' || true)"
+            if test "$code" = 200; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" -ne 1; then tail -n 100 "$RUNNER_TEMP/b2-native-workerd.log"; exit 1; fi
+          node scripts/test-branch2-authenticated-browser-order-20261031.mjs || { tail -n 140 "$RUNNER_TEMP/b2-native-workerd.log"; exit 1; }
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readdirSync} from 'node:fs'
+          import path from 'node:path'
+          import {DatabaseSync} from 'node:sqlite'
+          const root=process.env.LOCAL_STATE
+          const files=readdirSync(root,{recursive:true}).map(String).filter(x=>/\.sqlite$/.test(x))
+          assert(files.length>0)
+          let found=0
+          for(const rel of files){
+            const db=new DatabaseSync(path.join(root,rel),{readOnly:true})
+            if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_items'").get()){db.close();continue}
+            const lines=db.prepare(`SELECT o.id AS order_id,oi.id AS item_id,r.status,r.unresolved_reason,
+                  oi.stock_writeoff_status,oi.variant_id
+              FROM orders o JOIN order_items oi ON oi.order_id=o.id
+              LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+              WHERE oi.product_name_snapshot='CI B2 AUTHENTICATED UI ITEM'
+              ORDER BY o.id`).all()
+            if(!lines.length){db.close();continue}
+            found++
+            assert.equal(lines.length,3,'Three unique orders, despite repeated requestIds')
+            assert.deepEqual(lines.map(x=>x.status).sort(),['active','unresolved','unresolved'])
+            assert(lines.filter(x=>x.status==='unresolved').every(x=>x.unresolved_reason==='concurrent_shortage'&&x.stock_writeoff_status==='pending_reservation'))
+            const rows=db.prepare(`SELECT s.quantity,s.reserved_quantity,s.inventory_source
+              FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id
+              JOIN catalog_products p ON p.id=v.product_id
+              WHERE p.name='CI B2 AUTHENTICATED UI ITEM' ORDER BY s.inventory_source`).all()
+            assert.deepEqual(rows.map(x=>[x.inventory_source,Number(x.quantity),Number(x.reserved_quantity)]),[['warehouse',1,1]])
+            const moves=db.prepare(`SELECT movement_type,quantity_delta,reference_type
+              FROM inventory_movements WHERE product_name_snapshot='CI B2 AUTHENTICATED UI ITEM'`).all()
+            assert.equal(moves.length,1,'Only one actual arrival; no stock fabricated by order reservations')
+            assert.equal(Number(moves[0].quantity_delta),1)
+            assert.equal(moves[0].movement_type,'arrival')
+            console.log('BRANCH2_NATIVE_D1_AUTHENTICATED_UI_READBACK_PASS',JSON.stringify({lines,stock:rows,moves}))
+            db.close()
+          }
+          assert.equal(found,1,'One and only one isolated D1 backing database must contain synthetic results')
+          NODE
+          echo BRANCH2_NATIVE_D1_AUTHENTICATED_UI_ACCEPTANCE_PASS
