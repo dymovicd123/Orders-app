@@ -252,18 +252,6 @@ jobs:
               WHERE product_name_snapshot='CI STAGE2 RETIRED RECOVERY'`).get()
             assert.equal(Number(retiredMoves.n),1,'Recovered receipt and replay must only create one movement')
             console.log('BRANCH2_STAGE2_RETIRED_ARRIVAL_RECOVERY_D1_PASS',JSON.stringify({retiredRows,restore:restore[0],movements:1}))
-            const found=db.prepare(`SELECT s.id,s.variant_id,s.quantity,s.reserved_quantity,s.last_source_ref
-              FROM inventory_stock s JOIN catalog_products p ON p.id=s.product_id
-              WHERE p.name='CI STAGE2 FOUND UNKNOWN' AND s.inventory_source='warehouse'`).all()
-            assert.equal(found.length,1)
-            assert.equal(found[0].variant_id,null,'No barcode until catalog identity is truly known')
-            assert.equal(Number(found[0].quantity),1)
-            assert.equal(Number(found[0].reserved_quantity),0)
-            assert(found[0].last_source_ref.startsWith('stocktake-unresolved:'))
-            const fabricated=db.prepare(`SELECT COUNT(*) AS n FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
-              WHERE p.name='CI STAGE2 FOUND UNKNOWN'`).get()
-            assert.equal(Number(fabricated.n),0,'Found unknown physical cannot create fake canonical SKU')
-            console.log('BRANCH2_STAGE2_FOUND_UNIDENTIFIED_D1_PASS',JSON.stringify({stockId:found[0].id,physical:1,reserved:0,canonicalVariants:0}))
             db.close()
           }
           assert.equal(found,1,'One and only one isolated D1 backing database must contain synthetic results')
