@@ -12,7 +12,7 @@ import {setTimeout as delay} from 'node:timers/promises'
 const temp=mkdtempSync(join(tmpdir(),'stage4-native-d1-only-'))
 const persist=join(temp,'persist')
 const config=join(temp,'wrangler.json')
-const schemaPath=join(temp,'migrations.sql')
+const schemaPaths=[]
 const seedPath=join(temp,'seed.sql')
 const database='stage4_local_d1_fixture_only'
 const cli=resolve('node_modules/wrangler/bin/wrangler.js')
@@ -38,10 +38,25 @@ writeFileSync(config,JSON.stringify({
 const migrations=readdirSync('migrations').filter(name=>/^\d{4}.*\.sql$/.test(name)).sort()
 assert(migrations.includes('0117_v72_inventory_manual_operation_receipts.sql'))
 assert(migrations.includes('0118_v72_inventory_operation_attempts.sql'))
-// A real local D1 must accept the ACTUAL entire versioned SQL schema.
-writeFileSync(schemaPath,migrations.map(name=>
- '-- MIGRATION '+name+'\n'+readFileSync('migrations/'+name,'utf8')+'\n'
-).join('\n'))
+// Wrangler's local execute has a SQL-size ceiling. Apply the entire REAL
+// ordered migration chain in bounded files; never skip or reorder migrations.
+let migrationBatch=''
+for(const name of migrations){
+ const part='-- MIGRATION '+name+'\n'+readFileSync('migrations/'+name,'utf8')+'\n'
+ if(migrationBatch && migrationBatch.length+part.length>35000){
+  const filename=join(temp,'migrations-'+schemaPaths.length+'.sql')
+  writeFileSync(filename,migrationBatch)
+  schemaPaths.push(filename)
+  migrationBatch=''
+ }
+ migrationBatch+=part
+}
+if(migrationBatch){
+ const filename=join(temp,'migrations-'+schemaPaths.length+'.sql')
+ writeFileSync(filename,migrationBatch)
+ schemaPaths.push(filename)
+}
+assert(schemaPaths.length>1,'Migration chain must be split into safe native D1 chunks')
 const tokenHash=createHash('sha256').update(sessionToken).digest('base64url')
 writeFileSync(seedPath,[
  "INSERT INTO managers(id,name,role,is_active) VALUES(9781,'Тест Завсклад','Завсклад',1);",
@@ -94,7 +109,7 @@ const item={
  length:'СТАНДАРТ',size:'50',quantity:2,expectedQuantity:2,
 }
 try{
- localD1(schemaPath)
+ for(const sqlFile of schemaPaths)localD1(sqlFile)
  localD1(seedPath)
  child=spawn(process.execPath,[cli,'dev','--local','--config',config,
   '--persist-to',persist,'--ip','127.0.0.1','--port',String(port)],{
