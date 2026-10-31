@@ -210,7 +210,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
 
       {isAdmin && technicalIdentityQuestions > 0 ? <p className="inventory-attention-admin-note">
         В инженерной диагностике есть {technicalIdentityQuestions} вопросов распознавания или событий.
-        Они не входят в рабочие задачи склада и не считаются ошибками сотрудников.
+        Это инженерные вопросы: они не считаются ошибками сотрудников и не входят в рабочие задачи склада.
         <button className="secondary compact" type="button" onClick={() => openInventoryPanel('settings')}>Открыть сервис</button>
       </p> : null}
       {items && attentionCategory === 'identify' ? (
