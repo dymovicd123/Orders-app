@@ -8,6 +8,10 @@ async function api(path,method='GET',input,expected){
   headers:{...(cookie?{cookie}:{}),...(input?{'content-type':'application/json'}:{})},
   ...(input?{body:JSON.stringify(input)}:{})})
  const data=await response.json().catch(()=>({}))
+ if(!response.ok) {
+  console.log('NATIVE_D1_HTTP_REJECTION',JSON.stringify({method,path,status:response.status,code:data.code,message:data.message}))
+  await new Promise(resolve=>setTimeout(resolve,1500))
+ }
  if(expected!==undefined) assert.equal(response.status,expected,method+' '+path+' '+JSON.stringify(data))
  return {status:response.status,response,data}
 }
