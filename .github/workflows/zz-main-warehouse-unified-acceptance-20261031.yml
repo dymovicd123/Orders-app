@@ -1,0 +1,43 @@
+name: "Main unified warehouse safety runtime acceptance (NO deploy)"
+on:
+  push:
+    branches: [fix/main-warehouse-integrated-safety-20261031]
+    paths: ['.github/workflows/zz-main-warehouse-unified-acceptance-20261031.yml']
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Confirm correct candidate and environment — no Cloudflare API secrets, no deploy
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/fix/main-warehouse-integrated-safety-20261031"
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+      - name: Install reproducible dependencies
+        run: npm ci
+      - name: Exact canonical SKU and old obligation regression
+        run: |
+          node scripts/test-main-arrival-canonical-sku-20261031.mjs
+          node scripts/test-main-transfer-canonical-sku-20261031.mjs
+          node scripts/test-main-found-stocktake-identity-race-20261031.mjs
+          node scripts/test-main-older-unresolved-warehouse-attention-20261031.mjs
+      - name: Adjacent existing SQL and runtime guards (selected current, not outdated string-replay baselines)
+        run: |
+          node scripts/test-step191d-transfer-runtime-safety.mjs
+          node scripts/test-arrival-save-reliability.mjs
+          node scripts/test-arrival-variant-integrity-r2.mjs
+          node scripts/test-old-order-post-stocktake-handover-r1.mjs
+          node scripts/test-return-active-reserve-p0-20261021.mjs
+      - name: Main Worker HTTP and isolated SQL business acceptance
+        run: node scripts/test-main-foundation-worker-sqlite-20261020.mjs
+      - name: Typecheck and build (no publish)
+        run: npm run build
