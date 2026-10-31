@@ -161,6 +161,30 @@ jobs:
             assert.equal(moves.length,1,'Only one actual arrival; no stock fabricated by order reservations')
             assert.equal(Number(moves[0].quantity_delta),1)
             assert.equal(moves[0].movement_type,'arrival')
+            const edited=db.prepare(`SELECT oi.id,oi.quantity,oi.size_snapshot,oi.source_type,r.status,
+                 r.variant_id,r.inventory_source FROM order_items oi
+                 JOIN inventory_reservations r ON r.order_item_id=oi.id
+                 WHERE oi.product_name_snapshot='CI B2 ITEMIZED EDIT RESERVE ITEM'
+                 ORDER BY oi.id`).all()
+            assert.equal(edited.length,4,'Two live lines, one historical released, one competing pending')
+            const expectedEdit=edited.map(x=>[x.size_snapshot,x.source_type,Number(x.quantity),x.status].join(':')).sort()
+            assert.deepEqual(expectedEdit,[
+              '50:warehouse:1:active',
+              '50:warehouse:1:unresolved',
+              '52:warehouse:0:released',
+              '54:boutique:1:active',
+            ].sort())
+            const editStock=db.prepare(`SELECT s.inventory_source,v.size_label,s.quantity,s.reserved_quantity
+              FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id
+              JOIN catalog_products p ON p.id=v.product_id
+              WHERE p.name='CI B2 ITEMIZED EDIT RESERVE ITEM'`).all()
+            assert.deepEqual(editStock.map(x=>[x.inventory_source,x.size_label,Number(x.quantity),Number(x.reserved_quantity)].join(':')).sort(),
+              ['warehouse:50:1:1','warehouse:52:1:0','boutique:54:1:1'].sort())
+            const editMovement=db.prepare(`SELECT movement_type,quantity_delta FROM inventory_movements
+              WHERE product_name_snapshot='CI B2 ITEMIZED EDIT RESERVE ITEM'`).all()
+            assert.equal(editMovement.length,3,'Only three real arrivals, no phantom release/edit receipt')
+            assert(editMovement.every(x=>x.movement_type==='arrival'&&Number(x.quantity_delta)===1))
+            console.log('BRANCH2_NATIVE_D1_ITEMIZED_EDIT_RESERVE_DIRECT_SQL_PASS',JSON.stringify({edited,editStock,editMovement}))
             console.log('BRANCH2_NATIVE_D1_AUTHENTICATED_UI_READBACK_PASS',JSON.stringify({lines,stock:rows,moves}))
             db.close()
           }
