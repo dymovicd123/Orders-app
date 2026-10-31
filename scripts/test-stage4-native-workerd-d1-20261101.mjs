@@ -80,6 +80,7 @@ writeFileSync(seedPath,[
  "INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active,stock_position_id) SELECT 9783,9782,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50','adult',1,id FROM catalog_stock_positions WHERE product_id=9782;",
  "INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9784,'warehouse',9782,9783,'STAGE4 NATIVE TEST SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',2,0);",
  "INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9785,'boutique',9782,9783,'STAGE4 NATIVE TEST SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',8,0);",
+ "INSERT INTO catalog_identity_meta(key,value,updated_at) VALUES('catalog_identity_v3','active','2026-11-01T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active';",
  "INSERT INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-01T00:00:00Z') ON CONFLICT(key) DO UPDATE SET value='active';",
 ].join('\n'))
 function localD1(file){
