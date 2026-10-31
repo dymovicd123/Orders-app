@@ -1,0 +1,43 @@
+name: "Main DOMPurify transitive production audit proof (no deploy)"
+on:
+  push:
+    branches: [fix/main-dompurify-production-audit-20261031]
+    paths: ['.github/workflows/zz-main-dompurify-audit-proof-20261031.yml']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - name: Replace precisely ONE transitive DOMPurify lock entry with published patched version in EPHEMERAL checkout
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {execFileSync} from 'node:child_process'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const lock=JSON.parse(readFileSync('package-lock.json','utf8'))
+          const node=lock.packages['node_modules/dompurify']
+          assert.equal(node.version,'3.4.15','Unexpected lock baseline; stop')
+          const info=JSON.parse(execFileSync('npm',['view','dompurify@3.4.16','version','dist.integrity','dist.tarball','--json'],{encoding:'utf8'}))
+          assert.equal(info.version,'3.4.16')
+          assert.match(info['dist.tarball'],/^https:\/\/registry\.npmjs\.org\/dompurify\/\-\/dompurify-3\.4\.16\.tgz$/)
+          assert.match(info['dist.integrity'],/^sha512-/)
+          node.version=info.version
+          node.resolved=info['dist.tarball']
+          node.integrity=info['dist.integrity']
+          writeFileSync('package-lock.json',JSON.stringify(lock,null,2)+'\n')
+          console.log('DOMPURIFY_PATCHED_LOCK_METADATA',JSON.stringify({version:node.version,resolved:node.resolved,integrity:node.integrity}))
+          NODE
+      - name: npm ci on exact transitive lock update
+        run: npm ci
+      - name: Real production dependency audit — MUST pass
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: High-risk dev dependency audit — MUST pass
+        run: npm audit --audit-level=high
+      - name: Full TypeScript and Vite build
+        run: npm run build
