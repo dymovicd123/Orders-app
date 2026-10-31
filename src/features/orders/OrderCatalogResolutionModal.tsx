@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogReviewItem, CatalogReviewResponse, CatalogVariantRecord, OrderRecord } from '../../app/types'
 import { readJsonResponse } from '../../app/utils'
 import type { CatalogResolutionContext, CatalogResolutionProduct, CatalogResolutionResponse } from '../../../shared/api-contracts'
-import { clean, normalize, fields, fieldLabel, initialDraft, canonicalizePreviewDraft, nextQuestion, compoundRemainder, rankedProducts, rankedReferenceValues, referenceValues, segmentCompoundRemainder, needsReference, createResolutionSession } from './catalogResolutionFlow'
+import { clean, normalize, fields, fieldLabel, initialDraft, canonicalizePreviewDraft, nextQuestion, compoundRemainder, rankedProducts, rankedReferenceValues, referenceValues, segmentCompoundRemainder, needsReference, sameReferenceValue, createResolutionSession } from './catalogResolutionFlow'
 import type { Draft, Field } from './catalogResolutionFlow'
 import './OrderCatalogResolutionModal.css'
 
@@ -517,7 +517,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       const field = question.field
       const label = fieldLabel(field, draft.category)
       const suggestions = rankedReferenceValues(referenceValues(context, draft, field), draft[field], field)
-        .filter(entry => entry.score >= 5000 && normalize(entry.value) !== normalize(draft[field]))
+        .filter(entry => entry.score >= 5000 && !sameReferenceValue(entry.value, draft[field]))
         .slice(0, 3)
       if (creatingReference === field) return <><h4 ref={questionHeading} tabIndex={-1}>Новый {label.toLowerCase()}</h4>
         <form onSubmit={event => { event.preventDefault(); approveReference(field, answer) }}>
@@ -551,7 +551,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
       const ranked = rankedReferenceValues(values, answer || draft[field], field)
       const matched = ranked.filter(entry => entry.score > 0)
       const correctionValues = ranked
-        .filter(entry => normalize(entry.value) !== normalize(draft[field]))
+        .filter(entry => !sameReferenceValue(entry.value, draft[field]))
         .slice(0, 8)
       const visibleValues = (clean(answer) && matched.length ? matched.map(entry => entry.value) : [...values].sort((a, b) => a.localeCompare(b, 'ru'))).slice(0, 12)
       return <>{minimalFieldQuestion && context.product ? <strong>{context.product.name}</strong> : null}<h4 ref={questionHeading} tabIndex={-1}>{heading}</h4>
