@@ -79,7 +79,7 @@ jobs:
           const active=(Array.isArray(current)?current:current.deployments)[0]
           assert.equal(active.versions[0].version_id,'1fa6e7a3-32d4-4f77-b625-e044db46015a')
           const live=await asset('https://orders-app-branch2.orders-clothes.workers.dev')
-          const preview=await asset('https://23b5f04d-9340-4a0c-af53-4968527f821f-orders-app-branch2.orders-clothes.workers.dev')
+          const preview=await asset('https://23b5f04d-orders-app-branch2.orders-clothes.workers.dev')
           assert.equal(live.flags.oldButton,true)
           assert.equal(live.flags.newCopy,false)
           assert.equal(preview.flags.newCopy,true)
