@@ -627,6 +627,7 @@ export async function applyInventoryMovement(
   input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
   returnInventory = true,
   actor = '',
+  actorUserId = 0,
 ) {
   const inventorySource = normalizeSourceType(input.inventorySource);
   const movementType = cleanText(input.movementType).toLowerCase() as InventoryMovementKind;
@@ -1300,6 +1301,12 @@ export async function applyInventoryMovement(
     db.prepare(
       `INSERT INTO inventory_operation_request_fingerprints (operation_id, request_fingerprint, created_at) VALUES (?, ?, ?)`
     ).bind(requestId, requestFingerprint, now),
+    // Part of the SAME atomic D1 batch as inventory_operations, stock, and movements.
+    // A replay returns the original operation and never rewrites its real performer.
+    db.prepare(
+      `INSERT INTO inventory_manual_operation_receipts (operation_id, actor_user_id, actor_label, recorded_at)
+       VALUES (?, ?, ?, ?)`
+    ).bind(requestId, Math.max(0, toInt(actorUserId, 0)) || null, cleanText(actor) || null, now),
   );
 
   if (movementType === 'delete' && prepared.some(row => row.observedPhysicalQuantity !== null)) {

@@ -182,6 +182,7 @@ export function StockVariantTimeline({
           </p> : null}
           <div className="stock-variant-event-meta">
             {movement.referenceId ? `Документ/заказ: ${movement.referenceId}` : 'Документ не указан'}
+            {movement.referenceType === 'manual' ? ` · Исполнитель: ${movement.performedBy || 'не зафиксирован'}` : ''}
             {movement.comment ? ` · ${movement.comment}` : ''}
           </div>
         </li>

@@ -95,6 +95,7 @@ const groups = [
     'scripts/test-stage4-human-stock-problems-ui-20261101.mjs',
     'scripts/test-w17-optional-stock-notes-clear.mjs',
     'scripts/test-w18-variant-history-investigation.mjs',
+    'scripts/test-stage4-atomic-manual-actor-20261101.mjs',
     'scripts/test-stage4-reservations-full-aggregate-20261101.mjs',
     'scripts/test-stage4-issue-history-order-linkage-20261101.mjs',
     'scripts/test-inventory-writeoff-review.mjs',

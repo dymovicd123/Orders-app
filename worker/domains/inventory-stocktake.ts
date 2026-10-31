@@ -1663,6 +1663,8 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
        m.product_name_snapshot, m.gender_snapshot, m.color_snapshot, m.material_snapshot,
        m.length_snapshot, m.size_snapshot, m.quantity_delta, m.quantity_after,
        m.reference_type, m.reference_id, m.comment, m.created_at,
+       manual_receipt.actor_user_id AS performed_by_user_id,
+       manual_receipt.actor_label AS performed_by,
        r.reversed_at, r.reversal_movement_id,
        CASE WHEN rr.original_movement_id IS NOT NULL THEN 1 ELSE 0 END AS is_reversal,
        td.from_source AS transfer_from_source, td.to_source AS transfer_to_source,
@@ -1689,6 +1691,8 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
            AND e.operation_reference = m.reference_id
          ORDER BY e.id DESC LIMIT 1) AS unexplained_quantity
      FROM inventory_movements m
+     LEFT JOIN inventory_manual_operation_receipts manual_receipt
+       ON m.reference_type = 'manual' AND manual_receipt.operation_id = m.reference_id
      LEFT JOIN inventory_movement_reversals r ON r.original_movement_id = m.id
      LEFT JOIN inventory_movement_reversals rr ON rr.reversal_movement_id = m.id
      LEFT JOIN inventory_transfer_documents td
@@ -1721,6 +1725,8 @@ export async function listInventoryHistory(db: D1Database, url: URL) {
       referenceId: cleanText(row.reference_id),
       comment: cleanText(row.comment),
       createdAt: cleanText(row.created_at),
+      performedByUserId: Math.max(0, toInt(row.performed_by_user_id, 0)) || null,
+      performedBy: cleanText(row.performed_by) || null,
       reversedAt: cleanText(row.reversed_at),
       reversalMovementId: toInt(row.reversal_movement_id, 0),
       isReversal: toInt(row.is_reversal, 0) === 1,

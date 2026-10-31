@@ -1186,6 +1186,8 @@ export type InventoryMovementRecord = {
   referenceId: string
   comment: string
   createdAt: string
+  performedByUserId?: number | null
+  performedBy?: string | null
   reversedAt: string
   reversalMovementId: number
   isReversal: boolean
