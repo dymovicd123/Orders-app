@@ -113,6 +113,18 @@ await assertReview(2023,false)
 const otherLocation = makeOrder(2024,'2026-10-27','2026-10-27T09:00:00Z')
 sql.prepare("INSERT INTO inventory_stock_checks VALUES(5004,'boutique',240,'2026-10-27T12:00:00Z','manual_set','manual','boutique-only')").run()
 await assertReview(2024,false)
+// Same-second physical check: SQLite datetime() drops fractional seconds.
+// A correction 350ms after an order is a NEW checkpoint, not an old one.
+const sameSecondOrder=makeOrder(2030,'2026-10-28','2026-10-28T10:00:00.100Z')
+sql.prepare("INSERT INTO inventory_stock_checks VALUES(6001,'warehouse',240,'2026-10-28T10:00:00.450Z','manual_set','manual','same-second-after')").run()
+const sameSecondReview=await assertReview(2030,true)
+assert.equal(sameSecondReview.checkpointId,6001)
+assert.equal(sameSecondReview.reviewReason,'checkpoint_after_order')
+// A check 350ms BEFORE the same-second order must not trigger false review.
+const sameSecondEarlier=makeOrder(2031,'2026-10-29','2026-10-29T10:00:00.700Z')
+sql.prepare("INSERT INTO inventory_stock_checks VALUES(6002,'warehouse',240,'2026-10-29T10:00:00.350Z','manual_set','manual','same-second-before')").run()
+await assertReview(2031,false)
+
 // Prove the independent operation paths actually persist those checkpoints.
 const fs = await import('node:fs')
 const manual = fs.readFileSync('worker/domains/inventory-movement.ts','utf8')
