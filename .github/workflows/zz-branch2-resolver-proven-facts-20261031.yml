@@ -1,0 +1,33 @@
+name: "Branch2 resolver proven known facts and real Worker HTTP (NO DEPLOY)"
+on:
+  push:
+    branches: [fix/branch2-resolver-known-facts-20261031]
+    paths:
+      - '.github/workflows/zz-branch2-resolver-proven-facts-20261031.yml'
+      - 'src/features/orders/catalogResolutionFlow.ts'
+      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
+      - 'scripts/test-main-resolver-proven-sku-hydration-20261031.mjs'
+      - 'scripts/test-main-resolver-existing-reference-real-sqlite-20261031.mjs'
+      - 'scripts/test-main-resolver-linked-sku-worker-http-20261031.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - run: npm ci
+      - name: Execute real production resolver decision logic + existing R10 and R13 regressions
+        run: |
+          node scripts/test-main-resolver-proven-sku-hydration-20261031.mjs
+          node scripts/test-main-resolver-existing-reference-real-sqlite-20261031.mjs
+          node scripts/test-main-resolver-linked-sku-worker-http-20261031.mjs
+          node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
+          node scripts/test-catalog-resolver-r13-known-facts.mjs
+      - name: TypeScript and production client build
+        run: npm run build
