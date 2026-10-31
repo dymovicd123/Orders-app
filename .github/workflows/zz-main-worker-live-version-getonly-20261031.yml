@@ -1,0 +1,41 @@
+name: "Main Worker active version GET-only baseline 20261031"
+on:
+  push:
+    branches: [audit/main-active-worker-baseline-getonly-20261031]
+    paths: ['.github/workflows/zz-main-worker-live-version-getonly-20261031.yml']
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cloudflare Main GET-only Worker deployment and anonymous access
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-active-worker-baseline-getonly-20261031')
+          const a=process.env.CLOUDFLARE_ACCOUNT_ID,t=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(a||'')&&t,'Read credentials unavailable')
+          const u='https://api.cloudflare.com/client/v4/accounts/'+a+'/workers/scripts/orders-app/deployments'
+          const r=await fetch(u,{method:'GET',headers:{Authorization:'Bearer '+t},signal:AbortSignal.timeout(25000)})
+          const v=await r.json()
+          if(!r.ok||v.success!==true)throw Error('Main deployments GET failed HTTP '+r.status)
+          const row=(Array.isArray(v.result)?v.result:v.result.deployments)[0]
+          assert(row?.versions?.length>0)
+          const active=row.versions.map(x=>({versionId:x.version_id,percentage:x.percentage}))
+          const live='https://orders-app.orders-clothes.workers.dev'
+          const page=await fetch(live+'/?main-staging-baseline='+Date.now(),{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+          assert.equal(page.status,200,'Main HTML must be live')
+          const html=await page.text()
+          const asset=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)?.[1]
+          assert(asset,'Main JS asset not found')
+          const script=await fetch(live+asset,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+          assert.equal(script.status,200,'Main JS missing')
+          const anonymous=await fetch(live+'/api/orders?limit=1',{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+          assert.equal(anonymous.status,401,'Main private order data must reject anonymous requests')
+          console.log('MAIN_WORKER_GET_ONLY_BASELINE '+JSON.stringify({deployment:row.id,active,asset,anonymousOrdersStatus:anonymous.status,mutations:0}))
+          NODE
