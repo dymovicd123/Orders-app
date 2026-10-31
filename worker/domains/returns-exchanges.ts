@@ -3729,7 +3729,39 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         : executionPlan.newItems[0]?.item.sourceType === 'boutique'
           ? 'boutique'
           : 'warehouse'
-      exchangeId = await updateCriticalOperationTargetFromLastInsert(
+      // Claim every original unit in the same atomic D1 transaction as the
+      // exchange header. A standalone Return and a Set V2 exchange may both
+      // validate the same preflight state; only one can reserve the last unit.
+      // The order-item quantity is the shared committed claim seen by Return.
+      // This is resumable: the original Exchange plan keeps initial/target
+      // quantities and its next step is exchange_created in the SAME batch.
+      const oldItemClaims: D1PreparedStatement[] = executionPlan.oldItems.flatMap((plan) => [
+        db.prepare(
+          `UPDATE order_items
+           SET quantity = ?, line_total = unit_price * ?,
+               stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+           WHERE id = ? AND order_id = ? AND quantity = ?
+             AND quantity >= ? + COALESCE((
+               SELECT SUM(ri.quantity)
+               FROM return_items ri
+               JOIN returns r ON r.id = ri.return_id
+               WHERE r.order_id = ? AND ri.order_item_id = ?
+                 AND COALESCE(r.status, 'completed') <> 'cancelled'
+                 AND ${noStandaloneReturnSql}
+             ), 0)`
+        ).bind(
+          plan.targetQuantity, plan.targetQuantity, plan.targetQuantity,
+          plan.orderItemId, executionPlan.orderId, plan.initialQuantity,
+          plan.quantity, executionPlan.orderId, plan.orderItemId,
+        ),
+        // SQLite changes() is exactly the direct-row count in the preceding
+        // statement (unlike D1 meta.changes, which can count triggers).
+        // A stale claim must abort the entire header transaction; otherwise a
+        // phantom Exchange and double physical old-item intake can survive.
+        db.prepare(`SELECT json('EXCHANGE_OLD_ITEM_CLAIM_CONFLICT') WHERE changes() <> 1`),
+      ])
+      try {
+        exchangeId = await updateCriticalOperationTargetFromLastInsert(
         db,
         criticalOperation,
         'exchange',
@@ -3753,7 +3785,19 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           timestamp,
         ),
         'exchange_created',
+        oldItemClaims,
       )
+      } catch (error) {
+        // The fail-closed SQL assertion throws 'malformed JSON' when a
+        // Return/another Exchange has already claimed an original unit.
+        const message = cleanText(error instanceof Error ? error.message : error)
+        if (/EXCHANGE_OLD_ITEM_CLAIM_CONFLICT|malformed JSON/i.test(message)) {
+          throw new CriticalOperationConflictError(
+            'Одна из старых вещей уже оформлена другим возвратом или обменом. Обновите заказ: второй обмен остановлен без складских и денежных действий.'
+          )
+        }
+        throw error
+      }
     }
 
     const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
