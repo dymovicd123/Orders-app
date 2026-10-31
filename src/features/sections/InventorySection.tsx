@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { selectStockOverviewModels } from '../inventory/stockOverviewSelectors'
 import type { ComponentType, Dispatch, SetStateAction } from 'react'
 import type { CatalogResolutionContext, CatalogResolutionFacts, InventoryCycleCountSuggestionsResponse, InventoryReservation, InventoryStocktakeSession, InventoryStocktakeSessionSummary } from '../../../shared/api-contracts.ts'
-import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
+import type { CatalogResponse, CatalogVariantRecord, FriendlyNumberInputProps, InventoryArrivalPosition, InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse, InventoryOperationAttempt, InventorySourceKey, SmartPickerInputProps } from '../../app/types'
 import { renderInventoryHealthPanel } from '../inventory/views/renderInventoryHealthPanel'
 import { renderInventoryExactPanel } from '../inventory/views/renderInventoryExactPanel'
 import { renderInventorySourceToolbar } from '../inventory/views/renderInventorySourceToolbar'
@@ -197,6 +197,7 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     loadInventoryAudit,
     loadInventoryData,
     loadInventoryHistory,
+    loadInventoryOperationAttempts,
     loadInventoryCheckHistory,
     loadInventoryReservations,
     loadInventoryStocktakeSessions,
@@ -291,6 +292,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
   const [historyVariantFilter, setHistoryVariantFilter] = useState<InventoryHistoryFilter | null>(null)
   const [historyMode, setHistoryMode] = useState<'movements' | 'checks'>('movements')
   const [historyRows, setHistoryRows] = useState<InventoryHistoryResponse['movements']>([])
+  const [historyAttempts, setHistoryAttempts] = useState<InventoryOperationAttempt[]>([])
+  const [historyAttemptsHasMore, setHistoryAttemptsHasMore] = useState(false)
+  const [historyAttemptCursor, setHistoryAttemptCursor] = useState<number | null>(null)
+  const [historyAttemptsBusy, setHistoryAttemptsBusy] = useState(false)
+  const [historyAttemptsError, setHistoryAttemptsError] = useState('')
   const [historyCheckRows, setHistoryCheckRows] = useState<InventoryCheckHistoryRow[]>([])
   const [historyCheckEvidence, setHistoryCheckEvidence] = useState<InventoryCheckHistoryResponse | null>(null)
   // Active reservations are a separate CURRENT obligation, never a historic
@@ -1722,6 +1728,29 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     return 'Короткая сверка'
   }
 
+  async function loadMoreHistoryAttempts() {
+    const requestId = historyRequestRef.current
+    if (!historyVariantFilter?.variantId || !historyAttemptCursor || historyAttemptsBusy) return
+    setHistoryAttemptsBusy(true)
+    setHistoryAttemptsError('')
+    try {
+      const data = await loadInventoryOperationAttempts({
+        source: historyVariantFilter.source,
+        variantId: historyVariantFilter.variantId,
+        beforeId: historyAttemptCursor,
+      })
+      if (requestId !== historyRequestRef.current) return
+      setHistoryAttempts((current) => [...current, ...(Array.isArray(data?.attempts) ? data.attempts : [])])
+      setHistoryAttemptsHasMore(Boolean(data?.hasMore))
+      setHistoryAttemptCursor(Number(data?.nextBeforeId || 0) || null)
+    } catch (error) {
+      if (requestId === historyRequestRef.current)
+        setHistoryAttemptsError(error instanceof Error ? error.message : 'Не удалось загрузить более ранние попытки.')
+    } finally {
+      if (requestId === historyRequestRef.current) setHistoryAttemptsBusy(false)
+    }
+  }
+
   async function loadHistoryMovements(reset = true) {
     const requestId = ++historyRequestRef.current
     setHistoryBusy(true)
@@ -1729,6 +1758,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
     if (reset) {
       // Never render a previous SKU's cached events under a newly selected variant.
       setHistoryRows([])
+      setHistoryAttempts([])
+      setHistoryAttemptsHasMore(false)
+      setHistoryAttemptCursor(null)
+      setHistoryAttemptsBusy(Boolean(historyVariantFilter?.variantId))
+      setHistoryAttemptsError('')
       setHistoryCheckRows([])
       setHistoryCheckEvidence(null)
       setHistoryActiveOrders([])
@@ -1758,6 +1792,23 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setHistoryHasMore(Boolean(data?.hasMore))
       setHistoryNextBeforeId(Number(data?.nextBeforeId || 0) || null)
       if (reset && Number(historyVariantFilter?.variantId || 0) > 0) {
+        // HTTP attempts have their own independent evidence and pagination.
+        // Failure to load them must never be reported as no rejected attempts.
+        try {
+          const data = await loadInventoryOperationAttempts({
+            source: historyVariantFilter?.source || 'warehouse',
+            variantId: Number(historyVariantFilter?.variantId || 0),
+          })
+          if (requestId !== historyRequestRef.current) return
+          setHistoryAttempts(Array.isArray(data?.attempts) ? data.attempts : [])
+          setHistoryAttemptsHasMore(Boolean(data?.hasMore))
+          setHistoryAttemptCursor(Number(data?.nextBeforeId || 0) || null)
+        } catch (error) {
+          if (requestId !== historyRequestRef.current) return
+          setHistoryAttemptsError(error instanceof Error ? error.message : 'Не удалось загрузить журнал попыток.')
+        } finally {
+          if (requestId === historyRequestRef.current) setHistoryAttemptsBusy(false)
+        }
         // Physical checks are stored separately from movements. Load exact
         // source+variant facts alongside the focused timeline, read-only.
         try {
@@ -2931,6 +2982,11 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
         historyActiveOrdersTotalQuantity,
         historyActiveOrdersTotalCount,
         historyActiveOrdersHasMore,
+        historyAttempts,
+        historyAttemptsHasMore,
+        historyAttemptsBusy,
+        historyAttemptsError,
+        loadMoreHistoryAttempts,
         openHistoryReserveOrder: (order: InventoryReservation) => void openOrderFromFinance({
           orderId: order.orderId, externalId: order.externalOrderId, orderDate: order.orderDate,
         }),

@@ -44,6 +44,11 @@ type PanelContext = Pick<InventoryRenderContext,
   historyActiveOrdersTotalQuantity: number
   historyActiveOrdersTotalCount: number
   historyActiveOrdersHasMore: boolean
+  historyAttempts: import('../../../app/types').InventoryOperationAttempt[]
+  historyAttemptsHasMore: boolean
+  historyAttemptsBusy: boolean
+  historyAttemptsError: string
+  loadMoreHistoryAttempts: () => void
   openHistoryReserveOrder: (order: InventoryReservation) => void
 }
 
@@ -61,6 +66,11 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     historyActiveOrdersTotalQuantity,
     historyActiveOrdersTotalCount,
     historyActiveOrdersHasMore,
+    historyAttempts,
+    historyAttemptsHasMore,
+    historyAttemptsBusy,
+    historyAttemptsError,
+    loadMoreHistoryAttempts,
     openHistoryReserveOrder,
     historyCheckHasMore,
     historyChecksPagingBusy,
@@ -121,6 +131,11 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                           : <StockVariantTimeline
                               variant={historyVariantFilter}
                               movements={historyRows}
+                              attempts={historyAttempts}
+                              attemptsHasMore={historyAttemptsHasMore}
+                              attemptsBusy={historyAttemptsBusy}
+                              attemptsError={historyAttemptsError}
+                              loadMoreAttempts={() => void loadMoreHistoryAttempts()}
                               checks={historyCheckRows}
                               evidence={historyCheckEvidence}
                               reservations={historyActiveOrders}
@@ -195,6 +210,7 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                                   </div>
                                 ) : null}
                                 {entry.row.referenceType === 'manual' ? <div className="history-note"><span>Исполнитель</span><strong>{entry.row.performedBy || 'Не зафиксирован в момент операции'}</strong></div> : null}
+                                {['transfer_in','transfer_out'].includes(entry.row.referenceType) ? <div className="history-note"><span>Исполнитель перемещения</span><strong>{entry.row.performedBy || 'Не зафиксирован'}</strong></div> : null}
                                 {entry.row.comment ? <div className="history-note"><span>Комментарий</span><strong>{entry.row.comment}</strong></div> : null}
                                 <div className="history-card-actions">{entry.row.canReverse && isAdmin ? <button className="secondary compact danger-outline" type="button" disabled={reversingInventoryMovementId !== null} onClick={() => void reverseInventoryMovement(entry.row)}>{reversingInventoryMovementId === entry.row.id ? 'Отменяю…' : 'Отменить операцию'}</button> : null}</div>
                               </div>

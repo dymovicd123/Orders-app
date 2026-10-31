@@ -1,4 +1,4 @@
-import type { InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse } from '../../../app/types'
+import type { InventoryCheckHistoryRow, InventoryCheckHistoryResponse, InventoryHistoryResponse, InventoryOperationAttempt } from '../../../app/types'
 import type { InventoryReservation } from '../../../../shared/api-contracts.ts'
 import { buildStockVariantTimeline, stockCheckHasDifference } from '../stockVariantTimelineModel'
 import '../../../styles/w18-history-investigation.css'
@@ -17,6 +17,11 @@ type ExactVariant = {
 type Props = {
   variant: ExactVariant
   movements: Movement[]
+  attempts: InventoryOperationAttempt[]
+  attemptsHasMore: boolean
+  attemptsBusy: boolean
+  attemptsError: string
+  loadMoreAttempts: () => void
   checks: InventoryCheckHistoryRow[]
   evidence: InventoryCheckHistoryResponse | null
   reservations: InventoryReservation[]
@@ -42,12 +47,12 @@ const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(valu
 const quantity = (value: number) => `${value} шт.`
 
 export function StockVariantTimeline({
-  variant, movements, checks, evidence, reservations, reservationsBusy, reservationsError,
+  variant, movements, attempts, attemptsHasMore, attemptsBusy, attemptsError, loadMoreAttempts, checks, evidence, reservations, reservationsBusy, reservationsError,
   reservationsTotalQuantity, reservationsTotalCount, reservationsHasMore,
   openReserveOrder, checksUnavailable, checksHasMore, checksPagingBusy,
   checksPageError, loadMoreChecks, hasMore, busy, loadMore, momentLabel, movementLabel,
 }: Props) {
-  const { events, firstObservedDifference } = buildStockVariantTimeline(movements, checks, variant.source, variant.variantId)
+  const { events, firstObservedDifference } = buildStockVariantTimeline(movements, checks, variant.source, variant.variantId, attempts)
   const firstConfirmedDifference = evidence?.firstConfirmedDifference === undefined
     ? firstObservedDifference : evidence.firstConfirmedDifference
   const latestCheck = evidence?.latestCheck || [...checks].sort((a, b) =>
@@ -134,7 +139,7 @@ export function StockVariantTimeline({
       <details className="w18-investigation-how">
         <summary>Как найти причину расхождения?</summary>
         <p>Сначала найдите последнюю сверку, на которой товар совпадал с учётом. Затем изучите приходы, выдачи, возвраты, перемещения и корректировки до первого несовпадения. Сверьте документы и фактическое количество. Если операция отсутствует, история сама не восстановит её автоматически.</p>
-        <p>Ниже показаны <b>проведённые</b> действия. Отклонённые попытки сохранения и неоформленные физические движения здесь не отображаются.</p>
+        <p>Ниже отдельно показаны проведённые движения, сохранённые сверки и отклонённые попытки, повторы и неопределённые ответы. Попытка не означает физическое движение.</p>
       </details>
     </section>
 
@@ -152,6 +157,29 @@ export function StockVariantTimeline({
             <div className="stock-variant-event-meta">
               {check.checkedBy ? `Проверил(а): ${check.checkedBy}` : 'Сотрудник не указан'}
               {check.referenceId ? ` · Проверка ${check.referenceId}` : ''}
+            </div>
+          </li>
+        }
+        if (event.kind === 'attempt') {
+          const attempt = event.attempt
+          const label = attempt.outcome === 'rejected' ? 'Запрос отклонён'
+            : attempt.outcome === 'replayed' ? 'Повтор запроса без нового движения'
+              : 'Результат запроса не подтверждён'
+          return <li key={event.key} className="is-attempt">
+            <div className="stock-variant-event-head">
+              <time>{momentLabel(attempt.recordedAt)}</time><b>{label}</b>
+            </div>
+            <p className="stock-variant-event-warning">
+              {attempt.outcome === 'uncertain'
+                ? 'Ответ сервера не подтверждает, была ли операция проведена. Проверьте движения и документ перед новым действием.'
+                : attempt.outcome === 'replayed'
+                  ? 'Новой физической операции при повторе не выполнялось.'
+                  : 'Эта запись фиксирует отказ в запросе, а не складское движение.'}
+            </p>
+            <div className="stock-variant-event-meta">
+              {attempt.operationType} · {attempt.requestId ? 'Запрос: ' + attempt.requestId : 'ID запроса не указан'}
+              {' · '}{attempt.actor ? 'Запросил(а): ' + attempt.actor : 'Исполнитель не зафиксирован'}
+              {attempt.reasonMessage ? ' · ' + attempt.reasonMessage : ''}
             </div>
           </li>
         }
@@ -189,6 +217,14 @@ export function StockVariantTimeline({
       })}
     </ol> : <p className="stock-variant-empty">Для этого варианта пока нет загруженных событий. Отсутствие записи не подтверждает отсутствие движения.</p>}
 
+    {attemptsError ? <p className="stock-variant-event-warning" role="alert">{attemptsError}</p> : null}
+    {attemptsBusy && !attempts.length ? <p>Загружаю сохранённые попытки операций…</p> : null}
+    {attemptsHasMore ? <div className="stock-variant-more">
+      <p>Есть более ранние запросы. Их отсутствие в загруженном списке не доказывает, что попыток не было.</p>
+      <button type="button" className="secondary" disabled={attemptsBusy} onClick={loadMoreAttempts}>
+        {attemptsBusy ? 'Загружаю…' : 'Загрузить более ранние попытки'}
+      </button>
+    </div> : null}
     {checksHasMore && <div className="stock-variant-more w18-older-checks">
       <p>Есть более ранние физические сверки. Загрузите их, чтобы увидеть полную хронологию проверок рядом с движениями.</p>
       {checksPageError && <p role="alert">{checksPageError}</p>}

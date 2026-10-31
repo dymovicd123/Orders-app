@@ -1,9 +1,10 @@
-import type { InventoryCheckHistoryRow, InventoryHistoryResponse } from '../../app/types'
+import type { InventoryCheckHistoryRow, InventoryHistoryResponse, InventoryOperationAttempt } from '../../app/types'
 
 export type StockMovement = InventoryHistoryResponse['movements'][number]
 export type StockTimelineEvent =
   | { kind: 'movement'; moment: string; key: string; movement: StockMovement }
   | { kind: 'check'; moment: string; key: string; check: InventoryCheckHistoryRow }
+  | { kind: 'attempt'; moment: string; key: string; attempt: InventoryOperationAttempt }
 
 export function stockCheckHasDifference(check: InventoryCheckHistoryRow): boolean {
   return check.expectedQuantity !== undefined && check.countedQuantity !== undefined
@@ -12,7 +13,7 @@ export function stockCheckHasDifference(check: InventoryCheckHistoryRow): boolea
 
 export function buildStockVariantTimeline(
   movements: StockMovement[], checks: InventoryCheckHistoryRow[],
-  source: 'warehouse' | 'boutique', variantId: number,
+  source: 'warehouse' | 'boutique', variantId: number, attempts: InventoryOperationAttempt[] = [],
 ) {
   // Identity is exact. The source API is expected to filter by source and variant,
   // but the presentation must not ever mix separate location histories.
@@ -26,6 +27,10 @@ export function buildStockVariantTimeline(
     ...exactMovements.map(movement => ({
       kind: 'movement' as const, moment: movement.createdAt,
       key: `m-${movement.id}`, movement,
+    })),
+    ...attempts.filter(attempt => attempt.source === source && attempt.variantId === variantId).map(attempt => ({
+      kind: 'attempt' as const, moment: attempt.recordedAt,
+      key: `a-${attempt.id}`, attempt,
     })),
     ...exactChecks.map(check => ({
       kind: 'check' as const, moment: check.checkedAt,
