@@ -13,13 +13,14 @@ on:
       - 'scripts/test-main-resolver-linked-sku-worker-http-20261031.mjs'
       - 'scripts/test-branch2-resolver-historic-reserve-20261022.mjs'
       - 'scripts/test-branch2-resolver-only-when-actionable-20261022.mjs'
+      - 'scripts/catalog-integrity-branch2-preserved-gate.mjs'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -33,6 +34,7 @@ jobs:
           node scripts/test-main-resolver-linked-sku-worker-http-20261031.mjs
           node scripts/test-branch2-resolver-historic-reserve-20261022.mjs
           node scripts/test-branch2-resolver-only-when-actionable-20261022.mjs
+          node scripts/catalog-integrity-branch2-preserved-gate.mjs
           node scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
           node scripts/test-catalog-resolver-r13-known-facts.mjs
       - name: TypeScript and production client build
