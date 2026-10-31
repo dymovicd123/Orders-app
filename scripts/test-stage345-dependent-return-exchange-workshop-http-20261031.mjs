@@ -225,8 +225,10 @@ console.log('STAGE345_RETURN_EXCHANGE_DEPENDENCY_HTTP_PASS: return claims protec
 const mixedOrderId=await create('stage345-workshop-mixed',[{...item('warehouse'),quantity:1},{...item('warehouse'),sourceType:'workshop',quantity:2}])
 const mixedRows=sql.prepare('SELECT id,source_type,quantity,is_workshop,variant_id FROM order_items WHERE order_id=? ORDER BY id').all(mixedOrderId)
 assert.equal(mixedRows.length,2)
-const physicalLine=mixedRows.find(x=>x.source_type==='warehouse')
-const workshopLine=mixedRows.find(x=>x.source_type==='workshop')
+// Database stores source_type='warehouse' for Workshop rows as a physical
+// fallback; is_workshop is the authoritative discriminator.
+const physicalLine=mixedRows.find(x=>x.is_workshop===0)
+const workshopLine=mixedRows.find(x=>x.is_workshop===1)
 assert(physicalLine&&workshopLine)
 const originalTask=sql.prepare('SELECT id,quantity,status,order_item_id FROM workshop_tasks WHERE order_id=? AND order_item_id=?').get(mixedOrderId,workshopLine.id)
 assert(originalTask?.id)
