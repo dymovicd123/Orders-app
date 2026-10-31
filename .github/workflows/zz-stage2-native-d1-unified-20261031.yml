@@ -234,6 +234,24 @@ jobs:
               reservations:reservations.map(x=>({source:x.inventory_source,status:x.status,quantity:x.quantity})),
               replayDelta:0
             }))
+            const retiredRows=db.prepare(`SELECT p.id AS product_id,v.id AS variant_id,v.is_active,
+              s.inventory_source,COALESCE(s.quantity,0) AS quantity
+              FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id
+              LEFT JOIN inventory_stock s ON s.variant_id=v.id
+              WHERE p.name='CI STAGE2 RETIRED RECOVERY' ORDER BY v.id`).all()
+            assert.equal(retiredRows.length,2,'Recovery must create exactly one NEW generation; historical SKU remains')
+            assert.deepEqual(retiredRows.map(x=>[Number(x.is_active),Number(x.quantity)]),[[0,0],[1,1]],
+              'Retired historical SKU must have zero stock; new active SKU receives one physical piece')
+            const restore=db.prepare(`SELECT rr.status,rr.restored_variant_count
+              FROM catalog_retirement_restores rr JOIN catalog_retirement_operations op ON op.id=rr.retirement_id
+              JOIN catalog_products p ON p.id=op.product_id
+              WHERE p.name='CI STAGE2 RETIRED RECOVERY'`).all()
+            assert.equal(restore.length,1,'Repeat restore must not create another restore operation')
+            assert.equal(restore[0].status,'completed')
+            const retiredMoves=db.prepare(`SELECT COUNT(*) AS n FROM inventory_movements
+              WHERE product_name_snapshot='CI STAGE2 RETIRED RECOVERY'`).get()
+            assert.equal(Number(retiredMoves.n),1,'Recovered receipt and replay must only create one movement')
+            console.log('BRANCH2_STAGE2_RETIRED_ARRIVAL_RECOVERY_D1_PASS',JSON.stringify({retiredRows,restore:restore[0],movements:1}))
             db.close()
           }
           assert.equal(found,1,'One and only one isolated D1 backing database must contain synthetic results')
