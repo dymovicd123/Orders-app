@@ -68,4 +68,22 @@ assert.equal(nextQuestion(aliasContext,aliasDraft,opts).kind,'ready','Alias-only
 assert.equal(needsReference(aliasContext,{...aliasDraft,color:'ТЕМНО СИНИЙ'},'color'),true,'Different color is NOT a known alias')
 assert.deepEqual(nextQuestion(aliasContext,{...aliasDraft,color:'ТЕМНО СИНИЙ'},opts),{kind:'reference',field:'color'})
 assert.equal(sameReferenceValue('ТЕМНО СЕРИЙ','ТЕМНО СЕРЫЙ'),false,'Fuzzy typos must not auto-confirm a reference')
+// A preview is not proof of identity. A tentative server candidate must NEVER
+// overwrite an explicit, different field from an unlinked order or an employee edit.
+const staleCandidate={
+ ...ctx, facts:{...facts,color:'ЧЕРНЫЙ',size:'44'},
+ exactVariant:{id:2400,productId:75,productName:'ЭТНО КАРДИГАН',
+  facts:{...facts,color:'ЧЕРНЫЙ',size:'44'}},
+}
+const stale={productName:'ЭТНО КАРДИГАН',variantId:0,color:'БЕЖЕВЫЙ',size:'46'}
+const original=initialDraft(stale,staleCandidate)
+assert.equal(original.color,'БЕЖЕВЫЙ','Unlinked explicit color is not replaced by a tentative candidate')
+assert.equal(original.size,'46','Unlinked explicit size is not replaced by a tentative candidate')
+const afterPreview=canonicalizePreviewDraft({...original,color:'КРАСНЫЙ',size:'50'},staleCandidate,null)
+assert.equal(afterPreview.color,'КРАСНЫЙ','Manager changed color must survive server preview')
+assert.equal(afterPreview.size,'50','Manager changed size must survive server preview')
+assert.equal(canonicalizePreviewDraft({...original,color:'',size:''},staleCandidate,0).color,'')
+const trusted=initialDraft({...stale,variantId:2400},staleCandidate)
+assert.equal(trusted.color,'ЧЕРНЫЙ','Only original exact canonical SKU may supersede contradictory legacy snapshots')
+assert.equal(trusted.size,'44')
 console.log('MAIN_RESOLVER_PROVEN_SKU_HYDRATION_PASS: proven variant skips duplicate questions, unlinked or wrong ID never guesses')
