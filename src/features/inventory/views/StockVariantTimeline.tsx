@@ -93,7 +93,7 @@ export function StockVariantTimeline({
         Последняя загруженная физическая сверка: <b>{momentLabel(latestCheck.checkedAt)}</b>.
         По системе <b>{quantity(numeric(latestCheck.expectedQuantity))}</b>,
         посчитано <b>{quantity(numeric(latestCheck.countedQuantity))}</b>.
-        {stockCheckHasDifference(latestCheck) ? ' На той проверке было несовпадение; это не текущий физический остаток.' : ' Тогда количество совпало.'}
+        {latestCheckDiffers ? ' На той проверке было несовпадение; это не текущий физический остаток.' : ' Тогда количество совпало.'}
       </p> : null}
       <section className="w18-active-reservations" aria-label="Текущие резервы по конкретному варианту">
         <strong>Для каких заказов сейчас отложен этот товар</strong>
