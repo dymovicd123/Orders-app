@@ -141,18 +141,18 @@ jobs:
           for(const rel of files){
             const db=new DatabaseSync(path.join(root,rel),{readOnly:true})
             if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_items'").get()){db.close();continue}
-            const stock=db.prepare(\`SELECT s.inventory_source,v.size_label,s.quantity,s.reserved_quantity
+            const stock=db.prepare(`SELECT s.inventory_source,v.size_label,s.quantity,s.reserved_quantity
               FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id
               JOIN catalog_products p ON p.id=v.product_id
               WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
-              ORDER BY s.inventory_source,v.size_label\`).all()
+              ORDER BY s.inventory_source,v.size_label`).all()
             if(!stock.length){db.close();continue}
             found++
             assert.deepEqual(stock.map(x=>[x.inventory_source,x.size_label,Number(x.quantity),Number(x.reserved_quantity)]),
               [['boutique','46',1,0],['boutique','48',1,0],['warehouse','46',4,0],['warehouse','48',0,0]])
-            const moves=db.prepare(\`SELECT inventory_source,movement_type,quantity_delta,reference_type
+            const moves=db.prepare(`SELECT inventory_source,movement_type,quantity_delta,reference_type
               FROM inventory_movements WHERE product_name_snapshot='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
-              ORDER BY id\`).all()
+              ORDER BY id`).all()
             assert.equal(moves.length,9,'One D1 movement per real physical fact; transfer has two halves, retries none')
             const count=(type)=>moves.filter(x=>x.reference_type===type).length
             assert.equal(count('manual'),5,'Three arrivals, one correction, one writeoff')
@@ -162,19 +162,19 @@ jobs:
             assert.equal(count('stocktake'),1)
             assert.equal(moves.reduce((sum,x)=>sum+Number(x.quantity_delta),0),6,
               'Physical movement total must reconcile with four ending positions')
-            const checks=db.prepare(\`SELECT check_type,variant_id,expected_quantity,counted_quantity
+            const checks=db.prepare(`SELECT check_type,variant_id,expected_quantity,counted_quantity
               FROM inventory_stock_checks
               WHERE variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
-                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')\`).all()
+                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')`).all()
             assert(checks.some(x=>x.check_type==='manual_set'&&Number(x.expected_quantity)===1&&Number(x.counted_quantity)===3),
               'Real correction checkpoint missing')
             assert(checks.some(x=>x.check_type==='quick_stocktake'&&Number(x.expected_quantity)===2&&Number(x.counted_quantity)===4),
               'Quick physical check missing')
             assert(checks.some(x=>x.check_type==='full_stocktake'&&Number(x.counted_quantity)===1),
               'Full revision checkpoint missing')
-            const pending=db.prepare(\`SELECT COUNT(*) AS n FROM inventory_reservations
+            const pending=db.prepare(`SELECT COUNT(*) AS n FROM inventory_reservations
               WHERE variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
-                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')\`).get()
+                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')`).get()
             assert.equal(Number(pending.n),0,'Physical operations must not fabricate a reservation')
             console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_D1_READBACK_PASS',JSON.stringify({
               stock,movementCount:moves.length,checkCount:checks.length,reserved:0,replayDelta:0
