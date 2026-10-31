@@ -1,0 +1,89 @@
+name: "One-shot Branch2 current active version and candidate read-only audit 20261031"
+on:
+  push:
+    branches:
+      - audit/branch2-activation-readonly-20261031
+    paths:
+      - .github/workflows/zz-audit-branch2-activation-20261031.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Strict GET-only Cloudflare Branch2 state and live asset fingerprint
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          const ref='refs/heads/audit/branch2-activation-readonly-20261031'
+          assert.equal(process.env.GITHUB_REF,ref)
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_API_TOKEN
+          assert(/^[0-9a-f]{32}$/.test(account||'')&&token,'Missing Cloudflare read access')
+          const root='https://api.cloudflare.com/client/v4/accounts/'+account
+          async function get(path){
+            assert(path==='/workers/scripts' || path==='/workers/scripts/orders-app-branch2/deployments' ||
+              path==='/workers/scripts/orders-app-branch2/versions' ||
+              /^\/workers\/scripts\/orders-app-branch2\/versions\/[a-f0-9-]{16,}$/.test(path) ||
+              /^\/builds\/workers\/[a-f0-9-]{8,}\/(triggers|builds)$/.test(path),
+              'Unexpected Cloudflare path')
+            const r=await fetch(root+path,{method:'GET',headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(25000)})
+            const p=await r.json()
+            if(!r.ok||p.success!==true)throw Error('GET '+path.split('/').at(-1)+' returned '+r.status)
+            return p.result
+          }
+          const workers=(await get('/workers/scripts')).filter(x=>x.id==='orders-app-branch2')
+          assert.equal(workers.length,1)
+          const trigger=(await get('/builds/workers/'+workers[0].tag+'/triggers'))[0]
+          assert.deepEqual(trigger.branch_includes,['branch2'])
+          assert.equal(trigger.deploy_command,'npx wrangler versions upload')
+          const d=await get('/workers/scripts/orders-app-branch2/deployments')
+          const row=(Array.isArray(d)?d:d.deployments)[0]
+          assert(row?.versions?.length)
+          const active=row.versions.map(v=>({id:v.version_id,pct:v.percentage}))
+          const builds=await get('/builds/workers/'+workers[0].tag+'/builds')
+          const shas=['c6295401e0777121a4760beb44ba87e8a4a19b94','5a64c812a8826f0aa4bf87635e5c382fceaff55c']
+          const relevant=(Array.isArray(builds)?builds:builds?.builds||[]).filter(x=>x.build_trigger_metadata?.branch==='branch2').slice(0,20).map(x=>({
+            id:x.id,commit:x.build_trigger_metadata?.commit_hash,status:x.status,
+            outcome:x.build_outcome,created:x.created_on,command:x.build_trigger_metadata?.deploy_command,
+          }))
+          let versions=[]
+          try{
+            const v=await get('/workers/scripts/orders-app-branch2/versions')
+            versions=(Array.isArray(v)?v:v.items||v.versions||[]).slice(0,12).map(x=>({
+              id:x.id,created:x.created_on,number:x.number,
+              source:x.metadata?.source,buildId:x.metadata?.build_id,annotations:x.annotations,
+            }))
+          }catch(e){console.log('VERSION_LIST_GET_UNAVAILABLE '+String(e.message).slice(0,120))}
+          const live='https://orders-app-branch2.orders-clothes.workers.dev'
+          let asset=null,flags=null
+          for(let i=0;i<2;i++){
+            const r=await fetch(live+'/?release-readonly-check='+i,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+            assert.equal(r.status,200)
+            const html=await r.text()
+            const entry=html.match(/src=["'](\/assets\/index-[^"']+\.js)["']/)?.[1]
+            assert(entry)
+            if(asset)assert.equal(entry,asset)
+            asset=entry
+            const js=await fetch(live+entry,{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+            assert.equal(js.status,200)
+            const body=await js.text()
+            flags={
+              oldConfirmation:body.includes('Подтвердить резерв при нехватке — товар физически есть'),
+              newNonBlockingCopy:body.includes('Заказ можно сохранить без подтверждения физического наличия'),
+              warehouseTransferError:body.includes('Перемещение: выбранная вещь больше не соответствует'),
+            }
+          }
+          const anonymous=await fetch(live+'/api/orders?limit=1',{method:'GET',cache:'no-store',signal:AbortSignal.timeout(25000)})
+          assert.equal(anonymous.status,401,'Orders API must protect anonymous reads')
+          console.log('BRANCH2_CLOUDFLARE_GET_ONLY_STATE '+JSON.stringify({
+            activeDeployment:row.id,active,triggerCommand:trigger.deploy_command,
+            recentBuilds:relevant,versions,asset,flags,anonymousOrdersStatus:anonymous.status,
+            mutations:0
+          }))
+          NODE
