@@ -66,22 +66,22 @@ assert.equal(first.currentEpisodeLastMatchingCheck,null)
 insert.run(55,'warehouse','selective_stocktake','stocktake','REV-71',5,3,-2,'Менеджер','2026-10-19T07:00:00')
 insert.run(55,'warehouse','selective_stocktake','stocktake','REV-72',5,4,-1,'Менеджер','2026-10-19T08:00:00')
 const episode1=await listInventoryCheckHistory(d1,url())
-assert.equal(episode1.latestCheck?.id,'72')
-assert.equal(episode1.currentEpisodeFirstDifference?.id,'71',
+assert.equal(episode1.latestCheck?.referenceId,'REV-72')
+assert.equal(episode1.currentEpisodeFirstDifference?.referenceId,'REV-71',
   'A new episode starts with the first mismatch AFTER latest matching check')
 assert.equal(episode1.currentEpisodeLastMatchingCheck?.id,'70')
 assert.equal(episode1.firstConfirmedDifference?.id,'8',
   'Old historical first mismatch still available, but not used as active episode')
 insert.run(55,'warehouse','selective_stocktake','stocktake','REV-73',5,5,0,'Менеджер','2026-10-19T09:00:00')
 const resolved=await listInventoryCheckHistory(d1,url())
-assert.equal(resolved.latestCheck?.id,'73')
+assert.equal(resolved.latestCheck?.referenceId,'REV-73')
 assert.equal(resolved.currentEpisodeFirstDifference,null,
   'A later matching check closes old discrepancies')
 insert.run(55,'warehouse','selective_stocktake','stocktake','REV-74',5,2,-3,'Менеджер','2026-10-19T10:00:00')
 const episode2=await listInventoryCheckHistory(d1,url())
-assert.equal(episode2.latestCheck?.id,'74')
-assert.equal(episode2.currentEpisodeFirstDifference?.id,'74')
-assert.equal(episode2.currentEpisodeLastMatchingCheck?.id,'73')
+assert.equal(episode2.latestCheck?.referenceId,'REV-74')
+assert.equal(episode2.currentEpisodeFirstDifference?.referenceId,'REV-74')
+assert.equal(episode2.currentEpisodeLastMatchingCheck?.referenceId,'REV-73')
 const isolatedBoutique=await listInventoryCheckHistory(d1,new URL('https://test.invalid/api/inventory/check-history?source=boutique&variantId=55'))
 assert.equal(isolatedBoutique.latestCheck?.referenceId,'B1')
 assert.equal(isolatedBoutique.currentEpisodeFirstDifference?.referenceId,'B1',
