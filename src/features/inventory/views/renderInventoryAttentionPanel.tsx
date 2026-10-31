@@ -13,13 +13,12 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'formatDateShort'
   | 'inventoryPanelStyle'
   | 'isAdmin'
-  | 'openAttentionCatalog'
   | 'openAttentionHandover'
   | 'openAttentionIntake'
-  | 'openAttentionLifecycle'
   | 'openAttentionFoundCatalog'
   | 'reconcileFoundInventoryStock'
   | 'refreshWarehouseAttention'
+  | 'openInventoryPanel'
   | 'setAttentionCategory'
   | 'sourceLabel'
   | 'warehouseAttention'
@@ -52,15 +51,14 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     formatDateShort,
     inventoryPanelStyle,
     isAdmin,
-    openAttentionCatalog,
     openAttentionHandover,
     openAttentionIntake,
-    openAttentionLifecycle,
     openAttentionFoundCatalog,
     openAttentionOrder,
     openAttentionArrival,
     openAttentionCorrection,
     openAttentionHistory,
+    openInventoryPanel,
     reconcileFoundInventoryStock,
     refreshWarehouseAttention,
     setAttentionCategory,
@@ -73,7 +71,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     shortage: Number(counts?.shortage || 0),
     handover: Number(counts?.handover || 0),
     intake: Number(counts?.intake || 0),
-    identify: Number(counts?.lifecycle || 0) + Number(counts?.catalog || 0) + Number(counts?.found || 0),
+    identify: Number(counts?.found || 0),
   }
   // Catalog linking is an engineering diagnosis; do not count it as a task
   // that a warehouse employee has personally failed to perform.
@@ -85,7 +83,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
   const tabs: Array<{ value: Exclude<AttentionCategory, 'intake'>; label: string }> = [
     { value: 'shortage', label: 'Не хватает для заказов' },
     { value: 'handover', label: 'Уточнить выдачу' },
-    { value: 'identify', label: 'Данные и идентичность' },
+    { value: 'identify', label: 'Найденные вещи' },
   ]
 
   return (
@@ -111,7 +109,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
           <div className="inventory-attention-summary">
             <strong>{categoryCounts.shortage + confirmedHumanQuestions ? `Рабочие вопросы: ${categoryCounts.shortage + confirmedHumanQuestions}` : 'Рабочих вопросов нет'}</strong>
             <span>{categoryCounts.shortage} вариантов с учётной нехваткой · {categoryCounts.handover} выдач для подтверждения · {Number(counts?.found || 0)} найденных вещей для опознания.
-              {technicalIdentityQuestions > 0 ? ` Отдельно ${technicalIdentityQuestions} технических вопросов привязки/событий: они не считаются ошибками сотрудников.` : ''}</span>
+</span>
           </div>
           <div className="inventory-attention-tabs" role="tablist" aria-label="Что нужно уточнить">
             {tabs.map((tab) => (
@@ -210,20 +208,29 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
         </section>
       ) : null}
 
+      {isAdmin && technicalIdentityQuestions > 0 ? <p className="inventory-attention-admin-note">
+        В инженерной диагностике есть {technicalIdentityQuestions} вопросов распознавания или событий.
+        Они не входят в рабочие задачи склада и не считаются ошибками сотрудников.
+        <button className="secondary compact" type="button" onClick={() => openInventoryPanel('settings')}>Открыть сервис</button>
+      </p> : null}
       {items && attentionCategory === 'identify' ? (
         <section className="inventory-attention-group is-identify">
-          <div className="inventory-attention-group-head"><div><strong>Найденные вещи и вопросы привязки</strong><span>Не все вопросы здесь требуют действий склада. Физически найденные вещи требуют идентификации. Технические сбои распознавания существующих товаров должны исправляться в программе; сотрудника нельзя считать виновным в них.</span></div><b>{categoryCounts.identify}</b></div>
-          {((items.found?.length || 0) || items.lifecycle.length || items.catalog.length) ? <div className="inventory-attention-list">
-            {items.found?.length ? <section className="inventory-attention-subgroup">
-              <div className="inventory-attention-subgroup-head"><div><strong>Найдено при проверке</strong><span>Физический факт уже сохранён. Осталось связать вещь с точным вариантом товара.</span></div><b>{items.found.length}</b></div>
-              <div className="inventory-attention-sublist">
+          <div className="inventory-attention-group-head">
+            <div><strong>Найденные при проверке вещи</strong>
+              <span>Не все вопросы здесь требуют действий склада. В этом разделе только реально посчитанные вещи, у которых ещё не определён точный SKU; технические ошибки находятся в сервисе.</span>
+            </div><b>{categoryCounts.identify}</b>
+          </div>
+          {(items.found || []).length ? <div className="inventory-attention-list">
             {(items.found || []).map((item: any) => (
               <article className="w5-found-attention-card" key={`attention-found-${item.stockId}`}>
                 <div className="inventory-attention-main">
                   <strong>{item.productName || 'Найденная вещь'}</strong>
                   <span>{detailLine(item) || 'Характеристики требуют уточнения'} · {sourceLabel(item.source)}</span>
                   <small>Физически учтено: {item.physical}</small>
-                  <div className="w5-found-attention-warning"><strong>Вариант товара ещё не определён</strong><span>Физически вещь учтена, но пока не появилась среди обычных вариантов этого товара. Определите её, чтобы она стала доступна в остатках, перемещениях и заказах.</span></div>
+                  <div className="w5-found-attention-warning">
+                    <strong>Вариант товара ещё не определён</strong>
+                    <span>Физически вещь учтена, но пока не привязана к каноническому SKU. Уточните идентичность до приёма в обычный остаток.</span>
+                  </div>
                 </div>
                 {item.exactKnown
                   ? <button className="primary compact" type="button" onClick={() => void reconcileFoundInventoryStock(item)}>Связать с вариантом</button>
@@ -232,31 +239,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
                     : <span className="inventory-attention-admin-note">Требуется администратор</span>}
               </article>
             ))}
-              </div>
-            </section> : null}
-            {items.lifecycle.length ? <section className="inventory-attention-subgroup">
-              <div className="inventory-attention-subgroup-head"><div><strong>Есть незавершённые события по товарам</strong><span>Не считайте их приходом без проверки исходного документа и фактического получения. Некоторые старые события связаны с Цехом.</span></div><b>{items.lifecycle.length}</b></div>
-              <div className="inventory-attention-sublist">
-            {(items.lifecycle || []).map((item: any) => (
-              <article key={`attention-lifecycle-${item.id}`}>
-                <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'} · {sourceLabel(item.source)}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionLifecycle(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
-              </article>
-            ))}
-              </div>
-            </section> : null}
-            {items.catalog.length ? <section className="inventory-attention-subgroup">
-              <div className="inventory-attention-subgroup-head"><div><strong>Нужно проверить связь с каталогом</strong><span>Если существующий товар уже однозначно указан в заказе, система должна привязать его сама; ошибка привязки — задача разработчика, а не склада.</span></div><b>{items.catalog.length}</b></div>
-              <div className="inventory-attention-sublist">
-            {(items.catalog || []).map((item: any) => (
-              <article key={`attention-catalog-${item.orderItemId}`}>
-                <div className="inventory-attention-main"><strong>{item.productName || 'Неизвестный товар'}</strong><span>{detailLine(item) || 'Характеристики не определены'}</span><small>{item.externalId ? `Заказ ${item.externalId} · от ${formatDateShort(item.orderDate)}` : ''}{item.affectedCount > 1 ? ` · похожих позиций: ${item.affectedCount}` : ''}</small></div>
-                {isAdmin ? <button className="secondary compact" type="button" onClick={() => void openAttentionCatalog(item)}>Разобрать</button> : <span className="inventory-attention-admin-note">Требуется администратор</span>}
-              </article>
-            ))}
-              </div>
-            </section> : null}
-          </div> : <div className="empty-state">Неопределённых товаров сейчас нет.</div>}
+          </div> : <div className="empty-state">Сейчас нет найденных неопознанных вещей.</div>}
         </section>
       ) : null}
     </div>
