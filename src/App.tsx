@@ -5357,7 +5357,9 @@ function App() {
               ]
         // The mutation is already committed once the POST returned 2xx. Follow-up reads are
         // best-effort so a refresh failure cannot invite the employee to submit the operation again.
-        const refreshResults = await Promise.allSettled([...refreshes, loadWarehouseAttention(false, true)])
+        const refreshProblems = loadWarehouseAttention(false, true)
+        const refreshResults = await Promise.allSettled(refreshes)
+        await Promise.allSettled([refreshProblems])
         // Stage 4.6: committed manual operations also refresh the live problem
         // counts from the server. A follow-up read failure cannot undo the
         // committed physical operation or invite a duplicate submit.
