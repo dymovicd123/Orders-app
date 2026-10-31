@@ -105,7 +105,10 @@ assert(!readFileSync('src/features/inventory/views/renderInventoryAttentionPanel
 const stockAttentionUI = readFileSync('src/features/inventory/views/renderInventoryAttentionPanel.tsx','utf8')
 assert.equal((stockAttentionUI.match(/className="inventory-attention-guide"/g) || []).length, 0, 'Active shortage section no longer carries the old guide')
 assert.equal((stockAttentionUI.match(/className="inventory-attention-guide is-shipped"/g) || []).length, 0, 'Historical shipping evidence does not create an actionable shortage section')
-assert(!stockAttentionUI.includes('inventory-attention-task-help'), 'No repeated instruction in each item card')
+assert((stockAttentionUI.match(/className="inventory-attention-task-help"/g) || []).length <= 2,
+  'Only a concise reason per shortage/handover item; repeated tutorial blocks are forbidden')
+assert(stockAttentionUI.includes('Это данные учёта, <strong>не свежий пересчёт</strong>'),
+  'Shortage card must not present database stock as a physical count')
 assert(!stockAttentionUI.includes('не добавляйте его повторно на склад'), 'Avoid vague historical-shipment instruction')
 assert(stockAttentionUI.includes('Оформить приход') && stockAttentionUI.includes('Корректировать остаток'), 'Keep current stock actions')
 
