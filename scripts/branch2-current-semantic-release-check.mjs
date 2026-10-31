@@ -64,6 +64,7 @@ const groups = [
   ['Warehouse operations and history', [
     'scripts/test-stocktake-functional-acceptance.mjs',
     'scripts/test-found-stock-unique-identity-barcode-readiness-20261030.mjs',
+    'scripts/test-found-unidentified-stock-focused-20261031.mjs',
     'scripts/test-arrival-canonical-barcode-sku-20261030.mjs',
     'scripts/test-transfer-canonical-barcode-identity-20261030.mjs',
     'scripts/test-w8-warehouse-operation-integrity.mjs',
