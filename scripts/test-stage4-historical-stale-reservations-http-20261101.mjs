@@ -149,7 +149,7 @@ const oldItem=sql.prepare('SELECT id FROM order_items WHERE order_id=? AND quant
 sql.prepare("UPDATE orders SET order_date='2026-08-08' WHERE id=?").run(legacyId)
 sql.prepare("UPDATE inventory_stock SET quantity=0 WHERE id=9041").run() // simulated later physical stocktake, NOT performed by cleanup
 const physBefore=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get()
-assert.deepEqual(physBefore,{quantity:0,reserved_quantity:2})
+assert.deepEqual({...physBefore},{quantity:0,reserved_quantity:2})
 const movesBefore=sql.prepare('SELECT count(*) n FROM inventory_movements').get().n
 const oldReserve=sql.prepare('SELECT * FROM inventory_reservations WHERE order_item_id=?').get(oldItem)
 const currentReserve=sql.prepare('SELECT * FROM inventory_reservations WHERE order_item_id=?').get(modernItem)
@@ -182,7 +182,7 @@ const released=await http('POST','/api/admin/historical-reservations/release',bo
 assert.equal(released.status,200,'Release August order stale reserve: '+JSON.stringify(released))
 assert.equal(released.data.quantityReleased,1)
 assert.equal(released.data.physicalQuantityChanged,false)
-assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get(),{quantity:0,reserved_quantity:1},
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get()},{quantity:0,reserved_quantity:1},
   'Only one stale reservation removed. Physical stock and live reserve intact')
 assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE id=?').get(oldReserve.id).status,'released')
 assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE id=?').get(currentReserve.id).status,'active')
