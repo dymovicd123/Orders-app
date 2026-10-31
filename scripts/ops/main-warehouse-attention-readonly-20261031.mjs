@@ -1,15 +1,16 @@
-// Run CURRENT warehouse attention implementation against real Branch2 via D1 SELECT only.
+// Run CURRENT warehouse attention implementation against real Main via D1 SELECT only.
 // Never expose customer names or order contact details in CI logs.
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {getWarehouseAttentionSummary} from '../../worker/domains/warehouse-attention.ts'
 import {catalogReviewBasePredicate,catalogReviewOperationalPredicate} from '../../worker/domains/catalog-review.ts'
 assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-warehouse-actionability-readonly-20261031')
-const c=JSON.parse(readFileSync('wrangler.jsonc','utf8').replace(/\/\*[\s\S]*?\*\//g,''))
+const conf=readFileSync('wrangler.jsonc','utf8')
 const dbId='17e68a41-1d58-4a36-8a63-47c3e32443c4'
-assert.equal(c.name,'orders-app')
-assert.equal(c.d1_databases?.length,1)
-assert.equal(c.d1_databases[0].database_id,dbId)
+assert(conf.includes('"name": "orders-app"'))
+assert(conf.includes('"database_name": "orders_db_prod"'))
+assert(conf.includes(dbId))
+assert(!conf.includes('orders_db_branch2'))
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN
 assert(/^[0-9a-f]{32}$/.test(account||'')&&token)
 let reads=0
