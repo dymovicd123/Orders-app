@@ -313,7 +313,10 @@ export async function insertCriticalMappedEntity(
   ]);
   const inserted = toInt(insertResult.meta?.changes, 0);
   const mapped = toInt(mapResult.meta?.changes, 0);
-  if (inserted === 1 && mapped === 1) {
+  // Native D1 metadata includes trigger side effects: one direct INSERT can
+  // report changes=4. The preceding SQL changes()=1 in the mapping INSERT
+  // already proves exactly one direct row was inserted in this same batch.
+  if (inserted >= 1 && mapped === 1) {
     const id = toInt(insertResult.meta?.last_row_id, 0);
     if (!id) throw new Error(`Не удалось безопасно определить ${entityType}.`);
     return { id, created: true };
