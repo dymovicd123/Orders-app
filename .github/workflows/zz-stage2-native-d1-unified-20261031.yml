@@ -1,5 +1,10 @@
 name: "Stages 1+2 unified native D1 acceptance (NO DEPLOY)"
 on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/zz-stage2-native-d1-unified-20261031.yml'
+      - 'scripts/test-stage2-unified-native-http-20261031.mjs'
   push:
     branches: [test/branch2-unified-stage1-stage2-native-20261031]
     paths:
@@ -34,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/test/branch2-unified-stage1-stage2-native-20261031"
+          test "${GITHUB_HEAD_REF:-}" = "test/branch2-unified-stage1-stage2-native-20261031" || test "$GITHUB_REF" = "refs/heads/test/branch2-unified-stage1-stage2-native-20261031"
           test -z "${CLOUDFLARE_API_TOKEN:-}"
           test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -d migrations
