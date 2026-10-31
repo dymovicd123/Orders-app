@@ -37,7 +37,7 @@ assert.equal(created.data.duplicate,false)
 const replay=await api('/api/inventory/movements?returnInventory=0','POST',arrival,200)
 assert.equal(replay.data.duplicate,true)
 const invalid={...arrival,requestId:'main-native-invalid-arrival-20261031',items:[{...facts,color:'СИНИЙ',quantity:1}]}
-const rejected=await api('/api/inventory/movements?returnInventory=0','POST',invalid)
+const rejected=await api('/api/inventory/movements?returnInventory=0','POST',invalid,409)
 assert.equal(rejected.response.ok,false,'Stale/wrong SKU must be rejected before any physical change')
 assert(rejected.response.status>=400&&rejected.response.status<500)
 const transfer={requestId:'main-native-transfer-20261031-1',fromSource:'warehouse',toSource:'boutique',
@@ -48,7 +48,7 @@ assert.equal(moved.data.totalQuantity,1)
 const movedReplay=await api('/api/inventory/transfer?returnInventory=0','POST',transfer,200)
 assert.equal(movedReplay.data.duplicate,true)
 const wrongTransfer={...transfer,requestId:'main-native-invalid-transfer-20261031',items:[{...facts,quantity:1,size:'48'}]}
-const rejectedTransfer=await api('/api/inventory/transfer?returnInventory=0','POST',wrongTransfer)
+const rejectedTransfer=await api('/api/inventory/transfer?returnInventory=0','POST',wrongTransfer,409)
 assert.equal(rejectedTransfer.response.ok,false,'Wrong size may not cross stock locations')
 assert(rejectedTransfer.response.status>=400&&rejectedTransfer.response.status<500)
 const inventory=await api('/api/inventory?source=warehouse')
