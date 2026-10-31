@@ -1,0 +1,48 @@
+name: "One-shot activate vetted Branch2 warehouse and order fixes 20261031"
+on:
+  push:
+    branches:
+      - ops/branch2-release-shortage-and-transfer-20261031
+    paths:
+      - .github/workflows/zz-once-branch2-pinned-release-20261031.yml
+permissions:
+  contents: read
+concurrency:
+  group: branch2-pinned-release-20261031
+  cancel-in-progress: false
+jobs:
+  branch2-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact isolated release source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Run current release regression checks on combined source
+        run: npm run release:check
+      - name: Build exact Worker and frontend source
+        run: npm run build
+      - name: Syntax-check read-only preflight and guarded publisher
+        run: node --check scripts/ops/branch2-pinned-release-20261031.mjs
+      - name: Verify pinned candidate and activate only Branch2 with rollback
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EXPECTED_RELEASE_COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/ops/branch2-pinned-release-20261031.mjs
+      - name: Preserve D1 Time Travel bookmark evidence (manual recovery reference)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch2-release-20261031-bookmark-and-rollback
+          path: release-proof/branch2-20261031-before-switch.json
+          if-no-files-found: ignore
+          retention-days: 7
