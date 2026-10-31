@@ -4,6 +4,8 @@ on:
     branches: [ci/scope-obsolete-main-selective-pr-checks-20261031]
     paths:
       - '.github/workflows/zz-ci-main-pr-scope-check-20261031.yml'
+      - 'scripts/test-main-current-business-release-20261031.mjs'
+      - 'scripts/test-ci-scope-main-release-20261031.mjs'
 permissions:
   contents: read
 jobs:
