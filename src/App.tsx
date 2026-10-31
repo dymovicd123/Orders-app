@@ -5357,7 +5357,10 @@ function App() {
               ]
         // The mutation is already committed once the POST returned 2xx. Follow-up reads are
         // best-effort so a refresh failure cannot invite the employee to submit the operation again.
-        const refreshResults = await Promise.allSettled(refreshes)
+        const refreshResults = await Promise.allSettled([...refreshes, loadWarehouseAttention(false, true)])
+        // Stage 4.6: committed manual operations also refresh the live problem
+        // counts from the server. A follow-up read failure cannot undo the
+        // committed physical operation or invite a duplicate submit.
         // Exact-count adjustment is a new physical checkpoint. Reload order
         // handover flags so affected unshipped orders immediately ask whether
         // the goods were issued before/after this check.
