@@ -201,5 +201,5 @@ assert.equal(sql.prepare('SELECT reserved_quantity FROM inventory_stock WHERE id
 const nowPreview=await http('GET','/api/admin/historical-reservations')
 assert.equal(nowPreview.status,200)
 assert.equal(nowPreview.data.items.filter(x=>x.reservationId===oldReserve.id).length,0)
-assert.equal(sql.prepare('SELECT count(*) n FROM inventory_reservations WHERE status="active" AND inventory_source="warehouse" AND variant_id=9031').get().n,1)
+assert.equal(sql.prepare("SELECT count(*) n FROM inventory_reservations WHERE status='active' AND inventory_source='warehouse' AND variant_id=9031").get().n,1)
 console.log('STAGE4_LEGACY_RESERVE_CLEANUP_PASS: admin-only, August order migration stale claim, guarded explicit identity, no fake stock, current reserve preserved, durable audit, retry safe')
