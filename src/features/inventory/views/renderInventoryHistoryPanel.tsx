@@ -41,6 +41,9 @@ type PanelContext = Pick<InventoryRenderContext,
   historyActiveOrders: InventoryReservation[]
   historyActiveOrdersBusy: boolean
   historyActiveOrdersError: string
+  historyActiveOrdersTotalQuantity: number
+  historyActiveOrdersTotalCount: number
+  historyActiveOrdersHasMore: boolean
   openHistoryReserveOrder: (order: InventoryReservation) => void
 }
 
@@ -55,6 +58,9 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     historyActiveOrders,
     historyActiveOrdersBusy,
     historyActiveOrdersError,
+    historyActiveOrdersTotalQuantity,
+    historyActiveOrdersTotalCount,
+    historyActiveOrdersHasMore,
     openHistoryReserveOrder,
     historyCheckHasMore,
     historyChecksPagingBusy,
@@ -120,6 +126,9 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                               reservations={historyActiveOrders}
                               reservationsBusy={historyActiveOrdersBusy}
                               reservationsError={historyActiveOrdersError}
+                              reservationsTotalQuantity={historyActiveOrdersTotalQuantity}
+                              reservationsTotalCount={historyActiveOrdersTotalCount}
+                              reservationsHasMore={historyActiveOrdersHasMore}
                               openReserveOrder={openHistoryReserveOrder}
                               checksUnavailable={historyChecksUnavailable}
                               checksHasMore={historyCheckHasMore}
