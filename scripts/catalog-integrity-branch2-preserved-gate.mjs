@@ -162,7 +162,7 @@ if (!process.env.RETIRED_NATURAL_RESERVE_REPLAY) {
 // all immutable 2026-10-18 Stage04, Kaspi and order-history tests are replayed
 // against their exact accepted previous branch2 blobs, then current UI rebuilt.
 if (!process.env.RETIRED_ONE_LINE_MANAGER_REPLAY) {
-  const reviewed={"worker/index.ts":["fc7f8a747069788f708ed095aa40e7f5adfe5d4d","951a80a6bd14aab777704533c9fda677170fe177"],"src/features/orders/OrderCatalogResolutionModal.tsx":["1a9ff8f554c4b38332124c8922172ddd32136fc4","7f467fa465b1798bc168b085239395a22cafa5ad"]};
+  const reviewed={"worker/index.ts":["fc7f8a747069788f708ed095aa40e7f5adfe5d4d","951a80a6bd14aab777704533c9fda677170fe177"],"src/features/orders/OrderCatalogResolutionModal.tsx":["1a9ff8f554c4b38332124c8922172ddd32136fc4",process.env.RETIRED_NATURAL_RESERVE_REPLAY ? "286b0ddec3f8bf9fae2e024a6cc50afc83f3daed" : "7f467fa465b1798bc168b085239395a22cafa5ad"]};
   const added={"worker/domains/retired-item-correction.ts":"05e63bb5dcd399ca207f738fdf4dea37659c1a8d","migrations/0114_retired_item_one_line_corrections.sql":"d4582df345661a598e52afee68c6749654ba9ebe","scripts/test-retired-manager-one-line-correction-20261018.mjs":"0a8e5defd0e1e7464df51f370564bc59f3894b55"};
   const acceptedCommit='d630bd5c49ebbbec6e3b6b723cfc8a8adc5a30f2';
   const hash=file=>gitBlob(fs.readFileSync(file,'utf8'));
