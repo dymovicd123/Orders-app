@@ -4,6 +4,8 @@ on:
     branches: [fix/main-resolver-proven-sku-hydration-20261031]
     paths:
       - '.github/workflows/zz-main-resolver-proven-sku-hydration-20261031.yml'
+      - 'src/features/orders/catalogResolutionFlow.ts'
+      - 'scripts/test-main-resolver-proven-sku-hydration-20261031.mjs'
   workflow_dispatch:
 permissions:
   contents: read
