@@ -66,6 +66,7 @@ const groups = [
     'scripts/test-stage32-partial-itemized-rewrite-http-20261031.mjs',
     'scripts/test-stage32-unsent-delete-cross-source-http-20261031.mjs',
     'scripts/test-stage32-retired-sku-explicit-replacement-http-20261031.mjs',
+    'scripts/test-stage32-overlapping-item-edit-http-20261031.mjs',
     'scripts/test-return-active-reserve-p0-20261021.mjs',
     'scripts/test-branch2-partial-return-atomic-and-exchange-ui-20261028.mjs',
     'scripts/test-branch2-pending-exchange-initial-shipping-20261028.mjs',
