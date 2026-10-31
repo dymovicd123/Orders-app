@@ -229,7 +229,7 @@ const lateItem=Number(sql.prepare('SELECT id FROM order_items WHERE order_id=? A
 const lateShip=await http('PATCH','/api/orders/'+lateId+'/shipping',{shippingStatus:'sent',shippingDate:'2026-10-31'})
 assert.equal(lateShip.status,200,'Late order shipping: '+JSON.stringify(lateShip))
 const beforePendingPhysical=lateStock()
-const returnBody={requestId:'stage3-batch-pending-return',orderId:lateId,returnDate:'2026-10-31',amount:0,
+const returnBody={requestId:'stage3-batch-pending-return-operation',orderId:lateId,returnDate:'2026-10-31',amount:0,
  items:[{orderItemId:lateItem,quantity:1,restock:true,physicalState:'pending'}]}
 const pending=await http('POST','/api/returns',returnBody)
 assert.equal(pending.status,201,JSON.stringify(pending))
