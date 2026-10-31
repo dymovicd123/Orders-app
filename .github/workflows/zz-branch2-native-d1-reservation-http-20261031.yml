@@ -3,7 +3,7 @@ on:
   push:
     branches: [test/branch2-stage1-reservation-http-20261031]
     paths:
-      - '.github/workflows/zz-main-native-local-d1-acceptance-20261031.yml'
+      - '.github/workflows/zz-branch2-native-d1-reservation-http-20261031.yml'
       - 'scripts/test-branch2-native-d1-reservation-http-20261031.mjs'
       - 'scripts/test-branch2-stage1-reservation-worker-http-20261031.mjs'
 permissions:
