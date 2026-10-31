@@ -1771,6 +1771,12 @@ export async function applyInventoryTransfer(
     // actually be replayed, and so new transfers never propagate negative stock forward.
     const sourceCurrent = Math.max(0, toInt(sourceStock?.quantity, 0));
     const targetCurrent = Math.max(0, toInt(targetStock?.quantity, 0));
+    // A transfer must use the same physical source count the employee saw when
+    // choosing the item. Having enough stock after another operation is not
+    // permission to silently accept a stale transfer form.
+    if (entry.expectedQuantity !== null && entry.expectedQuantity !== sourceCurrent) {
+      throw new Error(`Остатки изменились после открытия перемещения: ${item.productName} ${item.size || ''}. Было ${entry.expectedQuantity}, сейчас ${sourceCurrent}. Обновите остатки и повторите перемещение.`);
+    }
     const reservedAtSource = reservationsBySourceVariant.get(`${fromSource}:${variantId}`) || 0;
     const targetReservedQuantity = reservationsBySourceVariant.get(`${toSource}:${variantId}`) || 0;
 
