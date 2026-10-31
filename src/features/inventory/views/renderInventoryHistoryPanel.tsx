@@ -1,4 +1,5 @@
 import type { InventoryRenderContext } from './types'
+import type { InventoryReservation } from '../../../../shared/api-contracts.ts'
 import '../../../styles/w8-3-daily-surfaces.css'
 import '../../../styles/w12-stock-variant-timeline.css'
 import { StockVariantTimeline } from './StockVariantTimeline'
@@ -36,7 +37,12 @@ type PanelContext = Pick<InventoryRenderContext,
   | 'setHistoryQuery'
   | 'setHistoryVariantFilter'
   | 'sourceLabel'
->
+> & {
+  historyActiveOrders: InventoryReservation[]
+  historyActiveOrdersBusy: boolean
+  historyActiveOrdersError: string
+  openHistoryReserveOrder: (order: InventoryReservation) => void
+}
 
 
 export function renderInventoryHistoryPanel(ctx: PanelContext) {
@@ -46,6 +52,10 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
     historyCheckLabel,
     historyCheckRows,
     historyCheckEvidence,
+    historyActiveOrders,
+    historyActiveOrdersBusy,
+    historyActiveOrdersError,
+    openHistoryReserveOrder,
     historyCheckHasMore,
     historyChecksPagingBusy,
     historyChecksPageError,
@@ -107,6 +117,10 @@ export function renderInventoryHistoryPanel(ctx: PanelContext) {
                               movements={historyRows}
                               checks={historyCheckRows}
                               evidence={historyCheckEvidence}
+                              reservations={historyActiveOrders}
+                              reservationsBusy={historyActiveOrdersBusy}
+                              reservationsError={historyActiveOrdersError}
+                              openReserveOrder={openHistoryReserveOrder}
                               checksUnavailable={historyChecksUnavailable}
                               checksHasMore={historyCheckHasMore}
                               checksPagingBusy={historyChecksPagingBusy}

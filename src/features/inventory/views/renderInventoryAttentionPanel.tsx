@@ -75,13 +75,17 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
     intake: Number(counts?.intake || 0),
     identify: Number(counts?.lifecycle || 0) + Number(counts?.catalog || 0) + Number(counts?.found || 0),
   }
+  // Catalog linking is an engineering diagnosis; do not count it as a task
+  // that a warehouse employee has personally failed to perform.
+  const confirmedHumanQuestions = categoryCounts.handover + Number(counts?.found || 0)
+  const technicalIdentityQuestions = Number(counts?.catalog || 0) + Number(counts?.lifecycle || 0)
   const clarificationTotal = categoryCounts.handover + categoryCounts.identify
   const isIntake = attentionCategory === 'intake'
   const isShortage = attentionCategory === 'shortage'
   const tabs: Array<{ value: Exclude<AttentionCategory, 'intake'>; label: string }> = [
     { value: 'shortage', label: 'Не хватает для заказов' },
     { value: 'handover', label: 'Уточнить выдачу' },
-    { value: 'identify', label: 'Проверить данные' },
+    { value: 'identify', label: 'Данные и идентичность' },
   ]
 
   return (
@@ -105,8 +109,9 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
       {warehouseAttention && !isIntake && categoryCounts.shortage + clarificationTotal > 0 ? (
         <>
           <div className="inventory-attention-summary">
-            <strong>{categoryCounts.shortage + categoryCounts.handover ? `Нужно проверить по заказам: ${categoryCounts.shortage + categoryCounts.handover}` : 'Вопросов по заказам нет'}</strong>
-            <span>{categoryCounts.shortage} товаров не хватает по учёту · {categoryCounts.handover} выдач требуют подтверждения.{categoryCounts.identify ? ` Отдельно ${categoryCounts.identify} вопросов о данных товара — их нельзя автоматически считать ошибками сотрудника.` : ''}</span>
+            <strong>{categoryCounts.shortage + confirmedHumanQuestions ? `Рабочие вопросы: ${categoryCounts.shortage + confirmedHumanQuestions}` : 'Рабочих вопросов нет'}</strong>
+            <span>{categoryCounts.shortage} вариантов с учётной нехваткой · {categoryCounts.handover} выдач для подтверждения · {Number(counts?.found || 0)} найденных вещей для опознания.
+              {technicalIdentityQuestions > 0 ? ` Отдельно ${technicalIdentityQuestions} технических вопросов привязки/событий: они не считаются ошибками сотрудников.` : ''}</span>
           </div>
           <div className="inventory-attention-tabs" role="tablist" aria-label="Что нужно уточнить">
             {tabs.map((tab) => (
@@ -207,7 +212,7 @@ export function renderInventoryAttentionPanel(ctx: PanelContext) {
 
       {items && attentionCategory === 'identify' ? (
         <section className="inventory-attention-group is-identify">
-          <div className="inventory-attention-group-head"><div><strong>Проверка данных о товарах</strong><span>Не все вопросы здесь требуют действий склада. Если существующий товар не распознан системой, это ошибка привязки, а не повод создавать другой товар вручную.</span></div><b>{categoryCounts.identify}</b></div>
+          <div className="inventory-attention-group-head"><div><strong>Найденные вещи и вопросы привязки</strong><span>Не все вопросы здесь требуют действий склада. Физически найденные вещи требуют идентификации. Технические сбои распознавания существующих товаров должны исправляться в программе; сотрудника нельзя считать виновным в них.</span></div><b>{categoryCounts.identify}</b></div>
           {((items.found?.length || 0) || items.lifecycle.length || items.catalog.length) ? <div className="inventory-attention-list">
             {items.found?.length ? <section className="inventory-attention-subgroup">
               <div className="inventory-attention-subgroup-head"><div><strong>Найдено при проверке</strong><span>Физический факт уже сохранён. Осталось связать вещь с точным вариантом товара.</span></div><b>{items.found.length}</b></div>
