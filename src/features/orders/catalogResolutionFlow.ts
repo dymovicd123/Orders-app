@@ -122,8 +122,8 @@ export function initialDraft(source: Partial<Record<Field, string>> & { productN
     material: f?.material || '', length: f?.length || '',
     // Missing dimensions are known only when an already-linked canonical SKU proves them.
     // Never fill them from an unlinked tentative exactVariant: it may be a placeholder.
-    color: clean(source.color) || linkedVariantProven ? f?.color || source.color || '' : '',
-    size: clean(source.size) || linkedVariantProven ? f?.size || source.size || '' : '',
+    color: linkedVariantProven ? (f?.color || clean(source.color)) : clean(source.color),
+    size: linkedVariantProven ? (f?.size || clean(source.size)) : clean(source.size),
   }
 }
 
@@ -141,8 +141,8 @@ export function canonicalizePreviewDraft(next: Draft, context: CatalogResolution
     gender: context.facts?.gender || next.gender,
     material: context.facts?.material || next.material,
     length: context.facts?.length || next.length,
-    color: clean(next.color) || linkedVariantProven ? context.facts?.color || next.color : '',
-    size: clean(next.size) || linkedVariantProven ? context.facts?.size || next.size : '',
+    color: linkedVariantProven ? (context.facts?.color || clean(next.color)) : clean(next.color),
+    size: linkedVariantProven ? (context.facts?.size || clean(next.size)) : clean(next.size),
   }
 }
 
