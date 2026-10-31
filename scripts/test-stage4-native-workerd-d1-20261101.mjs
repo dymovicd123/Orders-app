@@ -1,9 +1,12 @@
 // REAL local Cloudflare workerd + native D1. Disposable database and Worker.
+// Historical final schema is derived by applying real migrations in disposable
+// SQLite; new Stage4 migrations 0117/0118 are executed directly on native D1.
 // The ONLY Wrangler commands below have --local and an isolated temp config;
 // never pass production/Branch2 credentials, endpoints or database identifiers.
 import assert from 'node:assert/strict'
 import {spawn,spawnSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
+import {DatabaseSync} from 'node:sqlite'
 import {mkdtempSync,mkdirSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
@@ -38,25 +41,35 @@ writeFileSync(config,JSON.stringify({
 const migrations=readdirSync('migrations').filter(name=>/^\d{4}.*\.sql$/.test(name)).sort()
 assert(migrations.includes('0117_v72_inventory_manual_operation_receipts.sql'))
 assert(migrations.includes('0118_v72_inventory_operation_attempts.sql'))
-// Wrangler's local execute has a SQL-size ceiling. Apply the entire REAL
-// ordered migration chain in bounded files; never skip or reorder migrations.
-let migrationBatch=''
-for(const name of migrations){
- const part='-- MIGRATION '+name+'\n'+readFileSync('migrations/'+name,'utf8')+'\n'
- if(migrationBatch && migrationBatch.length+part.length>35000){
-  const filename=join(temp,'migrations-'+schemaPaths.length+'.sql')
-  writeFileSync(filename,migrationBatch)
-  schemaPaths.push(filename)
-  migrationBatch=''
+// Historical catalog migrations use CREATE TEMP TABLE, disallowed by Wrangler's
+// native local D1 execute authorizer. Derive the EXACT persistent final schema
+// from running all older real migrations in SQLite (as existing HTTP tests do),
+// then bootstrap those DDL statements into local D1. Apply the NEW 0117/0118
+// migrations directly on native local D1 to verify their real compatibility.
+const snapshot=new DatabaseSync(':memory:')
+for(const name of migrations.filter(x=>x<'0117_')) {
+ try {snapshot.exec(readFileSync('migrations/'+name,'utf8'))}
+ catch(e){throw Error('Cannot derive final schema from '+name+': '+String(e))}
+}
+const ddl=snapshot.prepare(`SELECT type,name,sql FROM sqlite_master
+ WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+ AND type IN ('table','index','view','trigger')
+ ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 WHEN 'view' THEN 2 ELSE 3 END,name`).all()
+assert(ddl.length>100,'Expected actual comprehensive persistent D1 table/index schema')
+let schemaBatch=''
+for(const row of ddl){
+ const part='-- '+row.type+' '+row.name+'\n'+row.sql+';\n'
+ if(schemaBatch && schemaBatch.length+part.length>28000){
+  const filename=join(temp,'schema-'+schemaPaths.length+'.sql')
+  writeFileSync(filename,schemaBatch);schemaPaths.push(filename);schemaBatch=''
  }
- migrationBatch+=part
+ schemaBatch+=part
 }
-if(migrationBatch){
- const filename=join(temp,'migrations-'+schemaPaths.length+'.sql')
- writeFileSync(filename,migrationBatch)
- schemaPaths.push(filename)
+if(schemaBatch){
+ const filename=join(temp,'schema-'+schemaPaths.length+'.sql')
+ writeFileSync(filename,schemaBatch);schemaPaths.push(filename)
 }
-assert(schemaPaths.length>1,'Migration chain must be split into safe native D1 chunks')
+snapshot.close()
 const tokenHash=createHash('sha256').update(sessionToken).digest('base64url')
 writeFileSync(seedPath,[
  "INSERT INTO managers(id,name,role,is_active) VALUES(9781,'Тест Завсклад','Завсклад',1);",
@@ -110,6 +123,8 @@ const item={
 }
 try{
  for(const sqlFile of schemaPaths)localD1(sqlFile)
+ localD1(resolve('migrations/0117_v72_inventory_manual_operation_receipts.sql'))
+ localD1(resolve('migrations/0118_v72_inventory_operation_attempts.sql'))
  localD1(seedPath)
  child=spawn(process.execPath,[cli,'dev','--local','--config',config,
   '--persist-to',persist,'--ip','127.0.0.1','--port',String(port)],{
