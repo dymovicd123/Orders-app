@@ -97,7 +97,10 @@ export async function dispatchSelectedCompleteOrderLines(
               e.status AS exchange_status,oi.stock_writeoff_status,oi.quantity AS item_quantity
        FROM inventory_lifecycle_events le
        JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
-         AND e.new_order_item_id=le.order_item_id
+         AND (e.new_order_item_id=le.order_item_id OR EXISTS(
+           SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+             AND ei.id=le.operation_item_id AND ei.role='new'
+             AND ei.order_item_id=le.order_item_id))
        JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=le.order_id
        WHERE le.id=? AND le.order_id=?
          AND le.operation_type='exchange' AND le.event_type='exchange_new_out'`
@@ -203,7 +206,11 @@ export async function dispatchSelectedCompleteOrderLines(
            AND oi.quantity=? AND oi.stock_writeoff_status='reserved'
            AND (o.shipping_status<>'sent' OR EXISTS(
              SELECT 1 FROM inventory_lifecycle_events le
-             JOIN exchanges e ON e.id=le.operation_id AND e.new_order_item_id=oi.id
+             JOIN exchanges e ON e.id=le.operation_id
+               AND (e.new_order_item_id=oi.id OR EXISTS(
+                 SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+                   AND ei.id=le.operation_item_id AND ei.order_item_id=oi.id AND ei.role='new'
+               ))
              WHERE le.id=? AND le.order_id=o.id AND le.order_item_id=oi.id
                AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
                AND le.status='pending' AND le.pending_reason='awaiting_dispatch'
