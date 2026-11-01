@@ -5,16 +5,14 @@ on:
     paths:
       - '.github/workflows/main-resolver-selective-20261022.yml'
       - 'scripts/main-resolver-selective-release-20261022.mjs'
+  # Exact 2026-10-22 release script is pinned to an old reviewed diff, not a
+  # general-purpose 2026-10-31 Resolver regression. Keep it available explicitly.
   pull_request:
     branches: [main]
     paths:
-      - 'worker/domains/catalog.ts'
-      - 'worker/domains/order-reservations.ts'
-      - 'worker/index.ts'
-      - 'src/features/orders/OrderCatalogResolutionModal.tsx'
-      - 'scripts/test-main-resolver-*'
       - 'scripts/main-resolver-selective-release-20261022.mjs'
       - '.github/workflows/main-resolver-selective-20261022.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

@@ -607,6 +607,21 @@ export async function resolveInventoryCreatableItemsBulk(
 }
 
 
+// The selected catalog variant must describe the garment physically received.
+// Prevent stale Arrival forms from adding an item to another size/color/gender SKU.
+export function arrivalFactsMatchCanonicalSku(
+  raw: ReturnType<typeof normalizeInventoryItem>,
+  canonical: InventoryResolvedItem,
+) {
+  return raw.category === canonical.category
+    && normalizeCatalogCombinationGender(raw.gender) === normalizeCatalogCombinationGender(canonical.gender)
+    && catalogColorIdentity(raw.color) === catalogColorIdentity(canonical.color)
+    && canonicalStockPositionValue(raw.material) === canonicalStockPositionValue(canonical.material)
+    && canonicalStockPositionValue(raw.length) === canonicalStockPositionValue(canonical.length)
+    && normalizeCatalogCombinationSize(raw.size) === normalizeCatalogCombinationSize(canonical.size);
+}
+
+
 export async function applyInventoryMovement(
   db: D1Database,
   input: { requestId?: unknown; inventorySource?: unknown; movementType?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
@@ -831,6 +846,9 @@ export async function applyInventoryMovement(
           if (enteredProductKey && enteredProductKey !== canonicalProductKey
               && !validArrivalAliasPairs.has(`${enteredProductKey}:${toInt(item.productId, 0)}`)) {
             throw new Error(`Приход «${raw.productName}»: выбранный размер относится к «${item.productName}». Выберите правильный вариант заново. Склад не изменён.`);
+          }
+          if (!arrivalFactsMatchCanonicalSku(raw, item)) {
+            throw new Error(`Приход «${raw.productName}»: пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом. Выберите комбинацию заново. Склад не изменён.`);
           }
         }
         if (strictOperationName) {
@@ -1523,6 +1541,34 @@ export async function assertNoActiveStocktakeForTransfer(db: D1Database, fromSou
 }
 
 
+// SKU is the physical identity for future barcode-driven transfers.
+// The scanner may submit variantId alone, but when a human picker also submits
+// visible characteristics they must still describe that exact active variant.
+// A stale selection must never silently move a different size or color.
+export function transferProvidedFactsMatchCanonicalSku(
+  raw: InventoryItemInput,
+  canonical: CanonicalVariantSnapshot,
+) {
+  if (raw.productId !== undefined && raw.productId !== null && cleanText(raw.productId)
+    && toInt(raw.productId, 0) !== canonical.productId) return false;
+  if (raw.productName !== undefined
+    && normalizeCatalogProductIdentityKey(raw.productName) !== normalizeCatalogProductIdentityKey(canonical.productName)) return false;
+  if (raw.category !== undefined
+    && normalizeAudienceCategory(raw.category, raw.size) !== canonical.category) return false;
+  if (raw.gender !== undefined
+    && normalizeCatalogCombinationGender(raw.gender) !== normalizeCatalogCombinationGender(canonical.gender)) return false;
+  if (raw.color !== undefined
+    && catalogColorIdentity(raw.color) !== catalogColorIdentity(canonical.color)) return false;
+  if (raw.material !== undefined
+    && canonicalStockPositionValue(raw.material) !== canonicalStockPositionValue(canonical.material)) return false;
+  if (raw.length !== undefined
+    && canonicalStockPositionValue(raw.length) !== canonicalStockPositionValue(canonical.length)) return false;
+  if (raw.size !== undefined
+    && normalizeCatalogCombinationSize(raw.size) !== normalizeCatalogCombinationSize(canonical.size)) return false;
+  return true;
+}
+
+
 export async function applyInventoryTransfer(
   db: D1Database,
   input: { requestId?: unknown; fromSource?: unknown; toSource?: unknown; comment?: unknown; items?: InventoryItemInput[]; stockConfirmations?: unknown },
@@ -1655,6 +1701,18 @@ export async function applyInventoryTransfer(
   const missingCanonical = variantIds.filter(id => !canonicalById.has(id));
   if (missingCanonical.length) throw new Error('Одна из выбранных комбинаций больше не существует. Обновите склад и повторите перемещение.');
 
+  // Validate each human-visible row *before* grouping by variantId and
+  // before the atomic movement batch. Otherwise a stale/mixed picker row
+  // can be aggregated under a perfectly valid but different variant ID.
+  for (const raw of rawItems) {
+    if (toInt(raw?.quantity, 0) <= 0) continue;
+    const variantId = Math.max(0, toInt(raw.variantId, 0));
+    const canonical = canonicalById.get(variantId);
+    if (canonical && !transferProvidedFactsMatchCanonicalSku(raw, canonical)) {
+      throw new Error('Перемещение: выбранная вещь больше не соответствует характеристикам варианта из каталога. Обновите остатки и выберите товар заново. Склад не изменён.');
+    }
+  }
+
   const stocksResult = await db.prepare(
     `SELECT id, inventory_source, variant_id, quantity, reserved_quantity
      FROM inventory_stock
@@ -1714,6 +1772,11 @@ export async function applyInventoryTransfer(
     // actually be replayed, and so new transfers never propagate negative stock forward.
     const sourceCurrent = Math.max(0, toInt(sourceStock?.quantity, 0));
     const targetCurrent = Math.max(0, toInt(targetStock?.quantity, 0));
+    // A transfer must operate on the stock count shown when the employee chose
+    // this exact source/SKU; enough current stock is not proof the form is fresh.
+    if (entry.expectedQuantity !== null && entry.expectedQuantity !== sourceCurrent) {
+      throw new Error(`Остатки изменились после открытия перемещения: ${item.productName} ${item.size || ''}. Было ${entry.expectedQuantity}, сейчас ${sourceCurrent}. Обновите остатки и повторите перемещение.`);
+    }
     const reservedAtSource = reservationsBySourceVariant.get(`${fromSource}:${variantId}`) || 0;
     const targetReservedQuantity = reservationsBySourceVariant.get(`${toSource}:${variantId}`) || 0;
 

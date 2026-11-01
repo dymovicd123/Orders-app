@@ -26,6 +26,12 @@ check(resolver.indexOf("let gender = enteredGender") < resolver.indexOf("const p
 // Review flow: linked canonical SKU and saved snapshot hydrate the resolver before a question is chosen.
 check(review.includes("gender_snapshot: cleanText(linked.gender)"), 'R11: linked exact SKU gender is not hydrated into catalog review')
 check(review.includes("gender: normalizeCatalogCombinationGender(preview.gender ?? anchor.gender_snapshot)"), 'R11: saved order-item gender is not used by catalog review')
-check(modal.includes("gender: data.facts?.gender || next.gender"), 'R11: modal preview discards canonical gender returned by review')
+check(modal.includes("canonicalizePreviewDraft(next, data, item.variantId)"), 'R11: preview must use canonical review facts')
+const {canonicalizePreviewDraft} = await import('../src/features/orders/catalogResolutionFlow.ts')
+const initial={gender:'МУЖ',genderScope:'unisex',color:'ЧЕРНЫЙ',size:'46',material:'СТАНДАРТ',length:'СТАНДАРТ'}
+const restored=canonicalizePreviewDraft(initial,{product:{genderScope:'unisex'},facts:{gender:'ЖЕН'},exactVariant:{id:41}},41)
+check(restored.gender==='ЖЕН', 'R11: review of linked exact SKU must preserve server-proven gender')
+const fallback=canonicalizePreviewDraft(initial,{product:{genderScope:'unisex'},facts:{},exactVariant:null},null)
+check(fallback.gender==='МУЖ', 'R11: missing canonical fact must preserve already entered manager gender')
 
 console.log('CATALOG RESOLVER R11 PRESERVE KNOWN GENDER PASSED — explicit manager gender and concrete selected SKU gender survive unisex product picks; resolver asks only when gender is genuinely unknown')

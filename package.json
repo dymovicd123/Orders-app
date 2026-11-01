@@ -13,7 +13,7 @@
     "typecheck": "tsc -b",
     "verify": "npm run release:check",
     "check": "npm run release:check",
-    "release:check": "node scripts/main-resolver-selective-release-20261022.mjs",
+    "release:check": "node scripts/test-main-current-business-release-20261031.mjs",
     "verify:db-safety": "node scripts/verify-database-safety.mjs",
     "test:d1-read-budget-r5-7": "node scripts/test-d1-read-budget-r5-7.mjs",
     "test:d1-read-budget-r5-8": "node scripts/test-d1-read-budget-r5-8.mjs",
@@ -39,11 +39,11 @@
     "@vitejs/plugin-react": "^6.0.2",
     "oxlint": "^1.69.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.0",
+    "vite": "^8.1.6",
     "wrangler": "^4.117.0"
   },
   "overrides": {
-    "undici": "7.29.1",
+    "undici": "7.30.1",
     "sharp": "0.35.5"
   }
 }
