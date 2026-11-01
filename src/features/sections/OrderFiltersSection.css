@@ -1,0 +1,37 @@
+.orders-new-order-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line, #cbd5e1);
+  border-left: 3px solid var(--accent, #2563eb);
+  border-radius: 12px;
+  background: var(--surface-soft, rgba(93, 115, 146, 0.07));
+}
+.orders-new-order-copy {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.orders-new-order-copy strong {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.orders-new-order-copy span {
+  font-size: .87rem;
+  line-height: 1.45;
+  color: var(--muted, #64748b);
+}
+.orders-new-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 540px) {
+  .orders-new-order-actions, .orders-new-order-actions button { width: 100%; }
+}
