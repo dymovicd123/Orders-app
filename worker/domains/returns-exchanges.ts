@@ -21,6 +21,22 @@ import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
 import { correctShippingMarkerAfterStandaloneReturn } from './order-shipping-scoped-correction.ts'
 
+// Item-level dispatch is authoritative even while another item of the same
+// order has not been shipped. In particular, ready Workshop goods have no
+// stock_writeoff_status='fulfilled' warehouse movement to infer from.
+async function orderItemWasActuallyDispatched(db:D1Database, item:Record<string,unknown>|null) {
+  if(!item) return false
+  if(orderItemWasPhysicallyIssued(item)) return true
+  const orderItemId=toInt(item.id,0)
+  if(!orderItemId) return false
+  const row=await db.prepare(
+    `SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) AS issued
+     FROM order_dispatch_items di
+     WHERE di.order_item_id=?`
+  ).bind(orderItemId).first<{issued:number}>()
+  return toInt(row?.issued,0)>0
+}
+
 export async function correctMistakenOrderHandoverWithCurrentExchange(
   db: D1Database,
   orderId: number,
@@ -361,7 +377,7 @@ export async function createReturn(
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
     const stockStatus = cleanText(orderItem.stock_writeoff_status);
     const sentFallback = cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus);
-    const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback;
+    const issuedToClient = await orderItemWasActuallyDispatched(db,orderItem) || sentFallback;
     // A historical item can claim to be issued while its original stock obligation
     // still has an active/unresolved reservation. Crediting a physical return in
     // that contradictory state would leave the same SKU both returned and reserved,
@@ -1233,7 +1249,7 @@ export async function createExchange(
     : null;
   if (rawOldPhysicalState && !oldPhysicalState) throw new Error('Неизвестный физический статус старой вещи обмена.');
   const oldWasNotIssued = oldPhysicalState === 'not_issued';
-  const oldWasAlreadyIssued = orderItemWasPhysicallyIssued(oldItem)
+  const oldWasAlreadyIssued = await orderItemWasActuallyDispatched(db,oldItem)
     || (oldItemIsWorkshop && cleanText((existing as any).shipping_status) === 'sent');
   if (oldWasNotIssued && oldWasAlreadyIssued) {
     throw new CriticalOperationConflictError(
@@ -1525,7 +1541,7 @@ export async function createExchange(
       { orderItemIds: [oldItemId], checkedBy: 'exchange_reconciliation' },
     );
     oldItem = await getOrderItemForReturnOrExchange(db, orderId, oldItemId);
-    if (!oldItem || !orderItemWasPhysicallyIssued(oldItem)) {
+    if (!oldItem || !(await orderItemWasActuallyDispatched(db,oldItem))) {
       const unresolved = Math.max(0, toInt((handover as any)?.unresolved, 0));
       throw new Error(unresolved
         ? `Старая позиция обмена «${cleanText(oldItem?.product_name_snapshot)}» ещё не распознана складом. Сначала разберите эту позицию, чтобы обмен не потерял движение товара.`
@@ -3609,7 +3625,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         }
         const physicalState = physicalStateText as ExchangeSetOldPlan['physicalState']
         const isWorkshop = Boolean(toInt(oldItem.is_workshop, 0))
-        const wasIssued = orderItemWasPhysicallyIssued(oldItem)
+        const wasIssued = await orderItemWasActuallyDispatched(db,oldItem)
           || (isWorkshop && cleanText((existing as any).shipping_status) === 'sent')
         if (physicalState === 'not_issued' && wasIssued) {
           throw new CriticalOperationConflictError(`«${cleanText(oldItem.product_name_snapshot)}» уже отмечен как выданный клиенту. Нельзя выбрать «не выдавался».`)
@@ -3888,7 +3904,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           { orderItemIds: [plan.orderItemId], checkedBy: 'exchange_set_reconciliation' },
         )
         oldItem = await getOrderItemForReturnOrExchange(db, executionPlan.orderId, plan.orderItemId)
-        if (!oldItem || !orderItemWasPhysicallyIssued(oldItem)) {
+        if (!oldItem || !(await orderItemWasActuallyDispatched(db,oldItem))) {
           throw new CriticalOperationConflictError(`Не удалось безопасно подтвердить выдачу «${cleanText(oldItem?.product_name_snapshot)}». Обмен остановлен.`)
         }
       }
