@@ -1,7 +1,7 @@
 name: "Main-derived stage 1.6 native local D1 pending recovery (NO DEPLOY)"
 on:
-  push:
-    branches: [test/main-stage16-native-d1-20261101]
+  pull_request:
+    branches: [candidate/main-stage16-atomic-reserve-20261101]
     paths:
       - '.github/workflows/test-main-stage16-native-d1-20261101.yml'
       - 'scripts/test-main-stage16-native-d1-http-20261101.mjs'
@@ -31,7 +31,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/test/main-stage16-native-d1-20261101"
+          test "$GITHUB_EVENT_NAME" = "pull_request"
+          test "$GITHUB_HEAD_REF" = "test/main-stage16-native-d1-20261101"
+          test "$GITHUB_BASE_REF" = "candidate/main-stage16-atomic-reserve-20261101"
           test -z "${CLOUDFLARE_API_TOKEN:-}"
           test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
           test -d migrations
