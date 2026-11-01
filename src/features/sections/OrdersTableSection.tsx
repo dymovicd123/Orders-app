@@ -29,6 +29,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
   const [returnCancelDraft,setReturnCancelDraft]=useState<{
     order:any;choices:any[];selectedId:number;loading:boolean;submitting:boolean;error:string;
   }|null>(null)
+  const [dispatchDraft,setDispatchDraft] = useState<{
+    order:any;plan:any|null;history:any[];loading:boolean;submitting:boolean;
+    error:string;selected:Record<number,number>;requestId:string;
+    correctionKey:string;correctionItemId:number;
+  }|null>(null)
   const [pendingReservationDraft,setPendingReservationDraft] = useState<{
     order:any;item:any;preview:any|null;error:string;loading:boolean;submitting:boolean;
   }|null>(null)
@@ -69,6 +74,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     apiFetch,
     askActionConfirmation,
     onPendingReservationResolved,
+    onShipmentChange,
     canResolvePendingReservation,
     setMessage,
     openOrderStockHandover,
@@ -95,6 +101,87 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     orderPageInfo,
     workspaceSector = 'orders',
   } = ctx
+
+  const newDispatchRequestId=()=>`order-dispatch:${crypto.randomUUID()}`
+  const openDispatchDraft=(order:any)=>{
+    setDispatchDraft({order,plan:null,history:[],loading:true,submitting:false,
+      error:'',selected:{},requestId:newDispatchRequestId(),correctionKey:'',correctionItemId:0})
+    void (async()=>{
+      try{
+        const [planRes,historyRes]=await Promise.all([
+          apiFetch(`/api/orders/${order.id}/shipping/plan`),
+          apiFetch(`/api/orders/${order.id}/shipping/dispatches`),
+        ])
+        const [plan,history]=await Promise.all([planRes.json(),historyRes.json()])
+        if(!planRes.ok||!plan.ok)throw new Error(plan.message||'Не удалось загрузить готовые товары.')
+        if(!historyRes.ok||!history.ok)throw new Error(history.message||'Не удалось загрузить отправки.')
+        const selected=Object.fromEntries((plan.lines||[]).filter((row:any)=>row.selectable)
+          .map((row:any)=>[Number(row.orderItemId),Number(row.selectedQuantity)]))
+        setDispatchDraft(d=>d?.order.id===order.id?{...d,loading:false,plan,
+          history:history.dispatches||[],selected,error:''}:d)
+      }catch(e){
+        setDispatchDraft(d=>d?.order.id===order.id?{...d,loading:false,
+          error:e instanceof Error?e.message:'Не удалось загрузить отправки.'}:d)
+      }
+    })()
+  }
+  const submitSelectedDispatch=()=>{
+    const d=dispatchDraft
+    if(!d||d.loading||d.submitting)return
+    const items=(d.plan?.lines||[]).flatMap((row:any)=>{
+      const quantity=Number(d.selected[Number(row.orderItemId)]||0)
+      return row.selectable&&Number.isSafeInteger(quantity)&&quantity>0
+        ? [{orderItemId:Number(row.orderItemId),quantity}] : []
+    })
+    if(!items.length){setDispatchDraft(v=>v?{...v,error:'Выберите хотя бы одну готовую вещь.'}:v);return}
+    setDispatchDraft(v=>v?{...v,submitting:true,error:''}:v)
+    void (async()=>{
+      try{
+        const res=await apiFetch(`/api/orders/${d.order.id}/shipping/dispatches`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({requestId:d.requestId,items}),
+        })
+        const data=await res.json()
+        if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось отправить товары.')
+        setDispatchDraft(null)
+        setMessage(`Заказ ${d.order.external_id}: отправлено ${data.shippedQuantity||items.reduce((n:any,x:any)=>n+x.quantity,0)} шт.`)
+        await onShipmentChange()
+      }catch(e){
+        setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
+          error:e instanceof Error?e.message:'Ошибка отправки. Повторите без изменения выбора.'}:v)
+      }
+    })()
+  }
+  const cancelDispatchedLine=(line:any)=>{
+    const d=dispatchDraft
+    if(!d||d.submitting)return
+    void (async()=>{
+      const yes=await askActionConfirmation(
+        `Отменить отправку товара «${line.productName}», ${line.quantity} шт.? Подтверждайте только если клиенту эту вещь фактически не передавали. Если вещь уже у клиента, оформите возврат.`
+      )
+      if(!yes)return
+      const key=d.correctionItemId===Number(line.dispatchItemId)&&d.correctionKey
+        ? d.correctionKey : newDispatchRequestId()
+      setDispatchDraft(v=>v?{...v,submitting:true,error:'',correctionKey:key,
+        correctionItemId:Number(line.dispatchItemId)}:v)
+      try{
+        const res=await apiFetch(`/api/orders/${d.order.id}/shipping/dispatch-items/${line.dispatchItemId}/correct`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({requestId:key,reason:'Исправление ошибочной отправки'}),
+        })
+        const data=await res.json()
+        if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось исправить отправку.')
+        setDispatchDraft(null)
+        setMessage(data.needsStockCheck
+          ? 'Отправка исправлена. После недавнего пересчёта остаток автоматически не увеличен — уточните количество на складе.'
+          : 'Отправка исправлена. Остальные товары заказа не изменились.')
+        await onShipmentChange()
+      }catch(e){
+        setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
+          error:e instanceof Error?e.message:'Не удалось исправить отправку.'}:v)
+      }
+    })()
+  }
 
   const openPendingReservation=(order:any,item:any)=>{
     const draft={order,item,preview:null,error:'',loading:true,submitting:false}
@@ -519,7 +606,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   <span> · Проверить</span>
                                 </button>
                               )):null}
-                            {projection.canOpenStockHandover ? (
+                            {projection.canOpenStockHandover && order.stock_handover_review_needed ? (
                               <button
                                 className="secondary compact order-stock-handover-trigger"
                                 type="button"
@@ -532,26 +619,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Уточнить выдачу после проверки склада' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {projection.canShip && !order.stock_handover_review_needed ? (
-                              <button
-                                className="secondary compact"
-                                type="button"
-                                disabled={savingOrder}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void markOrderSentToClient(order)
-                                }}
-                              >
-                                {projection.needsCatalogClarification ? 'Уточнить товар' : 'Отправить клиенту'}
+                            {!retainedOnly && !archived && !projection.deleted ? (
+                              <button className="secondary compact" type="button"
+                                disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
+                                {order.shipping_status==='sent' ? 'Отправки' : 'Отправить товары'}
                               </button>
                             ) : null}
-                            {projection.canShip && order.stock_handover_review_needed ? (
-                              <span className="order-stock-handover-wait-note">Сначала уточните выдачу после проверки склада. После подтверждения появится «Отправить клиенту».</span>
-                            ) : null}
-                            {!retainedOnly && !archived && !projection.hasCommittedPhysicalDownstreamOperation && order.shipping_status !== 'sent' && projection.workshopPending ? (
-                              <span className="order-stock-handover-wait-note">Отправить весь заказ можно после готовности Цеха</span>
-                            ) : null}
-                            {projection.canCorrectShipping ? (
+                            {projection.canCorrectShipping && !(order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
                               <button
                                 className="secondary compact"
                                 type="button"
@@ -723,6 +797,85 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                   <button className="secondary compact" type="button" disabled={busy || !orderPageInfo?.hasMore} onClick={() => void changeOrderPage('next')}>Дальше</button>
                 </div>
               </div>
+              {dispatchDraft ? (
+                <div className="modal-backdrop" role="presentation"
+                  onMouseDown={event=>{if(event.target===event.currentTarget&&!dispatchDraft.submitting)setDispatchDraft(null)}}>
+                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Отправка товаров"
+                    style={{maxWidth:620,maxHeight:'88vh',overflowY:'auto'}}>
+                    <div className="modal-head">
+                      <div><div className="card-label">Отправка товаров</div>
+                        <h3>{dispatchDraft.order.external_id}</h3></div>
+                      <button type="button" className="ghost compact" disabled={dispatchDraft.submitting}
+                        onClick={()=>setDispatchDraft(null)}>Закрыть</button>
+                    </div>
+                    {dispatchDraft.loading ? <p>Загружаю готовые товары…</p> : (
+                      <>
+                        {(dispatchDraft.plan?.lines||[]).map((line:any)=>{
+                          const value=Number(dispatchDraft.selected[Number(line.orderItemId)]||0)
+                          return <div key={line.orderItemId} style={{
+                            display:'flex',alignItems:'center',gap:10,padding:'10px 0',
+                            borderBottom:'1px solid var(--border-color,#e2e8f0)'}}>
+                            <input type="checkbox" checked={value>0} disabled={!line.selectable||dispatchDraft.submitting}
+                              aria-label={`Выбрать ${line.productName}`}
+                              onChange={event=>setDispatchDraft(d=>d?{...d,selected:{...d.selected,
+                                [line.orderItemId]:event.target.checked?line.readyQuantity:0},error:''}:d)}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <strong>{line.productName}</strong>
+                              <small style={{display:'block',opacity:.8}}>
+                                {[line.color,line.size,line.material,line.length].filter(Boolean).join(' · ')}
+                                {line.color||line.size||line.material||line.length ? ' · ' : ''}
+                                {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
+                                {' · '}{line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
+                              </small>
+                            </div>
+                            {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
+                              aria-label={`Количество ${line.productName}`}
+                              disabled={dispatchDraft.submitting} value={value}
+                              style={{width:72,padding:6}}
+                              onChange={event=>{const num=Number(event.target.value);
+                                setDispatchDraft(d=>d?{...d,error:'',selected:{...d.selected,
+                                  [line.orderItemId]:Number.isSafeInteger(num)?num:0}}:d)}}/> : null}
+                          </div>
+                        })}
+                        {(dispatchDraft.plan?.lines||[]).length===0 ? <p>В заказе нет товаров для отправки.</p> : null}
+                        {dispatchDraft.plan?.selectedCount ? (
+                          <div className="toolbar-actions" style={{marginTop:16}}>
+                            <button className="primary" type="button"
+                              disabled={dispatchDraft.submitting||!(dispatchDraft.plan?.lines||[]).some((x:any)=>
+                                Number(dispatchDraft.selected[x.orderItemId]||0)>0)}
+                              onClick={submitSelectedDispatch}>
+                              {dispatchDraft.submitting?'Сохраняю…':'Подтвердить отправку'}
+                            </button>
+                          </div>
+                        ) : null}
+                        {dispatchDraft.history.some((x:any)=>Number(x.cancelledQuantity)<Number(x.quantity)) ? (
+                          <div style={{marginTop:24}}>
+                            <h4>Ранее отправлено</h4>
+                            {dispatchDraft.history.filter((x:any)=>Number(x.cancelledQuantity)<Number(x.quantity))
+                              .map((x:any)=><div key={x.dispatchItemId}
+                                style={{display:'flex',gap:12,alignItems:'center',padding:'8px 0'}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <strong>{x.productName}</strong>
+                                  <small style={{display:'block',opacity:.8}}>
+                                    {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт. · {x.dispatchDate}
+                                  </small>
+                                </div>
+                                {x.hasReturn||x.hasExchange ? (
+                                  <small>{x.hasExchange?'Есть обмен':'Есть возврат'}</small>
+                                ) : (
+                                  <button type="button" className="secondary compact"
+                                    disabled={dispatchDraft.submitting}
+                                    onClick={()=>cancelDispatchedLine(x)}>Отменить отправку</button>
+                                )}
+                              </div>)}
+                          </div>
+                        ) : null}
+                        {dispatchDraft.error ? <p className="error" role="alert">{dispatchDraft.error}</p> : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               {pendingReservationDraft ? (
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={event=>{if(event.target===event.currentTarget&&!pendingReservationDraft.submitting)setPendingReservationDraft(null)}}>

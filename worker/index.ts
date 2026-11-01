@@ -18,6 +18,8 @@ import { previewExchangeCancellationChain } from './domains/exchange-cancel-chai
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
 import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
+import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
+import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
@@ -1691,6 +1693,13 @@ export default {
         return json(result);
       }
 
+      const orderHasNewDispatchHistory = async (id:number) => {
+        const row = await env.DB.prepare(
+          'SELECT EXISTS(SELECT 1 FROM order_dispatches WHERE order_id=?) AS found'
+        ).bind(id).first<{found:number}>();
+        return toInt(row?.found,0)>0;
+      };
+
       const orderStockHandoverMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/stock-handover$/);
       if (orderStockHandoverMatch && (request.method === 'GET' || request.method === 'PATCH')) {
         const id = toInt(orderStockHandoverMatch[1], 0);
@@ -1748,6 +1757,9 @@ export default {
 
         try {
           if (action === 'issue_now') {
+            if(await orderHasNewDispatchHistory(id)){
+              return json({ok:false,message:'Откройте «Отправить товары» и выберите нужные позиции.'},{status:409});
+            }
             if (item.reviewNeeded) {
               return json({ ok: false, message: `Сначала уточните, где находился товар «${item.productName}» во время последней физической ревизии или сверки.` }, { status: 409 });
             }
@@ -1824,6 +1836,9 @@ export default {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
+          if (await orderHasNewDispatchHistory(id)) {
+            return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки». Остальные товары не изменятся.'},{status:409});
+          }
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
@@ -1838,6 +1853,74 @@ export default {
         } catch (error) {
           const publicError = publicApiError(error);
           return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
+        }
+      }
+
+      const orderDispatchesMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/dispatches$/);
+      if (orderDispatchesMatch && (request.method === 'GET' || request.method === 'POST')) {
+        const orderId = toInt(orderDispatchesMatch[1],0);
+        if (request.method === 'GET') {
+          const order = await env.DB.prepare('SELECT id FROM orders WHERE id=?')
+            .bind(orderId).first<{id:number}>();
+          if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
+          const records = await env.DB.prepare(
+            `SELECT d.id AS dispatchId,d.dispatch_date AS dispatchDate,d.created_at AS dispatchedAt,
+                    d.status AS dispatchStatus,di.id AS dispatchItemId,di.order_item_id AS orderItemId,
+                    di.quantity,di.cancelled_quantity AS cancelledQuantity,
+                    EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+                      WHERE ri.order_item_id=di.order_item_id AND ri.quantity>0
+                        AND COALESCE(r.status,'completed')<>'cancelled') AS hasReturn,
+                    EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=d.order_id
+                      AND (e.old_order_item_id=di.order_item_id OR e.new_order_item_id=di.order_item_id)
+                        AND COALESCE(e.status,'completed')<>'cancelled') AS hasExchange,
+                    di.source_type AS sourceType,oi.product_name_snapshot AS productName,
+                    oi.color_snapshot AS color,oi.size_snapshot AS size,
+                    oi.material_snapshot AS material,oi.length_snapshot AS length,
+                    di.variant_id AS variantId
+             FROM order_dispatches d JOIN order_dispatch_items di ON di.dispatch_id=d.id
+             JOIN order_items oi ON oi.id=di.order_item_id
+             WHERE d.order_id=? ORDER BY d.id DESC,di.id`
+          ).bind(orderId).all<Record<string,unknown>>();
+          return json({ok:true,dispatches:records.results||[]});
+        }
+        try {
+          const input=await readJson<{ requestId?:unknown; items?:unknown; dispatchDate?:unknown }>(request);
+          const items=Array.isArray(input.items) ? input.items.map((row:any)=>({
+            orderItemId:Number(row?.orderItemId),quantity:Number(row?.quantity)
+          })) : [];
+          const result=await dispatchSelectedCompleteOrderLines(env.DB,orderId,{
+            requestId:cleanText(input.requestId),items,
+            dispatchDate:cleanText(input.dispatchDate),
+            actor:authenticatedActor(request)||'Сотрудник',
+          });
+          let updatedOrder=null;
+          try { updatedOrder=await getOrder(env.DB,orderId) }
+          catch(error) { console.warn('Dispatch committed; order readback failed',error) }
+          return json({...result,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
+        }catch(error){
+          const e=publicApiError(error);
+          return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
+        }
+      }
+
+      const orderDispatchItemCancelMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/dispatch-items\/(\d+)\/correct$/);
+      if(orderDispatchItemCancelMatch && request.method==='POST'){
+        const orderId=toInt(orderDispatchItemCancelMatch[1],0);
+        const dispatchItemId=toInt(orderDispatchItemCancelMatch[2],0);
+        try {
+          const input=await readJson<{requestId?:unknown;reason?:unknown}>(request);
+          const result=await cancelExactOrderDispatchItem(env.DB,orderId,{
+            dispatchItemId,requestId:cleanText(input.requestId),
+            actor:authenticatedActor(request)||'Сотрудник',
+            reason:cleanText(input.reason),
+          });
+          let updatedOrder=null;
+          try { updatedOrder=await getOrder(env.DB,orderId) }
+          catch(error){console.warn('Dispatch correction committed; order readback failed',error)}
+          return json({...result,...(updatedOrder?{order:updatedOrder}:{}),refreshRequired:!updatedOrder});
+        }catch(error){
+          const e=publicApiError(error);
+          return json({ok:false,...(e.code?{code:e.code}:{}),message:e.message},{status:e.status});
         }
       }
 
@@ -1860,6 +1943,9 @@ export default {
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
+        if(request.method==='PATCH' && await orderHasNewDispatchHistory(id)){
+          return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся вещи через «Отправить товары».'},{status:409});
+        }
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown }>(request);
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
