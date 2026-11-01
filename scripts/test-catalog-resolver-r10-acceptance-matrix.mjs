@@ -123,14 +123,15 @@ const fulfillEnd = reservations.indexOf('export async function getOrderShipmentI
 const fulfill = reservations.slice(fulfillStart, fulfillEnd)
 assert.ok((fulfill.match(/\$\{orderStillUnsentSql\}/g) || []).length >= 8 && fulfill.includes('shippingStatementIndex = statements.length'), 'R10.11: physical shipping mutations are not tied to one atomic CAS winner')
 
-// 12. After resolution: continue exactly the original shipping action automatically.
+// 12. After SKU resolution: refresh the order, then let staff choose
+// ready product lines and quantities. Never silently send the whole order.
 const completionStart = app.indexOf('onCompleted={async (resolvedOrder: OrderRecord) => {')
 const completionEnd = app.indexOf('        }}', completionStart)
 const completion = app.slice(completionStart, completionEnd)
-const freshIndex = completion.indexOf("apiFetch(\`/api/orders/\${resolvedOrder.id}\`, { cache: 'no-store' })")
-const sendIndex = completion.indexOf('await markOrderSentToClient(freshResult.order)')
+const freshIndex = completion.indexOf("apiFetch(`/api/orders/${resolvedOrder.id}`, { cache: 'no-store' })")
+const selectIndex = completion.indexOf('setSelectedOrderId(freshResult.order.id)')
 const closeIndex = completion.indexOf('setOrderCatalogResolutionOrder(null)')
-assert.ok(freshIndex >= 0 && sendIndex > freshIndex && closeIndex > sendIndex, 'R10.12: resolver completion no longer follows fresh-order -> original send -> proven close')
+assert.ok(freshIndex >= 0 && selectIndex > freshIndex && closeIndex > selectIndex && !completion.includes('await markOrderSentToClient'), 'R10.12: resolved item must require explicit operator shipping choice')
 assert.ok(!completion.includes("setActiveSector('inventory')") && !completion.includes('openInventoryPanel('), 'R10.12: successful resolver completion still detours to Warehouse')
 assert.ok(worker.indexOf('await reconcileCatalogReviewOrder(env.DB, id)') < worker.indexOf("code: 'catalog_review_required'"), 'R10.12: original shipping route no longer auto-reconciles before human block')
 
