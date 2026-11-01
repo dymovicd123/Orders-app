@@ -16,6 +16,7 @@ import { normalizeOrderItems } from './order-core.ts'
 import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { correctMistakenOrderHandover, fulfillOrderReservationsV2, reactivateReleasedOrderReservationV2, releaseOrderReservationV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
+import { dispatchSelectedCompleteOrderLines } from './order-dispatch.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
@@ -4662,79 +4663,71 @@ export async function cancelExchangeSetV2(
 }
 
 
-// Dispatch only a replacement explicitly saved as "not shipped".
-// The original order's shipping_status/shipping_date belong to its first dispatch.
+// Backward-compatible API for a previously opened tab. It no longer has its
+// own stock-issue algorithm. ALL new replacement shipments, including calls
+// from an older client, use the SAME atomic selected-order dispatch ledger.
 export async function dispatchPendingExchangeReplacement(
-  db: D1Database,
-  eventId: number,
-  requestId?: string,
+  db: D1Database, eventId: number, requestId?: string,
 ) {
-  let operation: CriticalOperationHandle | null = null
+  if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+    throw new Error('Выберите товар замены.')
+  }
+  const operation=await beginCriticalOperation(db,'exchange_replacement_dispatch',
+    requestId,{eventId})
+  if (operation.cachedResponse) return operation.cachedResponse
   try {
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error('Выберите товар замены.')
-    operation = await beginCriticalOperation(db, 'exchange_replacement_dispatch', requestId, { eventId })
-    if (operation.cachedResponse) return operation.cachedResponse
-    const row = await db.prepare(
-      `SELECT le.id, le.status, le.pending_reason, le.order_id, le.order_item_id, le.operation_id,
-              e.status AS exchange_status, o.order_status, o.archived_at, o.external_id,
-              oi.quantity, oi.is_workshop
+    const row=await db.prepare(
+      `SELECT le.id,le.order_id,le.order_item_id,le.operation_id,
+              le.status,le.pending_reason,le.quantity,
+              e.status AS exchange_status,o.order_status,o.archived_at,o.external_id,
+              oi.quantity AS item_quantity,oi.is_workshop
        FROM inventory_lifecycle_events le
-       JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+       JOIN exchanges e ON e.id=le.operation_id
+         AND e.order_id=le.order_id AND e.new_order_item_id=le.order_item_id
        JOIN orders o ON o.id=le.order_id
        JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=le.order_id
-       WHERE le.id=? AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
-       LIMIT 1`
-    ).bind(eventId).first<Record<string, unknown>>()
-    if (!row) throw new CriticalOperationConflictError('Новая позиция обмена не найдена.')
-    if (cleanText(row.exchange_status) === 'cancelled' || isArchivedOrder(row) || normalizeOrderStatus(row.order_status) === 'deleted') {
-      throw new CriticalOperationConflictError('Этот обмен уже отменён или заказ закрыт для отправки.')
+       WHERE le.id=? AND le.operation_type='exchange'
+         AND le.event_type='exchange_new_out' LIMIT 1`
+    ).bind(eventId).first<Record<string,unknown>>()
+    if(!row)throw new CriticalOperationConflictError('Новая позиция обмена не найдена.')
+    if(cleanText(row.exchange_status)==='cancelled' ||
+       isArchivedOrder(row) || normalizeOrderStatus(row.order_status)==='deleted')
+      throw new CriticalOperationConflictError('Обмен отменён или заказ закрыт для отправки.')
+    const orderId=toInt(row.order_id,0),itemId=toInt(row.order_item_id,0)
+    const alreadySent=cleanText(row.status)==='applied'
+    if(!alreadySent && (cleanText(row.status)!=='pending' ||
+       cleanText(row.pending_reason)!=='awaiting_dispatch' ||
+       toInt(row.is_workshop,0)!==0 || toInt(row.quantity,0)!==toInt(row.item_quantity,0)))
+      throw new CriticalOperationConflictError('Позиция замены изменилась. Обновите заказ.')
+    let dispatched:{ok:boolean;alreadyCommitted?:boolean;dispatchId?:number|null}|null=null
+    if(!alreadySent){
+      dispatched=await dispatchSelectedCompleteOrderLines(db,orderId,{
+        requestId:`legacy-exchange-dispatch:${eventId}:v2`,
+        items:[{orderItemId:itemId,quantity:toInt(row.quantity,0)}],
+        actor:'Сотрудник',dispatchDate:new Date().toISOString().slice(0,10),
+      })
     }
-    if (toInt(row.is_workshop, 0) || toInt(row.quantity, 0) <= 0) {
-      throw new CriticalOperationConflictError('Позиция замены больше не ожидает отправки.')
-    }
-    if (cleanText(row.status) === 'cancelled') {
-      throw new CriticalOperationConflictError('Складское событие замены отменено.')
-    }
-    if (cleanText(row.status) === 'pending' && cleanText(row.pending_reason) !== 'awaiting_dispatch') {
-      throw new CriticalOperationConflictError('Сначала уточните товар замены в каталоге.')
-    }
-    if (cleanText(row.status) === 'pending') {
-      const item = await getOrderItemForReturnOrExchange(db, toInt(row.order_id, 0), toInt(row.order_item_id, 0))
-      if (!item) throw new CriticalOperationConflictError('Новая позиция не найдена в заказе.')
-      const resolved = await resolveInventoryLifecycleCandidate(db, item, false)
-      if (!resolved.variantId) {
-        throw new CriticalOperationConflictError('Товар замены не распознан. Сначала уточните его в каталоге.')
-      }
-      const now = new Date().toISOString()
-      // Clicking "Отправить замену" explicitly confirms a real physical dispatch;
-      // shortage evidence is line-scoped and never overwrites an entire SKU count.
-      await applyCanonicalInventoryLifecycleEvent(db, eventId, resolved.variantId, now,
-        `Отправлена замена по обмену #${toInt(row.operation_id, 0)}`,
-        { outboundPossessionConfirmed: true, explicitReplacementDispatch: true })
-    }
-    const completedResponse = { ok: true, eventId, orderId: toInt(row.order_id, 0), alreadySent: cleanText(row.status) === 'applied' }
-    await completeCriticalOperation(db, operation, completedResponse)
-    if (!completedResponse.alreadySent) {
-      try {
-        await writeActivityLog(db, {
-          eventType: 'exchange_replacement_shipped',
-          entityType: 'exchange',
-          entityId: toInt(row.operation_id, 0),
-          orderId: completedResponse.orderId,
-          externalOrderId: cleanText(row.external_id),
-          title: 'Отправлена новая вещь по обмену',
-          details: `Позиция #${toInt(row.order_item_id, 0)}; количество ${toInt(row.quantity, 0)} шт.`,
+    const result={ok:true,eventId,orderId,alreadySent,
+      ...(dispatched?.dispatchId?{dispatchId:dispatched.dispatchId}:{})}
+    await completeCriticalOperation(db,operation,result)
+    if(!alreadySent && !dispatched?.alreadyCommitted){
+      try{
+        await writeActivityLog(db,{
+          eventType:'exchange_replacement_shipped',
+          entityType:'exchange',
+          entityId:toInt(row.operation_id,0),orderId,
+          externalOrderId:cleanText(row.external_id),
+          title:'Отправлена новая вещь по обмену',
+          details:`Позиция #${itemId}; количество ${toInt(row.quantity,0)} шт. (единая отправка)`,
         })
-      } catch (error) {
-        console.warn('Exchange replacement dispatch activity log failed', error)
-      }
+      }catch(error){console.warn('Exchange dispatch activity logging failed',error)}
     }
-    let order = null
-    try { order = await getOrder(db, completedResponse.orderId) }
-    catch (error) { console.warn('Exchange dispatch readback failed', error) }
-    return { ...completedResponse, ...(order ? { order } : {}) }
-  } catch (error) {
-    await failCriticalOperation(db, operation, error)
+    let order=null
+    try{order=await getOrder(db,orderId)}
+    catch(error){console.warn('Exchange dispatch readback failed',error)}
+    return {...result,...(order?{order}:{})}
+  }catch(error){
+    await failCriticalOperation(db,operation,error)
     throw error
   }
 }
