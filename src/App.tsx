@@ -33,6 +33,7 @@ import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, creat
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { ActionConfirmationModal } from './features/orders/ActionConfirmationModal'
+import { ActionTextPromptModal } from './features/orders/ActionTextPromptModal'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, ArrivalRecoveryDialog, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
@@ -269,6 +270,22 @@ function App() {
     actionConfirmationResolver.current = null
     setActionConfirmationMessage(null)
     resolve?.(confirmed)
+  }, [])
+
+  // Explicit text input for exceptional admin actions. Native prompt() stalls
+  // browser automation and hides the reason from the in-app confirmation flow.
+  const [actionTextPrompt, setActionTextPrompt] = useState<{ message: string; defaultValue: string } | null>(null)
+  const actionTextPromptResolver = useRef<((value: string | null) => void) | null>(null)
+  const askActionText = useCallback((message: string, defaultValue = '') => new Promise<string | null>(resolve => {
+    if (actionTextPromptResolver.current) { resolve(null); return }
+    actionTextPromptResolver.current = resolve
+    setActionTextPrompt({ message, defaultValue })
+  }), [])
+  const answerActionText = useCallback((value: string | null) => {
+    const resolve = actionTextPromptResolver.current
+    actionTextPromptResolver.current = null
+    setActionTextPrompt(null)
+    resolve?.(value)
   }, [])
 
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
@@ -2787,7 +2804,7 @@ function App() {
       setError('Начать новый цикл учёта может только администратор.')
       return
     }
-    const comment = window.prompt('Причина сброса текущего журнала:', 'Перезапуск учёта наличных после сверки')?.trim() || ''
+    const comment = (await askActionText('Причина сброса текущего кассового журнала', 'Перезапуск учёта наличных после сверки'))?.trim() || ''
     if (!comment) return
     if (!await askActionConfirmation('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.')) return
     await runCashMutation(async () => {
@@ -3118,7 +3135,7 @@ function App() {
   }
 
   async function deleteManagerPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план менеджера?')) return
+    if (!isAdmin || !id || !await askActionConfirmation(`Удалить план менеджера #${id}?\n\nПроверьте запись. Действие удалит план из рабочего списка, не изменяя заказы и физические остатки.`)) return
     setPlanBusy(true)
     setError(null)
     try {
@@ -3135,7 +3152,7 @@ function App() {
   }
 
   async function deleteDepartmentPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план отдела?')) return
+    if (!isAdmin || !id || !await askActionConfirmation(`Удалить план отдела #${id}?\n\nПроверьте период и сумму плана. Действие не изменяет заказы и физические остатки.`)) return
     setPlanBusy(true)
     setError(null)
     try {
@@ -3486,7 +3503,7 @@ function App() {
   }
 
   async function deleteLeadRecord(id: number) {
-    if (!id || !confirm('Удалить запись лидов?')) return
+    if (!id || !await askActionConfirmation(`Удалить запись лидов #${id}?\n\nЗапись исчезнет из отчётов по лидам. Отмена ничего не изменит.`)) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -3520,7 +3537,7 @@ function App() {
   }
 
   async function deleteCallCentreRecord(id: number) {
-    if (!id || !confirm('Удалить запись Call Centre?')) return
+    if (!id || !await askActionConfirmation(`Удалить запись Call Centre #${id}?\n\nЗапись исчезнет из отчётов Call Centre. Отмена ничего не изменит.`)) return
     setLeadBusy(true)
     setError(null)
     try {
@@ -8743,6 +8760,7 @@ function removeDebtPayment(index: number) {
       ) : null}
 
       <ActionConfirmationModal message={actionConfirmationMessage} onDecision={answerActionConfirmation} />
+      <ActionTextPromptModal message={actionTextPrompt?.message || null} defaultValue={actionTextPrompt?.defaultValue || ''} onDecision={answerActionText} />
       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
