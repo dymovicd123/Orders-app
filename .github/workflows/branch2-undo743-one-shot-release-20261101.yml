@@ -1,8 +1,5 @@
-name: "Branch2 Stage 5A shipping labels and plan release (Worker only)"
+name: "Stage 5B guarded Branch2 D1 and Worker release"
 
-# This file is intentionally the ONLY release trigger. No schedule, generic
-# push build/deploy, or pull_request deployment. Merge exactly once with
-# commit title "release(stage5a-branch2): ...". All other commits are inert.
 on:
   push:
     branches: [branch2]
@@ -13,21 +10,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: stage5a-branch2-one-shot-release
+  group: branch2-stage5b-controlled-release
   cancel-in-progress: false
 
 jobs:
-  branch2-release:
-    if: github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(stage5a-branch2):')
-    name: "EXACT Branch2 Worker + read-only D1 schema preflight"
+  stage5b:
+    if: github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(stage5b-branch2):')
     runs-on: ubuntu-latest
-    timeout-minutes: 24
+    timeout-minutes: 28
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: 'false'
+      DATABASE: orders_db_branch2_mirror_20261027
     steps:
-      - name: Checkout exact merged Branch2 commit
+      - name: Checkout exact accepted Branch2 source
         uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -36,64 +33,147 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Build and run current semantic integration gate
-        run: |
-          set -euo pipefail
-          npm ci
-          npm run build
-      - name: Validate release target, credentials and prepare ephemeral Worker config
+      - name: Verify exact source and test-only target
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/branch2'
-          # Never release a Branch2 source revision other than the accepted Stage 5A approved baseline.
-          test "$(git rev-parse HEAD^)" = 'a0c961500dd63b888657336b04176f2a6a33e278'
+          test "$GITHUB_REF" = "refs/heads/branch2"
+          test "$(git rev-parse HEAD^)" = "bd995ae67575b2fcf3ad9323ddf858ab5822d9a5"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
           import {readFileSync,writeFileSync} from 'node:fs'
-          const original=readFileSync('wrangler.jsonc','utf8')
-          for(const required of [
+          const cfg=readFileSync('wrangler.jsonc','utf8')
+          for(const v of [
             '"name": "orders-app-branch2"',
             '"database_name": "orders_db_branch2_mirror_20261027"',
             '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"',
-          ])assert(original.includes(required),'Missing exact Branch2 binding: '+required)
-          for(const forbidden of ['orders_db_prod','17e68a41-1d58-4a36-8a63-47c3e32443c4','orders-app.orders-clothes.workers.dev']){
-            assert(!original.includes(forbidden),'Production target detected; fail closed')
-          }
-          assert(original.includes('"assets": {'),'Missing assets stanza')
-          const patched=original.replace('"assets": {','"assets": {\n    "directory": "./dist/client",')
-          writeFileSync('.stage5a-branch2-release.jsonc',patched)
-          console.log('STAGE5A_BRANCH2_RELEASE_CONFIG_PASS: exact isolated D1 and Worker, never Main')
+          ])assert(cfg.includes(v),'Wrong Branch2 target: '+v)
+          for(const v of ['orders_db_prod','17e68a41-1d58-4a36-8a63-47c3e32443c4','orders-app.orders-clothes.workers.dev'])
+            assert(!cfg.includes(v),'Production configuration forbidden')
+          const sql=readFileSync('migrations/0119_v72_order_dispatch_lineage.sql','utf8')
+          for(const v of ['CREATE TABLE IF NOT EXISTS order_dispatches',
+            'CREATE TABLE IF NOT EXISTS order_dispatch_items',
+            'CREATE TABLE IF NOT EXISTS order_dispatch_corrections'])
+            assert(sql.includes(v),'Unexpected migration 0119')
+          assert(cfg.includes('"assets": {'),'Missing test assets stanza')
+          writeFileSync('.stage5b-release.jsonc',cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'))
+          console.log('STAGE5B_EXACT_TEST_TARGET_VALIDATED')
           NODE
-          npx wrangler deploy --dry-run --outdir .stage5a-branch2-dry-run --config .stage5a-branch2-release.jsonc
-      - name: Verify already-migrated Branch2 D1 READ ONLY (never migrate)
+      - name: Install and build (source CI already passed)
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npx wrangler deploy --dry-run --outdir .stage5b-dry-run --config .stage5b-release.jsonc
+      - name: D1 preflight and stock-money fingerprint READ ONLY
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --remote --config .stage5a-branch2-release.jsonc \
-            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_manual_operation_receipts','inventory_operation_attempts') ORDER BY name" --json > "$RUNNER_TEMP/stage5a-schema.json"
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict'
-          import {readFileSync} from 'node:fs'
-          const raw=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/stage5a-schema.json','utf8'))
-          const rows=Array.isArray(raw)?raw.flatMap(x=>x.results||[]):(raw.results||[])
-          assert.deepEqual(rows.map(x=>x.name),['inventory_manual_operation_receipts','inventory_operation_attempts'],'Missing preexisting schema. No Worker deploy.')
-          console.log('STAGE5A_REMOTE_D1_READ_ONLY_SCHEMA_PASS')
-          NODE
-      - name: Deploy exact test Worker only
+          npx wrangler d1 execute "$DATABASE" --remote --config .stage5b-release.jsonc --command="
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_dispatches') AS batches,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_dispatch_items') AS items,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_dispatch_corrections') AS corrections,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_reservations') AS reservations_exists,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='inventory_stock') AS stock_exists
+          " --json > "$RUNNER_TEMP/stage5b-schema-before.json"
+          jq -e '.[0].results[0] |
+            .reservations_exists==1 and .stock_exists==1 and
+            ((.batches==0 and .items==0 and .corrections==0) or
+             (.batches==1 and .items==1 and .corrections==1))' "$RUNNER_TEMP/stage5b-schema-before.json"
+          if [ "$(jq -r '.[0].results[0].batches' "$RUNNER_TEMP/stage5b-schema-before.json")" = 1 ]; then
+            npx wrangler d1 execute "$DATABASE" --remote --config .stage5b-release.jsonc --command="
+              SELECT
+                (SELECT COUNT(*) FROM pragma_table_info('order_dispatch_items') WHERE name IN
+                   ('order_item_id','variant_id','reservation_id','movement_id','quantity','cancelled_quantity')) AS columns,
+                (SELECT COUNT(*) FROM order_dispatches) AS batches,
+                (SELECT COUNT(*) FROM order_dispatch_items) AS items,
+                (SELECT COUNT(*) FROM order_dispatch_corrections) AS corrections
+            " --json > "$RUNNER_TEMP/stage5b-existing.json"
+            jq -e '.[0].results[0]|.columns==6 and .batches==0 and .items==0 and .corrections==0' "$RUNNER_TEMP/stage5b-existing.json"
+          fi
+          npx wrangler d1 execute "$DATABASE" --remote --config .stage5b-release.jsonc --command="
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received,
+              (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchange_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservations,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/stage5b-before.json"
+      - name: Create recoverable Time Travel bookmark before D1 schema writes
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --config .stage5a-branch2-release.jsonc
-      - name: Anonymous post-deploy availability smoke
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/0904a573-21ff-44d8-93b0-c9200f771702/time_travel/bookmark" \
+            | jq -e -r 'if .success==true and (.result.bookmark|type=="string") and (.result.bookmark|length>=32) then .result.bookmark else error("No Time Travel bookmark") end' > "$RUNNER_TEMP/stage5b-bookmark"
+          test -s "$RUNNER_TEMP/stage5b-bookmark"
+          {
+            echo '### Stage 5B Branch2 test-only recovery marker'
+            echo "D1: orders_db_branch2_mirror_20261027"
+            echo "Pre-migration bookmark: $(cat "$RUNNER_TEMP/stage5b-bookmark")"
+            echo "No recovery was executed automatically. No production D1 access."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply ONLY additive migration 0119 in isolated Branch2 D1
         shell: bash
         run: |
           set -euo pipefail
-          origin='https://orders-app-branch2.orders-clothes.workers.dev'
-          code="$(curl -sS --max-time 20 -o "$RUNNER_TEMP/stage5a-branch2-auth.json" -w '%{http_code}' "$origin/api/auth/status")"
+          test -s "$RUNNER_TEMP/stage5b-bookmark"
+          if [ "$(jq -r '.[0].results[0].batches' "$RUNNER_TEMP/stage5b-schema-before.json")" = 0 ]; then
+            npx wrangler d1 execute "$DATABASE" --remote --config .stage5b-release.jsonc --file migrations/0119_v72_order_dispatch_lineage.sql
+          else
+            echo "Migration 0119 already present; skipping DDL."
+          fi
+      - name: Verify empty new tables and identical original money/stock data
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config .stage5b-release.jsonc --command="
+            SELECT
+              (SELECT COUNT(*) FROM order_dispatches) AS batches,
+              (SELECT COUNT(*) FROM order_dispatch_items) AS items,
+              (SELECT COUNT(*) FROM order_dispatch_corrections) AS corrections,
+              (SELECT COUNT(*) FROM pragma_table_info('order_dispatch_items') WHERE name IN
+               ('order_item_id','variant_id','reservation_id','movement_id','quantity','cancelled_quantity')) AS columns
+          " --json | jq -e '.[0].results[0]|.batches==0 and .items==0 and .corrections==0 and .columns==6'
+          npx wrangler d1 execute "$DATABASE" --remote --config .stage5b-release.jsonc --command="
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS order_total,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received,
+              (SELECT COALESCE(SUM(debt_amount),0) FROM orders) AS debt,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchange_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservations,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/stage5b-after.json"
+          cmp "$RUNNER_TEMP/stage5b-before.json" "$RUNNER_TEMP/stage5b-after.json"
+          echo 'STAGE5B_BR2_MIGRATION_PASS: all old stock, reservations, money and order fingerprints unchanged'
+      - name: Deploy only test Worker with new API and item checklist
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config .stage5b-release.jsonc
+      - name: Postdeploy anonymous HTTP smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='https://orders-app-branch2.orders-clothes.workers.dev'
+          code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "$host/api/auth/status")"
           test "$code" = 200
-          code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "$origin/api/inventory/operation-attempts?source=warehouse&variantId=1")"
-          test "$code" = 401
-          echo 'STAGE5A_BRANCH2_DEPLOY_SMOKE_PASS: auth=200; guarded journal=401; no Main operation'
+          for suffix in '/api/orders/9551/shipping/plan' '/api/orders/9551/shipping/dispatches'; do
+            code="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "$host$suffix")"
+            test "$code" = 401
+          done
+          echo 'STAGE5B_BRANCH2_DEPLOY_PASS: public status 200 and private shipment API 401 without authentication'
