@@ -116,7 +116,7 @@ export async function runStage3NativeAcceptance({api, token}) {
  // payment must be REJECTED; do not circumvent that guard in the test fixture.
  const unpaid=await call('POST','/api/returns',{
   requestId:'stage3-native-37-unpaid',orderId:id,returnDate:'2026-11-01',
-  amount:100,refundMethod:'НАЛИЧНЫЕ',items:[],
+  amount:100,paymentMethod:'НАЛИЧНЫЕ',items:[],
  })
  assert.equal(unpaid.status,409,'Unpaid refund cannot create phantom debt or money.')
  const payment=await call('POST','/api/payments',{
@@ -127,7 +127,7 @@ export async function runStage3NativeAcceptance({api, token}) {
  // Money-only return must not mutate physical stock or reopen an active reserve.
  const moneyReturn=await call('POST','/api/returns',{
   requestId:'stage3-native-37-money',orderId:id,returnDate:'2026-11-01',
-  amount:100,refundMethod:'НАЛИЧНЫЕ',items:[],
+  amount:100,paymentMethod:'НАЛИЧНЫЕ',items:[],
  })
  assert.equal(moneyReturn.status,201,'Money-only Return: '+JSON.stringify(moneyReturn))
  assert.equal((await hist('warehouse',9841)).length,sentWh.length)
