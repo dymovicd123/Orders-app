@@ -852,12 +852,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 style={{display:'flex',gap:12,alignItems:'center',padding:'8px 0'}}>
                                 <div style={{flex:1,minWidth:0}}>
                                   <strong>{x.productName}</strong>
+                                  {x.isReplacement ? <small>Замена по обмену</small> : null}
                                   <small style={{display:'block',opacity:.8}}>
                                     {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт. · {x.dispatchDate}
                                   </small>
                                 </div>
-                                {x.hasReturn||x.hasExchange ? (
-                                  <small>{x.hasExchange?'Есть обмен':'Есть возврат'}</small>
+                                {x.hasReturn||(x.hasExchange&&!x.isReplacement) ? (
+                                  <small>{x.hasReturn?'Есть возврат':'Есть обмен'}</small>
                                 ) : (
                                   <button type="button" className="secondary compact"
                                     disabled={dispatchDraft.submitting}
