@@ -58,7 +58,13 @@ export async function cancelExactOrderDispatchItem(
        AND COALESCE(e.status,'completed')<>'cancelled'
      LIMIT 1`
   ).bind(orderId,itemId,toInt(line.movement_id,0)).first<Record<string,unknown>>()
-  if (exchangeConflict?.id && !replacement?.id)
+  const workshopReplacement=cleanText(line.source_type)==='workshop'
+    ? await db.prepare(
+       `SELECT e.id FROM exchanges e WHERE e.order_id=? AND e.new_order_item_id=?
+         AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1`
+      ).bind(orderId,itemId).first<{id:number}>()
+    : null
+  if (exchangeConflict?.id && !replacement?.id && !workshopReplacement?.id)
     fail('Эта вещь участвует в другом обмене. Исправьте её через обмен; остальные товары доступны.')
   if (replacement?.id && (toInt(replacement.quantity,0)!==quantity
       || toInt(replacement.variant_id,0)!==toInt(line.variant_id,0)
