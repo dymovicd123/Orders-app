@@ -23,7 +23,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     returnHistoryBusy,
     returnHistoryError,
     returnHistoryFilters,
-    returnPendingInbox.hasMore,
+    returnHistoryHasMore,
     returnHistorySummary,
     returnPendingInbox,
     loadReturnPendingInbox,
@@ -241,12 +241,12 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                   ) : (
                     <div className="intake-queue-missing">
-                      <span>Счётчик показывает ожидающие вещи, но они не попали в загруженные последние операции.</span>
-                      <button className="secondary compact" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnPendingInbox(true)}>Загрузить ещё</button>
+                      <span>Первая страница ожидающих ещё загружается. Если вещь не видна, откройте следующие ожидающие.</span>
+                      <button className="secondary compact" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Загрузить ещё</button>
                     </div>
                   )}
                   {returnPendingInbox.hasMore && loadedPendingReturnQuantity < Number(returnPendingInbox.pendingQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnPendingInbox(true)}>Показать ещё ожидающие</button>
+                    <button className="secondary compact intake-queue-more" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Показать ещё ожидающие</button>
                   ) : null}
                 </section>
               ) : null}
