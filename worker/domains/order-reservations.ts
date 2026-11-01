@@ -6,7 +6,7 @@ import type { SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import type { CanonicalVariantSnapshot } from './catalog.ts'
 import { catalogGenderForProductScope, createCatalogCombinationV3, ensureCatalogExecutionV3, findCatalogCombinationV3, findCatalogExecutionV3, findCatalogProductByIdentity, findRetiredCatalogCombinationV3, findRetiredCatalogExecutionV3, getCatalogProductGenderScope, isCatalogIdentityV3Enabled, isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot, makeVariantExternalId, normalizeCatalogCombinationColor, normalizeCatalogCombinationGender, normalizeCatalogCombinationSize, resolveCatalogValueAlias } from './catalog.ts'
-import { inventoryPhysicalCheckStatement } from './inventory-primitives.ts'
+import { admitOrderReservationAtomically } from './reservation-admission.ts'
 import { boundedOutboundStock } from './stock-resolution.ts'
 import { normalizeOrderItems } from './order-core.ts'
 
@@ -786,8 +786,8 @@ export async function reserveOrderItemV2(
 ) {
   if (!orderItemId) throw new Error('Не удалось связать резерв с позицией заказа.');
   const existingReservation = await db.prepare(
-    `SELECT id, status, quantity, inventory_source, variant_id FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
-  ).bind(orderItemId).first<{ id: number; status: string; quantity: number; inventory_source: string; variant_id: number | null }>();
+    `SELECT id, status, quantity, inventory_source, variant_id, unresolved_reason FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
+  ).bind(orderItemId).first<{ id: number; status: string; quantity: number; inventory_source: string; variant_id: number | null; unresolved_reason?: string | null }>();
   if (existingReservation?.id) {
     const existingVariantId = toInt(existingReservation.variant_id, toInt(variantId, 0));
     const existingSource = normalizeSourceType(existingReservation.inventory_source || item.inventorySource);
@@ -811,8 +811,11 @@ export async function reserveOrderItemV2(
       referenceType,
       referenceId: cleanText(referenceId) || externalId,
       reservationStatus: cleanText(existingReservation.status),
-      concurrentShortage: !item.shortageAcknowledged && cleanText(existingReservation.status) === 'active' && committedAvailable < 0,
-      shortageAfter: cleanText(existingReservation.status) === 'active' ? Math.max(0, -committedAvailable) : 0,
+      concurrentShortage: cleanText(existingReservation.unresolved_reason) === 'concurrent_shortage'
+        || (!item.shortageAcknowledged && cleanText(existingReservation.status) === 'active' && committedAvailable < 0),
+      pendingShortage: cleanText(existingReservation.unresolved_reason) === 'concurrent_shortage',
+      shortageAfter: Math.max(0, (cleanText(existingReservation.unresolved_reason) === 'concurrent_shortage'
+        ? Math.max(0, toInt(existingReservation.quantity, 0)) : 0) - committedAvailable),
       physicalAfter: committedPhysical,
       reservedAfter: committedReserved,
       alreadyApplied: true,
@@ -856,108 +859,46 @@ export async function reserveOrderItemV2(
   // Treat both null and undefined as ‘no physical count supplied’; never bind undefined into D1.
   // No reservation, including an exchange, may ever act as a physical stocktake.
   // Outbound possession is confirmed against the *operation*, not a whole-SKU count.
-  const observedPhysical: null = null;
-  const physicalForReservation = observedPhysical === null ? physicalBefore : observedPhysical;
-  const stockAction = observedPhysical === null ? 'Резерв заказа' : 'Сверено менеджером при заказе';
-  const statements: D1PreparedStatement[] = [
-    db.prepare(
-      `UPDATE inventory_stock
-       SET quantity = CASE WHEN ? IS NULL THEN quantity ELSE ? END,
-           reserved_quantity = MAX(0, COALESCE(reserved_quantity, 0) + ?),
-           product_id = ?, variant_id = ?, product_name_snapshot = ?, gender_snapshot = ?, color_snapshot = ?,
-           material_snapshot = ?, length_snapshot = ?, size_snapshot = ?,
-           last_action = ?, last_source_ref = ?, updated_at = ?
-       WHERE id = ?`
-    ).bind(
-      observedPhysical,
-      observedPhysical,
-      item.quantity,
-      canonicalProductId,
-      variantId,
-      canonical.productName,
-      canonical.gender,
-      canonical.color,
-      canonical.material,
-      canonical.length,
-      canonical.size,
-      stockAction,
-      `${referenceType}:${safeReferenceId}`,
-      timestamp,
-      stock.id,
-    ),
-  ];
-
-  if (observedPhysical !== null) {
-    statements.push(db.prepare(
-      `INSERT INTO inventory_movements (
-        inventory_source, movement_type, product_id, variant_id, product_name_snapshot, gender_snapshot,
-        color_snapshot, material_snapshot, length_snapshot, size_snapshot, quantity_delta, quantity_after,
-        reference_type, reference_id, comment, created_at
-      ) VALUES (?, 'revision', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'order_observation', ?, ?, ?)`
-    ).bind(
-      item.inventorySource,
-      canonicalProductId,
-      variantId,
-      canonical.productName,
-      canonical.gender,
-      canonical.color,
-      canonical.material,
-      canonical.length,
-      canonical.size,
-      observedPhysical - physicalBefore,
-      observedPhysical,
-      safeReferenceId,
-      `Менеджер подтвердил фактическое количество при заказе ${externalId}: ${observedPhysical} шт. По учёту до сверки: ${physicalBefore} шт. Резервы не изменялись этой сверкой.`,
-      timestamp,
-    ));
-
-    statements.push(inventoryPhysicalCheckStatement(db, {
-      source: item.inventorySource,
-      productId: canonicalProductId,
-      variantId,
-      expectedQuantity: physicalBefore,
-      countedQuantity: observedPhysical,
-      reservedQuantity: reservedBefore,
-      checkType: referenceType === 'exchange_new' ? 'exchange_observation' : 'order_observation',
-      referenceType: 'order_observation',
-      referenceId: safeReferenceId,
-      checkedAt: timestamp,
-    }));
-  }
-
-  statements.push(
-    db.prepare(
-      `INSERT INTO inventory_reservations (
-        order_id, order_item_id, inventory_source, product_id, variant_id, quantity, status,
-        reference_type, reference_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
-    ).bind(orderId, orderItemId, item.inventorySource, canonicalProductId, variantId, item.quantity, referenceType, safeReferenceId, timestamp, timestamp),
-    db.prepare(
-      `UPDATE order_items SET stock_writeoff_status = 'reserved', stock_quantity_before = NULL, stock_quantity_after = NULL WHERE id = ?`
-    ).bind(orderItemId),
-  );
-  await db.batch(statements);
-
+  const admission = await admitOrderReservationAtomically(db, {
+    orderId,
+    orderItemId,
+    source: item.inventorySource === 'boutique' ? 'boutique' : 'warehouse',
+    stockId: stock.id,
+    productId: canonicalProductId,
+    variantId,
+    quantity: item.quantity,
+    productName: canonical.productName,
+    gender: canonical.gender || '',
+    color: canonical.color || '',
+    material: canonical.material || '',
+    length: canonical.length || '',
+    size: canonical.size || '',
+    referenceType,
+    referenceId: safeReferenceId,
+    timestamp,
+    shortageAcknowledged: item.shortageAcknowledged,
+    shortageDecision: null, // Main does not yet carry a verified per-SKU approval snapshot.
+  });
   const committedStock = await db.prepare(
     `SELECT quantity, reserved_quantity FROM inventory_stock WHERE id = ? LIMIT 1`
   ).bind(stock.id).first<{ quantity: number; reserved_quantity: number }>();
-  const committedPhysical = toInt(committedStock?.quantity, physicalForReservation);
-  const committedReserved = Math.max(0, toInt(committedStock?.reserved_quantity, reservedBefore + item.quantity));
+  const committedPhysical = toInt(committedStock?.quantity, physicalBefore);
+  const committedReserved = Math.max(0, toInt(committedStock?.reserved_quantity, reservedBefore));
   const committedAvailable = committedPhysical - committedReserved;
-  const concurrentShortage = !item.shortageAcknowledged && committedAvailable < 0;
+  const pendingShortage = admission.status === 'unresolved' && admission.reason === 'concurrent_shortage';
 
   return {
     source: item.inventorySource,
     productName: item.productName,
     variantId,
-    quantityBefore: physicalForReservation - reservedBefore,
+    quantityBefore: physicalBefore - reservedBefore,
     quantityAfter: committedAvailable,
     referenceType,
     referenceId: safeReferenceId,
-    reservationStatus: 'active',
-    observedPhysicalQuantity: observedPhysical,
-    concurrentShortage,
-    shortageAfter: Math.max(0, -committedAvailable),
+    reservationStatus: admission.status,
+    concurrentShortage: pendingShortage,
+    pendingShortage,
+    shortageAfter: Math.max(0, committedReserved + (pendingShortage ? item.quantity : 0) - committedPhysical),
     physicalAfter: committedPhysical,
     reservedAfter: committedReserved,
   };
@@ -2930,11 +2871,17 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
             oi.stock_writeoff_status,
             r.status AS reservation_status, r.variant_id AS reservation_variant_id,
             stock.id AS inventory_stock_id,
+            CASE WHEN pending_r.id IS NOT NULL AND order_variant.id IS NOT NULL
+                AND COALESCE(oi.stock_writeoff_status,'') = 'pending_reservation'
+              THEN 1 ELSE 0 END AS known_pending_reservation,
             'unresolved' AS blocker_reason,
             NULL AS required_quantity,
             NULL AS physical_quantity
      FROM order_items oi
      LEFT JOIN inventory_reservations r ON r.order_item_id = oi.id AND r.status = 'active'
+     LEFT JOIN inventory_reservations pending_r
+       ON pending_r.order_item_id = oi.id AND pending_r.status = 'unresolved'
+       AND pending_r.variant_id = oi.variant_id
      LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
      LEFT JOIN catalog_products variant_product ON variant_product.id = order_variant.product_id
      LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id
