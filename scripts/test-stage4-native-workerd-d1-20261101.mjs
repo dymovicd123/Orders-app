@@ -42,6 +42,7 @@ writeFileSync(config,JSON.stringify({
 const migrations=readdirSync('migrations').filter(name=>/^\d{4}.*\.sql$/.test(name)).sort()
 assert(migrations.includes('0117_v72_inventory_manual_operation_receipts.sql'))
 assert(migrations.includes('0118_v72_inventory_operation_attempts.sql'))
+assert(migrations.includes('0119_v72_order_dispatch_lineage.sql'))
 // Historical catalog migrations use CREATE TEMP TABLE, disallowed by Wrangler's
 // native local D1 execute authorizer. Derive the EXACT persistent final schema
 // from running all older real migrations in SQLite (as existing HTTP tests do),
@@ -132,6 +133,10 @@ try{
  for(const sqlFile of schemaPaths)localD1(sqlFile)
  localD1(resolve('migrations/0117_v72_inventory_manual_operation_receipts.sql'))
  localD1(resolve('migrations/0118_v72_inventory_operation_attempts.sql'))
+ // Stage5 adds dispatch-item history to the current Worker orders projection.
+ // Include it in this disposable native D1, not remotely, to keep the Stage3/4
+ // acceptance fixtures compatible with current source code.
+ localD1(resolve('migrations/0119_v72_order_dispatch_lineage.sql'))
  localD1(seedPath)
  if(process.argv.includes('--stage3')){
   const {stage3NativeFixtureSQL}=await import('./test-stage3-7-native-workerd-lifecycle-20261101.mjs')
