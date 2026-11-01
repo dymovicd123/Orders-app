@@ -19,6 +19,7 @@ import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
+import { correctShippingMarkerAfterStandaloneReturn } from './order-shipping-scoped-correction.ts'
 
 export async function correctMistakenOrderHandoverWithCurrentExchange(
   db: D1Database,
@@ -30,12 +31,23 @@ export async function correctMistakenOrderHandoverWithCurrentExchange(
     throw new Error('Снять отметку «Отправлен» можно только после подтверждения, что текущий товар фактически НЕ передавался клиенту.');
   }
 
-  // Do not silently rewrite physical handover when a separate item Return
-  // still exists. Explain the exact Return instead of returning a generic 500.
-  // A pure money Return and an exchange-owned refund are not blockers.
+  // A completed standalone Return changes physical truth for only its own
+  // item. The final "sent" marker may still be a mistake on a different
+  // workshop item, without any new physical issue in that last send.
+  // Never undo the old handover or Return here.
   const standaloneItemReturn=await readStandaloneItemReturnBlocker(db,orderId)
-  if(standaloneItemReturn)
-    throw new CriticalOperationConflictError(standaloneItemReturn.message)
+  if (standaloneItemReturn) {
+    const hasActiveExchange = await db.prepare(
+      `SELECT EXISTS(
+         SELECT 1 FROM exchanges e WHERE e.order_id = ?
+           AND COALESCE(e.status, 'completed') <> 'cancelled'
+       ) AS active_exchange`,
+    ).bind(orderId).first<{ active_exchange: number }>()
+    if (toInt(hasActiveExchange?.active_exchange, 0)) {
+      throw new CriticalOperationConflictError('В заказе одновременно есть товарный возврат и обмен. Для исправления нужна точная позиция, а не общий откат.')
+    }
+    return correctShippingMarkerAfterStandaloneReturn(db, orderId, { actor: input.actor })
+  }
 
   const downstream=await db.prepare(
     `SELECT EXISTS(
