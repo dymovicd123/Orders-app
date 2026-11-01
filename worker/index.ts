@@ -1867,6 +1867,12 @@ export default {
             `SELECT d.id AS dispatchId,d.dispatch_date AS dispatchDate,d.created_at AS dispatchedAt,
                     d.status AS dispatchStatus,di.id AS dispatchItemId,di.order_item_id AS orderItemId,
                     di.quantity,di.cancelled_quantity AS cancelledQuantity,
+                    EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+                      WHERE ri.order_item_id=di.order_item_id AND ri.quantity>0
+                        AND COALESCE(r.status,'completed')<>'cancelled') AS hasReturn,
+                    EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=d.order_id
+                      AND (e.old_order_item_id=di.order_item_id OR e.new_order_item_id=di.order_item_id)
+                        AND COALESCE(e.status,'completed')<>'cancelled') AS hasExchange,
                     di.source_type AS sourceType,oi.product_name_snapshot AS productName,
                     oi.color_snapshot AS color,oi.size_snapshot AS size,
                     di.variant_id AS variantId
