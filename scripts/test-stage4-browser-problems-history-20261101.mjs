@@ -72,6 +72,22 @@ export async function startStage4Browser({origin,sessionToken,variantId}){
         return r.width>0 && (r.right>maxX+2 || r.left< -2)
       }).map(el=>({className:el.className,left:Math.round(el.getBoundingClientRect().left),right:Math.round(el.getBoundingClientRect().right),maxX}))
     })
+    if(clipped.length) {
+      const ancestry=await phone.evaluate(()=>{
+        const list=[]
+        let el=document.querySelector('.stock-variant-timeline')
+        while(el && list.length<13){
+          const r=el.getBoundingClientRect(),css=getComputedStyle(el)
+          list.push({tag:el.tagName,className:String(el.className).slice(0,90),
+            left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width),
+            minWidth:css.minWidth,maxWidth:css.maxWidth,grid:css.gridTemplateColumns,
+            display:css.display,overflowX:css.overflowX})
+          el=el.parentElement
+        }
+        return list
+      })
+      console.error('WORK733_MOBILE_LAYOUT_ANCESTRY',JSON.stringify(ancestry))
+    }
     assert.deepEqual(clipped,[],'Work #733 mobile SKU History cards cannot extend beyond the visible viewport')
    }finally {await mobile.close()}
    console.log('STAGE4_BROWSER_BEFORE_RECEIPT_PASS: desktop/mobile active problem → exact SKU timeline/order')
