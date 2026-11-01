@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 import { projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
+import './OrderShipmentStatus.css'
 type SectionContext = Record<string, any>
 
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
