@@ -65,6 +65,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     markOrderSentToClient,
     markExchangeReplacementSent,
     apiFetch,
+    askActionConfirmation,
     onPendingReservationResolved,
     canResolvePendingReservation,
     setMessage,
@@ -1247,7 +1248,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             const draft=exchangeChainDraft
                             if(!draft?.plan)return
                             const returns=draft.plan.steps.filter((s:any)=>s.type==='return').length
-                            if(!window.confirm('Отменить '+draft.plan.selectedExchangeIds.length
+                            if(!await askActionConfirmation('Отменить '+draft.plan.selectedExchangeIds.length
                               +' обмен(ов) по заказу '+draft.order.external_id+'?\n'
                               +'Шагов: '+draft.plan.steps.length+'. Зависимых возвратов: '+returns
                               +'. Каждая операция отдельно проверит деньги и склад.'))return
@@ -1333,7 +1334,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                               const draft=returnCancelDraft
                               const chosen=draft?.choices.find((x:any)=>x.id===draft.selectedId)
                               if(!chosen||chosen.parentExchangeId)return
-                              if(!window.confirm('Отменить возврат #'+chosen.id+' по заказу '+draft.order.external_id+
+                              if(!await askActionConfirmation('Отменить возврат #'+chosen.id+' по заказу '+draft.order.external_id+
                                 '? Сумма: '+formatMoney(chosen.amount)+' ₸. Склад и деньги будут проверены перед выполнением.'))return
                               setReturnCancelDraft(d=>d?{...d,submitting:true,error:''}:d)
                               try{
