@@ -30,8 +30,19 @@ export async function dispatchSelectedCompleteOrderLines(
   const uniqueIds = new Set(input.items.map(x=>x.orderItemId))
   if (uniqueIds.size !== input.items.length) fail('Одна позиция выбрана несколько раз.')
   const replay = await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=? LIMIT 1').bind(requestId).first<{id:number;order_id:number}>()
+  const identicalReplay = async (dispatchId: number) => {
+    const rows = await db.prepare(
+      'SELECT order_item_id,quantity FROM order_dispatch_items WHERE dispatch_id=? ORDER BY order_item_id'
+    ).bind(dispatchId).all<{order_item_id:number;quantity:number}>()
+    const prior = (rows.results||[]).map(x=>`${x.order_item_id}:${x.quantity}`).sort()
+    const requested = input.items.map(x=>`${x.orderItemId}:${x.quantity}`).sort()
+    if (prior.length !== requested.length || prior.some((x,i)=>x!==requested[i])) {
+      fail('Эта отправка уже сохранена с другим набором товаров. Обновите заказ.')
+    }
+  }
   if (replay?.id) {
     if (replay.order_id !== orderId) fail('Повторный запрос относится к другому заказу.')
+    await identicalReplay(replay.id)
     return {ok:true,alreadyCommitted:true,dispatchId:replay.id}
   }
   const order = await getOrder(db,orderId)
@@ -185,7 +196,7 @@ export async function dispatchSelectedCompleteOrderLines(
           inventory_source,movement_type,product_id,variant_id,product_name_snapshot,gender_snapshot,
           color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity_delta,quantity_after,
           reference_type,reference_id,comment,created_at
-        ) VALUES(?,'sale',?,?,?,?,?,?,?,?,?,?,?,'order_dispatch',?, ?,?)`
+        ) VALUES(?,'sale',?,?,?,?,?,?,?,?,?,?,'order_dispatch',?,?,?)`
       ).bind(group.source,group.productId,group.variantId,group.productName,group.gender,group.color,
         group.material,group.length,group.size,-item.quantity,next,ref,`Отправлен заказ ${order.external_id}`,stamp),
       db.prepare(`UPDATE inventory_reservations SET status='fulfilled',fulfilled_at=?,updated_at=?
@@ -233,7 +244,10 @@ export async function dispatchSelectedCompleteOrderLines(
     const msg=cleanText(error instanceof Error?error.message:error)
     if(/unique constraint failed/i.test(msg)){
       const recorded=await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=?').bind(requestId).first<{id:number;order_id:number}>()
-      if(recorded?.id && recorded.order_id===orderId)return {ok:true,alreadyCommitted:true,dispatchId:recorded.id}
+      if(recorded?.id && recorded.order_id===orderId) {
+        await identicalReplay(recorded.id)
+        return {ok:true,alreadyCommitted:true,dispatchId:recorded.id}
+      }
       fail('Заказ или остаток изменился одновременно с отправкой. Обновите заказ.')
     }
     throw error
