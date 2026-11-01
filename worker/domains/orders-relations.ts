@@ -108,6 +108,7 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
+                (SELECT SUM(di.quantity - di.cancelled_quantity) FROM order_dispatch_items di WHERE di.order_item_id=oi.id) AS shipment_sent_quantity,
                 p.name AS canonical_product_name,
                 p.is_active AS canonical_product_active,
                 v.is_active AS canonical_variant_active,
