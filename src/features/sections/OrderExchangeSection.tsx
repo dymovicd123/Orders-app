@@ -110,9 +110,18 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     return `Источник: ${sourceLabel(source as OrderRecord['source_type'])}`
   }
 
-  const pendingExchangeIntake = exchangePendingInbox.rows
-    .filter((entry: any) => entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId)
-  const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, entry: any) => sum + Math.max(0, Number(entry.oldQuantity || 0)), 0)
+  // One card per physically unreceived OLD item, including multi-item Set V2.
+  // Do not accidentally hide all but the first old SKU of an Exchange.
+  const pendingExchangeIntake = exchangePendingInbox.rows.flatMap((entry: any) => {
+    if (entry.status === 'cancelled') return []
+    const oldItems = (entry.oldItems || []) as any[]
+    const pending = oldItems.filter(old => old.physicalTracking && !old.physicalReceivedAt && Number(old.id) > 0)
+    if (oldItems.length) return pending.map(old => ({ entry, old }))
+    return entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId
+      ? [{ entry, old: null }] : []
+  })
+  const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, row: any) =>
+    sum + Math.max(0, Number(row.old?.quantity || row.entry.oldQuantity || 0)), 0)
 
   const itemizedExchange = exchangeSelectedOrder?.pricing_mode === 'itemized_v1'
   const queuedPairs = exchangeDraft.queuedPairs || []
@@ -290,13 +299,21 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                   {pendingExchangeIntake.length ? (
                     <div className="intake-queue-list">
-                      {pendingExchangeIntake.map((entry: any) => {
-                        const receiptKey = `exchange:${entry.id}:${entry.oldOperationItemId}`
+                      {pendingExchangeIntake.map(({entry, old}: any) => {
+                        const operationItemId = Number(old?.id || entry.oldOperationItemId)
+                        const productName = old?.productName || entry.oldProductName
+                        const quantity = Number(old?.quantity || entry.oldQuantity || 0)
+                        const isWorkshop = old?.isWorkshop ?? entry.oldIsWorkshop
+                        const receiptKey = `exchange:${entry.id}:${operationItemId}`
+                        const oldDetails = old ? { ...entry,
+                          oldGender: old.gender, oldColor: old.color,
+                          oldMaterial: old.material, oldLength: old.length, oldSize: old.size
+                        } : entry
                         return (
                           <div className="intake-queue-row" key={receiptKey}>
                             <div className="intake-queue-item">
                               <div className="intake-queue-product-head">
-                                <strong>{entry.oldProductName} × {entry.oldQuantity}</strong>
+                                <strong>{productName} × {quantity}</strong>
                                 <span className="intake-queue-operation">Обмен #{entry.id}</span>
                               </div>
                               <div className="intake-queue-context">
@@ -305,12 +322,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 <div><span>Менеджер</span><strong>{entry.manager || 'Не указан'}</strong></div>
                                 <div><span>Дата обмена</span><strong>{entry.exchangeDate || 'Не указана'}</strong></div>
                               </div>
-                              <small className="intake-queue-characteristics">{formatHistoryCharacteristics(entry, 'old')}</small>
+                              <small className="intake-queue-characteristics">{formatHistoryCharacteristics(oldDetails, 'old')}</small>
                             </div>
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
                               <select
-                                value={receiptDestinations[receiptKey] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')}
+                                value={receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse')}
                                 onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                 disabled={exchangeBusy}
                               >
@@ -326,9 +343,9 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               onClick={() => void receiveReturnedItemAction({
                                 operationType: 'exchange',
                                 operationId: entry.id,
-                                operationItemId: entry.oldOperationItemId,
-                                destination: receiptDestinations[receiptKey] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse'),
-                                productName: entry.oldProductName,
+                                operationItemId,
+                                destination: receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse'),
+                                productName,
                                 externalId: entry.externalId,
                               })}
                             >
