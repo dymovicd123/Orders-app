@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/main'
-          test "$(git rev-parse HEAD^)" = '0395e255dd33d4a928d2635ef043a4bc37e339ba'
+          test "$(git rev-parse HEAD^)" = '0a51ed73636ca626e2b81e4c425ed9758244f05f'
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
