@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { projectOrderShipmentDisplay } from '../src/app/orderShipmentProjection.ts'
+import { buildOrderShipmentPlan } from '../worker/domains/order-shipment-plan.ts'
 
 const item=(id,more={})=>({id,productName:'TEST',sourceType:'warehouse',quantity:1,stockWriteoffStatus:'reserved',...more})
 const projection=(items,shipping_status='not_sent')=>projectOrderShipmentDisplay({items,shipping_status})
@@ -32,6 +33,34 @@ assert.equal(p.lines[0].state,'not_sent','New exchange replacement still awaitin
 p=projection([item(1,{stockWriteoffStatus:'fulfilled'}),item(2,{pendingExchangeDispatchId:22})],'sent')
 assert.equal(p.label,'Частично отправлено','Old sent order with unshipped replacement is partial')
 assert.notEqual(p.lines[1].label,'Отправлен')
+
+// The first server surface is read-only: unavailable and already dispatched
+// lines are never selected by default; a partial held quantity is respected.
+const shipmentOrder={
+  id:1,external_id:'ORD-TEST',shipping_status:'not_sent',order_status:'active',
+  updated_at:'2026-11-01T12:00:00Z',
+  items:[
+    {id:11,productName:'Готовый склад',quantity:3,sourceType:'warehouse',stockWriteoffStatus:'reserved'},
+    {id:12,productName:'Цех не готов',quantity:1,isWorkshop:true,sourceType:'workshop',workshopTaskStatus:'active'},
+    {id:13,productName:'Цех готов',quantity:1,isWorkshop:true,sourceType:'workshop',workshopTaskStatus:'done'},
+    {id:14,productName:'Возвращён',quantity:1,sourceType:'warehouse',stockWriteoffStatus:'fulfilled'},
+    {id:15,productName:'Новая замена',quantity:1,sourceType:'warehouse',stockWriteoffStatus:'reserved',pendingExchangeDispatchId:9},
+  ],
+}
+const held=[{order_item_id:11,quantity:2,status:'active',variant_id:31},{order_item_id:15,quantity:1,status:'active',variant_id:32}]
+let preview=buildOrderShipmentPlan(shipmentOrder,held)
+assert.equal(preview.selectedQuantity,3,'2 reserved warehouse units + 1 ready workshop')
+assert.deepEqual(preview.lines.map(x=>x.selectedQuantity),[2,0,1,0,0])
+assert.equal(preview.lines[0].readyQuantity,2,'Cannot select more than held quantity')
+assert.equal(preview.lines[3].selectable,false,'Previously fulfilled cannot ship again')
+assert.equal(preview.lines[4].selectable,false,'Pending exchange replacement has separate lifecycle')
+assert.equal(preview.draftOnly,true,'Preview is not a committed physical shipment')
+preview=buildOrderShipmentPlan({...shipmentOrder,shipping_status:'sent'},held)
+assert.equal(preview.selectedQuantity,0,'Do not double-send legacy completed order')
+preview=buildOrderShipmentPlan({...shipmentOrder,order_status:'archived'},held)
+assert.equal(preview.selectedQuantity,0,'Archived order read-only')
+preview=buildOrderShipmentPlan(shipmentOrder,[{order_item_id:11,quantity:3,status:'active',variant_id:31},{order_item_id:11,quantity:1,status:'active',variant_id:44}])
+assert.equal(preview.lines[0].selectable,false,'Conflicting reserved SKU must not be guessed')
 
 // Standalone migration check: future select/undo must be uniquely identified and
 // must not rewrite a historical shipment without an independent correction.
