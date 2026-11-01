@@ -1524,10 +1524,46 @@ export function InventorySection({ ctx }: { ctx: SectionContext }) {
       setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось определить найденную позицию.')
     }
   }
-  function openFoundInventoryCatalog(item: any) {
-    setCatalogAdminMode('catalog')
-    if (item?.category === 'child' || item?.category === 'adult') setCatalogCategoryFilter(item.category)
-    openInventoryPanel('catalog')
+  async function openFoundInventoryCatalog(item: any) {
+    const productId = Number(item?.productId || 0)
+    if (!Number.isSafeInteger(productId) || productId <= 0) {
+      setStocktakeNotice('У найденной вещи нет подтверждённого товара. Выберите его в каталоге вручную.')
+      return
+    }
+    try {
+      const catalog = await loadCatalogData(true)
+      const product = (catalog?.products || []).find((candidate: any) =>
+        Number(candidate.id) === productId && candidate.isActive !== false)
+      if (!product) {
+        setStocktakeNotice('Карточка найденного товара больше недоступна. Обновите список проблем склада.')
+        return
+      }
+      const category = getCatalogProductEffectiveCategory(product)
+      // Search/category filters must not take the operator to a different SKU.
+      setCatalogAdminMode('catalog')
+      setCatalogCategoryFilter('all')
+      setCatalogOnlyWithoutVariants(false)
+      setInventoryQuery('')
+      setExpandedCatalogProducts({ [String(productId)]: true, __w6_variant_editor: true })
+      setCatalogProductDraft({
+        id: productId, name: product.name, category,
+        genderScope: product.genderScope || 'unisex',
+      })
+      // These are draft attributes of the physical find, never a new SKU or arrival.
+      setCatalogVariantDraft({
+        id: 0, productId: String(productId),
+        category: item?.category === 'child' ? 'child' : 'adult',
+        gender: String(item?.gender || ''),
+        color: String(item?.color || ''),
+        material: String(item?.material || 'СТАНДАРТ'),
+        length: String(item?.length || 'СТАНДАРТ'),
+        sizeLabel: String(item?.size || ''),
+        sortOrder: '0',
+      })
+      openInventoryPanel('catalog')
+    } catch (error) {
+      setStocktakeNotice(error instanceof Error ? error.message : 'Не удалось открыть найденный товар.')
+    }
   }
 
   async function openStocktakeOrders(row: any) {
