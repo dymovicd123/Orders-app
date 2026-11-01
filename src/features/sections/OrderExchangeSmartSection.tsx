@@ -22,6 +22,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     exchangeHistoryFilters,
     exchangeHistoryHasMore,
     exchangeHistorySummary,
+    exchangePendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
+    loadExchangePendingInbox,
     exchangeSelectedOrder,
     formatMoney,
     FriendlyNumberInput,
@@ -147,7 +149,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 ? 'Выберите способ оплаты.'
                 : ''
 
-  const pendingGroups = useMemo(() => (exchangeHistory || []).map((entry: any) => {
+  const pendingGroups = useMemo(() => exchangePendingInbox.rows.map((entry: any) => {
     const items = entry.isSetExchange
       ? (entry.oldItems || []).filter((item: any) => entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt && item.id)
       : entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId
@@ -165,7 +167,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
           }]
         : []
     return { entry, items }
-  }).filter((group: any) => group.items.length), [exchangeHistory])
+  }).filter((group: any) => group.items.length), [exchangePendingInbox.rows])
 
   const loadedPendingQuantity = pendingGroups.reduce((sum: number, group: any) =>
     sum + group.items.reduce((itemSum: number, item: any) => itemSum + Math.max(0, Number(item.quantity || 0)), 0), 0)
@@ -228,7 +230,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const oldHistoryStatus = (item: any) => {
     if (item.wasNotIssued || item.inventorySource === 'not_issued') return 'Не выдавалась клиенту — осталась на месте'
     if (!item.physicalTracking) return 'В старой записи возврат товара не отмечался'
-    if (!item.physicalReceivedAt) return 'Ещё у клиента'
+    if (!item.physicalReceivedAt) return 'Получение ещё не подтверждено'
     if (item.inventorySource === 'warehouse') return item.lifecycleStatus === 'pending' ? 'Вернули → Склад · нужно завершить учёт' : 'Вернули → Склад'
     if (item.inventorySource === 'boutique') return item.lifecycleStatus === 'pending' ? 'Вернули → Бутик · нужно завершить учёт' : 'Вернули → Бутик'
     return 'Вернули · в остаток не добавляли'
@@ -245,13 +247,15 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
         <button className="secondary compact" type="button" onClick={() => setOrderPanel('list')}>К заказам</button>
       </div>
 
-      {Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
-        <section className="exchange-return-queue" aria-label="Товары по обменам, которые ещё у клиентов">
+      {exchangePendingInbox.error ? <p role="alert">{exchangePendingInbox.error} <button type="button" onClick={() => void loadExchangePendingInbox()}>Повторить загрузку очереди</button></p> : null}
+      {exchangePendingInbox.busy && !exchangePendingInbox.rows.length ? <p>Загружаю ожидающие вещи…</p> : null}
+      {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? (
+        <section className="exchange-return-queue" aria-label="Ожидающие получения товары по обменам">
           <div className="exchange-set-section-head">
             <div>
               <span className="exchange-set-kicker">Ожидают возврата</span>
-              <h3>Товары ещё у клиентов · {exchangeHistorySummary.pendingPhysicalQuantity} шт.</h3>
-              <p>Когда товары вернутся, укажите, куда принять каждый из них, и подтвердите возврат одной кнопкой.</p>
+              <h3>Получение не подтверждено · {exchangePendingInbox.pendingQuantity} шт.</h3>
+              <p>Очередь не зависит от фильтров истории ниже. Когда вещи фактически получены, укажите, куда принять каждую, и подтвердите получение.</p>
             </div>
           </div>
           <div className="exchange-return-groups">
@@ -300,9 +304,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               </div>
             ))}
           </div>
-          {!pendingGroups.length ? <div className="history-load-state"><span>Ожидающие позиции есть дальше в истории.</span></div> : null}
-          {exchangeHistoryHasMore && loadedPendingQuantity < Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) ? (
-            <button className="secondary compact" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ append: true })}>Загрузить ещё ожидающие</button>
+          {!pendingGroups.length ? <div className="history-load-state"><span>Ожидающие позиции ещё не загружены.</span><button type="button" onClick={() => void loadExchangePendingInbox()}>Обновить очередь</button></div> : null}
+          {exchangePendingInbox.hasMore && loadedPendingQuantity < Number(exchangePendingInbox.pendingQuantity || 0) ? (
+            <button className="secondary compact" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Загрузить ещё ожидающие</button>
           ) : null}
         </section>
       ) : null}
@@ -323,8 +327,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
             </div>
             <div><span>Сумма заказа</span><strong>{formatMoney(currentTotal)}</strong></div>
             <div><span>Уже оплачено</span><strong>{formatMoney(currentNetPaid)}</strong></div>
-            <div><span>Долг</span><strong>{formatMoney(Math.max(0, currentTotal - currentNetPaid))}</strong></div>
+            <div><span>Долг по записи заказа</span><strong>{formatMoney(recordedDebt)}</strong></div>
           </div>
+          {recordedDebt !== Math.max(0,currentTotal-currentNetPaid) ? <p role="note">В заказе записан долг {formatMoney(recordedDebt)}. После возвратов к зачёту осталось {formatMoney(currentNetPaid)}. Расчёт обмена ниже учитывает возвраты и выбранные товары; запись заказа до сохранения не меняется.</p> : null}
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
