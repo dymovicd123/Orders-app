@@ -13,7 +13,10 @@ type ReservedLine = {order_item_id: unknown; quantity: unknown; status: unknown;
 
 export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedLine[]) {
   const closed = ['archived', 'deleted'].includes(cleanText(order.order_status).toLowerCase())
-    || Boolean(cleanText(order.archived_at)) || cleanText(order.shipping_status) === 'sent'
+    || Boolean(cleanText(order.archived_at))
+  // The old order-wide sent marker records an earlier issue; a NEW replacement
+  // may still need shipping. Never re-offer already sent ordinary lines.
+  const historicallySent = cleanText(order.shipping_status) === 'sent'
   const activeById = new Map<number, {quantity: number; variantId: number}>()
   for (const reservation of reservations) {
     if (cleanText(reservation.status) !== 'active') continue
@@ -41,20 +44,21 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     const physicallyReady = isWorkshop
       ? ['done', 'ready'].includes(workshopState)
       : stockState === 'reserved' && Boolean(current?.variantId)
-    const readyQuantity = closed || pendingReplacement || alreadyIssued || !physicallyReady ? 0
+    const alreadyClosed = closed || (historicallySent && !pendingReplacement)
+    const readyQuantity = alreadyClosed || alreadyIssued || !physicallyReady ? 0
       : isWorkshop ? quantity
         : Math.min(quantity, current?.quantity || 0)
     const reason = readyQuantity ? ''
-      : closed ? 'Заказ закрыт для отправки'
-        : pendingReplacement ? 'Замена отправляется отдельно до объединения механизма'
-          : alreadyIssued ? 'Уже выдан'
-            : isWorkshop ? 'Ещё не готов'
-              : 'Проверьте наличие товара'
+      : alreadyClosed ? 'Эта позиция уже отправлена или заказ закрыт'
+        : alreadyIssued ? 'Уже выдан'
+          : isWorkshop ? 'Ещё не готов'
+            : 'Проверьте наличие товара'
     return {
       orderItemId, productName: cleanText(item.productName) || 'Товар',
       color:cleanText(item.color),size:cleanText(item.size),
       material:cleanText(item.material),length:cleanText(item.length),
       quantity, sourceType: isWorkshop ? 'workshop' : cleanText(item.sourceType),
+      exchangeEventId: pendingReplacement ? toInt(item.pendingExchangeDispatchId, 0) : null,
       variantId: isWorkshop ? toInt(item.variantId, 0) : (current?.variantId || 0),
       readyQuantity, selectedQuantity: readyQuantity,
       selectable: readyQuantity > 0,
