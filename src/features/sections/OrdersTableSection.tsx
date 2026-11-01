@@ -857,7 +857,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 <div style={{flex:1,minWidth:0}}>
                                   <strong>{x.productName}</strong>
                                   <small style={{display:'block',opacity:.8}}>
-                                    {x.color ? `${x.color} · `:''}{x.size||''} · {x.quantity} шт. · {x.dispatchDate}
+                                    {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт. · {x.dispatchDate}
                                   </small>
                                 </div>
                                 {x.hasReturn||x.hasExchange ? (

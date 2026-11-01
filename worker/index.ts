@@ -1875,6 +1875,7 @@ export default {
                         AND COALESCE(e.status,'completed')<>'cancelled') AS hasExchange,
                     di.source_type AS sourceType,oi.product_name_snapshot AS productName,
                     oi.color_snapshot AS color,oi.size_snapshot AS size,
+                    oi.material_snapshot AS material,oi.length_snapshot AS length,
                     di.variant_id AS variantId
              FROM order_dispatches d JOIN order_dispatch_items di ON di.dispatch_id=d.id
              JOIN order_items oi ON oi.id=di.order_item_id
