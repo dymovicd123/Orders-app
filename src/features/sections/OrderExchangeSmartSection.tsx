@@ -436,7 +436,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                         <button type="button" aria-pressed={item.shipmentState === 'sent'} className={item.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'sent' })}>Уже отправили</button>
                         <button type="button" aria-pressed={item.shipmentState === 'pending'} className={item.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
                       </div>
-                      {item.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, нажмите «Отправить замену» в таблице заказов. Пока он остаётся в резерве.</div> : null}
+                      {item.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, откройте «Отправить товары» в заказе и выберите эту замену вместе с другими готовыми позициями. До отправки товар остаётся в резерве.</div> : null}
                     </div> : null}
                         <div className="exchange-new-price">
                           <div><span>Цена по каталогу</span><strong>{item.catalogPriceSnapshot == null ? 'Нет цены' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
