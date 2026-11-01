@@ -87,7 +87,7 @@ export async function dispatchSelectedCompleteOrderLines(
        WHERE le.id=? AND le.order_id=?
          AND le.operation_type='exchange' AND le.event_type='exchange_new_out'`
     ).bind(eventId,orderId).first<Record<string,unknown>>()
-    if (!event) fail('Позиция обмена больше не существует. Обновите заказ.')
+    if (!event) throw new CriticalOperationConflictError('Позиция обмена больше не существует. Обновите заказ.')
     if (cleanText(event.status)!=='pending'
       || cleanText(event.pending_reason)!=='awaiting_dispatch'
       || cleanText(event.exchange_status)==='cancelled'
