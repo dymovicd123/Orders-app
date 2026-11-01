@@ -11,18 +11,29 @@ const sources=[
 let total=0
 for(const path of sources){
  const text=readFileSync(path,'utf8')
- assert(!/window\.confirm\s*\(/.test(text),path+' still blocks browser with native confirm')
+ assert(!/(?:window\.)?confirm\s*\(/.test(text),path+' still blocks browser with native confirm')
+ assert(!/window\.prompt\s*\(/.test(text),path+' still blocks browser with native prompt')
  const count=(text.match(/await askActionConfirmation\s*\(/g)||[]).length
  assert(count>0,path+' must explicitly await in-app approval')
  total+=count
 }
-assert(total>=28,'Retain every existing confirmation, not silently remove them: '+total)
+assert(total>=32,'Retain every existing confirmation plus 4 admin delete approvals: '+total)
 const app=readFileSync('src/App.tsx','utf8')
 assert(app.includes('<ActionConfirmationModal message={actionConfirmationMessage}'))
 assert(app.includes('<InventorySection ctx={{ askActionConfirmation,'))
 assert(app.includes('<OrdersTableSection ctx={{ askActionConfirmation,'))
 assert(app.includes('if (actionConfirmationResolver.current) { resolve(false); return }'),
  'Rapid second click must not open a second confirm or authorize operation')
+for(const path of ['src/App.tsx','src/features/sections/OrdersTableSection.tsx']){
+ const text=readFileSync(path,'utf8')
+ assert(!/(?:window\.)?(?:prompt|confirm)\s*\(/.test(text), path+' must not use native blocking dialogs')
+}
+assert(app.includes('await askActionText('),'Cash reset must require explicit in-app text reason')
+assert(app.includes('<ActionTextPromptModal message={actionTextPrompt?.message'))
+const textModal=readFileSync('src/features/orders/ActionTextPromptModal.tsx','utf8')
+for(const required of ['aria-modal="true"',"event.key === 'Escape'",'disabled={!value}','onDecision(null)','onDecision(value)']){
+ assert(textModal.includes(required),'Reason prompt must be cancel-safe and require nonblank text: '+required)
+}
 const modal=readFileSync('src/features/orders/ActionConfirmationModal.tsx','utf8')
 for(const text of ['role="alertdialog"','aria-modal="true"',"event.key === 'Escape'",'onDecision(false)','onDecision(true)','Отмена — ничего не менять','Да, выполнить действие','previous.focus()']){
  assert(modal.includes(text),'Native dialog must support '+text)
