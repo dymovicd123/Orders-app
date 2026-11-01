@@ -10,13 +10,12 @@ type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity:
 const fail = (message: string): never => { throw new CriticalOperationConflictError(message) }
 
 /**
- * First atomically supported scope: complete, exact order lines (no quantity
- * splits). This is NOT the whole Stage-5 partial-quantity engine. Explicitly
- * refuse partial quantities rather than secretly consuming a full reservation.
- * Each selected line is committed together with stock and immutable dispatch
- * provenance. A later step will extend to quantity splits after Return/Exchange
- * consumers can understand outstanding quantity independently of historical
- * issued quantity.
+ * Ships selected lines or a subset of a reserved STOCK line. When Q > shipped,
+ * splits its business row and its unique reservation atomically: the original
+ * row becomes the fully shipped Q_sent row, and a new row/reservation preserves
+ * Q_remaining. Existing Return/Exchange consumers therefore still see complete
+ * per-row physical truth instead of an ambiguous partially-fulfilled flag.
+ * Workshop rows remain whole-quantity until workshop task splitting is safe.
  */
 export async function dispatchSelectedCompleteOrderLines(
   db: D1Database,
@@ -56,10 +55,11 @@ export async function dispatchSelectedCompleteOrderLines(
   const selected = input.items.map(row=>{
     const found=byId.get(row.orderItemId)
     if (!found || !found.selectable) throw new CriticalOperationConflictError('Товар изменился или ещё не готов. Обновите заказ.')
-    if (row.quantity !== found.quantity || row.quantity !== found.readyQuantity) {
-      fail('Пока можно отправить только всё готовое количество этой позиции. Деление одной позиции по количеству включим после обновления резервов.')
+    if (row.quantity > found.readyQuantity || row.quantity > found.quantity ||
+        (found.sourceType === 'workshop' && row.quantity !== found.quantity)) {
+      fail('Укажите количество не больше доступного. Товар из цеха пока отправляется всей готовой позицией.')
     }
-    return { ...found, quantity: row.quantity }
+    return { ...found, originalQuantity: found.quantity, quantity: row.quantity }
   })
   const selectedStock=selected.filter(x=>x.sourceType!=='workshop')
   const selectedWorkshop=selected.filter(x=>x.sourceType==='workshop')
@@ -68,7 +68,7 @@ export async function dispatchSelectedCompleteOrderLines(
   const perItemReservation = new Map(reservations.map(r=>[toInt(r.order_item_id,0),r]))
   for (const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)
-    if (!r || toInt(r.quantity,0)!==item.quantity || toInt(r.variant_id,0)!==item.variantId || normalizeSourceType(r.inventory_source)!==item.sourceType) {
+    if (!r || toInt(r.quantity,0)!==item.originalQuantity || toInt(r.variant_id,0)!==item.variantId || normalizeSourceType(r.inventory_source)!==item.sourceType) {
       fail('Резерв, склад или характеристики вещи изменились. Обновите заказ.')
     }
   }
@@ -146,7 +146,7 @@ export async function dispatchSelectedCompleteOrderLines(
            AND o.shipping_status<>'sent' AND o.order_status NOT IN ('archived','deleted')
            AND COALESCE(o.archived_at,'')=''
        )`
-    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,item.quantity,item.variantId,item.sourceType,item.quantity))
+    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity))
   }
   for(const item of selectedWorkshop) {
     statements.push(db.prepare(
@@ -160,6 +160,44 @@ export async function dispatchSelectedCompleteOrderLines(
            AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
        )`
     ).bind(stamp,orderId,item.orderItemId,item.quantity))
+  }
+  // Split each selected stock row BEFORE fulfilling it. The original item ID
+  // remains the issued item; a newly minted item ID owns the remaining hold.
+  // Both rows have unambiguous full-line status for legacy Return/Exchange UI.
+  for (const item of selectedStock) {
+    const remaining = item.originalQuantity - item.quantity
+    if (remaining <= 0) continue
+    const r = perItemReservation.get(item.orderItemId)!
+    const splitKey = `dispatch-rem:${requestId}:${item.orderItemId}`
+    const splitItemSql = `(SELECT id FROM order_items
+       WHERE order_id=? AND inventory_obligation_key=? ORDER BY id DESC LIMIT 1)`
+    statements.push(
+      db.prepare(`INSERT INTO order_items (
+        order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,
+        color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,
+        catalog_price_snapshot,is_workshop,source_type,workshop_comment,workshop_urgent,
+        workshop_due_date,workshop_due_time,stock_writeoff_status,created_at,
+        inventory_obligation_key,inventory_obligation_origin_at
+      ) SELECT order_id,product_id,variant_id,product_name_snapshot,audience_type,gender_snapshot,
+        color_snapshot,material_snapshot,length_snapshot,size_snapshot,?,unit_price,
+        line_total - CAST(line_total * ? / quantity AS INTEGER),
+        catalog_price_snapshot,0,source_type,workshop_comment,workshop_urgent,
+        workshop_due_date,workshop_due_time,'reserved',?,
+        ?,inventory_obligation_origin_at
+        FROM order_items WHERE id=? AND order_id=? AND quantity=? AND stock_writeoff_status='reserved'`
+      ).bind(remaining,item.quantity,stamp,splitKey,item.orderItemId,orderId,item.originalQuantity),
+      db.prepare(`INSERT INTO inventory_reservations(
+        order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,
+        reference_type,reference_id,unresolved_reason,created_at,updated_at)
+        SELECT r.order_id,${splitItemSql},r.inventory_source,r.product_id,r.variant_id,?,
+               'active',r.reference_type,r.reference_id,NULL,?,?
+        FROM inventory_reservations r WHERE r.id=? AND r.status='active' AND r.quantity=?`
+      ).bind(orderId,splitKey,remaining,stamp,stamp,toInt(r.id,0),item.originalQuantity),
+      db.prepare(`UPDATE order_items
+        SET quantity=?,line_total=CAST(line_total * ? / quantity AS INTEGER)
+        WHERE id=? AND quantity=? AND stock_writeoff_status='reserved'`
+      ).bind(item.quantity,item.quantity,item.orderItemId,item.originalQuantity),
+    )
   }
   for(const g of groups.values()){
     statements.push(
@@ -199,9 +237,9 @@ export async function dispatchSelectedCompleteOrderLines(
         ) VALUES(?,'sale',?,?,?,?,?,?,?,?,?,?,'order_dispatch',?,?,?)`
       ).bind(group.source,group.productId,group.variantId,group.productName,group.gender,group.color,
         group.material,group.length,group.size,-item.quantity,next,ref,`Отправлен заказ ${order.external_id}`,stamp),
-      db.prepare(`UPDATE inventory_reservations SET status='fulfilled',fulfilled_at=?,updated_at=?
+      db.prepare(`UPDATE inventory_reservations SET quantity=?,status='fulfilled',fulfilled_at=?,updated_at=?
          WHERE id=? AND status='active' AND quantity=?`
-      ).bind(stamp,stamp,toInt(r.id,0),item.quantity),
+      ).bind(item.quantity,stamp,stamp,toInt(r.id,0),item.originalQuantity),
       db.prepare(`UPDATE order_items SET stock_writeoff_status='fulfilled',stock_quantity_before=?,stock_quantity_after=?
          WHERE id=? AND stock_writeoff_status='reserved'`
       ).bind(next+item.quantity,next,item.orderItemId),
