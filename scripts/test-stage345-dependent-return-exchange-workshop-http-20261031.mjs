@@ -211,6 +211,15 @@ assert.equal(stock(9043).quantity,replacementPhysical-1)
 const undoParent=await http('PATCH','/api/exchanges/'+exchangeId+'/cancel',{requestId:'stage345-parent-after-child'})
 assert.equal(undoParent.status,200,'Cancel exchange once dependencies cleared: '+JSON.stringify(undoParent))
 assert.equal(stock(9041).quantity,oldPhysical)
+if(stock(9043).quantity!==replacementPhysical){
+ console.error('STAGE5_CANCEL_SYNTHETIC_DIAG',JSON.stringify({
+  checks:sql.prepare("SELECT id,check_type,checked_at FROM inventory_stock_checks WHERE variant_id=9032 ORDER BY id DESC LIMIT 8").all(),
+  movements:sql.prepare("SELECT id,movement_type,quantity_delta,reference_type FROM inventory_movements WHERE variant_id=9032 ORDER BY id DESC LIMIT 12").all(),
+  dispatch:sql.prepare("SELECT di.id,di.quantity,di.cancelled_quantity,di.movement_id FROM order_dispatch_items di JOIN order_items oi ON oi.id=di.order_item_id WHERE oi.order_id=?").all(originalOrderId),
+  lifecycle:sql.prepare("SELECT id,status,pending_reason,movement_id FROM inventory_lifecycle_events WHERE operation_id=?").all(exchangeId),
+  stock:stock(9043),
+ }))
+}
 assert.equal(stock(9043).quantity,replacementPhysical)
 assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=?').get(old.id).quantity,1)
 assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=?').get(newLine.id).quantity,0)
