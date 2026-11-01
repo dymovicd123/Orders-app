@@ -76,5 +76,47 @@ assert.equal(cancelReplay.alreadyCorrected,true)
 assert.deepEqual({...stock()},{quantity:9,reserved_quantity:1})
 await assert.rejects(cancelExactOrderDispatchItem(db,9051,{dispatchItemId:cancelItem,requestId:'stage5b-test-undo-0002',actor:'QA manager',reason:'new key'}),/уже исправили/)
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE reference_type='order_dispatch_correction'").get().n,1)
+// A completed Return on a THIRD line is not a reason to block normal
+// dispatch or cancellation of unrelated lines in the same order.
+sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(9063,9051,9021,9031,'DISPATCH EXACT SKU',1,1000,1000,0,'warehouse','fulfilled','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO returns(id,order_id,manager_id,return_date,amount,comment,created_at) VALUES(9071,9051,1,'2026-11-01',0,'Fixture unrelated Return','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO return_items(return_id,order_item_id,product_name_snapshot,quantity,amount,created_at) VALUES(9071,9063,'DISPATCH EXACT SKU',1,0,'2026-11-01T00:00:00Z')").run()
+
+// Bring the remaining shipped line back to active, then atomically dispatch
+// two separate order lines for the SAME physical SKU in one request.
+const oldSecondItem=sql.prepare("SELECT id FROM order_dispatch_items WHERE order_item_id=9062").get().id
+const correctedOther=await cancelExactOrderDispatchItem(db,9051,{
+ dispatchItemId:oldSecondItem,requestId:'stage5b-test-undo-0003',actor:'QA manager',reason:'Wrong last shipment',
+})
+assert.equal(correctedOther.ok,true)
+assert.deepEqual({...stock()},{quantity:10,reserved_quantity:2})
+const group=await dispatch('stage5b-test-dispatch-group-01',[
+ {orderItemId:9061,quantity:1},{orderItemId:9062,quantity:1},
+])
+assert.equal(group.shippedLines,2)
+assert.deepEqual({...stock()},{quantity:8,reserved_quantity:0})
+assert.equal(state(),'sent')
+const groupId=group.dispatchId
+const groupItems=sql.prepare("SELECT id,order_item_id,movement_id FROM order_dispatch_items WHERE dispatch_id=? ORDER BY order_item_id").all(groupId)
+assert.equal(groupItems.length,2)
+assert(groupItems.every(x=>x.movement_id>0),'Every exact outgoing line has a movement ID')
+assert.notEqual(groupItems[0].movement_id,groupItems[1].movement_id)
+assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9061").get().status,'fulfilled')
+
+// A later physical revision overwrote the stock baseline. Correcting the
+// earlier dispatch must NEVER manufacture a +1 on the counted physical stock.
+sql.prepare("INSERT INTO inventory_movements(inventory_source,movement_type,product_id,variant_id,product_name_snapshot,quantity_delta,quantity_after,reference_type,reference_id,created_at) VALUES('warehouse','revision',9021,9031,'DISPATCH EXACT SKU',0,8,'test','after-dispatch','2099-01-01T00:00:00Z')").run()
+const countedUndo=await cancelExactOrderDispatchItem(db,9051,{
+ dispatchItemId:groupItems[0].id,requestId:'stage5b-test-undo-after-count-01',
+ actor:'QA manager',reason:'Shipment marked too early',
+})
+assert.equal(countedUndo.ok,true)
+assert.equal(countedUndo.physicalRestoredQuantity,0)
+assert.equal(countedUndo.needsStockCheck,true)
+assert.deepEqual({...stock()},{quantity:8,reserved_quantity:1})
+assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9062").get().status,'fulfilled')
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM return_items WHERE return_id=9071").get().n,1,
+  'Unrelated completed Return is retained unchanged')
+
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
