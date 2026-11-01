@@ -822,6 +822,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <div style={{flex:1,minWidth:0}}>
                               <strong>{line.productName}</strong>
                               <small style={{display:'block',opacity:.8}}>
+                                {[line.color,line.size,line.material,line.length].filter(Boolean).join(' · ')}
+                                {line.color||line.size||line.material||line.length ? ' · ' : ''}
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
                                 {' · '}{line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
                               </small>
