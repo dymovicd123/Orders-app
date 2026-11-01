@@ -8,7 +8,7 @@ dbSql.exec([
   "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,archived_at TEXT,shipping_status TEXT)",
   "CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,stock_writeoff_status TEXT,is_workshop INTEGER,quantity INTEGER,source_type TEXT,variant_id INTEGER,product_name_snapshot TEXT,stock_quantity_before INTEGER,stock_quantity_after INTEGER)",
   "CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER,updated_at TEXT,last_action TEXT,last_source_ref TEXT)",
-  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,inventory_source TEXT,variant_id INTEGER,status TEXT,unresolved_reason TEXT,reference_type TEXT,quantity INTEGER,updated_at TEXT)",
+  "CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,inventory_source TEXT,variant_id INTEGER,status TEXT,unresolved_reason TEXT,reference_type TEXT,reference_id TEXT,quantity INTEGER,updated_at TEXT)",
   "CREATE TABLE returns(id INTEGER PRIMARY KEY,status TEXT)",
   "CREATE TABLE return_items(id INTEGER PRIMARY KEY,order_item_id INTEGER,return_id INTEGER,quantity INTEGER)",
   "CREATE TABLE activity_log(id INTEGER PRIMARY KEY,event_type TEXT,entity_type TEXT,entity_id INTEGER,order_id INTEGER,external_order_id TEXT,title TEXT,details TEXT,amount INTEGER,created_at TEXT)",

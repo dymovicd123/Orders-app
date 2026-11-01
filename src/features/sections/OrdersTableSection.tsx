@@ -157,7 +157,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     if(!d||d.submitting)return
     void (async()=>{
       const yes=await askActionConfirmation(
-        `Отменить отправку товара «${line.productName}», ${line.quantity} шт.? Подтверждайте только если клиенту эту вещь фактически не передавали. Если вещь уже у клиента, оформите возврат.`
+        `Отменить отправку №${line.dispatchId} товара «${line.productName}», ${[line.color,line.size,line.material,line.length].filter(Boolean).join(' · ')}, ${line.quantity} шт.? Подтверждайте только если клиенту эту вещь фактически не передавали. Если вещь уже у клиента, оформите возврат.`
       )
       if(!yes)return
       const key=d.correctionItemId===Number(line.dispatchItemId)&&d.correctionKey
@@ -796,10 +796,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={event=>{if(event.target===event.currentTarget&&!dispatchDraft.submitting)setDispatchDraft(null)}}>
                   <div className="modal-card" role="dialog" aria-modal="true"
-                    aria-label={dispatchDraft.order.shipping_status==='sent'?'Отправленные товары':'Отправка товаров'}
+                    aria-label={dispatchDraft.plan?.selectedCount?'Отправка товаров':'Отправленные товары'}
                     style={{maxWidth:620,maxHeight:'88vh',overflowY:'auto'}}>
                     <div className="modal-head">
-                      <div><div className="card-label">{dispatchDraft.order.shipping_status==='sent'?'Отправленные товары':'Отправка товаров'}</div>
+                      <div><div className="card-label">{dispatchDraft.plan?.selectedCount?'Отправка товаров':'Отправленные товары'}</div>
                         <h3>{dispatchDraft.order.external_id}</h3></div>
                       <button type="button" className="ghost compact" disabled={dispatchDraft.submitting}
                         onClick={()=>setDispatchDraft(null)}>Закрыть</button>
@@ -854,7 +854,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   <strong>{x.productName}</strong>
                                   {x.isReplacement ? <small>Замена по обмену</small> : null}
                                   <small style={{display:'block',opacity:.8}}>
-                                    {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт. · {x.dispatchDate}
+                                    {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт.
+                                    {' · '}{x.sourceType==='workshop'?'Цех':x.sourceType==='boutique'?'Бутик':'Склад'}
+                                    {' · '}Отправка №{x.dispatchId} · {x.dispatchedAt?new Date(x.dispatchedAt).toLocaleString('ru-RU'):x.dispatchDate}
                                   </small>
                                 </div>
                                 {x.hasReturn||(x.hasExchange&&!x.isReplacement) ? (

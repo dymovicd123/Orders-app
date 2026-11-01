@@ -78,8 +78,11 @@ export async function dispatchSelectedCompleteOrderLines(
     const exchange=await db.prepare(
       `SELECT e.id,e.order_id,e.new_order_item_id,e.status,oi.is_workshop,oi.quantity
        FROM exchanges e
-       JOIN order_items oi ON oi.id=e.new_order_item_id AND oi.order_id=e.order_id
-       WHERE e.id=? AND e.order_id=? AND e.new_order_item_id=?`
+       JOIN order_items oi ON oi.order_id=e.order_id
+       WHERE e.id=? AND e.order_id=? AND oi.id=?
+         AND (e.new_order_item_id=oi.id OR EXISTS(
+           SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+             AND ei.role='new' AND ei.order_item_id=oi.id AND ei.quantity=oi.quantity))`
     ).bind(toInt(item.exchangeWorkshopId,0),orderId,item.orderItemId).first<Record<string,unknown>>()
     if(!exchange || cleanText(exchange.status)==='cancelled' ||
        toInt(exchange.is_workshop,0)!==1 || toInt(exchange.quantity,0)!==item.quantity) {
@@ -234,7 +237,10 @@ export async function dispatchSelectedCompleteOrderLines(
            AND (
              NOT EXISTS(SELECT 1 FROM orders o WHERE o.id=oi.order_id AND o.shipping_status='sent')
              OR EXISTS(SELECT 1 FROM exchanges e
-               WHERE e.id=? AND e.order_id=oi.order_id AND e.new_order_item_id=oi.id
+               WHERE e.id=? AND e.order_id=oi.order_id
+                 AND (e.new_order_item_id=oi.id OR EXISTS(
+                   SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+                     AND ei.role='new' AND ei.order_item_id=oi.id AND ei.quantity=oi.quantity))
                  AND COALESCE(e.status,'completed')<>'cancelled')
            )
        )`
