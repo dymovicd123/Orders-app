@@ -42,7 +42,7 @@ export function projectOrderShipmentDisplay(
       && recordedQuantity >= 0 && recordedQuantity <= quantity) {
       sentQuantity = recordedQuantity
       state = recordedQuantity === quantity ? 'sent' : recordedQuantity === 0 ? 'not_sent' : 'partial'
-    } else if (Number(item.pendingExchangeDispatchId || 0) > 0) {
+    } else if (Number(item.pendingExchangeDispatchId || 0) > 0 || Number(item.pendingExchangeWorkshopId || 0) > 0) {
       // Replacement saved as "send later" is not part of a previous order dispatch.
       state = 'not_sent'
       sentQuantity = 0
