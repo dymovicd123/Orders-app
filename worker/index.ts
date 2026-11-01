@@ -1728,6 +1728,7 @@ export default {
 
         try {
           if (action === 'issue_now') {
+            if(await orderHasNewDispatchHistory(id))return json({ok:false,message:'Выберите готовые вещи через «Отправить товары».'},{status:409});
             if (item.reviewNeeded) {
               return json({ ok: false, message: `Сначала уточните, где находился товар «${item.productName}» во время последней физической ревизии или сверки.` }, { status: 409 });
             }
@@ -1804,6 +1805,7 @@ export default {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
+          if (await orderHasNewDispatchHistory(id))return json({ok:false,message:'Выберите конкретную отправленную вещь в «Отправки».'},{status:409});
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
@@ -1856,7 +1858,7 @@ export default {
           const result=await dispatchSelectedCompleteOrderLines(env.DB,orderId,{
             requestId:cleanText(input.requestId),items,
             dispatchDate:cleanText(input.dispatchDate),
-            actor:authenticatedActor(request)||'Сотрудник',
+            actor:cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
           });
           let updatedOrder=null;
           try { updatedOrder=await getOrder(env.DB,orderId) }
@@ -1876,7 +1878,7 @@ export default {
           const input=await readJson<{requestId?:unknown;reason?:unknown}>(request);
           const result=await cancelExactOrderDispatchItem(env.DB,orderId,{
             dispatchItemId,requestId:cleanText(input.requestId),
-            actor:authenticatedActor(request)||'Сотрудник',
+            actor:cleanText(request.headers.get('X-Access-User'))||'Сотрудник',
             reason:cleanText(input.reason),
           });
           let updatedOrder=null;
