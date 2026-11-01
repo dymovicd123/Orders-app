@@ -17,8 +17,9 @@ const confirmedStockIssue = new Set([
   'fulfilled', 'written_off', 'negative', 'retired_physically_issued',
 ])
 const knownNotIssued = new Set([
-  'reserved', 'active', 'pending_reservation', 'unresolved',
-  'reservation_released', 'pending', 'catalog_unresolved',
+  'reserved', 'active', 'pending_reservation', 'unresolved', 'pending',
+  // 'reservation_released' alone is ambiguous: a prior handover may have
+  // been followed by a Return. Do not call that historic item "not sent".
 ])
 
 /**
