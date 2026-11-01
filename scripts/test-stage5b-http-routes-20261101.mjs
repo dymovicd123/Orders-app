@@ -106,5 +106,28 @@ try{
  assert.equal(shipSibling.shippedQuantity,1)
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE order_item_id=9561').get().n,1)
  assert.equal(sql.prepare('SELECT SUM(line_total) AS total FROM order_items WHERE order_id=9551').get().total,6000)
+ // Workshop part of a mixed order was sent, but warehouse sibling is still
+ // reserved: Return must follow the WORKSHOP shipment item, not parent sent flag.
+ sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9552,'ORD-TEST-MIXED-WORKSHOP-HTTP','2026-11-01',9501,'active','warehouse','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at,inventory_obligation_key,inventory_obligation_origin_at) VALUES(9565,9552,9521,9531,'STAGE 5 TEST WORKSHOP',1,2500,2500,1,'warehouse','workshop','2026-11-01T00:00:00Z','stage5-http-workshop','2026-11-01T00:00:00Z')").run()
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at,inventory_obligation_key,inventory_obligation_origin_at) VALUES(9566,9552,9521,9531,'STAGE 5 TEST WAREHOUSE',1,1000,1000,0,'warehouse','reserved','2026-11-01T00:00:00Z','stage5-http-stock-sibling','2026-11-01T00:00:00Z')").run()
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9552,9566,'warehouse',9521,9531,1,'active','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+ sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+1 WHERE id=9541').run()
+ sql.prepare("INSERT INTO workshop_tasks(order_id,external_order_id,order_item_id,product_name_snapshot,quantity,status,created_at,updated_at) VALUES(9552,'ORD-TEST-MIXED-WORKSHOP-HTTP',9565,'STAGE 5 TEST WORKSHOP',1,'done','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+ const mixedPlan=await api('GET','/api/orders/9552/shipping/plan')
+ assert.equal(mixedPlan.selectedQuantity,2)
+ assert.equal(mixedPlan.lines.find(x=>x.orderItemId===9565)?.readyQuantity,1)
+ const workshopSent=await api('POST','/api/orders/9552/shipping/dispatches',{
+   requestId:'stage5-http-mixed-workshop-shipped',items:[{orderItemId:9565,quantity:1}]})
+ assert.equal(workshopSent.shippedQuantity,1)
+ assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9552').get().shipping_status,'not_sent')
+ const workshopReturn=await api('POST','/api/returns',{
+   requestId:'stage5-http-workshop-partial-return',orderId:9552,returnDate:'2026-11-01',amount:0,
+   items:[{orderItemId:9565,quantity:1,physicalState:'pending',restock:true}],
+ },201)
+ assert(workshopReturn.returnId>0,'Partially shipped Workshop item must remain returnable')
+ const afterWorkshopReturn=await api('GET','/api/orders/9552/shipping/plan')
+ assert.equal(afterWorkshopReturn.selectedQuantity,1,'Workshop Return cannot block independent Warehouse stock')
+ console.log('STAGE5_HTTP_PARTIALLY_SHIPPED_WORKSHOP_RETURN_PASS')
  console.log('STAGE5_REAL_WORKER_HTTP_SELECTED_1_OF_3_UNDO_REPLAY_LEGACY_GUARD_AND_RETURN_PASS')
 }finally{sql.close()}
