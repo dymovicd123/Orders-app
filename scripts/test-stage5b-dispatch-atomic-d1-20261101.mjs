@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {dispatchSelectedCompleteOrderLines} from '../worker/domains/order-dispatch.ts'
 import {cancelExactOrderDispatchItem} from '../worker/domains/order-dispatch-cancel.ts'
+import {inspectPendingReservation,resolvePendingReservation} from '../worker/domains/pending-reservation.ts'
 
 const sql=new DatabaseSync(':memory:')
 const migrations=fs.readdirSync('migrations').filter(s=>/^\d+.*\.sql$/.test(s)).sort()
@@ -209,6 +210,22 @@ assert.equal(events()[0].status,'applied')
 assert.deepEqual({...sql.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042").get()}, {quantity:3,reserved_quantity:0})
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_dispatch_corrections WHERE dispatch_item_id=?').get(dispatchedA).n,1,'Exchange correction must be item-exact')
 
+// Browser fixture2198: a true later count suppresses physical restoration,
+// but its exchange_new hold must still have the guarded recovery path.
+sql.prepare("UPDATE inventory_reservations SET reference_type='exchange_new',reference_id='9081' WHERE order_item_id=9965").run()
+sql.prepare("INSERT INTO inventory_stock_checks(check_key,inventory_source,product_id,variant_id,expected_quantity,counted_quantity,difference_quantity,reserved_quantity,check_type,reference_type,reference_id,checked_by,checked_at,created_at) VALUES('stage5-replacement-after-count','warehouse',9021,9032,3,3,0,0,'quick_stocktake','quick_stocktake','stage5-count','QA','2099-01-01T00:00:00Z','2099-01-01T00:00:00Z')").run()
+const replacementDispatchItem=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(lastOne.dispatchId).id
+await cancelExactOrderDispatchItem(db,9053,{dispatchItemId:replacementDispatchItem,requestId:'stage5-counted-replacement-undo-001',actor:'QA',reason:'test'})
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()},{quantity:3,reserved_quantity:0})
+const pendingReplacement=await inspectPendingReservation(db,9053,9965)
+assert.equal(pendingReplacement.pending,true)
+sql.prepare("UPDATE exchanges SET status='cancelled' WHERE id=9081").run()
+await assert.rejects(resolvePendingReservation(db,9053,9965,{snapshot:pendingReplacement.snapshot},{id:1,displayName:'QA'}),/Обмен изменился/)
+sql.prepare("UPDATE exchanges SET status='completed' WHERE id=9081").run()
+await resolvePendingReservation(db,9053,9965,{snapshot:pendingReplacement.snapshot},{id:1,displayName:'QA'})
+await resolvePendingReservation(db,9053,9965,{snapshot:pendingReplacement.snapshot},{id:1,displayName:'QA'})
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()},{quantity:3,reserved_quantity:1},'Recovery and replay never manufacture physical stock or double hold')
+
 // A workshop replacement created AFTER an already-sent order must use the
 // same dispatch plan and ledger, but must never alter physical stock.
 sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9054,'ORD-TEST-READY-WORKSHOP-EXCHANGE','2026-11-01',1,'active','warehouse','ready','sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
@@ -248,11 +265,18 @@ assert.equal(workshopUndo.physicalRestoredQuantity,0)
 assert.deepEqual({...stock()},snapshotBeforeWorkshop,'Undo workshop dispatch is never stock movement')
 const again=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9054))
 assert.equal(again.items.find(x=>x.id===9970).pendingExchangeWorkshopId,9086)
+// Current browser exchange forms use set-v2 links, with no legacy new item.
+sql.prepare('UPDATE exchanges SET new_order_item_id=NULL WHERE id=9086').run()
+sql.prepare("INSERT INTO exchange_items(exchange_id,role,order_item_id,product_name_snapshot,quantity,inventory_source,created_at) VALUES(9086,'new',9970,'READY WORKSHOP REPLACEMENT',1,'workshop','2026-11-01T00:00:00Z')").run()
+sql.prepare("UPDATE orders SET shipping_status='sent' WHERE id=9054").run()
 const workshopAgain=await dispatchSelectedCompleteOrderLines(db,9054,{
  requestId:'stage5b-workshop-exchange-redispatch-01',items:[{orderItemId:9970,quantity:1}],
  actor:'QA manager',dispatchDate:'2026-11-01',
 })
 assert.equal(workshopAgain.ok,true)
+assert.deepEqual({...stock()},snapshotBeforeWorkshop)
+const setWorkshopLine=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(workshopAgain.dispatchId).id
+await cancelExactOrderDispatchItem(db,9054,{dispatchItemId:setWorkshopLine,requestId:'stage5-set-v2-workshop-undo-01',actor:'QA',reason:'test'})
 assert.deepEqual({...stock()},snapshotBeforeWorkshop)
 
 sql.close()

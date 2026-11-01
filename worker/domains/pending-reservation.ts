@@ -8,7 +8,7 @@ type PendingRow = {
   item_source: string; item_variant_id: number | null;
   reservation_quantity: number; reservation_source: string;
   reservation_variant_id: number; reservation_status: string;
-  unresolved_reason: string | null; reference_type: string;
+  unresolved_reason: string | null; reference_type: string; reference_id: string;
   stock_id: number | null; physical_quantity: number | null;
   reserved_quantity: number | null; external_id: string;
   product_name: string; returned_quantity: number;
@@ -34,6 +34,24 @@ const qty = (n: unknown) => {
   return Number.isSafeInteger(value) ? value : 0;
 }
 
+// Only a live, still-unshipped replacement may reuse the shortage recovery
+// path after a protected dispatch correction. The exchange itself is immutable.
+const replacementGuard = `EXISTS(
+  SELECT 1 FROM inventory_lifecycle_events le
+  JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+  WHERE e.id=CAST(r.reference_id AS INTEGER) AND e.order_id=o.id
+    AND COALESCE(e.status,'completed')<>'cancelled'
+    AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
+    AND le.order_item_id=oi.id AND le.status='pending'
+    AND le.pending_reason='awaiting_dispatch'
+    AND le.variant_id=r.variant_id AND le.inventory_source=r.inventory_source
+    AND le.quantity=r.quantity
+    AND (e.new_order_item_id=oi.id OR EXISTS(
+      SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+        AND ei.role='new' AND ei.order_item_id=oi.id AND ei.id=le.operation_item_id
+        AND ei.quantity=oi.quantity))
+)`;
+
 export async function inspectPendingReservation(db: D1Database, orderId: number, itemId: number) {
   const row = await db.prepare(
     `SELECT r.id AS reservation_id, oi.id AS order_item_id, o.id AS order_id,
@@ -43,7 +61,7 @@ export async function inspectPendingReservation(db: D1Database, orderId: number,
             oi.product_name_snapshot AS product_name,
             r.quantity AS reservation_quantity, r.inventory_source AS reservation_source,
             r.variant_id AS reservation_variant_id, r.status AS reservation_status,
-            r.unresolved_reason, r.reference_type,
+            r.unresolved_reason, r.reference_type, r.reference_id,
             st.id AS stock_id, st.quantity AS physical_quantity,
             st.reserved_quantity,
             (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri
@@ -54,10 +72,18 @@ export async function inspectPendingReservation(db: D1Database, orderId: number,
      JOIN inventory_reservations r ON r.order_item_id=oi.id
      LEFT JOIN inventory_stock st
        ON st.inventory_source=r.inventory_source AND st.variant_id=r.variant_id
-     WHERE o.id=? AND oi.id=? AND r.reference_type='order'
+     WHERE o.id=? AND oi.id=? AND r.reference_type IN ('order','exchange_new')
      LIMIT 1`
   ).bind(orderId, itemId).first<PendingRow>();
   if (!row) throw new PendingReservationError('Резерв этой позиции не найден. Обновите заказ.');
+  const isReplacement = row.reference_type === 'exchange_new';
+  if (isReplacement) {
+    const linked = await db.prepare(`SELECT r.id FROM inventory_reservations r
+      JOIN order_items oi ON oi.id=r.order_item_id JOIN orders o ON o.id=oi.order_id
+      WHERE r.id=? AND o.id=? AND oi.id=? AND ${replacementGuard}`)
+      .bind(row.reservation_id,orderId,itemId).first<{id:number}>();
+    if (!linked) throw new PendingReservationError('Обмен изменился или уже закрыт. Обновите заказ.');
+  }
   if (row.reservation_status === 'active') {
     return { ok: true, alreadyResolved: true, pending: false, orderId, orderItemId:itemId };
   }
@@ -86,7 +112,7 @@ export async function inspectPendingReservation(db: D1Database, orderId: number,
   return {
     ok:true, pending:true, alreadyResolved:false, orderId, orderItemId:itemId,
     reservationId:qty(row.reservation_id), stockId:qty(row.stock_id),
-    externalId:row.external_id, productName:row.product_name,
+    externalId:row.external_id, productName:row.product_name, isReplacement,
     snapshot, freeQuantity:snapshot.physicalQuantity-snapshot.reservedQuantity,
     shortage:Math.max(0,snapshot.requestedQuantity-(snapshot.physicalQuantity-snapshot.reservedQuantity)),
   };
@@ -137,7 +163,7 @@ export async function resolvePendingReservation(
            JOIN orders o ON o.id=oi.order_id
            WHERE r.id=? AND r.order_item_id=? AND r.order_id=?
              AND r.status='unresolved' AND r.unresolved_reason='concurrent_shortage'
-             AND r.reference_type='order'
+             AND r.reference_type='${preview.isReplacement ? 'exchange_new' : 'order'}'
              AND r.quantity=? AND oi.quantity=r.quantity
              AND oi.variant_id=r.variant_id AND oi.source_type=r.inventory_source
              AND oi.stock_writeoff_status='pending_reservation'
@@ -148,6 +174,7 @@ export async function resolvePendingReservation(
              AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns ret
                ON ret.id=ri.return_id WHERE ri.order_item_id=oi.id
                AND ret.status<>'cancelled')
+             ${preview.isReplacement ? `AND ${replacementGuard}` : ''}
          )`
     ).bind(snap.requestedQuantity,timestamp,'order:'+orderId,
       preview.stockId,snap.inventorySource,snap.variantId,
