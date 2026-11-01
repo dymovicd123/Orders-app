@@ -7,6 +7,8 @@ on:
       - 'scripts/test-stage4-native-workerd-d1-20261101.mjs'
       - 'scripts/test-stage3-7-native-workerd-lifecycle-20261101.mjs'
       - 'scripts/test-stage4-browser-problems-history-20261101.mjs'
+      - 'src/styles/w12-stock-variant-timeline.css'
+      - 'src/styles/w18-history-investigation.css'
       - '.github/workflows/stage4-native-isolated-d1.yml'
       - 'worker/index.ts'
       - 'worker/domains/auth.ts'
