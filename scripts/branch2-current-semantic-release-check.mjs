@@ -100,6 +100,7 @@ const groups = [
     'scripts/test-stage4-operation-attempts-20261101.mjs',
     'scripts/test-stage4-return-exchange-attention-cache-20261101.mjs',
     'scripts/test-work733-shipping-after-partial-return-20261101.mjs',
+    'scripts/test-work733-action-confirmations-20261101.mjs',
     'scripts/test-stage4-6-http-stock-issue-lifecycle-20261101.mjs',
     'scripts/test-stage4-reservations-full-aggregate-20261101.mjs',
     'scripts/test-stage4-issue-history-order-linkage-20261101.mjs',
