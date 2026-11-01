@@ -1,0 +1,121 @@
+name: Guarded Storage background UI alert Branch2 Worker-only release
+
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-storage-background-ui-release-20261101.yml'
+
+permissions:
+  contents: read
+concurrency:
+  group: branch2-storage-background-ui-worker-only
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(storage-alert-branch2):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      DATABASE: orders_db_branch2_mirror_20261027
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify exact approved parent, isolated target, and no D1 migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD^)" = 'a923bd1d411ee99dd1cecebc69c9154e036aca29'
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const cfg=readFileSync('wrangler.jsonc','utf8')
+          for(const v of [
+            '"name": "orders-app-branch2"',
+            '"database_name": "orders_db_branch2_mirror_20261027"',
+            '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"',
+          ])assert(cfg.includes(v),'Branch2 binding drift: '+v)
+          for(const v of ['orders_db_prod','17e68a41-1d58-4a36-8a63-47c3e32443c4','orders-app.orders-clothes.workers.dev'])
+            assert(!cfg.includes(v),'Main target is forbidden')
+          const ui=readFileSync('src/features/storage/DatabaseStorageMaintenance.tsx','utf8')
+          const load=ui.slice(ui.indexOf('  const loadStatus = useCallback('), ui.indexOf('  useEffect('))
+          assert(!load.includes('setError('),'Background storage polling must never show a global order error')
+          assert(load.includes('setLoadError('),'Manual admin load failures must be visible in storage panel')
+          assert(ui.includes('maintenance.loadError') && ui.includes('maintenance.loadStatus(true)'),
+            'Admin manual read errors must be locally recoverable')
+          const backend=readFileSync('worker/index.ts','utf8')
+          assert(backend.includes("requireAdminUser(authUser, 'Хранилище базы доступно только администратору.')"),
+            'Do not loosen backend storage permissions')
+          writeFileSync('.storage-alert-release.jsonc',
+            cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'))
+          console.log('STORAGE_ALERT_BRANCH2_RELEASE_PREFLIGHT_PASS')
+          NODE
+      - name: Test accepted atomic shipping and full current release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node --experimental-strip-types scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          node scripts/test-storage-background-alert-scope-20261101.mjs
+          node scripts/branch2-current-semantic-release-check.mjs
+          npx wrangler deploy --dry-run --outdir .storage-alert-dry-run --config .storage-alert-release.jsonc
+      - name: Read-only remote Branch2 schema and stock-money fingerprints
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config .storage-alert-release.jsonc --command="
+            SELECT (SELECT COUNT(*) FROM sqlite_master WHERE name='order_dispatches' AND type='table') AS batches,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='order_dispatch_items' AND type='table') AS lines,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='order_dispatch_corrections' AND type='table') AS corrections
+          " --json | jq -e '.[0].results[0]|.batches==1 and .lines==1 and .corrections==1'
+          npx wrangler d1 execute "$DATABASE" --remote --config .storage-alert-release.jsonc --command="
+            SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS sales,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_qty,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_qty,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements_count
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/storage-alert-before.json"
+      - name: Deploy only orders-app-branch2 Worker (NO D1 WRITES)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config .storage-alert-release.jsonc
+      - name: Verify unchanged Branch2 D1 and anonymous HTTP boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config .storage-alert-release.jsonc --command="
+            SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS sales,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_qty,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_qty,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements_count
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/storage-alert-after.json"
+          cmp "$RUNNER_TEMP/storage-alert-before.json" "$RUNNER_TEMP/storage-alert-after.json"
+          host='https://orders-app-branch2.orders-clothes.workers.dev'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$host/api/auth/status")" = 200
+          for path in /api/orders/9551/shipping/plan /api/orders/9551/shipping/dispatches; do
+            test "$(curl -sS -o /dev/null -w '%{http_code}' "$host$path")" = 401
+          done
+          echo 'STORAGE_ALERT_BRANCH2_RELEASE_PASS: Worker-only, Main untouched, D1 business fingerprints identical'
