@@ -6,6 +6,9 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "orders-app",
 	"main": "worker/index.ts",
+	"build": {
+		"command": "npm run build"
+	},
 	"compatibility_date": "2026-07-06",
 	"d1_databases": [
   	{
