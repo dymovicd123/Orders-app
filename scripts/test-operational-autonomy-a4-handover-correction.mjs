@@ -36,7 +36,7 @@ try {
   check(app.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
   check(table.includes('Снять «Отправлен»'), 'sent-order correction action not visible in Orders table')
   check(!table.includes('активная обменённая позиция'), 'ordinary Orders UI exposes exchange implementation detail')
-  check(table.includes('Сначала исправьте возврат товара'), 'standalone item return blocker is not explained')
+  check(table.includes('Исправить отправку'), 'sent order needs a manager correction action even after an earlier Return')
   check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')

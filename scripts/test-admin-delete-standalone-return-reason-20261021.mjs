@@ -46,8 +46,8 @@ sql.prepare("UPDATE returns SET status='cancelled' WHERE id=1").run()
 assert.equal(await blocker(),null,'Cancelled Return has no delete blocker')
 const code=readFileSync('worker/domains/returns-exchanges.ts','utf8')
 const preview=readFileSync('worker/domains/order-delete-preview.ts','utf8')
-assert.match(code,/throw new CriticalOperationConflictError\(standaloneItemReturn\.message\)/,
-  'HTTP conflict should retain the exact Return ID and human-readable reason')
+assert.match(code,/return correctShippingMarkerAfterStandaloneReturn/,
+  'Item return cannot permit a blind stock reversal during last-shipment correction')
 assert.match(preview,/if\(itemReturn\)reasons\.push\(itemReturn\.message\)/,
   'Read-only preflight should surface the exact Return before submit')
 console.log('ADMIN_DELETE_STANDALONE_ITEM_RETURN_REASON_PASSED')
