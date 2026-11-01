@@ -52,7 +52,10 @@ export async function cancelExactOrderDispatchItem(
     `SELECT le.id,le.operation_id,le.quantity,le.variant_id,le.inventory_source
      FROM inventory_lifecycle_events le
      JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
-     WHERE le.order_id=? AND le.order_item_id=? AND e.new_order_item_id=le.order_item_id
+     WHERE le.order_id=? AND le.order_item_id=? AND (e.new_order_item_id=le.order_item_id OR EXISTS(
+           SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+             AND ei.id=le.operation_item_id AND ei.role='new'
+             AND ei.order_item_id=le.order_item_id))
        AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
        AND le.status='applied' AND le.movement_id=?
        AND COALESCE(e.status,'completed')<>'cancelled'
