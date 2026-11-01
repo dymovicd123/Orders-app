@@ -100,7 +100,8 @@ export async function cancelExactOrderDispatchItem(
             AND c.check_type<>'shipping_observation') AS newer_check,
          EXISTS(SELECT 1 FROM inventory_movements m
           WHERE m.inventory_source=? AND m.variant_id=? AND m.id>?
-            AND m.movement_type IN ('revision','manual_set')) AS newer_revision`
+            AND m.movement_type IN ('revision','manual_set')
+            AND m.reference_type NOT IN ('return_cancel','exchange_cancel')) AS newer_revision`
     ).bind(line.source_type,line.variant_id,line.dispatch_created_at,
       line.source_type,line.variant_id,movementId).first<{newer_check:number;newer_revision:number}>()
     restorePhysical=!toInt(recent?.newer_check,0)&&!toInt(recent?.newer_revision,0)
