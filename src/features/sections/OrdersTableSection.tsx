@@ -858,9 +858,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     {x.color ? `${x.color} · `:''}{x.size||''} · {x.quantity} шт. · {x.dispatchDate}
                                   </small>
                                 </div>
-                                <button type="button" className="secondary compact"
-                                  disabled={dispatchDraft.submitting}
-                                  onClick={()=>cancelDispatchedLine(x)}>Отменить отправку</button>
+                                {x.hasReturn||x.hasExchange ? (
+                                  <small>{x.hasExchange?'Есть обмен':'Есть возврат'}</small>
+                                ) : (
+                                  <button type="button" className="secondary compact"
+                                    disabled={dispatchDraft.submitting}
+                                    onClick={()=>cancelDispatchedLine(x)}>Отменить отправку</button>
+                                )}
                               </div>)}
                           </div>
                         ) : null}
