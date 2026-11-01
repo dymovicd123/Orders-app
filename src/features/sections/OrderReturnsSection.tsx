@@ -25,7 +25,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     returnHistoryFilters,
     returnHistoryHasMore,
     returnHistorySummary,
-    returnPendingInbox,
+    returnPendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
     loadReturnPendingInbox,
     loadReturnHistory,
     returnSelectedOrder,
