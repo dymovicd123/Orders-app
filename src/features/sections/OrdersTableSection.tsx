@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
+import { projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
 type SectionContext = Record<string, any>
 
 export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
@@ -311,6 +312,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     {orders.length ? orders.map((order) => {
                       const projection = projectOrderOperationalState(order, { isAdmin })
                       const returnTruth = order.return_physical_summary
+                      const shipmentDisplay = projectOrderShipmentDisplay(order)
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
                       const itemSummary = summarizeOrderItemLines(
                         order.items,
@@ -359,6 +361,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     <span className="order-item-quantity-badge">× {line.quantity}</span>
                                   </div>
                                   {line.details ? <span className="order-item-card-details">{line.details}</span> : null}
+                                  <small className={`order-item-shipment-status is-${shipmentDisplay.lines[index]?.state || 'unknown'}`}>
+                                    {shipmentDisplay.lines[index]?.label || 'Отправка не уточнена'}
+                                  </small>
                                   <div className="order-item-chip-meta">
                                     <span className={`order-item-source-badge source-${normalizeSuggestion(line.source) === 'ЦЕХ' ? 'workshop' : normalizeSuggestion(line.source) === 'БУТИК' ? 'boutique' : 'warehouse'}`}>{line.source}</span>
                                     {line.isWorkshop ? (
@@ -393,7 +398,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <td>
                           <div className="order-cell-stack">
                             <strong>{order.delivery_type || '—'}</strong>
-                            <small>{order.shipping_status === 'sent' ? `Отправлено${order.shipping_date ? ` · ${order.shipping_date}` : ''}` : 'Не отправлено'}</small>
+                            <small>{shipmentDisplay.label}{shipmentDisplay.state === 'sent' && order.shipping_date ? ` · ${order.shipping_date}` : ''}</small>
                             <small>{order.comment || '—'}</small>
                           </div>
                         </td>
@@ -464,7 +469,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           ) : (
                             <div className="order-status-stack">
                               <span className={`status-pill ${projection.paymentClass}`}>{projection.paymentLabel}</span>
-                              <span className={`status-pill ${order.shipping_status === 'sent' ? 'status-online' : 'status-warning'}`}>{shippingStatusLabel(order)}</span>
+                              <span className={`status-pill ${shipmentDisplay.state === 'sent' ? 'status-online' : shipmentDisplay.state === 'partial' ? 'status-warning' : 'status-neutral'}`}>{shipmentDisplay.label}</span>
                               {projection.workshopLabel ? <small>{projection.workshopLabel}</small> : null}
                               {returnTruth ? (
                                 <div className="order-return-truth" aria-label="Что известно о возвратах">
