@@ -108,6 +108,7 @@ const groups = [
     'scripts/test-orders-normal-after-partial-return-20261101.mjs',
     'scripts/test-work733-action-confirmations-20261101.mjs',
     'scripts/test-work733-smart-exchange-inbox-20261101.mjs',
+    'scripts/test-storage-background-alert-scope-20261101.mjs',
     'scripts/test-stage4-6-http-stock-issue-lifecycle-20261101.mjs',
     'scripts/test-stage4-reservations-full-aggregate-20261101.mjs',
     'scripts/test-stage4-issue-history-order-linkage-20261101.mjs',
