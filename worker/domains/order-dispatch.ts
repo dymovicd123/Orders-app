@@ -2,6 +2,7 @@ import { cleanText, normalizeSourceType, toInt } from '../core/text.ts'
 import { getOrder } from './orders-write.ts'
 import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
 import { CriticalOperationConflictError } from './critical.ts'
+import { getOrderStockHandoverState } from './order-reservations.ts'
 
 type Selection = { orderItemId: number; quantity: number }
 type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
@@ -76,17 +77,11 @@ export async function dispatchSelectedCompleteOrderLines(
     if (selectedStock.some(x=>alreadyReturned.has(x.orderItemId))) fail('Этот товар уже возвращали. Сначала уточните именно эту позицию.')
   }
 
-  // Refuse unresolved post-stocktake handovers for the exact selected lines.
-  const checkpoint = await db.prepare(
-    `SELECT DISTINCT r.order_item_id
-       FROM inventory_reservations r
-       JOIN inventory_stock_checks s ON s.inventory_source=r.inventory_source AND s.variant_id=r.variant_id
-       WHERE r.order_id=? AND r.status='active'
-         AND s.checked_at>r.created_at AND s.check_type<>'shipping_observation'`
-  ).bind(orderId).all<{order_item_id:number}>()
-  const suspicious=new Set((checkpoint.results||[]).map(x=>x.order_item_id))
-  if (selectedStock.some(x=>suspicious.has(x.orderItemId))) {
-    fail('После оформления заказа был пересчёт этого товара. Уточните выдачу именно этой позиции перед отправкой.')
+  // Reuse the SAME reviewed checkpoint truth as the existing issue action.
+  // A later stocktake with a recorded answer is not a blanket prohibition.
+  const handover=await getOrderStockHandoverState(db,orderId)
+  if (handover?.items.some(row=>selectedStock.some(item=>item.orderItemId===row.orderItemId) && row.reviewNeeded)) {
+    fail('Уточните выдачу выбранного товара после последней проверки склада.')
   }
 
   const groups = new Map<string,StockKey>()
