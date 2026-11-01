@@ -1,0 +1,47 @@
+name: Main catalog linked SKU diagnosis (SELECT ONLY, no deploy)
+on:
+  push:
+    branches: [audit/main-catalog-known-characteristics-readonly-20261101]
+    paths:
+      - '.github/workflows/audit-main-catalog-20261101.yml'
+permissions:
+  contents: read
+jobs:
+  catalog-main-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read only exact screenshot order/item identities in production
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import fs from 'node:fs'
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-catalog-known-characteristics-readonly-20261101')
+          const txt=fs.readFileSync('wrangler.jsonc','utf8')
+          assert(txt.includes('"name": "orders-app"')&&txt.includes('orders_db_prod')&&txt.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'),'Main config mismatch')
+          const token=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID
+          assert(token && /^[a-f0-9]{32}$/i.test(account||''),'Cloudflare credentials missing')
+          const endpoint='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/17e68a41-1d58-4a36-8a63-47c3e32443c4'
+          const sql="SELECT o.external_id,o.order_date,o.order_status,o.shipping_status,oi.id AS item_id,oi.quantity,oi.source_type,oi.product_id,oi.variant_id,oi.stock_writeoff_status AS item_state,oi.product_name_snapshot AS item_name,oi.gender_snapshot AS gender,oi.color_snapshot AS color,oi.material_snapshot AS material,oi.length_snapshot AS length,oi.size_snapshot AS size,\n(SELECT GROUP_CONCAT(r.status||':'||COALESCE(r.unresolved_reason,'')) FROM inventory_reservations r WHERE r.order_item_id=oi.id) AS reserves,\n(SELECT COUNT(*) FROM catalog_products p WHERE p.is_active=1 AND UPPER(TRIM(p.name))=UPPER(TRIM(oi.product_name_snapshot))) AS active_exact_name_products,\n(SELECT COUNT(*) FROM catalog_variants v WHERE v.is_active=1 AND v.product_id=oi.product_id) AS variants_on_linked_product,\n(SELECT COUNT(*) FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id WHERE v.is_active=1 AND p.is_active=1 AND ((oi.product_id IS NOT NULL AND v.product_id=oi.product_id) OR (oi.product_id IS NULL AND UPPER(TRIM(p.name))=UPPER(TRIM(oi.product_name_snapshot)))) AND UPPER(TRIM(COALESCE(v.gender,'')))=UPPER(TRIM(COALESCE(oi.gender_snapshot,''))) AND UPPER(TRIM(COALESCE(v.color,'')))=UPPER(TRIM(COALESCE(oi.color_snapshot,''))) AND UPPER(TRIM(COALESCE(v.material,'СТАНДАРТ')))=UPPER(TRIM(COALESCE(oi.material_snapshot,'СТАНДАРТ'))) AND UPPER(TRIM(COALESCE(v.length,'СТАНДАРТ')))=UPPER(TRIM(COALESCE(oi.length_snapshot,'СТАНДАРТ'))) AND UPPER(TRIM(COALESCE(v.size_label,'')))=UPPER(TRIM(COALESCE(oi.size_snapshot,'')))) AS strict_active_sku_candidates\nFROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE (o.external_id LIKE 'ORD-20261031154950%' OR o.external_id LIKE 'ORD-20261031152456%' OR o.external_id LIKE 'ORD-20261031141236%' OR o.external_id LIKE 'ORD-20261021101758%' OR o.external_id LIKE 'ORD-20261018145832%' OR o.external_id LIKE 'ORD-20261014130441%' OR o.external_id LIKE 'ORD-20261007131526%' OR o.external_id LIKE 'ORD-20260924130114%' OR o.external_id LIKE 'ORD-20260922065944%') AND oi.quantity>0 ORDER BY o.order_date DESC,oi.id DESC LIMIT 40"
+          assert(/^SELECT\s/i.test(sql)&&!sql.includes(';')&&!/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|DETACH|VACUUM)\b/i.test(sql),'SELECT ONLY')
+          async function call(path,statement){
+           const res=await fetch(endpoint+path,{method:statement?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(statement?{body:JSON.stringify({sql:statement})}:{}),signal:AbortSignal.timeout(25000)})
+           const data=await res.json()
+           assert(res.ok && data.success!==false,'D1 error '+res.status+' '+(data.errors||[]).map(x=>x.code).join(','))
+           return data.result
+          }
+          const meta=await call('')
+          assert.equal(meta.name,'orders_db_prod','Unexpected DB')
+          const r=await call('/query',sql)
+          const rows=(Array.isArray(r)?r:[r]).flatMap(x=>x.results||[])
+          console.log('MAIN_CATALOG_DIAG_READONLY_OK',JSON.stringify({rows:rows.length,source:'real remote production D1, SELECT only',mainBase:'e2fde89'}))
+          for(const item of rows)console.log('MAIN_CATALOG_ITEM',JSON.stringify(item))
+          
+          NODE
