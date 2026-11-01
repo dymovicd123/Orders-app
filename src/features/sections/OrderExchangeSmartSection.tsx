@@ -504,7 +504,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               <div className="exchange-money-clarification" role="note">
                 <strong>Почему сумма отличается от таблицы заказа?</strong>
                 <span>Поступило {formatMoney(grossReceived)} − уже возвращено клиенту {formatMoney(previousRefunds)} = осталось к зачёту {formatMoney(currentNetPaid)}.</span>
-                <span>В таблице записан долг {formatMoney(recordedDebt)} по сохранённому заказу. Здесь расчёт новый: с учётом возврата денег и выбранных замен. Доплата не означает повторный приход денег.</span>
+                <span>В таблице записан долг {formatMoney(recordedDebt)} по сохранённому заказу. Здесь расчёт новый: с учётом возврата денег и выбранных замен. Расчёт не меняет ранее проведённые возвраты или оплаты.</span>
               </div>
             ) : null}
 
