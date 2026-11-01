@@ -8850,9 +8850,12 @@ function removeDebtPayment(index: number) {
           if (!freshResponse.ok || freshResult.ok === false || !freshResult.order || freshResult.order.id !== resolvedOrder.id) {
             throw new Error(freshResult.message || 'Не удалось получить свежий заказ после уточнения товара.')
           }
-          const sent = await markOrderSentToClient(freshResult.order)
-          if (!sent) return false
+          // Item resolution must not authorize an unseen whole-order send.
+          // The employee explicitly chooses the ready lines in the Orders table.
+          upsertOrderInState(freshResult.order)
+          setSelectedOrderId(freshResult.order.id)
           setOrderCatalogResolutionOrder(null)
+          setMessage('Товар уточнён. Теперь выберите готовые вещи через «Отправить товары».')
           return true
         }}
         onEditOrder={async (blockedOrder: OrderRecord) => {
