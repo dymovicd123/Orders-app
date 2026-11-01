@@ -210,7 +210,11 @@ try{
  console.log('STAGE4_NATIVE_WORKER_D1_ACCEPTANCE_PASS: actual migrations, Cyrillic authorized staff, native D1 arrival, rejected audit, immutable movement, replay and exact source/SKU')
  if(process.argv.includes('--stage3')){
   const {runStage3NativeAcceptance}=await import('./test-stage3-7-native-workerd-lifecycle-20261101.mjs')
-  await runStage3NativeAcceptance({api,token:'stage3-isolated-native-admin'})
+  try { await runStage3NativeAcceptance({api,token:'stage3-isolated-native-admin'}) }
+  catch(error){
+   console.error('STAGE3_NATIVE_ISOLATED_WORKER_LOGS',logs.slice(-13000))
+   throw error
+  }
  }
 }finally{
  if(child&&child.exitCode===null){child.kill('SIGTERM');await delay(300);if(child.exitCode===null)child.kill('SIGKILL')}
