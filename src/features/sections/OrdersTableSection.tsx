@@ -619,10 +619,10 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Уточнить выдачу после проверки склада' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !projection.deleted ? (
+                            {!retainedOnly && !archived && !projection.deleted && order.shipping_status !== 'sent' ? (
                               <button className="secondary compact" type="button"
                                 disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
-                                {order.shipping_status==='sent' ? 'Отправки' : 'Отправить товары'}
+                                Отправить товары
                               </button>
                             ) : null}
                             {projection.canCorrectShipping && !(order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
@@ -695,6 +695,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     Исправить реквизиты
                                   </button>
                             ) : null}
+                                {extraActionsOrderId === order.id && (order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
+                                  <button className="secondary compact" type="button"
+                                    disabled={savingOrder}
+                                    onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
+                                    Посмотреть отправленные товары
+                                  </button>
+                                ) : null}
                                 {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item:any) => Number(item.id)>0 && Number(item.quantity)>0) ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
@@ -800,10 +807,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
               {dispatchDraft ? (
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={event=>{if(event.target===event.currentTarget&&!dispatchDraft.submitting)setDispatchDraft(null)}}>
-                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Отправка товаров"
+                  <div className="modal-card" role="dialog" aria-modal="true"
+                    aria-label={dispatchDraft.order.shipping_status==='sent'?'Отправленные товары':'Отправка товаров'}
                     style={{maxWidth:620,maxHeight:'88vh',overflowY:'auto'}}>
                     <div className="modal-head">
-                      <div><div className="card-label">Отправка товаров</div>
+                      <div><div className="card-label">{dispatchDraft.order.shipping_status==='sent'?'Отправленные товары':'Отправка товаров'}</div>
                         <h3>{dispatchDraft.order.external_id}</h3></div>
                       <button type="button" className="ghost compact" disabled={dispatchDraft.submitting}
                         onClick={()=>setDispatchDraft(null)}>Закрыть</button>
