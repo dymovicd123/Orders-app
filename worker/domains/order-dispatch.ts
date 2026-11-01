@@ -67,10 +67,25 @@ export async function dispatchSelectedCompleteOrderLines(
   // A legacy 'sent' order can acquire a NEW unshipped exchange line.
   // Never reissue an original product merely because this button is open.
   if (cleanText(order.shipping_status)==='sent'
-      && selected.some(x=>toInt(x.exchangeEventId,0)<=0)) {
+      && selected.some(x=>toInt(x.exchangeEventId,0)<=0 && toInt(x.exchangeWorkshopId,0)<=0)) {
     fail('Ранее отправленные товары нельзя выдать снова. Выберите только новые замены.')
   }
   const replacementByItem = new Map<number,{eventId:number;exchangeId:number}>()
+  // Workshop replacements do not have outbound warehouse lifecycle events.
+  // The exchange's new order item is the canonical identity; workshop readiness
+  // and the absence of a previously committed dispatch are the physical gates.
+  for(const item of selectedWorkshop.filter(x=>toInt(x.exchangeWorkshopId,0)>0)) {
+    const exchange=await db.prepare(
+      `SELECT e.id,e.order_id,e.new_order_item_id,e.status,oi.is_workshop,oi.quantity
+       FROM exchanges e
+       JOIN order_items oi ON oi.id=e.new_order_item_id AND oi.order_id=e.order_id
+       WHERE e.id=? AND e.order_id=? AND e.new_order_item_id=?`
+    ).bind(toInt(item.exchangeWorkshopId,0),orderId,item.orderItemId).first<Record<string,unknown>>()
+    if(!exchange || cleanText(exchange.status)==='cancelled' ||
+       toInt(exchange.is_workshop,0)!==1 || toInt(exchange.quantity,0)!==item.quantity) {
+      fail('Замена из цеха изменилась. Обновите заказ.')
+    }
+  }
   for (const item of selectedReplacements) {
     if (item.quantity!==item.originalQuantity) {
       fail('Новую замену пока можно отправить только всей позицией.')
@@ -209,8 +224,14 @@ export async function dispatchSelectedCompleteOrderLines(
          WHERE oi.order_id=? AND oi.id=? AND oi.quantity=? AND oi.is_workshop=1
            AND t.status IN ('ready','done')
            AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+           AND (
+             NOT EXISTS(SELECT 1 FROM orders o WHERE o.id=oi.order_id AND o.shipping_status='sent')
+             OR EXISTS(SELECT 1 FROM exchanges e
+               WHERE e.id=? AND e.order_id=oi.order_id AND e.new_order_item_id=oi.id
+                 AND COALESCE(e.status,'completed')<>'cancelled')
+           )
        )`
-    ).bind(stamp,orderId,item.orderItemId,item.quantity))
+    ).bind(stamp,orderId,item.orderItemId,item.quantity,toInt(item.exchangeWorkshopId,0)))
   }
   // Split each selected stock row BEFORE fulfilling it. The original item ID
   // remains the issued item; a newly minted item ID owns the remaining hold.
