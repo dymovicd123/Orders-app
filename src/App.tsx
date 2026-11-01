@@ -1483,7 +1483,6 @@ function App() {
 
   useEffect(() => {
     if (!authReady) return
-    if (activeSector === 'orders') void loadWarehouseAttention()
     if (activeSector === 'inventory') {
       void loadWarehouseAttention()
       // Весь склад живёт в одном разделе. Журнал движений по-прежнему не грузится без явного открытия истории.
@@ -9076,7 +9075,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders'} label="Заказы">
-        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary: {...returnHistorySummary,pendingPhysicalQuantity:returnPendingInbox.pendingQuantity}, exchangeHistorySummary: {...exchangeHistorySummary,pendingPhysicalQuantity:exchangePendingInbox.pendingQuantity}, warehouseAttention, openInventoryStockAttention: () => { setActiveSector('inventory'); setInventoryPanel('attention'); window.location.hash = '#inventory' }, sectorStyle, setEditorOpen, setOrderPanel }} />
+        <OrdersHeaderSection ctx={{ orderPanel, orderPanelOptions, returnHistorySummary: {...returnHistorySummary,pendingPhysicalQuantity:returnPendingInbox.pendingQuantity}, exchangeHistorySummary: {...exchangeHistorySummary,pendingPhysicalQuantity:exchangePendingInbox.pendingQuantity}, sectorStyle, setEditorOpen, setOrderPanel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Заказы">

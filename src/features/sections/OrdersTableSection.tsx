@@ -325,7 +325,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       <tr
                         key={order.id}
                         data-order-id={order.id}
-                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''} ${projection.hasCommittedDownstreamOperation ? 'row-returned' : ''}`}
+                        className={`${selectedOrderId === order.id ? 'row-active' : ''} ${archived ? 'row-archived' : ''}`}
                       >
                         <td>
                           <div className="order-cell-stack">
@@ -586,18 +586,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 Обмен
                               </button>
                             ) : null}
-                            {projection.hasCommittedDownstreamOperation ? (
-                              <span className="soft-badge">
-                                {projection.hasCommittedReturn && projection.hasCommittedExchange
-                                  ? 'Есть проведённые возврат и обмен'
-                                  : projection.hasCommittedExchange
-                                    ? 'Есть проведённый обмен'
-                                    : projection.hasCommittedItemReturn
-                                      ? 'Есть проведённый возврат'
-                                      : 'Есть возврат денег'}
-                              </span>
-                            ) : null}
-                            {(projection.canEdit || (isAdmin && projection.hasCommittedDownstreamOperation && !projection.deleted && !projection.archived)) ? (
+
+                            {!retainedOnly && !archived && !projection.deleted ? (
                               <button
                                 className="primary compact"
                                 type="button"
@@ -607,7 +597,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   else setLinkedAdminEditOrder(order)
                                 }}
                               >
-                                {projection.canEdit?'Редактировать':'Исправить заказ'}
+                                {projection.canEdit ? 'Редактировать' : 'Изменить заказ'}
                               </button>
                             ) : null}
                             {!retainedOnly && !archived && !projection.deleted ? (
@@ -1077,15 +1067,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
               {linkedAdminEditOrder ? (
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={event=>{if(event.target===event.currentTarget)setLinkedAdminEditOrder(null)}}>
-                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Редактирование после обмена" style={{maxWidth:600}}>
+                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Изменить заказ" style={{maxWidth:600}}>
                     <div className="modal-head">
-                      <div><div className="card-label">Администратор · заказ с зависимыми операциями</div>
+                      <div><div className="card-label">Заказ</div>
                         <h3>Исправить заказ {linkedAdminEditOrder.external_id}</h3></div>
                       <button className="ghost compact" type="button" onClick={()=>setLinkedAdminEditOrder(null)}>Закрыть</button>
                     </div>
-                    <p>После обмена или возврата можно исправить реквизиты, допустимые цены
-                      и способ проведённой оплаты. Состав товаров, выдачи и суммы проведённых
-                      обменов здесь не переписываются.</p>
+                    <p>Выберите, что нужно изменить. Остальные данные заказа останутся как были.</p>
                     <div className="toolbar-actions" style={{flexWrap:'wrap'}}>
                       <button className="secondary" type="button" onClick={()=>{
                         openMetadataCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
@@ -1097,22 +1085,19 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           openPriceCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
                         }}>Исправить цены</button>
                       ):null}
-                      {Array.isArray(linkedAdminEditOrder.payments)
+                      {isAdmin && Array.isArray(linkedAdminEditOrder.payments)
                         &&linkedAdminEditOrder.payments.some((payment:any)=>Number(payment.id)>0)?(
                         <button className="secondary" type="button" onClick={()=>{
                           openLinkedPaymentCorrection(linkedAdminEditOrder);setLinkedAdminEditOrder(null)
                         }}>Исправить способ оплаты</button>
                       ):null}
-                      {Number(linkedAdminEditOrder.committed_exchange_count||0)>0?(
+                      {isAdmin && Number(linkedAdminEditOrder.committed_exchange_count||0)>0?(
                         <button className="secondary" type="button" onClick={()=>{
                           openExchangeCancellation(linkedAdminEditOrder,'last');setLinkedAdminEditOrder(null)
                         }}>Отменить обмены</button>
                       ):null}
                     </div>
-                    <p className="muted">Изменение состава, количества и суммы оплаты
-                      требует отдельной проверки зависимых операций или их штатной отмены.
-                      Исправление способа оплаты сохраняет её сумму и ID, но оставляет
-                      проверяемый след в финансовой истории.</p>
+                    <p className="muted">Уже выданные вещи исправляются через действия с конкретными товарами, без отмены всего заказа.</p>
                   </div>
                 </div>
               ) : null}

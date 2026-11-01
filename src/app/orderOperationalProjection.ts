@@ -199,8 +199,10 @@ export function projectOrderOperationalState(
     // final-send marker. The server distinguishes a status-only correction (no
     // new physical issue) from cases requiring item-scoped physical reversal.
     canCorrectShipping: mutableWorkingOrder && sent,
+    // A Return for one line does not prevent handing over a different still-
+    // reserved line. The per-item Worker action validates the exact reservation,
+    // original SKU and same-line Return before any physical issue.
     canOpenStockHandover: mutableWorkingOrder
-      && !hasCommittedItemReturn
       && !sent
       && Boolean(order.stock_handover_review_needed || (mixedOrder && workshopPending && order.stock_handover_has_active_items)),
   }
