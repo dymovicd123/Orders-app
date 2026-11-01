@@ -20,7 +20,8 @@ assert((source.match(/pendingExchangeReplacementExclusionSql\('r.order_item_id'\
 assert.match(source,/if \(stockConfirmationOperation === 'handover'\) \{[\s\S]*?pendingReplacement = await db\.prepare/)
 assert.match(source,/Эта замена ещё не отправлена/)
 assert.match(lifecycle,/options\.explicitReplacementDispatch !== true/)
-assert.match(exchange,/explicitReplacementDispatch: true/)
+assert.match(exchange,/dispatchSelectedCompleteOrderLines\(db,orderId,\{/,
+  'Legacy replacement endpoint must use the same atomic order dispatch')
 const selectedDispatch=readFileSync('worker/domains/order-dispatch.ts','utf8')
 assert.match(selectedDispatch,/replacementByItem\.set\(item\.orderItemId,/,
   'Pending replacements must use the same order dispatch atomic batch')
