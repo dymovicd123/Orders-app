@@ -4683,7 +4683,10 @@ export async function dispatchPendingExchangeReplacement(
               oi.quantity AS item_quantity,oi.is_workshop
        FROM inventory_lifecycle_events le
        JOIN exchanges e ON e.id=le.operation_id
-         AND e.order_id=le.order_id AND e.new_order_item_id=le.order_item_id
+         AND e.order_id=le.order_id AND (e.new_order_item_id=le.order_item_id OR EXISTS(
+           SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+             AND ei.id=le.operation_item_id AND ei.role='new'
+             AND ei.order_item_id=le.order_item_id))
        JOIN orders o ON o.id=le.order_id
        JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=le.order_id
        WHERE le.id=? AND le.operation_type='exchange'
