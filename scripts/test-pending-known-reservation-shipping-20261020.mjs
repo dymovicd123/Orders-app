@@ -54,7 +54,7 @@ const admission=readFileSync('worker/domains/reservation-admission.ts','utf8')
 assert(stock.includes('admitOrderReservationAtomically(db, {')
   && admission.includes('UPDATE inventory_stock')
   && admission.includes('SET reserved_quantity')
-  && !/SET\\s+quantity\\s*=/.test(admission)
+  && !/SET\s+quantity\s*=/.test(admission)
   && !admission.includes('INSERT INTO inventory_movements'),
   'Recovery must never synthesize physical stock or fake inventory movement')
 assert(router.includes("await reconcileCatalogReviewOrder(env.DB, id)"),'Shipping does not retry reservation recovery before blocking')
