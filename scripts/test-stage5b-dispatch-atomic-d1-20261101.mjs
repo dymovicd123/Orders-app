@@ -118,5 +118,46 @@ assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_
 assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM return_items WHERE return_id=9071").get().n,1,
   'Unrelated completed Return is retained unchanged')
 
+// Send ONE of three identical physical units on a single original order line.
+// The issued line keeps its stable ID; a second, active row owns the remaining
+// two units. This preserves the established one-reservation-per-order-item rule.
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9052,'ORD-TEST-THREE-UNITS','2026-11-01',1,'active','warehouse','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at,inventory_obligation_key,inventory_obligation_origin_at) VALUES(9064,9052,9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',3,1000,3000,0,'warehouse','reserved','2026-11-01T00:00:00Z','stage5b-3-of-same','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9052,9064,'warehouse',9021,9031,3,'active','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=reserved_quantity+3 WHERE id=9041').run()
+const stockBeforeSplit={...stock()}
+const firstPart=await dispatchSelectedCompleteOrderLines(db,9052,{requestId:'stage5b-test-one-of-three-001',actor:'QA manager',dispatchDate:'2026-11-01',items:[{orderItemId:9064,quantity:1}]})
+assert.equal(firstPart.ok,true)
+assert.equal(firstPart.shippedQuantity,1)
+assert.deepEqual({...stock()},{quantity:stockBeforeSplit.quantity-1,reserved_quantity:stockBeforeSplit.reserved_quantity-1})
+const splitRows=sql.prepare("SELECT id,quantity,unit_price,line_total,stock_writeoff_status,variant_id,source_type FROM order_items WHERE order_id=9052 ORDER BY id").all()
+assert.equal(splitRows.length,2,'One selected original plus one new outstanding row')
+assert.equal(splitRows[0].id,9064)
+assert.equal(splitRows[0].quantity,1)
+assert.equal(splitRows[0].stock_writeoff_status,'fulfilled')
+assert.equal(splitRows[1].quantity,2)
+assert.equal(splitRows[1].stock_writeoff_status,'reserved')
+assert.equal(splitRows[1].variant_id,9031,'Canonical SKU must not change on split')
+assert.equal(splitRows[1].source_type,'warehouse')
+assert.equal(splitRows.reduce((n,x)=>n+x.line_total,0),3000,'Split cannot change booked money')
+const splitRes=sql.prepare("SELECT order_item_id,status,quantity FROM inventory_reservations WHERE order_id=9052 ORDER BY order_item_id").all()
+assert.deepEqual(splitRes.map(x=>({status:x.status,quantity:x.quantity})),[
+ {status:'fulfilled',quantity:1},{status:'active',quantity:2},
+])
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9052').get().shipping_status,'not_sent')
+const repeatPart=await dispatchSelectedCompleteOrderLines(db,9052,{requestId:'stage5b-test-one-of-three-001',actor:'QA manager',dispatchDate:'2026-11-01',items:[{orderItemId:9064,quantity:1}]})
+assert.equal(repeatPart.alreadyCommitted,true)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=9052').get().n,2,'Replay must not split again')
+const part2=await dispatchSelectedCompleteOrderLines(db,9052,{requestId:'stage5b-test-second-of-three',actor:'QA manager',dispatchDate:'2026-11-01',items:[{orderItemId:splitRows[1].id,quantity:1}]})
+assert.equal(part2.ok,true)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=9052').get().n,3)
+const last=sql.prepare("SELECT id FROM order_items WHERE order_id=9052 AND stock_writeoff_status='reserved'").get()
+assert(last?.id)
+const lastPart=await dispatchSelectedCompleteOrderLines(db,9052,{requestId:'stage5b-test-third-of-three',actor:'QA manager',dispatchDate:'2026-11-01',items:[{orderItemId:last.id,quantity:1}]})
+assert.equal(lastPart.ok,true)
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9052').get().shipping_status,'sent')
+assert.equal(sql.prepare('SELECT SUM(quantity) AS q FROM order_items WHERE order_id=9052').get().q,3)
+assert.equal(sql.prepare('SELECT SUM(quantity) AS q FROM inventory_reservations WHERE order_id=9052 AND status="fulfilled"').get().q,3)
+
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
