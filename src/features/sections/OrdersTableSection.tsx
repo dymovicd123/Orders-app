@@ -607,7 +607,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             ) : null}
                             {!retainedOnly && !archived && !projection.deleted
                               && (order.shipping_status !== 'sent'
-                                || (order.items||[]).some((item:any)=>Number(item.pendingExchangeDispatchId||0)>0)) ? (
+                                || (order.items||[]).some((item:any)=>Number(item.pendingExchangeDispatchId||0)>0 || Number(item.pendingExchangeWorkshopId||0)>0)) ? (
                               <button className="secondary compact" type="button"
                                 disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
                                 Отправить товары
