@@ -35,7 +35,9 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     const current = activeById.get(orderItemId)
     const stockState = cleanText(item.stockWriteoffStatus).toLowerCase()
     const workshopState = cleanText(item.workshopTaskStatus).toLowerCase()
+    const recordedSent = item.shipmentSentQuantity == null ? null : Math.max(0,toInt(item.shipmentSentQuantity,0))
     const alreadyIssued = ['fulfilled','written_off','negative','retired_physically_issued'].includes(stockState)
+      || (recordedSent !== null && recordedSent >= quantity)
     const physicallyReady = isWorkshop
       ? ['done', 'ready'].includes(workshopState)
       : stockState === 'reserved' && Boolean(current?.variantId)
