@@ -90,5 +90,17 @@ assert.equal(f.checkpointKind,'revision')
 assert.equal(f.checkpointId<0,true,'Full revision uses negative rowid')
 assert.equal(f.reviewReason,'checkpoint_after_order')
 
+
+// Stage 2.5: a check later in the same second must prompt clarification.
+// SQLite datetime() truncates milliseconds; julianday() preserves ordering.
+const sameSecondOrder=makeOrder(2030,'2026-10-28','2026-10-28T10:00:00.100Z')
+sql.prepare("INSERT INTO inventory_stock_checks VALUES(6001,'warehouse',240,'2026-10-28T10:00:00.450Z','manual_set','manual','same-second-after')").run()
+const sameSecondReview=await assertReview(2030,true)
+assert.equal(sameSecondReview.checkpointId,6001)
+assert.equal(sameSecondReview.reviewReason,'checkpoint_after_order')
+const sameSecondEarlier=makeOrder(2031,'2026-10-29','2026-10-29T10:00:00.700Z')
+sql.prepare("INSERT INTO inventory_stock_checks VALUES(6002,'warehouse',240,'2026-10-29T10:00:00.350Z','manual_set','manual','same-second-before')").run()
+await assertReview(2031,false)
+
 sql.close()
 console.log('OLD_ORDINARY_ORDER_POST_STOCKTAKE_REVIEW_SQLITE_PASSED')
