@@ -2871,7 +2871,7 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
             oi.stock_writeoff_status,
             r.status AS reservation_status, r.variant_id AS reservation_variant_id,
             stock.id AS inventory_stock_id,
-            CASE WHEN pending_r.id IS NOT NULL AND order_variant.is_active = 1
+            CASE WHEN pending_r.id IS NOT NULL AND order_variant.id IS NOT NULL
                 AND COALESCE(oi.stock_writeoff_status,'') = 'pending_reservation'
               THEN 1 ELSE 0 END AS known_pending_reservation,
             'unresolved' AS blocker_reason,
