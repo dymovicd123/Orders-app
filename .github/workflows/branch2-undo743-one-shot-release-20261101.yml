@@ -7,7 +7,7 @@ on:
   push:
     branches: [branch2]
     paths:
-      - '.github/workflows/branch2-stage5a-one-shot-release-20261101.yml'
+      - '.github/workflows/branch2-undo743-one-shot-release-20261101.yml'
 
 permissions:
   contents: read
