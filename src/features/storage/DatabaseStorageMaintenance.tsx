@@ -102,6 +102,7 @@ function cleanupConfirmText(months: string[]) {
 
 export function useDatabaseStorageMaintenance({ apiFetch, isAdmin, setError, setMessage }: StorageMaintenanceArgs) {
   const [status, setStatus] = useState<DatabaseStorageStatus | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -117,10 +118,12 @@ export function useDatabaseStorageMaintenance({ apiFetch, isAdmin, setError, set
   const loadStatus = useCallback(async (includeMonths = false) => {
     if (!isAdmin) return null
     setBusy(true)
+    if (includeMonths) setLoadError(null)
     try {
       const response = await apiFetch(`/api/admin/storage${includeMonths ? '?months=1' : ''}`)
       const data = await readJsonResponse<DatabaseStorageStatus>(response, 'Хранилище базы')
       setStatus(data)
+      setLoadError(null)
       setCapacityDraft(data.limitBytes)
       if (includeMonths) {
         setSelectedMonths((current) => {
@@ -131,16 +134,23 @@ export function useDatabaseStorageMaintenance({ apiFetch, isAdmin, setError, set
       }
       return data
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Не удалось проверить размер базы.')
+      // Polling is unrelated to Orders: a stale admin role/session or a
+      // temporary 403 must not create a red global alert over an employee's
+      // work. Explicit admin requests still explain the failure in this panel.
+      if (includeMonths) {
+        setStatus(null)
+        setLoadError(error instanceof Error ? error.message : 'Не удалось проверить размер базы.')
+      }
       return null
     } finally {
       setBusy(false)
     }
-  }, [apiFetch, isAdmin, setError])
+  }, [apiFetch, isAdmin])
 
   useEffect(() => {
     if (!isAdmin) {
       setStatus(null)
+      setLoadError(null)
       setOpen(false)
       return
     }
@@ -282,6 +292,7 @@ export function useDatabaseStorageMaintenance({ apiFetch, isAdmin, setError, set
 
   return {
     status,
+    loadError,
     open,
     busy,
     deleting,
@@ -354,6 +365,14 @@ export function DatabaseStorageModal({
           </div>
           <button className="secondary compact" type="button" onClick={maintenance.closePanel} disabled={maintenance.deleting || maintenance.capacityBusy}>Закрыть</button>
         </div>
+
+        {maintenance.loadError ? (
+          <div className="storage-resume-note" role="alert">
+            <strong>Не удалось загрузить сведения о хранилище</strong>
+            <span>{maintenance.loadError}</span>
+            <button className="secondary compact" type="button" onClick={() => void maintenance.loadStatus(true)} disabled={maintenance.busy}>Повторить</button>
+          </div>
+        ) : null}
 
         {status ? (
           <>
