@@ -1,0 +1,11 @@
+/* Work #733: human-readable, browser-safe confirmation instead of window.confirm. */
+.work-action-confirm-backdrop{z-index:1000;align-items:center}
+.work-action-confirm{display:grid;gap:14px;width:min(560px,100%);max-height:min(88dvh,760px);overflow-y:auto;box-sizing:border-box}
+.work-action-confirm-kicker{color:#526882;font-size:12px;font-weight:800;letter-spacing:.02em}
+.work-action-confirm h3{margin:0;color:#182a45;line-height:1.45;font-size:19px;overflow-wrap:anywhere}
+.work-action-confirm-detail{display:grid;gap:8px;max-width:100%;min-width:0}
+.work-action-confirm-detail p{margin:0;color:#33465f;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.work-action-confirm-warning{padding:12px;border-radius:9px;background:#fff6e8;border:1px solid #edd6b1;color:#855125;font-size:13px;line-height:1.5}
+.work-action-confirm-actions{display:flex;flex-wrap:wrap;gap:9px}
+.work-action-confirm-actions button{min-height:44px;white-space:normal}
+@media(max-width:620px){.work-action-confirm-backdrop{align-items:flex-end;padding:10px}.work-action-confirm{max-height:calc(100dvh - 20px);padding:16px;gap:12px;border-radius:16px 16px 9px 9px}.work-action-confirm-actions{flex-direction:column}.work-action-confirm-actions button{width:100%}}

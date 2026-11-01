@@ -32,6 +32,7 @@ import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWo
 import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sortSizeLikeValues, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
+import { ActionConfirmationModal } from './features/orders/ActionConfirmationModal'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
 import { DashboardSection, ClientsSection, ReferencesSection, InventorySection, WorkshopSection, OrdersHeaderSection, OrderFiltersSection, CreateOrderSection, OrderEditorSection, OrdersTableSection, OrderDetailsSection, OrderDebtSection, OrderReturnsSection, OrderExchangeSection, TeamSection, LeadsSection, PlanSection, FinanceSection, ReportsSection, OrderActivitySection, OrderCatalogResolutionModal, StockResolutionConfirmModal, ReturnedItemResolutionModal, ArrivalRecoveryDialog, DeferredSection } from './app/lazySections'
 import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStockGroupsRenderer'
@@ -255,6 +256,21 @@ function App() {
   const [message, setMessage] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [authChecking, setAuthChecking] = useState(true)
+  const [actionConfirmationMessage, setActionConfirmationMessage] = useState<string | null>(null)
+  const actionConfirmationResolver = useRef<((confirmed: boolean) => void) | null>(null)
+  // A second click cannot queue a second physical/financial approval.
+  const askActionConfirmation = useCallback((text: string) => new Promise<boolean>(resolve => {
+    if (actionConfirmationResolver.current) { resolve(false); return }
+    actionConfirmationResolver.current = resolve
+    setActionConfirmationMessage(text)
+  }), [])
+  const answerActionConfirmation = useCallback((confirmed: boolean) => {
+    const resolve = actionConfirmationResolver.current
+    actionConfirmationResolver.current = null
+    setActionConfirmationMessage(null)
+    resolve?.(confirmed)
+  }, [])
+
   const [stockResolutionPrompt, setStockResolutionPrompt] = useState<StockResolutionPrompt | null>(null)
   const stockResolutionDecisionRef = useRef<((value: boolean) => void) | null>(null)
   const [returnedItemResolutionEventId, setReturnedItemResolutionEventId] = useState<number | null>(null)
@@ -568,7 +584,7 @@ function App() {
   }, [apiFetch, authUserDraft, authUsers, isAdmin, loadAuthUsers])
 
   const disableAuthUser = useCallback(async (id: number) => {
-    if (!isAdmin || !window.confirm('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
+    if (!isAdmin || !await askActionConfirmation('Отключить этот аккаунт? Его активные сессии будут закрыты.')) return
     setAuthUsersBusy(true)
     try {
       const response = await apiFetch(`/api/auth/users/${id}`, { method: 'DELETE' })
@@ -580,7 +596,7 @@ function App() {
     } finally {
       setAuthUsersBusy(false)
     }
-  }, [apiFetch, isAdmin, loadAuthUsers])
+  }, [apiFetch, isAdmin, loadAuthUsers, askActionConfirmation])
 
   const [editorDraft, setEditorDraft] = useState<EditorDraft | null>(null)
   const [inventoryDraft, setInventoryDraft] = useState<InventoryDraft>({
@@ -2200,7 +2216,7 @@ function App() {
     if (!canManageWarehouse || inventoryAuditBusy || !row?.issueKey) return
     if (resolved) {
       const question = 'Подтверждайте расхождение только после фактической сверки этой позиции. Система НЕ изменит остаток автоматически — она запомнит, что исторический разрыв проверен сотрудником. Продолжить?'
-      if (!window.confirm(question)) return
+      if (!await askActionConfirmation(question)) return
     }
     setInventoryAuditBusy(true)
     setError(null)
@@ -2239,7 +2255,7 @@ function App() {
     const question = nextEnabled
       ? 'Включить автосписание? Новые заказы со склада и бутика снова будут сразу менять остатки.'
       : 'Выключить автосписание? Новые заказы сохранятся, но остатки не изменятся, пока администратор не запустит отложенное списание.'
-    if (!window.confirm(question)) return
+    if (!await askActionConfirmation(question)) return
     setInventoryControlBusy(true)
     setError(null)
     try {
@@ -2265,7 +2281,7 @@ function App() {
       setMessage('Отложенных списаний нет.')
       return
     }
-    if (!window.confirm(`Списать остатки по ${pending} отложенным позициям заказов? Заказы не удаляются и не меняются.`)) return
+    if (!await askActionConfirmation(`Списать остатки по ${pending} отложенным позициям заказов? Заказы не удаляются и не меняются.`)) return
     setInventoryControlBusy(true)
     setError(null)
     try {
@@ -2288,7 +2304,7 @@ function App() {
   async function reverseInventoryMovement(movement: InventoryMovementRecord) {
     if (!canManageWarehouse || !movement.canReverse || reversingInventoryMovementId) return
     const label = `${movement.productName} · ${movement.quantityDelta >= 0 ? '+' : ''}${movement.quantityDelta}`
-    if (!window.confirm(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
+    if (!await askActionConfirmation(`Отменить складскую операцию «${label}»? Остаток будет восстановлен обратным движением. Заказ, возврат или обмен останется в системе.`)) return
     setReversingInventoryMovementId(movement.id)
     setError(null)
     try {
@@ -2570,7 +2586,7 @@ function App() {
 
   async function setupCashRegister() {
     const amount = Math.max(0, Math.trunc(Number(cashSetupAmount || 0)))
-    if (!window.confirm(`Зафиксировать начальный остаток наличных ${formatMoney(amount)}?`)) return
+    if (!await askActionConfirmation(`Зафиксировать начальный остаток наличных ${formatMoney(amount)}?`)) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/setup', {
@@ -2593,7 +2609,7 @@ function App() {
     const prompt = enabled
       ? 'Включить автоучёт? Новые наличные оплаты будут увеличивать кассу, а возвраты наличными — уменьшать.'
       : 'Остановить автоучёт? Журнал, ручные операции и сверка остатка останутся доступны, но новые операции по заказам временно не будут менять кассу автоматически.'
-    if (!window.confirm(prompt)) return
+    if (!await askActionConfirmation(prompt)) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/auto-tracking', {
@@ -2637,8 +2653,8 @@ function App() {
     }
     if (historicalBusinessDate) {
       const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'
-      if (!window.confirm(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`)) return
-    } else if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
+      if (!await askActionConfirmation(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`)) return
+    } else if (cashMovementDraft.direction === 'out' && !await askActionConfirmation(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
     const requestId = makeCashRequestId('manual')
     await runCashMutation(async () => {
       try {
@@ -2673,7 +2689,7 @@ function App() {
       setMessage('Фактический остаток уже совпадает с учётом.')
       return
     }
-    if (!window.confirm(`Установить фактический остаток ${formatMoney(amount)}?\n\nСистема запишет только разницу отдельной строкой журнала.\nПричина: ${comment}`)) return
+    if (!await askActionConfirmation(`Установить фактический остаток ${formatMoney(amount)}?\n\nСистема запишет только разницу отдельной строкой журнала.\nПричина: ${comment}`)) return
     const requestId = makeCashRequestId('reconcile')
     await runCashMutation(async () => {
       try {
@@ -2695,7 +2711,7 @@ function App() {
   }
 
   async function reverseCashRegisterMovement(entryId: number) {
-    if (!window.confirm('Отменить эту ручную операцию? Исходная строка останется в истории, а система добавит обратную запись.')) return
+    if (!await askActionConfirmation('Отменить эту ручную операцию? Исходная строка останется в истории, а система добавит обратную запись.')) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch(`/api/finance/cash-register/movements/${entryId}/reverse`, { method: 'POST' })
@@ -2717,7 +2733,7 @@ function App() {
     }
     const comment = window.prompt('Причина сброса текущего журнала:', 'Перезапуск учёта наличных после сверки')?.trim() || ''
     if (!comment) return
-    if (!window.confirm('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.')) return
+    if (!await askActionConfirmation('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.')) return
     await runCashMutation(async () => {
       try {
         const response = await apiFetch('/api/finance/cash-register/reset-cycle', {
@@ -2937,7 +2953,7 @@ function App() {
     const confirmation = isActive
       ? `Вернуть сотрудника ${employee.name} в активную команду? Он снова появится в новых заказах и назначениях.`
       : `Отметить сотрудника ${employee.name} как уволенного? Старые заказы, планы, выплаты и отчёты сохранятся.`
-    if (!window.confirm(confirmation)) return
+    if (!await askActionConfirmation(confirmation)) return
 
     setTeamBusy(true)
     setError(null)
@@ -2967,7 +2983,7 @@ function App() {
       return
     }
     if (!employee?.id) return
-    if (!window.confirm(`Удалить сотрудника ${employee.name}? Если по нему есть заказы, планы или отчёты, система не даст удалить и предложит отметить его как уволенного.`)) return
+    if (!await askActionConfirmation(`Удалить сотрудника ${employee.name}? Если по нему есть заказы, планы или отчёты, система не даст удалить и предложит отметить его как уволенного.`)) return
     setTeamBusy(true)
     setError(null)
     setMessage(null)
@@ -4422,7 +4438,7 @@ function App() {
         }
         const names = [...new Set(result.retiredItems.map((item) => String(item.productName || '').trim()).filter(Boolean))]
         const label = names.length ? names.map((name) => `«${name}»`).join(', ') : 'выбранная позиция'
-        const confirmed = window.confirm(
+        const confirmed = await askActionConfirmation(
           `${label} раньше была удалена из рабочего каталога. Вернуть её как новую рабочую позицию?\n\nСтарые заказы и история не изменятся. Старые остатки и резервы не вернутся; новая рабочая позиция начнёт с нуля.`,
         )
         if (!confirmed) {
@@ -6792,7 +6808,7 @@ function removeDebtPayment(index: number) {
       setMessage('Сначала сделайте предпросмотр. Подходящих заказов пока нет.')
       return
     }
-    const confirmed = window.confirm(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
+    const confirmed = await askActionConfirmation(`Архивировать ${readyCount} закрытых заказов? Они останутся в отчётах, но станут доступны только для просмотра.`)
     if (!confirmed) return
 
     setArchiveBusy(true)
@@ -6831,7 +6847,7 @@ function removeDebtPayment(index: number) {
       return
     }
     if (!isArchivedOrderRecord(order)) return
-    const confirmed = window.confirm(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
+    const confirmed = await askActionConfirmation(`Вернуть заказ ${order.external_id} из архива в закрытые заказы?`)
     if (!confirmed) return
     setSavingOrder(true)
     setError(null)
@@ -6924,7 +6940,7 @@ function removeDebtPayment(index: number) {
     } else {
       confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} «${item.productName}» ещё находился в точке?\n\nЕсли да, резерв останется и товар спишется только при фактической выдаче.`
     }
-    if (!window.confirm(confirmText)) return
+    if (!await askActionConfirmation(confirmText)) return
 
     setStockHandoverActionItemId(item.orderItemId)
     setError(null)
@@ -7119,7 +7135,7 @@ function removeDebtPayment(index: number) {
   async function correctMistakenOrderShipping(order: OrderRecord) {
     const projection = await getOrderOperationalProjection(order)
     if (savingOrder || !projection.canCorrectShipping) return
-    const confirmed = window.confirm(
+    const confirmed = await askActionConfirmation(
       `Снять отметку «Отправлен» у заказа ${order.external_id}?\n\nПодтвердите только если товар фактически НЕ передавался клиенту. Это исправление ошибочной выдачи, а не возврат от клиента. Если клиент действительно получил товар, оформляйте «Возврат».\n\nВ резерв вернутся ранее списанные позиции. Физический остаток увеличится только на реально списанное количество и только если после отправки не было более свежей физической проверки. Обмены сохраняются.`
     )
     if (!confirmed) return
@@ -7477,7 +7493,7 @@ function removeDebtPayment(index: number) {
       .filter((item) => item.physicalState === 'pending')
       .reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)
     const receivedQuantity = selectedQuantity - pendingQuantity
-    if (!window.confirm(
+    if (!await askActionConfirmation(
       `Подтвердите операцию по заказу ${returnSelectedOrder.external_id}:\n\n`
       + `${returnKind}\n`
       + `Деньги: ${formatMoney(amount)} ₸\n`
@@ -8137,7 +8153,7 @@ function removeDebtPayment(index: number) {
   }
 
   async function cancelReturnEntry(entry: ReturnHistoryEntry) {
-    if (!window.confirm(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Система отменит деньги и статус возврата. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
+    if (!await askActionConfirmation(`Отменить возврат ${entry.externalId || ''} на ${formatMoney(entry.amount)}? Система отменит деньги и статус возврата. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
     setReturnBusy(true)
     setError(null)
     setMessage(null)
@@ -8243,7 +8259,7 @@ function removeDebtPayment(index: number) {
 
   async function cancelExchangeEntry(entry: ExchangeHistoryEntry) {
 
-    if (!window.confirm(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
+    if (!await askActionConfirmation(`Отменить обмен по заказу ${entry.externalId}? Система отменит деньги, статус и новую позицию. Более свежие фактические данные склада, если они уже появились, будут сохранены.`)) return
     setExchangeBusy(true)
     setError(null)
     setMessage(null)
@@ -8670,6 +8686,7 @@ function removeDebtPayment(index: number) {
         </div>
       ) : null}
 
+      <ActionConfirmationModal message={actionConfirmationMessage} onDecision={answerActionConfirmation} />
       <StockResolutionConfirmModal prompt={stockResolutionPrompt} onDecision={answerStockResolution} />
 
       <ArrivalRecoveryDialog
@@ -8864,7 +8881,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'inventory'} label="Склад">
-        <InventorySection ctx={{ onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
+        <InventorySection ctx={{ askActionConfirmation, onInlineCorrectionVariant: (seed: {productId:number|string;productName:string;category:'adult'|'child';gender:string;material:string;length:string;color:string;size:string;quantity:number})=>{
           const draftKey=inventoryUiId('correction')
           setInventoryDraft(current=>{
             // Two fast clicks on +размер/+цвет must never add the same SKU twice:
@@ -8960,7 +8977,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, markExchangeReplacementSent, canResolvePendingReservation: isAdmin || (authUser?.role === 'manager' && authUser?.employeeRole !== 'Упаковщик'), apiFetch, setMessage, onPendingReservationResolved: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false, filters, 0); void loadWarehouseAttention(false, true) }, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ askActionConfirmation, correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, markExchangeReplacementSent, canResolvePendingReservation: isAdmin || (authUser?.role === 'manager' && authUser?.employeeRole !== 'Упаковщик'), apiFetch, setMessage, onPendingReservationResolved: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false, filters, 0); void loadWarehouseAttention(false, true) }, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
