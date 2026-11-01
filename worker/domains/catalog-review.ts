@@ -447,6 +447,10 @@ export async function resolveCatalogReviewFacts(
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`
   ).bind(orderItemId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
+  if (cleanText(anchor.stock_writeoff_status) === 'pending_reservation'
+      && toInt(anchor.product_id, 0) > 0 && toInt(anchor.variant_id, 0) > 0) {
+    throw new Error('Товар уже распознан, но резерв ожидает поступления. Проверьте приход либо измените количество/источник заказа. Не нужно повторно выбирать SKU в каталоге.');
+  }
   if (cleanText(anchor.stock_writeoff_status) === 'catalog_retired') {
     throw new Error('Эта позиция заказа относится к удалённой исторической SKU. Сначала восстановите или заново создайте точную рабочую комбинацию в Каталоге, затем повторите проверку заказа.');
   }
@@ -1104,6 +1108,10 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
      WHERE oi.id = ? AND oi.order_id = ? LIMIT 1`
   ).bind(orderItemId, orderId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция не найдена в этом заказе.');
+  if (cleanText(anchor.stock_writeoff_status) === 'pending_reservation'
+      && toInt(anchor.product_id, 0) > 0 && toInt(anchor.variant_id, 0) > 0) {
+    throw new Error('Товар уже распознан, но резерв ожидает поступления. Проверьте приход либо измените количество/источник заказа. Не нужно повторно выбирать SKU в каталоге.');
+  }
   if (normalizeShippingStatus(anchor.shipping_status) === 'sent') throw new Error('Заказ уже отправлен. Складскую привязку здесь менять нельзя.');
   if (normalizeOrderStatus(anchor.order_status) !== 'active' || cleanText(anchor.archived_at)) throw new Error('Этот заказ уже не активен.');
 
