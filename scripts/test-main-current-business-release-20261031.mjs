@@ -23,6 +23,7 @@ const tests=[
  'scripts/test-main-stage16-worker-shipping-recovery-20261101.mjs',
  'scripts/test-main-stage15-exact-pending-reserve-retry-20261101.mjs',
  'scripts/test-main-stage24-found-catalog-navigation-20261101.mjs',
+ 'scripts/test-storage-background-alert-scope-20261101.mjs',
  'scripts/test-old-order-post-stocktake-handover-r1.mjs',
  'scripts/test-old-order-post-stocktake-guard-r1.mjs',
 ]
