@@ -29,7 +29,7 @@ export async function cancelExactOrderDispatchItem(
      JOIN order_items oi ON oi.id=di.order_item_id AND oi.order_id=d.order_id
      WHERE di.id=? AND d.order_id=?`
   ).bind(dispatchItemId,orderId).first<Record<string,unknown>>()
-  if(!line)fail('Отправленная вещь не найдена.')
+  if(!line) throw new CriticalOperationConflictError('Отправленная вещь не найдена.')
   if(['archived','deleted'].includes(cleanText(line.order_status))||cleanText(line.archived_at))fail('Заказ закрыт.')
   if(toInt(line.cancelled_quantity,0)!==0)fail('Эту отправку уже исправили. Обновите заказ.')
   const itemId=toInt(line.order_item_id,0),quantity=toInt(line.quantity,0)

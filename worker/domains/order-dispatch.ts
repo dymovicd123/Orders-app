@@ -55,7 +55,7 @@ export async function dispatchSelectedCompleteOrderLines(
   const byId = new Map(plan.lines.map(row=>[row.orderItemId,row]))
   const selected = input.items.map(row=>{
     const found=byId.get(row.orderItemId)
-    if (!found || !found.selectable) fail('Товар изменился или ещё не готов. Обновите заказ.')
+    if (!found || !found.selectable) throw new CriticalOperationConflictError('Товар изменился или ещё не готов. Обновите заказ.')
     if (row.quantity !== found.quantity || row.quantity !== found.readyQuantity) {
       fail('Пока можно отправить только всё готовое количество этой позиции. Деление одной позиции по количеству включим после обновления резервов.')
     }
