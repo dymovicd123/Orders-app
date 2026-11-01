@@ -21,6 +21,8 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     exchangeHistoryFilters,
     exchangeHistoryHasMore,
     exchangeHistorySummary,
+    exchangePendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
+    loadExchangePendingInbox,
     exchangeSelectedOrder,
     formatMoney,
     FriendlyNumberInput,
@@ -108,9 +110,18 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     return `Источник: ${sourceLabel(source as OrderRecord['source_type'])}`
   }
 
-  const pendingExchangeIntake = exchangeHistory
-    .filter((entry: any) => entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId)
-  const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, entry: any) => sum + Math.max(0, Number(entry.oldQuantity || 0)), 0)
+  // One card per physically unreceived OLD item, including multi-item Set V2.
+  // Do not accidentally hide all but the first old SKU of an Exchange.
+  const pendingExchangeIntake = exchangePendingInbox.rows.flatMap((entry: any) => {
+    if (entry.status === 'cancelled') return []
+    const oldItems = (entry.oldItems || []) as any[]
+    const pending = oldItems.filter(old => old.physicalTracking && !old.physicalReceivedAt && Number(old.id) > 0)
+    if (oldItems.length) return pending.map(old => ({ entry, old }))
+    return entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId
+      ? [{ entry, old: null }] : []
+  })
+  const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, row: any) =>
+    sum + Math.max(0, Number(row.old?.quantity || row.entry.oldQuantity || 0)), 0)
 
   const itemizedExchange = exchangeSelectedOrder?.pricing_mode === 'itemized_v1'
   const queuedPairs = exchangeDraft.queuedPairs || []
@@ -274,25 +285,35 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </section>
 
-              {Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+              {exchangePendingInbox.error ? <p className="history-load-state is-error" role="alert">{exchangePendingInbox.error} <button className="secondary compact" type="button" onClick={() => void loadExchangePendingInbox()}>Повторить</button></p> : null}
+              {exchangePendingInbox.busy && !exchangePendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
+              {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? (
                 <section className="intake-queue" aria-label="Старые вещи, ожидающие приёмки по обменам">
                   <div className="intake-queue-head">
                     <div>
                       <span className="intake-queue-kicker">Нужно принять</span>
                       <h3>Старые вещи едут обратно</h3>
-                      <p>Когда вещь приехала, отметьте это здесь. Открывать обмен в истории не нужно.</p>
+                      <p>Когда вещь приехала, отметьте это здесь. Открывать обмен в истории не нужно. Очередь не зависит от поиска и дат ниже; самые старые — первыми.</p>
                     </div>
-                    <strong className="intake-queue-count">{exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <strong className="intake-queue-count">{exchangePendingInbox.pendingQuantity} шт.</strong>
                   </div>
                   {pendingExchangeIntake.length ? (
                     <div className="intake-queue-list">
-                      {pendingExchangeIntake.map((entry: any) => {
-                        const receiptKey = `exchange:${entry.id}:${entry.oldOperationItemId}`
+                      {pendingExchangeIntake.map(({entry, old}: any) => {
+                        const operationItemId = Number(old?.id || entry.oldOperationItemId)
+                        const productName = old?.productName || entry.oldProductName
+                        const quantity = Number(old?.quantity || entry.oldQuantity || 0)
+                        const isWorkshop = old?.isWorkshop ?? entry.oldIsWorkshop
+                        const receiptKey = `exchange:${entry.id}:${operationItemId}`
+                        const oldDetails = old ? { ...entry,
+                          oldGender: old.gender, oldColor: old.color,
+                          oldMaterial: old.material, oldLength: old.length, oldSize: old.size
+                        } : entry
                         return (
                           <div className="intake-queue-row" key={receiptKey}>
                             <div className="intake-queue-item">
                               <div className="intake-queue-product-head">
-                                <strong>{entry.oldProductName} × {entry.oldQuantity}</strong>
+                                <strong>{productName} × {quantity}</strong>
                                 <span className="intake-queue-operation">Обмен #{entry.id}</span>
                               </div>
                               <div className="intake-queue-context">
@@ -301,12 +322,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                 <div><span>Менеджер</span><strong>{entry.manager || 'Не указан'}</strong></div>
                                 <div><span>Дата обмена</span><strong>{entry.exchangeDate || 'Не указана'}</strong></div>
                               </div>
-                              <small className="intake-queue-characteristics">{formatHistoryCharacteristics(entry, 'old')}</small>
+                              <small className="intake-queue-characteristics">{formatHistoryCharacteristics(oldDetails, 'old')}</small>
                             </div>
                             <label className="intake-queue-destination">
                               <span>Куда принять</span>
                               <select
-                                value={receiptDestinations[receiptKey] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')}
+                                value={receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse')}
                                 onChange={(event) => setReceiptDestinations((current) => ({ ...current, [receiptKey]: event.target.value as 'warehouse' | 'boutique' | 'no_stock' }))}
                                 disabled={exchangeBusy}
                               >
@@ -322,9 +343,9 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                               onClick={() => void receiveReturnedItemAction({
                                 operationType: 'exchange',
                                 operationId: entry.id,
-                                operationItemId: entry.oldOperationItemId,
-                                destination: receiptDestinations[receiptKey] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse'),
-                                productName: entry.oldProductName,
+                                operationItemId,
+                                destination: receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse'),
+                                productName,
                                 externalId: entry.externalId,
                               })}
                             >
@@ -336,12 +357,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                   ) : (
                     <div className="intake-queue-missing">
-                      <span>Счётчик показывает ожидающие вещи, но они не попали в загруженные последние операции.</span>
-                      <button className="secondary compact" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ append: true })}>Загрузить ещё</button>
+                      <span>Ожидающие вещи не поместились на первую страницу очереди. Откройте следующие.</span>
+                      <button className="secondary compact" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Загрузить ещё</button>
                     </div>
                   )}
-                  {exchangeHistoryHasMore && loadedPendingExchangeQuantity < Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ append: true })}>Показать ещё ожидающие</button>
+                  {exchangePendingInbox.hasMore && loadedPendingExchangeQuantity < Number(exchangePendingInbox.pendingQuantity || 0) ? (
+                    <button className="secondary compact intake-queue-more" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Показать ещё ожидающие</button>
                   ) : null}
                 </section>
               ) : null}

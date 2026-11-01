@@ -25,6 +25,8 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     returnHistoryFilters,
     returnHistoryHasMore,
     returnHistorySummary,
+    returnPendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
+    loadReturnPendingInbox,
     loadReturnHistory,
     returnSelectedOrder,
     receiveReturnedItemAction,
@@ -88,7 +90,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     if (item.lifecycleStatus === 'applied') return `Получен → ${destination}`
     return `Получен → ${destination}; статус учёта: ${item.lifecycleStatus}`
   }
-  const pendingReturnIntake = returnHistory.flatMap((entry: any) => (
+  const pendingReturnIntake = returnPendingInbox.rows.flatMap((entry: any) => (
     entry.operationType === 'order_return' && entry.status !== 'cancelled'
       ? (entry.items || [])
           .filter((item: any) => item.physicalTracking && !item.physicalReceivedAt)
@@ -170,19 +172,21 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                   <div>
                     <span>Ожидают приёмки</span>
-                    <strong>{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <strong>{returnPendingInbox.pendingQuantity} шт.</strong>
                   </div>
                 </div>
               </div>
-              {Number(returnHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+              {returnPendingInbox.error ? <p className="history-load-state is-error" role="alert">{returnPendingInbox.error} <button type="button" className="secondary compact" onClick={() => void loadReturnPendingInbox()}>Повторить</button></p> : null}
+              {returnPendingInbox.busy && !returnPendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
+              {Number(returnPendingInbox.pendingQuantity || 0) > 0 ? (
                 <section className="intake-queue" aria-label="Товары, ожидающие приёмки по возвратам">
                   <div className="intake-queue-head">
                     <div>
                       <span className="intake-queue-kicker">Нужно принять</span>
                       <h3>Товары едут обратно</h3>
-                      <p>Когда вещь приехала, отметьте это здесь. Искать нужный возврат в истории не нужно.</p>
+                      <p>Когда вещь приехала, отметьте это здесь. Искать нужный возврат в истории не нужно. Очередь показывает все ожидающие вещи, независимо от поиска ниже; самые старые — первыми.</p>
                     </div>
-                    <strong className="intake-queue-count">{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <strong className="intake-queue-count">{returnPendingInbox.pendingQuantity} шт.</strong>
                   </div>
                   {pendingReturnIntake.length ? (
                     <div className="intake-queue-list">
@@ -237,12 +241,12 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                   ) : (
                     <div className="intake-queue-missing">
-                      <span>Счётчик показывает ожидающие вещи, но они не попали в загруженные последние операции.</span>
-                      <button className="secondary compact" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>Загрузить ещё</button>
+                      <span>Первая страница ожидающих ещё загружается. Если вещь не видна, откройте следующие ожидающие.</span>
+                      <button className="secondary compact" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Загрузить ещё</button>
                     </div>
                   )}
-                  {returnHistoryHasMore && loadedPendingReturnQuantity < Number(returnHistorySummary.pendingPhysicalQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>Показать ещё ожидающие</button>
+                  {returnPendingInbox.hasMore && loadedPendingReturnQuantity < Number(returnPendingInbox.pendingQuantity || 0) ? (
+                    <button className="secondary compact intake-queue-more" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Показать ещё ожидающие</button>
                   ) : null}
                 </section>
               ) : null}
