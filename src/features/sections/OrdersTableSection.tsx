@@ -580,20 +580,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <td>
                           <div className="order-table-actions">
                             {retainedOnly ? <span className="soft-badge">Только история</span> : null}
-                            {!retainedOnly && !archived && !projection.deleted ? (order.items || [])
-                              .filter((item: any) => Number(item.pendingExchangeDispatchId || 0) > 0 && Number(item.quantity || 0) > 0)
-                              .map((item: any) => (
-                                <button
-                                  key={`exchange-dispatch-${item.pendingExchangeDispatchId}`}
-                                  type="button"
-                                  className="secondary compact order-exchange-dispatch-button"
-                                  disabled={savingOrder}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    void markExchangeReplacementSent(order, item)
-                                  }}
-                                >Отправить замену: {item.productName} × {item.quantity}</button>
-                              )) : null}
                             {canResolvePendingReservation&&!retainedOnly&&!archived&&!projection.deleted&&order.shipping_status!=='sent'
                               ? (order.items||[]).filter((item:any)=>
                                 item.stockWriteoffStatus==='pending_reservation'&&Number(item.id)>0
@@ -619,7 +605,9 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Уточнить выдачу после проверки склада' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !projection.deleted && order.shipping_status !== 'sent' ? (
+                            {!retainedOnly && !archived && !projection.deleted
+                              && (order.shipping_status !== 'sent'
+                                || (order.items||[]).some((item:any)=>Number(item.pendingExchangeDispatchId||0)>0)) ? (
                               <button className="secondary compact" type="button"
                                 disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
                                 Отправить товары
