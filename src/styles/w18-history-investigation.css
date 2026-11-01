@@ -59,3 +59,21 @@
   }
   .w18-reservation-orders > li { min-width: 0; align-items: stretch; }
 }
+
+
+/* Work #733 actual Chromium root cause:
+   .unified-inventory is a GRID whose implicit auto column became 578px within
+   a 376px card. This made the 390px history clip at x=600 even though body
+   scrollWidth was 375. Shrink the TRACK, not merely the text or scrollbar. */
+@media (max-width: 820px) {
+  .sector-inventory.unified-inventory {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .unified-inventory > .inventory-history-panel {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr) !important;
+    box-sizing: border-box;
+  }
+}
