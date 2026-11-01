@@ -86,5 +86,25 @@ try{
  assert.equal(movementCount(),1)
  assert.equal(sql.prepare("SELECT SUM(quantity) AS q FROM order_items WHERE order_id=9551").get().q,3)
  assert.equal(sql.prepare("SELECT SUM(line_total) AS total FROM order_items WHERE order_id=9551").get().total,6000)
- console.log('STAGE5_REAL_WORKER_HTTP_SELECTED_1_OF_3_UNDO_REPLAY_LEGACY_GUARD_PASS')
+ // A Return of ONE shipped line must not prevent shipping the still-reserved
+ // remainder of the same original purchase; legacy one-line reservation rules
+ // can now operate on the two accurate, physically distinct order item IDs.
+ const sentAgain=await api('POST',prefix+'/dispatches',{
+   requestId:'stage5-http-resend-after-undo',items:[{orderItemId:9561,quantity:1}]})
+ assert.equal(sentAgain.shippedQuantity,1)
+ const physicalReturn=await api('POST','/api/returns',{
+   requestId:'stage5-http-return-one-unit',orderId:9551,returnDate:'2026-11-01',amount:0,
+   items:[{orderItemId:9561,quantity:1,physicalState:'pending',restock:true}],
+ },201)
+ assert(physicalReturn.returnId>0,'Physical Return must record shipped item')
+ const remainingAfterReturn=await api('GET',prefix+'/plan')
+ assert.equal(remainingAfterReturn.selectedQuantity,2,'Return of dispatched row cannot lock sibling reserve')
+ const outstanding=remainingAfterReturn.lines.find(x=>x.selectable)
+ assert(outstanding)
+ const shipSibling=await api('POST',prefix+'/dispatches',{
+   requestId:'stage5-http-send-after-other-return',items:[{orderItemId:outstanding.orderItemId,quantity:1}]})
+ assert.equal(shipSibling.shippedQuantity,1)
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE order_item_id=9561').get().n,1)
+ assert.equal(sql.prepare('SELECT SUM(line_total) AS total FROM order_items WHERE order_id=9551').get().total,6000)
+ console.log('STAGE5_REAL_WORKER_HTTP_SELECTED_1_OF_3_UNDO_REPLAY_LEGACY_GUARD_AND_RETURN_PASS')
 }finally{sql.close()}
