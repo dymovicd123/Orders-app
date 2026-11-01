@@ -103,7 +103,10 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const addedQuantity = (exchangeDraft.newItems || []).reduce((sum: number, entry: any) =>
     sum + (String(entry.item?.productName || '').trim() ? Math.max(1, Number(entry.item?.quantity || 1)) : 0), 0)
   const currentTotal = Math.max(0, Number(exchangeSelectedOrder?.total_amount || 0))
-  const currentNetPaid = Math.max(0, Number(exchangeSelectedOrder?.received_amount || 0) - Number(exchangeSelectedOrder?.return_amount || 0))
+  const grossReceived = Math.max(0, Number(exchangeSelectedOrder?.received_amount || 0))
+  const previousRefunds = Math.max(0, Number(exchangeSelectedOrder?.return_amount || 0))
+  const currentNetPaid = Math.max(0, grossReceived - previousRefunds)
+  const recordedDebt = Math.max(0, Number(exchangeSelectedOrder?.debt_amount || 0))
   const projectedTotal = Math.max(0, currentTotal - removedValue + addedValue)
   const dueBeforeSettlement = Math.max(0, projectedTotal - currentNetPaid)
   const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
@@ -491,12 +494,19 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
           </section>
 
           <section className="exchange-set-step exchange-money-step">
-            <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">3 · Деньги</span><h3>Расчёт после обмена</h3><p>Система сравнила новый итог заказа с тем, что клиент уже оплатил.</p></div></div>
+            <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">3 · Деньги</span><h3>Расчёт после обмена</h3><p>Система сравнила новый итог заказа с деньгами, оставшимися после предыдущих возвратов.</p></div></div>
             <div className="exchange-money-result">
               <div className="exchange-money-result-main"><span>Новый итог заказа</span><strong>{formatMoney(projectedTotal)}</strong></div>
               <div><span>Было</span><strong>{formatMoney(currentTotal)}</strong></div>
-              <div><span>Уже оплачено</span><strong>{formatMoney(currentNetPaid)}</strong></div>
+              <div><span>Доступно к зачёту</span><strong>{formatMoney(currentNetPaid)}</strong></div>
             </div>
+            {previousRefunds > 0 ? (
+              <div className="exchange-money-clarification" role="note">
+                <strong>Почему сумма отличается от таблицы заказа?</strong>
+                <span>Поступило {formatMoney(grossReceived)} − уже возвращено клиенту {formatMoney(previousRefunds)} = осталось к зачёту {formatMoney(currentNetPaid)}.</span>
+                <span>В таблице записан долг {formatMoney(recordedDebt)} по сохранённому заказу. Здесь расчёт новый: с учётом возврата денег и выбранных замен. Доплата не означает повторный приход денег.</span>
+              </div>
+            ) : null}
 
             {refundAmount > 0 ? (
               <div className="exchange-settlement-card is-refund">
