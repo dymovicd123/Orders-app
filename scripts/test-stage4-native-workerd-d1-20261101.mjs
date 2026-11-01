@@ -100,9 +100,9 @@ function localD1(file){
 }
 let child=null
 let logs=''
-async function api(method,path,body,cookie=true){
+async function api(method,path,body,cookie=true,activeToken=sessionToken){
  const headers={}
- if(cookie)headers.cookie='orders_session='+sessionToken
+ if(cookie)headers.cookie='orders_session='+activeToken
  if(body!==undefined)headers['content-type']='application/json'
  const res=await fetch(base+path,{
   method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),
@@ -133,6 +133,13 @@ try{
  localD1(resolve('migrations/0117_v72_inventory_manual_operation_receipts.sql'))
  localD1(resolve('migrations/0118_v72_inventory_operation_attempts.sql'))
  localD1(seedPath)
+ if(process.argv.includes('--stage3')){
+  const {stage3NativeFixtureSQL}=await import('./test-stage3-7-native-workerd-lifecycle-20261101.mjs')
+  const adminTokenHash=createHash('sha256').update('stage3-isolated-native-admin').digest('base64url')
+  const stage3Seed=join(temp,'stage3-seed.sql')
+  writeFileSync(stage3Seed,stage3NativeFixtureSQL(adminTokenHash))
+  localD1(stage3Seed)
+ }
  child=spawn(process.execPath,[cli,'dev','--local','--config',config,
   '--persist-to',persist,'--ip','127.0.0.1','--port',String(port)],{
   env,stdio:['ignore','pipe','pipe'],
@@ -201,6 +208,10 @@ try{
  assert(events.data.attempts.some(x=>x.requestId==='native-stage4-arrival'&&x.outcome==='replayed'))
  assert.equal((await api('GET',other)).data.attempts.length,0,'No cross-location evidence leak')
  console.log('STAGE4_NATIVE_WORKER_D1_ACCEPTANCE_PASS: actual migrations, Cyrillic authorized staff, native D1 arrival, rejected audit, immutable movement, replay and exact source/SKU')
+ if(process.argv.includes('--stage3')){
+  const {runStage3NativeAcceptance}=await import('./test-stage3-7-native-workerd-lifecycle-20261101.mjs')
+  await runStage3NativeAcceptance({api,token:'stage3-isolated-native-admin'})
+ }
 }finally{
  if(child&&child.exitCode===null){child.kill('SIGTERM');await delay(300);if(child.exitCode===null)child.kill('SIGKILL')}
  rmSync(temp,{recursive:true,force:true})
