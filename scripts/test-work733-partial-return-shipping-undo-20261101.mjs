@@ -32,7 +32,7 @@ function reset() {
 function state() {
   return {
     shipping: sql.prepare('SELECT shipping_status FROM orders WHERE id=2197').get().shipping_status,
-    reserve: sql.prepare('SELECT status,fulfilled_at FROM inventory_reservations WHERE id=2209').get(),
+    reserve: (() => { const r = sql.prepare('SELECT status,fulfilled_at FROM inventory_reservations WHERE id=2209').get(); return { status: r.status, fulfilled_at: r.fulfilled_at } })(),
     movementCount: sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
     correctionLogs: sql.prepare("SELECT COUNT(*) AS n FROM activity_log WHERE event_type='order_partial_final_shipping_corrected'").get().n,
   }
