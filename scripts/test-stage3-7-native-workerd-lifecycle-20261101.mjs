@@ -169,9 +169,23 @@ export async function runStage3NativeAcceptance({api, token}) {
  const replaced=await getOrder()
  const newLine=(replaced.items||[]).find(x=>Number(x.variantId)===9842)
  assert(newLine&&newLine.sourceType==='boutique','Replacement uses exact new variant and source')
- const oldLine=(replaced.items||[]).find(x=>x.id===bt.id)
- assert.equal(Number(oldLine.variantId),9841,'Original sold SKU never rewritten')
- assert.equal(Number(oldLine.unitPrice),1500,'Historical price frozen')
+ // Once the entire old Boutique line was exchanged, GET /api/orders
+ // intentionally omits quantity=0 lines. Historical identity is read from
+ // exchange_items, not inferred from active order items.
+ const archivedActiveLine=(replaced.items||[]).find(x=>x.id===bt.id)
+ assert.equal(archivedActiveLine,undefined,'Fully exchanged old line is no longer active')
+ const exchangeRead=await call('GET',`/api/exchanges?orderId=${id}`)
+ assert.equal(exchangeRead.status,200,JSON.stringify(exchangeRead))
+ const recordedSwap=(exchangeRead.data.exchanges||[]).find(e=>Number(e.id)===exchangeId)
+ assert(recordedSwap,'Exchange details persist independent original/new snapshots')
+ const exactOld=(recordedSwap.oldItems||[]).find(x=>Number(x.orderItemId)===Number(bt.id))
+ const exactNew=(recordedSwap.newItems||[]).find(x=>Number(x.orderItemId)===Number(newLine.id))
+ assert(exactOld&&exactNew,'Both original and replacement are visible in durable exchange history')
+ assert.equal(Number(exactOld.lifecycleVariantId || exactOld.currentVariantId),9841,
+   'Original SKU preserved in old physical event, never overwritten by replacement')
+ assert.equal(Number(exactOld.unitPrice),1500,'Historical original price frozen')
+ assert.equal(Number(exactNew.lifecycleVariantId || exactNew.currentVariantId),9842,
+   'New exchange event keeps distinct replacement SKU')
  const oldBoutiqueHistory=await hist('boutique',9841)
  const newBoutiqueHistory=await hist('boutique',9842)
  assert.equal(oldBoutiqueHistory.length,sentBt.length+1,'Old Boutique physical +1')
