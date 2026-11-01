@@ -2836,6 +2836,25 @@ export async function cancelExchange(db: D1Database, exchangeId: number, input: 
     await loadCanonicalVariantSnapshot(db, variantId);
   }
 
+  // A replacement may have been issued via Stage5's unified dispatch.
+  // Cancel its exact recorded outgoing item first, or the exchange reversal
+  // would return physical stock while leaving the shipment ledger still sent.
+  if(newItemId){
+    const recorded=await db.prepare(
+      `SELECT di.id FROM order_dispatch_items di
+       JOIN order_dispatches d ON d.id=di.dispatch_id
+       WHERE d.order_id=? AND di.order_item_id=?
+         AND di.cancelled_quantity<di.quantity ORDER BY di.id`
+    ).bind(orderId,newItemId).all<{id:number}>()
+    for(const row of recorded.results||[]){
+      await cancelExactOrderDispatchItem(db,orderId,{
+        dispatchItemId:toInt(row.id,0),
+        requestId:`exchange-cancel:${exchangeId}:item:${toInt(row.id,0)}`,
+        actor:'Сотрудник',
+        reason:'Отмена обмена: отмена точной выдачи замены',
+      })
+    }
+  }
   // Exact lifecycle reversal happens before order/financial snapshots are restored. Pending
   // events simply become cancelled and never touch physical stock.
   for (const event of lifecycleEvents) {
