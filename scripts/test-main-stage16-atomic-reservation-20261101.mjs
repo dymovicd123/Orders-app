@@ -13,6 +13,7 @@ sql.exec([
 'CREATE TRIGGER inventory_stock_after_reserve AFTER UPDATE OF reserved_quantity ON inventory_stock BEGIN INSERT INTO inventory_stock_audit VALUES(new.id,old.reserved_quantity,new.reserved_quantity); END;',
 "INSERT INTO inventory_stock(id,inventory_source,variant_id,quantity,reserved_quantity) VALUES (1,'warehouse',7,1,0),(2,'boutique',7,3,0),(3,'warehouse',8,0,0);",
 ].join('\n'))
+let batchTail=Promise.resolve()
 const db={
  prepare(query){let args=[];return {
   bind(...values){args=values;return this},
@@ -21,9 +22,17 @@ const db={
   async run(){const m=sql.prepare(query).run(...args);return {meta:{changes:m.changes,last_row_id:m.lastInsertRowid}}}
  }},
  async batch(statements){
-  sql.exec('BEGIN IMMEDIATE')
-  try{const values=[];for(const stmt of statements)values.push(await stmt.run());sql.exec('COMMIT');return values}
-  catch(e){sql.exec('ROLLBACK');throw e}
+  // D1 serializes SQLite atomic batches; this adapter queues concurrent callers
+  // on one in-memory connection so Promise.all tests contention, not nested BEGIN.
+  const prior=batchTail
+  let release
+  batchTail=new Promise(resolve=>{release=resolve})
+  await prior
+  try{
+    sql.exec('BEGIN IMMEDIATE')
+    try{const values=[];for(const stmt of statements)values.push(await stmt.run());sql.exec('COMMIT');return values}
+    catch(e){sql.exec('ROLLBACK');throw e}
+  }finally{release()}
  }
 }
 let seq=10
