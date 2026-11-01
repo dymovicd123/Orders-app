@@ -45,6 +45,7 @@ const groups = [
   ['Orders, shipment and reservations', [
     'scripts/test-branch2-shipping-no-shortage-confirmation-20261021.mjs',
     'scripts/test-mistaken-shipping-physical-restore-20261028.mjs',
+    'scripts/test-work733-partial-return-shipping-undo-20261101.mjs',
     'scripts/test-old-order-post-stocktake-guard-r1.mjs',
     'scripts/test-old-order-post-stocktake-handover-r1.mjs',
     'scripts/test-branch2-resolver-historic-reserve-20261022.mjs',
