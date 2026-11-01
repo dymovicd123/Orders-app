@@ -59,6 +59,11 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
           onClose()
           return
         }
+        if (restoreRequestRef.current) {
+          setRestoreNotice(data.freshVariantReady
+            ? 'Свежая рабочая версия найдена. Приёмка ещё не завершена — нажмите «Принять в свежую версию».'
+            : 'Проверка завершена, но свежая рабочая версия пока не готова. При необходимости продолжите восстановление тем же номером операции.')
+        }
         const facts: (CatalogResolutionContext['facts'] & { productName?: string }) | undefined = data.facts
         setContext(data)
         setDraft({
