@@ -21,6 +21,8 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     exchangeHistoryFilters,
     exchangeHistoryHasMore,
     exchangeHistorySummary,
+    exchangePendingInbox,
+    loadExchangePendingInbox,
     exchangeSelectedOrder,
     formatMoney,
     FriendlyNumberInput,
@@ -108,7 +110,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     return `Источник: ${sourceLabel(source as OrderRecord['source_type'])}`
   }
 
-  const pendingExchangeIntake = exchangeHistory
+  const pendingExchangeIntake = exchangePendingInbox.rows
     .filter((entry: any) => entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId)
   const loadedPendingExchangeQuantity = pendingExchangeIntake.reduce((sum: number, entry: any) => sum + Math.max(0, Number(entry.oldQuantity || 0)), 0)
 
@@ -274,15 +276,17 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </section>
 
-              {Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+              {exchangePendingInbox.error ? <p className="history-load-state is-error" role="alert">{exchangePendingInbox.error} <button className="secondary compact" type="button" onClick={() => void loadExchangePendingInbox()}>Повторить</button></p> : null}
+              {exchangePendingInbox.busy && !exchangePendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
+              {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? (
                 <section className="intake-queue" aria-label="Старые вещи, ожидающие приёмки по обменам">
                   <div className="intake-queue-head">
                     <div>
                       <span className="intake-queue-kicker">Нужно принять</span>
                       <h3>Старые вещи едут обратно</h3>
-                      <p>Когда вещь приехала, отметьте это здесь. Открывать обмен в истории не нужно.</p>
+                      <p>Когда вещь приехала, отметьте это здесь. Открывать обмен в истории не нужно. Очередь не зависит от поиска и дат ниже; самые старые — первыми.</p>
                     </div>
-                    <strong className="intake-queue-count">{exchangeHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <strong className="intake-queue-count">{exchangePendingInbox.pendingQuantity} шт.</strong>
                   </div>
                   {pendingExchangeIntake.length ? (
                     <div className="intake-queue-list">
@@ -336,12 +340,12 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                   ) : (
                     <div className="intake-queue-missing">
-                      <span>Счётчик показывает ожидающие вещи, но они не попали в загруженные последние операции.</span>
-                      <button className="secondary compact" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ append: true })}>Загрузить ещё</button>
+                      <span>Ожидающие вещи не поместились на первую страницу очереди. Откройте следующие.</span>
+                      <button className="secondary compact" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Загрузить ещё</button>
                     </div>
                   )}
-                  {exchangeHistoryHasMore && loadedPendingExchangeQuantity < Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ append: true })}>Показать ещё ожидающие</button>
+                  {exchangePendingInbox.hasMore && loadedPendingExchangeQuantity < Number(exchangePendingInbox.pendingQuantity || 0) ? (
+                    <button className="secondary compact intake-queue-more" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Показать ещё ожидающие</button>
                   ) : null}
                 </section>
               ) : null}
