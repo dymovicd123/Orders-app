@@ -1,0 +1,11 @@
+.order-item-shipment-status {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: var(--muted, #64748b);
+}
+.order-item-shipment-status.is-sent { color: var(--success-text, #247149); }
+.order-item-shipment-status.is-partial { color: var(--warning-text, #98630b); }
+.order-item-shipment-status.is-unknown { color: var(--muted, #64748b); }
