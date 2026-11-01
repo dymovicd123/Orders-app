@@ -17,6 +17,7 @@ import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './orde
 import { correctMistakenOrderHandover, fulfillOrderReservationsV2, reactivateReleasedOrderReservationV2, releaseOrderReservationV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { dispatchSelectedCompleteOrderLines } from './order-dispatch.ts'
+import { cancelExactOrderDispatchItem } from './order-dispatch-cancel.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
@@ -4512,6 +4513,26 @@ export async function cancelExchangeSetV2(
       }
     }
 
+    // A replacement dispatched via Stage5 has a canonical dispatch ledger.
+    // Undo THAT exact outgoing dispatch first, then cancel its now-pending
+    // lifecycle event. Never replay the old exchange-specific reversal on
+    // the same physical issue, or leave a stale sent dispatch for a deleted SKU.
+    const issuedReplacementLines=await db.prepare(
+      `SELECT di.id AS dispatch_item_id,di.order_item_id
+       FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+       JOIN exchange_items ei ON ei.order_item_id=di.order_item_id
+         AND ei.exchange_id=? AND ei.role='new'
+       WHERE d.order_id=? AND di.cancelled_quantity<di.quantity
+       ORDER BY di.id`
+    ).bind(exchangeId,orderId).all<{dispatch_item_id:number;order_item_id:number}>()
+    for(const line of issuedReplacementLines.results||[]){
+      await cancelExactOrderDispatchItem(db,orderId,{
+        dispatchItemId:toInt(line.dispatch_item_id,0),
+        requestId:`exchange-set-cancel:${exchangeId}:item:${toInt(line.dispatch_item_id,0)}`,
+        actor:'Сотрудник',
+        reason:'Отмена обмена: отменена именно выдача новой позиции',
+      })
+    }
     const stockReversals: unknown[] = []
     for (const event of lifecycleRows.results || []) {
       const result = await cancelInventoryLifecycleEvent(db, toInt(event.id, 0), timestamp, comment)
