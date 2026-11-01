@@ -1937,7 +1937,7 @@ export default {
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
         if(request.method==='PATCH' && await orderHasNewDispatchHistory(id)){
-          return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся вещи через «Отправить товары».',{status:409});
+          return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся вещи через «Отправить товары».'},{status:409});
         }
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown }>(request);
         const existing = await env.DB.prepare(
