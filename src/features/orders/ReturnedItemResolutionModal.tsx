@@ -51,6 +51,11 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
     setCreateFields({})
     void apiFetch(`/api/inventory/lifecycle/${eventId}/context`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
+        // This read determines whether a previously attempted physical intake can continue.
+        // Never treat an API-client stale-cache fallback as fresh confirmation.
+        if (response.headers.get('X-Orders-App-Stale') === '1') {
+          throw new Error('Нет свежего подтверждения с сервера. Попробуйте «Проверить снова» при устойчивой связи.')
+        }
         const data = await readJsonResponse<CatalogResolutionContext>(response, 'Уточнение принятого товара')
         if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось открыть уточнение товара.')
         if (cancelled) return
