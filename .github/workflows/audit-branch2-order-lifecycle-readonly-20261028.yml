@@ -1,0 +1,22 @@
+name: Branch2 lifecycle physical truth audit READONLY
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/audit-order-lifecycle-readonly-20261028.mjs'
+      - '.github/workflows/audit-branch2-order-lifecycle-readonly-20261028.yml'
+permissions:
+  contents: read
+jobs:
+  readonly-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Query only the isolated Branch2 D1 snapshot; print counts and IDs only
+        run: node scripts/audit-order-lifecycle-readonly-20261028.mjs
