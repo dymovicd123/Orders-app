@@ -1,7 +1,7 @@
 name: Main catalog linked SKU diagnosis (SELECT ONLY, no deploy)
 on:
-  push:
-    branches: [audit/main-catalog-known-characteristics-readonly-20261101]
+  pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/audit-main-catalog-20261101.yml'
 permissions:
@@ -23,7 +23,9 @@ jobs:
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict'
           import fs from 'node:fs'
-          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/main-catalog-known-characteristics-readonly-20261101')
+          assert.equal(process.env.GITHUB_EVENT_NAME,'pull_request')
+          assert.equal(process.env.GITHUB_HEAD_REF,'audit/main-catalog-known-characteristics-readonly-20261101')
+          assert.equal(process.env.GITHUB_BASE_REF,'main')
           const txt=fs.readFileSync('wrangler.jsonc','utf8')
           assert(txt.includes('"name": "orders-app"')&&txt.includes('orders_db_prod')&&txt.includes('17e68a41-1d58-4a36-8a63-47c3e32443c4'),'Main config mismatch')
           const token=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID
