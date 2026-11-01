@@ -157,7 +157,7 @@ const lastPart=await dispatchSelectedCompleteOrderLines(db,9052,{requestId:'stag
 assert.equal(lastPart.ok,true)
 assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9052').get().shipping_status,'sent')
 assert.equal(sql.prepare('SELECT SUM(quantity) AS q FROM order_items WHERE order_id=9052').get().q,3)
-assert.equal(sql.prepare('SELECT SUM(quantity) AS q FROM inventory_reservations WHERE order_id=9052 AND status="fulfilled"').get().q,3)
+assert.equal(sql.prepare("SELECT SUM(quantity) AS q FROM inventory_reservations WHERE order_id=9052 AND status='fulfilled'").get().q,3)
 
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
