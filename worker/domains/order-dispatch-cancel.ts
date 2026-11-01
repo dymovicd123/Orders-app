@@ -45,7 +45,26 @@ export async function cancelExactOrderDispatchItem(
      JOIN inventory_lifecycle_events le ON le.operation_id=e.id AND le.operation_type='exchange'
      WHERE e.order_id=? AND le.order_item_id=? AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1`
   ).bind(orderId,itemId).first<{id:number}>()
-  if(exchangeConflict?.id)fail('Эта вещь участвует в обмене. Исправьте её через обмен; остальные товары доступны.')
+  // A NEW exchange replacement that was sent through the canonical dispatch
+  // ledger may be corrected by its exact dispatch item. The OLD exchanged
+  // item or a legacy exchange still needs the exchange-specific correction.
+  const replacement=await db.prepare(
+    `SELECT le.id,le.operation_id,le.quantity,le.variant_id,le.inventory_source
+     FROM inventory_lifecycle_events le
+     JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+     WHERE le.order_id=? AND le.order_item_id=? AND e.new_order_item_id=le.order_item_id
+       AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
+       AND le.status='applied' AND le.movement_id=?
+       AND COALESCE(e.status,'completed')<>'cancelled'
+     LIMIT 1`
+  ).bind(orderId,itemId,toInt(line.movement_id,0)).first<Record<string,unknown>>()
+  if (exchangeConflict?.id && !replacement?.id)
+    fail('Эта вещь участвует в другом обмене. Исправьте её через обмен; остальные товары доступны.')
+  if (replacement?.id && (toInt(replacement.quantity,0)!==quantity
+      || toInt(replacement.variant_id,0)!==toInt(line.variant_id,0)
+      || cleanText(replacement.inventory_source)!==cleanText(line.source_type))) {
+    fail('Идентичность отправленной замены не совпадает с обменом. Обновите заказ.')
+  }
   const isWorkshop=cleanText(line.source_type)==='workshop'
   const stamp=new Date().toISOString()
   let stock:{id:number;quantity:number;reserved_quantity:number}|null=null
@@ -105,16 +124,18 @@ export async function cancelExactOrderDispatchItem(
          SET quantity=quantity+?,reserved_quantity=reserved_quantity+?,
              last_action='Исправлена отправка',last_source_ref=?,updated_at=?
          WHERE id=? AND quantity=? AND reserved_quantity=?`
-      ).bind(restorePhysical?quantity:0,quantity,`dispatch_cancel:${requestId}`,stamp,
+      ).bind(restorePhysical?quantity:0,restorePhysical?quantity:0,`dispatch_cancel:${requestId}`,stamp,
         stock!.id,stock!.quantity,stock!.reserved_quantity),
       db.prepare(
-        `UPDATE inventory_reservations SET status='active',fulfilled_at=NULL,updated_at=?
+        `UPDATE inventory_reservations SET
+           status=?,unresolved_reason=?,fulfilled_at=NULL,updated_at=?
          WHERE id=? AND status='fulfilled' AND quantity=?`
-      ).bind(stamp,reservationId,quantity),
+      ).bind(restorePhysical?'active':'unresolved',restorePhysical?null:'concurrent_shortage',
+        stamp,reservationId,quantity),
       db.prepare(
-        `UPDATE order_items SET stock_writeoff_status='reserved',stock_quantity_before=NULL,stock_quantity_after=NULL
+        `UPDATE order_items SET stock_writeoff_status=?,stock_quantity_before=NULL,stock_quantity_after=NULL
          WHERE id=? AND stock_writeoff_status='fulfilled'`
-      ).bind(itemId),
+      ).bind(restorePhysical?'reserved':'pending_reservation',itemId),
     )
     if(restorePhysical) statements.push(db.prepare(
       `INSERT INTO inventory_movements(
@@ -127,6 +148,25 @@ export async function cancelExactOrderDispatchItem(
         FROM inventory_movements WHERE id=? AND movement_type='sale'`
     ).bind(quantity,stock!.quantity+quantity,`dispatch_cancel:${requestId}:item:${itemId}`,
       'Отменена ошибочная отправка',stamp,movementId))
+  }
+  if (replacement?.id) {
+    statements.push(
+      db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
+         SELECT 'human_inventory_v2','__replacement_cancel_conflict__',?
+         WHERE NOT EXISTS(
+           SELECT 1 FROM inventory_lifecycle_events le
+           JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+           WHERE le.id=? AND le.order_id=? AND le.order_item_id=?
+             AND le.status='applied' AND le.movement_id=?
+             AND COALESCE(e.status,'completed')<>'cancelled'
+         )`).bind(stamp,toInt(replacement.id,0),orderId,itemId,movementId),
+      db.prepare(`UPDATE inventory_lifecycle_events SET
+        status='pending',pending_reason='awaiting_dispatch',applied_at=NULL,movement_id=NULL,
+        resolution_comment=?,updated_at=?
+        WHERE id=? AND order_id=? AND order_item_id=? AND status='applied' AND movement_id=?`)
+        .bind('Отмена точной отправки замены; повторная выдача только после проверки резерва',
+          stamp,toInt(replacement.id,0),orderId,itemId,movementId),
+    )
   }
   statements.push(
     db.prepare('UPDATE order_dispatch_items SET cancelled_quantity=quantity WHERE id=? AND cancelled_quantity=0')
