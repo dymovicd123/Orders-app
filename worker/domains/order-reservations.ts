@@ -2882,7 +2882,6 @@ export async function getOrderShipmentInventoryBlockers(db: D1Database, orderId:
      LEFT JOIN inventory_reservations pending_r
        ON pending_r.order_item_id = oi.id AND pending_r.status = 'unresolved'
        AND pending_r.variant_id = oi.variant_id
-       AND pending_r.inventory_source = oi.source_type
      LEFT JOIN catalog_variants order_variant ON order_variant.id = oi.variant_id
      LEFT JOIN catalog_products variant_product ON variant_product.id = order_variant.product_id
      LEFT JOIN catalog_products order_product ON order_product.id = oi.product_id
