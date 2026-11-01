@@ -1,5 +1,4 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
-import '../../styles/order-stock-attention-banner.css'
 type SectionContext = Record<string, any>
 
 export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
@@ -9,16 +8,11 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
     orderPanelOptions,
     returnHistorySummary,
     exchangeHistorySummary,
-    warehouseAttention,
-    openInventoryStockAttention,
     sectorStyle,
     setEditorOpen,
     setOrderPanel,
     workspaceSector = 'orders',
   } = ctx
-
-  // Historical shipping discrepancies remain in per-SKU History; this banner is for present shortages only.
-  const shortageCount = Math.max(0, Number(warehouseAttention?.counts?.shortage || 0))
 
   return (
     <article className={`card wide sector-${workspaceSector} orders-workspace-header`} id={kaspiMode ? 'kaspi-orders-tabs' : 'orders-tabs'} style={sectorStyle(workspaceSector)}>
@@ -46,17 +40,7 @@ export function OrdersHeaderSection({ ctx }: { ctx: SectionContext }) {
           ))}
         </div>
       )}
-      {!kaspiMode && shortageCount > 0 ? (
-        <div className="orders-stock-attention" role="status" aria-label="Складские случаи для проверки">
-          <div className="orders-stock-attention-content">
-            <strong>Проверить складской учёт</strong>
-            <div className="orders-stock-attention-counts">
-              {shortageCount > 0 ? <span><b>{shortageCount}</b> {shortageCount === 1 ? 'случай' : 'случаев'} нехватки по активным заказам</span> : null}
-            </div>
-          </div>
-          <button className="secondary compact" type="button" onClick={openInventoryStockAttention}>Открыть случаи и действия →</button>
-        </div>
-      ) : null}
+
     </article>
   )
 }
