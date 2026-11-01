@@ -1867,7 +1867,7 @@ export default {
           }
           let blockers = await getOrderShipmentInventoryBlockers(env.DB, id);
           let unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
-          if (unresolvedBlockers.length) {
+          if (unresolvedBlockers.length && unresolvedBlockers.some(row => toInt(row.known_pending_reservation, 0) !== 1)) {
             try {
               await reconcileCatalogReviewOrder(env.DB, id);
             } catch (error) {
@@ -1877,6 +1877,15 @@ export default {
             unresolvedBlockers = blockers.filter((row) => cleanText(row.blocker_reason) !== 'insufficient_physical');
           }
           if (unresolvedBlockers.length) {
+            if (unresolvedBlockers.every(row => toInt(row.known_pending_reservation, 0) === 1)) {
+              const first = unresolvedBlockers[0];
+              const name = cleanText(first.product_name_snapshot) || `позиция #${toInt(first.id, 0)}`;
+              return json({
+                ok: false,
+                code: 'inventory_reservation_pending',
+                message: `Заказ не отправлен: товар «${name}» распознан, но резерв не подтверждён из-за нехватки. Проверьте фактическое наличие, приход и источник товара. Нельзя отправить заказ, пока резерв не станет действующим. Повторно распознавать товар не нужно.`,
+              }, { status: 409 });
+            }
             // Only catalog identity ambiguity belongs in Resolver. A missing stock
             // row or a broken active reservation must not open an empty modal.
             const reviewUrl = new URL(request.url);
