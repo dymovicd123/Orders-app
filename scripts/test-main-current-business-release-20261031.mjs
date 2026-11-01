@@ -19,6 +19,8 @@ const tests=[
  'scripts/test-main-warehouse-sku-feedback-20261031.mjs',
  'scripts/test-main-resolver-proven-sku-hydration-20261031.mjs',
  'scripts/test-main-stage1-final-resolver-20261031.mjs',
+ 'scripts/test-old-order-post-stocktake-handover-r1.mjs',
+ 'scripts/test-old-order-post-stocktake-guard-r1.mjs',
 ]
 let completed=0
 const started=Date.now()
