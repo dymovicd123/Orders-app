@@ -2194,8 +2194,13 @@ export async function listExchanges(db: D1Database, url: URL) {
   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
   const dateTo = cleanText(url.searchParams.get('dateTo'));
   const status = cleanText(url.searchParams.get('status')).toLowerCase();
+  const pendingOnly = url.searchParams.get('pendingOnly') === '1';
   const where: string[] = [];
   const bindings: Array<string | number> = [];
+  if (pendingOnly) where.push(`COALESCE(e.status,'completed') <> 'cancelled'
+    AND EXISTS (SELECT 1 FROM exchange_items pe
+      WHERE pe.exchange_id = e.id AND pe.role = 'old'
+      AND pe.physical_tracking = 1 AND pe.physical_received_at IS NULL)`);
   if (orderId) { where.push('e.order_id = ?'); bindings.push(orderId); }
   if (dateFrom) { where.push('e.exchange_date >= ?'); bindings.push(normalizeDate(dateFrom)); }
   if (dateTo) { where.push('e.exchange_date <= ?'); bindings.push(normalizeDate(dateTo)); }
@@ -2281,7 +2286,7 @@ export async function listExchanges(db: D1Database, url: URL) {
      LEFT JOIN inventory_lifecycle_events old_lifecycle ON old_lifecycle.id = (SELECT le.id FROM inventory_lifecycle_events le WHERE le.operation_type = 'exchange' AND le.operation_id = e.id AND le.event_type = 'exchange_old_in' ORDER BY le.id DESC LIMIT 1)
      LEFT JOIN inventory_lifecycle_events new_lifecycle ON new_lifecycle.id = (SELECT le.id FROM inventory_lifecycle_events le WHERE le.operation_type = 'exchange' AND le.operation_id = e.id AND le.event_type = 'exchange_new_out' ORDER BY le.id DESC LIMIT 1)
      ${whereSql}
-     ORDER BY e.exchange_date DESC, e.id DESC LIMIT ? OFFSET ?`
+     ORDER BY e.exchange_date ${pendingOnly ? 'ASC' : 'DESC'}, e.id ${pendingOnly ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?`
   ).bind(...bindings, limit, offset).all<Record<string, unknown>>();
   const baseRows = result.results || [];
   const pageExchangeIds = baseRows.map((row) => toInt(row.id, 0)).filter(Boolean);
