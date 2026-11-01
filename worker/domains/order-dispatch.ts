@@ -46,7 +46,7 @@ export async function dispatchSelectedCompleteOrderLines(
   }
   const order = await getOrder(db,orderId)
   if (!order) throw new CriticalOperationConflictError('Заказ не найден.')
-  if (['archived','deleted'].includes(cleanText(order.order_status)) || order.archived_at || cleanText(order.shipping_status)==='sent') fail('Заказ уже закрыт или отправлен. Обновите список.')
+  if (['archived','deleted'].includes(cleanText(order.order_status)) || order.archived_at) fail('Заказ закрыт. Обновите список.')
   const reserved = await db.prepare(
     'SELECT id,order_item_id,quantity,status,inventory_source,variant_id FROM inventory_reservations WHERE order_id=? ORDER BY id'
   ).bind(orderId).all<Record<string,unknown>>()
@@ -63,6 +63,43 @@ export async function dispatchSelectedCompleteOrderLines(
   })
   const selectedStock=selected.filter(x=>x.sourceType!=='workshop')
   const selectedWorkshop=selected.filter(x=>x.sourceType==='workshop')
+  const selectedReplacements = selectedStock.filter(x=>toInt(x.exchangeEventId,0)>0)
+  // A legacy 'sent' order can acquire a NEW unshipped exchange line.
+  // Never reissue an original product merely because this button is open.
+  if (cleanText(order.shipping_status)==='sent'
+      && selected.some(x=>toInt(x.exchangeEventId,0)<=0)) {
+    fail('Ранее отправленные товары нельзя выдать снова. Выберите только новые замены.')
+  }
+  const replacementByItem = new Map<number,{eventId:number;exchangeId:number}>()
+  for (const item of selectedReplacements) {
+    if (item.quantity!==item.originalQuantity) {
+      fail('Новую замену пока можно отправить только всей позицией.')
+    }
+    const eventId=toInt(item.exchangeEventId,0)
+    const event=await db.prepare(
+      `SELECT le.id,le.order_id,le.order_item_id,le.operation_id,le.quantity,
+              le.variant_id,le.product_id,le.inventory_source,le.status,le.pending_reason,
+              e.status AS exchange_status,oi.stock_writeoff_status,oi.quantity AS item_quantity
+       FROM inventory_lifecycle_events le
+       JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+         AND e.new_order_item_id=le.order_item_id
+       JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=le.order_id
+       WHERE le.id=? AND le.order_id=?
+         AND le.operation_type='exchange' AND le.event_type='exchange_new_out'`
+    ).bind(eventId,orderId).first<Record<string,unknown>>()
+    if (!event || cleanText(event.status)!=='pending'
+      || cleanText(event.pending_reason)!=='awaiting_dispatch'
+      || cleanText(event.exchange_status)==='cancelled'
+      || toInt(event.order_item_id,0)!==item.orderItemId
+      || toInt(event.quantity,0)!==item.quantity
+      || toInt(event.item_quantity,0)!==item.quantity
+      || toInt(event.product_id,0)<=0 || toInt(event.variant_id,0)!==item.variantId
+      || normalizeSourceType(event.inventory_source)!==item.sourceType
+      || cleanText(event.stock_writeoff_status)!=='reserved') {
+      fail('Позиция обмена изменилась. Обновите заказ и проверьте замену.')
+    }
+    replacementByItem.set(item.orderItemId,{eventId,exchangeId:toInt(event.operation_id,0)})
+  }
   const reservations = (reserved.results||[]).filter(row=>selectedStock.some(x=>x.orderItemId===toInt(row.order_item_id,0)))
   if (reservations.length!==selectedStock.length || reservations.some(x=>cleanText(x.status)!=='active')) fail('Резерв товара изменился. Обновите заказ.')
   const perItemReservation = new Map(reservations.map(r=>[toInt(r.order_item_id,0),r]))
@@ -148,10 +185,18 @@ export async function dispatchSelectedCompleteOrderLines(
          WHERE r.id=? AND r.order_id=? AND r.order_item_id=? AND r.status='active'
            AND r.quantity=? AND r.variant_id=? AND r.inventory_source=?
            AND oi.quantity=? AND oi.stock_writeoff_status='reserved'
-           AND o.shipping_status<>'sent' AND o.order_status NOT IN ('archived','deleted')
+           AND (o.shipping_status<>'sent' OR EXISTS(
+             SELECT 1 FROM inventory_lifecycle_events le
+             JOIN exchanges e ON e.id=le.operation_id AND e.new_order_item_id=oi.id
+             WHERE le.id=? AND le.order_id=o.id AND le.order_item_id=oi.id
+               AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
+               AND le.status='pending' AND le.pending_reason='awaiting_dispatch'
+               AND COALESCE(e.status,'completed')<>'cancelled'
+           ))
+           AND o.order_status NOT IN ('archived','deleted')
            AND COALESCE(o.archived_at,'')=''
        )`
-    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity))
+    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity,toInt(item.exchangeEventId,0)))
   }
   for(const item of selectedWorkshop) {
     statements.push(db.prepare(
@@ -256,6 +301,29 @@ export async function dispatchSelectedCompleteOrderLines(
         ),?,?)`
       ).bind(requestId,item.orderItemId,item.sourceType,item.variantId,toInt(r.id,0),ref,item.quantity,stamp),
     )
+    const replacement = replacementByItem.get(item.orderItemId)
+    if(replacement) {
+      // Same D1 transaction: the exchange lifecycle and shipment ledger
+      // must NEVER disagree about whether the replacement left the premises.
+      statements.push(
+        db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
+          SELECT 'human_inventory_v2','__exchange_dispatch_state_conflict__',?
+          WHERE NOT EXISTS(
+            SELECT 1 FROM inventory_lifecycle_events le JOIN exchanges e ON e.id=le.operation_id
+            WHERE le.id=? AND le.order_id=? AND le.order_item_id=?
+              AND le.operation_id=? AND le.status='pending' AND le.pending_reason='awaiting_dispatch'
+              AND le.variant_id=? AND le.quantity=? AND COALESCE(e.status,'completed')<>'cancelled'
+          )`).bind(stamp,replacement.eventId,orderId,item.orderItemId,replacement.exchangeId,item.variantId,item.quantity),
+        db.prepare(`UPDATE inventory_lifecycle_events
+          SET status='applied',pending_reason=NULL,applied_at=?,updated_at=?,
+              movement_id=(SELECT id FROM inventory_movements WHERE reference_type='order_dispatch'
+                AND reference_id=? ORDER BY id DESC LIMIT 1),
+              resolution_comment=?
+          WHERE id=? AND order_id=? AND order_item_id=?
+            AND status='pending' AND pending_reason='awaiting_dispatch'`)
+          .bind(stamp,stamp,ref,'Отправлено в общей выдаче заказа',replacement.eventId,orderId,item.orderItemId),
+      )
+    }
   }
   // The legacy boolean is a compatibility projection. A partial shipment may
   // never mark the entire order sent.
