@@ -10,12 +10,8 @@ const history=read('worker/domains/inventory-stocktake.ts')
 const timeline=read('src/features/inventory/views/StockVariantTimeline.tsx')
 const contract=read('shared/api-contracts.ts')
 
-// The orders banner only alerts about *current* active-reservation shortages.
-assert.match(header,/shortageCount/)
-assert.match(header,/warehouseAttention\?\.counts\?\.shortage/)
-assert.match(header,/случаев.*нехватки по активным заказам/)
-assert.match(header,/Открыть случаи и действия/)
-assert.doesNotMatch(header,/shippedCount|shippedUntracked|stockConcerns|при уже выполненной отправке/)
+// Current stock investigation belongs to Warehouse, not the daily Orders list.
+assert.doesNotMatch(header,/shortageCount|warehouseAttention|orders-stock-attention|Открыть случаи и действия/)
 assert.match(css,/orders-stock-attention-counts/)
 
 // Warehouse attention must preserve specific problem-resolution actions.
