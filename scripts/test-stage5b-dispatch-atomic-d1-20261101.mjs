@@ -25,7 +25,7 @@ const db={
   catch(e){sql.exec('ROLLBACK TO SAVEPOINT dispatch_atomic');sql.exec('RELEASE dispatch_atomic');throw e}
  },
 }
-sql.prepare("INSERT INTO managers(id,name) VALUES(1,'Stage5 tester')").run()
+sql.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'Stage5 tester')").run()
 sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(11,'DISPATCH EXACT SKU','adult',1)").run()
 sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(21,11,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1)").run()
 sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(31,'warehouse',11,21,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',10,2)").run()
