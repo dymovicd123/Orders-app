@@ -1,13 +1,13 @@
-name: "Main-derived stage 1.6 native local D1 pending recovery (NO DEPLOY) (NO DEPLOY)"
+name: "Main-derived stage 1.6 native local D1 pending recovery (NO DEPLOY)"
 on:
   push:
     branches: [test/main-stage16-native-d1-20261101]
     paths:
       - '.github/workflows/test-main-stage16-native-d1-20261101.yml'
       - 'scripts/test-main-stage16-native-d1-http-20261101.mjs'
-      - 'scripts/test-branch2-critical-native-d1-metadata-20261031.mjs'
-      - 'worker/domains/critical.ts'
-      - 'scripts/test-branch2-stage1-reservation-worker-http-20261031.mjs'
+      - 'worker/domains/reservation-admission.ts'
+      - 'worker/domains/order-reservations.ts'
+      - 'worker/index.ts'
 permissions:
   contents: read
 jobs:
@@ -26,7 +26,7 @@ jobs:
       - name: Reproducible dependencies and current Worker/client build
         run: |
           npm ci
-                          npm run build
+          npm run build
       - name: Strict local-only D1 database migration and canonical schema smoke
         shell: bash
         run: |
@@ -48,7 +48,7 @@ jobs:
           import path from 'node:path'
           const source=readFileSync('wrangler.jsonc','utf8')
           const token='"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'
-          if(!source.includes(token))throw Error('Branch2 D1 binding changed; stop')
+          if(!source.includes(token))throw Error('Main D1 fixture binding changed; stop')
           mkdirSync('.d1-acceptance-migrations',{recursive:true})
           let drops=0,temporaryTables=0,legacyManagerShadow=0
           for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x))){
