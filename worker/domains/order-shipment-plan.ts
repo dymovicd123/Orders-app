@@ -34,7 +34,8 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     const orderItemId = toInt(item.id, 0)
     const quantity = Math.max(1, toInt(item.quantity, 1))
     const isWorkshop = Boolean(item.isWorkshop) || cleanText(item.sourceType) === 'workshop'
-    const pendingReplacement = toInt(item.pendingExchangeDispatchId, 0) > 0
+    const pendingExchangeWorkshopId = toInt(item.pendingExchangeWorkshopId, 0)
+    const pendingReplacement = toInt(item.pendingExchangeDispatchId, 0) > 0 || (isWorkshop && pendingExchangeWorkshopId > 0)
     const current = activeById.get(orderItemId)
     const stockState = cleanText(item.stockWriteoffStatus).toLowerCase()
     const workshopState = cleanText(item.workshopTaskStatus).toLowerCase()
@@ -59,6 +60,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       material:cleanText(item.material),length:cleanText(item.length),
       quantity, sourceType: isWorkshop ? 'workshop' : cleanText(item.sourceType),
       exchangeEventId: pendingReplacement ? toInt(item.pendingExchangeDispatchId, 0) : null,
+      exchangeWorkshopId: isWorkshop ? pendingExchangeWorkshopId : null,
       variantId: isWorkshop ? toInt(item.variantId, 0) : (current?.variantId || 0),
       readyQuantity, selectedQuantity: readyQuantity,
       selectable: readyQuantity > 0,
