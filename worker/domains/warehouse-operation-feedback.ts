@@ -15,10 +15,18 @@ export function warehouseOperationFeedback(
   const base = publicApiError(error)
   const lower = raw.toLocaleLowerCase('ru')
   const reference = cleanText(requestId).replace(/[^a-zA-Z0-9_-]/g,'').slice(-12)
-  // A user-selected SKU with old/wrong characteristics is a deterministic
-  // client conflict, never a persistence failure. No stock write has occurred.
-  if (/характеристики не соответствуют выбранному варианту|пол, цвет, материал, длина, размер или тип не совпадают с выбранным вариантом|выбранная вещь больше не соответствует характеристикам варианта/.test(lower)) {
-    return { status:409,code:'warehouse_sku_mismatch',message:raw.slice(0,420) }
+  // A rejected canonical SKU on Arrival is a correct business validation
+  // failure, not a database outage. Physical stock was not modified.
+  // Keep this exact scoped marker narrow; SQL or persistence errors must stay 500.
+  if (kind === 'arrival' && /^Приход «[^»]+»:/.test(raw) && raw.endsWith('Склад не изменён.')) {
+    return {status:409,code:'warehouse_sku_mismatch',message:raw.slice(0,420)}
+  }
+  // Correct SKU identity rejections from write-off/correction are safe 409s.
+  // A manager must reselect the variant, not treat this as a database outage.
+  // Scope to the exact domain validation phrase so SQL/D1 errors remain 500.
+  if ((kind === 'writeoff' || kind === 'manual_set')
+      && /^(?:Списание|Корректировка): характеристики не соответствуют выбранному варианту\. Выберите существующую комбинацию заново\.$/.test(raw)) {
+    return {status:409,code:'warehouse_sku_mismatch',message:raw}
   }
   if (/остатк[иа]? изменил|остатки изменились|было \d+, сейчас \d+|вариант больше не существует|комбинаци[яи] больше не существует/.test(lower)) {
     return {
