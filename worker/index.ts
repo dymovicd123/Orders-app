@@ -1750,6 +1750,9 @@ export default {
 
         try {
           if (action === 'issue_now') {
+            if(await orderHasNewDispatchHistory(id)){
+              return json({ok:false,message:'Откройте «Отправить товары» и выберите нужные позиции.'},{status:409});
+            }
             if (item.reviewNeeded) {
               return json({ ok: false, message: `Сначала уточните, где находился товар «${item.productName}» во время последней физической ревизии или сверки.` }, { status: 409 });
             }
@@ -1821,11 +1824,21 @@ export default {
       }
 
 
+      const orderHasNewDispatchHistory = async (id:number) => {
+        const row = await env.DB.prepare(
+          'SELECT EXISTS(SELECT 1 FROM order_dispatches WHERE order_id=?) AS found'
+        ).bind(id).first<{found:number}>();
+        return toInt(row?.found,0)>0;
+      };
+
       const orderShippingCorrectionMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/correct$/);
       if (orderShippingCorrectionMatch && request.method === 'POST') {
         const id = toInt(orderShippingCorrectionMatch[1], 0);
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
+          if (await orderHasNewDispatchHistory(id)) {
+            return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки». Остальные товары не изменятся.'},{status:409});
+          }
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: authenticatedActor(request) || normalizeAccessRole(request.headers.get('X-Access-Role')),
@@ -1923,6 +1936,9 @@ export default {
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
+        if(request.method==='PATCH' && await orderHasNewDispatchHistory(id)){
+          return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся вещи через «Отправить товары».',{status:409});
+        }
         const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown }>(request);
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
