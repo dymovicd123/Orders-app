@@ -34,3 +34,29 @@
 .stock-variant-more p{font-size:12px;color:#92400e;margin:0}
 .stock-variant-footnote{font-size:11px;line-height:1.5;color:#64748b;margin:0}
 @media(max-width:680px){.stock-variant-timeline-intro{display:grid}.stock-variant-identity{justify-self:start}.stock-variant-events{padding-left:18px}.stock-variant-events li:before{left:-17px}}
+
+
+/* Work #733: on a 390px phone long historical SKU/details must wrap INSIDE
+   the investigation card, never disappear beneath the app's overflow clipping. */
+.stock-variant-timeline,
+.stock-variant-timeline-intro,
+.stock-variant-events,
+.stock-variant-events li,
+.stock-variant-event-head,
+.stock-variant-event-numbers,
+.stock-variant-event-meta {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.stock-variant-timeline { grid-template-columns: minmax(0, 1fr); }
+.stock-variant-timeline :is(h4, p, strong, b, span, small, time, em) {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .stock-variant-timeline-intro { width: 100%; padding: 12px; }
+  .stock-variant-events { grid-template-columns: minmax(0, 1fr); }
+  .stock-variant-events li { width: 100%; }
+  .stock-variant-event-head,
+  .stock-variant-event-numbers { flex-wrap: wrap; }
+}
