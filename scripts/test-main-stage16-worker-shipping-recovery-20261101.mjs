@@ -126,7 +126,7 @@ try{
  ).get(variantId).n,1)
  assert.equal(sqlite.prepare(
   "SELECT COUNT(*) AS n FROM inventory_reservations WHERE inventory_source='warehouse' AND variant_id=? AND status='unresolved'"
- ).get(variantId).n,2)
+ ).get(variantId).n,1,'First pending was fulfilled; only the later shortage remains')
  // Exactly one physical shipment was made; order creation itself is not a movement.
  const beforeShipmentCount=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
  const thirdItem=sqlite.prepare('SELECT id FROM order_items WHERE order_id=?').get(thirdId).id
