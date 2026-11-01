@@ -5,6 +5,7 @@ on:
     branches: [branch2]
     paths:
       - 'scripts/test-stage4-native-workerd-d1-20261101.mjs'
+      - 'scripts/test-stage3-7-native-workerd-lifecycle-20261101.mjs'
       - 'scripts/test-stage4-browser-problems-history-20261101.mjs'
       - '.github/workflows/stage4-native-isolated-d1.yml'
       - 'worker/index.ts'
@@ -44,3 +45,24 @@ jobs:
           node -e "const fs=require('fs');const s=fs.readFileSync('scripts/test-stage4-native-workerd-d1-20261101.mjs','utf8');if(!s.includes('--local')||!s.includes('stage4_local_d1_fixture_only')||s.includes('--remote')||s.includes('orders_db_prod')||s.includes('orders_db_branch2_mirror'))process.exit(1)"
       - name: Native Worker + D1 end-to-end
         run: node scripts/test-stage4-native-workerd-d1-20261101.mjs --browser
+
+  stage3-native:
+    name: Stage3.7 native D1 multi-source physical/financial lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_ACCOUNT_ID: ''
+      CLOUDFLARE_API_TOKEN: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: |
+          npm ci
+          npm run build
+      - name: Real local Worker and D1 --Stage 3.7 only--
+        run: node scripts/test-stage4-native-workerd-d1-20261101.mjs --stage3
+
