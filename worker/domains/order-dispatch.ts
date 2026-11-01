@@ -2,7 +2,7 @@ import { cleanText, normalizeSourceType, toInt } from '../core/text.ts'
 import { getOrder } from './orders-write.ts'
 import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
 import { CriticalOperationConflictError } from './critical.ts'
-import { getOrderStockHandoverState } from './order-reservations.ts'
+import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
 
 type Selection = { orderItemId: number; quantity: number }
 type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
@@ -93,6 +93,11 @@ export async function dispatchSelectedCompleteOrderLines(
   const handover=await getOrderStockHandoverState(db,orderId)
   if (handover?.items.some(row=>selectedStock.some(item=>item.orderItemId===row.orderItemId) && row.reviewNeeded)) {
     fail('Уточните выдачу выбранного товара после последней проверки склада.')
+  }
+
+  for (const source of new Set(selectedStock.map(x=>x.sourceType))) {
+    const open=await activeStocktakeSessionForHandover(db,source as 'warehouse'|'boutique')
+    if(open)fail('Сейчас на этой точке идёт ревизия. Отправку выбранной вещи сохраните после окончания пересчёта.')
   }
 
   const groups = new Map<string,StockKey>()
