@@ -63,6 +63,16 @@ export async function startStage4Browser({origin,sessionToken,variantId}){
     await mobileTimeline.waitFor({state:'visible',timeout:30000})
     assert.equal(await mobileTimeline.getAttribute('data-stock-variant-timeline'),String(variantId),
       'Mobile settles on the exact same source/SKU investigation')
+    const clipped=await phone.evaluate(()=>{
+      const maxX=document.documentElement.clientWidth
+      return [...document.querySelectorAll(
+        '.stock-variant-timeline, .stock-variant-timeline-intro, .w18-investigation-summary, .w18-investigation-metrics, .w18-investigation-metrics > div, .w18-active-reservations, .w18-reservation-orders > li, .stock-variant-events li'
+      )].filter(el=>{
+        const r=el.getBoundingClientRect()
+        return r.width>0 && (r.right>maxX+2 || r.left< -2)
+      }).map(el=>({className:el.className,left:Math.round(el.getBoundingClientRect().left),right:Math.round(el.getBoundingClientRect().right),maxX}))
+    })
+    assert.deepEqual(clipped,[],'Work #733 mobile SKU History cards cannot extend beyond the visible viewport')
    }finally {await mobile.close()}
    console.log('STAGE4_BROWSER_BEFORE_RECEIPT_PASS: desktop/mobile active problem → exact SKU timeline/order')
   },
