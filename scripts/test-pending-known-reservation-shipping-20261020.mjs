@@ -50,6 +50,12 @@ assert(review.includes('const rowsResult = await fetchCatalogReviewRows(db, 160,
 assert(review.includes('if (toInt(row.is_workshop, 0) === 1 || !toInt(row.variant_id, 0))'),'Known variant not protected in auto-reconcile')
 assert(review.includes('const result = await resolveCatalogReviewRows(db, [row], selected, normalizedCatalogReviewKey(row), new Date().toISOString(), { writeAlias: false })'),'Known SKU safe resolution not reused')
 assert(review.includes('const committedMatchesTarget'),'Reservation identity and quantity not proven before publishing')
-assert(stock.includes('const observedPhysical: null = null;'),'Recovery must never synthesize physical stock')
+const admission=readFileSync('worker/domains/reservation-admission.ts','utf8')
+assert(stock.includes('admitOrderReservationAtomically(db, {')
+  && admission.includes('UPDATE inventory_stock')
+  && admission.includes('SET reserved_quantity')
+  && !/SET\\s+quantity\\s*=/.test(admission)
+  && !admission.includes('INSERT INTO inventory_movements'),
+  'Recovery must never synthesize physical stock or fake inventory movement')
 assert(router.includes("await reconcileCatalogReviewOrder(env.DB, id)"),'Shipping does not retry reservation recovery before blocking')
 console.log('PENDING_KNOWN_SKU_ORDER_SHIPPING_RECOVERY_PASSED: 10 negative cases, exact SKU, idempotency protections, no stock injection')
