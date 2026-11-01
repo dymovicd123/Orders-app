@@ -48,4 +48,12 @@ assert.equal(unchangedStock.quantity,0,'No phantom physical units during pending
 assert.equal(unchangedStock.reserved_quantity,0,'No stock reservation was added by pending shipment')
 assert(router.includes("unresolvedBlockers.some(row => toInt(row.known_pending_reservation, 0) !== 1)"),
  'Shipping must skip catalog repair entirely when all blockers are already-known shortages')
+const {isRecognizedPendingCatalogReservation}=await import('../src/features/orders/catalogResolutionFlow.ts')
+assert.equal(isRecognizedPendingCatalogReservation({stockWriteoffStatus:'pending_reservation',productId:75,variantId:962}),true)
+assert.equal(isRecognizedPendingCatalogReservation({stockWriteoffStatus:'pending_reservation',productId:75,variantId:null}),false)
+assert.equal(isRecognizedPendingCatalogReservation({stockWriteoffStatus:'catalog_unresolved',productId:75,variantId:962}),false)
+const modal=readFileSync('src/features/orders/OrderCatalogResolutionModal.tsx','utf8')
+assert(modal.includes('if (pendingKnownShortage)')&&modal.includes('После прихода повторите отправку'),'Pending SKU must not reopen irrelevant catalog editor')
+const review=readFileSync('worker/domains/catalog-review.ts','utf8')
+assert.equal((review.match(/Товар уже распознан, но резерв ожидает поступления/g)||[]).length,2,'Both mutation endpoints must reject known pending SKU')
 console.log('PENDING_KNOWN_SKU_RESERVATION_ID_STABLE_PASS: 3 retries preserve ID 2203, no writes, no phantom physical stock')
