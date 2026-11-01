@@ -195,10 +195,10 @@ export function projectOrderOperationalState(
     canShip: mutableWorkingOrder && !sent && !workshopPending
       && (!hasCommittedItemReturn || stillDeliverableAfterReturn),
     needsCatalogClarification: mutableWorkingOrder && !sent && Boolean(order.catalog_review_required),
-    // A completed exchange is current order truth, not a reason to roll the exchange back.
-    // False shipping correction follows the active replacement item. A standalone item
-    // return still changes current physical truth and must be corrected in its own domain.
-    canCorrectShipping: mutableWorkingOrder && !hasCommittedItemReturn && sent,
+    // A standalone Return does not cancel the manager's right to correct a later
+    // final-send marker. The server distinguishes a status-only correction (no
+    // new physical issue) from cases requiring item-scoped physical reversal.
+    canCorrectShipping: mutableWorkingOrder && sent,
     canOpenStockHandover: mutableWorkingOrder
       && !hasCommittedItemReturn
       && !sent
