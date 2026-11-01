@@ -17,6 +17,7 @@ import { findRetiredV2OldItemPriceLink, recordRetiredV2OldPriceCorrection } from
 import { previewExchangeCancellationChain } from './domains/exchange-cancel-chain.ts'
 import { previewAdminOrderDeletion } from './domains/order-delete-preview.ts'
 import { correctPhysicalBeforeAdminDelete } from './domains/admin-delete-physical-confirm.ts'
+import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
 import { executeAdminDeleteChainStep, readActiveAdminDeleteChain } from './domains/admin-delete-execute.ts'
 import { listCityReportOrders, listFinanceReports } from './domains/finance-reports.ts'
 import { listWarehouseDemand } from './domains/warehouse-demand.ts'
@@ -1838,6 +1839,22 @@ export default {
           const publicError = publicApiError(error);
           return json({ ok: false, ...(publicError.code ? { code: publicError.code } : {}), message: publicError.message }, { status: publicError.status });
         }
+      }
+
+      const orderShippingPlanMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/plan$/);
+      if (orderShippingPlanMatch && request.method === 'GET') {
+        const orderId = toInt(orderShippingPlanMatch[1], 0);
+        const order = await getOrder(env.DB, orderId);
+        if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
+        const activeReservations = await env.DB.prepare(
+          `SELECT order_item_id, quantity, status, variant_id
+           FROM inventory_reservations WHERE order_id = ? AND status = 'active'
+           ORDER BY order_item_id ASC, id ASC`
+        ).bind(orderId).all<Record<string,unknown>>();
+        return json(buildOrderShipmentPlan(
+          order as Parameters<typeof buildOrderShipmentPlan>[0],
+          (activeReservations.results || []) as Parameters<typeof buildOrderShipmentPlan>[1],
+        ));
       }
 
       const orderShippingMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping$/);
