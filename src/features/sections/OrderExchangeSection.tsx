@@ -21,7 +21,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
     exchangeHistoryFilters,
     exchangeHistoryHasMore,
     exchangeHistorySummary,
-    exchangePendingInbox,
+    exchangePendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
     loadExchangePendingInbox,
     exchangeSelectedOrder,
     formatMoney,
