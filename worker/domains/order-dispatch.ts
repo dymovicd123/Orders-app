@@ -46,7 +46,7 @@ export async function dispatchSelectedCompleteOrderLines(
     return {ok:true,alreadyCommitted:true,dispatchId:replay.id}
   }
   const order = await getOrder(db,orderId)
-  if (!order) fail('Заказ не найден.')
+  if (!order) throw new CriticalOperationConflictError('Заказ не найден.')
   if (['archived','deleted'].includes(cleanText(order.order_status)) || order.archived_at || cleanText(order.shipping_status)==='sent') fail('Заказ уже закрыт или отправлен. Обновите список.')
   const reserved = await db.prepare(
     'SELECT id,order_item_id,quantity,status,inventory_source,variant_id FROM inventory_reservations WHERE order_id=? ORDER BY id'
@@ -97,10 +97,10 @@ export async function dispatchSelectedCompleteOrderLines(
 
   const groups = new Map<string,StockKey>()
   for(const item of selectedStock) {
-    const key=`${item.sourceType}:${item.variantId}`
+    const key=`${item.sourceType}:${toInt(item.variantId,0)}`
     const previous=groups.get(key)
     groups.set(key,{
-      source:item.sourceType as 'warehouse'|'boutique',variantId:item.variantId,
+      source:item.sourceType as 'warehouse'|'boutique',variantId:toInt(item.variantId,0),
       quantity:(previous?.quantity||0)+item.quantity,
       stockId:0,before:0,reservedBefore:0,productId:0,productName:'',
       gender:null,color:null,material:null,length:null,size:null,
@@ -116,7 +116,7 @@ export async function dispatchSelectedCompleteOrderLines(
        JOIN catalog_products p ON p.id=v.product_id
        WHERE s.inventory_source=? AND s.variant_id=? LIMIT 1`
     ).bind(group.source,group.variantId).first<Record<string,unknown>>()
-    if (!stock?.id || toInt(stock.variant_active,0)!==1 || toInt(stock.product_active,0)!==1) fail('Товар изменён в каталоге. Обновите заказ.')
+    if (!stock?.id || toInt(stock.variant_active,0)!==1 || toInt(stock.product_active,0)!==1) throw new CriticalOperationConflictError('Товар изменён в каталоге. Обновите заказ.')
     group.stockId=toInt(stock.id,0);group.before=toInt(stock.quantity,0);group.reservedBefore=toInt(stock.reserved_quantity,0)
     group.productId=toInt(stock.product_id,0);group.productName=cleanText(stock.product_name)
     group.gender=cleanText(stock.gender)||null;group.color=cleanText(stock.color)||null
@@ -185,7 +185,7 @@ export async function dispatchSelectedCompleteOrderLines(
       continue
     }
     const r=perItemReservation.get(item.orderItemId)!
-    const group=groups.get(`${item.sourceType}:${item.variantId}`)!
+    const group=groups.get(`${item.sourceType}:${toInt(item.variantId,0)}`)!
     const key=`${item.sourceType}:${item.variantId}`
     const next=(running.get(key)||0)-item.quantity
     running.set(key,next)
