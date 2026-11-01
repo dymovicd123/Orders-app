@@ -1013,6 +1013,24 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
       remainingRows.push(row);
       continue;
     }
+    // A known SKU with an identical unresolved shortage must keep its reservation
+    // identity through retries; it is a physical shortage, not a catalog error.
+    // This is important when OTHER items on the same order need real resolver work.
+    if (cleanText(row.stock_writeoff_status) === 'pending_reservation'
+        && toInt(row.product_id, 0) > 0) {
+      const pending = await db.prepare(
+        `SELECT status, unresolved_reason, inventory_source, product_id, variant_id, quantity
+         FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
+      ).bind(toInt(row.id ?? row.order_item_id, 0)).first<Record<string, unknown>>();
+      if (cleanText(pending?.status) === 'unresolved'
+          && cleanText(pending?.unresolved_reason) === 'concurrent_shortage'
+          && toInt(pending?.product_id, 0) === toInt(row.product_id, 0)
+          && normalizeSourceType(pending?.inventory_source) === normalizeSourceType(row.source_type)
+          && toInt(pending?.variant_id, 0) === toInt(row.variant_id, 0)
+          && toInt(pending?.quantity, 0) === toInt(row.quantity, 0)) {
+        continue;
+      }
+    }
     try {
       const selected = await db.prepare(
         `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, COALESCE(v.category, p.category, 'adult') AS category,
