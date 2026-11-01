@@ -16,6 +16,8 @@ on:
       - 'worker/domains/inventory-movement.ts'
       - 'worker/domains/inventory-stocktake.ts'
       - 'worker/domains/warehouse-attention.ts'
+      - 'worker/domains/activity.ts'
+      - 'worker/domains/returns-exchanges.ts'
       - 'migrations/0117_v72_inventory_manual_operation_receipts.sql'
       - 'migrations/0118_v72_inventory_operation_attempts.sql'
 
