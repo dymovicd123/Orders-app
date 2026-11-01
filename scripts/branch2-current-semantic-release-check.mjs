@@ -102,6 +102,7 @@ const groups = [
     'scripts/test-stage4-return-exchange-attention-cache-20261101.mjs',
     'scripts/test-work733-shipping-after-partial-return-20261101.mjs',
     'scripts/test-stage5-shipment-display-and-ledger-20261101.mjs',
+    'scripts/test-stage5-sent-actions-ui-20261101.mjs',
     'scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs',
     'scripts/test-stage5b-http-routes-20261101.mjs',
     'scripts/test-orders-normal-after-partial-return-20261101.mjs',
