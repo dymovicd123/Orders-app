@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CatalogResponse, CatalogReviewItem, CatalogReviewResponse, CatalogVariantRecord, OrderRecord } from '../../app/types'
 import { readJsonResponse } from '../../app/utils'
 import type { CatalogResolutionContext, CatalogResolutionProduct, CatalogResolutionResponse } from '../../../shared/api-contracts'
-import { clean, normalize, fields, fieldLabel, initialDraft, canonicalizePreviewDraft, nextQuestion, compoundRemainder, rankedProducts, rankedReferenceValues, referenceValues, segmentCompoundRemainder, needsReference, sameReferenceValue, createResolutionSession } from './catalogResolutionFlow'
+import { clean, normalize, fields, fieldLabel, initialDraft, canonicalizePreviewDraft, nextQuestion, compoundRemainder, rankedProducts, rankedReferenceValues, referenceValues, segmentCompoundRemainder, needsReference, sameReferenceValue, isRecognizedPendingCatalogReservation, createResolutionSession } from './catalogResolutionFlow'
 import type { Draft, Field } from './catalogResolutionFlow'
 import './OrderCatalogResolutionModal.css'
 
@@ -343,6 +343,7 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   if (!order) return null
   const exactDraftVariant = context?.exactVariant
   const retiredRecovery = Boolean(item?.retiredRecovery || context?.retiredRecovery || item?.stockWriteoffStatus === 'catalog_retired')
+  const pendingKnownShortage = !retiredRecovery && isRecognizedPendingCatalogReservation(item)
   const canLegacy = !retiredRecovery && isAdmin && Boolean(context?.canLeaveGenderUnknown) && !draft?.createProduct
   const disabled = busy || resolving || needsRecheck
   const approveReference = (field: Field, value = clean(draft?.[field])) => {
@@ -377,6 +378,15 @@ export function OrderCatalogResolutionModal({ order, apiFetch, isAdmin, onClose,
   }
   const finalAction = () => {
     if (!draft || !context) return null
+    if (pendingKnownShortage) {
+      return <div className="resolution-admin-required">
+        <p>Товар уже распознан, но свободного остатка недостаточно для резерва. Повторное распознавание не создаст товар.</p>
+        <p>После прихода повторите отправку: система проверит остаток и восстановит прежний резерв. При необходимости измените количество или источник заказа.</p>
+        {onEditOrder
+          ? <button type="button" className="primary-button" disabled={disabled} onClick={() => void onEditOrder(order!)}>Изменить заказ</button>
+          : <button type="button" className="secondary-button" onClick={onClose}>Вернуться к заказу</button>}
+      </div>
+    }
     if (retiredRecovery) {
       if (!exactDraftVariant?.id) {
         return <div className="resolution-admin-required">

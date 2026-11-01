@@ -226,6 +226,16 @@ export function nextQuestion(context: CatalogResolutionContext, draft: Draft, op
   return { kind: options.legacy ? 'legacy' : 'ready' }
 }
 
+// An already recognized SKU lacking free stock is not a catalog identity issue.
+export function isRecognizedPendingCatalogReservation(item: {
+  stockWriteoffStatus?: string | null
+  productId?: number | null
+  variantId?: number | null
+} | null | undefined) {
+  return item?.stockWriteoffStatus === 'pending_reservation'
+    && Number(item.productId || 0) > 0 && Number(item.variantId || 0) > 0
+}
+
 // One owner per modal session. Re-check failure can be retried without replaying the write.
 export function createResolutionSession() {
   let locked = false, completed = false, changed = false, uncertainWrite = false

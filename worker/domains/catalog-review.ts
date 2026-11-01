@@ -447,6 +447,10 @@ export async function resolveCatalogReviewFacts(
      FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = ? LIMIT 1`
   ).bind(orderItemId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция заказа для разбора не найдена.');
+  if (cleanText(anchor.stock_writeoff_status) === 'pending_reservation'
+      && toInt(anchor.product_id, 0) > 0 && toInt(anchor.variant_id, 0) > 0) {
+    throw new Error('Товар уже распознан, но резерв ожидает поступления. Проверьте приход либо измените количество/источник заказа. Не нужно повторно выбирать SKU в каталоге.');
+  }
   if (cleanText(anchor.stock_writeoff_status) === 'catalog_retired') {
     throw new Error('Эта позиция заказа относится к удалённой исторической SKU. Сначала восстановите или заново создайте точную рабочую комбинацию в Каталоге, затем повторите проверку заказа.');
   }
@@ -1013,6 +1017,24 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
       remainingRows.push(row);
       continue;
     }
+    // A known SKU with an identical unresolved shortage must keep its reservation
+    // identity through retries; it is a physical shortage, not a catalog error.
+    // This is important when OTHER items on the same order need real resolver work.
+    if (cleanText(row.stock_writeoff_status) === 'pending_reservation'
+        && toInt(row.product_id, 0) > 0) {
+      const pending = await db.prepare(
+        `SELECT status, unresolved_reason, inventory_source, product_id, variant_id, quantity
+         FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
+      ).bind(toInt(row.id ?? row.order_item_id, 0)).first<Record<string, unknown>>();
+      if (cleanText(pending?.status) === 'unresolved'
+          && cleanText(pending?.unresolved_reason) === 'concurrent_shortage'
+          && toInt(pending?.product_id, 0) === toInt(row.product_id, 0)
+          && normalizeSourceType(pending?.inventory_source) === normalizeSourceType(row.source_type)
+          && toInt(pending?.variant_id, 0) === toInt(row.variant_id, 0)
+          && toInt(pending?.quantity, 0) === toInt(row.quantity, 0)) {
+        continue;
+      }
+    }
     try {
       const selected = await db.prepare(
         `SELECT v.id AS variant_id, v.product_id, p.name AS product_name, COALESCE(v.category, p.category, 'adult') AS category,
@@ -1086,6 +1108,10 @@ export async function resolveOrderCatalogReviewExistingVariant(db: D1Database, o
      WHERE oi.id = ? AND oi.order_id = ? LIMIT 1`
   ).bind(orderItemId, orderId).first<Record<string, unknown>>();
   if (!anchor?.id) throw new Error('Позиция не найдена в этом заказе.');
+  if (cleanText(anchor.stock_writeoff_status) === 'pending_reservation'
+      && toInt(anchor.product_id, 0) > 0 && toInt(anchor.variant_id, 0) > 0) {
+    throw new Error('Товар уже распознан, но резерв ожидает поступления. Проверьте приход либо измените количество/источник заказа. Не нужно повторно выбирать SKU в каталоге.');
+  }
   if (normalizeShippingStatus(anchor.shipping_status) === 'sent') throw new Error('Заказ уже отправлен. Складскую привязку здесь менять нельзя.');
   if (normalizeOrderStatus(anchor.order_status) !== 'active' || cleanText(anchor.archived_at)) throw new Error('Этот заказ уже не активен.');
 
