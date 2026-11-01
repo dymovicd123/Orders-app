@@ -1693,6 +1693,13 @@ export default {
         return json(result);
       }
 
+      const orderHasNewDispatchHistory = async (id:number) => {
+        const row = await env.DB.prepare(
+          'SELECT EXISTS(SELECT 1 FROM order_dispatches WHERE order_id=?) AS found'
+        ).bind(id).first<{found:number}>();
+        return toInt(row?.found,0)>0;
+      };
+
       const orderStockHandoverMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/stock-handover$/);
       if (orderStockHandoverMatch && (request.method === 'GET' || request.method === 'PATCH')) {
         const id = toInt(orderStockHandoverMatch[1], 0);
@@ -1823,13 +1830,6 @@ export default {
         }
       }
 
-
-      const orderHasNewDispatchHistory = async (id:number) => {
-        const row = await env.DB.prepare(
-          'SELECT EXISTS(SELECT 1 FROM order_dispatches WHERE order_id=?) AS found'
-        ).bind(id).first<{found:number}>();
-        return toInt(row?.found,0)>0;
-      };
 
       const orderShippingCorrectionMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/shipping\/correct$/);
       if (orderShippingCorrectionMatch && request.method === 'POST') {
