@@ -272,7 +272,7 @@ function App() {
     resolve?.(confirmed)
   }, [])
 
-  // Explicit text input for exceptional admin actions. Native prompt() stalls
+  // Explicit text input for exceptional admin actions. Native browser input stalls
   // browser automation and hides the reason from the in-app confirmation flow.
   const [actionTextPrompt, setActionTextPrompt] = useState<{ message: string; defaultValue: string } | null>(null)
   const actionTextPromptResolver = useRef<((value: string | null) => void) | null>(null)
