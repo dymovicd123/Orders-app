@@ -21,7 +21,13 @@ assert.match(source,/if \(stockConfirmationOperation === 'handover'\) \{[\s\S]*?
 assert.match(source,/Эта замена ещё не отправлена/)
 assert.match(lifecycle,/options\.explicitReplacementDispatch !== true/)
 assert.match(exchange,/explicitReplacementDispatch: true/)
-assert.match(orders,/markExchangeReplacementSent\(order, item\)/)
+const selectedDispatch=readFileSync('worker/domains/order-dispatch.ts','utf8')
+assert.match(selectedDispatch,/replacementByItem\.set\(item\.orderItemId,/,
+  'Pending replacements must use the same order dispatch atomic batch')
+assert.match(orders,/openDispatchDraft\(order\)/,
+  'Unified shipment checklist must remain accessible')
+assert(!orders.includes('order-exchange-dispatch-button'),
+  'Legacy replacement button must not compete with unified shipment action')
 
 const db=new DatabaseSync(':memory:')
 db.exec(`
@@ -84,4 +90,4 @@ assert.equal(db.prepare(shippedSql).all(42).some(r=>r.order_item_id===99),false)
 const latePending=db.prepare('SELECT id FROM inventory_lifecycle_events WHERE order_item_id=? AND status=? AND pending_reason=?').get(99,'pending','awaiting_dispatch')
 assert.equal(latePending.id,22)
 db.close()
-console.log('BRANCH2_PENDING_REPLACEMENT_SEPARATE_SHIPPING_PASS')
+console.log('BRANCH2_PENDING_REPLACEMENT_UNIFIED_SHIPPING_PASS')
