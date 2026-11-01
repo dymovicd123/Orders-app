@@ -447,7 +447,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             ) : null}
                           </div>
                         </td>
-                        <td>{formatMoney(projection.debtAmount)}</td>
+                        <td>
+                          <div className="order-cell-stack">
+                            <strong>{formatMoney(projection.debtAmount)}</strong>
+                            {projection.refundAmount > 0 ? (
+                              <small>После возвратов к зачёту {formatMoney(projection.netRetainedAmount)}. Следующая операция пересчитает сумму.</small>
+                            ) : null}
+                          </div>
+                        </td>
                         <td>
                           {retainedOnly ? (
                             <div className="order-status-stack">

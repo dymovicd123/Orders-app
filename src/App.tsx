@@ -802,6 +802,8 @@ function App() {
     dateTo: defaultOrderRange.dateTo,
     pageSize: '100',
   })
+  const [createdOrderNotice, setCreatedOrderNotice] = useState<{ id: number; externalId: string; orderDate: string } | null>(null)
+  const [savedOrderView, setSavedOrderView] = useState<{ filters: typeof filters; preset: OrderPeriodPreset } | null>(null)
   const closedArchiveMonth = getClosedArchiveMonth()
   const [archiveDraft, setArchiveDraft] = useState({
     month: closedArchiveMonth.value,
@@ -4221,6 +4223,41 @@ function App() {
     })
   }
 
+  async function showCreatedOrder() {
+    if (!createdOrderNotice) return
+    if (!savedOrderView) setSavedOrderView({ filters: { ...filters }, preset: orderPeriodPreset })
+    const nextFilters = {
+      ...filters,
+      q: createdOrderNotice.externalId,
+      status: 'all',
+      shippingStatus: 'all',
+      deliveryType: 'all',
+      source: 'all',
+      manager: '',
+      managerId: 0,
+      archiveMode: 'all' as ArchiveMode,
+      dateFrom: createdOrderNotice.orderDate,
+      dateTo: createdOrderNotice.orderDate,
+      pageSize: '100',
+    }
+    setOrderPeriodPreset('custom')
+    setFilters(nextFilters)
+    setOrderPageOffset(0)
+    setSelectedOrderId(createdOrderNotice.id)
+    await loadDashboard(false, nextFilters, 0)
+  }
+
+  async function restoreOrderFiltersAfterCreated() {
+    if (!savedOrderView) return
+    const prior = savedOrderView
+    setFilters(prior.filters)
+    setOrderPeriodPreset(prior.preset)
+    setSavedOrderView(null)
+    setCreatedOrderNotice(null)
+    setOrderPageOffset(0)
+    await loadDashboard(false, prior.filters, 0)
+  }
+
   function updateCreateDraft<K extends keyof EditorDraft>(key: K, value: EditorDraft[K]) {
     setCreateDraft((current) => {
       if (key === 'orderDate') {
@@ -4624,6 +4661,8 @@ function App() {
         setMessage(`Заказ ${createdOrder.external_id} создан, сумма ${formatMoney(createdOrder.total_amount)} тенге.`)
       }
       upsertOrderInState(createdOrder)
+      setCreatedOrderNotice({ id: createdOrder.id, externalId: createdOrder.external_id, orderDate: createdOrder.order_date })
+      setSavedOrderView(null)
       if (createdOrder.items.some((item) => item.isWorkshop || item.sourceType === 'workshop')) {
         void loadWorkshopData()
       }
@@ -9039,7 +9078,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Заказы">
-        <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, sectorStyle, setFilters }} />
+        <OrderFiltersSection ctx={{ applyOrderPeriodPreset, busy, ChoicePills, createdOrderNotice, filters, ManagerPicker, orderPanelStyle, orderPeriodPreset, references, resetOrderFilters, restoreOrderFiltersAfterCreated, savedOrderView, sectorStyle, setCreatedOrderNotice, setFilters, showCreatedOrder }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'create'} label="Создание заказа">

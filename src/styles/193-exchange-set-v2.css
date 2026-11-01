@@ -69,3 +69,17 @@
 .exchange-shipment-warning strong{display:block;margin-bottom:3px}
 .exchange-set-workspace{scroll-margin-top:96px}
 @media(max-width:550px){.exchange-shipment-choice{padding:12px}.exchange-shipment-choice>.exchange-choice-row{display:grid;grid-template-columns:1fr 1fr}.exchange-shipment-choice>.exchange-choice-row button{padding:10px 8px;font-size:.86rem}}
+
+/* Work #733: make historical refunds auditable before collecting an exchange top-up. */
+.exchange-money-clarification {
+  display: grid;
+  gap: 5px;
+  padding: 11px 13px;
+  margin-top: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line, #cbd5e1);
+  background: var(--surface-soft, rgba(93, 115, 146, .07));
+  line-height: 1.45;
+}
+.exchange-money-clarification strong { font-size: .9rem; }
+.exchange-money-clarification span { font-size: .86rem; color: var(--muted, #64748b); }

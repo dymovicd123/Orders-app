@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { readJsonResponse } from '../../app/utils'
 import type { CatalogResolutionContext, CatalogResolutionResponse } from '../../../shared/api-contracts'
 import { rankedProducts } from './catalogResolutionFlow'
@@ -30,17 +30,32 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [reloadNonce, setReloadNonce] = useState(0)
+  const [restoreNotice, setRestoreNotice] = useState('')
+  const restoreRequestRef = useRef<{ key: string; requestId: string } | null>(null)
+  const loadedEventRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!eventId) return
     let cancelled = false
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    if (loadedEventRef.current !== eventId) {
+      loadedEventRef.current = eventId
+      restoreRequestRef.current = null
+      setRestoreNotice('')
+      setContext(null)
+    }
     setBusy(true)
     setError('')
-    setContext(null)
     setSearch('')
     setCreateFields({})
-    void apiFetch(`/api/inventory/lifecycle/${eventId}/context`, { cache: 'no-store' })
+    void apiFetch(`/api/inventory/lifecycle/${eventId}/context`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
+        // This read determines whether a previously attempted physical intake can continue.
+        // Never treat an API-client stale-cache fallback as fresh confirmation.
+        if (response.headers.get('X-Orders-App-Stale') === '1') {
+          throw new Error('Нет свежего подтверждения с сервера. Попробуйте «Проверить снова» при устойчивой связи.')
+        }
         const data = await readJsonResponse<CatalogResolutionContext>(response, 'Уточнение принятого товара')
         if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось открыть уточнение товара.')
         if (cancelled) return
@@ -48,6 +63,11 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
           await onCompleted()
           onClose()
           return
+        }
+        if (restoreRequestRef.current) {
+          setRestoreNotice(data.freshVariantReady
+            ? 'Свежая рабочая версия найдена. Приёмка ещё не завершена — нажмите «Принять в свежую версию».'
+            : 'Проверка завершена, но свежая рабочая версия пока не готова. При необходимости продолжите восстановление тем же номером операции.')
         }
         const facts: (CatalogResolutionContext['facts'] & { productName?: string }) | undefined = data.facts
         setContext(data)
@@ -65,9 +85,16 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
         })
         setSearch(facts?.productName || '')
       })
-      .catch((value) => { if (!cancelled) setError(value instanceof Error ? value.message : 'Не удалось открыть уточнение товара.') })
-      .finally(() => { if (!cancelled) setBusy(false) })
-    return () => { cancelled = true }
+      .catch((value) => {
+        if (!cancelled) setError(controller.signal.aborted
+          ? 'Проверка заняла слишком долго. Состояние товара могло измениться: нажмите «Проверить снова». Повторный приход делать не нужно.'
+          : value instanceof Error ? value.message : 'Не удалось открыть уточнение товара.')
+      })
+      .finally(() => {
+        clearTimeout(timeoutId)
+        if (!cancelled) setBusy(false)
+      })
+    return () => { cancelled = true; clearTimeout(timeoutId); controller.abort() }
   }, [eventId, reloadNonce])
 
   const products = context?.products || []
@@ -118,22 +145,45 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
 
   const restoreRetired = async () => {
     if (!eventId || !context?.retirementId || busy || !isAdmin) return
+    const key = `${eventId}:${context.retirementId}`
+    // Keep the same request ID after a lost response. The server replays a completed
+    // catalog restoration without creating a second working SKU.
+    if (restoreRequestRef.current?.key !== key) {
+      restoreRequestRef.current = {
+        key,
+        requestId: `return-retired-restore-${eventId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      }
+    }
+    const requestId = restoreRequestRef.current.requestId
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    let responseReceived = false
+    let verifying = false
     setBusy(true)
     setError('')
+    setRestoreNotice('')
     try {
-      const requestId = `return-retired-restore-${eventId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
       const response = await apiFetch(`/api/catalog/retirements/${context.retirementId}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ requestId }),
       })
+      responseReceived = true
       const data = await readJsonResponse<CatalogResolutionResponse>(response, 'Восстановление товара')
       if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось восстановить рабочую версию товара.')
+      setRestoreNotice('Восстановление сохранено. Проверяем свежую рабочую версию; приёмка ещё не завершена.')
+      verifying = true
       setReloadNonce((value) => value + 1)
     } catch (value) {
-      setError(value instanceof Error ? value.message : 'Не удалось восстановить рабочую версию товара.')
+      if (!responseReceived) {
+        setRestoreNotice('Ответ сервера не получен. Восстановление могло уже сохраниться. Сначала нажмите «Проверить снова». Если потребуется повтор, используется прежний номер операции — второй товар не создаётся.')
+      } else {
+        setError(value instanceof Error ? value.message : 'Не удалось восстановить рабочую версию товара.')
+      }
     } finally {
-      setBusy(false)
+      clearTimeout(timeoutId)
+      if (!verifying) setBusy(false)
     }
   }
 
@@ -186,7 +236,8 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
         </div>
 
         {busy && !context ? <p>Проверяю товар…</p> : null}
-        {error ? <div className="returned-item-resolution-error">{error}</div> : null}
+        {error ? <div className="returned-item-resolution-error" role="alert">{error}</div> : null}
+        {restoreNotice ? <div className="returned-item-warning" role="status">{restoreNotice}</div> : null}
 
         {context ? <>
           <div className="returned-item-source">
@@ -207,7 +258,7 @@ export function ReturnedItemResolutionModal({ eventId, apiFetch, isAdmin, onClos
             </> : context.retirementId ? <>
               <p>Свежей рабочей версии пока нет. Сначала восстановите её, затем система ещё раз проверит точную комбинацию.</p>
               {isAdmin
-                ? <button type="button" className="primary" disabled={busy} onClick={() => void restoreRetired()}>{busy ? 'Восстанавливаю…' : 'Восстановить рабочую версию'}</button>
+                ? <button type="button" className="primary" disabled={busy} onClick={() => void restoreRetired()}>{busy ? 'Восстанавливаю…' : restoreRequestRef.current?.key === `${eventId}:${context.retirementId}` ? 'Продолжить восстановление безопасно' : 'Восстановить рабочую версию'}</button>
                 : <span className="resolution-admin-note">Восстановление доступно только администратору.</span>}
             </> : <>
               <p>Для этой исторической SKU нет записи полного удаления, поэтому автоматически восстановить её нельзя. Создайте в Каталоге свежую рабочую комбинацию с теми же характеристиками и вернитесь сюда.</p>

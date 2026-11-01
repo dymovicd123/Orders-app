@@ -1,4 +1,5 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import './OrderFiltersSection.css'
 type SectionContext = Record<string, any>
 
 export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
@@ -6,6 +7,7 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     applyOrderPeriodPreset,
     busy,
     ChoicePills,
+    createdOrderNotice,
     filters,
     kaspiMode = false,
     ManagerPicker,
@@ -14,8 +16,12 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
     orderPeriodPreset,
     references,
     resetOrderFilters,
+    restoreOrderFiltersAfterCreated,
+    savedOrderView,
     sectorStyle,
+    setCreatedOrderNotice,
     setFilters,
+    showCreatedOrder,
     workspaceSector = 'orders',
   } = ctx
 
@@ -31,6 +37,22 @@ export function OrderFiltersSection({ ctx }: { ctx: SectionContext }) {
   return (
     <article className={`card wide sector-${workspaceSector} order-filter-card`} id={kaspiMode ? 'kaspi-filters' : 'filters'} style={{ ...sectorStyle(workspaceSector), ...(kaspiMode ? (orderPanel === 'list' ? {} : { display: 'none' }) : orderPanelStyle('list')) }}>
       <div className="orders-filter-panel">
+        {createdOrderNotice ? (
+          <div className="orders-new-order-notice" role="status">
+            <div className="orders-new-order-copy">
+              <strong>Заказ {createdOrderNotice.externalId} создан</strong>
+              <span>Дата заказа: {createdOrderNotice.orderDate}. Старый период или другой фильтр могут скрывать его в списке. Настройки поиска не сброшены.</span>
+            </div>
+            <div className="orders-new-order-actions">
+              <button className="primary compact" type="button" onClick={() => void showCreatedOrder()} disabled={busy}>Показать заказ</button>
+              {savedOrderView ? (
+                <button className="secondary compact" type="button" onClick={() => void restoreOrderFiltersAfterCreated()} disabled={busy}>Вернуть мои фильтры</button>
+              ) : (
+                <button className="secondary compact" type="button" onClick={() => setCreatedOrderNotice(null)}>Скрыть</button>
+              )}
+            </div>
+          </div>
+        ) : null}
         <div className="orders-period-row">
           <span className="orders-filter-title">Период:</span>
           <ChoicePills value={orderPeriodPreset} onChange={(value) => applyOrderPeriodPreset(value)} options={periodOptions} />
