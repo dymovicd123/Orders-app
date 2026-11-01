@@ -26,6 +26,7 @@ import { getDashboardInsights, getInventoryHardAudit, listInventory, setInventor
 import { listInventoryReservations } from './domains/inventory-reservations.ts'
 import { addInventoryStocktakeCombination, addInventoryStocktakeVariant, cancelInventoryStocktakeSession, completeInventoryStocktakeSession, createInventoryStocktakeSession, listInventoryCheckHistory, listInventoryCycleCountSuggestions, listInventoryHistory, listInventoryStocktakeSessions, quickInventoryStocktake, quickInventoryStocktakeBatch, reconcileFoundInventoryStock, saveInventoryStocktakeCount, serializeInventoryStocktakeSession } from './domains/inventory-stocktake.ts'
 import { getInventoryLifecycleContext, listInventoryLifecyclePending, reconcileKnownPendingInventoryInbound, resolveInventoryLifecycleFacts } from './domains/lifecycle.ts'
+import { recoverPendingOrderReservationsBeforeShipping } from './domains/reservation-admission.ts'
 import { createManualOrderPaymentCritical } from './domains/money.ts'
 import { OrderInputValidationError } from './domains/order-core.ts'
 import { deleteOrderSafely } from './domains/order-delete.ts'
@@ -1853,6 +1854,10 @@ export default {
         const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(env.DB);
         const normalizedStockConfirmations = humanInventoryModelEnabled ? normalizeShipmentStockConfirmations(input.stockConfirmations) : [];
         if (humanInventoryModelEnabled) {
+          // An explicit shipment retry is the safe re-admission point after
+          // stock arrives. This keeps pending reservation/item IDs unchanged.
+          // Still-short items remain unresolved and shipping remains blocked.
+          await recoverPendingOrderReservationsBeforeShipping(env.DB, id, new Date().toISOString());
           // Before fulfilling this order, compare its still-active reservations to
           // later physical checks. A past revision may already have counted a
           // physically departed item; ordinary stock-only orders need this too.
@@ -1883,7 +1888,7 @@ export default {
               return json({
                 ok: false,
                 code: 'inventory_reservation_pending',
-                message: `Заказ не отправлен: товар «${name}» распознан, но резерв не подтверждён из-за нехватки. Проверьте фактическое наличие, приход и источник товара. Нельзя отправить заказ, пока резерв не станет действующим. Повторно распознавать товар не нужно.`,
+                message: `Заказ не отправлен: товар «${name}» распознан, но резерв не подтверждён из-за нехватки. Проверьте приход и источник товара. После поступления повторите отправку: система попробует закрепить имеющийся товар автоматически. Если свободного остатка всё ещё нет, заказ останется неотправленным. Повторно распознавать товар не нужно.`,
               }, { status: 409 });
             }
             // Only catalog identity ambiguity belongs in Resolver. A missing stock
