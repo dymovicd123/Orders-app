@@ -1873,6 +1873,12 @@ export default {
                     EXISTS(SELECT 1 FROM exchanges e WHERE e.order_id=d.order_id
                       AND (e.old_order_item_id=di.order_item_id OR e.new_order_item_id=di.order_item_id)
                         AND COALESCE(e.status,'completed')<>'cancelled') AS hasExchange,
+                    EXISTS(SELECT 1 FROM exchanges e JOIN inventory_lifecycle_events le
+                      ON le.operation_id=e.id AND le.operation_type='exchange'
+                      WHERE e.order_id=d.order_id AND e.new_order_item_id=di.order_item_id
+                        AND le.order_item_id=di.order_item_id AND le.event_type='exchange_new_out'
+                        AND le.status='applied' AND le.movement_id=di.movement_id
+                        AND COALESCE(e.status,'completed')<>'cancelled') AS isReplacement,
                     di.source_type AS sourceType,oi.product_name_snapshot AS productName,
                     oi.color_snapshot AS color,oi.size_snapshot AS size,
                     oi.material_snapshot AS material,oi.length_snapshot AS length,

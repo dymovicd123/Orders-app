@@ -37,7 +37,10 @@ try {
   check(table.includes('Снять «Отправлен»'), 'sent-order correction action not visible in Orders table')
   check(!table.includes('активная обменённая позиция'), 'ordinary Orders UI exposes exchange implementation detail')
   check(table.includes('Исправить отправку'), 'sent order needs a manager correction action even after an earlier Return')
-  check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
+  const projection = read('src/app/orderOperationalProjection.ts')
+  check(projection.includes('canCorrectShipping: mutableWorkingOrder && sent')
+    && table.includes('projection.canCorrectShipping'),
+    'correction action must be limited to sent, mutable orders through the shared projection')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')
 } catch (error) {

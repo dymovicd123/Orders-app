@@ -580,20 +580,6 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         <td>
                           <div className="order-table-actions">
                             {retainedOnly ? <span className="soft-badge">Только история</span> : null}
-                            {!retainedOnly && !archived && !projection.deleted ? (order.items || [])
-                              .filter((item: any) => Number(item.pendingExchangeDispatchId || 0) > 0 && Number(item.quantity || 0) > 0)
-                              .map((item: any) => (
-                                <button
-                                  key={`exchange-dispatch-${item.pendingExchangeDispatchId}`}
-                                  type="button"
-                                  className="secondary compact order-exchange-dispatch-button"
-                                  disabled={savingOrder}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    void markExchangeReplacementSent(order, item)
-                                  }}
-                                >Отправить замену: {item.productName} × {item.quantity}</button>
-                              )) : null}
                             {canResolvePendingReservation&&!retainedOnly&&!archived&&!projection.deleted&&order.shipping_status!=='sent'
                               ? (order.items||[]).filter((item:any)=>
                                 item.stockWriteoffStatus==='pending_reservation'&&Number(item.id)>0
@@ -619,10 +605,12 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {order.stock_handover_review_needed ? 'Уточнить выдачу после проверки склада' : 'Выдать готовые товары'}
                               </button>
                             ) : null}
-                            {!retainedOnly && !archived && !projection.deleted ? (
+                            {!retainedOnly && !archived && !projection.deleted
+                              && (order.shipping_status !== 'sent'
+                                || (order.items||[]).some((item:any)=>Number(item.pendingExchangeDispatchId||0)>0 || Number(item.pendingExchangeWorkshopId||0)>0)) ? (
                               <button className="secondary compact" type="button"
                                 disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
-                                {order.shipping_status==='sent' ? 'Отправки' : 'Отправить товары'}
+                                Отправить товары
                               </button>
                             ) : null}
                             {projection.canCorrectShipping && !(order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
@@ -695,6 +683,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     Исправить реквизиты
                                   </button>
                             ) : null}
+                                {extraActionsOrderId === order.id && (order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
+                                  <button className="secondary compact" type="button"
+                                    disabled={savingOrder}
+                                    onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
+                                    Посмотреть отправленные товары
+                                  </button>
+                                ) : null}
                                 {extraActionsOrderId === order.id && order.pricing_mode === 'itemized_v1' && Array.isArray(order.items) && order.items.some((item:any) => Number(item.id)>0 && Number(item.quantity)>0) ? (
                                   <button className="secondary compact" type="button" onClick={(event) => {
                                     event.stopPropagation()
@@ -800,10 +795,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
               {dispatchDraft ? (
                 <div className="modal-backdrop" role="presentation"
                   onMouseDown={event=>{if(event.target===event.currentTarget&&!dispatchDraft.submitting)setDispatchDraft(null)}}>
-                  <div className="modal-card" role="dialog" aria-modal="true" aria-label="Отправка товаров"
+                  <div className="modal-card" role="dialog" aria-modal="true"
+                    aria-label={dispatchDraft.order.shipping_status==='sent'?'Отправленные товары':'Отправка товаров'}
                     style={{maxWidth:620,maxHeight:'88vh',overflowY:'auto'}}>
                     <div className="modal-head">
-                      <div><div className="card-label">Отправка товаров</div>
+                      <div><div className="card-label">{dispatchDraft.order.shipping_status==='sent'?'Отправленные товары':'Отправка товаров'}</div>
                         <h3>{dispatchDraft.order.external_id}</h3></div>
                       <button type="button" className="ghost compact" disabled={dispatchDraft.submitting}
                         onClick={()=>setDispatchDraft(null)}>Закрыть</button>
@@ -856,12 +852,13 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 style={{display:'flex',gap:12,alignItems:'center',padding:'8px 0'}}>
                                 <div style={{flex:1,minWidth:0}}>
                                   <strong>{x.productName}</strong>
+                                  {x.isReplacement ? <small>Замена по обмену</small> : null}
                                   <small style={{display:'block',opacity:.8}}>
                                     {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт. · {x.dispatchDate}
                                   </small>
                                 </div>
-                                {x.hasReturn||x.hasExchange ? (
-                                  <small>{x.hasExchange?'Есть обмен':'Есть возврат'}</small>
+                                {x.hasReturn||(x.hasExchange&&!x.isReplacement) ? (
+                                  <small>{x.hasReturn?'Есть возврат':'Есть обмен'}</small>
                                 ) : (
                                   <button type="button" className="secondary compact"
                                     disabled={dispatchDraft.submitting}

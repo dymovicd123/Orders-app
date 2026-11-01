@@ -613,7 +613,7 @@ export function OrderExchangeSection({ ctx }: { ctx: SectionContext }) {
                                <button type="button" className={exchangeDraft.newItem.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeItemPatch({ shipmentState: 'sent' })}>Уже отправили</button>
                                <button type="button" className={exchangeDraft.newItem.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeItemPatch({ shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
                              </div>
-                             {exchangeDraft.newItem.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, нажмите «Отправить замену» в таблице заказов. До этого товар остаётся в резерве.</div> : null}
+                             {exchangeDraft.newItem.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, откройте «Отправить товары» в заказе и отметьте эту замену вместе с другими готовыми вещами. До отправки товар остаётся в резерве.</div> : null}
                            </div> : null}
                            {exchangeDraft.newItem.sourceType === 'workshop' ? (
                             <>

@@ -127,6 +127,18 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
                    AND e.event_type='exchange_new_out' AND e.status='pending' AND e.pending_reason='awaiting_dispatch'
                    AND COALESCE(exchange_row.status,'completed')<>'cancelled'
                  ORDER BY e.id DESC LIMIT 1) AS pending_exchange_dispatch_id,
+                (SELECT e.id FROM exchanges e WHERE
+                   (e.new_order_item_id=oi.id OR EXISTS(
+                     SELECT 1 FROM exchange_items ei WHERE ei.exchange_id=e.id
+                       AND ei.order_item_id=oi.id AND ei.role='new'
+                   ))
+                   AND e.order_id=oi.order_id AND oi.is_workshop=1
+                   AND COALESCE(e.status,'completed')<>'cancelled'
+                   AND NOT EXISTS(
+                     SELECT 1 FROM order_dispatch_items di
+                     WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity
+                   )
+                 ORDER BY e.id DESC LIMIT 1) AS pending_exchange_workshop_id,
                 p.name AS canonical_product_name,
                 p.is_active AS canonical_product_active,
                 v.is_active AS canonical_variant_active,
