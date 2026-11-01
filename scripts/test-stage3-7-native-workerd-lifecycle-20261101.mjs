@@ -204,5 +204,63 @@ export async function runStage3NativeAcceptance({api, token}) {
  assert.equal(Number(finished.received_amount),Number(replaced.received_amount))
  assert.equal((await reservations('warehouse',9841)).totalQuantity,0)
  assert.equal((await reservations('boutique',9841)).totalQuantity,0)
+ // Work #733: a history filter must NEVER erase the live physical receipt
+ // inbox. Pending Return items have no physical +1 until an actual receipt.
+ const awaiting=await call('POST','/api/returns',{
+  requestId:'stage3-native-37-awaiting',orderId:id,returnDate:'2026-10-01',amount:0,
+  items:[{orderItemId:Number(wh.id),quantity:1,physicalState:'pending',restock:false}]
+ })
+ assert.equal(awaiting.status,201,'Unreceived physical Return: '+JSON.stringify(awaiting))
+ const awaitId=Number(awaiting.data.returnId)
+ const pendingReturns=await call('GET','/api/returns?pendingOnly=1&limit=50')
+ assert.equal(pendingReturns.status,200,JSON.stringify(pendingReturns))
+ assert((pendingReturns.data.returns||[]).some(x=>Number(x.id)===awaitId),
+   'Independent receipt inbox must include old pending Return')
+ assert(Number(pendingReturns.data.summary?.pendingPhysicalQuantity)>=1)
+ const filteredReturns=await call('GET','/api/returns?q=NO-SUCH-CLIENT-99999&limit=50')
+ assert.equal(filteredReturns.status,200)
+ assert.equal(filteredReturns.data.count,0,'Historical search must be independent')
+ assert.equal((await call('GET','/api/returns?pendingOnly=1&limit=50')).data.count,pendingReturns.data.count)
+ assert.equal((await hist('warehouse',9841)).length,back.length,
+   'Pending physical Return does not invent a stock receipt')
+
+ const oldOrder=await call('POST','/api/orders',{
+   ...payload,requestId:'stage3-native-37-pending-order',
+   externalId:'STAGE3-PENDING-RECEIPT',
+   items:[orderItem('warehouse',1,1000)],payments:[],
+ })
+ assert.equal(oldOrder.status,201,JSON.stringify(oldOrder))
+ const pendingOrderId=Number(oldOrder.data.orderId)
+ assert.equal((await call('PATCH',`/api/orders/${pendingOrderId}/shipping`,{
+   requestId:'stage3-native-37-pending-send',shippingStatus:'sent',shippingDate:'2026-10-01',
+ })).status,200)
+ const readOldOrder=await call('GET','/api/orders?q=STAGE3-PENDING-RECEIPT')
+ assert.equal(readOldOrder.status,200)
+ const sourceOrder=(readOldOrder.data.orders||[]).find(o=>Number(o.id)===pendingOrderId)
+ assert(sourceOrder&&sourceOrder.items?.length===1)
+ const oldLineForPending=sourceOrder.items[0]
+ const awaitingSwap=await call('POST','/api/exchanges/set',{
+   requestId:'stage3-native-37-awaiting-exchange',orderId:pendingOrderId,
+   exchangeDate:'2026-09-28',expectedOrderTotal:1000,
+   oldItems:[{orderItemId:Number(oldLineForPending.id),quantity:1,
+     physicalState:'pending',expectedActiveQuantity:1,expectedUnitPrice:1000,
+     expectedLineTotal:1000,expectedCatalogPriceSnapshot:null}],
+   newItems:[{...replacement('pending'),unitPrice:1000}],
+   paymentAmount:0,paymentMethod:'',refundMethod:'',
+ })
+ assert.equal(awaitingSwap.status,201,'Awaiting physical old item in SetV2 Exchange: '+JSON.stringify(awaitingSwap))
+ const waitSwapId=Number(awaitingSwap.data.exchangeId)
+ const awaitingExchangeInbox=await call('GET','/api/exchanges?pendingOnly=1&limit=50')
+ assert.equal(awaitingExchangeInbox.status,200,JSON.stringify(awaitingExchangeInbox))
+ const pendingSwap=(awaitingExchangeInbox.data.exchanges||[]).find(x=>Number(x.id)===waitSwapId)
+ assert(pendingSwap&&pendingSwap.oldItems?.some(x=>x.physicalTracking&&!x.physicalReceivedAt),
+   'Unfiltered oldest-first inbox must expose pending old Exchange SKU')
+ assert(Number(awaitingExchangeInbox.data.summary?.pendingPhysicalQuantity)>=1)
+ const unrelated=await call('GET','/api/exchanges?q=NOT-THE-ORDER-98765')
+ assert.equal(unrelated.status,200)
+ assert.equal(unrelated.data.count,0)
+ assert.equal((await call('GET','/api/exchanges?pendingOnly=1')).data.count,awaitingExchangeInbox.data.count,
+  'Filtered history cannot remove an awaiting physical Exchange receipt')
+ console.log('WORK733_INDEPENDENT_PHYSICAL_INBOX_PASS: oldest pending Return and Exchange survive filtered history; no phantom stock')
  console.log('STAGE3_7_NATIVE_MULTISOURCE_LIFECYCLE_PASS: create+edit identity, two-source shipping, separate money-only and physical Return, exact new Exchange SKU, all replay-safe, frozen original price and no phantom reserves')
 }
