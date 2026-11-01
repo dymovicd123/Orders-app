@@ -52,6 +52,8 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
               : 'Проверьте наличие товара'
     return {
       orderItemId, productName: cleanText(item.productName) || 'Товар',
+      color:cleanText(item.color),size:cleanText(item.size),
+      material:cleanText(item.material),length:cleanText(item.length),
       quantity, sourceType: isWorkshop ? 'workshop' : cleanText(item.sourceType),
       variantId: isWorkshop ? toInt(item.variantId, 0) : (current?.variantId || 0),
       readyQuantity, selectedQuantity: readyQuantity,
