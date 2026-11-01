@@ -960,8 +960,12 @@ export async function quickInventoryStocktakeBatch(
        SELECT 1 FROM expected e
        LEFT JOIN inventory_stock s ON s.inventory_source = ? AND s.variant_id = e.variant_id
        WHERE COALESCE(s.quantity, 0) <> e.expected_quantity
+     )
+     OR EXISTS (
+       SELECT 1 FROM inventory_stocktake_sessions
+       WHERE inventory_source = ? AND status = 'active'
      )`
-  ).bind(...expectedBindings, source);
+  ).bind(...expectedBindings, source, source);
 
   const updateCases = items.map(() => 'WHEN ? THEN ?').join(' ');
   const updateBindings = items.flatMap(item => [item.variantId, Math.trunc(Number(item.countedQuantity))]);
@@ -1048,6 +1052,13 @@ export async function quickInventoryStocktakeBatch(
       return current === item.expectedQuantity ? [] : [{ variantId: item.variantId, expectedQuantity: item.expectedQuantity, currentQuantity: current }];
     });
     if (raced.length) return { ok: false, code: 'changed', message: `Во время сохранения изменилось ${raced.length} позиций. Ничего из быстрой сверки не применено.`, conflicts: raced };
+    const newlyActive = await db.prepare(
+      `SELECT id FROM inventory_stocktake_sessions WHERE inventory_source = ? AND status = 'active' LIMIT 1`
+    ).bind(source).first<{ id: string }>();
+    if (newlyActive?.id) {
+      return { ok: false, code: 'stocktake_active',
+        message: 'Ревизия этой точки началась во время сохранения. Быстрая сверка не применена. Завершите или отмените ревизию.', sessionId: newlyActive.id };
+    }
     throw error;
   }
 
