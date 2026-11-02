@@ -15,6 +15,10 @@ type CatalogRow={
   dialColor:string|null
   braceletColor:string|null
   variantActive:number|null
+  officePhysical:number
+  officeReserved:number
+  showcasePhysical:number
+  showcaseReserved:number
 }
 type Api={ok:boolean;message?:string;rows?:CatalogRow[];watchProductId?:number;watchVariantId?:number;alreadyExists?:boolean}
 async function callApi(url:string,init?:RequestInit):Promise<Api> {
@@ -47,7 +51,16 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
   const [arrivalQuantity,setArrivalQuantity]=useState('1')
   const [arrivalComment,setArrivalComment]=useState('')
   const arrivalRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
+  const [transferVariantId,setTransferVariantId]=useState(0)
+  const [transferSource,setTransferSource]=useState<'office'|'showcase'>('office')
+  const [transferQuantity,setTransferQuantity]=useState('1')
+  const [transferComment,setTransferComment]=useState('')
+  const transferRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
   const linked=rows.filter(row=>row.watchVariantId && row.catalogProductId && row.catalogVariantId && row.productActive===1 && row.variantActive===1)
+  const selectedTransfer=linked.find(row=>row.watchVariantId===transferVariantId)
+  const transferPhysical=Math.max(0,Number(transferSource==='office'?selectedTransfer?.officePhysical:selectedTransfer?.showcasePhysical)||0)
+  const transferReserved=Math.max(0,Number(transferSource==='office'?selectedTransfer?.officeReserved:selectedTransfer?.showcaseReserved)||0)
+  const transferFree=Math.max(0,transferPhysical-transferReserved)
   const models=Array.from(new Map<number,{id:number;name:string}>(
     rows.map(row=>[row.watchProductId,{id:row.watchProductId,name:row.modelName}])
   ).values())
@@ -109,6 +122,29 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       setReload(x=>x+1)
       onStockChanged?.()
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить приход')}
+    finally{setBusy(false)}
+  }
+  const createTransfer=async(e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault()
+    const quantity=Number(transferQuantity)
+    if(busy||!selectedTransfer||!Number.isSafeInteger(quantity)||quantity<1||quantity>transferFree){
+      setError('Недостаточно свободных часов для перемещения. Обновите остатки.');return
+    }
+    const payload={watchVariantId:transferVariantId,source:transferSource,quantity,
+      expectedPhysical:transferPhysical,comment:transferComment.trim()}
+    const fingerprint=JSON.stringify([brand,payload])
+    if(transferRequest.current?.fingerprint!==fingerprint)
+      transferRequest.current={fingerprint,requestId:'transfer-'+crypto.randomUUID()}
+    setBusy(true);setError('');setNotice('')
+    try{
+      const result=await post('/api/client3/watches/stock/transfer',{
+        ...payload,requestId:transferRequest.current.requestId
+      })
+      transferRequest.current=null
+      setNotice(result.message||'Часы перемещены. Остатки офиса и витрины обновлены.')
+      setReload(x=>x+1)
+      onStockChanged?.()
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось переместить часы')}
     finally{setBusy(false)}
   }
   const createVariant=async(e:FormEvent<HTMLFormElement>)=>{
@@ -181,6 +217,26 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       <label>Комментарий<input maxLength={300} value={arrivalComment}
         onChange={e=>setArrivalComment(e.target.value)} placeholder="Например, номер накладной"/></label>
       <button type="submit" disabled={busy||!arrivalVariantId||!linked.length}>Сохранить приход</button>
+    </form>
+    <form className="watch-catalog-editor-arrival" onSubmit={e=>void createTransfer(e)}>
+      <h4>Переместить часы</h4>
+      <p>Перемещаются только свободные часы — товары с активными резервами остаются на исходной точке.</p>
+      <label>Комплектация<select required value={transferVariantId} onChange={e=>setTransferVariantId(Number(e.target.value))}>
+        <option value={0}>Выберите подготовленный SKU</option>
+        {linked.map(row=><option key={row.watchVariantId!} value={row.watchVariantId!}>
+          {row.modelName} · {textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial)} · {textFor(WATCH_OPTIONS.dialColors,row.dialColor)}{row.braceletColor?' · '+row.braceletColor:''}
+        </option>)}
+      </select></label>
+      <label>Откуда<select value={transferSource} onChange={e=>setTransferSource(e.target.value as 'office'|'showcase')}>
+        <option value="office">Из офиса → на витрину</option>
+        <option value="showcase">С витрины → в офис</option>
+      </select></label>
+      <p>По системе: {transferPhysical} шт. · Резерв: {transferReserved} шт. · Доступно: {transferFree} шт.</p>
+      <label>Количество<input type="number" min={1} max={transferFree} step={1} required
+        value={transferQuantity} onChange={e=>setTransferQuantity(e.target.value)}/></label>
+      <label>Комментарий<input maxLength={300} value={transferComment}
+        onChange={e=>setTransferComment(e.target.value)} placeholder="Например, передали на витрину"/></label>
+      <button type="submit" disabled={busy||!selectedTransfer||transferFree<1}>Переместить часы</button>
     </form>
     <h4>Зарегистрированные часы</h4>
     {loading?<p>Загрузка…</p>:models.length===0?<p>Для бренда пока не зарегистрированы модели.</p>:
