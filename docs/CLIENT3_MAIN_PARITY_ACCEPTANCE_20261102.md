@@ -1,40 +1,82 @@
-# Client3 exact Main functional parity — acceptance criteria (2026-11-02)
+# Client3 — единый план доведения до Main (02.11.2026)
 
-Client3 is the watches-only tenant. **Do not describe it as a completed clone of Main.** Its visible layouts borrowed class names from Main, but functionality is materially narrower. Main and Branch2 must not be changed to implement these items. This is a checkable backlog, not a claim that the gaps have been fixed.
+**Статус документа:** актуальный рабочий план. Система Client3 продаёт часы TAUWACH / WACHIZEN. Базовый продукт и поведение — Main, а не заново сконструированный сокращённый ERP. Этот файл заменяет разрозненные «почти parity» критерии в качестве статусов готовности. Любое закрытие задачи — только после релиза Client3 и проверки живого сценария.
 
-## Verified shipped in Client3
-- Main's core order, reservation and money writer is reused for one watch line.
-- Multiple payment rows can be entered on one new order and reach the Main financial ledger as distinct records (split payments).
-- General client-wide references for leather strap colors, payment and delivery with admin creation; TAUWACH/WACHIZEN have separate physical stock and sales.
-- Engraving-ready confirmation belongs to the logist, actual shipping to an authorized manager/admin in Logistics.
+## 0. Зафиксированные требования и границы
 
-## Stage P1: Real Main Orders list and editor (NOT DONE)
-Source of truth: `src/features/sections/OrdersTableSection.tsx`, `src/features/sections/CreateOrderSection.tsx`, `worker/domains/orders-write.ts`. Current watches façade: `src/features/client3/WatchOrdersPanel.tsx`, `src/features/client3/WatchOrderForm.tsx`.
-- Preserve Main table columns, controls, dense layout, search/filter and per-order actions. Reuse Main view-model helpers rather than copying isolated class names.
-- Full order edit (delivery/client/phone/manager/price/order lines where permitted), debt closure, corrections, legal deletion with consequences and auditable changes.
-- Multiple watch models/variants in one order, with item-specific engraving and brand identity. Current Main critical write explicitly refuses `normalizedItems.length !== 1` when a `watchCommit` exists. Replace the one-item attachment with per-item mapping and idempotent writes *before* showing a multi-line form.
-- Ensure details show all items and all actual payment rows. The expanded ledger work began on `client3/order-ledger-main-parity-20261102`; read-only additions must be verified and released separately.
-- No silent divergence between table status and Logistics dispatch.
+- Отдельные заказы, остатки, резервы, полномочия и финансовые отчёты каждого бренда. **Справочники характеристик, доставок и оплат — общие для обоих брендов**.
+- Модель, пол (мужской/женский), механизм, материал браслета (сталь/кожа/каучук), цвет циферблата, цвет кожаного ремешка. Размеров, длины и цеха нет. Каталожная цена отдельно от цены продажи.
+- Точки хранения: Офис и Витрина (позднее уточнение исходной заявки «только офис»). Каждая точка имеет собственный физический остаток и резерв.
+- В заказе ФИО/телефон/адрес/город/индекс, доставка, точная дата и время дедлайна, срочность, текст гравировки для **каждой товарной позиции**, отдельные оплаты, долг.
+- «Заказы» — реестр продаж/финансов/редактирования/возвратов/обменов. «Логистика» — гравировка/готовность и физическая отправка. Подтверждение готовности не равно отправке.
+- Сохраняем канонические позиции и бухгалтерские/складские действия Main; не создаём независимые параллельные проводки. Не трогаем Main, Branch2 и их D1, не копируем чужие заказы в Client3.
 
-## Stage P2: Logistics, selective shipment (NOT DONE)
-Sources: `OrdersTableSection.tsx` shipment view and `src/features/orders/shippingSelection.ts`, dispatch engine in `worker/domains`. Client3 shipping currently full-order-oriented.
-- Logistics owns preparation, engraving and shipment. Each item is selectable with quantity, accurate “Отправлен/Не отправлен”, and partial shipment at order level. Cannot accidentally reship.
-- Support clarification/correction of issuance with stock movements and reservations preserving identity and audit; avoid cargo-cult replication of Main's button labels.
-- The logist can confirm engraving readiness only; manager/admin confirms actual shipment.
+## 1. Что реально есть по исходникам и релизам
 
-## Stage P3: Resolver, returns and exchanges (NOT DONE)
-- Deterministic exact watch variant lookup: model + brand + gender + movement + bracelet + dial color + strap color, no ignored characteristics. Advisor only when identity ambiguous.
-- Return/exchange actions work on chosen lines, not just `lineCount===1`; partial returns leave unrelated lines actionable. Physical receipt must never be inferred from a monetary refund.
-- Reuse relevant Main lifecycle/stock handlers instead of new pseudo-ledgers. Preserve older sales, and tenant-only authorization.
+| Компонент | Статус на 02.11 | Подтверждённое наличие | Разрыв до Main |
+|---|---|---|---|
+| Изолированная установка и вход | База есть | Третий Worker/D1, экран входа, панель Main-подобной навигации, admin/manager/logist, назначение менеджеров на бренды | Полная визуальная и ролевая проверка в браузере отсутствует |
+| Два бренда | Есть базовая работа | Серверная фильтрация заказов и SKU, переключатель брендов склада/логистики, раздельные финансы | Проверить все ID lookups/экспорты и роли без межбрендовых утечек |
+| Общие справочники | Частично | Админ добавляет цвет кожаного ремешка, оплату, доставку без выбора бренда; данные используются в заказе/SKU | Пол, механизм, материал браслета, цвета циферблата фиксированы CHECK/enum и не редактируются |
+| Каталог часов | Частично | Модели, SKU, цены, привязка к складу, отдельные брендовые карточки | Полноценное редактирование, отключение, массовые позиции и UX Main не перенесены |
+| Остатки | Частично | Офис/витрина, физический/резерв/свободно, поиск по моделям | История SKU, детальные действия и взаимодействие как в Main неполные |
+| Операции | Частично | Приход, перемещение, списание и отдельный пересчёт одного SKU с защитой резервов | Пакетные операции, полноценная выборочная/полная ревизия и история Main отсутствуют |
+| Создание заказа | Частично | Один SKU, количество, цены, гравировка, адрес, срок до минут, срочность, бренд/источник; несколько платежей | Несколько товарных позиций, полное редактирование и Main-UX отсутствуют; серверное прикрепление watch-позиции жёстко рассчитано на одну строку |
+| Оплаты | Реализованы при создании | До 8 строк разных способов/сумм, записи в Main money ledger, защита повторного сохранения, расчёт долга | Закрытие долга/коррекция оплат в существующем заказе не перенесены полностью |
+| Заказы (реестр) | Частично | Поиск, месяц, пагинация, бренд, суммы, разворот всех товарных строк и платежей | Отдельный облегчённый `WatchOrdersPanel` (~9 колонок), НЕ функциональный клон Main `OrdersTableSection`; полноценные фильтры, edit/delete, corrections, debt и проч. отсутствуют |
+| Логистика | Частично | Очередь, срочность, дата/время, гравировка, отдельно подтверждения готовности и физической отправки; роли раздельные | Отправляется целый однострочный заказ. Выбор товара/количества, частичная отправка, отмена/уточнение выдачи отсутствуют |
+| Возвраты/обмены | Ограниченный сценарий | Денежный/физический возврат, очередь фактической приёмки, обмен одной отправленной единицы с резервами и защитой SKU | `lineCount===1`, обмен при количестве 1, нет полноценного выбора позиций/частичных цепочек/отмен Main |
+| Resolver | Нет полноценного | Сопоставление по уже созданному точному watch SKU через canonical links и brand scope | Main advisory resolver, исправление неоднозначности и сохранение identity на всех переходах не перенесены |
+| Финансы | Частично | Движение денежных событий и методы по брендам, суммы поступлений/возвратов | Не полный Main Finance/касса, корректировки/сверки/расширенные отчёты отсутствуют |
+| Сотрудники/прочее | Частично | Админ-аккаунты, список менеджеров/назначений; исторические заказы администратору | Работа команды, клиенты, планы, лиды, отчёты Main не завершены, не блокируют критичный поток |
 
-## Stage P4: Warehouse & catalog references (PARTIAL)
-- Keep brand selection visible before physical movements, and check each source's actual free stock.
-- Restore detailed Main-like inventory history, selective counting, correction, SKU identity, and readable stock operations.
-- Shared references are not equivalent to arbitrary enum extension. Currently gender/movement/bracelet/dial-color schema checks require a safe migration and matching resolver before adding new values. Never show an editable field that cannot be persisted.
-- Required watch fields: model name; male/female; no clothing sizes or lengths; color; bracelet steel/leather/rubber; separate price by catalog and sale.
+**Свидетельства деплоя:** [смешанные оплаты и справочники](https://github.com/dymovicd123/Orders-app/actions/runs/41489102944), [позиции и оплаты в реестре](https://github.com/dymovicd123/Orders-app/actions/runs/41489778407); оба SUCCESS. `npm run build`/SQLite/SSR прошли; реальное браузерное QA под сотрудниками по всем ролям **не подтверждено**.
 
-## Nonnegotiable release gates
-- All test writes are initially against disposable SQLite or dedicated third environment. No migrations against Main/Branch2.
-- For deployed third D1, preserve existing orders, payments, users, watch variants, stock and reservations. Check owner admin stays enabled.
-- Real authenticated browser QA: desktop/mobile screenshots, creation, split payment display, two brands, return, exchange, engraving, physical shipment, partial shipment and history. SSR and grep tests alone are not enough to assert UX parity.
-- Change to stage status only after the actual workflow is released and tested; record exact successful GitHub Actions run and verified third-only release.
+## 2. Этапы и порядок
+
+### Этап 1 — справочники, каталог и точная идентичность (P0)
+1.1 Общие редактируемые справочники характеристик, доступные во всех SKU формах. Пол остаётся только муж/жен, системные brand/source — не произвольный ввод. Изменяемые механизм/браслет/цвет циферблата должны безопасно проходить БД, нормализацию, старые SKU и resolver; прежде создать совместимую схему/адаптер. Не включать фальшивые editable поля до API.
+1.2 Довести каталог Main: создание/редактирование модели и вариантов, цены, отключение/восстановление при разрешённых остатках, быстрый выбор, информативные ошибки; никаких «подготовить SKU» без понятного смысла пользователю.
+1.3 Проверить идентичность бренда/SKU/источника/резерва на приходе, продаже, отправке, обмене и возврате; не переписывать складское ядро, если проверенная функция Main уже подходит.
+**Готово:** админ заводит значение в общих справочниках, создаёт SKU в обоих брендах, принимает и продаёт, характеристики не теряются; старые товары/остатки не меняются.
+
+### Этап 2 — настоящие Заказы Main: форма, таблица и редактирование (P0)
+2.1 Перенести поведение/структуру `CreateOrderSection` и `OrdersTableSection` через Client3-адаптеры; сохранить оригинальные действия и плотность таблицы, а не только CSS-классы.
+2.2 **Сначала backend**, потом UI: расширить `watchCommit` с одной строки до массивов `order_item_id -> watch_variant_id -> engraving_text`; обеспечить канонические SKU, резервы, цены, запись и повторяемость операции. Добавить несколько часов/комплектаций с разными количества­ми и гравировками.
+2.3 Полноценное редактирование существующего заказа (клиент/доставка/город/контакты, товары и цены по правам), корректировка оплат, дополнительная оплата/долг, удаление с правильными последствиями и аудитом.
+2.4 Полный Main-подобный реестр: фильтры, статусы, товарная детализация, действия с заказом без искусственных ограничений по наличию возврата/обмена.
+**Готово:** два разных SKU в одном заказе, две разные оплаты, редактирование, корректное закрытие долга, правильные резервы и отображение в одной таблице. Без скрытых несохранённых изменений.
+
+### Этап 3 — логистика и реальная отправка (P0)
+3.1 Адаптировать рабочий экран Main со сроками, срочностью, группами и действиями, сохранив понятную роли логиста.
+3.2 Выбор конкретных готовых позиций и количества к отправке через проверенный Main dispatch engine. Статусы на строках «Отправлен/Не отправлен», на заказе «Частично отправлено», если применимо.
+3.3 Возобновляемая отправка остатка, безопасная отмена/уточнение фактической выдачи и корректные movements/reservations. Гравировка не становится отправкой.
+**Готово:** из двух часов отправляем один, второй остаётся в резерве/очереди; затем отправляем второй. Повторная команда не дублирует движение; возврат отправленного отдельно работает.
+
+### Этап 4 — возвраты, обмены, resolver и уточнения (P0)
+4.1 Перенести работу с конкретными позициями и частичными количествами, убрать `lineCount===1` и запреты, когда уже был частичный возврат/обмен.
+4.2 Денежный, товарный и смешанный возврат; отдельное физическое поступление с понятными статусами, без автоматического увеличения остатков до приёмки.
+4.3 Обмен: старая и новая позиция, обязательное состояние физической отправки/возврата, последствия для цен, денег и резервов; отмены/исправления с аудитом.
+4.4 Resolver из Main адаптировать для часов: точное определение по атрибутам, советы при неоднозначности, никакой молчаливой потери `variant_id`.
+**Готово:** часть товаров возвращена/обменена, остальные позиции остаются доступны для обычных действий; идентичность и суммы сходятся.
+
+### Этап 5 — полное складское рабочее место (P1, фундаментальные ошибки — P0)
+5.1 Складской интерфейс Main: каталог, остатки, операции, поиск, карточка SKU, история движений и причины.
+5.2 Массовый приход/списание/перемещение и выборочная/полная ревизия. Кнопка «Исправить количество» открывает конкретную позицию.
+5.3 Доступы сотрудников, отображение двух брендов, понятные предупреждения дефицита и неуспешных операций, мобильная работа.
+**Готово:** несколько SKU в одной операции, понятная история и корректные физические/зарезервированные/доступные остатки.
+
+### Этап 6 — финансы, команда и итоговая проверка (P1/P2)
+6.1 Сверить финансовые данные и действия с Main: долг/доплата/коррекция/возврат, удобные фильтры и детализация, строгий брендовый scope.
+6.2 Довести права администратора, менеджера и логиста; расширенные разделы (планы/лиды/отчёты/клиенты) — после критического потока и только если требуются этому клиенту.
+6.3 Реальные сквозные проверки: ПК/телефон, оба бренда, сотрудник разных ролей, 2 SKU + 2 платежа, частичная отправка, возврат, обмен, пересчёт, сохранность старых данных.
+**Готово:** каждая операция из плана доступна сотруднику, функционально и визуально сопоставима с Main, все финансовые и складские события проверяемы.
+
+## 3. Как исполнять без повторения провалов
+
+- Для **каждой подзадачи** перед реализацией открыть оригинальный раздел Main и соответствующие API, составить маленькую таблицу «Main → Client3: переиспользуем / адаптируем / убираем». Не заменять Main стили похожими вручную.
+- Менять только отдельные ветки `client3/*`; новые функции сначала проверять на третьей тестовой среде / disposable SQLite, без касания Main и Branch2. Не портить рабочее ядро ради визуальной схожести.
+- Проверять **только затронутые сценарии + базовый склад/заказ/деньги** после подзадачи, затем браузерный smoke в Client3. Полный сквозной набор — на границах этапов. Никакой массы дублирующих grep-«тестов» как замены функциональности.
+- После каждого релиза дописывать в этот файл: статус **не начато / в работе / в коде, не выпущено / выпущено / проверено в браузере**, ссылку на конкретный Actions run и реальные открытые проблемы.
+- **Не закрывать этап по SSR, CI, наличию CSS-классов или зеленой сборке.** Не писать «как в Main», пока действия не работают так же.
+- Приоритет: P0 = блокирует нормальную продажу/товарооборот; P1 = функциональное доведение и удобство; P2 = второстепенные разделы.
