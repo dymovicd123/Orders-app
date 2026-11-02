@@ -50,3 +50,59 @@
 .client3-main-stock-step .stocktake-e-review-actions .secondary{background:#fff;border:1px solid #cbd5e1;border-radius:9px;padding:11px 16px}
 @media(max-width:1150px){.client3-main-stock-totals{grid-template-columns:repeat(2,1fr)}.client3-main-stock-operation .stocktake-start-modes{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.client3-main-stock-operation{padding:11px!important}.client3-main-stock-totals>div{padding:12px}.client3-main-stock-operation .stocktake-start-mode{min-height:70px}.client3-main-stock-skus{grid-template-columns:1fr}.client3-main-stock-quantity{grid-template-columns:1fr}.client3-main-stock-step .stocktake-e-review-row{grid-template-columns:repeat(3,minmax(0,1fr))}.client3-main-stock-step .stocktake-e-review-name{grid-column:1/-1}.client3-main-stock-step .stocktake-e-review-actions>*{flex:1}}
+
+/* Stage 5: restore the actual Main W12 semantic palette and make every mode
+   recognizable before selecting it. Scoped to Client3; no Main/Branch2 edits. */
+.client3-main-stock-operation[data-unified-operation="arrival"]{
+ --w12-accent:#15803d;--w12-tint:#f0fdf4;--w12-border:#86efac;
+}
+.client3-main-stock-operation[data-unified-operation="writeoff"]{
+ --w12-accent:#b91c1c;--w12-tint:#fef2f2;--w12-border:#fca5a5;
+}
+.client3-main-stock-operation[data-unified-operation="transfer"]{
+ --w12-accent:#a16207;--w12-tint:#fffbeb;--w12-border:#fcd34d;
+}
+.client3-main-stock-operation[data-unified-operation="manual_set"]{
+ --w12-accent:#1d4ed8;--w12-tint:#eff6ff;--w12-border:#93c5fd;
+}
+.client3-main-stock-operation .stocktake-start-mode[data-operation="arrival"]{
+ --mode-accent:#15803d;--mode-tint:#f0fdf4;--mode-border:#86efac;
+}
+.client3-main-stock-operation .stocktake-start-mode[data-operation="writeoff"]{
+ --mode-accent:#b91c1c;--mode-tint:#fef2f2;--mode-border:#fca5a5;
+}
+.client3-main-stock-operation .stocktake-start-mode[data-operation="transfer"]{
+ --mode-accent:#a16207;--mode-tint:#fffbeb;--mode-border:#fcd34d;
+}
+.client3-main-stock-operation .stocktake-start-mode[data-operation="manual_set"]{
+ --mode-accent:#1d4ed8;--mode-tint:#eff6ff;--mode-border:#93c5fd;
+}
+.client3-main-stock-operation .stocktake-start-mode{
+ border-inline-start:4px solid var(--mode-accent)!important;
+ background:color-mix(in srgb,var(--mode-tint) 55%,#fff)!important;
+}
+.client3-main-stock-operation .stocktake-start-mode.is-active{
+ border-color:var(--mode-accent)!important;
+ background:var(--mode-tint)!important;
+ color:var(--mode-accent)!important;
+ box-shadow:inset 0 0 0 1px var(--mode-accent)!important;
+}
+.client3-main-stock-operation .stocktake-start-mode.is-active strong{color:var(--mode-accent)!important}
+.client3-main-stock-operation .stocktake-e-head{
+ padding:12px 14px!important;border-inline-start:4px solid var(--w12-accent)!important;
+ background:var(--w12-tint)!important;border-radius:9px;
+}
+.client3-main-stock-operation .stocktake-e-head h3{color:var(--w12-accent)!important}
+.client3-main-stock-operation .w7-operation-location{
+ border:1px solid var(--w12-border)!important;background:var(--w12-tint)!important;
+ padding:12px!important;border-radius:9px;
+}
+.client3-main-stock-operation .client3-main-stock-step .stocktake-e-footer button.primary,
+.client3-main-stock-operation .client3-main-stock-step .stocktake-e-review-actions button.primary{
+ background:var(--w12-accent)!important;border-color:var(--w12-accent)!important;color:#fff!important;
+}
+.client3-main-stock-operation .client3-main-stock-sku.is-selected{
+ background:var(--w12-tint)!important;border-color:var(--w12-accent)!important;
+ box-shadow:inset 0 0 0 1px var(--w12-accent)!important;
+}
+.client3-main-stock-operation .client3-main-stock-quantity-info b{color:var(--w12-accent)!important}
