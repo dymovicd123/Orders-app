@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import {DatabaseSync} from 'node:sqlite'
+import {listWatchCatalogDrafts,registerWatchModel,registerWatchVariant} from '../../worker/domains/client3-watch-catalog.ts'
+
+const sqlite=new DatabaseSync(':memory:')
+sqlite.exec('PRAGMA foreign_keys=ON')
+sqlite.exec([
+'CREATE TABLE managers(id INTEGER PRIMARY KEY);',
+'CREATE TABLE app_users(id INTEGER PRIMARY KEY);',
+'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);',
+'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);',
+'CREATE TABLE orders(id INTEGER PRIMARY KEY);',
+'CREATE TABLE order_items(id INTEGER PRIMARY KEY);',
+'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,quantity INTEGER);',
+'CREATE TABLE payments(id INTEGER PRIMARY KEY,amount INTEGER);',
+'INSERT INTO managers VALUES(1);',
+'INSERT INTO app_users VALUES(1);',
+'INSERT INTO inventory_stock VALUES(1,3);',
+'INSERT INTO payments VALUES(1,10000);',
+].join('\n'))
+sqlite.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
+const db={
+  prepare(query){
+    let params=[]
+    return {
+      bind(...args){params=args;return this},
+      async first(){return sqlite.prepare(query).get(...params)||null},
+      async all(){return {results:sqlite.prepare(query).all(...params)}},
+      async run(){const result=sqlite.prepare(query).run(...params);return {meta:{last_row_id:result.lastInsertRowid,changes:result.changes}}},
+    }
+  },
+}
+const admin={role:'admin',id:1,managerId:null}
+const manager={role:'manager',id:2,managerId:1}
+const read=async promise=>{const response=await promise;return {httpStatus:response.status,...await response.json()}}
+const before={
+  inventory:sqlite.prepare('SELECT * FROM inventory_stock').all(),
+  payments:sqlite.prepare('SELECT * FROM payments').all(),
+}
+let result=await read(registerWatchModel(db,manager,1,{modelName:'CLASSIC'}))
+assert.equal(result.httpStatus,403)
+result=await read(registerWatchModel(db,admin,1,{modelName:'CLASSIC'}))
+assert.equal(result.httpStatus,201)
+const firstId=result.watchProductId
+result=await read(registerWatchModel(db,admin,1,{modelName:'classic'}))
+assert.equal(result.watchProductId,firstId)
+assert.equal(result.alreadyExists,true)
+result=await read(registerWatchModel(db,admin,2,{modelName:'CLASSIC'}))
+assert.equal(result.httpStatus,201)
+assert.notEqual(result.watchProductId,firstId)
+const base={watchProductId:firstId,gender:'male',movement:'quartz',braceletMaterial:'leather',dialColor:'black'}
+result=await read(registerWatchVariant(db,admin,1,{...base,braceletColor:''}))
+assert.equal(result.httpStatus,400,'Leather requires color')
+result=await read(registerWatchVariant(db,admin,2,{...base,braceletColor:'ЧЁРНЫЙ'}))
+assert.equal(result.httpStatus,404,'Cannot use a model from a foreign brand')
+result=await read(registerWatchVariant(db,admin,1,{...base,braceletColor:'ЧЁРНЫЙ'}))
+assert.equal(result.httpStatus,201)
+const blackId=result.watchVariantId
+result=await read(registerWatchVariant(db,admin,1,{...base,braceletColor:'ЧЁРНЫЙ'}))
+assert.equal(result.alreadyExists,true)
+assert.equal(result.watchVariantId,blackId)
+result=await read(registerWatchVariant(db,admin,1,{...base,braceletColor:'КОРИЧНЕВЫЙ'}))
+assert.equal(result.httpStatus,201,'Leather color must create separate SKU')
+assert.notEqual(result.watchVariantId,blackId)
+result=await read(registerWatchVariant(db,admin,1,{...base,braceletMaterial:'steel',braceletColor:'ЧЁРНЫЙ'}))
+assert.equal(result.httpStatus,400,'Non-leather color forbidden')
+result=await read(registerWatchVariant(db,admin,1,{...base,braceletMaterial:'steel',braceletColor:''}))
+assert.equal(result.httpStatus,201)
+const rows=await read(listWatchCatalogDrafts(db,admin,1))
+assert.equal(rows.rows.length,3)
+assert(rows.rows.every(x=>x.catalogVariantId==null))
+assert.equal((await read(listWatchCatalogDrafts(db,manager,1))).httpStatus,403)
+assert.deepEqual(sqlite.prepare('SELECT * FROM inventory_stock').all(),before.inventory)
+assert.deepEqual(sqlite.prepare('SELECT * FROM payments').all(),before.payments)
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+sqlite.close()
+console.log('CLIENT3_WATCH_CATALOG_DRAFT_PASS: brand scoped, leather SKU, no ghost stock/payments')
