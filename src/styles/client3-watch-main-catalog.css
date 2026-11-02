@@ -1,0 +1,40 @@
+/* Watch-only detail cells in Main w6 catalog browser. All layout/navigation CSS comes
+   from original Main w6 catalog sheets imported in WatchCatalogEditor. */
+.client3-watch-catalog-main{min-width:0;width:100%}
+.client3-watch-catalog-main .catalog-master-detail{min-height:470px}
+.client3-watch-catalog-main .catalog-master-pane{min-width:245px}
+.client3-watch-catalog-main .catalog-detail-pane{min-width:0}
+.client3-watch-catalog-main .w6-catalog-toolbar{display:flex;align-items:end;flex-wrap:wrap;gap:10px;padding:13px}
+.client3-watch-catalog-main .w6-catalog-search{flex:1 1 290px;min-width:220px}
+.client3-watch-catalog-main .w6-catalog-toolbar-actions{margin-left:auto}
+.client3-watch-catalog-main .w6-catalog-stats{flex-basis:100%;display:flex;gap:12px;flex-wrap:wrap;font-size:.8rem}
+.client3-watch-catalog-main .catalog-master-list{max-height:min(62vh,650px);overflow-y:auto}
+.client3-watch-catalog-main .catalog-detail-title h2{font-size:1.5rem;margin:3px 0}
+.client3-watch-catalog-main .catalog-detail-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:19px;border-bottom:1px solid #dce5ef}
+.client3-watch-catalog-main .catalog-detail-actions button{width:auto;min-width:115px}
+.client3-watch-catalog-main .catalog-detail-editor{margin:15px;padding:17px;border:1px solid #dce5ef;border-radius:12px;background:#f9fbff}
+.client3-watch-catalog-main .catalog-product-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}
+.client3-watch-catalog-main .catalog-product-form button{height:42px}
+.client3-watch-catalog-main .catalog-variant-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:end}
+.client3-watch-catalog-main .catalog-variant-form-grid label{display:grid;gap:6px}
+.client3-watch-catalog-main .catalog-variant-form-grid .primary{justify-self:start}
+.client3-main-catalog-variants{display:grid;gap:11px;padding:15px}
+.client3-main-catalog-variant{border:1px solid #dce5ef;border-radius:11px;background:white;overflow:hidden}
+.client3-main-catalog-variant-head{display:flex;align-items:start;justify-content:space-between;gap:16px;padding:15px;background:#fff}
+.client3-main-catalog-variant-head h4{margin:5px 0 8px;font-size:15px}
+.client3-main-catalog-variant-head small{color:#64748b;font-size:12px}
+.client3-main-catalog-variant-head>strong{min-width:78px;text-align:right;font-size:19px}
+.client3-main-catalog-variant-head>strong small{display:block;font-weight:400}
+.client3-main-catalog-variant-price{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:13px 15px;border-top:1px solid #edf1f6;background:#f8fafc}
+.client3-main-catalog-variant-price>span{font-size:12px;font-weight:650;color:#58677e}
+.client3-main-catalog-price-editor{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.client3-main-catalog-price-editor input{width:150px;max-width:100%}
+.client3-main-catalog-price-editor strong{font-size:16px}
+@media(max-width:800px){
+.client3-watch-catalog-main .catalog-master-detail{display:block}
+.client3-watch-catalog-main .catalog-master-pane{width:100%}
+.client3-watch-catalog-main .catalog-detail-pane{margin-top:10px}
+.client3-watch-catalog-main .catalog-product-form{grid-template-columns:1fr}
+.client3-watch-catalog-main .catalog-variant-form-grid{grid-template-columns:1fr}
+.client3-watch-catalog-main .catalog-detail-head{flex-wrap:wrap}
+}
