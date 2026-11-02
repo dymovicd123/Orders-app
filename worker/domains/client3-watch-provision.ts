@@ -5,11 +5,11 @@ import type { WatchBrand } from '../../shared/client3/watch-domain.ts'
 
 const bad = (code:string,message:string,status=400) => json({ok:false,code,message},{status})
 const codeForProduct = (brand:WatchBrand,id:number) => 'WATCH_' + brand + '_MODEL_' + id
-const materialFor = (row:{movement:string;bracelet_material:string;bracelet_color:string}) =>
+export const materialFor = (row:{movement:string;bracelet_material:string;bracelet_color:string}) =>
   ['WATCH',row.movement,row.bracelet_material,...(row.bracelet_material==='leather'?[row.bracelet_color]:[])].join('_').toUpperCase()
-const genderFor=(gender:string)=>gender==='male'?'МУЖ':'ЖЕН'
-const dialFor=(dial:string)=>'WATCH_DIAL_'+dial.toUpperCase()
-const WATCH_LENGTH='СТАНДАРТ'
+export const genderFor=(gender:string)=>gender==='male'?'МУЖ':'ЖЕН'
+export const dialFor=(dial:string)=>'WATCH_DIAL_'+dial.toUpperCase()
+export const WATCH_LENGTH='СТАНДАРТ'
 
 /**
  * Administrator-owned, retry-safe identity provisioning.
