@@ -35,6 +35,15 @@ sql.exec([
 "INSERT INTO order_dispatches(id,order_id) VALUES(10,1);",
 "INSERT INTO order_dispatch_items VALUES(11,10,101,1,0);",
 ].join('\n'))
+sql.exec(`CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT,phone_normalized TEXT);
+ ALTER TABLE orders ADD COLUMN customer_id INTEGER;
+ ALTER TABLE orders ADD COLUMN customer_name_override TEXT;
+ ALTER TABLE orders ADD COLUMN city TEXT;
+ ALTER TABLE orders ADD COLUMN delivery_type TEXT;
+ ALTER TABLE orders ADD COLUMN comment TEXT;
+ ALTER TABLE order_items ADD COLUMN line_total INTEGER;
+ ALTER TABLE order_items ADD COLUMN catalog_price_snapshot INTEGER;
+ UPDATE order_items SET line_total=unit_price*quantity;`)
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
