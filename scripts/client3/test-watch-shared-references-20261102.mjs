@@ -5,9 +5,9 @@ import {createClient3WatchReference,listClient3WatchReferences} from '../../work
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
-for(const file of fs.readdirSync('migrations').filter(x=>/^\\d+.*\\.sql$/.test(x)).sort())
+for(const file of fs.readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x)).sort())
   sqlite.exec(fs.readFileSync('migrations/'+file,'utf8'))
-for(const file of fs.readdirSync('migrations/client3-watch').filter(x=>/^\\d+.*\\.sql$/.test(x)).sort())
+for(const file of fs.readdirSync('migrations/client3-watch').filter(x=>/^[0-9].*\.sql$/.test(x)).sort())
   sqlite.exec(fs.readFileSync('migrations/client3-watch/'+file,'utf8'))
 sqlite.exec("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'TEST')")
 sqlite.exec("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'male','quartz','leather','black','ЧЁРНЫЙ')")
