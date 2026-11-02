@@ -152,7 +152,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
      })
      const payload={
        ...base,shippingDeadlineLocal,items:selected,
-       watchVariantId:first.watchVariantId,catalogVariantId:first.catalogVariantId??0,
+       watchVariantId:first.watchVariantId,catalogVariantId:0,
        quantity:first.quantity,unitPrice:first.unitPrice,engravingText:first.engravingText,
        catalogPriceSnapshot:matches[0]?.catalogPriceSnapshot??null,
        receivedAmount:received,payments:payments.filter(x=>Number(x.amount)>0)
@@ -369,7 +369,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        </div>
        <div className="main-watch-create-summary">
          <strong>Состав заказа · {brand||'Бренд не выбран'}</strong>
-         {lines.map((line,index)=><div key={line.id}>
+         {lines.map(line=><div key={line.id}>
            <span>{line.manual.modelName||'Товар не указан'} · {readable(WATCH_OPTIONS.movements,line.manual.movement)} · 
              {readable(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial)} · {readable(WATCH_OPTIONS.dialColors,line.manual.dialColor)}</span>
            <b>{line.source==='office'?'Офис':'Витрина'} · ×{line.quantity}</b>
