@@ -28,7 +28,7 @@ const KINDS=Object.keys(CONFIG) as Kind[]
 type Catalog={ok:boolean;rows?:Array<{braceletColor?:string|null;braceletMaterial?:string|null}>;message?:string}
 export function WatchReferencesSection({brand,brands,onBrandChange,onOpenCatalog,onOpenStaff}:{
   brand:WatchBrand;brands:readonly WatchBrand[];onBrandChange:(next:WatchBrand)=>void;
-  onOpenCatalog:()=>void;onOpenStaff:()=>void
+  onOpenCatalog:()=>void;onOpenStaff?:()=>void
 }){
   const [kind,setKind]=useState<Kind>('brands')
   const [query,setQuery]=useState('')
@@ -79,7 +79,8 @@ export function WatchReferencesSection({brand,brands,onBrandChange,onOpenCatalog
       <span><strong>Справочники</strong> — значения, доступные при работе с часами.</span>
       <span><strong>Склад → Товары</strong> — создание комплектаций и цен.</span>
       <button type="button" className="secondary compact" onClick={onOpenCatalog}>Открыть товары</button>
-      <button type="button" className="secondary compact" onClick={onOpenStaff}>Доступ к брендам</button>
+      {onOpenStaff&&<button type="button" className="secondary compact"
+        onClick={onOpenStaff}>Доступ к брендам</button>}
     </div>
     <div className="watch-references-brand-scope">
       <strong>Данные бренда:</strong>
