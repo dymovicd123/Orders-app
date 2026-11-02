@@ -82,6 +82,19 @@ assert.equal(linked.status,200,JSON.stringify(linked))
 const before=sql.prepare('SELECT * FROM watch_variants WHERE id=?').get(v)
 assert.equal(before.custom_movement??before.movement,'Механизм с турбийоном')
 assert.equal(before.custom_dial_color??before.dial_color,'Тёмно синий')
+// Main delete preflight must not silently write off physical watches.
+sql.prepare(`INSERT INTO inventory_stock(
+ inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity
+) VALUES('warehouse',?,?,'WATCH TEST STOCK',2,0)`).run(linked.canonicalProductId,linked.canonicalVariantId)
+const blockedPreview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'variant',watchProductId:p,watchVariantId:v,
+}))
+assert.equal(blockedPreview.canDelete,false,'Physical stock blocks SKU removal')
+assert.equal((await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'variant',watchProductId:p,watchVariantId:v,expectedCount:1,
+}))).status,409)
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?').get(linked.canonicalVariantId).quantity,2)
+sql.prepare('UPDATE inventory_stock SET quantity=0 WHERE variant_id=?').run(linked.canonicalVariantId)
 const used=await parse(deleteClient3WatchReference(db,admin,renamed.id))
 assert.equal(used.status,409,'An active SKU protects its characteristic from removal')
 let preview=await parse(previewClient3WatchDelete(db,admin,1,{kind:'variant',watchProductId:p,watchVariantId:v}))
@@ -94,6 +107,32 @@ assert.equal((await parse(deleteClient3WatchReference(db,admin,renamed.id))).ok,
 assert.equal((await parse(updateClient3WatchReference(db,manager,{
  id:renamed.id,kind:'movements',value:'Нельзя',
 }))).status,403)
+// Group/execution deletion is granular: remove only matching movement+material.
+const groupedModel=await parse(registerWatchModel(db,admin,1,{modelName:'Тест Групповое Исполнение'}))
+assert.equal(groupedModel.status,201)
+const gId=groupedModel.watchProductId
+const gAttrs={watchProductId:gId,gender:'female',movement:'quartz',braceletMaterial:'steel',braceletColor:''}
+for(const dialColor of ['black','white']){
+ const vi=await parse(registerWatchVariant(db,admin,1,{...gAttrs,dialColor}))
+ assert.equal(vi.status,201,JSON.stringify(vi))
+ assert.equal((await parse(provisionClient3WatchSku(db,admin,1,vi.watchVariantId))).status,200)
+}
+const alternative=await parse(registerWatchVariant(db,admin,1,{
+ ...gAttrs,movement:'mechanical',dialColor:'black',
+}))
+assert.equal(alternative.status,201)
+assert.equal((await parse(provisionClient3WatchSku(db,admin,1,alternative.watchVariantId))).status,200)
+preview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'execution',watchProductId:gId,movement:'quartz',braceletMaterial:'steel',
+}))
+assert.equal(preview.count,2)
+removed=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'execution',watchProductId:gId,movement:'quartz',braceletMaterial:'steel',expectedCount:2,
+}))
+assert.equal(removed.ok,true,JSON.stringify(removed))
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM watch_variants WHERE watch_product_id=? AND is_active=1").get(gId).n,1)
+assert.equal(sql.prepare("SELECT is_active FROM watch_variants WHERE id=?").get(alternative.watchVariantId).is_active,1)
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM catalog_retirement_history_events WHERE event_type='variant'").get().n,3)
 // Whole product disappears without purging its historical canonical keys.
 preview=await parse(previewClient3WatchDelete(db,admin,1,{kind:'product',watchProductId:p}))
 assert.equal(preview.canDelete,true)
