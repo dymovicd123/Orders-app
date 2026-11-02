@@ -1,0 +1,40 @@
+name: Client3 shared references and split payments — ISOLATED QA ONLY
+on:
+  push:
+    branches: [client3/shared-references-split-payments-20261102]
+    paths:
+      - '.github/workflows/client3-shared-references-acceptance-20261102.yml'
+permissions:
+  contents: read
+jobs:
+  client3-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protect customer Main and Branch2
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/shared-references-split-payments-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Shared references migration and admin/manager API
+        run: node --experimental-strip-types scripts/client3/test-watch-shared-references-20261102.mjs
+      - name: Real Main order/payment/stock engine with split-payment replay
+        run: |
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+      - name: Main-adapted UI and form acceptance
+        run: |
+          node scripts/client3/test-watch-form-20261102.mjs
+          node scripts/client3/test-watch-warehouse-order-parity-20261102.mjs
+          node scripts/client3/test-main-workflow-parity-20261102.mjs
+          node scripts/client3/test-watch-shell-20261102.mjs
+      - name: TypeScript and Vite build
+        run: npm run build
