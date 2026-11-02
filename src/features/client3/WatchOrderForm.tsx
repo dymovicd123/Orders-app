@@ -120,7 +120,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
      })
      const payload={
        ...base,shippingDeadlineLocal,items:selected,
-       watchVariantId:first.watchVariantId,catalogVariantId:first.catalogVariantId,
+       watchVariantId:first.watchVariantId,catalogVariantId:first.catalogVariantId??0,
        quantity:first.quantity,unitPrice:first.unitPrice,engravingText:first.engravingText,
        catalogPriceSnapshot:matches[0]?.catalogPriceSnapshot??null,
        receivedAmount:received,payments:payments.filter(x=>Number(x.amount)>0)
