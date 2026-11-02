@@ -6,6 +6,8 @@ export type WatchLogisticsRow = {
   orderId: number
   externalId: string
   brand: WatchBrand
+  legacySource: 'warehouse' | 'boutique'
+  shippingStatus: string
   recipientName: string
   recipientPhone: string
   address: string
@@ -92,6 +94,7 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
   useEffect(() => {
     const controller = new AbortController()
     setBusy(true)
+    setRows([])
     setError('')
     const params = new URLSearchParams({ status: filter })
     if (brand !== 'all') params.set('brand', brand)
@@ -156,13 +159,14 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
     <div className="watch-logistics-orders">
       {groups.map(({ order, items }) => {
         const overdue = order.engravingStatus !== 'ready'
+          && order.shippingStatus !== 'sent' && order.shippingStatus !== 'Отправлено'
           && Number.isFinite(Date.parse(order.shippingDeadlineAt))
           && Date.parse(order.shippingDeadlineAt) < Date.now()
         return <article className="watch-logistics-order" key={order.orderId}>
           <div className="watch-logistics-order-header">
             <div>
               <strong>Заказ {order.externalId || '#' + order.orderId}</strong>
-              <span className="watch-logistics-brand">{order.brand}</span>
+              <span className="watch-logistics-brand">{order.brand} · {order.legacySource === 'boutique' ? 'Витрина' : 'Офис'}</span>
             </div>
             <span className={'watch-logistics-status ' + (order.engravingStatus === 'ready' ? 'is-ready' : '')}>
               {statusText(order.engravingStatus)}
@@ -175,7 +179,7 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
               {Boolean(order.urgent) && <span className="watch-logistics-urgent">Срочный</span>}
               {overdue && <span className="watch-logistics-urgent">Срок подготовки прошёл</span>}
             </div>
-            <div><small>Доставка · {order.deliveryMethod}</small>
+            <div><small>Доставка · {order.deliveryMethod} · {order.shippingStatus === 'sent' || order.shippingStatus === 'Отправлено' ? 'Отправлено' : 'Не отправлено'}</small>
               <strong>{order.city}, {order.postalCode}</strong><span>{order.address}</span>
             </div>
           </div>
