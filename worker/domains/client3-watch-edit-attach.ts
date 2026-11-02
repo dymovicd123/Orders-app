@@ -53,5 +53,5 @@ export async function attachClient3WatchRewrite(
      .bind(orderItemId,line.watchVariantId,line.engravingText))
  }
  const results=await db.batch(statements)
- if(results.some(x=>x.success===false))throw new Error('Не удалось сохранить все связи часов.')
+ if(results.length!==statements.length)throw new Error('Не удалось сохранить все связи часов.')
 }
