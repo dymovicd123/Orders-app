@@ -65,3 +65,15 @@
 .watch-main-order-detail>.watch-orders-sku{margin:10px 0 0;padding:9px 12px;background:#fff;border:1px solid #edf1f6;border-radius:8px}
 @media(max-width:780px){.watch-main-order-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:500px){.watch-main-order-detail-grid{grid-template-columns:1fr}}
+
+/* The order expansion mirrors Main's separate item and money sections. */
+.watch-main-order-ledger-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:14px}
+.watch-main-order-ledger-details>.mini-panel{min-width:0;background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:13px 15px}
+.watch-main-order-ledger-details h3{margin:0 0 12px;font-size:.9rem;color:#26364b}
+.watch-main-ledger-line{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid #edf1f6}
+.watch-main-ledger-line:last-of-type{border-bottom:0}
+.watch-main-ledger-line>div{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
+.watch-main-ledger-line>strong{white-space:nowrap;font-variant-numeric:tabular-nums;font-size:.85rem}
+.watch-main-ledger-line small{color:#64748b;font-size:.74rem}
+.watch-main-ledger-total{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid #dbe4ee;font-size:.82rem}
+@media(max-width:780px){.watch-main-order-ledger-details{grid-template-columns:minmax(0,1fr)}}
