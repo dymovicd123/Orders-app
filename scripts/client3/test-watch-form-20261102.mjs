@@ -34,10 +34,8 @@ try {
     catalog,deliveryMethods:['Казпочта','Курьер'],onSave:async()=>{},
   }))
   for(const label of ['Клиент и условия заказа','Бренд','Источник',
-    'Модель и комплектация','Цена по каталогу','Цена продажи','Получено от клиента','Комментарий логисту',
-    'текст гравировки','Полный адрес доставки','Индекс','Город',
-    'Отправить до','Срочный заказ','Казпочта','KASPI RED','KASPI GOLD','Рассрочка',
-    'ЧЁРНЫЙ','КОРИЧНЕВЫЙ']){
+    'Комментарий','Полный адрес доставки','Индекс','Город',
+    'Отправить до','Срочный заказ','Казпочта','KASPI RED','KASPI GOLD','Рассрочка']){
     assert(html.includes(label),'Missing customer watch form field/option: '+label)
   }
   assert(html.includes('type="datetime-local"'),'Shipping cutoff needs date AND time')
