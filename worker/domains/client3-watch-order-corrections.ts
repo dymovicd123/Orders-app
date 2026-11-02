@@ -1,6 +1,6 @@
 import {json} from '../core/http.ts'
 import type {AuthUser,OrderInput} from '../core/types.ts'
-import {getOrder,updateOrderCritical} from './orders-write.ts'
+import {updateOrderCritical} from './orders-write.ts'
 
 type Meta={orderDate:string;customerName:string;customerPhone:string;city:string;deliveryType:string;comment:string}
 type Money={totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number;shippingStatus:string;orderStatus:string}
@@ -56,6 +56,12 @@ export async function correctClient3WatchMetadata(
    raw.next.city.trim()===''||raw.next.deliveryType.trim()==='')
    return fail('WATCH_METADATA_REQUIRED','Заполните ФИО, телефон, город и доставку.',400)
  try{
+   const previousWatch=await db.prepare(`SELECT recipient_name,recipient_phone,city,delivery_method
+     FROM watch_order_details WHERE order_id=? AND brand_id=?`)
+     .bind(orderId,brandId).first<{
+       recipient_name:string;recipient_phone:string;city:string;delivery_method:string
+     }>()
+   if(!previousWatch)return fail('WATCH_METADATA_MISSING','Реквизиты часов не найдены.',404)
    const payload={requestId:raw.requestId,metadataCorrection:{
      expected:raw.expected,next:raw.next,expectedState:raw.expectedState,
    }} as unknown as OrderInput
@@ -63,7 +69,7 @@ export async function correctClient3WatchMetadata(
    if(!saved?.ok)throw new Error('Main не подтвердил исправление.')
    // No blind overwrite: old watch projection or already-applied next projection
    // is required. This is safe across retries after Main committed the correction.
-   const old=raw.expected,next=raw.next
+   const next=raw.next
    const batch=await db.batch([
      db.prepare(`UPDATE watch_order_details SET
          recipient_name=?,recipient_phone=?,city=?,delivery_method=?,updated_at=?
@@ -72,7 +78,8 @@ export async function correctClient3WatchMetadata(
            OR (recipient_name=? AND recipient_phone=? AND city=? AND delivery_method=?))`)
        .bind(next.customerName.trim(),next.customerPhone.trim(),next.city.trim(),next.deliveryType.trim(),
          new Date().toISOString(),orderId,brandId,
-         old.customerName,old.customerPhone,old.city,old.deliveryType,
+         previousWatch.recipient_name,previousWatch.recipient_phone,
+         previousWatch.city,previousWatch.delivery_method,
          next.customerName.trim(),next.customerPhone.trim(),next.city.trim(),next.deliveryType.trim()),
      db.prepare(`SELECT json('WATCH_METADATA_PROJECTION_STALE') WHERE NOT EXISTS (
        SELECT 1 FROM watch_order_details
