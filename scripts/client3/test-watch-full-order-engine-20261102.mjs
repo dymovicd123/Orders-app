@@ -9,6 +9,7 @@ import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-disp
 import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
+import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from '../../worker/domains/client3-watch-admin-order.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -555,6 +556,75 @@ const shippedBlocked=await parse(correctClient3AdminWatchDetails(db,admin,1,sele
  next:{...shippedExpected,postalCode:'999999'}
 }))
 assert.equal(shippedBlocked.status,409,'Admin cannot revise historical shipment destination')
+// Main admin action parity: brand-scoped manager transfer + read-only
+// consequence preview before irreversible logical order deletion.
+sqlite.prepare("INSERT INTO managers(id,name) VALUES(2,'Second Watch Manager')").run()
+sqlite.prepare('INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(2,1)').run()
+const beforeTransferMoney=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(editOrderId)
+const beforeTransferPhysical=count('inventory_movements')
+const transferManager={requestId:'watch-admin-reassign-20261103-01',
+ managerId:2,expectedManagerId:1}
+const reassigned=await parse(reassignClient3AdminOrderManager(db,admin,1,editOrderId,transferManager))
+assert.equal(reassigned.ok,true,JSON.stringify(reassigned))
+assert.equal(sqlite.prepare('SELECT manager_id FROM orders WHERE id=?').get(editOrderId).manager_id,2)
+assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(editOrderId),beforeTransferMoney)
+assert.equal(count('inventory_movements'),beforeTransferPhysical)
+const deniedManager=await parse(reassignClient3AdminOrderManager(db,manager,1,editOrderId,{
+ ...transferManager,requestId:'watch-denied-reassign-20261103',expectedManagerId:2,managerId:1
+}))
+assert.equal(deniedManager.status,403)
+const foreignManager=await parse(reassignClient3AdminOrderManager(db,admin,2,editOrderId,{
+ ...transferManager,requestId:'watch-foreign-reassign-20261103',expectedManagerId:2
+}))
+assert.equal(foreignManager.status,404)
+const staleManager=await parse(reassignClient3AdminOrderManager(db,admin,1,editOrderId,{
+ ...transferManager,requestId:'watch-stale-reassign-20261103'
+}))
+assert.equal(staleManager.status,409)
+const managerRetry=await parse(reassignClient3AdminOrderManager(db,admin,1,editOrderId,{
+ ...transferManager,requestId:'watch-repeat-reassign-20261103',
+ expectedManagerId:2,managerId:2
+}))
+assert.equal(managerRetry.ok,true)
+const beforeDeletionMoney=count('payments')
+const safePreview=await parse(previewClient3AdminOrderDelete(db,admin,1,editOrderId))
+assert.equal(safePreview.ok,true,JSON.stringify(safePreview))
+assert.equal(safePreview.preview.canDelete,true,JSON.stringify(safePreview.preview))
+assert.match(safePreview.preview.expectedSnapshot,/^[0-9a-f]{64}$/)
+const noDeleteByManager=await parse(deleteClient3AdminOrder(db,manager,1,editOrderId,{
+ requestId:'watch-manager-delete-denied-20261103',expectedSnapshot:safePreview.preview.expectedSnapshot,
+ comment:'Not permitted'
+}))
+assert.equal(noDeleteByManager.status,403)
+const foreignPreview=await parse(previewClient3AdminOrderDelete(db,admin,2,editOrderId))
+assert.equal(foreignPreview.status,404)
+const badSnapshot=await parse(deleteClient3AdminOrder(db,admin,1,editOrderId,{
+ requestId:'watch-admin-delete-badsnap-20261103',
+ expectedSnapshot:'f'.repeat(64),comment:'Duplicate order recorded incorrectly'
+}))
+assert.equal(badSnapshot.status,409)
+const deletedWatchOrder=await parse(deleteClient3AdminOrder(db,admin,1,editOrderId,{
+ requestId:'watch-admin-delete-safe-20261103',
+ expectedSnapshot:safePreview.preview.expectedSnapshot,
+ comment:'Wrong customer order and all products remain at office'
+}))
+assert.equal(deletedWatchOrder.ok,true,JSON.stringify(deletedWatchOrder))
+assert.equal(sqlite.prepare('SELECT order_status FROM orders WHERE id=?').get(editOrderId).order_status,'deleted')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM watch_order_details WHERE order_id=?')
+ .get(editOrderId).n,1,'Historical brand watch association must survive logical deletion')
+assert.equal(count('inventory_movements'),beforeTransferPhysical,'Deletion cannot manufacture physical receipts')
+assert(count('payments')>=beforeDeletionMoney,'Historical money rows should remain as audited facts')
+const shippedPreview=await parse(previewClient3AdminOrderDelete(db,admin,1,selectiveOrder.orderId))
+assert.equal(shippedPreview.ok,true)
+assert.equal(shippedPreview.preview.canDelete,false,'Partially/fully sent order deletion blocked')
+const shippedDelete=await parse(deleteClient3AdminOrder(db,admin,1,selectiveOrder.orderId,{
+ requestId:'watch-admin-delete-sent-denied-20261103',
+ expectedSnapshot:shippedPreview.preview.expectedSnapshot,
+ comment:'Cannot delete physically dispatched watches'
+}))
+assert.equal(shippedDelete.status,409)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
