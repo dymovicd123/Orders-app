@@ -22,8 +22,9 @@ async function brandRow(db:D1Database,code:string) {
 }
 async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'logistics'|'sales') {
   if(actor.role==='admin'||(mode==='logistics'&&staffCanSeeAllLogistics(actor)))return true
+  if(mode==='sales'&&actor.employeeRole==='Логист')return false
   if(!actor.managerId)return false
-  const row=await db.prepare('SELECT 1 AS ok FROM watch_manager_brands WHERE manager_id=? AND brand_id=? LIMIT 1')
+  const row=await db.prepare('SELECT 1 AS ok FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1')
     .bind(actor.managerId,brandId).first<{ok:number}>()
   return Boolean(row?.ok)
 }
@@ -39,7 +40,7 @@ export async function listWatchBrands(db:D1Database,actor:AuthUser) {
   const rows=await db.prepare(`
     SELECT b.code,b.name FROM watch_brands b
     WHERE b.is_active=1 AND (?=1 OR EXISTS (
-      SELECT 1 FROM watch_manager_brands mb WHERE mb.brand_id=b.id AND mb.manager_id=?
+      SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=b.id AND mb.manager_id=?
     )) ORDER BY b.code
   `).bind(staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0)
     .all<{code:WatchBrand,name:string}>()
@@ -171,7 +172,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     WHERE (?=0 OR wd.brand_id=?)
       AND (? IS NULL OR ?='all' OR lj.status=?)
       AND (?=1 OR EXISTS (
-        SELECT 1 FROM watch_manager_brands mb
+        SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
         WHERE mb.manager_id=? AND mb.brand_id=wd.brand_id
       ))
     ORDER BY wd.urgent DESC,wd.shipping_deadline_at ASC,o.id ASC,oi.id ASC
