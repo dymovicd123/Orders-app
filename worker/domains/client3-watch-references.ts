@@ -69,7 +69,7 @@ export async function deleteClient3WatchReference(db:D1Database,actor:AuthUser,i
   if(column[row.kind]){
     const sql=`SELECT COUNT(*) AS n FROM watch_variants v
       JOIN watch_products wp ON wp.id=v.watch_product_id
-      WHERE v.is_active=1 AND wp.is_active=1 AND v.${column[row.kind]}=?`
+      WHERE v.is_active=1 AND wp.is_active=1 AND COALESCE(v.custom_${column[row.kind]},v.${column[row.kind]})=?`
     const used=await db.prepare(sql).bind(row.value).first<{n:number}>()
     if(Number(used?.n)>0)
       return fail('Сначала удалите использующие это значение позиции часов. Исторические заказы сохраняются.',409)
@@ -105,7 +105,7 @@ export async function updateClient3WatchReference(
  if(columns[row.kind]){
    const count=await db.prepare(`SELECT COUNT(*) AS n FROM watch_variants v
      JOIN watch_products wp ON wp.id=v.watch_product_id
-     WHERE v.is_active=1 AND wp.is_active=1 AND v.${columns[row.kind]}=?`)
+     WHERE v.is_active=1 AND wp.is_active=1 AND COALESCE(v.custom_${columns[row.kind]},v.${columns[row.kind]})=?`)
      .bind(row.value).first<{n:number}>()
    if(Number(count?.n)>0)return fail('Характеристика используется в товаре. Сначала измените или удалите соответствующую позицию; историю трогать нельзя.',409)
  }
