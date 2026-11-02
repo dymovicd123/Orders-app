@@ -424,6 +424,59 @@ export async function createReturn(
 
   const createdAt = cleanText(operationContext.createdAt) || operationStartedAt;
   const returnEventKey = `1901:${criticalOperation.requestId}:return-refund`;
+  // Claim the remaining returnable units inside the SAME D1 transaction as
+  // the Return and refund. Two workers may both pass the read-only preflight:
+  // only the first guarded INSERT can then claim the last unit.
+  const returnItemClaim = (validated: typeof validatedSelectedItems[number], currentReturnId: number | null) => {
+    const { selected, orderItem, quantity, inventorySource, physicalTracking, physicalState } = validated;
+    const targetIdSql = currentReturnId
+      ? '?'
+      : '(SELECT target_id FROM critical_operations WHERE request_id = ?)';
+    return db.prepare(
+      `INSERT INTO return_items (
+         return_id, order_item_id, product_name_snapshot, quantity, amount, inventory_source, restocked,
+         physical_tracking, physical_received_at,
+         gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot, created_at
+       )
+       SELECT ${targetIdSql}, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM order_items oi
+         WHERE oi.id = ? AND oi.order_id = ? AND oi.quantity >= ?
+           + COALESCE((
+             SELECT SUM(ri.quantity)
+             FROM return_items ri
+             JOIN returns r ON r.id = ri.return_id
+             WHERE r.order_id = ? AND ri.order_item_id = ?
+               AND COALESCE(r.status, 'completed') <> 'cancelled'
+               AND ${noStandaloneReturnSql}
+           ), 0)
+       )`
+    ).bind(
+      currentReturnId || criticalOperation!.requestId,
+      selected.orderItemId, cleanText(orderItem.product_name_snapshot), quantity, selected.amount,
+      inventorySource, physicalTracking ? 1 : 0, physicalTracking && physicalState !== 'pending' ? createdAt : null,
+      cleanText(orderItem.gender_snapshot) || null, cleanText(orderItem.color_snapshot) || null,
+      cleanText(orderItem.material_snapshot) || null, cleanText(orderItem.length_snapshot) || null,
+      cleanText(orderItem.size_snapshot) || null, createdAt,
+      selected.orderItemId, orderId, quantity, orderId, selected.orderItemId,
+    );
+  };
+  const returnItemClaimMapping = (index: number) => db.prepare(
+    `INSERT INTO critical_operation_entities
+       (request_id, entity_type, entity_key, entity_id, created_at)
+     VALUES (?, 'return_item', ?, CASE WHEN changes() = 1 THEN last_insert_rowid() ELSE NULL END, ?)`
+  ).bind(criticalOperation!.requestId, `return:item:${index + 1}`, createdAt);
+
+  const claimConflict = (error: unknown): never => {
+    const message = cleanText(error instanceof Error ? error.message : error);
+    if (/NOT NULL constraint failed.*critical_operation_entities\.entity_id/i.test(message)) {
+      throw new CriticalOperationConflictError(
+        'Количество для возврата уже изменилось в другом действии. Обновите заказ и повторите. Деньги и склад этим запросом не изменены.'
+      );
+    }
+    throw error;
+  };
+
   let returnId = toInt(criticalOperation.row.target_id, 0);
   if (!returnId) {
     const leaseUntil = Date.now() + 45_000;
@@ -457,6 +510,11 @@ export async function createReturn(
          WHERE request_id = ? AND status = 'started' AND lease_token = ?`
       ).bind(cleanText((existing as any).external_id), leaseUntil, createdAt, criticalOperation.requestId, criticalOperation.leaseToken),
     ];
+    // Claim each physical item atomically before any money or stock event.
+    // A concurrent Exchange that retires the original item makes the claim fail.
+    for (const [index, validated] of validatedSelectedItems.entries()) {
+      createStatements.push(returnItemClaim(validated, null), returnItemClaimMapping(index));
+    }
     if (amount > 0) {
       createStatements.push(refundMoneyEventStatement(db, {
         eventKey: returnEventKey,
@@ -485,7 +543,7 @@ export async function createReturn(
           'Доступная сумма возврата изменилась: другой сотрудник уже оформил возврат денег. Ничего не списано. Обновите заказ.',
         );
       }
-      throw error;
+      claimConflict(error);
     }
     returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
@@ -497,26 +555,20 @@ export async function createReturn(
   for (const validated of validatedSelectedItems) {
     const { selected, orderItem, quantity, wantsRestock, isWorkshop, physicalTracking, physicalState, inventorySource } = validated;
 
-    const returnItemMapped = await insertCriticalMappedEntity(
-      db,
-      criticalOperation,
-      'return_item',
-      `return:item:${validatedSelectedItems.indexOf(validated) + 1}`,
-      db.prepare(
-        `INSERT INTO return_items (
-          return_id, order_item_id, product_name_snapshot, quantity, amount, inventory_source, restocked,
-          physical_tracking, physical_received_at,
-          gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        returnId, selected.orderItemId, cleanText(orderItem.product_name_snapshot), quantity, selected.amount,
-        inventorySource, physicalTracking ? 1 : 0, physicalTracking && physicalState !== 'pending' ? createdAt : null,
-        cleanText(orderItem.gender_snapshot) || null, cleanText(orderItem.color_snapshot) || null,
-        cleanText(orderItem.material_snapshot) || null, cleanText(orderItem.length_snapshot) || null,
-        cleanText(orderItem.size_snapshot) || null, createdAt,
-      ),
-    );
-    const returnItemId = returnItemMapped.id;
+    // Previously committed claim remains mapped after uncertain HTTP responses.
+    // Old interrupted requests are guarded by a fresh atomic claim, never replayed blindly.
+    const itemIndex = validatedSelectedItems.indexOf(validated);
+    const itemKey = `return:item:${itemIndex + 1}`;
+    let returnItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return_item', itemKey);
+    if (!returnItemId) {
+      try {
+        await db.batch([returnItemClaim(validated, returnId), returnItemClaimMapping(itemIndex)]);
+      } catch (error) {
+        claimConflict(error);
+      }
+      returnItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return_item', itemKey) || 0;
+    }
+    if (!returnItemId) throw new CriticalOperationConflictError('Не удалось безопасно зафиксировать позицию возврата.');
 
     if (wantsRestock) {
       const resolved = await resolveInventoryLifecycleCandidate(db, orderItem, isWorkshop);
