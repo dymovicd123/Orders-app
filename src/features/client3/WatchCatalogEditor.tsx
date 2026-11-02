@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
 import {WatchCatalogDeleteAction} from './WatchCatalogDeleteAction'
+import {WatchCatalogVariantEditAction} from './WatchCatalogVariantEditAction'
 import '../../styles/w6-catalog-browse.css'
 import '../../styles/w6-2-catalog-master-detail.css'
 import '../../styles/w6-2-catalog-density.css'
@@ -50,6 +51,8 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
   const [catalogGender,setCatalogGender]=useState<'all'|'male'|'female'>('all')
   const [showNewModel,setShowNewModel]=useState(false)
   const [showNewVariant,setShowNewVariant]=useState(false)
+  const [editingModel,setEditingModel]=useState(false)
+  const [modelRename,setModelRename]=useState('')
 
   const [modelId,setModelId]=useState(0)
   const [gender,setGender]=useState<WatchVariantInput['gender']>('male')
@@ -147,6 +150,22 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
       setReload(x=>x+1)
       return true
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить модель');return false}
+    finally{setBusy(false)}
+  }
+  const renameModel=async(e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault()
+    const selected=rows.find(row=>row.watchProductId===modelId&&row.productActive===1)
+    if(!selected||busy)return
+    setBusy(true);setError('');setNotice('')
+    try{
+      await callApi('/api/client3/watches/catalog/models',{
+        method:'PATCH',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({brand,watchProductId:modelId,expectedName:selected.modelName,modelName:modelRename}),
+      })
+      setEditingModel(false)
+      setNotice('Название модели изменено. Складские SKU, заказы и остатки не менялись.')
+      setReload(v=>v+1)
+    }catch(e){setError(e instanceof Error?e.message:'Не удалось изменить название')}
     finally{setBusy(false)}
   }
   const provisionVariant=async(variantId:number)=>{
@@ -354,7 +373,7 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
           <div className="catalog-master-list">
             {catalogModels.map(model=><button key={model.id} type="button"
               className={'catalog-master-row '+(!showNewModel&&modelId===model.id?'is-selected':'')}
-              onClick={()=>{setModelId(model.id);setShowNewModel(false);setShowNewVariant(false);setError('')}}>
+              onClick={()=>{setModelId(model.id);setShowNewModel(false);setShowNewVariant(false);setEditingModel(false);setError('')}}>
               <span><strong>{model.name}</strong>
                 <em>{rows.filter(row=>row.watchProductId===model.id&&row.watchVariantId).length} позиций</em>
               </span><b aria-hidden="true">›</b>
@@ -387,12 +406,25 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
             <header className="catalog-detail-head">
               <div className="catalog-detail-title">
                 <span className="catalog-detail-eyebrow">Товар</span><h2>{selected.name}</h2>
+                {editingModel&&<form className="client3-watch-model-rename" onSubmit={e=>void renameModel(e)}>
+                  <label>Название модели
+                    <input autoFocus required maxLength={150} value={modelRename}
+                      onChange={e=>setModelRename(e.target.value)} placeholder="Название модели"/>
+                  </label>
+                  <button type="submit" className="primary compact" disabled={busy||!modelRename.trim()}>
+                    {busy?'Сохраняю…':'Сохранить'}</button>
+                  <button type="button" className="secondary compact" disabled={busy}
+                    onClick={()=>setEditingModel(false)}>Отмена</button>
+                </form>}
                 <div className="catalog-detail-meta catalog-product-commercial-anchor">
                   <span><b>{variants.length}</b> комплектаций</span>
                   <span><b>{variants.filter(v=>v.catalogVariantId).length}</b> складских SKU</span>
                 </div>
               </div>
               <div className="catalog-detail-actions">
+                <button type="button" className="secondary compact" onClick={()=>{
+                  setModelRename(selected.name);setEditingModel(true)
+                }}>Изменить название</button>
                 <button type="button" className="primary compact"
                   onClick={()=>setShowNewVariant(true)}>+ Позиция</button>
                 <WatchCatalogDeleteAction brand={brand} kind="product"
@@ -485,6 +517,21 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
                       onClick={()=>void provisionVariant(row.watchVariantId!)}>Подготовить складской SKU</button>}
                   </div>}
                   {row.watchVariantId&&<div className="client3-watch-variant-delete">
+                    <WatchCatalogVariantEditAction brand={brand} row={{
+                      watchProductId:row.watchProductId,watchVariantId:row.watchVariantId,
+                      catalogVariantId:row.catalogVariantId,gender:row.gender,
+                      movement:row.movement,braceletMaterial:row.braceletMaterial,
+                      dialColor:row.dialColor,braceletColor:row.braceletColor,
+                    }} choices={choices} strapColors={strapColors}
+                      onSaved={()=>{setNotice('Характеристики позиции сохранены.');setReload(v=>v+1)}}
+                      onCreateReplacement={draft=>{
+                        setModelId(row.watchProductId)
+                        setGender(draft.gender);setMovement(draft.movement)
+                        setBraceletMaterial(draft.braceletMaterial)
+                        setDialColor(draft.dialColor);setBraceletColor(draft.braceletColor||'')
+                        setShowNewVariant(true)
+                        setNotice('Заполнена форма новой комплектации. Проверьте и сохраните её.')
+                      }}/>
                     <WatchCatalogDeleteAction brand={brand} kind="variant"
                       watchProductId={selected.id} watchVariantId={row.watchVariantId}
                       label="Удалить позицию" onDeleted={()=>setReload(v=>v+1)}/>
