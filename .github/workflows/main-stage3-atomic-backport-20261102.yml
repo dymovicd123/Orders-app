@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
-          test "$(git rev-parse HEAD^)" = '2d51fdb36ed2398ffab0ae390f0cc672161c9be1'
+          test "$(git rev-parse HEAD^)" = 'c601453bdce55137ab851c67e3a05487335d4f03'
           git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
           git fetch -q origin +refs/heads/branch2:refs/remotes/origin/branch2
           git fetch -q origin +refs/pull/717/head:refs/remotes/origin/pr717 +refs/pull/718/head:refs/remotes/origin/pr718
@@ -43,7 +43,7 @@ jobs:
             git status --short
             exit 22
           fi
-          for x in scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs; do
+          for x in scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs scripts/order-manager-schema-reconciliation-20261030.mjs; do
             git show "origin/branch2:$x" > "$x"
             git add "$x"
           done
