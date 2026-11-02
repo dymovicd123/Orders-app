@@ -198,12 +198,30 @@ assert.equal((await parse(editClient3WatchVariant(db,admin,1,{
 }))).status,409,'Duplicate SKU prevention works across extension and legacy representations')
 const preparedDraft=await parse(provisionClient3WatchSku(db,admin,1,draftId))
 assert.equal(preparedDraft.status,200,JSON.stringify(preparedDraft))
+// Main permits rewriting a linked canonical SKU only BEFORE ANY operational use.
+const unusedLinkedNext={gender:'female',movement:'mechanical',braceletMaterial:'steel',dialColor:'white',braceletColor:''}
+const existingCanonicalId=preparedDraft.canonicalVariantId
 const linkedEdit=await parse(editClient3WatchVariant(db,admin,1,{
- watchProductId:editableId,watchVariantId:draftId,expected:updatedDraft,...oldDraft,
+ watchProductId:editableId,watchVariantId:draftId,expected:updatedDraft,...unusedLinkedNext,
 }))
-assert.equal(linkedEdit.status,409,'Linked identity not rewritten')
-assert.equal(sql.prepare('SELECT catalog_variant_id FROM watch_variants WHERE id=?').get(draftId).catalog_variant_id,preparedDraft.canonicalVariantId)
-assert.equal(sql.prepare('SELECT movement FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId).movement,'Механизм с турбийоном')
+assert.equal(linkedEdit.ok,true,JSON.stringify(linkedEdit))
+assert.equal(linkedEdit.canonicalVariantId,existingCanonicalId)
+assert.equal(sql.prepare('SELECT catalog_variant_id FROM watch_variants WHERE id=?').get(draftId).catalog_variant_id,existingCanonicalId)
+assert.equal(sql.prepare('SELECT movement FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId).movement,'mechanical')
+const canonicalAfterEdit=sql.prepare('SELECT gender,color,material,stock_position_id FROM catalog_variants WHERE id=?').get(existingCanonicalId)
+assert.equal(canonicalAfterEdit.gender,'ЖЕН')
+assert.equal(canonicalAfterEdit.color,'WATCH_DIAL_WHITE')
+assert.equal(canonicalAfterEdit.material,'WATCH_MECHANICAL_STEEL')
+// Now record real inventory usage; a further identity rewrite must be rejected.
+sql.prepare(`INSERT INTO inventory_stock(
+ inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity
+) VALUES('warehouse',?,?,'LINKED WATCH',1,0)`).run(preparedDraft.canonicalProductId,existingCanonicalId)
+const usedLinked=await parse(editClient3WatchVariant(db,admin,1,{
+ watchProductId:editableId,watchVariantId:draftId,expected:unusedLinkedNext,...updatedDraft,
+}))
+assert.equal(usedLinked.status,409,'Main blocks identity changes with physical/operational history')
+assert.equal(sql.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?').get(existingCanonicalId).quantity,1)
+assert.equal(sql.prepare('SELECT material FROM catalog_variants WHERE id=?').get(existingCanonicalId).material,'WATCH_MECHANICAL_STEEL')
 assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[])
 sql.close()
 console.log('CLIENT3_MAIN_STEP1_PASS: editable multiword refs, custom canonical SKU, protected deletes, history intact')
