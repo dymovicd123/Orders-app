@@ -224,6 +224,19 @@ const newExchange=await parse(exchangeClient3Watch(db,manager,1,exchangeOrder.or
 assert.equal(newExchange.status,200,JSON.stringify(newExchange))
 assert.equal(newExchange.ok,true)
 assert.equal(newExchange.newShippingStatus,'pending')
+const repeatExchange=await parse(exchangeClient3Watch(db,manager,1,exchangeOrder.orderId,{
+ requestId:'watch-exchange-operation-000001',newWatchVariantId:2,newSource:'office',
+ engravingText:'NEW ENGRAVING',reason:'Customer requested steel strap',
+}))
+assert.equal(repeatExchange.status,200,JSON.stringify(repeatExchange))
+assert.equal(repeatExchange.alreadyCommitted,true)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE order_id=?').get(exchangeOrder.orderId).n,1)
+const changedReplay=await parse(exchangeClient3Watch(db,manager,1,exchangeOrder.orderId,{
+ requestId:'watch-exchange-operation-000001',newWatchVariantId:2,newSource:'office',
+ engravingText:'FRAUD DIFFERENT TEXT',reason:'Customer requested steel strap',
+}))
+assert.equal(changedReplay.status,409)
+
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE order_id=?').get(exchangeOrder.orderId).n,1)
 const exch=sqlite.prepare('SELECT old_order_item_id,new_order_item_id FROM exchanges WHERE order_id=?').get(exchangeOrder.orderId)
 assert.equal(sqlite.prepare('SELECT quantity FROM order_items WHERE id=?').get(exch.old_order_item_id).quantity,0)
