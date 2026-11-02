@@ -449,64 +449,16 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
       </div>
     </div>
   }
-  return <section className={"watch-catalog-editor watch-catalog-editor-"+view}>
-    {view==='catalog'?<header><h3>Модели и комплектации · {brand}</h3>
-      <p>Добавляйте модели, настраивайте варианты и цены. Учёт физического товара находится отдельно в разделе «Склад».</p>
-    </header>:<header><h3>Учёт остатков · {brand}</h3>
-      <p>Наличие и резервы по двум источникам. Выберите операцию ниже, чтобы изменить складские остатки.</p>
-    </header>}
-    {view==='warehouse'&&<>
-      <div className="watch-warehouse-summary">
-        <div><small>Физически в офисе</small><strong>{linked.reduce((sum,row)=>sum+Math.max(0,Number(row.officePhysical)||0),0)} шт.</strong></div>
-        <div><small>Физически на витрине</small><strong>{linked.reduce((sum,row)=>sum+Math.max(0,Number(row.showcasePhysical)||0),0)} шт.</strong></div>
-        <div><small>Свободный остаток</small><strong>{linked.reduce((sum,row)=>sum+Math.max(0,(Number(row.officePhysical)||0)-(Number(row.officeReserved)||0))+Math.max(0,(Number(row.showcasePhysical)||0)-(Number(row.showcaseReserved)||0)),0)} шт.</strong></div>
-      </div>
-      <div className="watch-warehouse-table" role="region" aria-label="Остатки часов" tabIndex={0}>
-        <table><thead><tr><th>Модель и комплектация</th><th>Офис</th><th>Резерв</th><th>Витрина</th><th>Резерв</th></tr></thead>
-          <tbody>{linked.map(row=><tr key={row.watchVariantId}>
-            <td><strong>{row.modelName}</strong><small>{[textFor(WATCH_OPTIONS.genders,row.gender),textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial),textFor(WATCH_OPTIONS.dialColors,row.dialColor),row.braceletColor].filter(Boolean).join(' · ')}</small></td>
-            <td>{row.officePhysical}</td><td>{row.officeReserved}</td><td>{row.showcasePhysical}</td><td>{row.showcaseReserved}</td>
-          </tr>)}</tbody></table>
-        {!linked.length&&!loading&&<p>Подготовленных складских SKU пока нет. Создайте комплектации в каталоге.</p>}
-      </div>
-      <div className="watch-warehouse-operation-tabs" role="group" aria-label="Складская операция">
-        {([['arrival','Приход'],['transfer','Перемещение'],['writeoff','Списание'],['count','Пересчёт']] as const).map(([value,label])=>
-          <button key={value} type="button" aria-pressed={operation===value} onClick={()=>{setOperation(value);setError('');setNotice('')}}>{label}</button>)}
-      </div>
-    </>}
+  return <section className="watch-catalog-editor watch-catalog-editor-warehouse">
+    <header><h3>Складские операции · {brand}</h3>
+      <p>Выберите операцию и сохраните фактическое движение часов.</p></header>
     {error&&<p role="alert" className="watch-catalog-editor-error">{error}</p>}
     {notice&&<p role="status" className="watch-catalog-editor-notice">{notice}</p>}
-    {view==='catalog'&&<div className="watch-catalog-editor-forms">
-      <form onSubmit={e=>void createModel(e)}>
-        <h4>Новая модель</h4>
-        <label>Название модели<input value={modelName} maxLength={150}
-          onChange={e=>setModelName(e.target.value)} placeholder="Название часов" required/></label>
-        <button type="submit" disabled={busy||!modelName.trim()}>Добавить модель</button>
-      </form>
-      <form onSubmit={e=>void createVariant(e)}>
-        <h4>Комплектация</h4>
-        <label>Модель<select value={modelId} onChange={e=>setModelId(Number(e.target.value))} required>
-          <option value={0}>Выберите модель</option>
-          {models.map(model=><option key={model.id} value={model.id}>{model.name}</option>)}
-        </select></label>
-        <label>Пол<select value={gender} onChange={e=>setGender(e.target.value as typeof gender)}>
-          {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-        </select></label>
-        <label>Механизм<select value={movement} onChange={e=>setMovement(e.target.value as typeof movement)}>
-          {WATCH_OPTIONS.movements.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-        </select></label>
-        <label>Браслет<select value={braceletMaterial} onChange={e=>setBraceletMaterial(e.target.value as typeof braceletMaterial)}>
-          {WATCH_OPTIONS.braceletMaterials.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-        </select></label>
-        <label>Цвет циферблата<select value={dialColor} onChange={e=>setDialColor(e.target.value as typeof dialColor)}>
-          {WATCH_OPTIONS.dialColors.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-        </select></label>
-        {braceletMaterial==='leather'&&<label>Цвет кожаного ремешка
-          <input required value={braceletColor} maxLength={80} onChange={e=>setBraceletColor(e.target.value)}
-            placeholder="Чёрный, коричневый…"/></label>}
-        <button type="submit" disabled={busy||!modelId}>Добавить комплектацию</button>
-      </form>
-    </div>}
+    <div className="watch-warehouse-operation-tabs" role="group" aria-label="Складская операция">
+      {([['arrival','Приход'],['transfer','Перемещение'],['writeoff','Списание'],['count','Пересчёт']] as const)
+        .map(([value,label])=><button key={value} type="button" aria-pressed={operation===value}
+          onClick={()=>{setOperation(value);setError('');setNotice('')}}>{label}</button>)}
+    </div>
     {view==='warehouse'&&operation==='arrival'&&<form className="watch-catalog-editor-arrival" onSubmit={e=>void createArrival(e)}>
       <h4>Физический приход часов</h4>
       <p>Только реальные полученные часы. Эта операция увеличивает остаток и записывается в складскую историю.</p>
@@ -604,37 +556,5 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
       </label>
       <button type="submit" disabled={busy||!selectedCount||!countConfirmed||(hasCountShortage&&!shortageConfirmed)}>Сохранить пересчёт</button>
     </form>}
-    {view==='catalog'&&<><h4>Зарегистрированные часы</h4>
-    {loading?<p>Загрузка…</p>:models.length===0?<p>Для бренда пока не зарегистрированы модели.</p>:
-      <div className="watch-catalog-editor-list">
-        {rows.map(row=><article key={row.watchVariantId||'model-'+row.watchProductId}>
-          <strong>{row.modelName}</strong>
-          <span>{row.watchVariantId
-            ? [textFor(WATCH_OPTIONS.genders,row.gender),textFor(WATCH_OPTIONS.movements,row.movement),
-                textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial),
-                textFor(WATCH_OPTIONS.dialColors,row.dialColor),
-                ...(row.braceletColor?['Ремешок: '+row.braceletColor]:[])].join(' · ')
-            : 'Без комплектаций'}</span>
-          <small>{row.catalogProductId&&row.catalogVariantId?'Связан со складом':'Не привязан к складу — продажа недоступна'}</small>
-          {row.watchVariantId&&row.catalogProductId&&row.catalogVariantId&&
-            <div className="watch-catalog-editor-price">
-              <strong>Каталожная цена: {row.catalogPriceSnapshot==null?'не установлена':Number(row.catalogPriceSnapshot).toLocaleString('ru-RU')+' ₸'}</strong>
-              {priceVariantId===row.watchVariantId?<>
-                <input type="number" min={0} max={1000000000} step={1}
-                  aria-label="Новая цена по каталогу" value={priceDraft}
-                  onChange={e=>setPriceDraft(e.target.value)}/>
-                <button type="button" disabled={busy} onClick={()=>void savePrice(row)}>Сохранить цену</button>
-                <button type="button" disabled={busy} onClick={()=>setPriceVariantId(null)}>Отмена</button>
-              </>:<button type="button" disabled={busy}
-                  onClick={()=>{setPriceVariantId(row.watchVariantId);setPriceDraft(row.catalogPriceSnapshot==null?'':String(row.catalogPriceSnapshot))}}>
-                  Изменить цену
-                </button>}
-            </div>}
-          {row.watchVariantId&&row.productActive===1&&row.variantActive===1&&(!row.catalogProductId||!row.catalogVariantId)&&
-            <button type="button" disabled={busy} onClick={()=>void provisionVariant(row.watchVariantId!)}>
-              Подготовить складской SKU
-            </button>}
-        </article>)}
-      </div>}</>}
   </section>
 }
