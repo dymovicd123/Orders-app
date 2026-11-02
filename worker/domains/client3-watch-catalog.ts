@@ -80,6 +80,18 @@ export async function registerWatchVariant(
   try{v=normalizeWatchVariant(input)}catch(cause){
     return error('WATCH_VARIANT_INVALID',cause instanceof Error?cause.message:'Некорректные характеристики часов.')
   }
+  // Exactly Main's reference-driven characteristics, without brand partitioning.
+  // A server-side membership check is necessary: no hand-typed unlisted SKU.
+  for(const [kind,value] of [
+    ['movements',v.movement],['bracelets',v.braceletMaterial],['dials',v.dialColor],
+    ...(v.braceletMaterial==='leather'?[['leatherColors',v.braceletColor]]:[]),
+  ]){
+    const listed=await db.prepare(
+      'SELECT value FROM watch_reference_values WHERE kind=? AND is_active=1',
+    ).bind(kind).all<{value:string}>()
+    if(!(listed.results||[]).some(row=>row.value.toLocaleUpperCase('ru-RU')===value.toLocaleUpperCase('ru-RU')))
+      return error('WATCH_REFERENCE_NOT_FOUND','Характеристика «'+value+'» отсутствует в справочнике '+kind+'.',409)
+  }
   const product=await db.prepare(
     'SELECT id FROM watch_products WHERE id=? AND brand_id=? AND is_active=1 LIMIT 1',
   ).bind(productId,brandId).first<{id:number}>()
@@ -87,7 +99,14 @@ export async function registerWatchVariant(
   const values=[productId,v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]
   const find='SELECT id,is_active,catalog_variant_id FROM watch_variants WHERE watch_product_id=? AND gender=? AND movement=? AND bracelet_material=? AND dial_color=? AND bracelet_color=? LIMIT 1'
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
-  if(old)return json({ok:true,watchVariantId:old.id,alreadyExists:true,active:old.is_active===1,stockLinked:old.catalog_variant_id!=null})
+  if(old){
+    if(old.is_active===0) {
+      // Existing identities remain historical; deliberate recreation reuses the
+      // exact same SKU id only when no canonical conflicting retirement exists.
+      return error('WATCH_VARIANT_RETIRED','Позиция ранее удалена. Создайте другую комплектацию либо обратитесь к администратору.',409)
+    }
+    return json({ok:true,watchVariantId:old.id,alreadyExists:true,active:true,stockLinked:old.catalog_variant_id!=null})
+  }
   try{
     const result=await db.prepare(
       'INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(?,?,?,?,?,?)',
