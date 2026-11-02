@@ -208,7 +208,7 @@ export function WatchClient3App() {
       </div>
     </header>
     <nav className="watch-shell-nav" aria-label="Разделы">
-      {brands.length>0&&user.employeeRole!=='Логист'&&<button type="button" aria-current={tab==='orders'?'page':undefined}
+      {brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')&&<button type="button" aria-current={tab==='orders'?'page':undefined}
         onClick={()=>setTab('orders')}>Заказы</button>}
       <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
         onClick={() => setTab('logistics')}>Логистика</button>
@@ -223,7 +223,7 @@ export function WatchClient3App() {
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       {success && <p role="status" className="watch-shell-success">{success}</p>}
       {warning && <p role="alert" className="watch-shell-warning">{warning}</p>}
-      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'orders' ? <WatchOrdersPanel allowedBrands={brands.map(x=>x.code)}/> : tab === 'create'
+      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'orders' ? (brands.length ? <WatchOrdersPanel allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
         ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
           : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
               isAdmin={user.role==='admin'} managers={managerChoices}
