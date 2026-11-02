@@ -2,6 +2,7 @@ import type {AuthUser} from '../core/types.ts'
 import {normalizeWatchVariant,WATCH_OPTIONS,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
 import {registerWatchModel,registerWatchVariant} from './client3-watch-catalog.ts'
 import {provisionClient3WatchSku} from './client3-watch-provision.ts'
+import {normalizeCatalogProductIdentityKey} from './catalog.ts'
 
 export type ManualWatchOrderItem=WatchVariantInput&{modelName:string}
 type Result={ok:boolean;watchProductId?:number;watchVariantId?:number;canonicalVariantId?:number;message?:string}
@@ -11,15 +12,63 @@ const parse=async(response:Response):Promise<Result>=>{
  return result
 }
 const clean=(x:unknown)=>typeof x==='string'?x.trim().replace(/\s+/g,' '):''
-/** Strict semantic equality, never fuzzy guess or silent translation to another model. */
-export const watchIdentityKey=(x:unknown)=>clean(x).normalize('NFKC')
- .replace(/[‐‑–—−]/g,'-').replace(/\s*-\s*/g,'-')
- .toLocaleUpperCase('ru-RU')
+/** Reuse Main's product-identity rules for Cyrillic/Kazakh spelling, unicode
+ * dashes, punctuation and whitespace. Never use edit distance/fuzzy guessing:
+ * a collision is an explicit conflict, not an auto-selected SKU.
+ */
+export const watchIdentityKey=(x:unknown)=>normalizeCatalogProductIdentityKey(clean(x))
 
+type ResolverKind='movements'|'bracelets'|'dials'|'leatherColors'
+const WATCH_SYNONYMS:Record<Exclude<ResolverKind,'leatherColors'>,
+  Readonly<Record<string,readonly string[]>>>={
+ movements:{
+   quartz:['quartz','кварц','кварцевый','кварцевые','кварцевый механизм'],
+   mechanical:['mechanical','механика','механический','механические','механический механизм'],
+ },
+ bracelets:{
+   steel:['steel','сталь','стальной','стальной браслет'],
+   leather:['leather','кожа','кожаный','кожаный ремешок'],
+   rubber:['rubber','каучук','каучуковый','каучуковый браслет'],
+ },
+ dials:{
+   black:['black','черный','чёрный'],
+   white:['white','белый'],
+   silver:['silver','серебро','серебристый'],
+   gold:['gold','золото','золотистый'],
+   green:['green','зеленый','зелёный'],
+   orange:['orange','оранжевый'],
+   brown:['brown','коричневый'],
+   multicolor:['multicolor','комбинированный','многоцветный'],
+ },
+}
 const standard=(raw:unknown,options:readonly {value:string;label:string}[])=>{
  const key=watchIdentityKey(raw)
- const option=options.find(x=>watchIdentityKey(x.value)===key||watchIdentityKey(x.label)===key)
- return option?option.value:clean(raw)
+ const matches=options.filter(x=>watchIdentityKey(x.value)===key||
+   watchIdentityKey(x.label)===key)
+ return matches.length===1?matches[0].value:clean(raw)
+}
+/** A known synonym only maps to a built-in canonical value; custom values
+ * match via Main identity key. No synonym is inferred from an unrelated word. */
+export const watchReferenceIdentityKey=(kind:ResolverKind,value:unknown)=>{
+ const key=watchIdentityKey(value)
+ if(kind==='leatherColors')return key
+ for(const [canonical,aliases] of Object.entries(WATCH_SYNONYMS[kind])){
+   if(aliases.some(alias=>watchIdentityKey(alias)===key))return watchIdentityKey(canonical)
+ }
+ return key
+}
+
+/** A reference may be exact or semantically equivalent. All collisions,
+ * including retired spellings, must be resolved by a human. */
+const matchReference=(kind:ResolverKind,needle:string,
+  rows:readonly {value:string;is_active:number}[])=>{
+ const key=watchReferenceIdentityKey(kind,needle)
+ const matches=rows.filter(row=>watchReferenceIdentityKey(kind,row.value)===key)
+ if(matches.length>1)
+   throw Error('Характеристика «'+needle+'» неоднозначна: в справочнике несколько совпадающих значений.')
+ if(matches.length===1&&Number(matches[0].is_active)!==1)
+   throw Error('Характеристика «'+needle+'» удалена. Обратитесь к администратору.')
+ return matches[0]?.value||null
 }
 
 /** Main-style known-SKU-first: exact brand and all characteristics, even when free stock is zero.
@@ -63,11 +112,9 @@ export async function ensureManualWatchOrderSku(
  for(const field of fields){
    const existing=await db.prepare(`SELECT value,is_active FROM ${field.table} WHERE kind=?`)
      .bind(field.kind).all<{value:string;is_active:number}>()
-   const matches=(existing.results||[]).filter(x=>watchIdentityKey(x.value)===watchIdentityKey(field.value))
-   if(matches.length>1)throw Error('Характеристика «'+field.value+'» неоднозначна. Уточните справочник.')
-   if(matches.length===1){
-     if(matches[0].is_active!==1)throw Error('Характеристика «'+field.value+'» удалена. Обратитесь к администратору.')
-     refs[field.kind]=matches[0].value
+   const existingValue=matchReference(field.kind as ResolverKind,field.value,existing.results||[])
+   if(existingValue!==null){
+     refs[field.kind]=existingValue
    }else{
      refs[field.kind]=field.value
      missing.push(field)
@@ -98,10 +145,10 @@ export async function ensureManualWatchOrderSku(
      .bind(known[0].id).all<Record<string,unknown>>()
    const matched=(found.results||[]).filter(v=>
      v.gender===variant.gender &&
-     watchIdentityKey(v.movement)===watchIdentityKey(variant.movement)&&
-     watchIdentityKey(v.bracelet_material)===watchIdentityKey(variant.braceletMaterial)&&
-     watchIdentityKey(v.dial_color)===watchIdentityKey(variant.dialColor)&&
-     watchIdentityKey(v.bracelet_color)===watchIdentityKey(variant.braceletColor))
+     watchReferenceIdentityKey('movements',v.movement)===watchReferenceIdentityKey('movements',variant.movement)&&
+     watchReferenceIdentityKey('bracelets',v.bracelet_material)===watchReferenceIdentityKey('bracelets',variant.braceletMaterial)&&
+     watchReferenceIdentityKey('dials',v.dial_color)===watchReferenceIdentityKey('dials',variant.dialColor)&&
+     watchReferenceIdentityKey('leatherColors',v.bracelet_color)===watchReferenceIdentityKey('leatherColors',variant.braceletColor))
    if(matched.length>1)throw Error('Найдено несколько одинаковых комплектаций. Нужна проверка каталога.')
    if(matched.length===1){
      if(Number(matched[0].is_active)!==1)
