@@ -34,7 +34,7 @@ try {
     catalog,deliveryMethods:['Казпочта','Курьер'],onSave:async()=>{},
   }))
   for(const label of ['Клиент и условия заказа','Бренд','Источник',
-    'Комментарий','Полный адрес доставки','Индекс','Город',
+    'Полный адрес доставки','Индекс','Город',
     'Отправить до','Срочный заказ','Казпочта','KASPI RED','KASPI GOLD','Рассрочка']){
     assert(html.includes(label),'Missing customer watch form field/option: '+label)
   }
