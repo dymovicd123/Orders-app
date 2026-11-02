@@ -59,6 +59,7 @@ export async function listClient3WatchOrders(
             )
         ) AS pendingReplacement,
         (SELECT oi.id FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS firstItemId,
+        (SELECT wi.watch_variant_id FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS activeWatchVariantId,
         (SELECT oi.quantity-COALESCE((SELECT SUM(ri.quantity) FROM return_items ri
           JOIN returns r ON r.id=ri.return_id
           WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'),0)
