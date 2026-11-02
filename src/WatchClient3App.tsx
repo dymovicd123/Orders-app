@@ -56,6 +56,7 @@ export function WatchClient3App() {
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [catalogBusy, setCatalogBusy] = useState(false)
+  const [catalogVersion,setCatalogVersion]=useState(0)
 
   const refreshAuth = useCallback(async () => {
     setChecking(true)
@@ -103,7 +104,7 @@ export function WatchClient3App() {
       .catch(cause=>{if(!controller.signal.aborted){setModels([]);setError(cause instanceof Error?cause.message:'Каталог недоступен')}})
       .finally(()=>{if(!controller.signal.aborted)setCatalogBusy(false)})
     return () => controller.abort()
-  }, [user?.id, user?.mustChangePassword, brand, tab, brands])
+  }, [user?.id, user?.mustChangePassword, brand, tab, brands, catalogVersion])
 
   useEffect(()=>{
     if(tab!=='create'||user?.role!=='admin'||!brands.length){setManagerChoices([]);return}
@@ -254,7 +255,7 @@ export function WatchClient3App() {
                 <div>Витрина: <strong>{sourceFree(model, false)}</strong> шт.</div>
               </article>)}
             </div>
-            {user.role==='admin' && brand && <WatchCatalogEditor brand={brand}/>}
+            {user.role==='admin' && brand && <WatchCatalogEditor brand={brand} onStockChanged={()=>setCatalogVersion(x=>x+1)}/>}
           </section>}
     </main>
   </div>
