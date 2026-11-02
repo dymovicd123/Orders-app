@@ -1,0 +1,82 @@
+name: Client3 Watches release preflight (READ ONLY, NO DEPLOY)
+on:
+  push:
+    branches: [client3/watch-redesign-20261102]
+    paths:
+      - '.github/workflows/client3-watch-release-preflight-20261102.yml'
+permissions:
+  contents: read
+  issues: write
+jobs:
+  remote-release-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Exact third tenant guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/client3/watch-redesign-20261102'
+          grep -Fq '"name": "orders-app-client3-old-client"' wrangler.jsonc
+          grep -Fq '"database_id": "0717f239-6d81-4837-8586-777d94e22c53"' wrangler.jsonc
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Validate third database has Time Travel support
+        run: |
+          set -euo pipefail
+          npx wrangler d1 info orders_db_client3_old_client --config wrangler.jsonc --json > /tmp/client3-d1-info.json
+          jq -e '.version == "production"' /tmp/client3-d1-info.json
+          echo "Time Travel production backend confirmed."
+      - name: Capture current bookmark only in ephemeral runner (do not post actual bookmark)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info orders_db_client3_old_client --config wrangler.jsonc > /tmp/client3-bookmark.txt
+          grep -Eiq 'bookmark' /tmp/client3-bookmark.txt
+          echo "Bookmark lookup confirmed; value intentionally not printed."
+      - name: Show unapplied migrations (READ ONLY, no apply)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-pending-migrations.txt
+          echo "Migration listing command succeeded. No migration applied."
+          sed -n '1,30p' /tmp/client3-pending-migrations.txt
+      - name: Verify existing tenant records and no watch tables yet
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM managers) AS managers_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brands') AS watch_installed,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_dispatches') AS dispatch_installed" \
+            | jq -ce '.[0].results[0]' > /tmp/client3-release-preflight.json
+          cat /tmp/client3-release-preflight.json
+          jq -e '.orders_count>=2 and .items_count>=2 and .payments_count>=2 and .users_count>=4 and .managers_count>=3 and .stock_count>=2' /tmp/client3-release-preflight.json
+      - name: Post release preflight status (counts and readiness only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Client3 watch release-preflight (NO WRITES)"
+            echo "Run: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}"
+            echo ""
+            echo "Time Travel backend and bookmark lookup: verified; bookmark not published."
+            echo "Migrations list: queried remotely; migrations NOT applied."
+            echo "Baseline counts and install flags:"
+            cat /tmp/client3-release-preflight.json
+            echo ""
+            echo "NO D1 modifications and NO Worker deployments."
+          } > /tmp/client3-release-status.txt
+          gh issue comment 774 --repo dymovicd123/Orders-app --body-file /tmp/client3-release-status.txt
