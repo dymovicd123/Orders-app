@@ -8,6 +8,9 @@ const source=fs.readFileSync('src/features/client3/WatchOrderForm.tsx','utf8')
 assert(!/Размер|Длина|Обмен размера|Цех/.test(source),'Watch form must not show clothing fields')
 assert(source.includes("quantity<=free"),'Submission must not exceed selected source available quantity')
 assert(source.includes("deliveryMethods.map"),'Delivery choices must come from current Main configuration')
+assert(source.includes('receivedAmount'),'Received money must be explicitly captured')
+assert(source.includes('requestRef'),'Create retries need a stable idempotency key')
+assert(source.includes('managerId'),'Admin must select a brand-bound salesperson')
 const server=await createServer({configFile:false,plugins:[reactPlugin()],appType:'custom',
   server:{middlewareMode:true},logLevel:'error'})
 try {
@@ -31,7 +34,7 @@ try {
     catalog,deliveryMethods:['Казпочта','Курьер'],onSave:async()=>{},
   }))
   for(const label of ['Новый заказ часов','Бренд','Откуда заберут часы',
-    'Модель и комплектация','Цена по каталогу','Цена продажи','Комментарий логисту',
+    'Модель и комплектация','Цена по каталогу','Цена продажи','Получено от клиента','Комментарий логисту',
     'Текст гравировки','Полный адрес доставки','Индекс','Город',
     'Отправить до','Срочный заказ','Казпочта','KASPI RED','KASPI GOLD','Рассрочка',
     'ЧЁРНЫЙ','КОРИЧНЕВЫЙ']){
