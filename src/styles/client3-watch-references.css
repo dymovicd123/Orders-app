@@ -1,0 +1,14 @@
+/* Main ReferencesSection markup, only watch brand scope and locked-domain guidance. */
+.watch-references-main .reference-routing-note button{flex:0 0 auto}
+.watch-references-brand-scope{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 15px;border:1px solid #c7d8f4;background:#f1f6ff;border-radius:12px;padding:14px 17px}
+.watch-references-brand-scope>strong{color:#1e40af;font-size:13px}
+.watch-references-brand-scope>div{display:flex;gap:8px;flex-wrap:wrap}
+.watch-references-brand-scope>div>button{border:1px solid #bfd0e8;padding:9px 15px;border-radius:9px;background:#fff;font-weight:750;color:#334155;cursor:pointer}
+.watch-references-brand-scope>div>button.is-active{color:#fff;background:#2159d1;border-color:#2159d1}
+.watch-references-brand-scope>small{font-size:12px;color:#64748b}
+.watch-references-main .reference-kind-grid .reference-kind-card{width:auto;min-height:80px}
+.watch-references-main .reference-list .reference-row{cursor:default}
+.watch-references-main .reference-list .reference-row:hover{background:inherit}
+.watch-references-readonly{font-size:13px;line-height:1.65;color:#475569;padding:12px 14px;margin:12px 0;border:1px solid #dce5f0;border-radius:10px;background:#fff}
+.watch-references-main .reference-editor-panel>.primary{width:auto;min-width:180px}
+@media(max-width:640px){.watch-references-brand-scope>div{width:100%}.watch-references-brand-scope>div button{flex:1}}
