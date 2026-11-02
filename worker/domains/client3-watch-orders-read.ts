@@ -60,10 +60,10 @@ export async function listClient3WatchOrders(
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,'unitPrice',oi.unit_price,'source',oi.source_type,
           'engravingText',COALESCE(wi2.engraving_text,''),
-          'gender',COALESCE(wv2.gender,''),'movement',COALESCE(wv2.custom_movement,wv2.movement,''),
-          'braceletMaterial',COALESCE(wv2.custom_bracelet_material,wv2.bracelet_material,''),
-          'dialColor',COALESCE(wv2.custom_dial_color,wv2.dial_color,''),
-          'braceletColor',COALESCE(wv2.custom_bracelet_color,wv2.bracelet_color,'')
+          'gender',COALESCE(wv2.gender,''),'movement',COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.movement,''),
+          'braceletMaterial',COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.bracelet_material,''),
+          'dialColor',COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.dial_color,''),
+          'braceletColor',COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.bracelet_color,'')
         )),'[]')
           FROM order_items oi
           LEFT JOIN watch_order_item_details wi2 ON wi2.order_item_id=oi.id
@@ -86,8 +86,8 @@ export async function listClient3WatchOrders(
           WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'),0)
           FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS returnableQuantity,
         (SELECT wp.model_name || ' · ' || CASE wv.gender WHEN 'male' THEN 'Мужские' ELSE 'Женские' END ||
-          ' · ' || COALESCE(wv.custom_movement,wv.movement) || ' · ' || COALESCE(wv.custom_bracelet_material,wv.bracelet_material) || ' · ' || COALESCE(wv.custom_dial_color,wv.dial_color) ||
-          CASE WHEN length(COALESCE(wv.custom_bracelet_color,wv.bracelet_color))>0 THEN ' · ' || COALESCE(wv.custom_bracelet_color,wv.bracelet_color) ELSE '' END
+          ' · ' || COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.movement) || ' · ' || COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_material) || ' · ' || COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.dial_color) ||
+          CASE WHEN length(COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color))>0 THEN ' · ' || COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color) ELSE '' END
           FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
           JOIN watch_variants wv ON wv.id=wi.watch_variant_id
           JOIN watch_products wp ON wp.id=wv.watch_product_id
