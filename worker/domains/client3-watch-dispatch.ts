@@ -30,12 +30,14 @@ export async function dispatchClient3WatchOrder(
      JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
      JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
      JOIN watch_products wp ON wp.id=wv.watch_product_id
-     WHERE oi.order_id=? ORDER BY oi.id`,
+     WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`,
   ).bind(orderId).all<Record<string,unknown>>()
   const items=lines.results||[]
+  // Only one positive-quantity SKU can ship. An exchange retires the original
+  // item at quantity=0 while retaining its audit/return history.
   // Don't enable partial dispatch or invisible split lines yet: watch engraving
   // metadata must stay on each exact physical item after a split.
-  const allItems=await db.prepare('SELECT COUNT(*) AS total FROM order_items WHERE order_id=?')
+  const allItems=await db.prepare('SELECT COUNT(*) AS total FROM order_items WHERE order_id=? AND quantity>0')
     .bind(orderId).first<{total:number}>()
   if(items.length!==1||Number(allItems?.total)!==1||items[0].sku_brand!==brandId||
     Number(items[0].is_workshop)!==0||!['warehouse','boutique'].includes(String(items[0].source_type))||
