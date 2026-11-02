@@ -12,6 +12,8 @@ assert(entry.includes('<WatchClient3App />'))
 assert(!entry.includes('<App />'), 'Isolated Client3 must not render the old clothing dashboard')
 assert(shell.includes('/api/client3/watches/brands'), 'Brands must come from session-bound API')
 assert(shell.includes('/api/client3/watches/models?brand='))
+assert(shell.includes('/api/client3/watches/orders'),'Watch create must use tenant-owned API')
+assert(shell.includes('WatchOrderForm'),'Watch create form must be reachable')
 assert(shell.includes("canCompleteEngraving={user.role === 'admin' || user.employeeRole === 'Логист'}"))
 assert(!/\/api\/(?:finance|orders|cash)(?:\/|\?|['\"])/.test(shell),
   'Do not invoke brand-unsafe legacy sales/finance APIs from the watch shell')
