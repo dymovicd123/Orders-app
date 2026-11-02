@@ -2,6 +2,7 @@ import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
+import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
@@ -310,6 +311,7 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
+  if(url.pathname==='/api/client3/watches/legacy-orders'&&request.method==='GET')return listLegacyClient3Orders(db,actor)
   if(url.pathname==='/api/client3/watches/finance'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
