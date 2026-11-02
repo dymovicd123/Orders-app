@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { WatchBrand } from '../../../shared/client3/watch-domain'
 import {WatchReturnForm} from './WatchReturnForm'
+import {WatchExchangeForm} from './WatchExchangeForm'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
@@ -10,6 +11,7 @@ type WatchOrder={
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
   lineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
+  activeWatchVariantId:number|null;pendingReplacement:number
 }
 type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
@@ -30,6 +32,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
   const [error,setError]=useState('')
   const [sendConfirm,setSendConfirm]=useState<number|null>(null)
   const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
+  const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
   const [sendingId,setSendingId]=useState<number|null>(null)
   const shipRequests=useRef<Record<number,string>>({})
   useEffect(()=>{
@@ -118,9 +121,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
               <div><small>Оплата</small><strong>{sum(order.receivedAmount)} / {sum(order.totalAmount)}</strong>
                 <span>Долг: {sum(order.debtAmount)}</span></div>
               <div><small>Состояние</small>
-                <strong>{order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
+                <strong>{order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
                 <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span>
-                {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&order.lineCount===1&&
+                {(order.pendingReplacement||order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено')&&order.lineCount===1&&(order.returnableQuantity??1)>0&&
                   (order.engravedLines===0||order.engravingStatus==='ready')&&
                   <div className="watch-orders-shipping">
                     {sendConfirm===order.orderId?<>
@@ -132,11 +135,21 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
                     </>:<button type="button" disabled={sendingId!==null}
                       onClick={()=>setSendConfirm(order.orderId)}>Отправить клиенту</button>}
                   </div>}
-                {order.shippingStatus!=='sent'&&order.engravedLines>0&&order.engravingStatus!=='ready'&&
+                {(order.pendingReplacement||order.shippingStatus!=='sent')&&order.engravedLines>0&&order.engravingStatus!=='ready'&&
                   <small>Сначала завершите гравировку в логистике.</small>}
               </div>
             </div>
             {order.watchDescription&&<p className="watch-orders-sku">{order.watchDescription}</p>}
+            {(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&
+              !order.pendingReplacement&&order.lineCount===1&&order.returnableQuantity===1&&
+              (exchangeOrderId===order.orderId?
+                <WatchExchangeForm brand={brand} order={order}
+                  onCancel={()=>setExchangeOrderId(null)}
+                  onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>
+                :<button className="watch-orders-return-open" type="button"
+                  onClick={()=>{setReturnOrderId(null);setSendConfirm(null);setExchangeOrderId(order.orderId)}}>
+                  Обменять часы
+                </button>)}
             {order.lineCount===1&&(Math.max(0,order.receivedAmount-order.returnAmount)>0||
               ((order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&order.returnableQuantity>0))&&
               (returnOrderId===order.orderId?
