@@ -39,8 +39,8 @@ export async function exchangeClient3Watch(
  // An accepted exchange may have retired the original item. Check immutable
  // critical result BEFORE looking for a remaining active old item.
  const prior=await db.prepare(
-   'SELECT operation_type,status,target_id,response_json FROM critical_operations WHERE request_id=? LIMIT 1',
- ).bind(input.requestId).first<{operation_type:string;status:string;target_id:number|null;response_json:string|null}>()
+   'SELECT operation_type,status,target_id,response_json,context_json FROM critical_operations WHERE request_id=? LIMIT 1',
+ ).bind(input.requestId).first<{operation_type:string;status:string;target_id:number|null;response_json:string|null;context_json:string|null}>()
  if(prior?.status==='completed'){
    if(prior.operation_type!=='exchange_create'||!prior.target_id)
      return deny('WATCH_EXCHANGE_REPLAY_CONFLICT','Идентификатор использован для другого действия.')
@@ -66,6 +66,29 @@ export async function exchangeClient3Watch(
  }
  if(prior&&prior.operation_type!=='exchange_create')
    return deny('WATCH_EXCHANGE_REPLAY_CONFLICT','Этот идентификатор уже использован в другом действии.')
+ // A lost HTTP response can occur AFTER Main has retired the original order_item.
+ // Recover the saved core critical operation from its own exact exchange target,
+ // rather than incorrectly treating the retired item as an unrelated new exchange.
+ const recovering=prior?.status==='started'&&Number(prior.target_id||0)>0
+   ?await db.prepare(`SELECT id,old_order_item_id,old_quantity,exchange_date,
+       new_source_type,comment,financial_action FROM exchanges WHERE id=? AND order_id=?`)
+     .bind(prior.target_id,orderId).first<Record<string,unknown>>()
+   :null
+ if(prior?.status==='started'&&prior.target_id&&!recovering)
+   return deny('WATCH_EXCHANGE_RECOVERY_BLOCKED','Незавершённая операция имеет недоступную связанную запись. Обратитесь к администратору.')
+ if(recovering&&(Number(recovering.old_quantity)!==1||
+   String(recovering.comment||'')!==reason||String(recovering.new_source_type)!==source||
+   String(recovering.financial_action)!=='none'))
+   return deny('WATCH_EXCHANGE_RECOVERY_CONFLICT','Данные незавершённого обмена не совпадают с исходной операцией.')
+ let frozenCatalogPrice:number|null|undefined
+ if(recovering){
+   try {
+     const context=JSON.parse(prior?.context_json||'{}') as {itemizedExchangePricingPlan?:{newCatalogPriceSnapshot?:number|null}}
+     frozenCatalogPrice=context.itemizedExchangePricingPlan?.newCatalogPriceSnapshot
+   }catch{ /* Original fingerprint is checked again by Main. */ }
+   if(frozenCatalogPrice===undefined)
+     return deny('WATCH_EXCHANGE_RECOVERY_BLOCKED','Не найден исходный ценовой снимок незавершённого обмена.')
+ }
 
  if(order.order_status==='archived'||order.order_status==='deleted')
    return deny('WATCH_EXCHANGE_CLOSED','Заказ закрыт.')
@@ -78,15 +101,20 @@ export async function exchangeClient3Watch(
    FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
    JOIN watch_products wp ON wp.id=wv.watch_product_id
-   WHERE oi.order_id=? AND oi.quantity>0 LIMIT 3
- `).bind(orderId).all<Record<string,unknown>>()
+   WHERE oi.order_id=? AND (oi.quantity>0 OR oi.id=?) LIMIT 3
+ `).bind(orderId,recovering?Number(recovering.old_order_item_id):-1).all<Record<string,unknown>>()
  const lines=oldLines.results||[]
  const current=await db.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=? AND quantity>0')
    .bind(orderId).first<{n:number}>()
- if(Number(current?.n)!==1||lines.length!==1||Number(lines[0].quantity)!==1||
-    Number(lines[0].is_workshop)!==0||Number(lines[0].item_brand)!==brandId)
+ const oldLine=recovering
+   ?lines.find(x=>Number(x.id)===Number(recovering.old_order_item_id))
+   :lines[0]
+ if((!recovering&&Number(current?.n)!==1)||
+    (!recovering&&lines.length!==1)||!oldLine||
+    (!recovering&&Number(oldLine.quantity)!==1)||
+    Number(oldLine.is_workshop)!==0||Number(oldLine.item_brand)!==brandId)
    return deny('WATCH_EXCHANGE_COMPLEX','Нужна проверка состава: разрешён обмен только одной активной позиции в количестве 1 шт.')
- const old=lines[0]
+ const old=oldLine!
  const physical=await db.prepare(`
    SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) AS sent
    FROM order_dispatch_items di WHERE di.order_item_id=?
@@ -124,14 +152,14 @@ export async function exchangeClient3Watch(
    SELECT COALESCE(SUM(quantity),0) AS reserved
    FROM inventory_reservations WHERE variant_id=? AND inventory_source=? AND status='active'
  `).bind(sku.variantId,source).first<{reserved:number}>()
- if(Number(count?.physical||0)-Math.max(Number(count?.reserved||0),Number(ledger?.reserved||0))<1)
+ if(!recovering&&Number(count?.physical||0)-Math.max(Number(count?.reserved||0),Number(ledger?.reserved||0))<1)
    return deny('WATCH_EXCHANGE_NO_STOCK','Новая комплектация отсутствует в свободном остатке.')
  // No unreviewed money movements in the first exchange release.
  const price=Number(old.unit_price)
- if(!Number.isSafeInteger(price)||price<0||Number(old.line_total)!==price
+ if(!Number.isSafeInteger(price)||price<0||(!recovering&&Number(old.line_total)!==price)
    ||Number(order.total_amount)!==price)
    return deny('WATCH_EXCHANGE_PRICE_COMPLEX','Для этого обмена требуется отдельное согласование расчёта.')
- const catalogPrice=sku.catalogPrice==null?null:Number(sku.catalogPrice)
+ const catalogPrice=recovering ? frozenCatalogPrice! : sku.catalogPrice==null?null:Number(sku.catalogPrice)
  const newItem:NonNullable<OrderInput['items']>[number]={
    productName:String(sku.productName),quantity:1,unitPrice:price,
    catalogPriceSnapshot:catalogPrice,sourceType:source,shortageAcknowledged:true,
@@ -146,7 +174,7 @@ export async function exchangeClient3Watch(
  }
  try{
    const result=await createExchange(db,{
-     requestId:input.requestId,orderId,exchangeDate:dateAlmaty(),
+     requestId:input.requestId,orderId,exchangeDate:recovering?String(recovering.exchange_date):dateAlmaty(),
      oldItemId:Number(old.id),oldQuantity:1,oldPhysicalState:'pending',
      oldReturnSource:'none',newItem,newSourceWasManuallyChanged:true,
      expectedOrderTotal:price,expectedOldActiveQuantity:1,
