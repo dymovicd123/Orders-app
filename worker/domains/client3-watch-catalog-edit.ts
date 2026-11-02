@@ -89,22 +89,32 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
    .bind(productId,variantId,...after).first<{id:number}>()
  if(collision)return error('Такая комплектация уже существует. Выберите её вместо создания дубля.',409)
  try{
-   // Both writes occur in ONE D1 transaction; keep old CHECK-backed enum values
-   // unchanged, and store new display identity only in the V5 extension.
+   // Move the old constrained identity to an opaque unique sentinel. Otherwise
+   // editing a draft leaves its previous LEGACY UNIQUE key occupied, preventing a
+   // correct new watch from using that former combination. Preserve the watch ID.
+   const sentinel='__WATCH_V5__'+crypto.randomUUID().replaceAll('-','')
    const result=await db.batch([
-     db.prepare(`UPDATE watch_variants SET gender=? WHERE id=? AND watch_product_id=?
-       AND is_active=1 AND catalog_variant_id IS NULL AND gender=?`)
-       .bind(next.gender,variantId,productId,row.gender),
+     db.prepare(`UPDATE watch_variants v
+       SET gender=?,movement='quartz',bracelet_material='leather',
+         dial_color='black',bracelet_color=?
+       WHERE id=? AND watch_product_id=? AND is_active=1
+         AND catalog_variant_id IS NULL AND gender=?
+         AND COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement)=?
+         AND COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material)=?
+         AND COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color)=?
+         AND COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_color)=?`)
+       .bind(next.gender,sentinel,variantId,productId,...prev),
      db.prepare(`INSERT INTO watch_variant_attributes_v5(
        watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
      ) SELECT v.id,v.watch_product_id,v.gender,?,?,?,?
        FROM watch_variants v
-       WHERE v.id=? AND v.watch_product_id=? AND v.is_active=1 AND v.catalog_variant_id IS NULL
+       WHERE v.id=? AND v.watch_product_id=? AND v.is_active=1
+         AND v.catalog_variant_id IS NULL AND v.bracelet_color=?
        ON CONFLICT(watch_variant_id) DO UPDATE SET
          gender=excluded.gender,movement=excluded.movement,
          bracelet_material=excluded.bracelet_material,dial_color=excluded.dial_color,
          bracelet_color=excluded.bracelet_color`)
-       .bind(next.movement,next.braceletMaterial,next.dialColor,next.braceletColor,variantId,productId),
+       .bind(next.movement,next.braceletMaterial,next.dialColor,next.braceletColor,variantId,productId,sentinel),
    ])
    if(Number(result[0].meta?.changes||0)!==1||Number(result[1].meta?.changes||0)!==1)
      return error('Позиция изменилась во время сохранения. Обновите каталог.',409)
