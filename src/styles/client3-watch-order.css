@@ -69,3 +69,34 @@
   .watch-order-form fieldset { padding: 12px; }
   .watch-order-form > button { width: 100%; }
 }
+
+/* Standalone creation workspace: sectioned, aligned and distinct from the order list. */
+.watch-shell-create-page .watch-order-form{max-width:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.watch-shell-create-page .watch-order-form-header{grid-column:1/-1;margin:0;padding:23px 26px 21px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.watch-shell-create-page .watch-order-form-header h2{font-size:1.15rem;letter-spacing:-.02em}
+.watch-shell-create-page .watch-order-form-header p{font-size:.86rem}
+.watch-shell-create-page .watch-order-form fieldset{margin:0 0 0 21px;border:1px solid #e2e8f0;background:#fff;border-radius:12px;padding:17px 18px;min-width:0}
+.watch-shell-create-page .watch-order-form fieldset:nth-of-type(2){margin:0 21px 0 0}
+.watch-shell-create-page .watch-order-form legend{font-size:.94rem;color:#17243a;padding:0 8px;font-weight:750}
+.watch-shell-create-page .watch-order-form fieldset:first-of-type legend::before{content:"01";display:inline-block;margin-right:8px;color:#1d4ed8;font-weight:800}
+.watch-shell-create-page .watch-order-form fieldset:nth-of-type(2) legend::before{content:"02";display:inline-block;margin-right:8px;color:#1d4ed8;font-weight:800}
+.watch-shell-create-page .watch-order-form-grid{gap:13px}
+.watch-shell-create-page .watch-order-form label{font-size:.83rem}
+.watch-shell-create-page .watch-order-form :is(input:not([type=checkbox]),select,textarea,output){border-radius:9px;padding:11px;border-color:#d0dbe7;background:#fff}
+.watch-shell-create-page .watch-order-form output{background:#f8fafc}
+.watch-shell-create-page .watch-order-form>.primary{grid-column:1/-1;justify-self:end;margin:0 21px 23px;padding:13px 26px;min-height:48px;min-width:190px;border:0;border-radius:10px;background:#1d4ed8;color:#fff;font-weight:750;box-shadow:0 5px 14px #1d4ed829}
+.watch-shell-create-page .watch-order-form>.primary:hover:not(:disabled){background:#1e40af}
+.watch-shell-create-page .watch-order-form>.watch-order-form-error{grid-column:1/-1;margin:0 21px}
+@media(max-width:1240px){
+  .watch-shell-create-page .watch-order-form{grid-template-columns:1fr}
+  .watch-shell-create-page .watch-order-form fieldset,
+  .watch-shell-create-page .watch-order-form fieldset:nth-of-type(2){margin:0 20px}
+  .watch-shell-create-page .watch-order-form>.primary{grid-column:1;margin:0 20px 22px}
+}
+@media(max-width:540px){
+  .watch-shell-create-page .watch-order-form-header{padding:17px}
+  .watch-shell-create-page .watch-order-form fieldset,
+  .watch-shell-create-page .watch-order-form fieldset:nth-of-type(2){margin:0 12px;padding:12px}
+  .watch-shell-create-page .watch-order-form>.primary{width:calc(100% - 24px);margin:0 12px 15px}
+  .watch-shell-create-page .watch-order-form>.watch-order-form-error{margin:0 12px}
+}
