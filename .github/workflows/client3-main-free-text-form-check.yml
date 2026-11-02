@@ -1,4 +1,5 @@
 name: Client3 Main free-text watch form QA
+# Retest after replacing mandatory catalogue SKU with Main SmartPicker input.
 on:
   push:
     branches: [client3/main-first-free-text-watch-order-20261103]
