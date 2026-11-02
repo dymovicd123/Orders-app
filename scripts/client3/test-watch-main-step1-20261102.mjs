@@ -7,6 +7,29 @@ import {registerWatchModel,registerWatchVariant} from '../../worker/domains/clie
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
+// The migration must preserve foreign keys from *existing* sold watch lines.
+// This catches DROP/RENAME mistakes not visible on an empty third tenant.
+const history=new DatabaseSync(':memory:')
+history.exec(`PRAGMA foreign_keys=ON;
+ CREATE TABLE managers(id INTEGER PRIMARY KEY);
+ CREATE TABLE app_users(id INTEGER PRIMARY KEY);
+ CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);
+ CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);
+ CREATE TABLE orders(id INTEGER PRIMARY KEY);
+ CREATE TABLE order_items(id INTEGER PRIMARY KEY);
+`)
+history.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
+history.exec("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'HISTORICAL WATCH')")
+history.exec("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'male','quartz','leather','black','ЧЁРНЫЙ')")
+history.exec("INSERT INTO order_items(id) VALUES(1001)")
+history.exec("INSERT INTO watch_order_item_details(order_item_id,watch_variant_id,engraving_text) VALUES(1001,1,'ИМЯ КЛИЕНТА')")
+history.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
+history.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
+assert.equal(history.prepare('SELECT watch_variant_id FROM watch_order_item_details WHERE order_item_id=1001').get().watch_variant_id,1)
+assert.equal(history.prepare('SELECT bracelet_color FROM watch_variants WHERE id=1').get().bracelet_color,'ЧЁРНЫЙ')
+assert.deepEqual(history.prepare('PRAGMA foreign_key_check').all(),[],'Migration must retain existing watch order item links')
+history.close()
+
 const sql=new DatabaseSync(':memory:')
 sql.exec('PRAGMA foreign_keys=ON')
 for(const p of fs.readdirSync('migrations').filter(x=>/^\d+.*\.sql$/.test(x)).sort())
