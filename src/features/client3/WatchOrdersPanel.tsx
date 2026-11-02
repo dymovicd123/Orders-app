@@ -13,10 +13,18 @@ type WatchOrder={
   lineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
   activeWatchVariantId:number|null;pendingReplacement:number
+  paymentLines:string;itemLines:string
 }
 type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
 const sum=(value:number)=>Number(value||0).toLocaleString('ru-RU')+' ₸'
+type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
+type ItemLine={id:number;productName:string;quantity:number;unitPrice:number;source:string;
+  engravingText:string;gender:string;movement:string;braceletMaterial:string;
+  dialColor:string;braceletColor:string}
+function parsedRows<T>(raw:string|undefined):T[]{
+  try{const rows=JSON.parse(raw||'[]') as unknown;return Array.isArray(rows)?rows as T[]:[]}catch{return []}
+}
 const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
@@ -126,7 +134,39 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                       <strong>{order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
                       <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span></div>
                   </div>
-                  {order.watchDescription&&<p className="watch-orders-sku">{order.watchDescription}</p>}
+                  <div className="watch-main-order-ledger-details">
+                    <section className="mini-panel">
+                      <h3>Товары заказа</h3>
+                      {parsedRows<ItemLine>(order.itemLines).map(line=><div className="watch-main-ledger-line" key={line.id}>
+                        <div><strong>{line.productName}</strong>
+                          <small>{[
+                            line.gender==='male'?'Мужские':line.gender==='female'?'Женские':'',
+                            line.movement,line.braceletMaterial,line.dialColor,line.braceletColor,
+                          ].filter(Boolean).join(' · ')}</small>
+                          {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
+                          <small>{line.source==='warehouse'?'Офис':'Витрина'}</small></div>
+                        <strong>{line.quantity} × {sum(line.unitPrice)}</strong>
+                      </div>)}
+                      {parsedRows<ItemLine>(order.itemLines).length===0&&
+                        <p>Состав заказа пока недоступен.</p>}
+                    </section>
+                    <section className="mini-panel">
+                      <h3>Оплаты по заказу</h3>
+                      {parsedRows<PaymentLine>(order.paymentLines).map(line=>
+                        <div className="watch-main-ledger-line" key={line.id}>
+                          <div><strong>{line.method}</strong>
+                            <small>{line.date} · {line.kind==='debt_close'?'Закрытие долга':
+                              line.kind==='extra'?'Дополнительная оплата':'Основная оплата'}</small>
+                          </div><strong>{sum(line.amount)}</strong>
+                        </div>)}
+                      {parsedRows<PaymentLine>(order.paymentLines).length===0&&
+                        <p>Зафиксированных оплат пока нет.</p>}
+                      <div className="watch-main-ledger-total">
+                        <span>Получено: <strong>{sum(order.receivedAmount)}</strong></span>
+                        <span>Долг: <strong>{sum(order.debtAmount)}</strong></span>
+                      </div>
+                    </section>
+                  </div>
                   <div className="watch-main-order-actions">
                     {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
                       (onOpenLogistics?<button type="button"
