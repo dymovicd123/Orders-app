@@ -54,6 +54,65 @@ export async function listWatchManagers(db:D1Database,actor:AuthUser,url:URL) {
     (rows.results||[]).filter(x=>x.id===actor.managerId)})
 }
 
+export async function listWatchStaff(db:D1Database,actor:AuthUser) {
+  if(actor.role!=='admin')return FORBIDDEN()
+  const rows=await db.prepare(
+    'SELECT m.id,m.name,m.is_active,b.code AS brand FROM managers m LEFT JOIN watch_manager_brands mb ON mb.manager_id=m.id LEFT JOIN watch_brands b ON b.id=mb.brand_id WHERE m.is_active=1 ORDER BY m.name COLLATE NOCASE,m.id,b.code',
+  ).all<{id:number;name:string;is_active:number;brand:WatchBrand|null}>()
+  const grouped=new Map<number,{id:number;name:string;brands:WatchBrand[]}>()
+  for(const row of rows.results||[]) {
+    if(!grouped.has(row.id))grouped.set(row.id,{id:row.id,name:row.name,brands:[]})
+    if(row.brand)grouped.get(row.id)!.brands.push(row.brand)
+  }
+  return json({ok:true,staff:Array.from(grouped.values())})
+}
+
+export async function assignWatchManagerBrands(
+  db:D1Database,actor:AuthUser,managerId:number,
+  raw:{brands?:unknown;expectedBrands?:unknown;requestId?:unknown},
+) {
+  if(actor.role!=='admin')return FORBIDDEN()
+  if(!Number.isSafeInteger(managerId)||managerId<=0)return BAD('Укажите сотрудника')
+  if(!Array.isArray(raw.brands)||!Array.isArray(raw.expectedBrands)||
+    raw.brands.length>2||raw.expectedBrands.length>2)return BAD('Нужны новые и ожидаемые бренды')
+  let next:WatchBrand[],expected:WatchBrand[]
+  try{
+    next=[...new Set(raw.brands.map(normalizeWatchBrand))].sort()
+    expected=[...new Set(raw.expectedBrands.map(normalizeWatchBrand))].sort()
+  }catch{return BAD('Укажите TAUWACH и/или WACHIZEN')}
+  if(typeof raw.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,128}$/.test(raw.requestId))
+    return BAD('Нужен уникальный requestId')
+  const done=await db.prepare(
+    'SELECT manager_id,previous_brands,next_brands,actor_user_id FROM watch_manager_brand_events WHERE request_id=? LIMIT 1',
+  ).bind(raw.requestId).first<{manager_id:number;previous_brands:string;next_brands:string;actor_user_id:number}>()
+  if(done)return done.manager_id===managerId&&done.actor_user_id===actor.id&&
+    done.previous_brands===JSON.stringify(expected)&&done.next_brands===JSON.stringify(next)
+      ?json({ok:true,alreadyCommitted:true,managerId,brands:next})
+      :json({ok:false,code:'WATCH_ASSIGNMENT_REPLAY_CONFLICT'},{status:409})
+  const manager=await db.prepare('SELECT id FROM managers WHERE id=? AND is_active=1 LIMIT 1')
+    .bind(managerId).first<{id:number}>()
+  if(!manager)return json({ok:false,code:'WATCH_MANAGER_NOT_FOUND'},{status:404})
+  const rows=await db.prepare(
+    'SELECT b.code FROM watch_manager_brands mb JOIN watch_brands b ON b.id=mb.brand_id WHERE mb.manager_id=? ORDER BY b.code',
+  ).bind(managerId).all<{code:WatchBrand}>()
+  const current=(rows.results||[]).map(x=>x.code)
+  if(JSON.stringify(current)!==JSON.stringify(expected))
+    return json({ok:false,code:'WATCH_ASSIGNMENT_STALE',message:'Назначения изменились. Обновите список.'},{status:409})
+  if(JSON.stringify(current)===JSON.stringify(next))
+    return json({ok:true,alreadySet:true,managerId,brands:next})
+  const inserts=next.map(code=>db.prepare(
+    'INSERT INTO watch_manager_brands(manager_id,brand_id) SELECT ?,id FROM watch_brands WHERE code=? AND is_active=1',
+  ).bind(managerId,code))
+  await db.batch([
+    db.prepare('DELETE FROM watch_manager_brands WHERE manager_id=?').bind(managerId),
+    ...inserts,
+    db.prepare(
+      'INSERT INTO watch_manager_brand_events(manager_id,actor_user_id,previous_brands,next_brands,request_id) VALUES(?,?,?,?,?)',
+    ).bind(managerId,actor.id,JSON.stringify(current),JSON.stringify(next),raw.requestId),
+  ])
+  return json({ok:true,managerId,brands:next})
+}
+
 export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
   const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
   if(scope.error)return scope.error
@@ -171,6 +230,13 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,raw?.brand,'sales')
     if(scope.error)return scope.error
     return createClient3WatchOrder(db,actor,scope.row!.id,raw)
+  }
+  if(url.pathname==='/api/client3/watches/staff'&&request.method==='GET')
+    return listWatchStaff(db,actor)
+  const staffMatch=/^\/api\/client3\/watches\/staff\/(\d+)\/brands$/.exec(url.pathname)
+  if(staffMatch&&request.method==='POST'){
+    const data=await readJson<{brands?:unknown;expectedBrands?:unknown;requestId?:unknown}>(request)
+    return assignWatchManagerBrands(db,actor,Number(staffMatch[1]),data)
   }
   if(url.pathname==='/api/client3/watches/managers'&&request.method==='GET')
     return listWatchManagers(db,actor,url)
