@@ -857,6 +857,56 @@ assert.equal(resendAfterCorrection.status,200,JSON.stringify(resendAfterCorrecti
 assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(partialCreated.orderId).shipping_status,'sent')
 assert.equal(stock('warehouse').quantity,beforeCorrectionStock.quantity)
 assert.equal(count('payments'),countPaymentsCorrection)
+// Stage4: two shipped rows, one operation, two explicit refund methods.
+const multiInput={requestId:'watch-two-lines-refund-20261103-01',kind:'both',
+ amount:9000,paymentMethod:'KASPI GOLD',
+ refundParts:[{method:'KASPI GOLD',amount:5000},{method:'KASPI RED',amount:4000}],
+ reason:'Клиент возвращает часы из двух отправленных позиций',
+ items:[{orderItemId:partialOriginal.id,quantity:1},
+        {orderItemId:remainingPart.id,quantity:1}],
+}
+const physicalBeforeMulti=stock('warehouse').quantity
+const multi=await parse(createClient3WatchReturn(db,manager,1,partialCreated.orderId,multiInput))
+assert.equal(multi.status,200,JSON.stringify(multi))
+assert.equal(stock('warehouse').quantity,physicalBeforeMulti,'No automatic return receipt')
+const multiRow=sqlite.prepare('SELECT id,amount FROM returns WHERE order_id=? ORDER BY id DESC LIMIT 1')
+ .get(partialCreated.orderId)
+assert.equal(multiRow.amount,9000)
+const picked=sqlite.prepare('SELECT order_item_id,quantity,physical_tracking FROM return_items WHERE return_id=? ORDER BY order_item_id')
+ .all(multiRow.id)
+assert.deepEqual(picked.map(x=>[x.order_item_id,x.quantity]),[
+ [partialOriginal.id,1],[remainingPart.id,1]])
+assert(picked.every(x=>x.physical_tracking===1))
+const refundParts=sqlite.prepare('SELECT payment_method,amount_delta FROM financial_events WHERE event_type=? AND source_ref=? ORDER BY event_key')
+ .all('order_refund','critical-operation:'+multiInput.requestId)
+assert.deepEqual(refundParts.map(x=>[x.payment_method,x.amount_delta]),[
+ ['KASPI GOLD',-5000],['KASPI RED',-4000]])
+const eventsAfterMulti=count('financial_events')
+assert.equal((await parse(createClient3WatchReturn(db,manager,1,partialCreated.orderId,multiInput))).ok,true)
+assert.equal(count('financial_events'),eventsAfterMulti,'Idempotent money split')
+const badParts=await parse(createClient3WatchReturn(db,manager,1,partialCreated.orderId,{
+ ...multiInput,requestId:'watch-refund-invalid-split-20261103',
+ refundParts:[{method:'KASPI GOLD',amount:6000},{method:'KASPI RED',amount:4000}],
+}))
+assert.equal(badParts.status,400)
+const duplicateQuantity=await parse(createClient3WatchReturn(db,manager,1,partialCreated.orderId,{
+ ...multiInput,requestId:'watch-refund-duplicate-quantity-20261103',
+ kind:'items_only',amount:0,refundParts:[],
+ items:[{orderItemId:partialOriginal.id,quantity:1}],
+}))
+assert.equal(duplicateQuantity.status,409)
+const foreignMoney=await parse(createClient3WatchReturn(db,manager,2,partialCreated.orderId,{
+ ...multiInput,requestId:'watch-refund-foreign-brand-20261103',
+}))
+assert.equal(foreignMoney.status,404)
+const physicalRows=sqlite.prepare('SELECT id FROM return_items WHERE return_id=? ORDER BY id').all(multiRow.id)
+const firstIntake=await parse(receiveClient3WatchReturn(db,manager,1,partialCreated.orderId,{
+ requestId:'watch-multi-return-intake-20261103',
+ returnId:multiRow.id,returnItemId:physicalRows[0].id,destination:'warehouse',
+}))
+assert.equal(firstIntake.ok,true,JSON.stringify(firstIntake))
+assert.equal(stock('warehouse').quantity,physicalBeforeMulti+1)
+assert.equal(count('financial_events'),eventsAfterMulti,'Stock receipt cannot refund again')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
