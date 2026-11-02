@@ -40,6 +40,7 @@ jobs:
         run: |
           grep -Fq 'w6-catalog-browse.css' src/features/client3/WatchCatalogEditor.tsx
           grep -Fq 'w6-2-catalog-master-detail.css' src/features/client3/WatchCatalogEditor.tsx
+          grep -Fq 'data-catalog-view="main-master-detail"' src/features/client3/WatchCatalogEditor.tsx
           grep -Fq 'warehouse-w2-navigation' src/WatchClient3App.tsx
           grep -Fq '<section className="order-step-card">' src/features/client3/WatchOrderForm.tsx
           grep -Fq 'rows.filter(x=>x.catalogVariantId&&available(x,source)>0)' src/features/client3/WatchOrderForm.tsx
