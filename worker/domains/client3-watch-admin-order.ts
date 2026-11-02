@@ -127,7 +127,7 @@ export async function reassignClient3AdminOrderManager(
    } as OrderInput,actor,name(actor))
    if(!(done as {ok?:boolean}|null)?.ok)
      return error('WATCH_MANAGER_EDIT_NOT_CONFIRMED','Main не подтвердил смену менеджера.')
-   return json({ok:true,orderId,managerId:target,managerName:manager.name,mainAudit:true})
+   return json({ok:true,orderId,managerId:target,managerName:manager.name,mainEditor:true})
  }catch(cause){
    return error('WATCH_MANAGER_EDIT_CONFLICT',cause instanceof Error?cause.message:'Не удалось сменить менеджера.')
  }
