@@ -51,7 +51,8 @@ assert(create.includes("rows.filter(x=>x.catalogVariantId&&available(x,source)>0
 assert(create.includes("quantity<=free"),'Quantity must stay bounded by available stock')
 assert(create.includes('validateWatchOrderInput'),'Existing server-domain input validation retained')
 assert(create.includes('requestRef'),'Create retry must reuse idempotency key')
-assert(create.includes('Получено от клиента')&&create.includes('Цена продажи')&&create.includes('ДОЛГ'),
-  'Payment and debt must have Main-style standalone steps and review')
+assert(create.includes('Получено, ₸')&&create.includes('Цена продажи')&&create.includes('ДОЛГ')&&
+  create.includes('+ Добавить способ оплаты')&&create.includes('paymentRows'),
+  'Main-style money and debt review must support separate payment rows')
 assert(!create.includes('размер')&&!create.includes('Длина'),'Watch order must not contain clothing characteristics')
 console.log('CLIENT3_MAIN_WAREHOUSE_ORDER_PARITY_PASS: Main horizontal tabs, real master-detail catalog, and brand/source-gated four-step order')
