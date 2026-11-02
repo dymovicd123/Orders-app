@@ -77,3 +77,23 @@
 .watch-main-ledger-line small{color:#64748b;font-size:.74rem}
 .watch-main-ledger-total{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid #dbe4ee;font-size:.82rem}
 @media(max-width:780px){.watch-main-order-ledger-details{grid-template-columns:minmax(0,1fr)}}
+
+/* Main OrdersTableSection density: 12 real financial/operational columns. */
+.watch-main-orders-table{min-width:1570px}
+.watch-main-orders-table .watch-main-order-sku{min-width:240px;max-width:360px}
+.watch-main-order-sku-row{display:grid;gap:2px;padding:2px 0 6px}
+.watch-main-order-sku-row:not(:last-child){border-bottom:1px solid #edf1f6}
+.watch-main-order-sku-row strong{font-size:.8rem}
+.watch-main-order-delivery{min-width:165px;max-width:240px}
+.watch-main-order-payments{min-width:165px;max-width:240px}
+.watch-main-order-payments .order-payment-chip{display:block;width:max-content;max-width:100%;white-space:normal;margin:0 0 5px;font-size:.71rem;background:#f1f5f9;color:#334155;border-radius:7px;padding:4px 7px}
+.watch-main-orders-table .watch-main-money.is-debt{color:#b45309;font-weight:750}
+.watch-main-orders-table .watch-main-money.is-paid{color:#15803d;font-weight:650}
+.watch-main-stock-warning{color:#b45309!important;font-weight:700;white-space:normal;max-width:200px}
+.watch-orders-filters>label{min-width:130px}
+@media(max-width:740px){
+.watch-main-orders-table{min-width:1420px}
+.watch-main-order-detail{padding:11px}
+.watch-orders-filters{gap:9px}
+.watch-orders-filters>label{flex:1 1 130px}
+}
