@@ -55,7 +55,7 @@ export async function createClient3WatchOrder(
 
     // Never trust client variant IDs, model names, stock figures or brand headers.
     const variant=await db.prepare(
-      'SELECT wv.id AS watch_id,wv.catalog_variant_id,wp.catalog_product_id,cp.name AS canonical_name,cv.is_active AS catalog_active,wp.is_active AS product_active,wv.is_active AS variant_active,ep.sale_price AS catalog_price FROM watch_variants wv JOIN watch_products wp ON wp.id=wv.watch_product_id JOIN catalog_products cp ON cp.id=wp.catalog_product_id JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id AND cv.product_id=wp.catalog_product_id LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE wv.id=? AND wp.brand_id=? LIMIT 1',
+      `SELECT wv.id AS watch_id,wv.catalog_variant_id,wp.catalog_product_id,cp.name AS canonical_name,cv.is_active AS catalog_active,wp.is_active AS product_active,wv.is_active AS variant_active,ep.sale_price AS catalog_price FROM watch_variants wv JOIN watch_products wp ON wp.id=wv.watch_product_id JOIN catalog_products cp ON cp.id=wp.catalog_product_id JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id AND cv.product_id=wp.catalog_product_id LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE wv.id=? AND wp.brand_id=? LIMIT 1`,
     ).bind(raw.watchVariantId,brandId).first<Record<string,unknown>>()
     const productId=Number(variant?.catalog_product_id||0)
     const variantId=Number(variant?.catalog_variant_id||0)
