@@ -42,7 +42,9 @@ old=source('origin/branch2',str(path))
 start=old.index("  // Work #733: a LIVE receipt inbox")
 end=old.index("  if (dateFrom)",start)
 needle="  if (dateFrom)"
-main=replace_once(main,needle,old[start:end]+needle,'return pending SQL')
+fragment=old[start:end]
+fragment=replace_once(fragment,"  const where: string[] = [];\n  const bindings: unknown[] = [];\n",'','strip existing return bindings')
+main=replace_once(main,needle,fragment+needle,'return pending SQL')
 main=replace_once(main,"ORDER BY r.return_date DESC, r.id DESC LIMIT ? OFFSET ?","ORDER BY r.return_date ${pendingOnly ? 'ASC' : 'DESC'}, r.id ${pendingOnly ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?",'return oldest first')
 path.write_text(main)
 
