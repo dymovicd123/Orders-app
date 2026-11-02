@@ -132,3 +132,22 @@
    grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
  .client3-main-stock-operation .stocktake-e-review-name{grid-column:1/-1}
 }
+
+/* Reuse Main stocktake/variant form structure; the inline missing-SKU editor
+   belongs INSIDE the one operations panel, never in a duplicate panel. */
+.client3-main-stock-operation .client3-main-stock-missing{display:flex;align-items:center;justify-content:flex-start;margin:12px 0;gap:10px}
+.client3-main-stock-operation .client3-stock-inline-add{border:1px solid var(--w12-border,#bfd0e5);background:var(--w12-tint,#f8fafc);border-radius:12px;padding:15px 18px;margin:14px 0;min-width:0}
+.client3-main-stock-operation .client3-stock-inline-add .stocktake-e-product-nav{display:flex;justify-content:space-between;align-items:start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.client3-main-stock-operation .client3-stock-inline-add .subgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.client3-main-stock-operation .client3-stock-inline-add label{display:grid;align-content:start;gap:6px;font-size:.85rem;font-weight:650;min-width:0}
+.client3-main-stock-operation .client3-stock-inline-add select,
+.client3-main-stock-operation .client3-stock-inline-add input{min-width:0;width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:9px 11px;background:#fff;color:inherit}
+.client3-main-stock-operation .client3-stock-inline-add label small{font-weight:400;line-height:1.35;color:#64748b}
+.client3-main-stock-operation .client3-stock-inline-actions{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.client3-main-stock-operation .client3-stock-inline-actions small{color:#64748b;font-weight:400}
+.client3-main-stock-operation .client3-stock-inline-actions button.primary{background:var(--w12-accent,#15803d);border-color:var(--w12-accent,#15803d);color:#fff;border-radius:9px}
+@media(max-width:640px){
+ .client3-main-stock-operation .client3-stock-inline-add{padding:12px}
+ .client3-main-stock-operation .client3-stock-inline-add .subgrid{grid-template-columns:1fr}
+ .client3-main-stock-operation .client3-stock-inline-actions{grid-column:1}
+}
