@@ -13,6 +13,7 @@ import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watc
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from '../../worker/domains/client3-watch-admin-order.ts'
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
+import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -907,6 +908,90 @@ const firstIntake=await parse(receiveClient3WatchReturn(db,manager,1,partialCrea
 assert.equal(firstIntake.ok,true,JSON.stringify(firstIntake))
 assert.equal(stock('warehouse').quantity,physicalBeforeMulti+1)
 assert.equal(count('financial_events'),eventsAfterMulti,'Stock receipt cannot refund again')
+// Stage4 Main set exchange: real multi-method extra payment, new watch SKU and
+// engraving, money/inventory kept in Main, old watch receipt stays pending.
+const exchSetArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:1,quantity:12,comment:'Stage4 exchange old watch stock',
+ requestId:'watch-set-old-stock-20261103',
+}))
+assert.equal(exchSetArrival.ok,true,JSON.stringify(exchSetArrival))
+const exchSetAltStock=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:2,quantity:12,comment:'Stage4 exchange new watch stock',
+ requestId:'watch-set-new-stock-20261103',
+}))
+assert.equal(exchSetAltStock.ok,true,JSON.stringify(exchSetAltStock))
+const manualReplacement={modelName:'REAL ENGINE EXCHANGE MODEL',gender:'male',
+ movement:'quartz',braceletMaterial:'steel',dialColor:'silver',braceletColor:''}
+const createSetOld=async(key,price)=>{
+ const created=await parse(createClient3WatchOrder(db,manager,1,{
+   ...purchase,requestId:key,receivedAmount:price,unitPrice:price,
+   engravingText:'',items:[{watchVariantId:1,catalogVariantId:vid,
+    quantity:1,unitPrice:price,source:'office',engravingText:''}],
+ }))
+ assert.equal(created.status,201,JSON.stringify(created))
+ const sent=await parse(dispatchClient3WatchOrder(db,manager,1,created.orderId,{
+   requestId:key+'-ship',
+ }))
+ assert.equal(sent.status,200,JSON.stringify(sent))
+ const old=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.unit_price,oi.line_total,
+   oi.catalog_price_snapshot FROM order_items oi WHERE oi.order_id=? AND oi.quantity>0`)
+   .get(created.orderId)
+ return {created,old}
+}
+const stage4Pay=await createSetOld('watch-set-extra-20261103-01',40000)
+const oldSelection=original=>({
+ orderItemId:original.id,quantity:1,physicalState:'pending',
+ expectedActiveQuantity:original.quantity,expectedUnitPrice:original.unit_price,
+ expectedLineTotal:original.line_total,
+ expectedCatalogPriceSnapshot:original.catalog_price_snapshot,
+})
+const extraInput={requestId:'watch-set-extra-pay-20261103-01',
+ expectedOrderTotal:40000,
+ oldItems:[oldSelection(stage4Pay.old)],
+ newItems:[{manual:manualReplacement,source:'office',quantity:1,
+   unitPrice:60000,engravingText:'Новая гравировка'}],
+ paymentParts:[{method:'KASPI GOLD',amount:12000},{method:'KASPI RED',amount:8000}],
+ refundParts:[],reason:'Обмен с доплатой двумя способами'}
+const extraResult=await parse(exchangeClient3WatchSet(
+ db,manager,1,stage4Pay.created.orderId,extraInput))
+assert.equal(extraResult.status,200,JSON.stringify(extraResult))
+assert.equal(extraResult.ok,true)
+const extraPayments=sqlite.prepare(`SELECT method,amount FROM payments WHERE order_id=? ORDER BY id`)
+ .all(stage4Pay.created.orderId)
+assert.deepEqual(extraPayments.slice(-2).map(x=>[x.method,x.amount]),[
+ ['KASPI GOLD',12000],['KASPI RED',8000]])
+assert.equal(sqlite.prepare('SELECT total_amount,received_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId).received_amount,60000)
+const attached=sqlite.prepare(`SELECT wi.watch_variant_id,wi.engraving_text,oi.stock_writeoff_status
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1`)
+ .get(stage4Pay.created.orderId)
+assert.equal(attached.watch_variant_id,2)
+assert.equal(attached.engraving_text,'Новая гравировка')
+const previousPaymentCount=count('payments')
+const retryExtra=await parse(exchangeClient3WatchSet(
+ db,manager,1,stage4Pay.created.orderId,extraInput))
+assert.equal(retryExtra.ok,true,JSON.stringify(retryExtra))
+assert.equal(count('payments'),previousPaymentCount,'Repeat split payment must not add more money')
+const stage4Refund=await createSetOld('watch-set-refund-20261103-01',70000)
+const refundInput={requestId:'watch-set-refund-calc-20261103-01',
+ expectedOrderTotal:70000,
+ oldItems:[oldSelection(stage4Refund.old)],
+ newItems:[{manual:manualReplacement,source:'office',quantity:1,
+   unitPrice:30000,engravingText:''}],
+ paymentParts:[],refundParts:[
+  {method:'KASPI GOLD',amount:15000},{method:'KASPI RED',amount:25000}],
+ reason:'Обмен с возвратом двумя способами'}
+const refundSet=await parse(exchangeClient3WatchSet(
+ db,manager,1,stage4Refund.created.orderId,refundInput))
+assert.equal(refundSet.status,200,JSON.stringify(refundSet))
+assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId).return_amount,40000)
+const moneyRefundEvents=sqlite.prepare(`SELECT payment_method,amount_delta
+ FROM financial_events WHERE event_type='exchange_refund' AND source_ref=?
+ ORDER BY event_key`).all('exchanges:'+refundSet.exchangeId)
+assert.deepEqual(moneyRefundEvents.map(x=>[x.payment_method,x.amount_delta]),[
+ ['KASPI GOLD',-15000],['KASPI RED',-25000]])
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
