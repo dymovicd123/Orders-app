@@ -173,8 +173,7 @@ export function WatchClient3App() {
   if (checking) return <main className="watch-shell-auth"><p>Проверка доступа…</p></main>
   if (!user) return <main className="watch-shell-auth">
     <div className="watch-shell-auth-card">
-      <h1>TAUWACH / WACHIZEN</h1>
-      <p>{hasUsers ? 'Вход в систему часов' : 'Первоначальная настройка администратора'}</p>
+      <h1>{hasUsers ? 'Вход' : 'Создание администратора'}</h1>
       {!setupReady && <p role="alert">Первоначальная настройка ещё не разрешена владельцем.</p>}
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       <form onSubmit={event => void authenticate(event)}>
@@ -187,7 +186,7 @@ export function WatchClient3App() {
           {busy ? 'Проверка…' : hasUsers ? 'Войти' : 'Создать администратора'}
         </button>
       </form>
-      <button type="button" className="watch-shell-secondary" onClick={() => void refreshAuth()}>Повторить проверку</button>
+      {error && <button type="button" className="watch-shell-secondary" onClick={() => void refreshAuth()}>Проверить соединение</button>}
     </div>
   </main>
   if (user.mustChangePassword) return <main className="watch-shell-auth">
