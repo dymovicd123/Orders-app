@@ -82,7 +82,7 @@ export function WatchClient3App() {
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [models, setModels] = useState<WatchOrderChoice[]>([])
-  const [catalogBusy, setCatalogBusy] = useState(false)
+  const [,setCatalogBusy] = useState(false)
   const [catalogVersion,setCatalogVersion]=useState(0)
   const [watchRefOptions,setWatchRefOptions]=useState<{
     paymentMethods:string[];deliveryMethods:string[];
