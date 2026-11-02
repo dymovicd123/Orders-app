@@ -383,7 +383,8 @@ export function WatchClient3App() {
           </section>
           {canAdmin&&brand?(activeSection==='catalog'?
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
-              onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
+              onStockChanged={()=>setCatalogVersion(x=>x+1)}
+              onOpenReferences={()=>goTo('references')}/>:
             activeSection==='operations'?
               <WatchWarehouseMain key={'operation-'+brand+'-'+catalogVersion} brand={brand}
                 onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
