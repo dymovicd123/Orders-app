@@ -1,5 +1,5 @@
 name: Client3 Main catalog edit isolated checks
-# Verify custom characteristic after reference restoration.
+# Validate moving draft identity to unique legacy anchor on edit.
 on:
   push:
     branches: [client3/step1-catalog-edit-20261102]
