@@ -57,3 +57,18 @@
  .client3-main-erp .warehouse-w2-navigation .warehouse-w2-primary{flex-wrap:nowrap!important}
  .client3-main-erp .warehouse-w2-navigation .warehouse-w2-primary>button{min-width:85px!important;padding:8px 11px}
 }
+
+
+/* Brand is a primary workspace boundary, not a subtle dropdown. */
+.client3-main-erp .client3-brand-workspace{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 16px;padding:17px 19px;background:#fff;border:1px solid #c8d7f1;border-radius:13px;box-shadow:0 2px 10px #1f438508}
+.client3-brand-workspace-context{flex:1 1 300px;min-width:0}
+.client3-brand-workspace-context>.card-label{font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin:0 0 5px}
+.client3-brand-workspace-context>strong{display:block;font-size:20px;line-height:1.4;color:#1e40af}
+.client3-brand-workspace-context p{font-size:12px;color:#64748b;line-height:1.5;margin:5px 0 0;max-width:570px}
+.client3-brand-workspace-tabs{display:flex;align-items:stretch;gap:9px;flex:0 1 auto}
+.client3-brand-workspace-tabs>button{display:grid;gap:5px;min-width:130px;padding:12px 17px;text-align:left;border:1px solid #d5e0f0;background:#f8fafc;border-radius:10px;color:#334155;cursor:pointer}
+.client3-brand-workspace-tabs>button strong{font-size:13px}
+.client3-brand-workspace-tabs>button small{font-size:11px;color:#64748b}
+.client3-brand-workspace-tabs>button.is-active{background:#2054ce;border-color:#2054ce;color:#fff;box-shadow:0 2px 6px #1d4ed826}
+.client3-brand-workspace-tabs>button.is-active small{color:#d9e8ff}
+@media(max-width:680px){.client3-brand-workspace-tabs{width:100%}.client3-brand-workspace-tabs>button{min-width:0;flex:1}.client3-main-erp .client3-brand-workspace{padding:13px}}
