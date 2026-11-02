@@ -135,10 +135,10 @@ export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
   const rows=await db.prepare(`
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
       v.id AS watchVariantId,v.catalog_variant_id AS catalogVariantId,
-      v.gender,COALESCE(v.custom_movement,v.movement) AS movement,
-      COALESCE(v.custom_bracelet_material,v.bracelet_material) AS braceletMaterial,
-      COALESCE(v.custom_dial_color,v.dial_color) AS dialColor,
-      COALESCE(v.custom_bracelet_color,v.bracelet_color) AS braceletColor,
+      v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
+      COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
+      COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color) AS dialColor,
+      COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_color) AS braceletColor,
       MAX(ep.sale_price) AS catalogPriceSnapshot,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.quantity ELSE 0 END),0) AS officePhysical,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.reserved_quantity ELSE 0 END),0) AS officeReserved,
@@ -173,10 +173,10 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       lj.status AS engravingStatus,lj.ready_at AS readyAt,
       oi.id AS orderItemId,oi.quantity,ir.status AS reservationStatus,wp.model_name AS modelName,
       wditem.engraving_text AS engravingText,
-      v.gender,COALESCE(v.custom_movement,v.movement) AS movement,
-      COALESCE(v.custom_bracelet_material,v.bracelet_material) AS braceletMaterial,
-      COALESCE(v.custom_dial_color,v.dial_color) AS dialColor,
-      COALESCE(v.custom_bracelet_color,v.bracelet_color) AS braceletColor
+      v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
+      COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
+      COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color) AS dialColor,
+      COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_color) AS braceletColor
     FROM watch_order_details wd
     JOIN watch_brands wb ON wb.id=wd.brand_id
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
