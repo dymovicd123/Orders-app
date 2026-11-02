@@ -1,4 +1,5 @@
 name: Client3 Main admin deletion and reassignment verification
+# Verify guarded admin delete with distinct second-manager fixture.
 # Test manager Main scopes and admin-only watch details including ready/dispatched constraints.
 on:
   push:
