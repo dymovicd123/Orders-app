@@ -124,7 +124,7 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
       const ids=new Set(variants.filter(v=>v.watchProductId===modelId)
         .map(v=>v.watchVariantId).filter((id):id is number=>id!==null))
       setDraftBySource(prev=>({...prev,[source]:Object.fromEntries(
-        Object.entries(prev[source]).filter(([id])=>!ids.has(Number(id))
+        Object.entries(prev[source]).filter(([id])=>!ids.has(Number(id)))
       )}))
       if(selectedModel===modelId)setSelectedModel(null)
     }
