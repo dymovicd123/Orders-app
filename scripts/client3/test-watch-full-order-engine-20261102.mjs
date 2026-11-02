@@ -302,6 +302,97 @@ const crossBrandLine=await parse(createClient3WatchOrder(db,manager,2,{
  ...multiPurchase,brand:'WACHIZEN',requestId:'watch-multiline-foreign-20261102',
 }))
 assert.equal(crossBrandLine.status,403,'Brand permissions are enforced before multi-line validation')
+// Stage 3: dispatch exactly selected entire lines from a multi-watch order,
+// while preserving the second item's reserve, money and engraving.
+const restockFirst=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:1,quantity:5,comment:'Selective dispatch stock',
+ requestId:'watch-selective-restock1-20261102',
+}))
+assert.equal(restockFirst.status,200,JSON.stringify(restockFirst))
+const restockSecond=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'showcase',watchVariantId:2,quantity:5,comment:'Selective dispatch stock',
+ requestId:'watch-selective-restock2-20261102',
+}))
+assert.equal(restockSecond.status,200,JSON.stringify(restockSecond))
+const selectiveDraft={...purchase,requestId:'watch-selective-order-20261102',
+ engravingText:'',receivedAmount:0,
+ items:[
+  {watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:41000,
+   source:'office',engravingText:'ГРАВИРОВКА НУЖНА'},
+  {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,quantity:1,
+   unitPrice:22000,source:'showcase',engravingText:''},
+ ],
+}
+const selectiveOrder=await parse(createClient3WatchOrder(db,manager,1,selectiveDraft))
+assert.equal(selectiveOrder.status,201,JSON.stringify(selectiveOrder))
+assert.equal(selectiveOrder.pendingReservation,false)
+const selectRows=sqlite.prepare(`SELECT oi.id,oi.variant_id,oi.source_type,r.status AS reservation_status
+ FROM order_items oi JOIN inventory_reservations r ON r.order_item_id=oi.id
+ WHERE oi.order_id=? ORDER BY oi.id`).all(selectiveOrder.orderId)
+assert.equal(selectRows.length,2)
+assert(selectRows.every(x=>x.reservation_status==='active'))
+const moneyBeforeSelect=count('payments')
+const selectiveBad=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-empty-20261102',
+}))
+assert.equal(selectiveBad.status,400,'Multiple items require explicit selection')
+const selectiveWrongQuantity=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-qty-20261102',
+ items:[{orderItemId:selectRows[1].id,quantity:2}],
+}))
+assert.equal(selectiveWrongQuantity.status,409,'Cannot ship quantity beyond the chosen full line')
+const blockedEngraved=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-engrave-20261102',
+ items:[{orderItemId:selectRows[0].id,quantity:1}],
+}))
+assert.equal(blockedEngraved.status,409,'Engraved item requires readiness')
+const stock1before=stock('warehouse').quantity
+const stock2before=sqlite.prepare('SELECT quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?')
+ .get('boutique',secondSku.canonicalVariantId).quantity
+const sentUnengraved=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-send-2-20261102',
+ items:[{orderItemId:selectRows[1].id,quantity:1}],
+}))
+assert.equal(sentUnengraved.status,200,JSON.stringify(sentUnengraved))
+assert.equal(stock('warehouse').quantity,stock1before,'Unselected warehouse SKU unchanged')
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?')
+ .get('boutique',secondSku.canonicalVariantId).quantity,stock2before-1)
+assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?')
+ .get(selectRows[0].id).status,'active','Unshipped engraved line must retain reservation')
+assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?')
+ .get(selectRows[1].id).status,'fulfilled')
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(selectiveOrder.orderId).shipping_status,'not_sent',
+ 'Partial physical shipment cannot claim the whole order sent')
+assert.equal(count('payments'),moneyBeforeSelect,'Shipping cannot change money')
+const replayPartial=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-send-2-20261102',
+ items:[{orderItemId:selectRows[1].id,quantity:1}],
+}))
+assert.equal(replayPartial.alreadyCommitted,true)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+ .get(selectiveOrder.orderId).n,1)
+const alreadySent=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-again-20261102',
+ items:[{orderItemId:selectRows[1].id,quantity:1}],
+}))
+assert.equal(alreadySent.status,409,'Sent line must not dispatch twice')
+sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready' WHERE order_id=?")
+ .run(selectiveOrder.orderId)
+const sendRemaining=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
+ requestId:'watch-selective-send-1-20261102',
+ items:[{orderItemId:selectRows[0].id,quantity:1}],
+}))
+assert.equal(sendRemaining.status,200,JSON.stringify(sendRemaining))
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(selectiveOrder.orderId).shipping_status,'sent')
+assert.equal(stock('warehouse').quantity,stock1before-1)
+assert.equal(count('payments'),moneyBeforeSelect)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+ .get(selectiveOrder.orderId).n,2)
+const alienSelect=await parse(dispatchClient3WatchOrder(db,manager,2,selectiveOrder.orderId,{
+ requestId:'watch-selective-foreign-20261102',items:[{orderItemId:selectRows[0].id,quantity:1}],
+}))
+assert.equal(alienSelect.status,404,'No cross-brand shipment access')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
