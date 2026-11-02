@@ -105,6 +105,7 @@ const groups = [
     'scripts/test-stage5-sent-actions-ui-20261101.mjs',
     'scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs',
     'scripts/test-stage5b-http-routes-20261101.mjs',
+    'scripts/test-stage5-client-quantity-replay-20261102.mjs',
     'scripts/test-orders-normal-after-partial-return-20261101.mjs',
     'scripts/test-work733-action-confirmations-20261101.mjs',
     'scripts/test-work733-smart-exchange-inbox-20261101.mjs',
