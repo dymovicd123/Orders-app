@@ -24,7 +24,7 @@ const server = await createServer({
 try {
   const { WatchClient3App } = await server.ssrLoadModule('/src/WatchClient3App.tsx')
   const html = renderToStaticMarkup(React.createElement(WatchClient3App))
-  assert(html.includes('Проверка доступа'))
+  assert(html.includes('Загрузка сессии.') && html.includes('erp-brand-mark'))
   assert(!html.includes('Цех') && !html.includes('Обмен размера'))
   console.log('CLIENT3_WATCH_SHELL_SSR_PASS: separate entrypoint, auth gating, scoped reads, zero legacy finance')
 } finally { await server.close() }
