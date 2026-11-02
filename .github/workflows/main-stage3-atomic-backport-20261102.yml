@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
-          test "$(git rev-parse HEAD^)" = 'a38b7649fd005a75b88d6dff2a7a87f36db107a4'
+          test "$(git rev-parse HEAD^)" = 'f7be476804a14940cdc8c9af4041a18e818161ad'
           git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
           git fetch -q origin +refs/heads/branch2:refs/remotes/origin/branch2
           git fetch -q origin +refs/pull/717/head:refs/remotes/origin/pr717 +refs/pull/718/head:refs/remotes/origin/pr718
