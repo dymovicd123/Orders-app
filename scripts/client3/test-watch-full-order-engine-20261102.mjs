@@ -7,6 +7,7 @@ import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writ
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -51,6 +52,18 @@ sqlite.prepare("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'REAL E
 sqlite.prepare("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'male','quartz','leather','black','ЧЁРНЫЙ')").run()
 const prepared=await parse(provisionClient3WatchSku(db,admin,1,1))
 assert.equal(prepared.status,200,JSON.stringify(prepared))
+const initialCatalogPrice=await parse(updateClient3WatchCatalogPrice(db,admin,1,{
+ watchVariantId:1,salePrice:42000,expectedPrice:null,
+}))
+assert.equal(initialCatalogPrice.status,200,JSON.stringify(initialCatalogPrice))
+const sameCatalogPrice=await parse(updateClient3WatchCatalogPrice(db,admin,1,{
+ watchVariantId:1,salePrice:42000,expectedPrice:null,
+}))
+assert.equal(sameCatalogPrice.alreadySet,true)
+const staleCatalogPrice=await parse(updateClient3WatchCatalogPrice(db,admin,1,{
+ watchVariantId:1,salePrice:50000,expectedPrice:null,
+}))
+assert.equal(staleCatalogPrice.status,409)
 const vid=prepared.canonicalVariantId
 assert(vid>0)
 const stock=source=>sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?').get(source,vid)
@@ -110,6 +123,7 @@ assert.equal(count('watch_order_details'),1)
 assert.equal(count('watch_order_item_details'),1)
 assert.equal(count('watch_logistics_jobs'),1)
 assert.equal(sqlite.prepare("SELECT engraving_text FROM watch_order_item_details").get().engraving_text,'A + M')
+assert.equal(sqlite.prepare('SELECT catalog_price_snapshot FROM order_items WHERE order_id=?').get(firstPurchase.orderId).catalog_price_snapshot,42000,'Sale price and historic catalog snapshot must be distinct')
 assert.equal(sqlite.prepare("SELECT brand_id FROM watch_order_details").get().brand_id,1)
 assert.equal(sqlite.prepare("SELECT quantity,status FROM inventory_reservations WHERE order_id=?").get(firstPurchase.orderId).quantity,1)
 assert.equal(stock('warehouse').quantity,2)
