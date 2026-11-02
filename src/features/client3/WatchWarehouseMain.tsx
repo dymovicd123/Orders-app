@@ -158,12 +158,12 @@ export function WatchWarehouseMain({brand,onStockChanged}:{brand:WatchBrand;onSt
       <div><small>В резерве</small><strong>{rowsReserved}</strong></div>
       <div><small>Свободно</small><strong>{Math.max(0,rowsPhysical-rowsReserved)}</strong></div>
     </div>
-    <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e stocktake-reused-operations client3-main-stock-operation">
+    <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e stocktake-reused-operations client3-main-stock-operation" data-unified-operation={mode==='count'?'manual_set':mode}>
       <div className="stocktake-e-head"><div><h3>Складские операции</h3><p>Порядок тот же, что в Main: выбор → количество → проверка → сохранение.</p></div></div>
       <div className="stocktake-e-start stocktake-e-start-v5 w6-operation-switch">
         <div className="stocktake-start-modes stocktake-start-modes-v5">
           {(['arrival','writeoff','count','transfer'] as const).map(value=>
-            <button key={value} type="button" disabled={saving} className={'stocktake-start-mode '+(mode===value?'is-active':'')}
+            <button key={value} type="button" disabled={saving} data-operation={value==='count'?'manual_set':value} className={'stocktake-start-mode '+(mode===value?'is-active':'')}
               onClick={()=>selectMode(value)}><strong>{titles[value].name}</strong><span>{titles[value].hint}</span></button>)}
         </div>
       </div>
