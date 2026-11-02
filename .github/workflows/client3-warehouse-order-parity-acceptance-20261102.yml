@@ -1,0 +1,40 @@
+name: Client3 Main warehouse and order screen parity acceptance (NO DEPLOY)
+on:
+  push:
+    branches: [client3/main-warehouse-order-parity-20261102]
+    paths: ['.github/workflows/client3-warehouse-order-parity-acceptance-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Ensure isolated Worker configuration and exact third D1
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+      - run: npm ci
+      - name: Main shell, exact warehouse navigation, catalog master-detail and gated four-step order
+        run: |
+          node scripts/client3/test-main-foundation-parity-20261102.mjs
+          node scripts/client3/test-watch-warehouse-order-parity-20261102.mjs
+      - name: Client3 auth / tenant / API isolation
+        run: node scripts/client3/test-watch-shell-20261102.mjs
+      - name: Real watch form and logistics component regression
+        run: |
+          node scripts/client3/test-watch-form-20261102.mjs
+          node scripts/client3/test-watch-logistics-20261102.mjs
+      - name: Actual disposable stock, purchase, return and exchange lifecycles
+        run: |
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+      - name: Watch catalog business semantics and no accidental physical stock changes
+        run: node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
+      - name: Main CSS integrated TypeScript/Vite production build
+        run: npm run build
