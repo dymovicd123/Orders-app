@@ -1,5 +1,5 @@
 name: Client3 watch multi-line exchange and split settlement acceptance
-# Preserve exact brand and watch SKU identity independently from catalog ID allocation.
+# Revalidate request-id replay after finished exchange updates canonical total and original item quantity.
 # Recheck two-row return after resolving an unrelated existing fixture identifier.
 # Real Main watch reservation rewrite passed. Verify final strict build after type cleanups.
 # Revalidate complete register fixture payment comment and current Main money model.
