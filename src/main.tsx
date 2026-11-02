@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
+import { WatchClient3App } from './WatchClient3App.tsx'
 
 const CHUNK_RELOAD_KEY = 'orders-app:vite-preload-reload-at'
 
@@ -15,6 +15,6 @@ window.addEventListener('vite:preloadError', (event) => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <WatchClient3App />
   </StrictMode>,
 )
