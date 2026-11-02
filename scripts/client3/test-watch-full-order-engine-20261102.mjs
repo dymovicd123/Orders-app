@@ -218,6 +218,54 @@ const badMixed=await parse(createClient3WatchOrder(db,manager,1,{
 }))
 assert.equal(badMixed.status,400,'Payments sum mismatch must fail before any money write')
 assert.equal(count('payments'),beforeMixedPayments+2)
+// Stage 2: Main-style multiple watches, including absent stock. Never reject
+// registration purely for a shortage; unresolved reservation is visible.
+sqlite.prepare("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'female','mechanical','rubber','white','')").run()
+const secondSku=await parse(provisionClient3WatchSku(db,admin,1,2))
+assert.equal(secondSku.status,200,JSON.stringify(secondSku))
+const multiPurchase={...purchase,requestId:'watch-multiline-main-20261102',
+  paymentMethod:'KASPI RED',receivedAmount:23000,
+  payments:[{method:'KASPI RED',amount:13000},{method:'KASPI GOLD',amount:10000}],
+  items:[
+    {watchVariantId:1,catalogVariantId:vid,source:'office',quantity:10,unitPrice:40000,
+      engravingText:'ГРАВИРОВКА 1'},
+    {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,source:'showcase',
+      quantity:1,unitPrice:25000,engravingText:'ГРАВИРОВКА 2'},
+  ],
+}
+const beforeMulti=count('orders'),beforeMultiPayments=count('payments')
+const multi=await parse(createClient3WatchOrder(db,manager,1,multiPurchase))
+assert.equal(multi.status,201,JSON.stringify(multi))
+assert.equal(multi.ok,true)
+assert.equal(multi.pendingReservation,true,'Pending reservation must be surfaced for shortage')
+assert.equal(count('orders'),beforeMulti+1)
+const multiItems=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.source_type,oi.variant_id,
+  wi.watch_variant_id,wi.engraving_text,r.status AS reserve_status
+  FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+  JOIN inventory_reservations r ON r.order_item_id=oi.id
+  WHERE oi.order_id=? ORDER BY oi.id`).all(multi.orderId)
+assert.equal(multiItems.length,2,JSON.stringify(multiItems))
+assert.deepEqual(multiItems.map(x=>[x.watch_variant_id,x.quantity,x.source_type,x.engraving_text]),[
+ [1,10,'warehouse','ГРАВИРОВКА 1'],[2,1,'boutique','ГРАВИРОВКА 2'],
+])
+assert(multiItems.every(x=>x.reserve_status==='unresolved'))
+assert.equal(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+  .get(multi.orderId).total_amount,425000)
+assert.equal(sqlite.prepare('SELECT debt_amount FROM orders WHERE id=?').get(multi.orderId).debt_amount,402000)
+assert.deepEqual(sqlite.prepare('SELECT method,amount FROM payments WHERE order_id=? ORDER BY id').all(multi.orderId)
+ .map(x=>[x.method,x.amount]),[['KASPI RED',13000],['KASPI GOLD',10000]])
+const multiRetry=await parse(createClient3WatchOrder(db,manager,1,multiPurchase))
+assert.equal(multiRetry.orderId,multi.orderId)
+assert.equal(count('orders'),beforeMulti+1)
+assert.equal(count('payments'),beforeMultiPayments+2)
+const badMultiReplay=await parse(createClient3WatchOrder(db,manager,1,{
+ ...multiPurchase,items:[{...multiPurchase.items[0],engravingText:'ИЗМЕНИЛОСЬ'},multiPurchase.items[1]],
+}))
+assert.equal(badMultiReplay.status,409,'Same requestId cannot change engraving')
+const crossBrandLine=await parse(createClient3WatchOrder(db,manager,2,{
+ ...multiPurchase,brand:'WACHIZEN',requestId:'watch-multiline-foreign-20261102',
+}))
+assert.equal(crossBrandLine.status,409)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
