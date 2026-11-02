@@ -1,0 +1,37 @@
+name: Client3 Watch foundation isolated acceptance (NO DEPLOY)
+on:
+  push:
+    branches: [client3/watch-redesign-20261102]
+  pull_request:
+    branches: [client3/isolated-stabilization-20261020]
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Prove only Client3 worker and DB identity in repository config
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const c=JSON.parse(require('fs').readFileSync('wrangler.jsonc','utf8'))
+          if(c.name!=='orders-app-client3-old-client'||c.d1_databases?.length!==1||
+             c.d1_databases[0].database_name!=='orders_db_client3_old_client'||
+             c.d1_databases[0].database_id!=='0717f239-6d81-4837-8586-777d94e22c53'||
+             c.vars?.CLIENT3_INSTALLATION!=='1'||c.vars?.CLIENT3_WATCHES!=='1')process.exit(11)
+          console.log('CLIENT3_THIRD_ONLY_ENV_IDENTITY_PASS')
+          JS
+      - run: npm ci
+      - name: Watch SKU, authorized brands, deadline, clean migration on disposable SQLite
+        run: node --experimental-strip-types scripts/client3/test-watch-foundation-20261102.mjs
+      - name: Full Main foundation build on isolated tenant code
+        run: npm run build
+      - name: Dependencies audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Explicit non-deployment conclusion
+        run: echo 'CLIENT3_WATCH_SOURCE_TESTS_PASSED — no Cloudflare auth used, no remote D1, no Worker deployed'
