@@ -1,4 +1,5 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
+import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
@@ -273,6 +274,13 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return registerWatchVariant(db,actor,scope.row!.id,input)
+  }
+  const sendMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/send$/.exec(url.pathname)
+  if(sendMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
   if(url.pathname==='/api/client3/watches/orders'&&request.method==='GET') {
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
