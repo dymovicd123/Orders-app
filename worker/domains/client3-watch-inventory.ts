@@ -17,6 +17,7 @@ type WatchArrivalInput = {
  */
 export async function receiveClient3WatchArrival(
   db:D1Database,actor:AuthUser,brandId:number,input:WatchArrivalInput,
+  movementWriter:typeof applyInventoryMovement=applyInventoryMovement,
 ) {
   if(actor.role!=='admin')
     return fail('WATCH_STOCK_ADMIN_ONLY','Приход часов доступен администратору.',403)
@@ -56,7 +57,7 @@ export async function receiveClient3WatchArrival(
     size:String(row.size||''),quantity,
   }
   try{
-    const result=await applyInventoryMovement(db,{
+    const result=await movementWriter(db,{
       requestId,inventorySource:watchSourceToLegacy(source as WatchSource),
       movementType:'arrival',comment:comment||'Приход часов',
       items:[item],
