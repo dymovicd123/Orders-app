@@ -4,11 +4,14 @@ import {WatchReturnForm} from './WatchReturnForm'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
+import {WatchOrderCorrections} from './WatchOrderCorrections'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
   orderId:number;externalId:string;orderDate:string;managerName:string|null
   recipientName:string;recipientPhone:string;city:string;deliveryMethod:string;
+  canonicalCustomerName:string;canonicalCustomerPhone:string;canonicalCity:string;
+  canonicalDeliveryType:string;orderComment:string;orderStatus:string;
   deliveryAddress:string;postalCode:string;unresolvedReservations:number
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
@@ -24,7 +27,8 @@ const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ож�
   order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':
   order.shippedLineCount>0?'Частично отправлено':'Не отправлено'
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
-type ItemLine={id:number;productName:string;quantity:number;unitPrice:number;source:string;shipped:number;
+type ItemLine={id:number;productName:string;quantity:number;unitPrice:number;
+  lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
   engravingText:string;gender:string;movement:string;braceletMaterial:string;
   dialColor:string;braceletColor:string}
 function parsedRows<T>(raw:string|undefined):T[]{
@@ -34,8 +38,9 @@ const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
 }
-export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
-  allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;onOpenLogistics?:(brand:WatchBrand)=>void
+export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics,isAdmin=false}:{
+  allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;onOpenLogistics?:(brand:WatchBrand)=>void;
+  isAdmin?:boolean
 }) {
   const [brand,setBrand]=useState<WatchBrand>(initialBrand&&allowedBrands.includes(initialBrand)?initialBrand:allowedBrands[0]||'TAUWACH')
   const [month,setMonth]=useState(initialMonth)
@@ -51,6 +56,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
   const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
   const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
+  const [editOrderId,setEditOrderId]=useState<number|null>(null)
   const [expanded,setExpanded]=useState<number|null>(null)
   useEffect(()=>{
     const controller=new AbortController()
@@ -166,7 +172,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                 </td>
                 <td><button type="button" className="watch-main-detail-button"
                   aria-expanded={expanded===order.orderId}
-                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null)}}>
+                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);setEditOrderId(null)}}>
                   {expanded===order.orderId?'Скрыть':'Открыть'}
                 </button></td>
               </tr>
@@ -219,6 +225,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                     </section>
                   </div>
                   <div className="watch-main-order-actions">
+                    {editOrderId!==order.orderId&&<button type="button" className="secondary compact"
+                      onClick={()=>{setEditOrderId(order.orderId);setDebtOrderId(null);setReturnOrderId(null);setExchangeOrderId(null)}}>
+                      {isAdmin?'Редактировать / исправить':'Доп. действия · исправить'}
+                    </button>}
                     {order.debtAmount>0&&debtOrderId!==order.orderId&&
                       <button type="button" className="secondary compact"
                         onClick={()=>{setDebtOrderId(order.orderId);setReturnOrderId(null);setExchangeOrderId(null)}}>
@@ -240,6 +250,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                         Оформить возврат</button>}
                   </div>
 
+                  {editOrderId===order.orderId&&<WatchOrderCorrections
+                    brand={brand} order={order} isAdmin={isAdmin}
+                    onCancel={()=>setEditOrderId(null)}
+                    onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
                   {debtOrderId===order.orderId&&<WatchDebtPaymentForm
                     brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
                     debt={order.debtAmount} onCancel={()=>setDebtOrderId(null)}
