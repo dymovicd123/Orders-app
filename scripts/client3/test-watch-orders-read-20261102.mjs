@@ -13,7 +13,7 @@ sql.exec([
 "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_date TEXT,manager_id INTEGER,manager_snapshot_name TEXT,source_type TEXT,shipping_status TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,return_amount INTEGER);",
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
-'INSERT INTO managers VALUES(1,"Alice",1),(2,"Bob",1);',
+`INSERT INTO managers VALUES(1,'Alice',1),(2,'Bob',1);`,
 'INSERT INTO app_users VALUES(9);',
 "INSERT INTO orders VALUES(1,'W-1','2026-11-01',1,'Alice','warehouse','not_sent','active',20000,10000,10000,0);",
 "INSERT INTO orders VALUES(2,'W-2','2026-11-02',2,'Bob','boutique','sent','active',60000,60000,0,0);",
