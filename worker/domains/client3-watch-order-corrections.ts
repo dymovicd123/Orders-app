@@ -8,7 +8,6 @@ type RawMeta={requestId?:unknown;expected?:Meta;next?:Meta;expectedState?:Money}
 type RawPrices={requestId?:unknown;changes?:Array<{orderItemId:number;unitPrice:number;expectedUnitPrice:number;
  expectedQuantity:number;expectedLineTotal:number;expectedCatalogPriceSnapshot:number|null}>}
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
-const str=(v:unknown)=>typeof v==='string'?v.trim():''
 const validId=(v:unknown)=>typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(v)
 const metadataKeys=['orderDate','customerName','customerPhone','city','deliveryType','comment'] as const
 
@@ -44,6 +43,7 @@ export async function correctClient3WatchMetadata(
    metadataKeys.some(k=>typeof raw.expected![k]!=='string'||typeof raw.next![k]!=='string'
      ||raw.expected![k].length>500||raw.next![k].length>500)||
    Object.keys(raw.expected).some(k=>!metadataKeys.includes(k as keyof Meta))||
+   Object.keys(raw.expectedState).some(k=>!['totalAmount','receivedAmount','debtAmount','returnAmount','shippingStatus','orderStatus'].includes(k))||
    Object.keys(raw.next).some(k=>!metadataKeys.includes(k as keyof Meta))||
    ['totalAmount','receivedAmount','debtAmount','returnAmount'].some(k=>
      !Number.isSafeInteger((raw.expectedState as unknown as Record<string,unknown>)[k]))||
