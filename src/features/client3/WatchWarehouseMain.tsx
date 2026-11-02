@@ -1,5 +1,6 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
 import {StocktakeProductChoice,StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'
+import {WatchSelectiveRecount,WatchWarehouseHistory} from './WatchWarehouseStage5'
 import {WATCH_OPTIONS,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/182-inventory-stocktake-human.css'
 import '../../styles/183-inventory-stocktake-workflow.css'
@@ -270,5 +271,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{brand:WatchBrand;onSt
           </div>
         </section>}
     </div>
+    <WatchSelectiveRecount brand={brand} variants={variants}
+      onSaved={()=>{refresh();onStockChanged?.()}}/>
+    <WatchWarehouseHistory key={brand+'-'+reload} brand={brand} revision={reload}/>
   </div>
 }
