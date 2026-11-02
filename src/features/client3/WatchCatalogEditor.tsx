@@ -20,7 +20,7 @@ type CatalogRow={
   showcasePhysical:number
   showcaseReserved:number
 }
-type Api={ok:boolean;message?:string;rows?:CatalogRow[];watchProductId?:number;watchVariantId?:number;alreadyExists?:boolean}
+type Api={ok:boolean;message?:string;attention?:string;rows?:CatalogRow[];watchProductId?:number;watchVariantId?:number;alreadyExists?:boolean}
 async function callApi(url:string,init?:RequestInit):Promise<Api> {
   const response=await fetch(url,{credentials:'include',cache:'no-store',...init})
   const value=await response.json() as Api
@@ -141,7 +141,7 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
         ...payload,requestId:transferRequest.current.requestId
       })
       transferRequest.current=null
-      setNotice(result.message||'Часы перемещены. Остатки офиса и витрины обновлены.')
+      setNotice(result.attention ? 'Перемещение записано. '+result.attention : (result.message||'Часы перемещены. Остатки офиса и витрины обновлены.'))
       setReload(x=>x+1)
       onStockChanged?.()
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось переместить часы')}
