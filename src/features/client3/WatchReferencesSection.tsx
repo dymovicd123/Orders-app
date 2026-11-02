@@ -1,4 +1,4 @@
-import {useCallback,useEffect,useMemo,useState,type FormEvent} from 'react'
+import {useCallback,useEffect,useState,type FormEvent} from 'react'
 import {WATCH_OPTIONS,WATCH_PAYMENTS,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-references.css'
 
@@ -58,8 +58,8 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
   const config=CONFIG[kind]
   const available=kind==='leatherColors'?lists.leatherColors:
     kind==='payments'?lists.payments:kind==='delivery'?lists.delivery:[...config.items]
-  const items=useMemo(()=>available.filter(value=>
-    value.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))),[available.join('\u0000'),query])
+  const items=available.filter(value=>
+    value.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')))
   const create=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
     if(!config.editable||!canEdit||saving)return
