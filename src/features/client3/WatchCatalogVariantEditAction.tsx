@@ -41,7 +41,19 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
  const linked=Boolean(row.catalogVariantId)
  const save=async(event:FormEvent<HTMLFormElement>)=>{
    event.preventDefault()
-   if(busy||!row.watchVariantId||linked)return
+   if(busy||!row.watchVariantId)return
+   if(linked){
+     const comparable=(v:WatchVariantInput)=>JSON.stringify([
+       v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletMaterial==='leather'?v.braceletColor||'':'',
+     ])
+     if(comparable(draft)===comparable(initial())){
+       setError('Измените хотя бы одну характеристику, чтобы создать исправленную позицию.')
+       return
+     }
+     onCreateReplacement({...draft,braceletColor:draft.braceletMaterial==='leather'?draft.braceletColor:''})
+     setOpen(false)
+     return
+   }
    setBusy(true);setError('')
    try{
      await request(brand,{
@@ -72,10 +84,8 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
          <p>Изменение её идентичности может переписать историю движения и заказов.
            Как и в Main, для такой позиции сначала создаётся правильная комплектация.
            Старую затем удаляют через проверку остатков и резервов.</p>
-         <button className="primary" type="button" onClick={()=>{
-           onCreateReplacement(draft);setOpen(false)
-         }}>Создать исправленную позицию</button>
-       </div>:<form className="catalog-variant-form-grid client3-watch-edit-fields" onSubmit={event=>void save(event)}>
+       </div>:null}
+       <form className="catalog-variant-form-grid client3-watch-edit-fields" onSubmit={event=>void save(event)}>
          <label>Пол
            <select value={draft.gender} onChange={e=>setDraft({...draft,gender:e.target.value as WatchVariantInput['gender']})}>
              {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
@@ -106,13 +116,10 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
          </label>}
          {error&&<p className="catalog-retirement-modal-error" role="alert">{error}</p>}
          <div className="modal-actions">
-           <button type="submit" className="primary" disabled={busy}> {busy?'Сохранение…':'Сохранить изменения'}</button>
+           <button type="submit" className="primary" disabled={busy}> {busy?'Сохранение…':linked?'Заполнить новую позицию':'Сохранить изменения'}</button>
            <button type="button" className="secondary" disabled={busy} onClick={()=>setOpen(false)}>Отмена</button>
          </div>
-       </form>}
-       {linked&&<div className="modal-actions">
-         <button className="secondary" type="button" onClick={()=>setOpen(false)}>Закрыть</button>
-       </div>}
+       </form>
      </section>
    </div>}
  </>
