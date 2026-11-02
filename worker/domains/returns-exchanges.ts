@@ -3080,7 +3080,7 @@ export type ExchangeSetOldInput = {
   expectedCatalogPriceSnapshot?: number | null
 }
 
-export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number]
+export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number] & { shipmentState?: 'sent' | 'pending' }
 
 export type ExchangeSetInput = {
   requestId?: string
@@ -3135,6 +3135,7 @@ type ExchangeSetOldPlan = {
 
 type ExchangeSetNewPlan = {
   inputIndex: number
+  shipmentState: 'sent' | 'pending'
   item: NonNullable<ReturnType<typeof normalizeOrderItems>[number]> & { catalogPriceSnapshot: number | null }
   productId: number | null
   variantId: number | null
@@ -3679,10 +3680,14 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             inventorySource: null,
             stockKey: null,
             physicalIssueConfirmed: false,
+            shipmentState: 'pending',
           })
           continue
         }
-
+        const shipmentState = cleanText((requested as any).shipmentState)
+        if (shipmentState !== 'sent' && shipmentState !== 'pending') {
+          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: укажите, отправлен ли товар клиенту.`)
+        }
         const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
@@ -3692,7 +3697,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         }
         const physicalIssueConfirmed = (requested as any).issuePossessionConfirmed === true
         let stockKey: string | null = null
-        if (variantId) {
+        if (variantId && shipmentState === 'sent') {
           stockKey = `${inventorySource}:${variantId}`
           const group = stockGroups.get(stockKey) || {
             source: inventorySource,
@@ -3705,7 +3710,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           group.allConfirmed = group.allConfirmed && physicalIssueConfirmed
           stockGroups.set(stockKey, group)
         }
-        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed })
+        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed, shipmentState })
       }
 
       for (const group of stockGroups.values()) {
@@ -3997,10 +4002,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           isWorkshop: false,
           productId: resolved.productId,
           variantId: resolved.variantId,
-          pendingReason: inventoryLifecyclePendingReason(resolved, false),
+          pendingReason: plan.shipmentState === 'pending' ? 'awaiting_dispatch' : inventoryLifecyclePendingReason(resolved, false),
           timestamp,
         })
-        if (resolved.variantId) {
+        if (plan.shipmentState === 'sent' && resolved.variantId) {
           await applyCanonicalInventoryLifecycleEvent(
             db,
             event.id,
@@ -4009,9 +4014,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             `Физическое списание новой позиции обмена #${exchangeId}`,
             { outboundPossessionConfirmed: plan.physicalIssueConfirmed },
           )
-        } else {
+        } else if (plan.shipmentState === 'sent') {
           pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(inserted.product_name_snapshot), source: plan.inventorySource })
         }
+        // Unsent exchange replacements retain their active reserve and do not affect physical stock.
       }
 
       completedNew = index + 1
