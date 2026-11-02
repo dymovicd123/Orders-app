@@ -172,7 +172,12 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       wd.delivery_method AS deliveryMethod,wd.urgent,
       wd.shipping_deadline_at AS shippingDeadlineAt,wd.deadline_timezone AS deadlineTimezone,
       lj.status AS engravingStatus,lj.ready_at AS readyAt,
-      oi.id AS orderItemId,oi.quantity,ir.status AS reservationStatus,wp.model_name AS modelName,
+      oi.id AS orderItemId,oi.quantity,oi.source_type AS itemSource,
+      oi.stock_writeoff_status AS stockWriteoffStatus,
+      ir.status AS reservationStatus,wp.model_name AS modelName,
+      COALESCE((SELECT SUM(di.quantity-di.cancelled_quantity)
+        FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+        WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id),0) AS shippedQuantity,
       wditem.engraving_text AS engravingText,
       v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
       COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
