@@ -37,5 +37,9 @@ jobs:
           node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
+      - name: Prohibit writing to Main clothing APIs from new views
+        run: |
+          ! grep -Eq "fetch\('/api/(orders|workshop|finance|cash)/" src/features/client3/WatchLogisticsPanel.tsx
+          ! grep -Eq "fetch\('/api/(orders|workshop|finance|cash)/" src/features/client3/WatchReferencesSection.tsx
       - name: TypeScript and Vite production build
         run: npm run build
