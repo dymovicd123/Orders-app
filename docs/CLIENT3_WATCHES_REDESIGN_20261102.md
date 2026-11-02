@@ -192,3 +192,34 @@
 2. W2: write-off, корректировка/ревизия и положительные тесты реального складского движка с полной схемой, отдельно проверять активные резервы.
 3. W3/W4: брендовая касса/отчёты и item-scoped обмены/возвраты/отправка; не включать старые универсальные POST.
 4. W5: браузерная QA и деплой исключительно третьей системы после bookmark/backup/rollback plan.
+
+## 12. Checkpoint W1d / W2f · 2026-11-02 · Stage5 migration + реальный складской движок на disposable D1
+
+**Только исходники Client3, ничего не развернуто и ни одна remote D1 не изменена.**
+
+### W1d · Клиентская цепочка миграций Stage5 + Watches
+
+- Найден оригинальный Main `migrations/0119_v72_order_dispatch_lineage.sql`: все три таблицы `order_dispatches`, `order_dispatch_items`, `order_dispatch_corrections` и их индексы содержатся в одной additive DDL миграции, без backfill и переделки прошлых отправок.
+- В `migrations/client3-watch/` добавлена `0001_client3_stage5_dispatch_lineage.sql` (ровно оригинальный DDL после комментария), затем `0002_client3_watch_foundation.sql` и `0003_watch_manager_brand_audit.sql`. `wrangler.jsonc` указывает исключительно на этот каталог Client3; не переносить миграции в Main/Branch2.
+- SQLite-тест `scripts/client3/test-watch-migration-chain-20261102.mjs` проверил source parity с Main, FK, создание и коррекцию отправки через реальную новую схему, повтор DDL, **нулевую выдуманную историю отправок и неизменность старых заказов, оплат, пользователей и остатков**. CI #41448231773 — SUCCESS.
+- Реальная D1 preflight #41445219435 показала наличие требуемых основных Main таблиц/колонок и отсутствие именно шести watch-domain schema элементов и трёх dispatch-таблиц, при контрольных числах 2 заказа / 2 строки / 2 оплаты / 4 пользователя / 3 менеджера / 2 остатка. Это **не разрешение автоматически применять** 0001–0003: проверить D1 migration journal, перед применением получить bookmark и сверить baseline/counters/FK/rollback.
+
+### W2f · Списание часов
+
+- Добавлен `POST /api/client3/watches/stock/writeoff` — администратор, текущий бренд/SKU, офис/витрина, физическое количество, текущий снимок остатков, обязательная причина и idempotent requestId.
+- Часы с чужой брендовoй идентичностью, неподготовленным SKU, несвежим остатком или недостаточным свободным остатком не списываются. Сравнивается максимум cached `inventory_stock.reserved_quantity` и живого `inventory_reservations`. Сервер передаёт запрос настоящему Main `applyInventoryMovement(...,'writeoff')`, не пишет физические остатки вручную.
+- Для новых списаний после успешного сохранения выполняется read-only проверка резервов и выдаётся предупреждение при расхождении. В UI отдельный раздел с **обязательным явным подтверждением** и комментарием.
+- `scripts/client3/test-watch-writeoff-20261102.mjs` проверяет отказ при ошибочной роли/бренде/резерве/остатке, повтор и конфликт ключа (адаптерная SQLite-модель); CI #41448524184 SUCCESS.
+
+### W2f · Реальный тест Main warehouse engine на полной схеме
+
+- В отличие от предыдущих mock-тестов, `scripts/client3/test-watch-full-stock-engine-20261102.mjs` поднимает **все Main SQL миграции + Client3 watch 0001–0003** на disposable SQLite, формирует реальную canonical SKU по существующей функции, затем вызывает настоящие `receiveClient3WatchArrival`, `transferClient3WatchStock` и `writeoffClient3WatchStock` без подмены складского движка.
+- Проверено: приход 5 → перемещение 2 офис→витрина → списание 1 с офиса; итог офис=2, витрина=2; повторы без удвоения, изменённые запросы с прежними requestId отклонены; `inventory_movements` увеличивается, `orders/payments` не изменяются, FK чистые.
+- **GitHub Actions #41448810644 — SUCCESS**, включая этот тест, все прежние Client3 тесты, TypeScript/Vite сборку и проверку зависимостей. Это результат теста на полной схеме, **не на живой Client3 D1**.
+
+### Открытые границы
+
+- W2: selective/manual count correction и полноценная ревизия, сквозное создание заказа и резерва, затем физическая отправка/частичная выдача с Stage5 механизмом.
+- W3: отдельный *server-side* платёжный ledger / касса, отчёты/долги/менеджерские ограничения по брендам; UI-агрегаты заказов не являются кассой.
+- W4: item-level возвраты/обмены, подтверждение приёмки и сохранение SKU/бренда.
+- W5: backup/Time Travel bookmark, offline replay against complete real schema snapshot, staged Client3-only migration, браузерная QA, наблюдение и выпуск. Main/Branch2 неприкосновенны.
