@@ -56,8 +56,9 @@ assert(logistics.includes('canDispatch')&&shell.includes('canDispatch={canSales}
   'Only authorized sales users may dispatch')
 assert(logistics.includes('canCompleteEngraving'),
   'Engraving rights independent from dispatch')
-assert(logistics.includes("body:JSON.stringify({brand:order.brand,requestId})"),
-  'Shipment must be brand-scoped and idempotent')
+assert(logistics.includes("body:JSON.stringify({brand:order.brand,requestId,")&&
+  logistics.includes("items:selected.map(row=>({orderItemId:row.orderItemId,quantity:row.quantity}))"),
+  'Shipment must be brand-scoped, idempotent and explicit per watch line')
 assert(!logistics.includes('/api/workshop/')&&!logistics.includes('/api/cash/'),
   'No legacy workshop money access from Logistics')
 assert(!orders.includes("'/api/client3/watches/orders/'+orderId+'/send'"),
