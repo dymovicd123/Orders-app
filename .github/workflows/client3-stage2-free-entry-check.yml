@@ -1,5 +1,5 @@
 name: Client3 Stage2 free-item Main order acceptance
-# Complete watch lifecycle: earlier 403 brand scope and mixed exchange tests.
+# Final TS check: manually created watch item has no canonical ID until server assigns it.
 on:
   push:
     branches: [client3/step2-main-free-watch-entry-20261102]
