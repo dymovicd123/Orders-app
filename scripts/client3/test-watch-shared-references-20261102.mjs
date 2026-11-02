@@ -11,6 +11,7 @@ for(const file of fs.readdirSync('migrations/client3-watch').filter(x=>/^[0-9].*
   sqlite.exec(fs.readFileSync('migrations/client3-watch/'+file,'utf8'))
 sqlite.exec("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'TEST')")
 sqlite.exec("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'male','quartz','leather','black','ЧЁРНЫЙ')")
+sqlite.exec("INSERT INTO watch_reference_values(kind,value) VALUES('leatherColors','ЧЁРНЫЙ')")
 const prepared=(sql,args=[])=>({
   bind(...values){return prepared(sql,values)},
   async first(){return sqlite.prepare(sql).get(...args)||null},
