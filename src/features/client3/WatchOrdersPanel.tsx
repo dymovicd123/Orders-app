@@ -11,7 +11,7 @@ type WatchOrder={
   deliveryAddress:string;postalCode:string;unresolvedReservations:number
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
-  lineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
+  lineCount:number;shippedLineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
   activeWatchVariantId:number|null;pendingReplacement:number
   paymentLines:string;itemLines:string
@@ -19,8 +19,11 @@ type WatchOrder={
 type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
 const sum=(value:number)=>Number(value||0).toLocaleString('ru-RU')+' ₸'
+const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ожидает отправки':
+  order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':
+  order.shippedLineCount>0?'Частично отправлено':'Не отправлено'
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
-type ItemLine={id:number;productName:string;quantity:number;unitPrice:number;source:string;
+type ItemLine={id:number;productName:string;quantity:number;unitPrice:number;source:string;shipped:number;
   engravingText:string;gender:string;movement:string;braceletMaterial:string;
   dialColor:string;braceletColor:string}
 function parsedRows<T>(raw:string|undefined):T[]{
@@ -154,7 +157,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                 <td className={'watch-main-money '+(order.debtAmount>0?'is-debt':'is-paid')}>
                   {order.debtAmount>0?sum(order.debtAmount):'Оплачено'}</td>
                 <td><span className={'watch-main-order-status'+(order.pendingReplacement?' is-awaiting':order.shippingStatus==='sent'?' is-sent':' is-awaiting')}>
-                  {order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}
+                  {shipLabel(order)}
                   </span>
                   {order.unresolvedReservations>0&&<small className="watch-main-stock-warning">
                     Требует поступления/резерва: {order.unresolvedReservations}</small>}
@@ -177,7 +180,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                     <div><small>Оплата</small><strong>{sum(order.receivedAmount)} из {sum(order.totalAmount)}</strong>
                       <span>Долг: {sum(order.debtAmount)} · Возвраты: {sum(order.returnAmount)}</span></div>
                     <div><small>Доставка и гравировка</small>
-                      <strong>{order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
+                      <strong>{shipLabel(order)}</strong>
                       <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span></div>
                   </div>
                   <div className="watch-main-order-ledger-details">
@@ -190,7 +193,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                             line.movement,line.braceletMaterial,line.dialColor,line.braceletColor,
                           ].filter(Boolean).join(' · ')}</small>
                           {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-                          <small>{line.source==='warehouse'?'Офис':'Витрина'}</small></div>
+                          <small>{line.source==='warehouse'?'Офис':'Витрина'} · {line.shipped?'Отправлен':'Не отправлен'}</small></div>
                         <strong>{line.quantity} × {sum(line.unitPrice)}</strong>
                       </div>)}
                       {parsedRows<ItemLine>(order.itemLines).length===0&&
