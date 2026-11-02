@@ -138,7 +138,7 @@ assert.equal(count('orders'),baseOrders+1)
 const unsafeReplay=await parse(createClient3WatchOrder(db,manager,1,{...purchase,engravingText:'OTHER'}))
 assert.equal(unsafeReplay.status,409)
 const deniedBrand=await parse(createClient3WatchOrder(db,manager,2,{...purchase,brand:'WACHIZEN',requestId:'watch-real-order-000002'}))
-assert.equal(deniedBrand.status,409,'Direct handler denies a SKU that is not owned by the supplied brand; outer route enforces manager 403')
+assert.equal(deniedBrand.status,403,'Manager brand entitlement is checked before reading SKU or creating reference values')
 const beforeShippingPayment=count('payments')
 const beforeShip=stock('warehouse')
 const blockedEngraving=await parse(dispatchClient3WatchOrder(db,manager,1,firstPurchase.orderId,{
