@@ -272,6 +272,7 @@ export async function createReturn(
     returnDate?: string;
     amount?: number;
     paymentMethod?: string;
+    refundParts?: Array<{method:string;amount:number}>;
     comment?: string;
     restockSource?: unknown;
     items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }>;
@@ -308,7 +309,16 @@ export async function createReturn(
   if (!rawReturnDate) throw new Error('Укажите дату возврата.');
   const returnDate = normalizeDate(rawReturnDate);
   const amount = Math.max(0, toInt(input.amount, 0));
-  const paymentMethod = upperText(input.paymentMethod);
+  const refundParts=(input.refundParts||[]).map(p=>({
+    method:upperText(p.method),amount:Number(p.amount),
+  }));
+  if(refundParts.length>3||refundParts.some(p=>!p.method||
+      !Number.isSafeInteger(p.amount)||p.amount<1)||
+      (refundParts.length>0&&refundParts.reduce((sum,p)=>sum+p.amount,0)!==amount)){
+    throw new CriticalOperationConflictError('Суммы по способам возврата должны точно совпасть с общей суммой.')
+  }
+  const paymentMethod = refundParts.length>1?'РАЗНЫЕ СПОСОБЫ'
+    :refundParts.length===1?refundParts[0].method:upperText(input.paymentMethod);
   const comment = cleanText(input.comment);
   // On a retry the return created by this same operation is already included in
   // order.return_amount. Add only that operation-owned amount back so the request
@@ -531,19 +541,22 @@ export async function createReturn(
     for (const [index, validated] of validatedSelectedItems.entries()) {
       createStatements.push(returnItemClaim(validated, null), returnItemClaimMapping(index));
     }
-    if (amount > 0) {
-      createStatements.push(refundMoneyEventStatement(db, {
-        eventKey: returnEventKey,
-        orderId,
-        externalOrderId: cleanText((existing as any).external_id),
-        returnDate,
-        amount,
-        paymentMethod,
-        timestamp: createdAt,
-        eventType: 'order_refund',
-        sourceRef: `critical-operation:${criticalOperation.requestId}`,
-        comment: comment || null,
-      }));
+    if(amount>0){
+      const parts=refundParts.length?refundParts:[{method:paymentMethod,amount}]
+      for(const [index,part] of parts.entries()){
+        createStatements.push(refundMoneyEventStatement(db, {
+          eventKey: refundParts.length?returnEventKey+':part:'+index:returnEventKey,
+          orderId,
+          externalOrderId: cleanText((existing as any).external_id),
+          returnDate,
+          amount:part.amount,
+          paymentMethod:part.method,
+          timestamp:createdAt,
+          eventType:'order_refund',
+          sourceRef:`critical-operation:${criticalOperation.requestId}`,
+          comment:comment||null,
+        }))
+      }
     }
     // The refund limit must be enforced atomically with Return creation.
     // If two employees both read the same refundable amount, the losing batch
@@ -2679,19 +2692,45 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     ).bind(timestamp, comment, returnId),
   ];
   if (toInt(ret.amount, 0) > 0) {
-    cancelStatements.push(refundReversalMoneyEventStatement(db, {
-      eventKey: `189c:return:${returnId}:cancelled`,
-      orderId: toInt(ret.order_id, 0),
-      externalOrderId: cleanText(ret.external_id),
-      amount: toInt(ret.amount, 0),
-      paymentMethod: cleanText(ret.payment_method) || null,
-      timestamp,
-      relatedType: 'order_refund',
-      sourceId: returnId,
-      sourceRef: `returns:${returnId}`,
-      reason: 'return_cancel',
-      comment,
-    }));
+    // Splits are stored as distinct immutable financial events. Undo each
+    // original method/amount instead of manufacturing a wrong mixed cash entry.
+    const parts=await db.prepare(`SELECT fe.event_key,fe.payment_method,fe.amount_delta
+      FROM financial_events fe
+      JOIN critical_operations co ON co.target_id=? AND co.operation_type='return_create'
+        AND fe.source_ref='critical-operation:'||co.request_id
+      WHERE fe.order_id=? AND fe.event_type='order_refund'
+        AND fe.event_key LIKE '1901:%:return-refund:part:%'
+      ORDER BY fe.event_key`).bind(returnId,toInt(ret.order_id,0))
+      .all<{event_key:string;payment_method:string;amount_delta:number}>()
+    const splitParts=parts.results||[]
+    if(splitParts.length>0){
+      const sum=splitParts.reduce((total,row)=>total-Math.min(0,Number(row.amount_delta)),0)
+      if(sum!==toInt(ret.amount,0))
+        throw new CriticalOperationConflictError('Финансовые части возврата не сходятся. Отмена остановлена.')
+      for(const [index,part] of splitParts.entries()){
+        cancelStatements.push(refundReversalMoneyEventStatement(db,{
+          eventKey:`189c:return:${returnId}:cancelled:part:${index}`,
+          orderId:toInt(ret.order_id,0),externalOrderId:cleanText(ret.external_id),
+          amount:-Number(part.amount_delta),paymentMethod:part.payment_method,
+          timestamp,relatedType:'order_refund',sourceId:returnId,
+          sourceRef:`returns:${returnId}`,reason:'return_cancel',comment,
+        }))
+      }
+    }else{
+      cancelStatements.push(refundReversalMoneyEventStatement(db, {
+        eventKey: `189c:return:${returnId}:cancelled`,
+        orderId: toInt(ret.order_id, 0),
+        externalOrderId: cleanText(ret.external_id),
+        amount: toInt(ret.amount, 0),
+        paymentMethod: cleanText(ret.payment_method) || null,
+        timestamp,
+        relatedType: 'order_refund',
+        sourceId: returnId,
+        sourceRef: `returns:${returnId}`,
+        reason: 'return_cancel',
+        comment,
+      }));
+    }
   }
   await db.batch(cancelStatements);
 
