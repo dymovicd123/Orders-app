@@ -59,8 +59,8 @@ function descriptor(row:WatchOrderChoice):string {
 
 /** Tenant-specific draft. Caller must POST only through authorized Client3 API. */
 export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,deliveryMethods,onSave}:Props) {
-  const [brand,setBrand]=useState<WatchBrand>(allowedBrands[0]||'TAUWACH')
-  const [source,setSource]=useState<WatchSource>('office')
+  const [brand,setBrand]=useState<WatchBrand|''>('')
+  const [source,setSource]=useState<WatchSource|''>('')
   const [variantId,setVariantId]=useState(0)
   const [quantity,setQuantity]=useState(1)
   const [unitPrice,setUnitPrice]=useState('')
@@ -82,10 +82,10 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   const rows=useMemo(()=>catalog.filter(x=>x.brand===brand),[catalog,brand])
   const staff=managers.filter(x=>x.brand===brand)
   const chosen=rows.find(x=>x.watchVariantId===variantId)
-  const free=chosen?available(chosen,source):0
+  const free=chosen&&source?available(chosen,source):0
   const price=Number(unitPrice)
   const canSave=Boolean(
-    allowedBrands.includes(brand)&&chosen&&chosen.catalogVariantId>0&&
+    brand!==''&&source!==''&&allowedBrands.includes(brand as WatchBrand)&&chosen&&chosen.catalogVariantId>0&&
     Number.isSafeInteger(quantity)&&quantity>0&&quantity<=free&&
     unitPrice.trim()!==''&&Number.isSafeInteger(price)&&price>=0&&Number.isSafeInteger(price*quantity)&&
     receivedAmount.trim()!==''&&Number.isSafeInteger(Number(receivedAmount))&&
@@ -95,7 +95,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   const submit=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
     setError('')
-    if(!canSave||!chosen){setError('Выберите доступные часы и укажите количество и цену.');return}
+    if(!canSave||!chosen||!brand||!source){setError('Укажите бренд, источник, точную комплектацию, количество и цену.');return}
     try{
       const base=validateWatchOrderInput({
         brand,source,recipientName,recipientPhone,address,postalCode,city,deliveryMethod,
@@ -115,108 +115,191 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
       })
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить заказ.')}finally{setBusy(false)}
   }
-  return <form className="watch-order-form main-order-create" onSubmit={event=>void submit(event)}>
-    <header className="watch-order-form-header create-hero">
-      <div><span className="card-label">Новый заказ</span>
-        <h2>Оформление заказа</h2><p>Клиент, часы, стоимость и подготовка к отправке.</p></div>
+  const total=unitPrice.trim()!==''&&Number.isSafeInteger(price*quantity)?price*quantity:0
+  const received=Number(receivedAmount)||0
+  const debt=Math.max(0,total-received)
+  return <form className="main-watch-create card wide sector-orders" id="create"
+    onSubmit={event=>void submit(event)}>
+    <div className="create-hero">
+      <div><div className="card-label">Новый заказ</div>
+        <div className="card-meta">Выберите бренд и точку, затем заполните данные, часы и оплату.</div></div>
       <div className="orders-workspace-kpis create-kpis">
-        <div><span>Количество</span><strong>{quantity} шт.</strong></div>
-        <div><span>Сумма</span><strong>{(price*quantity).toLocaleString('ru-RU')} ₸</strong></div>
-        <div><span>К оплате</span><strong>{Math.max(0,price*quantity-Number(receivedAmount||0)).toLocaleString('ru-RU')} ₸</strong></div>
+        <div><span>Товаров</span><strong>{chosen?quantity:0}</strong></div>
+        <div><span>Оплат</span><strong>{received>0?1:0}</strong></div>
+        <div><span>Долг</span><strong>{chosen&&unitPrice.trim()!==''?debt.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
       </div>
-    </header>
-    <fieldset className="order-step-card">
-      <legend className="order-step-head"><span className="order-step-index">1</span><span><strong>Клиент и доставка</strong><small>Получатель, адрес и точное время отправки</small></span></legend>
-      <div className="watch-order-form-grid">
-        <label>ФИО получателя
-          <input value={recipientName} onChange={e=>setRecipientName(e.target.value)} required/>
+    </div>
+    <section className="order-step-card">
+      <div className="order-step-head"><div className="order-step-index">1</div>
+        <div><h3>Клиент и условия заказа</h3>
+          <p>Бренд и источник выбираются до товара. Данные получателя и условия отправки.</p></div>
+      </div>
+      <div className="main-watch-create-grid">
+        <label>Бренд *
+          <select required value={brand} onChange={e=>{
+            setBrand(e.target.value as WatchBrand);setSource('');setVariantId(0);
+            setManagerId(0);setQuantity(1);setUnitPrice('');setError('')
+          }}>
+            <option value="">Выберите бренд</option>
+            {allowedBrands.map(value=><option key={value} value={value}>{value}</option>)}
+          </select>
         </label>
-        <label>Номер телефона
-          <input type="tel" value={recipientPhone} onChange={e=>setRecipientPhone(e.target.value)} required/>
+        <label>Источник *
+          <select required value={source} disabled={!brand} onChange={e=>{
+            setSource(e.target.value as WatchSource);setVariantId(0);
+            setQuantity(1);setUnitPrice('');setError('')
+          }}>
+            <option value="">Выберите источник</option>
+            {WATCH_OPTIONS.sources.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+          </select>
+          <small>{!brand?'Сначала выберите бренд':'Часы предлагаются только из выбранной точки'}</small>
         </label>
-        <label className="watch-order-form-wide">Полный адрес доставки
-          <textarea rows={2} value={address} onChange={e=>setAddress(e.target.value)} required/>
+        <div className="main-watch-create-spacer" aria-hidden="true"/>
+        <label>ФИО получателя *
+          <input required value={recipientName} onChange={e=>setRecipientName(e.target.value)}
+            autoComplete="name"/>
         </label>
-        <label>Индекс
-          <input value={postalCode} onChange={e=>setPostalCode(e.target.value)} required/>
+        <label>Телефон клиента *
+          <input type="tel" required value={recipientPhone}
+            onChange={e=>setRecipientPhone(e.target.value)} autoComplete="tel"/>
         </label>
-        <label>Город
-          <input value={city} onChange={e=>setCity(e.target.value)} required/>
+        <label>Город *
+          <input required value={city} onChange={e=>setCity(e.target.value)}/>
         </label>
-        <label>Способ доставки
-          <select value={deliveryMethod} onChange={e=>setDeliveryMethod(e.target.value)} required>
+        <label>Доставка *
+          <select required value={deliveryMethod} onChange={e=>setDeliveryMethod(e.target.value)}>
             {deliveryMethods.map(x=><option key={x} value={x}>{x}</option>)}
           </select>
         </label>
-        <label>Отправить до · Алматы
-          <input type="datetime-local" value={shippingDeadlineLocal}
-            onChange={e=>setShippingDeadlineLocal(e.target.value)} required/>
+        <label>Почтовый индекс *
+          <input required value={postalCode} onChange={e=>setPostalCode(e.target.value)}/>
         </label>
-        <label className="watch-order-form-urgent">
-          <input type="checkbox" checked={urgent} onChange={e=>setUrgent(e.target.checked)}/>
-          Срочный заказ
+        <label>Отправить до · Алматы *
+          <input type="datetime-local" required value={shippingDeadlineLocal}
+            onChange={e=>setShippingDeadlineLocal(e.target.value)}/>
         </label>
+        <label className="main-watch-create-wide">Полный адрес доставки *
+          <textarea required rows={2} value={address} onChange={e=>setAddress(e.target.value)}/>
+        </label>
+        <label className="main-watch-create-urgent"><input type="checkbox" checked={urgent}
+          onChange={e=>setUrgent(e.target.checked)}/>Срочный заказ</label>
       </div>
-    </fieldset>
-    <fieldset className="order-step-card">
-      <legend className="order-step-head"><span className="order-step-index">2</span><span><strong>Часы и стоимость</strong><small>Модель, наличие, цена, оплата и гравировка</small></span></legend>
-      <div className="watch-order-form-grid">
-        <label>Бренд
-          <select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setVariantId(0);setManagerId(0)}}>
-            {allowedBrands.map(b=><option key={b} value={b}>{b}</option>)}
-          </select>
-        </label>
-        <label>Откуда заберут часы
-          <select value={source} onChange={e=>setSource(e.target.value as WatchSource)}>
-            {WATCH_OPTIONS.sources.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-          </select>
-        </label>
-        <label className="watch-order-form-wide">Модель и комплектация
-          <select value={variantId} onChange={e=>{const selected=rows.find(row=>row.watchVariantId===Number(e.target.value));setVariantId(Number(e.target.value));setQuantity(1);setUnitPrice(selected?.catalogPriceSnapshot==null?'':String(selected.catalogPriceSnapshot))}} required>
-            <option value={0}>Выберите часы из {source==='office'?'офиса':'витрины'}</option>
-            {rows.map(row=><option key={row.watchVariantId} value={row.watchVariantId}
-              disabled={!row.catalogVariantId||available(row,source)<=0}>
-              {descriptor(row)} · доступно {available(row,source)}
-            </option>)}
-          </select>
-        </label>
-        <label>Количество
-          <input type="number" min={1} max={Math.max(1,free)} step={1} value={quantity}
-            onChange={e=>setQuantity(Number(e.target.value))} required/>
-        </label>
-        <label>Цена по каталогу
-          <output>{chosen?.catalogPriceSnapshot==null?'Не задана':chosen.catalogPriceSnapshot.toLocaleString('ru-RU')+' ₸'}</output>
-        </label>
-        <label>Цена продажи, ₸
-          <input type="number" min={0} step={1} value={unitPrice} onChange={e=>setUnitPrice(e.target.value)} required/>
-        </label>
-        <label>Получено от клиента, ₸
-          <input type="number" min={0} max={Math.max(0,price*quantity)} step={1} value={receivedAmount}
-            onChange={e=>setReceivedAmount(e.target.value)} required/>
-        </label>
-        {isAdmin?<label>Менеджер продажи
-          <select value={managerId} onChange={e=>setManagerId(Number(e.target.value))} required>
-            <option value={0}>Выберите менеджера бренда</option>
-            {staff.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
-        </label>:null}
-        <label>Способ оплаты
-          <select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value as WatchPaymentMethod)}>
-            {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
-          </select>
-        </label>
-        <label className="watch-order-form-wide">Комментарий логисту · Текст гравировки
-          <textarea value={engravingText} onChange={e=>setEngravingText(e.target.value)}
-            placeholder="Что выгравировать на этих часах" rows={2}/>
-        </label>
+    </section>
+    <section className="order-step-card">
+      <div className="order-step-head order-step-head-split">
+        <div className="order-step-head-main"><div className="order-step-index">2</div>
+          <div><h3>Товары в заказе</h3>
+            <p>Показываются только часы выбранного бренда и источника. Цена и наличие проверяются перед сохранением.</p></div>
+        </div>
       </div>
-    </fieldset>
-    {chosen&&free<quantity?<p className="watch-order-form-error" role="alert">
-      Доступно только {free} шт. в выбранном источнике. Переключите источник или количество.
-    </p>:null}
-    {error?<p className="watch-order-form-error" role="alert">{error}</p>:null}
-    <button type="submit" className="primary" disabled={!canSave}>
-      {busy?'Сохраняю…':'Сохранить заказ часов'}
-    </button>
+      {!brand||!source?<div className="main-watch-create-placeholder">
+        Сначала выберите бренд и источник в первом блоке.
+      </div>:<div className="main-watch-create-item">
+        <div className="main-watch-create-item-head"><strong>Позиция 1</strong>
+          <span>{brand} · {source==='office'?'Офис':'Витрина'}</span></div>
+        <div className="main-watch-create-grid">
+          <label className="main-watch-create-wide">Модель и комплектация *
+            <select required value={variantId} onChange={e=>{
+              const x=rows.find(row=>row.watchVariantId===Number(e.target.value))
+              setVariantId(Number(e.target.value));setQuantity(1)
+              setUnitPrice(x?.catalogPriceSnapshot==null?'':String(x.catalogPriceSnapshot))
+            }}>
+              <option value={0}>Выберите часы из {source==='office'?'офиса':'витрины'}</option>
+              {rows.filter(x=>x.catalogVariantId&&available(x,source)>0).map(row=>
+                <option key={row.watchVariantId} value={row.watchVariantId}>
+                  {descriptor(row)} · доступно {available(row,source)}
+                </option>)}
+            </select>
+            <small>{!rows.some(x=>x.catalogVariantId&&available(x,source)>0)?
+              'Свободных часов на этой точке нет. Переключите источник или оформите приход.':
+              'В списке только подготовленные и доступные комплектации.'}</small>
+          </label>
+          <label>Количество *
+            <input type="number" required min={1} step={1} max={Math.max(1,free)}
+              value={quantity} onChange={e=>setQuantity(Number(e.target.value))}/>
+          </label>
+          <label>Цена по каталогу
+            <output>{chosen?.catalogPriceSnapshot==null?'Нет цены':
+              chosen.catalogPriceSnapshot.toLocaleString('ru-RU')+' ₸'}</output>
+          </label>
+          <label>Цена продажи, ₸ *
+            <input type="number" required min={0} step={1} value={unitPrice}
+              onChange={e=>setUnitPrice(e.target.value)}/>
+          </label>
+          <label className="main-watch-create-wide">Комментарий логисту / текст гравировки
+            <textarea rows={2} value={engravingText} onChange={e=>setEngravingText(e.target.value)}
+              placeholder="Надпись для гравировки и уточнения для логиста"/>
+          </label>
+        </div>
+        {chosen&&free<quantity&&<p className="main-watch-create-validation" role="alert">
+          Доступно {free} шт. в этой точке. Уменьшите количество или смените источник.
+        </p>}
+      </div>}
+    </section>
+    <section className="order-step-card">
+      <div className="order-step-head"><div className="order-step-index">3</div>
+        <div><h3>Оплаты</h3>
+          <p>Укажите способ оплаты и фактически полученную сумму. Остальное останется долгом.</p></div>
+      </div>
+      <div className="main-watch-create-item">
+        <div className="main-watch-create-item-head"><strong>Оплата 1</strong>
+          <span>{total.toLocaleString('ru-RU')} ₸ по заказу</span></div>
+        <div className="main-watch-create-grid">
+          {isAdmin&&<label>Менеджер *
+            <select required value={managerId} onChange={e=>setManagerId(Number(e.target.value))}>
+              <option value={0}>Выберите менеджера бренда</option>
+              {staff.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
+            </select>
+          </label>}
+          <label>Способ оплаты
+            <select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value as WatchPaymentMethod)}>
+              {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <label>Получено от клиента, ₸ *
+            <input type="number" min={0} step={1} max={Math.max(0,total)} required
+              value={receivedAmount} onChange={e=>setReceivedAmount(e.target.value)}/>
+          </label>
+        </div>
+      </div>
+    </section>
+    <section className="order-step-card">
+      <div className="order-step-head"><div className="order-step-index">4</div>
+        <div><h3>Проверка заказа</h3>
+          <p>Перед сохранением сверьте выбранные часы, источник, оплату и долг.</p></div>
+      </div>
+      <div className="main-watch-create-review">
+        <div className="order-create-item-summary-head"><strong>Итог по заказу</strong>
+          <span>{canSave?'Готов к сохранению':'Нужно проверить'}</span></div>
+        <div className="main-watch-create-totals">
+          <div><span>ИТОГО ПО ПОЗИЦИЯМ</span><strong>{chosen&&unitPrice!==''?total.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
+          <div><span>ПОЛУЧЕНО</span><strong>{received.toLocaleString('ru-RU')} ₸</strong></div>
+          <div><span>ДОЛГ</span><strong>{chosen&&unitPrice!==''?debt.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
+          <div><span>ПОЗИЦИИ</span><strong>{chosen?'1':'0'}</strong></div>
+        </div>
+        <div className="main-watch-create-summary">
+          <strong>Состав заказа</strong>
+          <div><span>{chosen?descriptor(chosen):'Товар не выбран'}</span>
+            {chosen&&<b>{source==='office'?'Офис':'Витрина'} · × {quantity}</b>}</div>
+        </div>
+        {!brand||!source?<p className="main-watch-create-validation">Выберите бренд и источник.</p>:null}
+        {!chosen&&<p className="main-watch-create-validation">Выберите часы из доступных остатков.</p>}
+        {chosen&&unitPrice.trim()===''&&<p className="main-watch-create-validation">Укажите цену продажи.</p>}
+        {isAdmin&&managerId===0&&<p className="main-watch-create-validation">Выберите менеджера бренда.</p>}
+        {error&&<p role="alert" className="main-watch-create-validation">{error}</p>}
+        <div className="actions order-create-actions form-bottom-actions">
+          <button className="primary" type="submit" disabled={!canSave}>
+            {busy?'Сохраняю…':'Сохранить заказ'}</button>
+          <button className="secondary" type="reset" disabled={busy}
+            onClick={e=>{e.preventDefault()
+              if(!window.confirm('Очистить введённые данные?'))return
+              setBrand('');setSource('');setVariantId(0);setQuantity(1);setUnitPrice('')
+              setReceivedAmount('0');setManagerId(0);setEngravingText('');setRecipientName('')
+              setRecipientPhone('');setAddress('');setPostalCode('');setCity('')
+              setShippingDeadlineLocal('');setUrgent(false);setError('');requestRef.current=null}}>
+            Очистить форму</button>
+        </div>
+      </div>
+    </section>
   </form>
 }
