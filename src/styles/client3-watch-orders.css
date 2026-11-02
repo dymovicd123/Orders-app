@@ -107,3 +107,22 @@
 .watch-main-debt-grid input,.watch-main-debt-grid select{box-sizing:border-box;min-height:41px;max-width:100%;min-width:0;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font:inherit}
 .watch-main-debt-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 @media(max-width:560px){.watch-main-debt-grid{grid-template-columns:1fr}.watch-main-debt-actions button{flex:1}}
+
+/* Main-style narrow edit cards: metadata and recorded price, not the full manager editor. */
+.watch-corrections{margin:14px 0 8px;background:#fff;border:1px solid #d5e0ec;border-radius:11px;padding:16px;max-width:100%;min-width:0}
+.watch-corrections-title{display:grid;gap:4px;margin-bottom:13px}
+.watch-corrections-title strong{font-size:15px;color:#172b43}
+.watch-corrections-title small,.watch-corrections-hint{font-size:12px;color:#64748b}
+.watch-corrections-hint{line-height:1.5;margin:8px 0 13px}
+.watch-corrections-tabs,.watch-corrections-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.watch-corrections-actions{margin:14px 0 0}
+.watch-corrections-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.watch-corrections-grid label{display:grid;gap:6px;font-size:12px;font-weight:600;min-width:0}
+.watch-corrections-wide{grid-column:1/-1}
+.watch-corrections-grid :is(input,textarea),.watch-corrections-item input{width:100%;max-width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;background:white;border-radius:8px;padding:9px 11px;font:inherit}
+.watch-corrections-lines{display:grid;gap:10px}
+.watch-corrections-item{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:12px;background:#f8fafc;border:1px solid #e0e8f2;border-radius:9px}
+.watch-corrections-item>span{display:grid;gap:5px;min-width:130px}
+.watch-corrections-item small{font-size:12px;color:#64748b}
+.watch-corrections-item>span:last-child{max-width:195px;font-size:12px}
+@media(max-width:650px){.watch-corrections-grid{grid-template-columns:1fr}.watch-corrections-item>span:last-child{max-width:none;flex:1 1 100%}}
