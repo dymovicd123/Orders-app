@@ -2,7 +2,7 @@ import {json} from '../core/http.ts'
 import type {AuthUser,OrderInput} from '../core/types.ts'
 import {getOrder,updateOrderCritical} from './orders-write.ts'
 import {ensureManualWatchOrderSku,type ManualWatchOrderItem} from './client3-watch-order-manual.ts'
-import type {WatchOrderRewrite,WatchRewriteLine} from './client3-watch-edit-attach.ts'
+import type {WatchRewriteLine} from './client3-watch-edit-attach.ts'
 
 type Snapshot={orderItemId:number;watchVariantId:number;quantity:number;
  unitPrice:number;source:'office'|'showcase';engravingText:string;catalogPriceSnapshot:number|null}
@@ -11,7 +11,6 @@ type Incoming={orderItemId?:number|null;watchVariantId?:number;
  engravingText:string}
 type Request={requestId?:unknown;expected?:Snapshot[];items?:Incoming[]}
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
-const norm=(x:unknown)=>typeof x==='string'?x.trim().replace(/\s+/g,' '):''
 const validRequest=(v:unknown):v is string=>
  typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(v)
 /** Brand-scoped, strictly admin-only, exact SKU rewrite. Main retires rows
