@@ -995,8 +995,78 @@ const moneyRefundEvents=sqlite.prepare(`SELECT payment_method,amount_delta
  ORDER BY event_key`).all('exchanges:'+refundSet.exchangeId)
 assert.deepEqual(moneyRefundEvents.map(x=>[x.payment_method,x.amount_delta]),[
  ['KASPI GOLD',-15000],['KASPI RED',-25000]])
+// Stage 4 final acceptance: exchange TWO dispatched, differently identified watches
+// for TWO replacement lines in a single request. Only the explicit physical intake
+// workflow may add old watches to stock; the exchange must not touch cash on a
+// zero-difference swap, must preserve both replacement engraving links, and replay.
+const twoOld=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-two-old-exchange-20261103-01',
+ receivedAmount:50000,
+ items:[
+  {watchVariantId:1,catalogVariantId:vid,source:'office',quantity:1,
+   unitPrice:20000,engravingText:''},
+  {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,source:'office',quantity:1,
+   unitPrice:30000,engravingText:''},
+ ],
+}))
+assert.equal(twoOld.status,201,JSON.stringify(twoOld))
+const twoOldRows=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
+ FROM order_items WHERE order_id=? AND quantity>0 ORDER BY id`).all(twoOld.orderId)
+assert.equal(twoOldRows.length,2)
+const twoOldShip=await parse(dispatchClient3WatchOrder(db,manager,1,twoOld.orderId,{
+ requestId:'watch-two-old-dispatch-20261103-01',
+ items:twoOldRows.map(r=>({orderItemId:r.id,quantity:1})),
+}))
+assert.equal(twoOldShip.status,200,JSON.stringify(twoOldShip))
+const physicalBeforeSwap=stock('warehouse').quantity
+const paymentsBeforeSwap=count('payments')
+const eventsBeforeSwap=count('financial_events')
+const oldChoices=twoOldRows.map(r=>({
+ orderItemId:r.id,quantity:1,physicalState:'pending',
+ expectedActiveQuantity:r.quantity,expectedUnitPrice:r.unit_price,
+ expectedLineTotal:r.line_total,expectedCatalogPriceSnapshot:r.catalog_price_snapshot,
+}))
+const twoSwapInput={requestId:'watch-two-to-two-exchange-20261103-01',
+ expectedOrderTotal:50000,oldItems:oldChoices,
+ newItems:[
+  {manual:manualReplacement,source:'office',quantity:1,unitPrice:22000,
+   engravingText:'Левая гравировка'},
+  {manual:manualReplacement,source:'showcase',quantity:1,unitPrice:28000,
+   engravingText:'Правая гравировка'},
+ ],
+ paymentParts:[],refundParts:[],reason:'Обмен двух часов на два других'}
+const twoSwap=await parse(exchangeClient3WatchSet(db,manager,1,twoOld.orderId,twoSwapInput))
+assert.equal(twoSwap.status,200,JSON.stringify(twoSwap))
+assert.equal(twoSwap.oldItemCount,2)
+assert.equal(twoSwap.newItemCount,2)
+assert.equal(stock('warehouse').quantity,physicalBeforeSwap,
+ 'Exchange with pending physical intake must not restock old watches')
+assert.equal(count('payments'),paymentsBeforeSwap,'Equal-value exchange must not add payment')
+assert.equal(count('financial_events'),eventsBeforeSwap,'Equal-value exchange must not add money events')
+const activeSwap=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.source_type,
+ wi.watch_variant_id,wi.engraving_text
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(twoOld.orderId)
+assert.equal(activeSwap.length,2,'Two new active lines must survive exchange')
+assert.deepEqual(activeSwap.map(x=>x.engraving_text),
+ ['Левая гравировка','Правая гравировка'])
+assert.deepEqual(activeSwap.map(x=>x.source_type),['warehouse','boutique'])
+assert(activeSwap.every(x=>x.watch_variant_id===attached.watch_variant_id),
+ 'Both replacements must keep canonical watch variant identity')
+assert.equal(sqlite.prepare('SELECT total_amount,received_amount,return_amount FROM orders WHERE id=?')
+ .get(twoOld.orderId).total_amount,50000)
+const swapOldReceipts=sqlite.prepare(`SELECT quantity,physical_tracking,physical_received_at
+ FROM exchange_items WHERE exchange_id=? AND role='old' ORDER BY id`).all(twoSwap.exchangeId)
+assert.equal(swapOldReceipts.length,2)
+assert(swapOldReceipts.every(x=>x.quantity===1&&x.physical_tracking===1&&x.physical_received_at==null))
+assert.equal((await parse(exchangeClient3WatchSet(db,manager,1,twoOld.orderId,twoSwapInput))).ok,true)
+assert.equal(count('payments'),paymentsBeforeSwap)
+const forbiddenTwoSwap=await parse(exchangeClient3WatchSet(db,manager,2,twoOld.orderId,{
+ ...twoSwapInput,requestId:'watch-two-brand-reject-20261103-01',
+}))
+assert.equal(forbiddenTwoSwap.status,404)
+
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
-console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: stock, order, payment, engraving, dispatch, refund, composition and physical return receipt')
-console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: stock, order, payment, engraving, dispatch, refund and physical return receipt')
+console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
