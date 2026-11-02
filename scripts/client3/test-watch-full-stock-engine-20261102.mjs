@@ -6,6 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {countClient3WatchStock,countClient3WatchStockBatch} from '../../worker/domains/client3-watch-stocktake.ts'
 import {listClient3WatchStockHistory} from '../../worker/domains/client3-watch-history.ts'
+import {applyClient3WatchBulkOperation} from '../../worker/domains/client3-watch-bulk.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -161,9 +162,83 @@ const showcaseHistory=await readHistory('showcase')
 assert(showcaseHistory.rows.every(x=>x.source==='showcase'))
 const invalidHistory=await readHistory('bogus')
 assert.equal(invalidHistory.status,400)
+// Stage 5 next block: all 3 multi-SKU movements use ONE Main transaction,
+// never 2 sequential calls; brand, reserves, stale and request replay are guarded.
+const withRows=(kind,requestId,items,comment='Test multi-watch operation')=>({
+ kind,source:'office',requestId,comment,items,
+})
+const bulkArrival=withRows('arrival','watch-bulk-arrival-20261103-01',[
+ {watchVariantId:1,quantity:1},
+ {watchVariantId:newWatchId,quantity:2},
+])
+const arrivalResult=await parse(applyClient3WatchBulkOperation(db,admin,1,bulkArrival))
+assert.equal(arrivalResult.status,200,JSON.stringify(arrivalResult))
+assert.equal(stock('warehouse').quantity,3)
+assert.equal(physical2(),7)
+const movementAfterArrival=count('inventory_movements')
+const sameArrival=await parse(applyClient3WatchBulkOperation(db,admin,1,bulkArrival))
+assert.equal(sameArrival.duplicate,true)
+assert.equal(count('inventory_movements'),movementAfterArrival)
+const corruptArrival=await parse(applyClient3WatchBulkOperation(db,admin,1,{
+ ...bulkArrival,items:[...bulkArrival.items.slice(0,1),
+  {...bulkArrival.items[1],quantity:3}],
+}))
+assert.equal(corruptArrival.status,409)
+const bulkWriteoff=withRows('writeoff','watch-bulk-writeoff-20261103-01',[
+ {watchVariantId:1,quantity:1,expectedPhysical:3},
+ {watchVariantId:newWatchId,quantity:2,expectedPhysical:7},
+],'Two physically damaged watch sets')
+const writeoffResult=await parse(applyClient3WatchBulkOperation(db,admin,1,bulkWriteoff))
+assert.equal(writeoffResult.status,200,JSON.stringify(writeoffResult))
+assert.equal(stock('warehouse').quantity,2)
+assert.equal(physical2(),5)
+assert.equal((await parse(applyClient3WatchBulkOperation(db,admin,1,bulkWriteoff))).duplicate,true)
+const staleBundle=await parse(applyClient3WatchBulkOperation(db,admin,1,{
+ ...bulkWriteoff,requestId:'watch-bulk-stale-20261103-01',
+ items:[{watchVariantId:1,quantity:1,expectedPhysical:2},
+        {watchVariantId:newWatchId,quantity:1,expectedPhysical:7}],
+}))
+assert.equal(staleBundle.status,409)
+assert.equal(stock('warehouse').quantity,2)
+assert.equal(physical2(),5)
+const bulkTransfer=withRows('transfer','watch-bulk-transfer-20261103-01',[
+ {watchVariantId:1,quantity:1,expectedPhysical:2},
+ {watchVariantId:newWatchId,quantity:1,expectedPhysical:5},
+])
+const transferResult=await parse(applyClient3WatchBulkOperation(db,admin,1,bulkTransfer))
+assert.equal(transferResult.status,200,JSON.stringify(transferResult))
+assert.equal(stock('warehouse').quantity,1)
+assert.equal(physical2(),4)
+assert.equal(stock('boutique').quantity,3)
+assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=? AND inventory_source='boutique'")
+ .get(second.canonicalVariantId).quantity,1)
+const repeatTransfer=await parse(applyClient3WatchBulkOperation(db,admin,1,bulkTransfer))
+assert.equal(repeatTransfer.duplicate,true)
+const wrongBrand=await parse(applyClient3WatchBulkOperation(db,admin,2,{
+ ...bulkArrival,requestId:'watch-bulk-foreign-20261103-01',
+}))
+assert.equal(wrongBrand.status,409)
+const duplicateItem=await parse(applyClient3WatchBulkOperation(db,admin,1,{
+ ...bulkArrival,requestId:'watch-bulk-duplicate-20261103-01',
+ items:[bulkArrival.items[0],bulkArrival.items[0]],
+}))
+assert.equal(duplicateItem.status,409)
+sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=1 WHERE inventory_source='warehouse' AND variant_id=?")
+ .run(vid)
+const reserveBlocked=await parse(applyClient3WatchBulkOperation(db,admin,1,{
+ ...bulkTransfer,requestId:'watch-bulk-reserved-20261103-01',
+ items:[{watchVariantId:1,quantity:1,expectedPhysical:1}],
+}))
+assert.equal(reserveBlocked.status,409)
+sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=0 WHERE inventory_source='warehouse' AND variant_id=?")
+ .run(vid)
+const roleBlocked=await parse(applyClient3WatchBulkOperation(db,{
+ id:2,role:'manager',managerId:2,employeeRole:'Менеджер',
+},1,{...bulkArrival,requestId:'watch-bulk-manager-20261103-01'}))
+assert.equal(roleBlocked.status,403)
 assert.equal(count('orders'),baseOrders,'Warehouse operations cannot create business orders')
 assert.equal(count('payments'),basePayments,'Warehouse operations cannot record money')
 assert(count('inventory_movements')>=initialMovement+3,'All warehouse operations must leave movement history')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
-console.log('CLIENT3_FULL_MAIN_STOCK_ENGINE_PASS: real Main arrival/transfer/writeoff, multi-SKU atomic stocktake, history/brand isolation, replay and money invariants')
+console.log('CLIENT3_FULL_MAIN_STOCK_ENGINE_PASS: real Main multi-line arrival/writeoff/transfer, atomic stocktake, brand/reservation/replay and money invariants')
