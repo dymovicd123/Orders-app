@@ -153,7 +153,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       wd.delivery_method AS deliveryMethod,wd.urgent,
       wd.shipping_deadline_at AS shippingDeadlineAt,wd.deadline_timezone AS deadlineTimezone,
       lj.status AS engravingStatus,lj.ready_at AS readyAt,
-      oi.id AS orderItemId,oi.quantity,wp.model_name AS modelName,
+      oi.id AS orderItemId,oi.quantity,ir.status AS reservationStatus,wp.model_name AS modelName,
       wditem.engraving_text AS engravingText,
       v.gender,v.movement,v.bracelet_material AS braceletMaterial,
       v.dial_color AS dialColor,v.bracelet_color AS braceletColor
@@ -162,6 +162,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
     JOIN watch_logistics_jobs lj ON lj.order_id=wd.order_id
     LEFT JOIN order_items oi ON oi.order_id=wd.order_id
+    LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
     LEFT JOIN watch_variants v ON v.id=wditem.watch_variant_id
     LEFT JOIN watch_products wp ON wp.id=v.watch_product_id
