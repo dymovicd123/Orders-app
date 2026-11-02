@@ -14,6 +14,7 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
+import {cancelExchangeSetV2} from '../../worker/domains/returns-exchanges.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -995,6 +996,33 @@ const moneyRefundEvents=sqlite.prepare(`SELECT payment_method,amount_delta
  ORDER BY event_key`).all('exchanges:'+refundSet.exchangeId)
 assert.deepEqual(moneyRefundEvents.map(x=>[x.payment_method,x.amount_delta]),[
  ['KASPI GOLD',-15000],['KASPI RED',-25000]])
+const refundCancel=await parse(cancelExchangeSetV2(db,refundSet.exchangeId,{
+ requestId:'watch-set-cancel-refund-20261103-01',
+ comment:'Отмена обмена: клиент вернулся к первоначальным часам',
+}))
+assert.equal(refundCancel.ok,true,JSON.stringify(refundCancel))
+assert.equal(sqlite.prepare('SELECT total_amount,return_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId).return_amount,0)
+const reversalRefunds=sqlite.prepare(`SELECT payment_method,amount_delta
+ FROM financial_events WHERE related_type='exchange_refund' AND event_type='refund_reversal'
+ AND source_ref=? ORDER BY event_key`).all('exchanges:'+refundSet.exchangeId)
+assert.deepEqual(reversalRefunds.map(x=>[x.payment_method,x.amount_delta]),[
+ ['KASPI GOLD',15000],['KASPI RED',25000]])
+const extraCancel=await parse(cancelExchangeSetV2(db,extraResult.exchangeId,{
+ requestId:'watch-set-cancel-extra-20261103-01',
+ comment:'Отмена обмена с возвратом всей проведённой доплаты',
+}))
+assert.equal(extraCancel.ok,true,JSON.stringify(extraCancel))
+const paymentsRestored=sqlite.prepare('SELECT received_amount,total_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId)
+assert.deepEqual(paymentsRestored,{received_amount:40000,total_amount:40000})
+const reversals=sqlite.prepare(`SELECT payment_method,amount_delta
+ FROM financial_events WHERE event_type='payment_reversal' AND related_type='exchange_extra'
+ AND source_type='payment' AND order_id=? ORDER BY id DESC LIMIT 2`)
+ .all(stage4Pay.created.orderId)
+assert.deepEqual(reversals.map(x=>[x.payment_method,x.amount_delta]).sort((a,b)=>a[1]-b[1]),[
+ ['KASPI GOLD',-12000],['KASPI RED',-8000]])
+
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
