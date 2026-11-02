@@ -1,6 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { persistWatchOrderCommit, type WatchOrderCommit } from './client3-watch-order-commit.ts'
+import { attachClient3WatchRewrite, type WatchOrderRewrite } from './client3-watch-edit-attach.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
@@ -1234,7 +1235,7 @@ export async function updateOrderCritical(
   input: OrderInput,
   actor: AuthUser | null,
   checkedBy: string,
-  options: { lifecycleAction?: 'order_delete' } = {},
+  options: { lifecycleAction?: 'order_delete'; watchRewrite?:WatchOrderRewrite } = {},
 ) {
   // A manager may only use the two narrow, optimistic-concurrency-corrected
   // forms. Never accept the legacy full editor as a manager, including crafted
@@ -2081,6 +2082,27 @@ export async function updateOrderCritical(
         }
       }
 
+      // Client3 watch rewrite is trusted from its brand-scoped admin route.
+      // Resolve ALL canonical variants against exact watched SKUs before
+      // retiring any old rows; Main remains the reservation and money authority.
+      if(options.watchRewrite){
+        const watch=options.watchRewrite
+        if(!itemContentReplacementRequested||!rewriteItems||!rewritePreResolvedCatalog||
+           watch.lines.length!==requestedItems?.length||
+           !Number.isSafeInteger(watch.brandId)||watch.brandId<1)
+          throw new CriticalOperationConflictError('Редактирование часов требует точного плана изменения состава.')
+        for(let i=0;i<watch.lines.length;i++){
+          const claimed=watch.lines[i],resolved=rewritePreResolvedCatalog[i]
+          if(!claimed||!resolved||
+            resolved.productId!==claimed.catalogProductId||
+            resolved.variantId!==claimed.catalogVariantId||
+            nextItems[i].quantity!==claimed.quantity||
+            nextItems[i].unitPrice!==claimed.unitPrice||
+            nextItems[i].inventorySource!==(claimed.source==='office'?'warehouse':'boutique'))
+            throw new CriticalOperationConflictError('Комплектация часов не совпала с каталогом Main. Состав не изменён; обновите заказ.')
+        }
+      }
+
       // Stage 1.6: keep EXACT unchanged itemized rows and their reservations.
       // No inference from a name alone. The current persisted order item and
       // committed reservation must agree with the same active canonical SKU,
@@ -2180,6 +2202,7 @@ export async function updateOrderCritical(
         paymentCorrections,
         nextItems, nextPayments, totals, rewritePreResolvedCatalog: rewritePreResolvedCatalog || null,
         itemizedRewritePlan, preservedRewriteIndexes, preservedRewriteItemIds,
+        watchRewrite:options.watchRewrite||null,
         inventoryObligationLineage, humanInventoryModelEnabled,
       };
       operationContext = { ...operationContext, plan };
@@ -2419,6 +2442,11 @@ export async function updateOrderCritical(
           newLineage,
           newPricing,
         );
+      }
+      if(p.rewriteItems&&p.watchRewrite){
+        await attachClient3WatchRewrite(db,id,criticalOperation.requestId,
+          p.watchRewrite as WatchOrderRewrite,
+          p.preservedRewriteIndexes||[],p.preservedRewriteItemIds||[]);
       }
       operationContext = { ...operationContext, insertedContent };
       await advanceCriticalOperation(db, criticalOperation, 'new_content_written', { context: operationContext });
