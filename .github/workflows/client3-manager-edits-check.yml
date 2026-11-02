@@ -1,5 +1,5 @@
 name: Client3 Main manager corrections verification
-# Test read projection with Main customer and price columns in third-tenant SQLite fixture.
+# Full manager metadata/price lifecycle passed; rerun after narrowing Main result typing for TS build.
 on:
   push:
     branches: [client3/step2-manager-admin-edits-from-main-20261103]
