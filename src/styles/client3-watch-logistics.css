@@ -37,3 +37,24 @@
   .watch-logistics-item { grid-template-columns: 1fr; }
   .watch-logistics-actions button { width: 100%; }
 }
+
+/* Main operational table: linked scroll and one expandable row per order. */
+.watch-logistics .linked-table-scroll{background:#fff;border:1px solid #dbe4ee;border-radius:11px}
+.watch-main-logistics-table{width:100%;border-collapse:collapse;min-width:990px;text-align:left;font-size:.84rem}
+.watch-main-logistics-table thead th{padding:12px 14px;background:#f6f9fc;border-bottom:1px solid #dbe4ee;white-space:nowrap;font-size:.74rem;color:#64748b}
+.watch-main-logistics-table td{padding:13px 14px;border-bottom:1px solid #edf1f6;vertical-align:top}
+.watch-main-logistics-table td strong{font-weight:720}
+.watch-main-logistics-table td small{display:block;color:#64748b;font-size:.74rem;margin-top:4px}
+.watch-main-logistics-table tr.watch-main-logistics-row:hover td{background:#fafcff}
+.watch-main-logistics-table tr.watch-main-logistics-row.is-open td{background:#f4f8ff}
+.watch-main-logistics-expanded>td{padding:0!important}
+.watch-main-logistics-detail{padding:17px;border-left:3px solid #2563eb;background:#fafcff}
+.watch-main-logistics-detail-head{display:grid;grid-template-columns:1.3fr 1fr;gap:15px;background:#fff;border:1px solid #e2e8f0;padding:14px;border-radius:10px}
+.watch-main-logistics-detail-head>div{display:grid;gap:5px}
+.watch-main-logistics-detail-head span{color:#475569;font-size:.82rem}
+.watch-main-logistics-items{display:grid;gap:8px;margin-top:11px}
+.watch-main-logistics-item{display:grid;grid-template-columns:1.35fr 1.2fr .7fr;gap:14px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:12px 15px}
+.watch-main-logistics-item>div{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}
+.watch-main-logistics-item small{color:#64748b;font-size:.73rem}
+.watch-main-logistics-detail .watch-logistics-actions{border-top:0;padding:14px 0 0}
+@media(max-width:710px){.watch-main-logistics-detail-head,.watch-main-logistics-item{grid-template-columns:1fr}}
