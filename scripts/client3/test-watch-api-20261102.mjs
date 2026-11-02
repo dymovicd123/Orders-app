@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import {
   listWatchBrands,listWatchModels,listWatchManagers,listWatchLogistics,markWatchLogisticsReady,
+  listWatchStaff,assignWatchManagerBrands,
 } from '../../worker/domains/client3-watches.ts'
 
 // D1.prepare/batch compatible adapter. Every test uses a disposable in-memory DB;
@@ -30,6 +31,7 @@ sql.exec(`
  INSERT INTO payments VALUES(1,1,90000),(2,2,60000);
 `)
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
+sql.exec(fs.readFileSync('migrations/client3-watch/0003_watch_manager_brand_audit.sql','utf8'))
 sql.exec(`
  INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1),(2,2);
  INSERT INTO watch_products(brand_id,model_name,catalog_product_id) VALUES(1,'CLASSIC',10),(2,'CLASSIC',11);
@@ -101,6 +103,21 @@ x=await j(await listWatchLogistics(db,logistics,allUrl))
 assert.equal(x.rows.length,2)
 x=await j(await listWatchLogistics(db,admin,allUrl))
 assert.equal(x.rows.length,2)
+const staff=await j(await listWatchStaff(db,admin))
+assert.equal(staff.staff.length,2)
+assert.deepEqual(staff.staff.find(x=>x.id===1).brands,['TAUWACH'])
+const managerDenied=await j(await listWatchStaff(db,alice))
+assert.equal(managerDenied.status,403)
+let assignment=await j(await assignWatchManagerBrands(db,alice,1,{brands:['TAUWACH','WACHIZEN'],expectedBrands:['TAUWACH'],requestId:'assign-one-1'}))
+assert.equal(assignment.status,403)
+assignment=await j(await assignWatchManagerBrands(db,admin,1,{brands:['TAUWACH','WACHIZEN'],expectedBrands:['TAUWACH'],requestId:'assign-one-1'}))
+assert.equal(assignment.status,200)
+assignment=await j(await assignWatchManagerBrands(db,admin,1,{brands:['TAUWACH','WACHIZEN'],expectedBrands:['TAUWACH'],requestId:'assign-one-1'}))
+assert.equal(assignment.alreadyCommitted,true)
+assignment=await j(await assignWatchManagerBrands(db,admin,1,{brands:['TAUWACH'],expectedBrands:['TAUWACH'],requestId:'assign-two-1'}))
+assert.equal(assignment.status,409)
+assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM watch_manager_brand_events').get().c,1)
+assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[])
 const unchanged=()=>({
   stocks:sql.prepare('SELECT id,quantity,reserved_quantity FROM inventory_stock ORDER BY id').all(),
   payments:sql.prepare('SELECT order_id,amount FROM payments ORDER BY id').all(),
