@@ -138,7 +138,7 @@ export function WatchOrderForm({allowedBrands,catalog,deliveryMethods,onSave}:Pr
             {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
           </select>
         </label>
-        <label className="watch-order-form-wide">Комментарий логисту · текст гравировки
+        <label className="watch-order-form-wide">Комментарий логисту · Текст гравировки
           <textarea value={engravingText} onChange={e=>setEngravingText(e.target.value)}
             placeholder="Что выгравировать на этих часах" rows={2}/>
         </label>
