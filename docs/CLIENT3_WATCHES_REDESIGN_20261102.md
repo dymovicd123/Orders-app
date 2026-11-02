@@ -145,3 +145,27 @@
 - Последние push-CI и удалённый schema preflight через доступный API ещё **не подтверждены**; полный end-to-end не объявляется успешным.
 
 **Открыто:** W1c migration path + Time Travel bookmark; W2 canonical SKU, склад, несколько позиций; W3 брендовая касса, финансовые события, отчёты; W4 обмены/возвраты/отправка; W5 QA и guarded Client3-only release. Main и Branch2 не трогать.
+
+## 10. Checkpoint W2d · 2026-11-02 · подтверждённый CI, canonical SKU и физический приход
+
+### Подтверждённая приёмка кода
+- Для запуска PR-ориентированных checks создан **черновой PR #775 (DO NOT MERGE)** только между двумя Client3-ветками: `client3/watch-redesign-20261102` → `client3/watch-ci-accept-20261102`. Ни main, ни branch2 не являются base и не изменялись.
+- CI обнаружил и позволил исправить реальную TS-синтаксическую ошибку в SQL строки создания заказа, некорректную SQLite-фикстуру менеджеров и TypeScript-сужение результата `createOrder`.
+- Финальная на данный checkpoint приёмка **GitHub Actions #41442139938 — SUCCESS**: isolated Worker/D1 identity, Node/SQLite watch domain, API/access, SSR watch form/logistics/shell, order-details idempotency, catalog drafts, per-brand orders, canonical SKU provisioning, arrival guards, TypeScript+Vite, npm audit. Сборка проверена, однако сквозное создание заказа на фактической Client3 D1 ещё НЕ проверялось.
+
+### W2d · Подготовка SKU
+- Административный `POST /api/client3/watches/catalog/provision`: только для выбранного бренда и точного watchVariantId. Использует раздельные стабильные внутренние имена canonical продуктов `WATCH_<brand>_MODEL_<id>`, Main `ensureCatalogExecutionV3` и `createCatalogCombinationV3`. Цвет кожаного ремешка участвует в материале/ключе SKU. Одинаковое видимое название в другом бренде получает отдельный canonical product/variant.
+- Повторная подготовка не создаёт второе SKU. Перед ответом перепроверяются привязка к бренду, товару, исполнению и варианту. Это только привязка каталога: **inventory_stock, inventory_movements, payments, orders не создаются и не меняются**.
+- В админ-каталоге кнопка «Подготовить складской SKU». Изолированный SQLite тест: сквозной mapping, разделение брендов/цветов, идемпотентность и отсутствие ghost-остатков.
+
+### W2d · Приход
+- Отдельный `POST /api/client3/watches/stock/arrival`, admin-only, бренд/SKU проверены на сервере, офис/витрина как warehouse/boutique. Приход вызывает **существующий Main `applyInventoryMovement`** с exact canonical variant, строгой проверкой количества и `requestId`; прямая вставка в остатки исключена.
+- В каталоге отдельная форма физического прихода (SKU, источник, количество, необязательный комментарий), обновление доступного остатка после успешного запроса. Приход нельзя сохранить по черновику без canonical mapping.
+- Тест ролей, недопустимых источников/количеств, неизвестной комплектации и отсутствия физического stock update прошёл. **Позитивный arrival end-to-end на актуальной Main+D1 схеме ещё требуется**, поэтому приход не объявляется окончательно принятым.
+- Без деплоя/remote writes, реальная Client3 D1 со старыми записями не менялась.
+
+### Следующий путь
+1. W1c: получить точный результат READ-ONLY schema preflight, провести отдельный план инкрементальных Main + watch миграций без потери старых данных; Time Travel bookmark перед apply.
+2. W2: полноценные операции перемещения/списания/ревизии и проверка положительного прихода с защитой от повторного сохранения.
+3. W3/W4: серверные брендовые финансы/кассы/оплаты/возвраты/обмены/отправка, никаких опасных generic-legacy мутаций.
+4. W5: отдельная браузерная QA и Client3-only релиз; Main и Branch2 не затрагивать.
