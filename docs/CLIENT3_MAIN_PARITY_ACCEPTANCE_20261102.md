@@ -264,3 +264,33 @@ User screenshot exposed a regression: a second `Массовые складск�
 - One intermediate release run was blocked at pre-deploy gate (41530072485; no deployment). Diagnostic guard rerun deployed successfully (41530259039) after verifying the accepted source unchanged. Do not treat the blocked run as an application regression.
 
 **Next:** full Main stocktake session workflow and practical logged-in browser/mobile acceptance, plus deliberately-configured resolver alias edge cases; do not reintroduce a separate bulk operations screen.
+
+
+## 03.11.2026 — Main warehouse operation parity bugfix: model-only OTAN and history separation
+
+**REAL Client3-only release SUCCESS:** https://github.com/dymovicd123/Orders-app/actions/runs/41532676344
+**Complete accepted production-source test SUCCESS:** https://github.com/dymovicd123/Orders-app/actions/runs/41532494102
+
+Client screenshot reproduced the actual critical gap: a valid active `watch_products` entry named OTAN existed in the catalog with **0 variants**. The warehouse operations screen was incorrectly deriving its product picker exclusively from already provisioned `watch_variants`. The complete Main inventory UX allows a new product/variant at receiving time, without a forced catalog round trip.
+
+**Main vs Client3 verified operation matrix**
+
+| Main workflow | Client3 outcome | Safety / exact adapter |
+| --- | --- | --- |
+| Select new active product without variants | Fixed: model-only rows included in `WatchWarehouseMain` picker | Brand-scoped catalog data, active products |
+| Add missing model/variant inline during arrival | Fixed: `WatchOperationInlineCatalog` embedded in existing single operations page | Uses established watch model/variant registration and canonical SKU provisioning endpoints |
+| Add missing variant during correction | Fixed: same inline picker | No physical stock created by model/variant registration |
+| Catalog-created variation immediately usable in stock | Fixed: `WatchCatalogEditor` provisions canonical watch SKU after variant registration | No stock or movement until explicit warehouse arrival |
+| Arrival, multiple items (max 30) | Existing Main atomic `applyInventoryMovement` | Exact brand/SKU, idempotent request, one transaction |
+| Write-off, multiple items | Existing Main atomic `applyInventoryMovement` | Reserved stock protection, stale input, reason required |
+| Office–Showcase transfer, multiple items | Existing Main atomic `applyInventoryTransfer` | Source ownership, target identity, expected source quantity |
+| Selective correction, multiple items | Existing Main atomic `quickInventoryStocktakeBatch` | Expected physical, shortage confirmation, retry protection |
+| Source switch with unsaved numbers | Fixed: source-specific drafts kept without client-side writes | Each source commits as its own atomic operation |
+| Warehouse movement history | Fixed: its **own stock tab** `history`, not rendered under operations | Read-only SQL brand/source filtering, 50-item pagination |
+| Problem queue | Omitted by explicit client decision | No historical issues queue |
+| Full/session-based Main revision (partial save/continue/complete) | **NOT YET IMPLEMENTED** | Next Stage 5 parity task; do not call the entire stocktake module Main-identical |
+| Live desktop/mobile/role walkthrough | **NOT YET VERIFIED** | Needed as operator acceptance after programmatic tests |
+
+**Acceptance evidence:** Full ephemeral real Main migrations and transaction tests on model-only OTAN → register variant → canonical provision → 4-unit receiving → duplicate replay → correction → brand denial and FK integrity. Existing Main-backed four-mode stock/money/reserve/replay/return/exchange regression and `npm run build` passed. History route and style regression passed. No remote D1 mutations were used during test; release verified remote D1 order/item/payment/stock/reserve/movement counters and FK before/after deploy. Third Worker only, **Main and Branch2 not touched**.
+
+**Follow-ups:** Main full/session stocktake parity and practical browser/mobile acceptance; smarter resolver aliases. Do not add a second parallel mass-operation or revision UI; extend the one Main-derived operations workspace.
