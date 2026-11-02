@@ -202,39 +202,57 @@ export function WatchClient3App() {
     finally { setBusy(false) }
   }
 
-  if (checking) return <main className="watch-shell-auth"><p>Проверка доступа…</p></main>
-  if (!user) return <main className="watch-shell-auth">
-    <div className="watch-shell-auth-card">
-      <h1>{hasUsers ? 'Вход' : 'Создание администратора'}</h1>
-      {!setupReady && <p role="alert">Первоначальная настройка ещё не разрешена владельцем.</p>}
-      {error && <p role="alert" className="watch-shell-error">{error}</p>}
-      <form onSubmit={event => void authenticate(event)}>
-        <label>Логин<input required autoComplete="username" value={login} onChange={event => setLogin(event.target.value)}/></label>
-        <label>Пароль<input required type="password" autoComplete={hasUsers ? 'current-password' : 'new-password'}
-          value={password} onChange={event => setPassword(event.target.value)}/></label>
-        {!hasUsers && <label>Код первого администратора<input required type="password"
-          value={bootstrapPassword} onChange={event => setBootstrapPassword(event.target.value)}/></label>}
-        <button type="submit" disabled={busy || (!hasUsers && !setupReady)}>
-          {busy ? 'Проверка…' : hasUsers ? 'Войти' : 'Создать администратора'}
-        </button>
-      </form>
-      {error && <button type="button" className="watch-shell-secondary" onClick={() => void refreshAuth()}>Проверить соединение</button>}
-    </div>
+  if(checking)return <main className="auth-shell">
+    <section className="auth-card">
+      <div className="erp-brand auth-brand"><div className="erp-brand-mark">S</div>
+        <div><div className="erp-brand-title">Система заказов</div>
+          <div className="erp-brand-subtitle">Проверяем вход…</div></div>
+      </div>
+      <p className="muted-note">Загрузка сессии.</p>
+    </section>
   </main>
-  if (user.mustChangePassword) return <main className="watch-shell-auth">
-    <div className="watch-shell-auth-card">
-      <h1>Смена временного пароля</h1>
-      <p>Перед началом работы требуется сменить пароль.</p>
-      {error && <p role="alert" className="watch-shell-error">{error}</p>}
-      <form onSubmit={event => void changePassword(event)}>
-        <label>Текущий пароль<input required type="password" autoComplete="current-password"
-          value={password} onChange={event => setPassword(event.target.value)}/></label>
-        <label>Новый пароль<input required type="password" minLength={8} autoComplete="new-password"
-          value={nextPassword} onChange={event => setNextPassword(event.target.value)}/></label>
-        <button type="submit" disabled={busy}>Сменить пароль</button>
-      </form>
-      <button type="button" onClick={() => void logout()} disabled={busy}>Выйти</button>
-    </div>
+  if(!user)return <main className="auth-shell">
+    <form className="auth-card" onSubmit={event=>void authenticate(event)} method="post"
+      action={hasUsers?'/api/auth/login':'/api/auth/setup'} autoComplete="on">
+      <div className="erp-brand auth-brand">
+        <div className="erp-brand-mark">S</div>
+        <div><div className="erp-brand-title">Система заказов</div>
+          <div className="erp-brand-subtitle">{hasUsers?'Вход по логину и паролю':'Первый запуск'}</div></div>
+      </div>
+      <div><h1>{hasUsers?'Вход':'Создать администратора'}</h1>
+        <p>{hasUsers?'Введите логин и пароль своего аккаунта.':'Создайте первый аккаунт администратора.'}</p></div>
+      {error&&<div className="app-alert error" role="alert"><span>{error}</span></div>}
+      {!setupReady&&<p role="alert">Первоначальная настройка ещё не разрешена владельцем.</p>}
+      <label><span>Логин</span><input id="auth-username" name="username" value={login}
+        onChange={event=>setLogin(event.target.value)} autoComplete="username" autoCapitalize="none"
+        spellCheck={false} required minLength={3} maxLength={32} placeholder="Например: admin"/></label>
+      <label><span>Пароль</span><input id="auth-password" name="password" type="password"
+        value={password} onChange={event=>setPassword(event.target.value)}
+        autoComplete={hasUsers?'current-password':'new-password'} required minLength={8}/></label>
+      {!hasUsers&&<label><span>Код первого администратора</span>
+        <input type="password" required value={bootstrapPassword}
+          onChange={event=>setBootstrapPassword(event.target.value)}/></label>}
+      <button className="primary" type="submit" disabled={busy||(!hasUsers&&!setupReady)}>
+        {busy?'Проверяю…':hasUsers?'Войти':'Создать администратора'}
+      </button>
+    </form>
+  </main>
+  if(user.mustChangePassword)return <main className="auth-shell">
+    <form className="auth-card" onSubmit={event=>void changePassword(event)}
+      method="post" action="/api/auth/change-password" autoComplete="on">
+      <div className="erp-brand auth-brand"><div className="erp-brand-mark">S</div>
+        <div><div className="erp-brand-title">Система заказов</div>
+          <div className="erp-brand-subtitle">Первый вход сотрудника</div></div></div>
+      <div><h1>Смена временного пароля</h1>
+        <p>Перед началом работы требуется сменить временный пароль.</p></div>
+      {error&&<div className="app-alert error" role="alert"><span>{error}</span></div>}
+      <label><span>Текущий пароль</span><input type="password" autoComplete="current-password"
+        required value={password} onChange={event=>setPassword(event.target.value)}/></label>
+      <label><span>Новый пароль</span><input type="password" autoComplete="new-password"
+        required minLength={8} value={nextPassword} onChange={event=>setNextPassword(event.target.value)}/></label>
+      <button className="primary" type="submit" disabled={busy}>Сменить пароль</button>
+      <button className="secondary" type="button" disabled={busy} onClick={()=>void logout()}>Выйти</button>
+    </form>
   </main>
 
   const canSales=brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')
