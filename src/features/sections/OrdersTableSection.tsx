@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { LinkedTableScroll } from '../../components/tables/LinkedTableScroll'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
 import { projectOrderShipmentDisplay } from '../../app/orderShipmentProjection'
+import { clampDispatchQuantity, dispatchSelectionError } from '../orders/shippingSelection'
 import './OrderShipmentStatus.css'
 type SectionContext = Record<string, any>
 
@@ -133,6 +134,8 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
       return row.selectable&&Number.isSafeInteger(quantity)&&quantity>0
         ? [{orderItemId:Number(row.orderItemId),quantity}] : []
     })
+    const selectionError=dispatchSelectionError(d.plan?.lines||[],d.selected)
+    if(selectionError){setDispatchDraft(v=>v?{...v,error:selectionError}:v);return}
     if(!items.length){setDispatchDraft(v=>v?{...v,error:'Выберите хотя бы одну готовую вещь.'}:v);return}
     setDispatchDraft(v=>v?{...v,submitting:true,error:''}:v)
     void (async()=>{
@@ -826,19 +829,22 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             </div>
                             {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
                               aria-label={`Количество ${line.productName}`}
-                              disabled={dispatchDraft.submitting} value={value}
+                              disabled={dispatchDraft.submitting||line.sourceType==='workshop'} value={value}
                               style={{width:72,padding:6}}
-                              onChange={event=>{const num=Number(event.target.value);
+                              onChange={event=>{const quantity=clampDispatchQuantity(
+                                event.target.value,line.readyQuantity,false)
                                 setDispatchDraft(d=>d?{...d,error:'',selected:{...d.selected,
-                                  [line.orderItemId]:Number.isSafeInteger(num)?num:0}}:d)}}/> : null}
+                                  [line.orderItemId]:quantity}}:d)}}/> : null}
                           </div>
                         })}
                         {(dispatchDraft.plan?.lines||[]).length===0 ? <p>В заказе нет товаров для отправки.</p> : null}
                         {dispatchDraft.plan?.selectedCount ? (
                           <div className="toolbar-actions" style={{marginTop:16}}>
                             <button className="primary" type="button"
-                              disabled={dispatchDraft.submitting||!(dispatchDraft.plan?.lines||[]).some((x:any)=>
-                                Number(dispatchDraft.selected[x.orderItemId]||0)>0)}
+                              disabled={dispatchDraft.submitting||
+                                Boolean(dispatchSelectionError(dispatchDraft.plan?.lines||[],dispatchDraft.selected))||
+                                !(dispatchDraft.plan?.lines||[]).some((x:any)=>
+                                  x.selectable&&Number(dispatchDraft.selected[x.orderItemId]||0)>0)}
                               onClick={submitSelectedDispatch}>
                               {dispatchDraft.submitting?'Сохраняю…':'Подтвердить отправку'}
                             </button>
