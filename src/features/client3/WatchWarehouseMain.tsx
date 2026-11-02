@@ -7,6 +7,7 @@ import '../../styles/183-inventory-stocktake-workflow.css'
 import '../../styles/185-inventory-stocktake-state.css'
 import '../../styles/188e-inventory-stocktake-sessions.css'
 import '../../styles/188e4-stocktake-usability.css'
+import '../../styles/188k1-stocktake-inline-add.css'
 import '../../styles/193-unified-inventory-operations.css'
 import '../../styles/client3-watch-main-warehouse.css'
 
