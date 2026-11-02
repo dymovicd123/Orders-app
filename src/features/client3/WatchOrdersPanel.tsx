@@ -28,7 +28,7 @@ const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ож�
   order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':
   order.shippedLineCount>0?'Частично отправлено':'Не отправлено'
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
-type ItemLine={id:number;productName:string;quantity:number;unitPrice:number;
+type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;unitPrice:number;
   lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
   engravingText:string;gender:string;movement:string;braceletMaterial:string;
   dialColor:string;braceletColor:string}
@@ -239,13 +239,12 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics,isA
                       (onOpenLogistics?<button type="button"
                         onClick={()=>onOpenLogistics(brand)}>Подготовить / отправить в логистике</button>:
                         <small>Подготовка и отправка находятся в разделе «Логистика».</small>)}
-                    {(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&
-                      !order.pendingReplacement&&order.lineCount===1&&order.returnableQuantity===1&&
+                    {parsedRows<ItemLine>(order.itemLines).some(line=>line.returnableQuantity>0)&&
                       exchangeOrderId!==order.orderId&&
                       <button type="button" onClick={()=>{setExchangeOrderId(order.orderId);setReturnOrderId(null)}}>
                         Обменять часы</button>}
-                    {order.lineCount===1&&(Math.max(0,order.receivedAmount-order.returnAmount)>0||
-                      ((order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&order.returnableQuantity>0))&&
+                    {(Math.max(0,order.receivedAmount-order.returnAmount)>0||
+                      parsedRows<ItemLine>(order.itemLines).some(line=>line.shipped>0&&line.returnableQuantity>0))&&
                       returnOrderId!==order.orderId&&
                       <button type="button" onClick={()=>{setReturnOrderId(order.orderId);setExchangeOrderId(null)}}>
                         Оформить возврат</button>}
