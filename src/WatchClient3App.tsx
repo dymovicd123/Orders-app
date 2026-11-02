@@ -84,9 +84,13 @@ export function WatchClient3App() {
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [catalogBusy, setCatalogBusy] = useState(false)
   const [catalogVersion,setCatalogVersion]=useState(0)
-  const [watchRefOptions,setWatchRefOptions]=useState<{paymentMethods:string[];deliveryMethods:string[]}>({
+  const [watchRefOptions,setWatchRefOptions]=useState<{
+    paymentMethods:string[];deliveryMethods:string[];
+    movements:string[];bracelets:string[];dials:string[];leatherColors:string[]
+  }>({
     paymentMethods:['KASPI GOLD','KASPI RED','Рассрочка'],
     deliveryMethods:['Казпочта','Курьер','Самовывоз','Межгород'],
+    movements:[],bracelets:[],dials:[],leatherColors:[],
   })
 
   const refreshAuth = useCallback(async () => {
@@ -167,7 +171,14 @@ export function WatchClient3App() {
       if(controller.signal.aborted)return
       const paymentMethods=result.rows.filter(row=>row.kind==='paymentMethods').map(row=>row.value)
       const deliveryMethods=result.rows.filter(row=>row.kind==='deliveryMethods').map(row=>row.value)
-      if(paymentMethods.length&&deliveryMethods.length)setWatchRefOptions({paymentMethods,deliveryMethods})
+      setWatchRefOptions({
+        paymentMethods:paymentMethods.length?paymentMethods:['KASPI GOLD','KASPI RED','Рассрочка'],
+        deliveryMethods:deliveryMethods.length?deliveryMethods:['Казпочта','Курьер','Самовывоз','Межгород'],
+        movements:result.rows.filter(row=>row.kind==='movements').map(row=>row.value),
+        bracelets:result.rows.filter(row=>row.kind==='bracelets').map(row=>row.value),
+        dials:result.rows.filter(row=>row.kind==='dials').map(row=>row.value),
+        leatherColors:result.rows.filter(row=>row.kind==='leatherColors').map(row=>row.value),
+      })
     }).catch(cause=>{if(!controller.signal.aborted)setError(
       cause instanceof Error?cause.message:'Не удалось загрузить способы оплаты и доставки')})
     return ()=>controller.abort()
@@ -325,12 +336,12 @@ export function WatchClient3App() {
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
         activeSection==='create'?
           <section className="watch-shell-create-page">
-            {catalogBusy?<article className="card wide">Загрузка доступных часов…</article>:
-              <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
+            <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
                 isAdmin={canAdmin} managers={managerChoices}
                 deliveryMethods={watchRefOptions.deliveryMethods}
                 paymentMethods={watchRefOptions.paymentMethods}
-                onSave={saveWatchOrder}/>}
+                references={watchRefOptions}
+                onSave={saveWatchOrder}/>
           </section>:
         activeSection==='returns'?<>
           <article className="card wide"><div className="card-label">Возвраты</div>
