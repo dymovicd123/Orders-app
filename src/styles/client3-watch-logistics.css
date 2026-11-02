@@ -89,3 +89,14 @@
 .watch-logistics-actions small{max-width:420px}
 .watch-main-logistics-send-status.is-awaiting{white-space:normal}
 @media(max-width:710px){.watch-logistics-select-line>span{overflow-wrap:anywhere}.watch-logistics-actions{align-items:stretch}}
+
+/* Separate admin-only correction of an erroneous recorded shipment; not a return. */
+.watch-dispatch-correction-open{white-space:normal;text-align:left;font-size:.76rem}
+.watch-dispatch-correction-confirm{display:grid;gap:10px;padding:14px;margin:14px 0;border:1px solid #fcd34d;border-radius:10px;background:#fffbeb}
+.watch-dispatch-correction-confirm strong{color:#92400e;font-size:14px}
+.watch-dispatch-correction-confirm p{margin:0;color:#78350f;font-size:12px;line-height:1.5}
+.watch-dispatch-correction-confirm label{display:grid;gap:7px;font-size:12px;font-weight:600;color:#713f12}
+.watch-dispatch-correction-confirm textarea{width:100%;max-width:100%;min-width:0;box-sizing:border-box;border:1px solid #fbbf24;border-radius:8px;background:#fff;padding:10px;font:inherit}
+.watch-dispatch-correction-confirm .watch-logistics-actions{margin:0}
+.watch-dispatch-correction-commit{background:#92400e!important;color:#fff!important}
+@media(max-width:680px){.watch-dispatch-correction-confirm{padding:11px}}
