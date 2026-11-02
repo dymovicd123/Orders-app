@@ -1,6 +1,7 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
+import {createClient3WatchReturn,receiveClient3WatchReturn} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
@@ -275,6 +276,20 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return registerWatchVariant(db,actor,scope.row!.id,input)
+  }
+  const watchReturnMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return$/.exec(url.pathname)
+  if(watchReturnMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;paymentMethod?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return createClient3WatchReturn(db,actor,scope.row!.id,Number(watchReturnMatch[1]),input)
+  }
+  const watchReceiveMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return\/receive$/.exec(url.pathname)
+  if(watchReceiveMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;returnId?:unknown;returnItemId?:unknown;destination?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return receiveClient3WatchReturn(db,actor,scope.row!.id,Number(watchReceiveMatch[1]),input)
   }
   const sendMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/send$/.exec(url.pathname)
   if(sendMatch&&request.method==='POST'){
