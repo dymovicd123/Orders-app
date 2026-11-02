@@ -1,4 +1,5 @@
 name: Client3 shared references and split payments — ISOLATED QA ONLY
+# Retry after verifying split payment checks against multi-row UI.
 on:
   push:
     branches: [client3/shared-references-split-payments-20261102]
