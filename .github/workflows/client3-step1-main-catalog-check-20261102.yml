@@ -1,4 +1,5 @@
 name: Client3 Step1 Main catalog and references — isolated acceptance
+# Repeat after reference fixtures were corrected.
 on:
   push:
     branches: [client3/step1-main-catalog-references-20261102]
