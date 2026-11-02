@@ -59,6 +59,10 @@ export async function listClient3WatchOrders(
         o.debt_amount AS debtAmount,o.return_amount AS returnAmount,
         wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
         wd.city,wd.delivery_method AS deliveryMethod,
+        COALESCE(o.customer_name_override,c.display_name,'') AS canonicalCustomerName,
+        COALESCE(c.phone_normalized,'') AS canonicalCustomerPhone,
+        COALESCE(o.city,'') AS canonicalCity,COALESCE(o.delivery_type,'') AS canonicalDeliveryType,
+        COALESCE(o.comment,'') AS orderComment,
         wd.delivery_full_address AS deliveryAddress,wd.postal_code AS postalCode,wd.urgent,
         wd.shipping_deadline_at AS shippingDeadlineAt,
         lj.status AS engravingStatus,
@@ -78,7 +82,9 @@ export async function listClient3WatchOrders(
         (SELECT COALESCE(json_group_array(json_object(
           'id',oi.id,
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
-          'quantity',oi.quantity,'unitPrice',oi.unit_price,'source',oi.source_type,
+          'quantity',oi.quantity,'unitPrice',oi.unit_price,
+          'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
+          'source',oi.source_type,
           'shipped',EXISTS(SELECT 1 FROM order_dispatch_items di2
             JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
             WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
@@ -120,6 +126,7 @@ export async function listClient3WatchOrders(
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0) AS lineCount
       FROM watch_order_details wd
       JOIN orders o ON o.id=wd.order_id
+      LEFT JOIN customers c ON c.id=o.customer_id
       LEFT JOIN watch_logistics_jobs lj ON lj.order_id=o.id
       WHERE ${where}
       ORDER BY o.order_date DESC,o.id DESC LIMIT ? OFFSET ?
