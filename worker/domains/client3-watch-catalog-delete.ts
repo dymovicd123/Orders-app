@@ -15,7 +15,8 @@ async function target(db:D1Database,brandId:number,input:Input){
  const model=await db.prepare('SELECT id,model_name,catalog_product_id,is_active FROM watch_products WHERE id=? AND brand_id=?')
    .bind(productId,brandId).first<{id:number;model_name:string;catalog_product_id:number|null;is_active:number}>()
  if(!model)throw new Error('Товар не найден в выбранном бренде.')
- const rows=await db.prepare(`SELECT id,catalog_variant_id,movement,bracelet_material FROM watch_variants
+ const rows=await db.prepare(`SELECT id,catalog_variant_id,COALESCE(custom_movement,movement) AS movement,
+     COALESCE(custom_bracelet_material,bracelet_material) AS bracelet_material FROM watch_variants
    WHERE watch_product_id=? AND is_active=1 ORDER BY id`).bind(productId).all<Item>()
  let items=rows.results||[]
  if(kind==='variant'){
