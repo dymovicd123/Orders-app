@@ -145,3 +145,19 @@
 .watch-admin-delete-trigger{color:#9f1239!important}
 .watch-admin-delete-confirm-button{background:#b91c1c!important;color:#fff!important}
 @media(max-width:650px){.watch-admin-actions-buttons>button{flex:1 1 155px}}
+
+/* Client3 admin full-item editor: compact Main-like grouped lines, no mandatory catalog picker. */
+.watch-admin-composition{display:grid;gap:14px;min-width:0}
+.watch-admin-composition-line{padding:15px;border:1px solid #dbe4ef;border-radius:10px;background:#fbfdff}
+.watch-admin-composition-heading,.watch-admin-composition-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.watch-admin-composition-heading strong{color:#1e3a5f;font-size:14px}
+.watch-admin-composition .watch-corrections-grid label{position:relative}
+.watch-admin-composition .smart-picker,.watch-admin-composition .smart-picker-shell{position:relative;min-width:0;width:100%}
+.watch-admin-composition .smart-picker-shell>input{padding-right:40px}
+.watch-admin-composition .smart-picker-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:29px;height:29px;display:grid;place-items:center;border:0;background:#eef4fa;border-radius:6px;color:#475569;cursor:pointer}
+.watch-admin-composition .smart-picker-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;max-height:230px;overflow-y:auto;border:1px solid #d0dceb;border-radius:8px;background:#fff;box-shadow:0 12px 20px #0f172a20}
+.watch-admin-composition .smart-picker-option{display:block;width:100%;border:0;border-bottom:1px solid #f1f5f9;background:#fff;text-align:left;padding:9px 12px;color:#0f172a;font:inherit;font-size:12px;cursor:pointer}
+.watch-admin-composition .smart-picker-option:hover,.watch-admin-composition .smart-picker-option.is-selected{background:#eff6ff}
+.watch-admin-composition .smart-picker-empty{padding:12px;color:#64748b;font-size:12px}
+.watch-admin-composition-bottom{margin-bottom:0}
+@media(max-width:690px){.watch-admin-composition-line{padding:11px}.watch-admin-composition-bottom>*{flex:1}}
