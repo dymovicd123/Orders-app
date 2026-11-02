@@ -1,4 +1,5 @@
 name: Client3 Main catalog edit isolated checks
+# Verify custom characteristic after reference restoration.
 on:
   push:
     branches: [client3/step1-catalog-edit-20261102]
