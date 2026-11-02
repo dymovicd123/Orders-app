@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict'
+import { DatabaseSync } from 'node:sqlite'
+import fs from 'node:fs'
+import { routeClient3Watches } from '../../worker/domains/client3-watches.ts'
+
+const sql=new DatabaseSync(':memory:')
+sql.exec('PRAGMA foreign_keys=ON')
+sql.exec([
+'CREATE TABLE managers(id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER DEFAULT 1);',
+'CREATE TABLE app_users(id INTEGER PRIMARY KEY);',
+'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);',
+'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);',
+"CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_date TEXT,manager_id INTEGER,manager_snapshot_name TEXT,source_type TEXT,shipping_status TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,return_amount INTEGER);",
+'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER);',
+'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
+'INSERT INTO managers VALUES(1,"Alice",1),(2,"Bob",1);',
+'INSERT INTO app_users VALUES(9);',
+"INSERT INTO orders VALUES(1,'W-1','2026-11-01',1,'Alice','warehouse','not_sent','active',20000,10000,10000,0);",
+"INSERT INTO orders VALUES(2,'W-2','2026-11-02',2,'Bob','boutique','sent','active',60000,60000,0,0);",
+"INSERT INTO orders VALUES(3,'W-3','2026-10-01',1,'Alice','warehouse','sent','active',30000,30000,0,0);",
+'INSERT INTO order_items VALUES(101,1),(102,2),(103,3);',
+].join('\n'))
+sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
+sql.exec([
+'INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1),(2,2);',
+"INSERT INTO watch_order_details(order_id,brand_id,recipient_name,recipient_phone,delivery_full_address,postal_code,city,delivery_method,urgent,shipping_deadline_at) VALUES(1,1,'Private Customer 1','777','Address 1','050000','Almaty','Kazpost',0,'2026-11-05T12:00:00Z');",
+"INSERT INTO watch_order_details(order_id,brand_id,recipient_name,recipient_phone,delivery_full_address,postal_code,city,delivery_method,urgent,shipping_deadline_at) VALUES(2,2,'Private Customer 2','888','Address 2','010000','Astana','Kazpost',1,'2026-11-06T12:00:00Z');",
+"INSERT INTO watch_order_details(order_id,brand_id,recipient_name,recipient_phone,delivery_full_address,postal_code,city,delivery_method,urgent,shipping_deadline_at) VALUES(3,1,'Historical Customer 3','999','Address 3','050000','Almaty','Kazpost',0,'2026-10-06T12:00:00Z');",
+'INSERT INTO watch_logistics_jobs(order_id) VALUES(1),(2),(3);',
+].join('\n'))
+function dbMock() {
+  return { prepare(query) {
+    let params=[]
+    return {
+      bind(...args){params=args;return this},
+      async first(){return sql.prepare(query).get(...params)||null},
+      async all(){return {results:sql.prepare(query).all(...params)}},
+    }
+  }}
+}
+const db=dbMock()
+const alice={id:1,role:'manager',managerId:1,employeeRole:'Менеджер'}
+const bob={id:2,role:'manager',managerId:2,employeeRole:'Менеджер'}
+const admin={id:9,role:'admin',managerId:null,employeeRole:'Администратор'}
+const query=async(actor,params)=>{
+  const url=new URL('https://example.test/api/client3/watches/orders?'+params)
+  const response=await routeClient3Watches(db,new Request(url),url,actor)
+  assert(response,'GET order route must exist')
+  return {httpStatus:response.status,...await response.json()}
+}
+const aliceMonth=await query(alice,'brand=TAUWACH&from=2026-11-01&to=2026-11-30')
+assert.equal(aliceMonth.httpStatus,200)
+assert.equal(aliceMonth.rows.length,1)
+assert.equal(aliceMonth.totals.orderCount,1)
+assert.equal(aliceMonth.totals.totalAmount,20000)
+assert.equal(aliceMonth.totals.receivedAmount,10000)
+assert.equal(aliceMonth.totals.debtAmount,10000)
+const forbidden=await query(alice,'brand=WACHIZEN')
+assert.equal(forbidden.httpStatus,403)
+assert(!JSON.stringify(forbidden).includes('Private Customer 2'))
+const missing=await query(alice,'')
+assert.equal(missing.httpStatus,400)
+const bobMonth=await query(bob,'brand=WACHIZEN&from=2026-11-01&to=2026-11-30')
+assert.equal(bobMonth.rows.length,1)
+assert.equal(bobMonth.totals.receivedAmount,60000)
+const adminOne=await query(admin,'brand=TAUWACH&from=2026-10-01&to=2026-11-30&limit=1')
+assert.equal(adminOne.totals.orderCount,2)
+assert.equal(adminOne.rows.length,1)
+assert.equal(adminOne.hasMore,true)
+const next=await query(admin,'brand=TAUWACH&from=2026-10-01&to=2026-11-30&limit=1&offset=1')
+assert.equal(next.rows.length,1)
+assert.notEqual(next.rows[0].orderId,adminOne.rows[0].orderId)
+const searched=await query(alice,'brand=TAUWACH&q=Private%20Customer%201')
+assert.equal(searched.rows.length,1)
+const invalid=await query(alice,'brand=TAUWACH&from=2026-02-30')
+assert.equal(invalid.httpStatus,400)
+sql.close()
+console.log('CLIENT3_WATCH_ORDERS_READ_PASS: scoped manager ledger, brand totals, date validation, pagination, search')
