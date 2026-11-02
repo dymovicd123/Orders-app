@@ -1349,6 +1349,7 @@ export async function createExchange(
     throw new Error('Обмен больше не принимает полный остаток товара. Обновите форму и подтвердите только выдаваемые вещи.');
   }
   const physicalIssueConfirmed = (input.newItem as any)?.issuePossessionConfirmed === true;
+  const shipmentState = cleanText((input.newItem as any)?.shipmentState);
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
 
@@ -1492,6 +1493,9 @@ export async function createExchange(
   const effectiveReplacementSource: OrderItemSourceType = input.newSourceWasManuallyChanged
     ? requestedNewItem.sourceType
     : inheritedReplacementSource;
+  if (!requestedNewItem.isWorkshop && shipmentState !== 'sent' && shipmentState !== 'pending') {
+    throw new CriticalOperationConflictError('Укажите, отправлен ли новый товар клиенту.');
+  }
   const newItem = {
     ...requestedNewItem,
     sourceType: effectiveReplacementSource,
@@ -1742,10 +1746,10 @@ export async function createExchange(
       isWorkshop: false,
       productId: resolvedNew.productId,
       variantId: resolvedNew.variantId,
-      pendingReason: inventoryLifecyclePendingReason(resolvedNew, false),
+      pendingReason: shipmentState === 'pending' ? 'awaiting_dispatch' : inventoryLifecyclePendingReason(resolvedNew, false),
       timestamp,
     });
-    if (resolvedNew.variantId) {
+    if (shipmentState === 'sent' && resolvedNew.variantId) {
       newStockWriteOff = await applyCanonicalInventoryLifecycleEvent(
         db,
         newEvent.id,
@@ -1754,7 +1758,7 @@ export async function createExchange(
         `Физическое списание новой позиции обмена #${exchangeId}`,
         { outboundPossessionConfirmed: physicalIssueConfirmed },
       );
-    } else {
+    } else if (shipmentState === 'sent') {
       pendingInventory.push({ eventId: newEvent.id, eventType: newEvent.event_type, productName: cleanText(insertedNewOrderItem.product_name_snapshot), source: newItem.inventorySource });
     }
   }
