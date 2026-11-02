@@ -139,9 +139,9 @@ export async function markWatchLogisticsReady(
     `).bind(timestamp,actor.id,requestId,timestamp,orderId,row.status),
     db.prepare(`
       INSERT INTO watch_logistics_events(order_id,actor_user_id,previous_status,next_status,request_id,created_at)
-      SELECT order_id,?,'`+row.status+`','ready',?,?
+      SELECT order_id,?,?,'ready',?,?
       FROM watch_logistics_jobs WHERE order_id=? AND ready_request_id=?
-    `).bind(actor.id,requestId,timestamp,orderId,requestId),
+    `).bind(actor.id,row.status,requestId,timestamp,orderId,requestId),
   ])
   if(Number(results[0]?.meta?.changes||0)!==1)
     return json({ok:false,code:'LOGISTICS_STALE',message:'Статус изменился, обновите логистику.'},{status:409})
