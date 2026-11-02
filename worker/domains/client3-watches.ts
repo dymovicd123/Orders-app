@@ -1,7 +1,7 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
-import {createClient3WatchReturn,receiveClient3WatchReturn} from './client3-watch-returns.ts'
+import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
@@ -276,6 +276,11 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return registerWatchVariant(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/returns/pending'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listPendingClient3WatchReturns(db,actor,scope.row!.id)
   }
   const watchReturnMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return$/.exec(url.pathname)
   if(watchReturnMatch&&request.method==='POST'){
