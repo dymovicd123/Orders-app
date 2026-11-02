@@ -1,0 +1,24 @@
+/* Only watch-specific compatibility. ERP shell, sidebar and topbar use the
+   untouched Main styles imported by Client3MainChrome.tsx. */
+.client3-main-erp .erp-main{min-width:0}
+.client3-main-erp .client3-main-page{display:grid;align-content:start;gap:12px;min-width:0;padding:0 4px 24px}
+.client3-main-erp .client3-main-page>.card{margin:0}
+.client3-main-erp .client3-main-page .orders-workspace-header{margin:0}
+.client3-main-erp .client3-main-page .watch-shell-create-page{background:transparent;border:0;box-shadow:none;overflow:visible}
+.client3-main-erp .client3-main-page .watch-shell-catalog{border:0;background:transparent;padding:0;box-shadow:none}
+.client3-main-erp .client3-main-page .watch-shell-catalog-header{padding:8px 15px 16px;background:#fff;border:1px solid #dce5f0;border-radius:12px;margin:0 0 12px}
+.client3-main-erp .client3-main-page .watch-orders{padding:0;max-width:none;margin:0}
+.client3-main-erp .client3-main-page .watch-logistics{padding:0;max-width:none;margin:0}
+.client3-main-erp .client3-main-page .watch-finance{padding:0;max-width:none;margin:0}
+.client3-main-erp .client3-main-page .watch-returns{padding:0;max-width:none;margin:0}
+.client3-main-erp .client3-main-page .watch-users{padding:0;max-width:none;margin:0}
+.client3-main-erp .client3-main-page .watch-catalog-editor{border:0;margin:0}
+.client3-main-erp .client3-main-page .client3-main-stock-operation{margin:0!important}
+.client3-main-erp .client3-main-erp-inventory-tabs{display:flex;flex-wrap:wrap;gap:7px;padding:10px 12px}
+.client3-main-erp .client3-main-erp-inventory-tabs>.secondary.is-active{background:#2563eb;color:#fff;border-color:#2563eb}
+.client3-main-erp .client3-main-note{color:#64748b;font-size:13px;margin:0 0 12px}
+.client3-main-erp .client3-main-alert{margin:0 0 9px;padding:12px 15px;border-radius:10px;border:1px solid #dce5f0;background:#fff}
+.client3-main-erp .client3-main-erp-account-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:12px}
+.client3-main-erp .client3-main-erp-account-tabs>.secondary.is-active{color:#1d4ed8;border-color:#93c5fd;background:#eff6ff}
+.client3-main-erp .erp-primary-nav-button.is-current{pointer-events:auto}
+@media(max-width:820px){.client3-main-erp .client3-main-page{padding:0 8px 30px}.client3-main-erp .client3-main-erp-inventory-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.client3-main-erp .client3-main-erp-inventory-tabs button{padding:8px 5px}}
