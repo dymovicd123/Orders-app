@@ -16,6 +16,7 @@ sqlite.exec([
  'CREATE TABLE inventory_model_meta(key TEXT PRIMARY KEY,value TEXT);',
  'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,reserved_quantity INTEGER);',
  'CREATE TABLE inventory_transfer_documents(id INTEGER PRIMARY KEY,request_id TEXT UNIQUE);',
+ 'CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,status TEXT);',
  "INSERT INTO inventory_model_meta VALUES('human_inventory_v2','active');",
  'INSERT INTO managers VALUES(1);',
  'INSERT INTO app_users VALUES(1);',
@@ -115,6 +116,13 @@ const transferWriter=async(_db,input,actor,includeInventory)=>{
   return {ok:true,duplicate:false,warnings:[]}
 }
 sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=1 WHERE inventory_source='warehouse'").run()
+sqlite.prepare("INSERT INTO inventory_reservations(id,variant_id,inventory_source,quantity,status) VALUES(1,100,'warehouse',3,'active')").run()
+const inconsistentReserved=await read(transferClient3WatchStock(db,admin,1,{
+  watchVariantId:1,source:'office',quantity:2,expectedPhysical:3,
+  requestId:'transfer-test-stale-reserved',comment:'test'
+},transferWriter))
+assert.equal(inconsistentReserved.status,409,'Active reservation ledger must override a stale low reserved stock counter')
+sqlite.prepare('DELETE FROM inventory_reservations WHERE id=1').run()
 const transferInput={watchVariantId:1,source:'office',quantity:3,
  expectedPhysical:3,requestId:'transfer-test-001',comment:'to showcase'}
 const reserved=await read(transferClient3WatchStock(db,admin,1,transferInput,transferWriter))
