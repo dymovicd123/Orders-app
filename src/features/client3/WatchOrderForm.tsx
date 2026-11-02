@@ -43,6 +43,7 @@ type Props = {
   managers?: readonly {brand:WatchBrand;id:number;name:string}[]
   isAdmin?: boolean
   deliveryMethods: readonly string[]
+  paymentMethods?: readonly string[]
   onSave: (draft: WatchOrderDraftPayload) => Promise<void> | void
 }
 const genderLabel=(v:string)=>v==='male'?'Мужские':'Женские'
@@ -61,7 +62,7 @@ function descriptor(row:WatchOrderChoice):string {
 }
 
 /** Tenant-specific draft. Caller must POST only through authorized Client3 API. */
-export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,deliveryMethods,onSave}:Props) {
+export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,deliveryMethods,paymentMethods=WATCH_PAYMENTS,onSave}:Props) {
   const [brand,setBrand]=useState<WatchBrand|''>('')
   const [source,setSource]=useState<WatchSource|''>('')
   const [variantId,setVariantId]=useState(0)
@@ -84,7 +85,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   const receivedAmount=paymentRows.reduce((sum,row)=>sum+(Number(row.amount)||0),0)
   const paymentMethod=paymentRows.find(row=>Number(row.amount)>0)?.method||paymentRows[0].method
   const paymentInputsValid=paymentRows.length>=1&&paymentRows.length<=8&&
-    paymentRows.every((row,index)=>WATCH_PAYMENTS.includes(row.method)&&
+    paymentRows.every((row,index)=>paymentMethods.includes(row.method)&&
       row.amount.trim()!==''&&Number.isSafeInteger(Number(row.amount))&&
       Number(row.amount)>=(index===0?0:1))
   const [busy,setBusy]=useState(false)
@@ -271,7 +272,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
             <label>Способ оплаты
               <select value={row.method} onChange={e=>setPaymentRows(rows=>rows.map((item,i)=>
                 i===index?{...item,method:e.target.value as WatchPaymentMethod}:item))}>
-                {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
+                {paymentMethods.map(p=><option key={p} value={p}>{p}</option>)}
               </select>
             </label>
             <label>Получено, ₸ *
