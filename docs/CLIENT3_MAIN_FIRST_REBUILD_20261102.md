@@ -36,3 +36,13 @@ The user requested the working Main product with only watch-specific changes. Pr
 - Test at least one admin and one manager role under each brand. Make no cross-brand leaks.
 - Test 2-brand stock, reservation, dispatch, returns, exchange and idempotent retry on disposable D1. Confirm existing historical orders and monitoring admin survive rollout.
 - No claims that full Main parity is finished without real logged-in browser QA. This branch has structural/unit/SSR/stock/order tests, but browser-authenticated parity remains pending.
+
+## 2026-11-02 follow-up: split payments and shared references
+
+Source branch: `client3/shared-references-split-payments-20261102`, currently under isolated CI; do not call it a released Main-parity implementation.
+
+- **Accurate Orders table answer:** Client3 uses `src/features/client3/WatchOrdersPanel.tsx`, not Main's full `OrdersTableSection.tsx`. It has 9 simplified columns and lacks Main's advanced filters, full per-item editor, correction/settlement actions and several order lifecycle controls. Do not describe it as "exactly like Main" before the real sections and interactions are ported.
+- **Multi-method sales payments:** `WatchOrderForm.tsx` now renders multiple payment rows. Server `client3-watch-create.ts` verifies methods, amounts and exact received sum, then gives each payment as a distinct entry to Main's critical order/money write. The existing request ID protects retries from double-counting. Main finance core itself is not replaced.
+- **Reference values for both watch brands:** `watch_reference_values` is a shared tenant-wide dictionary rather than a brand-scoped list. Admin may add leather strap colors, payment methods and delivery methods on the References page; managers read them. Existing customer and SKU data are not rewritten. The watch catalog selects registered leather colors. Gender/movement/bracelet material/dial color remain bounded by the existing DB schema checks and must not pretend to support arbitrary values.
+- **DB migration is isolated and additive:** `migrations/client3-watch/0004_client3_shared_reference_values.sql` is strictly for the third D1. Never apply it to Main or Branch2.
+- **Outstanding parity:** multi-position orders, true Main Orders table/editor, selective sending, resolver and issuance corrections, full inventory history/checks and finished UI browser QA. These are *not finished*. Reuse the actual Main components with narrow client-specific adapters, not superficial CSS imitation.
