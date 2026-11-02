@@ -48,6 +48,8 @@ jobs:
           assert(handler.includes('saveInventoryStocktakeCount'))
           assert(handler.includes('inventoryStocktake_sessions')===false)
           assert(handler.includes('watch_products'))
+          assert(!component.includes('const unsaved='))
+          assert(!handler.includes('const sourceLabel='))
           assert(!/\/api\/inventory\/(problems|issues)/.test(component))
           console.log('CLIENT3_MAIN_SESSION_RECOUNT_UI_PASS')
           NODE
