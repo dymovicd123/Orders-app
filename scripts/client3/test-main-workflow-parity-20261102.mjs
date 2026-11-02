@@ -30,8 +30,8 @@ assert(refs.includes("'/api/client3/watches/references'"),
   'Watch characteristics must come from the shared brand-neutral references API')
 assert(!refs.includes('onBrandChange(value)')&&!refs.includes('watch-references-brand-scope'),
   'References must not force a brand selector for characteristics')
-assert(refs.includes('Добавить в справочник')&&refs.includes("method:'POST'"),
-  'Admin must be able to add real shared references rather than fake edits')
+assert(refs.includes('Добавить в справочник')&&refs.includes("editId?'PATCH':'POST'")&&refs.includes("method:'DELETE'"),
+  'Admin must add, edit and remove real shared references rather than fake edits')
 assert(!refs.includes('/api/references'),'Never allow brand-unsafe Main references write routes')
 
 assert(shell.includes('client3-brand-workspace')&&shell.includes('client3-brand-workspace-tabs'),
