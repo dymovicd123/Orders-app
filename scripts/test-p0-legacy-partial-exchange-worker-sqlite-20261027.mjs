@@ -505,7 +505,7 @@ try {
     expectedStatus:500,requestId:'stability-recover-mid-return',
   })
   assert.equal(injected.data.ok,false)
-  assert.equal(count('returns','order_id='+failedId),1,'Return header committed before injected failure')
+  assert.equal(count('returns','order_id='+failedId),0,'Atomic Return must not leave an orphan refund header when item claim fails')
   assert.equal(Number(stock().quantity),0,'Uncompleted Return must not restock physical')
   const recovered=await api('/api/returns','POST',failedReturnPayload,{
     expectedStatus:201,requestId:'stability-recover-mid-return',
@@ -525,7 +525,7 @@ try {
   })
   assert.equal(Number(stock().quantity),0,'Recovered-and-cancelled Return must restore physical')
   assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',failedId).return_amount),0)
-  console.log('MAIN_RETURN_INJECTED_FAILURE_RECOVERY_PASSED: committed header/refund before failed item, request replay preserves exactly one money/stock event and cancels safely')
+  console.log('MAIN_RETURN_INJECTED_FAILURE_RECOVERY_PASSED: header and item roll back together, request replay creates exactly one money/stock event and cancels safely')
   // REGRESSION: partial LEGACY exchange of an UNISSUED old line (quantity 2).
   // It must free ONE unit of that line's reserve, never the other unissued unit.
   await api('/api/inventory/movements','POST',{
