@@ -38,9 +38,14 @@
 @media(max-width:1070px){.main-watch-create .main-watch-create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.main-watch-create .main-watch-create-totals{grid-template-columns:repeat(2,1fr)}.main-watch-create .main-watch-create-spacer{display:none}}
 @media(max-width:650px){.main-watch-create .main-watch-create-grid{grid-template-columns:1fr}.main-watch-create .main-watch-create-totals{grid-template-columns:repeat(2,minmax(0,1fr))}.main-watch-create .order-step-head{align-items:flex-start}.main-watch-create .order-create-actions button{flex:1}}
 
-/* Main free-entry product card for watches not yet in the catalog. */
-.main-watch-create .main-watch-manual-toggle{margin-top:7px;justify-self:start}
-.main-watch-create .main-watch-manual-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px;border:1px dashed #b9c9dd;border-radius:10px;background:#f8fafc}
-.main-watch-create .main-watch-manual-fields label{min-width:0}
-.main-watch-create .main-watch-manual-fields p{grid-column:1/-1;margin:0;color:#64748b;font-size:.83rem}
-@media(max-width:650px){.main-watch-create .main-watch-manual-fields{grid-template-columns:1fr}}
+/* Same SmartPickerInput as Main. Free text is the default, not an alternate mode. */
+.main-watch-create .main-watch-create-grid .smart-picker{min-width:0;width:100%;position:relative}
+.main-watch-create .main-watch-create-grid .smart-picker-shell{width:100%;position:relative}
+.main-watch-create .main-watch-create-grid .smart-picker-shell input{width:100%;min-height:42px;box-sizing:border-box;padding-right:39px}
+.main-watch-create .main-watch-create-grid .smart-picker-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:7px;background:#eff4fb;color:#64748b;font-size:19px;cursor:pointer}
+.main-watch-create .main-watch-create-grid .smart-picker-menu{position:absolute;left:0;right:0;top:calc(100% + 5px);z-index:15;max-height:225px;overflow-y:auto;border:1px solid #cfdae7;box-shadow:0 9px 22px #0f172a20;border-radius:9px;background:#fff}
+.main-watch-create .main-watch-create-grid .smart-picker-option{display:block;width:100%;padding:10px 12px;text-align:left;border:0;border-bottom:1px solid #edf1f5;background:#fff;font:inherit;font-size:13px;color:#0f172a;cursor:pointer}
+.main-watch-create .main-watch-create-grid .smart-picker-option:hover,
+.main-watch-create .main-watch-create-grid .smart-picker-option.is-selected{background:#eff6ff}
+.main-watch-create .main-watch-create-grid .smart-picker-empty{padding:12px;font-size:13px;color:#64748b}
+.main-watch-create .main-watch-create-item{overflow:visible}
