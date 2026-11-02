@@ -14,13 +14,15 @@ export type WatchOrderChoice={
  officePhysical:number;officeReserved:number;showcasePhysical:number;showcaseReserved:number;
  catalogPriceSnapshot?:number|null
 }
+type ManualFields={modelName:string;gender:'male'|'female';movement:string;
+ braceletMaterial:string;dialColor:string;braceletColor:string}
 type DraftLine={id:string;watchVariantId:number;source:WatchSource;quantity:number;
- unitPrice:string;engravingText:string}
+ unitPrice:string;engravingText:string;manual:ManualFields|null}
 export type WatchOrderDraftPayload=ReturnType<typeof validateWatchOrderInput>&{
  shippingDeadlineLocal:string;requestId:string;receivedAmount:number;
  payments:Array<{method:WatchPaymentMethod;amount:number}>;managerId?:number;
  items:Array<{watchVariantId:number;catalogVariantId:number;quantity:number;unitPrice:number;
-   source:WatchSource;engravingText:string}>
+   source:WatchSource;engravingText:string;manual?:ManualFields}>
  // Backwards compatibility with early third-tenant Clients and Main tests.
  watchVariantId:number;catalogVariantId:number;quantity:number;unitPrice:number;engravingText:string;
  catalogPriceSnapshot:number|null
@@ -43,7 +45,7 @@ const descriptor=(x:WatchOrderChoice)=>[
 const free=(x:WatchOrderChoice,source:WatchSource)=>Math.max(0,Number(source==='office'?
  x.officePhysical-x.officeReserved:x.showcasePhysical-x.showcaseReserved)||0)
 const newLine=():DraftLine=>({
- id:crypto.randomUUID(),watchVariantId:0,source:'office',quantity:1,unitPrice:'',engravingText:'',
+ id:crypto.randomUUID(),watchVariantId:0,source:'office',quantity:1,unitPrice:'',engravingText:'',manual:null,
 })
 
 /** Same workflow as Main's CreateOrderSection: brand → multiple lines with own
@@ -80,7 +82,9 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  const debt=Math.max(0,total-received)
  const paymentMethod=payments.find(x=>Number(x.amount)>0)?.method||payments[0]?.method||paymentMethods[0]||'KASPI GOLD'
  const validLines=lines.length>0&&lines.length<=20&&lines.every((line,index)=>
-   Boolean(matches[index])&&Number.isSafeInteger(line.quantity)&&line.quantity>=1&&line.quantity<=1000&&
+   (line.manual?Boolean(line.manual.modelName.trim()&&line.manual.movement.trim()&&
+       line.manual.braceletMaterial.trim()&&line.manual.dialColor.trim()):Boolean(matches[index]))&&
+   Number.isSafeInteger(line.quantity)&&line.quantity>=1&&line.quantity<=1000&&
    line.unitPrice.trim()!==''&&Number.isSafeInteger(Number(line.unitPrice))&&
    Number(line.unitPrice)>=0&&Number(line.unitPrice)<=1000000000&&line.engravingText.length<=500)
  const validPayments=payments.length>=1&&payments.length<=8&&payments.every((row,index)=>
@@ -103,9 +107,11 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    if(!brand||!canSave){setError('Выберите бренд, заполните товары, данные клиента и оплаты.');return}
    try{
      const selected=lines.map((line,index)=>({
-       watchVariantId:line.watchVariantId,catalogVariantId:matches[index]!.catalogVariantId,
+       watchVariantId:line.manual?0:line.watchVariantId,
+       catalogVariantId:line.manual?undefined:matches[index]?.catalogVariantId,
        quantity:line.quantity,unitPrice:Number(line.unitPrice),source:line.source,
        engravingText:line.engravingText.trim(),
+       ...(line.manual?{manual:line.manual}:{}),
      }))
      const first=selected[0]
      const base=validateWatchOrderInput({
@@ -135,7 +141,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
      <div><div className="card-label">Новый заказ</div>
        <div className="card-meta">Форма по логике Main: бренд обязателен; отсутствие часов на складе не запрещает регистрацию.</div></div>
      <div className="orders-workspace-kpis create-kpis">
-       <div><span>Товаров</span><strong>{lines.filter(x=>x.watchVariantId>0).reduce((n,x)=>n+x.quantity,0)}</strong></div>
+       <div><span>Товаров</span><strong>{lines.filter(x=>x.watchVariantId>0||x.manual).reduce((n,x)=>n+x.quantity,0)}</strong></div>
        <div><span>Оплат</span><strong>{payments.filter(x=>Number(x.amount)>0).length}</strong></div>
        <div><span>Долг</span><strong>{debt.toLocaleString('ru-RU')} ₸</strong></div>
      </div>
@@ -201,7 +207,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
      {!brand?<div className="main-watch-create-placeholder">Сначала выберите бренд.</div>:
        <div className="main-watch-create-list">
          {lines.map((line,index)=>{
-           const chosen=matches[index]
+           const chosen=line.manual?undefined:matches[index]
            const available=chosen?free(chosen,line.source):0
            return <article className="main-watch-create-item" key={line.id}>
              <div className="main-watch-create-item-head">
@@ -211,7 +217,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
              </div>
              <div className="main-watch-create-grid">
                <label className="main-watch-create-wide">Модель и характеристики часов *
-                 <select required value={line.watchVariantId} onChange={e=>{
+                 {!line.manual&&<select required value={line.watchVariantId} onChange={e=>{
                    const chosen=scoped.find(x=>x.watchVariantId===Number(e.target.value))
                    update(line.id,{watchVariantId:Number(e.target.value),
                      unitPrice:chosen?.catalogPriceSnapshot==null?'':String(chosen.catalogPriceSnapshot)})
@@ -220,9 +226,53 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
                    {scoped.map(x=><option key={x.watchVariantId} value={x.watchVariantId}>
                      {descriptor(x)} · офис {free(x,'office')} / витрина {free(x,'showcase')}
                    </option>)}
-                 </select>
-                 <small>Все активные комплектации бренда, независимо от наличия в выбранной точке.</small>
+                 </select>}
+                 <small>Выберите из каталога или введите новый товар и характеристики вручную,
+                   как в Main. Физический остаток не создаётся автоматически.</small>
+                 <button type="button" className="secondary compact main-watch-manual-toggle"
+                   onClick={()=>update(line.id,line.manual?{manual:null,watchVariantId:0,unitPrice:''}:
+                     {manual:{modelName:'',gender:'male',movement:'quartz',
+                       braceletMaterial:'steel',dialColor:'black',braceletColor:''},
+                       watchVariantId:0,unitPrice:''})}>
+                   {line.manual?'Выбрать из каталога':'Не нашли товар? Ввести вручную'}
+                 </button>
                </label>
+               {line.manual&&<div className="main-watch-create-wide main-watch-manual-fields">
+                 <label>Название новой модели *
+                   <input required maxLength={150} value={line.manual.modelName}
+                     onChange={e=>update(line.id,{manual:{...line.manual!,modelName:e.target.value}})}
+                     placeholder="Например, Classic Watch 01"/>
+                 </label>
+                 <label>Пол *
+                   <select required value={line.manual.gender}
+                     onChange={e=>update(line.id,{manual:{...line.manual!,gender:e.target.value as 'male'|'female'}})}>
+                     {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+                   </select>
+                 </label>
+                 <label>Механизм *
+                   <input required maxLength={80} list="watch-order-movement-options"
+                     value={line.manual.movement}
+                     onChange={e=>update(line.id,{manual:{...line.manual!,movement:e.target.value}})}/>
+                 </label>
+                 <label>Материал браслета *
+                   <input required maxLength={80} list="watch-order-bracelet-options"
+                     value={line.manual.braceletMaterial}
+                     onChange={e=>update(line.id,{manual:{...line.manual!,braceletMaterial:e.target.value,
+                       braceletColor:e.target.value==='leather'?line.manual!.braceletColor:''}})}/>
+                 </label>
+                 <label>Цвет циферблата *
+                   <input required maxLength={80} list="watch-order-dial-options"
+                     value={line.manual.dialColor}
+                     onChange={e=>update(line.id,{manual:{...line.manual!,dialColor:e.target.value}})}/>
+                 </label>
+                 {line.manual.braceletMaterial==='leather'&&<label>Цвет кожаного ремешка *
+                   <input required maxLength={80} value={line.manual.braceletColor}
+                     onChange={e=>update(line.id,{manual:{...line.manual!,braceletColor:e.target.value}})}
+                     placeholder="Например, Тёмно синий"/>
+                 </label>}
+                 <p>Новая модель и комплектация будут зарегистрированы в выбранном бренде
+                   с нулевым физическим остатком. Недостающие часы останутся в ожидании резерва.</p>
+               </div>}
                <label>Источник позиции *
                  <select value={line.source}
                    onChange={e=>update(line.id,{source:e.target.value as WatchSource})}>
@@ -255,6 +305,15 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        </div>}
      {brand&&<button type="button" className="secondary" disabled={lines.length>=20}
        onClick={()=>setLines(all=>[...all,newLine()])}>+ Добавить товар</button>}
+     <datalist id="watch-order-movement-options">
+       {WATCH_OPTIONS.movements.map(x=><option key={x.value} value={x.value} label={x.label}/>)}
+     </datalist>
+     <datalist id="watch-order-bracelet-options">
+       {WATCH_OPTIONS.braceletMaterials.map(x=><option key={x.value} value={x.value} label={x.label}/>)}
+     </datalist>
+     <datalist id="watch-order-dial-options">
+       {WATCH_OPTIONS.dialColors.map(x=><option key={x.value} value={x.value} label={x.label}/>)}
+     </datalist>
    </section>
    <section className="order-step-card">
      <div className="order-step-head"><div className="order-step-index">3</div>
@@ -310,7 +369,9 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        <div className="main-watch-create-summary">
          <strong>Состав заказа · {brand||'Бренд не выбран'}</strong>
          {lines.map((line,index)=><div key={line.id}>
-           <span>{matches[index]?descriptor(matches[index]!):'Часы не выбраны'}</span>
+           <span>{line.manual?line.manual.modelName+' · '+line.manual.movement+' · '+
+             line.manual.braceletMaterial+' · '+line.manual.dialColor:
+             matches[index]?descriptor(matches[index]!):'Часы не выбраны'}</span>
            <b>{line.source==='office'?'Офис':'Витрина'} · ×{line.quantity}</b>
          </div>)}
        </div>
