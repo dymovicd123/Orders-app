@@ -1,6 +1,7 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
+import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
@@ -253,6 +254,12 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return receiveClient3WatchArrival(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/prices'&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown;salePrice?:unknown;expectedPrice?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return updateClient3WatchCatalogPrice(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/provision'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown}>(request)
