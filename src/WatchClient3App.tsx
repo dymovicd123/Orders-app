@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import type { WatchBrand } from '../shared/client3/watch-domain'
+import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import type { WatchOrderChoice } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
@@ -23,6 +23,9 @@ async function api<T extends { ok: boolean; message?: string }>(path: string, in
 }
 const jsonHeaders = { 'Content-Type': 'application/json' }
 function fullName(user: User) { return user.displayName || 'Сотрудник' }
+function optionLabel(rows: readonly {value:string;label:string}[], value: string) {
+  return rows.find(row => row.value === value)?.label || value
+}
 function sourceFree(item: WatchOrderChoice, office: boolean) {
   return Math.max(0, office
     ? Number(item.officePhysical) - Number(item.officeReserved)
@@ -176,7 +179,7 @@ export function WatchClient3App() {
     <nav className="watch-shell-nav" aria-label="Разделы">
       <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
         onClick={() => setTab('logistics')}>Логистика</button>
-      {brands.length > 0 && <button type="button" aria-current={tab === 'catalog' ? 'page' : undefined}
+      {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'catalog' ? 'page' : undefined}
         onClick={() => setTab('catalog')}>Каталог и остатки</button>}
     </nav>
     <main className="watch-shell-content">
@@ -198,7 +201,7 @@ export function WatchClient3App() {
                 <strong>{model.modelName}</strong>
                 <p>{model.gender === 'male' ? 'Мужские' : 'Женские'} ·
                   {model.movement === 'quartz' ? 'Кварц' : 'Механика'} ·
-                  {model.braceletMaterial} · {model.dialColor}
+                  {optionLabel(WATCH_OPTIONS.braceletMaterials, model.braceletMaterial)} · {optionLabel(WATCH_OPTIONS.dialColors, model.dialColor)}
                   {model.braceletColor ? ' · ремешок: ' + model.braceletColor : ''}</p>
                 <div>Офис: <strong>{sourceFree(model, true)}</strong> шт.</div>
                 <div>Витрина: <strong>{sourceFree(model, false)}</strong> шт.</div>
