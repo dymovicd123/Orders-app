@@ -30,6 +30,16 @@ export async function persistWatchOrderCommit(
     'SELECT id FROM order_items WHERE id=? AND order_id=? AND product_id=? AND variant_id=? AND quantity>0 AND is_workshop=0 LIMIT 1',
   ).bind(orderItemId, orderId, payload.catalogProductId, payload.catalogVariantId).first<{id:number}>()
   if (!item?.id) throw new Error('Сохранённая позиция не совпадает с выбранным SKU часов.')
+  const brandSku=await db.prepare(
+    'SELECT 1 AS ok FROM watch_variants wv JOIN watch_products wp ON wp.id=wv.watch_product_id WHERE wv.id=? AND wv.catalog_variant_id=? AND wp.catalog_product_id=? AND wp.brand_id=? AND wv.is_active=1 AND wp.is_active=1 LIMIT 1',
+  ).bind(payload.watchVariantId,payload.catalogVariantId,payload.catalogProductId,payload.brandId).first<{ok:number}>()
+  if (!brandSku?.ok) throw new Error('SKU часов больше не принадлежит указанному бренду.')
+  const expectedSource=payload.source==='office'?'warehouse':'boutique'
+  const source=await db.prepare(
+    'SELECT oi.source_type AS item_source,o.source_type AS order_source FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.id=? AND o.id=? LIMIT 1',
+  ).bind(orderItemId,orderId).first<{item_source:string;order_source:string}>()
+  if(source?.item_source!==expectedSource || source.order_source!==expectedSource)
+    throw new Error('Источник резерва часов не совпадает с источником заказа.')
   const now = new Date().toISOString()
   // All three watch-owned records commit or roll back together. Main core
   // order/reservation/payment creation remains the existing resumable critical operation.
