@@ -14,7 +14,7 @@ assert(shell.includes('/api/client3/watches/brands'), 'Brands must come from ses
 assert(shell.includes('/api/client3/watches/models?brand='))
 assert(shell.includes('/api/client3/watches/orders'),'Watch create must use tenant-owned API')
 assert(shell.includes('WatchOrderForm'),'Watch create form must be reachable')
-assert(shell.includes("canCompleteEngraving={user.role === 'admin' || user.employeeRole === 'Логист'}"))
+assert(shell.includes("canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}"),'Only admin or logistics role may complete engraving')
 assert(!/\/api\/(?:finance|orders|cash)(?:\/|\?|['\"])/.test(shell),
   'Do not invoke brand-unsafe legacy sales/finance APIs from the watch shell')
 const server = await createServer({
