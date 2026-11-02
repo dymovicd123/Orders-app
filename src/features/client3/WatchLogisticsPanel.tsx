@@ -279,7 +279,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                         item.engravingText?.trim()&&order.engravingStatus!=='ready'?'Ожидает гравировки':
                         'Готов к отправке'}</strong></div>
                     </div>
-                  }})}
+                  })}
                 </div>
                 <div className="watch-logistics-actions">
                   {order.engravingStatus==='ready'?<span>Гравировка завершена</span>:
