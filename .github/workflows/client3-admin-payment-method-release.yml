@@ -1,0 +1,95 @@
+name: Client3 Main admin payment method correction release (third only)
+on:
+  push:
+    branches: [client3/step2-admin-payment-method-correction-20261103]
+    paths: ['.github/workflows/client3-admin-payment-method-release.yml']
+permissions: {contents: read}
+jobs:
+  client3-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Verify only third tenant is targeted
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/step2-admin-payment-method-correction-20261103
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Execute Main editing, warehouse and financial regression tests
+        run: |
+          set -euo pipefail
+          node scripts/client3/test-watch-main-free-text-ux-20261103.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-main-step1-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-shared-references-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node scripts/client3/test-main-workflow-parity-20261102.mjs
+          npm run build
+      - name: Confirm no schema migrations pending, historic FK integrity and snapshot counts
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-edit-migrations
+          ! grep -Eq '000[0-9]+.*\.sql' /tmp/client3-edit-migrations
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COUNT(*) FROM watch_products) AS watch_products_count,
+              (SELECT COUNT(*) FROM watch_variants) AS watch_variants_count,
+              (SELECT COUNT(*) FROM watch_order_item_details) AS engraved_items_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_variant_attributes_v5') AS extension_exists" \
+            | jq -ce '.[0].results[0] | select(.orders_count>=2 and .payments_count>=2 and .monitoring_admin==1 and .extension_exists==1)' > /tmp/client3-edit-before
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+      - name: Deploy only Client3 Worker (no D1 writes)
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Smoke published Client3 UI and ensure data counts unchanged
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          test "$(curl -sSL -o /tmp/client3-edit-html -w '%{http_code}' --max-time 25 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-edit-html
+          code=$(curl -sS -o /tmp/client3-edit-protected -w '%{http_code}' --max-time 25 -X PATCH \
+            -H 'Content-Type: application/json' --data '{}' "$base/api/client3/watches/catalog/models")
+          test "$code" = 401 -o "$code" = 403
+          payment_status=$(curl -sS -o /tmp/client3-debt-protected -w '%{http_code}' --max-time 25 -X POST \
+            -H 'Content-Type: application/json' --data '{"brand":"TAUWACH","method":"KASPI GOLD","amount":1000}' \
+            "$base/api/client3/watches/orders/1/payments")
+          test "$payment_status" = 401 -o "$payment_status" = 403
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COUNT(*) FROM watch_products) AS watch_products_count,
+              (SELECT COUNT(*) FROM watch_variants) AS watch_variants_count,
+              (SELECT COUNT(*) FROM watch_order_item_details) AS engraved_items_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_variant_attributes_v5') AS extension_exists" \
+            | jq -ce '.[0].results[0]' > /tmp/client3-edit-after
+          diff -u /tmp/client3-edit-before /tmp/client3-edit-after
+          echo CLIENT3_ADMIN_MAIN_PAYMENT_METHOD_RELEASE_SUCCESS
