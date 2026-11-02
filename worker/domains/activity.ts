@@ -119,6 +119,14 @@ export async function listReturnHistory(db: D1Database, url: URL) {
   const status = cleanText(url.searchParams.get('status')).toLowerCase();
   const where: string[] = [];
   const bindings: unknown[] = [];
+  // Work #733: a LIVE receipt inbox is never filtered by the History search.
+  // The oldest unreceived physical item must remain discoverable even if it
+  // happened months ago and is not in the default newest 50 history rows.
+  const pendingOnly = url.searchParams.get('pendingOnly') === '1';
+  if (pendingOnly) where.push(`COALESCE(r.status,'completed') <> 'cancelled'
+    AND EXISTS (SELECT 1 FROM return_items pending_ri WHERE pending_ri.return_id = r.id
+      AND pending_ri.physical_tracking = 1 AND pending_ri.physical_received_at IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM exchanges parent_e WHERE parent_e.refund_return_id = r.id)`);
   if (dateFrom) { where.push('r.return_date >= ?'); bindings.push(normalizeDate(dateFrom)); }
   if (dateTo) { where.push('r.return_date <= ?'); bindings.push(normalizeDate(dateTo)); }
   if (status === 'completed') where.push("COALESCE(r.status, 'completed') <> 'cancelled'");
@@ -164,7 +172,7 @@ export async function listReturnHistory(db: D1Database, url: URL) {
        LEFT JOIN managers m ON m.id = COALESCE(r.manager_id, o.manager_id)
        LEFT JOIN customers c ON c.id = o.customer_id
        ${whereSql}
-       ORDER BY r.return_date DESC, r.id DESC LIMIT ? OFFSET ?
+       ORDER BY r.return_date ${pendingOnly ? 'ASC' : 'DESC'}, r.id ${pendingOnly ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?
      )
      SELECT r.id, r.order_id, o.external_id, o.order_date, r.return_date, r.amount, r.payment_method, r.status,
             COALESCE(r.comment, '') AS comment, r.cancelled_at, COALESCE(r.cancellation_comment, '') AS cancellation_comment,

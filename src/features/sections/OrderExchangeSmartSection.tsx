@@ -22,6 +22,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     exchangeHistoryFilters,
     exchangeHistoryHasMore,
     exchangeHistorySummary,
+    exchangePendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
+    loadExchangePendingInbox,
     exchangeSelectedOrder,
     formatMoney,
     FriendlyNumberInput,
@@ -42,6 +44,16 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     sourceLabel,
     suggestionValues,
   } = ctx
+
+  // This component can mount after the parent effect has run (deferred workspace).
+  // Scroll only when the exchange form is actually present in the DOM.
+  useEffect(() => {
+    if (!exchangeSelectedOrder?.id) return
+    const frame = requestAnimationFrame(() => {
+      exchangeFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [exchangeSelectedOrder?.id, exchangeFormRef])
 
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
   const [receivingExchangeId, setReceivingExchangeId] = useState<number | null>(null)
@@ -93,7 +105,10 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const addedQuantity = (exchangeDraft.newItems || []).reduce((sum: number, entry: any) =>
     sum + (String(entry.item?.productName || '').trim() ? Math.max(1, Number(entry.item?.quantity || 1)) : 0), 0)
   const currentTotal = Math.max(0, Number(exchangeSelectedOrder?.total_amount || 0))
-  const currentNetPaid = Math.max(0, Number(exchangeSelectedOrder?.received_amount || 0) - Number(exchangeSelectedOrder?.return_amount || 0))
+  const grossReceived = Math.max(0, Number(exchangeSelectedOrder?.received_amount || 0))
+  const previousRefunds = Math.max(0, Number(exchangeSelectedOrder?.return_amount || 0))
+  const currentNetPaid = Math.max(0, grossReceived - previousRefunds)
+  const recordedDebt = Math.max(0, Number(exchangeSelectedOrder?.debt_amount || 0))
   const projectedTotal = Math.max(0, currentTotal - removedValue + addedValue)
   const dueBeforeSettlement = Math.max(0, projectedTotal - currentNetPaid)
   const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
@@ -122,6 +137,8 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
       ? 'Добавьте товар, который клиент получает.'
       : !newPricesReady
         ? 'Укажите цену продажи для каждого нового товара.'
+        : filledNewItems.some((entry: any) => entry.item?.sourceType !== 'workshop' && !['sent','pending'].includes(entry.item?.shipmentState))
+          ? 'Укажите, отправлены ли новые товары клиенту.'
         : refundAmount > 0 && draftPaymentAmount > 0
           ? 'После пересчёта доплата больше не нужна. Сумма оплаты будет очищена.'
           : refundAmount <= 0 && draftPaymentAmount > dueBeforeSettlement
@@ -132,7 +149,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 ? 'Выберите способ оплаты.'
                 : ''
 
-  const pendingGroups = useMemo(() => (exchangeHistory || []).map((entry: any) => {
+  const pendingGroups = useMemo(() => exchangePendingInbox.rows.map((entry: any) => {
     const items = entry.isSetExchange
       ? (entry.oldItems || []).filter((item: any) => entry.status !== 'cancelled' && item.physicalTracking && !item.physicalReceivedAt && item.id)
       : entry.status !== 'cancelled' && entry.oldPhysicalTracking && !entry.oldPhysicalReceivedAt && entry.oldOperationItemId
@@ -150,7 +167,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
           }]
         : []
     return { entry, items }
-  }).filter((group: any) => group.items.length), [exchangeHistory])
+  }).filter((group: any) => group.items.length), [exchangePendingInbox.rows])
 
   const loadedPendingQuantity = pendingGroups.reduce((sum: number, group: any) =>
     sum + group.items.reduce((itemSum: number, item: any) => itemSum + Math.max(0, Number(item.quantity || 0)), 0), 0)
@@ -213,7 +230,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
   const oldHistoryStatus = (item: any) => {
     if (item.wasNotIssued || item.inventorySource === 'not_issued') return 'Не выдавалась клиенту — осталась на месте'
     if (!item.physicalTracking) return 'В старой записи возврат товара не отмечался'
-    if (!item.physicalReceivedAt) return 'Ещё у клиента'
+    if (!item.physicalReceivedAt) return 'Получение ещё не подтверждено'
     if (item.inventorySource === 'warehouse') return item.lifecycleStatus === 'pending' ? 'Вернули → Склад · нужно завершить учёт' : 'Вернули → Склад'
     if (item.inventorySource === 'boutique') return item.lifecycleStatus === 'pending' ? 'Вернули → Бутик · нужно завершить учёт' : 'Вернули → Бутик'
     return 'Вернули · в остаток не добавляли'
@@ -230,13 +247,15 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
         <button className="secondary compact" type="button" onClick={() => setOrderPanel('list')}>К заказам</button>
       </div>
 
-      {Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
-        <section className="exchange-return-queue" aria-label="Товары по обменам, которые ещё у клиентов">
+      {exchangePendingInbox.error ? <p role="alert">{exchangePendingInbox.error} <button type="button" onClick={() => void loadExchangePendingInbox()}>Повторить загрузку очереди</button></p> : null}
+      {exchangePendingInbox.busy && !exchangePendingInbox.rows.length ? <p>Загружаю ожидающие вещи…</p> : null}
+      {Number(exchangePendingInbox.pendingQuantity || 0) > 0 ? (
+        <section className="exchange-return-queue" aria-label="Ожидающие получения товары по обменам">
           <div className="exchange-set-section-head">
             <div>
               <span className="exchange-set-kicker">Ожидают возврата</span>
-              <h3>Товары ещё у клиентов · {exchangeHistorySummary.pendingPhysicalQuantity} шт.</h3>
-              <p>Когда товары вернутся, укажите, куда принять каждый из них, и подтвердите возврат одной кнопкой.</p>
+              <h3>Получение не подтверждено · {exchangePendingInbox.pendingQuantity} шт.</h3>
+              <p>Очередь не зависит от фильтров истории ниже. Когда вещи фактически получены, укажите, куда принять каждую, и подтвердите получение.</p>
             </div>
           </div>
           <div className="exchange-return-groups">
@@ -285,9 +304,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               </div>
             ))}
           </div>
-          {!pendingGroups.length ? <div className="history-load-state"><span>Ожидающие позиции есть дальше в истории.</span></div> : null}
-          {exchangeHistoryHasMore && loadedPendingQuantity < Number(exchangeHistorySummary.pendingPhysicalQuantity || 0) ? (
-            <button className="secondary compact" type="button" disabled={exchangeHistoryBusy} onClick={() => void loadExchangeHistory({ append: true })}>Загрузить ещё ожидающие</button>
+          {!pendingGroups.length ? <div className="history-load-state"><span>Ожидающие позиции ещё не загружены.</span><button type="button" onClick={() => void loadExchangePendingInbox()}>Обновить очередь</button></div> : null}
+          {exchangePendingInbox.hasMore && loadedPendingQuantity < Number(exchangePendingInbox.pendingQuantity || 0) ? (
+            <button className="secondary compact" type="button" disabled={exchangePendingInbox.busy} onClick={() => void loadExchangePendingInbox(true)}>Загрузить ещё ожидающие</button>
           ) : null}
         </section>
       ) : null}
@@ -308,8 +327,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
             </div>
             <div><span>Сумма заказа</span><strong>{formatMoney(currentTotal)}</strong></div>
             <div><span>Уже оплачено</span><strong>{formatMoney(currentNetPaid)}</strong></div>
-            <div><span>Долг</span><strong>{formatMoney(Math.max(0, currentTotal - currentNetPaid))}</strong></div>
+            <div><span>Долг по записи заказа</span><strong>{formatMoney(recordedDebt)}</strong></div>
           </div>
+          {recordedDebt !== Math.max(0,currentTotal-currentNetPaid) ? <p role="note">В заказе записан долг {formatMoney(recordedDebt)}. После возвратов к зачёту осталось {formatMoney(currentNetPaid)}. Расчёт обмена ниже учитывает возвраты и выбранные товары; запись заказа до сохранения не меняется.</p> : null}
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
@@ -389,7 +409,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 const groupConfirmed = matchingIndexes.every((candidateIndex: number) =>
                   exchangeDraft.newItems[candidateIndex]?.item?.stockObservationEnabled === true)
                 const availability = item.sourceType === 'workshop' ? null : getOrderSourceAvailability(item, batchRequired)
-                const physicalShortage = Boolean(availability?.canObservePhysical && Number(availability.currentPhysical || 0) < batchRequired)
+                const physicalShortage = Boolean(item.shipmentState === 'sent' && availability?.canObservePhysical && Number(availability.currentPhysical || 0) < batchRequired)
                 const observationOwner = matchingIndexes[0] === index
                 return (
                   <div className="exchange-new-card" key={entry.draftKey}>
@@ -415,6 +435,14 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                             <label><span>{String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={item.size || ''} options={String(item.audienceType || '').includes('ДЕТ') ? suggestionValues.childAges : suggestionValues.sizes} placeholder={String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'} onChange={(value) => applyExchangeSetNewItemPatch(index, { size: value })} /></label>
                           </div>
                         </div>
+                    {item.sourceType !== 'workshop' ? <div className={`exchange-shipment-choice${!item.shipmentState ? " needs-choice" : ""}`}>
+                      <strong>Новый товар уже отправили клиенту?</strong>
+                      <div className="exchange-choice-row" role="group" aria-label="Фактическая отправка замены">
+                        <button type="button" aria-pressed={item.shipmentState === 'sent'} className={item.shipmentState === 'sent' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'sent' })}>Уже отправили</button>
+                        <button type="button" aria-pressed={item.shipmentState === 'pending'} className={item.shipmentState === 'pending' ? 'is-active' : ''} onClick={() => applyExchangeSetNewItemPatch(index, { shipmentState: 'pending', stockObservationEnabled: false })}>Ещё не отправили</button>
+                      </div>
+                      {item.shipmentState === 'pending' ? <div className="exchange-shipment-warning" role="alert"><strong>Не забудьте отметить отправку!</strong> Когда передадите товар клиенту, откройте «Отправить товары» в заказе и выберите эту замену вместе с другими готовыми позициями. До отправки товар остаётся в резерве.</div> : null}
+                    </div> : null}
                         <div className="exchange-new-price">
                           <div><span>Цена по каталогу</span><strong>{item.catalogPriceSnapshot == null ? 'Нет цены' : formatMoney(Number(item.catalogPriceSnapshot || 0))}</strong></div>
                           <label><span>Цена продажи</span><FriendlyNumberInput type="number" min="0" value={item.unitPrice ?? ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { unitPrice: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)), priceOrigin: 'manual' })} /></label>
@@ -471,12 +499,19 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
           </section>
 
           <section className="exchange-set-step exchange-money-step">
-            <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">3 · Деньги</span><h3>Расчёт после обмена</h3><p>Система сравнила новый итог заказа с тем, что клиент уже оплатил.</p></div></div>
+            <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">3 · Деньги</span><h3>Расчёт после обмена</h3><p>Система сравнила новый итог заказа с деньгами, оставшимися после предыдущих возвратов.</p></div></div>
             <div className="exchange-money-result">
               <div className="exchange-money-result-main"><span>Новый итог заказа</span><strong>{formatMoney(projectedTotal)}</strong></div>
               <div><span>Было</span><strong>{formatMoney(currentTotal)}</strong></div>
-              <div><span>Уже оплачено</span><strong>{formatMoney(currentNetPaid)}</strong></div>
+              <div><span>Доступно к зачёту</span><strong>{formatMoney(currentNetPaid)}</strong></div>
             </div>
+            {previousRefunds > 0 ? (
+              <div className="exchange-money-clarification" role="note">
+                <strong>Почему сумма отличается от таблицы заказа?</strong>
+                <span>Поступило {formatMoney(grossReceived)} − уже возвращено клиенту {formatMoney(previousRefunds)} = осталось к зачёту {formatMoney(currentNetPaid)}.</span>
+                <span>В таблице записан долг {formatMoney(recordedDebt)} по сохранённому заказу. Здесь расчёт новый: с учётом возврата денег и выбранных замен. Расчёт не меняет ранее проведённые возвраты или оплаты.</span>
+              </div>
+            ) : null}
 
             {refundAmount > 0 ? (
               <div className="exchange-settlement-card is-refund">
