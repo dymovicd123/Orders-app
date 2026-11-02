@@ -11,6 +11,7 @@ import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
+import {editClient3WatchModel,editClient3WatchVariant} from './client3-watch-catalog-edit.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog} from './client3-watch-catalog-delete.ts'
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from './client3-watch-references.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
@@ -309,6 +310,18 @@ export async function routeClient3Watches(
     return url.pathname.endsWith('delete-preview')
       ? previewClient3WatchDelete(db,actor,scope.row!.id,input)
       : deleteClient3WatchCatalog(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='PATCH') {
+    const input=await readJson<{brand?:unknown;watchProductId?:unknown;expectedName?:unknown;modelName?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return editClient3WatchModel(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/variants'&&request.method==='PATCH') {
+    const input=await readJson<WatchVariantInput&{brand?:unknown;watchProductId?:unknown;watchVariantId?:unknown;expected?:WatchVariantInput}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return editClient3WatchVariant(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;modelName?:unknown}>(request)
