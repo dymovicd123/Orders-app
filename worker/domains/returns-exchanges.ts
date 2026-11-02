@@ -19,6 +19,22 @@ import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 
+// Item-level dispatch is authoritative even while another item of the same
+// order has not been shipped. In particular, ready Workshop goods have no
+// stock_writeoff_status='fulfilled' warehouse movement to infer from.
+async function orderItemWasActuallyDispatched(db:D1Database, item:Record<string,unknown>|null) {
+  if(!item) return false
+  if(orderItemWasPhysicallyIssued(item)) return true
+  const orderItemId=toInt(item.id,0)
+  if(!orderItemId) return false
+  const row=await db.prepare(
+    `SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) AS issued
+     FROM order_dispatch_items di
+     WHERE di.order_item_id=?`
+  ).bind(orderItemId).first<{issued:number}>()
+  return toInt(row?.issued,0)>0
+}
+
 export async function correctMistakenOrderHandoverWithCurrentExchange(
   db: D1Database,
   orderId: number,
@@ -357,7 +373,7 @@ export async function createReturn(
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
     const stockStatus = cleanText(orderItem.stock_writeoff_status);
     const sentFallback = cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus);
-    const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback;
+    const issuedToClient = await orderItemWasActuallyDispatched(db,orderItem) || sentFallback;
     // A historical item can claim to be issued while its original stock obligation
     // still has an active/unresolved reservation. Crediting a physical return in
     // that contradictory state would leave the same SKU both returned and reserved,
