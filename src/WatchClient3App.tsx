@@ -6,6 +6,7 @@ import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
 import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
+import {WatchUserAccessPanel} from './features/client3/WatchUserAccessPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
@@ -52,7 +53,7 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff' | 'orders' | 'finance' | 'returns' | 'legacy'>('orders')
+  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff' | 'orders' | 'finance' | 'returns' | 'legacy' | 'accounts'>('orders')
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
@@ -225,6 +226,8 @@ export function WatchClient3App() {
           onClick={()=>setTab('returns')}>Приём возвратов</button>}
       {user.role==='admin'&&<button type="button" aria-current={tab==='legacy'?'page':undefined}
         onClick={()=>setTab('legacy')}>Старая история</button>}
+      {user.role==='admin'&&<button type="button" aria-current={tab==='accounts'?'page':undefined}
+        onClick={()=>setTab('accounts')}>Учётные записи</button>}
       {user.role==='admin'&&<button type="button" aria-current={tab==='staff'?'page':undefined}
         onClick={()=>setTab('staff')}>Доступ к брендам</button>}
       {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'create' ? 'page' : undefined}
@@ -236,7 +239,7 @@ export function WatchClient3App() {
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       {success && <p role="status" className="watch-shell-success">{success}</p>}
       {warning && <p role="alert" className="watch-shell-warning">{warning}</p>}
-      {tab === 'legacy' ? <WatchLegacyOrdersPanel/> : tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'returns' ? (brands.length ? <WatchReturnsPanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'finance' ? (brands.length ? <WatchFinancePanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'orders' ? (brands.length ? <WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
+      {tab === 'accounts' ? <WatchUserAccessPanel/> : tab === 'legacy' ? <WatchLegacyOrdersPanel/> : tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'returns' ? (brands.length ? <WatchReturnsPanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'finance' ? (brands.length ? <WatchFinancePanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'orders' ? (brands.length ? <WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
         ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
           : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
               isAdmin={user.role==='admin'} managers={managerChoices}
