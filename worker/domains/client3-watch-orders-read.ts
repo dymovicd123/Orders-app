@@ -82,7 +82,12 @@ export async function listClient3WatchOrders(
         (SELECT COALESCE(json_group_array(json_object(
           'id',oi.id,'watchVariantId',wi2.watch_variant_id,
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
-          'quantity',oi.quantity,'unitPrice',oi.unit_price,
+          'quantity',oi.quantity,
+          'returnableQuantity',MAX(0,oi.quantity-COALESCE((
+             SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id=ri.return_id
+             WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'
+           ),0)),
+          'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,
           'shipped',EXISTS(SELECT 1 FROM order_dispatch_items di2
