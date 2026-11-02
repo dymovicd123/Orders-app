@@ -1,0 +1,39 @@
+/* The four Main CreateOrderSection cards, preserved directly as Main JSX structure.
+   Only watch-specific grid and source-selector layout below; no alternate design shell. */
+.main-watch-create{display:grid;gap:16px;min-width:0}
+.main-watch-create>.create-hero{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.main-watch-create>.order-step-card{margin:0;min-width:0}
+.main-watch-create .order-step-head{display:flex;align-items:center;gap:14px;margin:0 0 18px}
+.main-watch-create .order-step-head-main{display:flex;align-items:center;gap:14px}
+.main-watch-create .order-step-head h3{margin:0 0 6px}
+.main-watch-create .order-step-head p{margin:0;color:#64748b}
+.main-watch-create .main-watch-create-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.main-watch-create .main-watch-create-grid>label{display:grid;align-content:start;gap:7px;min-width:0;font-weight:650;font-size:13px;color:#475569}
+.main-watch-create .main-watch-create-grid>label>small{font-size:11px;color:#64748b;font-weight:400}
+.main-watch-create .main-watch-create-grid :is(input:not([type=checkbox]),select,textarea,output){
+ width:100%;max-width:none;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;
+ border-radius:9px;padding:10px 12px;background:#fff;color:#0f172a;font:inherit;font-weight:500;
+}
+.main-watch-create .main-watch-create-grid :is(input,select):disabled{background:#f1f5f9;color:#94a3b8}
+.main-watch-create .main-watch-create-grid output{min-height:40px;display:flex;align-items:center;background:#f8fafc}
+.main-watch-create .main-watch-create-wide{grid-column:1/-1}
+.main-watch-create .main-watch-create-spacer{visibility:hidden}
+.main-watch-create .main-watch-create-urgent{display:flex!important;flex-direction:row;align-items:center;gap:10px;align-self:end;min-height:42px}
+.main-watch-create .main-watch-create-urgent input{width:17px;height:17px}
+.main-watch-create .main-watch-create-placeholder{padding:20px;border:1px dashed #bfcee1;background:#f8fbff;border-radius:11px;color:#64748b}
+.main-watch-create .main-watch-create-item{border:1px solid #e3eaf5;background:#fff;border-radius:12px;padding:15px}
+.main-watch-create .main-watch-create-item-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.main-watch-create .main-watch-create-item-head>span{font-size:12px;color:#64748b}
+.main-watch-create .main-watch-create-review{border:1px solid #dce5f0;border-radius:12px;padding:16px;background:#f8fafc}
+.main-watch-create .main-watch-create-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}
+.main-watch-create .main-watch-create-totals>div{display:grid;gap:9px;border:1px solid #e2e8f0;border-radius:11px;padding:14px;background:#fff}
+.main-watch-create .main-watch-create-totals span{font-size:12px;color:#64748b;font-weight:750}
+.main-watch-create .main-watch-create-totals strong{font-size:18px;font-variant-numeric:tabular-nums}
+.main-watch-create .main-watch-create-summary{border:1px solid #e0e8f2;border-radius:10px;overflow:hidden;background:#fff;margin-bottom:14px}
+.main-watch-create .main-watch-create-summary>strong{display:block;padding:13px;background:#f5f9ff;border-bottom:1px solid #dce5f0}
+.main-watch-create .main-watch-create-summary>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:14px;font-size:13px}
+.main-watch-create .main-watch-create-validation{margin:8px 0;color:#b91c1c;background:#fff1f2;border:1px solid #fecaca;border-radius:9px;padding:10px 13px;font-size:13px;font-weight:650}
+.main-watch-create .order-create-actions{display:flex;gap:11px;flex-wrap:wrap;align-items:center;padding-top:14px}
+.main-watch-create .order-create-actions button{width:auto;min-width:135px}
+@media(max-width:1070px){.main-watch-create .main-watch-create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.main-watch-create .main-watch-create-totals{grid-template-columns:repeat(2,1fr)}.main-watch-create .main-watch-create-spacer{display:none}}
+@media(max-width:650px){.main-watch-create .main-watch-create-grid{grid-template-columns:1fr}.main-watch-create .main-watch-create-totals{grid-template-columns:repeat(2,minmax(0,1fr))}.main-watch-create .order-step-head{align-items:flex-start}.main-watch-create .order-create-actions button{flex:1}}
