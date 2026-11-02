@@ -13,7 +13,7 @@ assert(!entry.includes('<App />'), 'Isolated Client3 must not render the old clo
 assert(shell.includes('/api/client3/watches/brands'), 'Brands must come from session-bound API')
 assert(shell.includes('/api/client3/watches/models?brand='))
 assert(shell.includes("canCompleteEngraving={user.role === 'admin' || user.employeeRole === 'Логист'}"))
-assert(!/\/api\/finance|\/api\/orders[/'?]|\/api\/cash/.test(shell),
+assert(!/\/api\/(?:finance|orders|cash)(?:\/|\?|['\"])/.test(shell),
   'Do not invoke brand-unsafe legacy sales/finance APIs from the watch shell')
 const server = await createServer({
   configFile: false, plugins: [reactPlugin()], appType: 'custom',
