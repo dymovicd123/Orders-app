@@ -251,3 +251,28 @@
 - Count below active reservations requires a second explicit shortage acknowledgement. Main handles stale stock and idempotent replay.
 - Added positive real-engine quick count + same-request replay + changed-request rejection to `scripts/client3/test-watch-full-stock-engine-20261102.mjs`. [Isolated test #41458912439](https://github.com/dymovicd123/Orders-app/actions/runs/41458912439) SUCCESS.
 - A **separate third Worker-only hotfix** branch/workflow `client3/watch-update-stocktake-20261102` checks existing migrated schema and only deploys worker/assets, never reapplies D1 migrations. Update status must be verified before marking this feature live.
+
+## 20. 2026-11-02 — восстановление реального интерфейса Main вместо отдельной UI-системы Client3
+
+Владелец потребовал *сохранить точную основную оболочку Main, а не копировать её отрывочные элементы*. Прежние самодельные Client3 sidebar/topbar/layout признаны неправильной стратегией и **убраны из авторизованной рабочей страницы**.
+
+### Подключено непосредственно из Main
+
+- **Прямые оригинальные стили Main из `src/App.tsx`**: весь список CSS imports перенесён в `src/features/client3/Client3MainChrome.tsx` в исходном порядке, начиная с `00-foundation.css` и заканчивая `195-kaspi-orders.css`. Не создавали новую систему стилей.
+- **Точная композиция основных компонентов Main**: `erp-shell` → `erp-sidebar`/`erp-sidebar-scroll` → `erp-brand`/account card → `erp-primary-nav`/original `workspaceModules` icons → `erp-main` → `erp-topbar`/page context/status, с исходным mobile nav.
+- **Авторизация** перенесена на `auth-shell`/`auth-card` с Main-brand и полями логина/пароля; никаких подписей о часах.
+- **Заказы** используют непосредственно Main `OrdersHeaderSection`, `orderPanelOptions` и исходные tabs внутри раздела (создание/список/возврат/обмен/исторические только для admin). Создание **не находится в главном боковом меню**. Список использует Main `LinkedTableScroll`.
+- **Склад** использует прямую структуру Main W13 `stock-v13-browse/catalog-master-detail` с выбором модели слева, деталями и остатками по точке справа, оригинальными `w8-*`/`w13-*`/`w14-*`/`w16-*` стилями. Внутренние вкладки `Остатки / Операции / Товары`. Операции используют оригинальные `StocktakeProductChoice` и `StocktakeSizeCountCell` из Main, с `review` до изменения D1. У часов нет придуманных размеров и длин.
+- **Логистика и финансы** используют общий Main `LinkedTableScroll`, а адаптация самих табличных столбцов привязана к часам.
+- Взаимодействия **остаются на Client3 API** `/api/client3/watches/*` и строго в третьей D1; нельзя бездумно подключать Main clothing endpoints или снимать брендовые ограничения.
+
+### Приёмка и выпуск
+
+- [Acceptance #41475023775](https://github.com/dymovicd123/Orders-app/actions/runs/41475023775) **SUCCESS**: отдельный parity-script сравнил исходные CSS imports и структуры Main; TypeScript/Vite, auth SSR, товарные характеристики, backend-only catalog safety, disposable Main D1 склад/заказ/возврат/обмен.
+- Отдельный gated Worker-only release [#41475377585](https://github.com/dymovicd123/Orders-app/actions/runs/41475377585) **SUCCESS**: третий Worker `orders-app-client3-old-client`, проверены D1 uuid, существующий `owner-monitor`, старые заказы и платежи до/после, сайт и блокировка неавторизованного доступа. **Не выполнялись миграции или SQL-изменения D1.** Main и Branch2 не затрагивались.
+- Публичный адрес: https://orders-app-client3-old-client.orders-clothes.workers.dev
+
+### Честные ограничения относительно требования «точная копия всего Main»
+
+Общая оболочка Main, стили, навигация рабочих разделов, заказные вкладки и складской master-detail теперь действительно перенесены из Main. **Полная функциональная копия всех 11 разделов Main пока не достигнута**: Клиенты, Лиды, План, Отчёты, полноценная Команда/зарплаты/касса не мигрированы под бренды и часы и не должны отображаться как якобы действующие. Оставшиеся WatchCatalogEditor/WatchReturnsPanel/brand access экраны ещё специализированные. Глобальный экран Main `App.tsx` (9k+ строк + clothing business controllers) нельзя просто подключить к Client3: его API/формы работают с одеждой и могут нарушить идентичность и резервы часов. Следующие изменения — перенос **каждого реального Main Section** с watch-safe data adapter, без ещё одного нового UI.
+Авторизованная визуальная проверка десктоп/мобильный через браузер пользователя пока не проведена; GitHub CI и HTTP smoke — не её замена.
