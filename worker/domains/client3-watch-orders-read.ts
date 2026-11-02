@@ -77,7 +77,7 @@ export async function listClient3WatchOrders(
         -- the first item plus an aggregate received amount.
         (SELECT COALESCE(json_group_array(json_object(
           'id',p.id,'method',p.method,'amount',p.amount,
-          'date',p.payment_date,'kind',p.payment_kind
+          'date',p.payment_date,'kind',p.payment_kind,'comment',COALESCE(p.comment,'')
         )),'[]') FROM payments p WHERE p.order_id=o.id) AS paymentLines,
         (SELECT COALESCE(json_group_array(json_object(
           'id',oi.id,
