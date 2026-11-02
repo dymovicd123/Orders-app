@@ -1,0 +1,99 @@
+name: Client3 Main four-mode selected-products queue acceptance (NO DEPLOY)
+on:
+  push:
+    branches: [client3/stage5-main-selection-queue-20261103]
+    paths: ['.github/workflows/client3-stage5-selection-queue-acceptance-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Client3-only isolation, Main four-mode explicit-start and model-only regression
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/stage5-main-selection-queue-20261103
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test ! -e src/features/client3/WatchBulkOperations.tsx
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const operations=readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8')
+          const create=readFileSync('src/features/client3/WatchOperationInlineCatalog.tsx','utf8')
+          const catalog=readFileSync('src/features/client3/WatchCatalogEditor.tsx','utf8')
+          const history=readFileSync('src/features/client3/WatchWarehouseStage5.tsx','utf8')
+          const navigation=readFileSync('src/WatchClient3App.tsx','utf8')
+          const chrome=readFileSync('src/features/client3/Client3MainChrome.tsx','utf8')
+          const palette=readFileSync('src/styles/client3-watch-main-warehouse.css','utf8')
+          assert.equal((operations.match(/<h3>Складские операции<\/h3>/g)||[]).length,1)
+          assert(!operations.includes('<WatchWarehouseHistory'))
+          assert(history.includes('export function WatchWarehouseHistory'))
+          assert(navigation.includes("activeSection==='history'?"))
+          assert(navigation.includes("label:'История'"))
+          assert(chrome.includes("section==='history'?'warehouse'")||
+                 chrome.includes("section==='history'?'warehouse':"))
+          assert(operations.includes('rows.filter(r=>r.productActive===1)'),
+              'Unprovisioned model-only products must be offered on arrival')
+          assert(operations.includes('<WatchOperationInlineCatalog'))
+          assert(create.includes('/api/client3/watches/catalog/models'))
+          assert(create.includes('/api/client3/watches/catalog/variants'))
+          assert(create.includes('/api/client3/watches/catalog/provision'))
+          assert(create.includes('onCreated(modelId,variant.watchVariantId)'))
+          assert(catalog.includes("await post('/api/client3/watches/catalog/provision'"))
+          assert(operations.includes("mode==='arrival'||mode==='count'"))
+          assert(operations.includes("count-batch':'bulk'"))
+          assert(operations.includes('draftBySource[source]'))
+          assert(operations.includes('selectedModelIdsBySource'))
+          assert(operations.includes('const toggleModel=(modelId:number)=>'))
+          assert(operations.includes('const beginSelected=()=>'))
+          assert(operations.includes("setStage('quantities')"))
+          assert(operations.includes('<StocktakeProductChoice key={id} checked={checked}'))
+          assert(operations.includes('onToggle={()=>toggleModel(id)}'))
+          assert(operations.includes('stocktake-selective-queue'))
+          assert(operations.includes('stocktake-selective-chips'))
+          assert(operations.includes('selectedModels.map(([id,name])=><button'))
+          assert(operations.includes('onClick={clearModels}'))
+          assert(operations.includes('disabled={saving||!selectedModels.length} onClick={beginSelected}'))
+          assert(operations.includes('Начать работу с выбранными товарами'))
+          assert(operations.includes('client3-main-stock-model-navigation-list'))
+          assert(operations.includes("selectedModelIds.includes(v.watchProductId)"))
+          assert(operations.includes('setSelectedModelIdsBySource(prev=>({...prev,'))
+          assert(!operations.includes("onToggle={()=>{setSelectedModel(id);setStage('quantities')"))
+          assert(operations.includes('setSelectedModelIdsBySource({office:[],showcase:[]})'))
+          // All modes share ONE selector, ONE transition, one 1–30-line Main writer.
+          for(const op of ['arrival','writeoff','count','transfer'])
+            assert(operations.includes("'"+op+"'"))
+          assert(operations.includes('mode===\'count\'?\'count-batch\':\'bulk\''))
+          for(const [op,color] of Object.entries({arrival:'#15803d',
+            writeoff:'#b91c1c',transfer:'#a16207',manual_set:'#1d4ed8'})){
+            assert(palette.includes('data-unified-operation="'+op+'"'))
+            assert(palette.includes('--w12-accent:'+color))
+          }
+          console.log('CLIENT3_MAIN_FOUR_MODE_SELECTION_QUEUE_PASS')
+          NODE
+      - run: npm ci
+      - name: Real Main SQL/D1 engines, empty model to SKU to physical receipt, returns and orders
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node scripts/client3/test-watch-main-free-text-ux-20261103.mjs
+          npm run build
+      - name: Audit in Client3 issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Main warehouse four-mode selected-products queue and explicit-start: $JOB_RESULT. Source $GITHUB_SHA; run https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Full real Main stock/finance/order regression; no deployment or remote database writes; selection checkboxes never open quantity page before explicit start. Main/Branch2 not targeted."
