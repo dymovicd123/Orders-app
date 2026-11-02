@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/candidate/main-stage345-port-20261102
-          test "$(git rev-parse HEAD^)" = 'c29ba5bf1471da1512491a459a5542091d7550e3'
+          test "$(git rev-parse HEAD^)" = '0bd130dab61133749b7088204d8d4d1f2cc11e07'
           git fetch -q origin +refs/heads/branch2:refs/remotes/origin/branch2
           python3 scripts/prepare-main-stage4-receipt-inboxes-20261102.py
           git diff --stat
