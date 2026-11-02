@@ -262,6 +262,42 @@ const badMultiReplay=await parse(createClient3WatchOrder(db,manager,1,{
  ...multiPurchase,items:[{...multiPurchase.items[0],engravingText:'ИЗМЕНИЛОСЬ'},multiPurchase.items[1]],
 }))
 assert.equal(badMultiReplay.status,409,'Same requestId cannot change engraving')
+// Main's free entry: an unknown model with multiword characteristics can be
+// ordered before warehouse intake or admin catalog preparation.
+const freeEntry={...purchase,requestId:'watch-manual-main-20261102',
+  watchVariantId:0,catalogVariantId:0,quantity:2,unitPrice:58000,
+  receivedAmount:10000,payments:[{method:'KASPI GOLD',amount:10000}],
+  items:[{watchVariantId:0,source:'office',quantity:2,unitPrice:58000,
+    engravingText:'САМИРА',manual:{
+      modelName:'New   Watch   Collection',gender:'female',
+      movement:'Механизм с автоподзаводом',braceletMaterial:'rubber',
+      dialColor:'Тёмно синий',braceletColor:'',
+    }}],
+}
+const beforeManualStock=count('inventory_movements')
+const manualSaved=await parse(createClient3WatchOrder(db,manager,1,freeEntry))
+assert.equal(manualSaved.status,201,JSON.stringify(manualSaved))
+assert.equal(manualSaved.pendingReservation,true)
+const manualItem=sqlite.prepare(`SELECT wi.watch_variant_id,v.catalog_variant_id,
+  a.movement,a.dial_color,oi.quantity,ir.status AS reservation_status
+  FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+  JOIN watch_variants v ON v.id=wi.watch_variant_id
+  LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
+  JOIN inventory_reservations ir ON ir.order_item_id=oi.id WHERE oi.order_id=?`)
+  .get(manualSaved.orderId)
+assert.equal(manualItem.movement,'Механизм с автоподзаводом')
+assert.equal(manualItem.dial_color,'Тёмно синий')
+assert.equal(manualItem.reservation_status,'unresolved')
+assert.equal(manualItem.quantity,2)
+assert.equal(count('inventory_movements'),beforeManualStock,'Free registration never fabricates physical goods')
+assert.equal(sqlite.prepare("SELECT model_name FROM watch_products WHERE id=(SELECT watch_product_id FROM watch_variants WHERE id=?)").get(manualItem.watch_variant_id).model_name,'New Watch Collection')
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM watch_reference_values_v5 WHERE kind='movements' AND value=?").get('Механизм с автоподзаводом').n,1)
+const manualRetry=await parse(createClient3WatchOrder(db,manager,1,freeEntry))
+assert.equal(manualRetry.orderId,manualSaved.orderId)
+const manualDenied=await parse(createClient3WatchOrder(db,manager,2,{
+  ...freeEntry,brand:'WACHIZEN',requestId:'watch-manual-foreign-20261102',
+}))
+assert.equal(manualDenied.status,403)
 const crossBrandLine=await parse(createClient3WatchOrder(db,manager,2,{
  ...multiPurchase,brand:'WACHIZEN',requestId:'watch-multiline-foreign-20261102',
 }))
