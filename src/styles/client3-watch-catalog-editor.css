@@ -15,3 +15,6 @@
 .watch-catalog-editor-list span{font-size:.88rem;color:#334155}
 .watch-catalog-editor-list small{color:#64748b}
 @media(max-width:720px){.watch-catalog-editor-forms{grid-template-columns:1fr}}
+
+.watch-catalog-editor-list article button{justify-self:start;border:1px solid #2563eb;border-radius:8px;background:#eff6ff;color:#1d4ed8;padding:8px 12px;font:inherit;font-size:.86rem;font-weight:600;cursor:pointer}
+.watch-catalog-editor-list article button:disabled{opacity:.5;cursor:not-allowed}
