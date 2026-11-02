@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-returns.css'
-type Pending={returnItemId:number;returnId:number;orderId:number;externalOrderId:string;quantity:number;returnDate:string;modelName:string;gender:string;braceletMaterial:string;dialColor:string;braceletColor:string}
+type Pending={operationType:'return'|'exchange';returnItemId:number;returnId:number;orderId:number;externalOrderId:string;quantity:number;returnDate:string;modelName:string;gender:string;braceletMaterial:string;dialColor:string;braceletColor:string}
 type Result={ok:boolean;rows:Pending[];message?:string}
 type Destination='warehouse'|'boutique'|'no_stock'
 export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
@@ -11,10 +11,10 @@ export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
  const [error,setError]=useState('')
  const [notice,setNotice]=useState('')
  const [reload,setReload]=useState(0)
- const [selected,setSelected]=useState<number|null>(null)
+ const [selected,setSelected]=useState<string|null>(null)
  const [destination,setDestination]=useState<Destination>('warehouse')
  const [confirmed,setConfirmed]=useState(false)
- const requests=useRef<Record<number,{fingerprint:string;requestId:string}>>({})
+ const requests=useRef<Record<string,{fingerprint:string;requestId:string}>>({})
  useEffect(()=>{
    const abort=new AbortController()
    setBusy(true);setError('');setRows([])
@@ -29,22 +29,23 @@ export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
    return ()=>abort.abort()
  },[brand,reload])
  const receive=async(row:Pending)=>{
-   if(busy||selected!==row.returnItemId||!confirmed)return
-   const fingerprint=JSON.stringify([brand,row.orderId,row.returnId,row.returnItemId,destination])
-   if(requests.current[row.returnItemId]?.fingerprint!==fingerprint)
-     requests.current[row.returnItemId]={fingerprint,requestId:'watch-intake-'+crypto.randomUUID()}
+   const itemKey=row.operationType+':'+row.returnItemId
+   if(busy||selected!==itemKey||!confirmed)return
+   const fingerprint=JSON.stringify([brand,row.operationType,row.orderId,row.returnId,row.returnItemId,destination])
+   if(requests.current[itemKey]?.fingerprint!==fingerprint)
+     requests.current[itemKey]={fingerprint,requestId:'watch-intake-'+crypto.randomUUID()}
    setBusy(true);setError('');setNotice('')
    try{
      const response=await fetch('/api/client3/watches/orders/'+row.orderId+'/return/receive',{
        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({
          brand,returnId:row.returnId,returnItemId:row.returnItemId,destination,
-         requestId:requests.current[row.returnItemId].requestId,
+         operationType:row.operationType,requestId:requests.current[itemKey].requestId,
        }),
      })
      const result=await response.json() as {ok:boolean;message?:string;code?:string}
      if(!response.ok||!result.ok)throw new Error(result.message||'Приём не подтверждён')
-     delete requests.current[row.returnItemId]
+     delete requests.current[itemKey]
      setSelected(null);setConfirmed(false)
      setNotice('Физический приём часов подтверждён. Складская история обновлена.')
      setReload(x=>x+1)
@@ -62,12 +63,12 @@ export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
    {notice&&<p role="status" className="watch-returns-notice">{notice}</p>}
    {busy&&<p>Обработка…</p>}
    {!busy&&rows.length===0&&<p>Ожидающих физической приёмки нет.</p>}
-   <div className="watch-returns-list">{rows.map(row=><article key={row.returnItemId}>
-     <strong>{row.externalOrderId} · {row.quantity} шт.</strong>
+   <div className="watch-returns-list">{rows.map(row=><article key={row.operationType+':'+row.returnItemId}>
+     <strong>{row.externalOrderId} · {row.quantity} шт. · {row.operationType==='exchange'?'После обмена':'Возврат'}</strong>
      <p>{row.modelName} · {row.gender==='male'?'Мужские':'Женские'} · {row.braceletMaterial} · {row.dialColor}
        {row.braceletColor?' · Ремешок '+row.braceletColor:''}</p>
      <small>Возврат оформлен: {row.returnDate}</small>
-     {selected===row.returnItemId?<>
+     {selected===row.operationType+':'+row.returnItemId?<>
        <label>Физическое состояние<select value={destination} onChange={e=>{setDestination(e.target.value as Destination);setConfirmed(false)}}>
          <option value="warehouse">Фактически получено в офис</option>
          <option value="boutique">Фактически получено на витрину</option>
@@ -80,7 +81,7 @@ export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
        <div className="watch-returns-actions"><button disabled={busy||!confirmed}
          onClick={()=>void receive(row)}>Подтвердить приём</button>
          <button disabled={busy} onClick={()=>{setSelected(null);setConfirmed(false)}}>Отмена</button></div>
-     </>:<button disabled={busy} onClick={()=>{setSelected(row.returnItemId);setConfirmed(false)}}>Принять часы</button>}
+     </>:<button disabled={busy} onClick={()=>{setSelected(row.operationType+':'+row.returnItemId);setConfirmed(false)}}>Принять часы</button>}
    </article>)}</div>
  </section>
 }
