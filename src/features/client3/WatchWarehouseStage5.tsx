@@ -11,7 +11,7 @@ type HistoryRow={
  referenceType:string;referenceId:string
 }
 const sourceLabel=(source:Source)=>source==='office'?'Офис':'Витрина'
-const description=(row:Pick<Variant,'gender'|'movement'|'braceletMaterial'|'dialColor'|'braceletColor'>)=>
+const description=(row:Pick<HistoryRow,'gender'|'movement'|'braceletMaterial'|'dialColor'|'braceletColor'>)=>
  [row.gender==='male'?'Мужские':row.gender==='female'?'Женские':'',
   row.movement,row.braceletMaterial,row.dialColor,row.braceletColor?('Ремешок: '+row.braceletColor):'']
  .filter(Boolean).join(' · ')
