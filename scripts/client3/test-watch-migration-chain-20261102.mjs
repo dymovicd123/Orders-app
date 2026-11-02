@@ -54,7 +54,7 @@ assert.equal(db.prepare('SELECT count(*) AS n FROM watch_order_details').get().n
 assert.equal(db.prepare('SELECT count(*) AS n FROM watch_order_item_details').get().n,0)
 assert.equal(db.prepare('SELECT count(*) AS n FROM watch_logistics_jobs').get().n,0)
 assert.equal(db.prepare('SELECT count(*) AS n FROM watch_manager_brands').get().n,0)
-assert.deepEqual(db.prepare('SELECT code FROM watch_brands ORDER BY code').all(),[
+assert.deepEqual(db.prepare('SELECT code FROM watch_brands ORDER BY code').all().map(row=>({code:row.code})),[
  {code:'TAUWACH'},{code:'WACHIZEN'}])
 assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[])
 for(const file of files)db.exec(fs.readFileSync(file,'utf8'))
