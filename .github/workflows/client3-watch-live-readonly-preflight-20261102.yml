@@ -89,6 +89,21 @@ jobs:
           echo "Client3 missing columns (schema names only, NO CLIENT DATA):"
           cat /tmp/client3-schema-gaps.json
           echo "Missing schema columns: $(jq length /tmp/client3-schema-gaps.json)"
+      - name: Read-only migration metadata and storage prerequisites (names only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN
+              ('inventory_operations','inventory_operation_request_fingerprints',
+               'inventory_movements','inventory_model_meta','critical_operations',
+               'critical_operation_entities','catalog_stock_positions',
+               'catalog_execution_prices','inventory_reservations',
+               'watch_brands','watch_order_details','watch_manager_brand_events')
+             ORDER BY name" \
+            | jq -ce '.[0].results | map(.name)' > /tmp/client3-required-tables.json
+          echo "Client3 existing supporting table names (NO CLIENT DATA):"
+          cat /tmp/client3-required-tables.json
       - name: Public third Worker auth readiness and unauthorized API guard
         shell: bash
         run: |
