@@ -1,5 +1,5 @@
 name: Client3 Stage3 selective watch dispatch acceptance
-# Main per-item dispatch: only selected SKU moves, other reserve and money preserved.
+# Main per-item dispatch: verify readiness constraint, other reserve and money preserved.
 on:
   push:
     branches: [client3/step3-selective-watch-dispatch-20261102]
