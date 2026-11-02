@@ -6,11 +6,12 @@ export type WatchCorrectionOrder={
  recipientName:string;recipientPhone:string;city:string;deliveryMethod:string;
  canonicalCustomerName:string;canonicalCustomerPhone:string;canonicalCity:string;canonicalDeliveryType:string;
  orderComment:string;shippingStatus:string;orderStatus:string;
+ deliveryAddress:string;postalCode:string;urgent:number;shippingDeadlineAt:string;
  totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number;
  itemLines:string
 }
 type Line={id:number;productName:string;quantity:number;unitPrice:number;
- lineTotal:number;catalogPriceSnapshot:number|null;source:string}
+ lineTotal:number;catalogPriceSnapshot:number|null;source:string;engravingText:string}
 type Props={brand:WatchBrand;order:WatchCorrectionOrder;isAdmin:boolean;onDone:()=>void;onCancel:()=>void}
 type Metadata={orderDate:string;customerName:string;customerPhone:string;city:string;deliveryType:string;comment:string}
 const initial=(o:WatchCorrectionOrder):Metadata=>({
@@ -25,17 +26,32 @@ const lines=(raw:string):Line[]=>{
  try{const x=JSON.parse(raw) as Line[];return Array.isArray(x)?x.filter(x=>x.id>0&&x.quantity>0):[]}catch{return []}
 }
 const num=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
-const path=(id:number,mode:'metadata'|'prices')=>'/api/client3/watches/orders/'+id+'/'+mode
+const path=(id:number,mode:'metadata'|'prices'|'watch')=>'/api/client3/watches/orders/'+id+'/'+
+  (mode==='watch'?'watch-details':mode)
+type AdminWatch={deliveryAddress:string;postalCode:string;urgent:boolean;
+ shippingDeadlineAt:string;items:Array<{orderItemId:number;engravingText:string}>}
+const toLocal=(iso:string)=>{
+ const parsed=Date.parse(iso||'')
+ return Number.isFinite(parsed)?new Date(parsed+5*3600000).toISOString().slice(0,16):''
+}
+const toUTC=(local:string)=>local&&Number.isFinite(Date.parse(local+'+05:00'))
+ ?new Date(local+'+05:00').toISOString():''
+const fromOrder=(order:WatchCorrectionOrder):AdminWatch=>({
+ deliveryAddress:order.deliveryAddress||'',postalCode:order.postalCode||'',
+ urgent:order.urgent===1,shippingDeadlineAt:order.shippingDeadlineAt,
+ items:lines(order.itemLines).map(x=>({orderItemId:x.id,engravingText:x.engravingText||''})),
+})
 /** Exactly Main's two narrow correction modes. Does NOT send a full order payload.
  * The server validates both the original state and role independently.
  */
 export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Props){
  const expected=initial(order)
  const items=lines(order.itemLines)
- const [mode,setMode]=useState<'metadata'|'prices'>('metadata')
+ const [mode,setMode]=useState<'metadata'|'prices'|'watch'>('metadata')
  const [next,setNext]=useState<Metadata>(expected)
  const [prices,setPrices]=useState<Record<number,string>>(
    Object.fromEntries(items.map(x=>[x.id,String(x.unitPrice)])))
+ const [watch,setWatch]=useState<AdminWatch>(fromOrder(order))
  const [error,setError]=useState('')
  const [busy,setBusy]=useState(false)
  const pending=useRef<{fingerprint:string;id:string}|null>(null)
@@ -59,6 +75,17 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        debtAmount:order.debtAmount,returnAmount:order.returnAmount,
        shippingStatus:order.shippingStatus,orderStatus:order.orderStatus,
      }
+   }else if(mode==='watch'){
+     if(!isAdmin){setError('Только администратор может исправлять данные логистики.');return}
+     const expectedWatch=fromOrder(order)
+     if(JSON.stringify(expectedWatch)===JSON.stringify(watch)){
+       setError('Изменений нет.');return
+     }
+     if(!watch.deliveryAddress.trim()||!watch.postalCode.trim()||
+       !Number.isFinite(Date.parse(watch.shippingDeadlineAt))){
+       setError('Проверьте адрес, индекс и точное время отправки.');return
+     }
+     body.expected=expectedWatch;body.next=watch
    }else{
      const changes=items.filter(x=>Number(prices[x.id])!==x.unitPrice)
        .map(x=>({
@@ -98,6 +125,8 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        onClick={()=>{setMode('metadata');setError('')}}>Реквизиты</button>
      <button type="button" className={mode==='prices'?'primary':'secondary'}
        onClick={()=>{setMode('prices');setError('')}}>Записанная цена</button>
+     {isAdmin&&<button type="button" className={mode==='watch'?'primary':'secondary'}
+       onClick={()=>{setMode('watch');setError('')}}>Данные часов и логистики</button>}
    </div>
    <form onSubmit={e=>void submit(e)}>
      {mode==='metadata'?<>
@@ -122,6 +151,35 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
          <label className="watch-corrections-wide">Комментарий к заказу
            <textarea maxLength={500} rows={2} value={next.comment}
              onChange={e=>update('comment',e.target.value)}/></label>
+       </div>
+     </>:mode==='watch'&&isAdmin?<>
+       <p className="watch-corrections-hint">Администратор может исправить доставку,
+         срочность, срок отправки и гравировку до фактической отправки.
+         Если гравировка отмечена готовой, текст нельзя переписывать.</p>
+       <div className="watch-corrections-grid">
+         <label className="watch-corrections-wide">Полный адрес доставки *
+           <textarea rows={2} required maxLength={500} value={watch.deliveryAddress}
+             onChange={e=>setWatch(prev=>({...prev,deliveryAddress:e.target.value}))}/></label>
+         <label>Почтовый индекс *
+           <input required maxLength={20} value={watch.postalCode}
+             onChange={e=>setWatch(prev=>({...prev,postalCode:e.target.value}))}/></label>
+         <label>Отправить до (Алматы) *
+           <input type="datetime-local" required value={toLocal(watch.shippingDeadlineAt)}
+             onChange={e=>setWatch(prev=>({...prev,shippingDeadlineAt:toUTC(e.target.value)}))}/></label>
+         <label className="watch-corrections-wide watch-corrections-checkbox">
+           <input type="checkbox" checked={watch.urgent}
+             onChange={e=>setWatch(prev=>({...prev,urgent:e.target.checked}))}/>
+           Срочный заказ</label>
+       </div>
+       <div className="watch-corrections-lines">
+         {items.map(x=><label key={x.id} className="watch-corrections-item">
+           <span><strong>{x.productName||'Часы'} · {x.quantity} шт.</strong>
+             <small>Комментарий логисту / гравировка для этой позиции</small></span>
+           <textarea maxLength={500} rows={2}
+             value={watch.items.find(y=>y.orderItemId===x.id)?.engravingText||''}
+             onChange={e=>setWatch(prev=>({...prev,items:prev.items.map(y=>
+               y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/>
+         </label>)}
        </div>
      </>:<>
        <p className="watch-corrections-hint">Исправляется только записанная цена продажи.
