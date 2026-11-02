@@ -1,0 +1,64 @@
+name: Client3 watch stocktake safe Worker-only update
+on:
+  push:
+    branches: [client3/watch-update-stocktake-20261102]
+    paths: ['.github/workflows/client3-watch-stocktake-update-20261102.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  update-third-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Verify EXACT Client3 worker + installed watch schema
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/watch-update-stocktake-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+      - run: npm ci
+      - name: Full schema Main warehouse + watch lifecycle including stocktake
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node scripts/client3/test-watch-shell-20261102.mjs
+          npm run build
+      - name: Read ONLY verify existing Client3 watch migration and legacy counts
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM app_users) AS users_count,
+            (SELECT COUNT(*) FROM watch_brands) AS brands_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='order_dispatches' AND type='table') AS stage5"             | jq -e '.[0].results[0] | .orders_count>=2 and .payments_count>=2 and .users_count>=4 and .brands_count==2 and .stage5==1'
+          echo "Existing Client3 D1 confirmed. No SQL writes or migrations are authorized by this update."
+      - name: Update ONLY third Cloudflare Worker (NO DATABASE MIGRATION)
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Verify public site is responding
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          test "$(curl -sSL -o /tmp/client3-live.html -w '%{http_code}' --max-time 20 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-live.html
+      - name: Report Client3 stocktake update
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 watch stocktake Worker-only update SUCCESS. Run https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}. Full Main/Client3 warehouse and order tests green, exact third Worker redeployed with SKU physical recount; existing third D1 verified, NO schema migrations or data writes, Main and Branch2 unchanged. Exchange flow still separately pending."
