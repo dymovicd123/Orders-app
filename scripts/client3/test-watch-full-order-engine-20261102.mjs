@@ -10,6 +10,7 @@ import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-pay
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from '../../worker/domains/client3-watch-admin-order.ts'
+import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -588,6 +589,38 @@ const managerRetry=await parse(reassignClient3AdminOrderManager(db,admin,1,editO
  expectedManagerId:900,managerId:900
 }))
 assert.equal(managerRetry.ok,true)
+// Isolated Main financial correction: changing METHOD of a conducted payment
+// must not change amount/debt, watch SKU, stock or brand access.
+const recorded=sqlite.prepare(`SELECT id AS paymentId,method AS expectedMethod,
+ amount AS expectedAmount,payment_date AS expectedPaymentDate,
+ payment_kind AS expectedPaymentKind,COALESCE(comment,'') AS expectedComment
+ FROM payments WHERE order_id=? ORDER BY id LIMIT 1`).get(editOrderId)
+assert(recorded.paymentId>0,'New watch order must have a payment to correct')
+const paymentBefore=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(editOrderId)
+const paymentMoveCount=count('inventory_movements')
+const methodInput={requestId:'watch-admin-paymethod-20261103-01',
+ change:{...recorded,method:'KASPI RED'}}
+const methodSaved=await parse(correctClient3AdminPaymentMethod(db,admin,1,editOrderId,methodInput))
+assert.equal(methodSaved.ok,true,JSON.stringify(methodSaved))
+assert.equal(sqlite.prepare('SELECT method FROM payments WHERE id=?').get(recorded.paymentId).method,'KASPI RED')
+assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(editOrderId),paymentBefore)
+assert.equal(count('inventory_movements'),paymentMoveCount)
+const methodRetry=await parse(correctClient3AdminPaymentMethod(db,admin,1,editOrderId,methodInput))
+assert.equal(methodRetry.ok,true,'Main critical payment correction is idempotent')
+const blockedMethodManager=await parse(correctClient3AdminPaymentMethod(db,manager,1,editOrderId,{
+ ...methodInput,requestId:'watch-manager-paymethod-20261103-1'
+}))
+assert.equal(blockedMethodManager.status,403)
+const blockedMethodBrand=await parse(correctClient3AdminPaymentMethod(db,admin,2,editOrderId,{
+ ...methodInput,requestId:'watch-foreign-paymethod-20261103-1'
+}))
+assert.equal(blockedMethodBrand.status,404)
+const blockedMethodStale=await parse(correctClient3AdminPaymentMethod(db,admin,1,editOrderId,{
+ ...methodInput,requestId:'watch-stale-paymethod-20261103-01',change:{...recorded,method:'Наличные'}
+}))
+assert.equal(blockedMethodStale.status,400,'Unknown payment methods must remain protected')
 const beforeDeletionMoney=count('payments')
 const safePreview=await parse(previewClient3AdminOrderDelete(db,admin,1,editOrderId))
 assert.equal(safePreview.ok,true,JSON.stringify(safePreview))
