@@ -1015,7 +1015,8 @@ const extraCancel=await cancelExchangeSetV2(db,extraResult.exchangeId,{
 assert.equal(extraCancel.ok,true,JSON.stringify(extraCancel))
 const paymentsRestored=sqlite.prepare('SELECT received_amount,total_amount FROM orders WHERE id=?')
  .get(stage4Pay.created.orderId)
-assert.deepEqual(paymentsRestored,{received_amount:40000,total_amount:40000})
+assert.equal(paymentsRestored.received_amount,40000)
+assert.equal(paymentsRestored.total_amount,40000)
 const reversals=sqlite.prepare(`SELECT payment_method,amount_delta
  FROM financial_events WHERE event_type='payment_reversal' AND related_type='exchange_extra'
  AND source_type='payment' AND order_id=? ORDER BY id DESC LIMIT 2`)
