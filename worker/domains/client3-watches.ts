@@ -13,6 +13,7 @@ import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
 import {countClient3WatchStock} from './client3-watch-stocktake.ts'
+import {listClient3WatchStockHistory} from './client3-watch-history.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
@@ -278,6 +279,11 @@ export async function routeClient3Watches(
   const refDelete=/^\/api\/client3\/watches\/references\/(\d+)$/.exec(url.pathname)
   if(refDelete&&request.method==='DELETE')
     return deleteClient3WatchReference(db,actor,Number(refDelete[1]))
+  if(url.pathname==='/api/client3/watches/stock/history'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchStockHistory(db,actor,scope.row!.id,url)
+  }
   if(url.pathname==='/api/client3/watches/stock/count'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;source?:unknown;expectedPhysical?:unknown;countedQuantity?:unknown;requestId?:unknown;confirmed?:unknown;allowShortage?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
