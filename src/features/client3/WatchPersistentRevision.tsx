@@ -159,7 +159,12 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
    try{
      const result=await post('complete',{brand,sessionId:session.id})
      if(result.session)hydrate(result.session)
-     setShowOutcome(true);onStockChanged()
+     // Keep the completed result visible inside the same Main correction panel.
+     // A completed session is no longer "active" on the server, but the parent
+     // must not unmount this component before the user acknowledges the outcome.
+     setShowOutcome(true)
+     onActiveChange(true)
+     onStockChanged()
      setNotice(result.message||'Ревизия завершена. Фактические остатки обновлены.')
    }catch(e){setError(e instanceof Error?e.message:'Ревизия не завершена.')}
    finally{setBusy(false)}
