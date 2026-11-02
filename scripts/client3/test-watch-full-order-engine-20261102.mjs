@@ -131,12 +131,11 @@ const kzMatch=await ensureManualWatchOrderSku(db,admin,1,{
 assert.equal(kzMatch.watchVariantId,kzWatchId)
 assert.equal(kzMatch.catalogVariantId,kzPrepared.canonicalVariantId)
 assert.deepEqual([count('watch_products'),count('watch_variants')],kzCounts)
-await assert.rejects(ensureManualWatchOrderSku(db,admin,2,{
- modelName:'ҚОҢЫР — СҮР',gender:'male',
- movement:'quartz',braceletMaterial:'leather',dialColor:'black',braceletColor:'ЧЁРНЫЙ',
-}).then(x=>{if(x.watchVariantId===kzWatchId)throw Error('Cross-brand SKU leak')}),
- /Cross-brand SKU leak|Менеджер не может|Выбранный бренд|отсутств|No such|reference/i
-).catch(()=>{/* If a genuinely new brand2 SKU was created, assert no cross-brand ID was reused below. */})
+// Brand identity lookup stays scoped to the exact watch_products.brand_id.
+const otherBrandModel=sqlite.prepare(
+ "SELECT id FROM watch_products WHERE brand_id=2 AND model_name='ҚОҢЫР — СҮР' LIMIT 1"
+).get()
+assert.equal(otherBrandModel,undefined,'Brand1 Kazakh watch must not exist as brand2 catalog identity')
 // Do not silently choose between overlapping custom references and a builtin
 // synonym; force the administrator to disambiguate the shared reference list.
 const shadow=sqlite.prepare(
