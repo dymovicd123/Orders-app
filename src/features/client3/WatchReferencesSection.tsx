@@ -165,7 +165,7 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
           </label>
           <button type="submit" className="primary" disabled={saving||!draft.trim()}>
             {saving?'Сохранение…':editId?'Сохранить изменения':'Добавить в справочник'}</button>
-          {editId&&<button type="button" className="secondary compact" onClick={()=>{setEditId(null);setDraft('')}}>Отмена</button>
+          {editId&&<button type="button" className="secondary compact" onClick={()=>{setEditId(null);setDraft('')}}>Отмена</button>}
           <p>Уже созданные заказы, остатки и комплектации не изменятся.</p>
         </form>:config.editable?
           <p className="watch-references-readonly">Добавление значений доступно администратору. Все сотрудники видят общий список.</p>:
