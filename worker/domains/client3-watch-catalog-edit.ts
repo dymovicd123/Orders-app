@@ -1,0 +1,115 @@
+import {json} from '../core/http.ts'
+import type {AuthUser} from '../core/types.ts'
+import {normalizeWatchVariant,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
+
+const error=(message:string,status=400)=>json({ok:false,message},{status})
+const clean=(x:unknown)=>typeof x==='string'?x.trim().replace(/\s+/g,' '):''
+const id=(x:unknown)=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):0
+
+/** Main-style model rename: only the display name, never the canonical product ID. */
+export async function editClient3WatchModel(db:D1Database,actor:AuthUser,brandId:number,
+ input:{watchProductId?:unknown;expectedName?:unknown;modelName?:unknown}){
+ if(actor.role!=='admin')return error('Изменять товары может только администратор.',403)
+ const productId=id(input.watchProductId),name=clean(input.modelName),expected=clean(input.expectedName)
+ if(!productId||!expected||!name||name.length>150)return error('Выберите модель и укажите корректное название (до 150 символов).')
+ const current=await db.prepare('SELECT id,model_name,is_active FROM watch_products WHERE id=? AND brand_id=?')
+   .bind(productId,brandId).first<{id:number;model_name:string;is_active:number}>()
+ if(!current||current.is_active!==1)return error('Товар удалён или недоступен в этом бренде.',404)
+ if(current.model_name!==expected)return error('Название уже изменилось. Обновите каталог перед сохранением.',409)
+ if(current.model_name===name)return json({ok:true,unchanged:true,watchProductId:productId,modelName:name})
+ const duplicate=await db.prepare('SELECT id FROM watch_products WHERE brand_id=? AND model_name=? COLLATE NOCASE AND id<>? LIMIT 1')
+   .bind(brandId,name,productId).first<{id:number}>()
+ if(duplicate)return error('В этом бренде уже есть модель с таким названием.',409)
+ try{
+   const saved=await db.prepare('UPDATE watch_products SET model_name=? WHERE id=? AND brand_id=? AND is_active=1 AND model_name=?')
+     .bind(name,productId,brandId,expected).run()
+   if(Number(saved.meta?.changes||0)!==1)return error('Товар изменился одновременно. Обновите каталог.',409)
+   return json({ok:true,watchProductId:productId,modelName:name})
+ }catch{return error('Название занято другой моделью. Обновите каталог.',409)}
+}
+
+const cols=[
+ ['movements','movement'],
+ ['bracelets','braceletMaterial'],
+ ['dials','dialColor'],
+ ['leatherColors','braceletColor'],
+] as const
+type EditInput=WatchVariantInput&{watchVariantId?:unknown;watchProductId?:unknown;
+ expected?:WatchVariantInput}
+
+/** Main refuses identity corrections after an SKU participates in operations.
+ * Keep the exact same rule: a linked position's identity is immutable, while
+ * an unlinked draft can be corrected without creating a duplicate SKU.
+ */
+export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brandId:number,input:EditInput){
+ if(actor.role!=='admin')return error('Редактирование позиций доступно только администратору.',403)
+ const variantId=id(input.watchVariantId),productId=id(input.watchProductId)
+ if(!variantId||!productId||!input.expected)return error('Выберите позицию и обновите её карточку.',400)
+ let next:ReturnType<typeof normalizeWatchVariant>,expected:ReturnType<typeof normalizeWatchVariant>
+ try{
+   next=normalizeWatchVariant(input)
+   expected=normalizeWatchVariant(input.expected)
+ }catch(e){return error(e instanceof Error?e.message:'Некорректные характеристики.')}
+ const row=await db.prepare(`SELECT v.id,v.gender,v.catalog_variant_id,wp.is_active AS product_active,
+   COALESCE(a.movement,v.movement) AS movement,
+   COALESCE(a.bracelet_material,v.bracelet_material) AS bracelet_material,
+   COALESCE(a.dial_color,v.dial_color) AS dial_color,
+   COALESCE(a.bracelet_color,v.bracelet_color) AS bracelet_color
+   FROM watch_variants v
+   JOIN watch_products wp ON wp.id=v.watch_product_id AND wp.brand_id=?
+   LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
+   WHERE v.id=? AND v.watch_product_id=? AND v.is_active=1`)
+   .bind(brandId,variantId,productId).first<{id:number;gender:string;catalog_variant_id:number|null;
+     movement:string;bracelet_material:string;dial_color:string;bracelet_color:string;product_active:number}>()
+ if(!row||row.product_active!==1)return error('Позиция уже удалена или не принадлежит выбранному бренду.',404)
+ const actual=[row.gender,row.movement,row.bracelet_material,row.dial_color,row.bracelet_color]
+ const prev=[expected.gender,expected.movement,expected.braceletMaterial,expected.dialColor,expected.braceletColor]
+ if(JSON.stringify(actual)!==JSON.stringify(prev))
+   return error('Характеристики уже изменились. Обновите каталог и повторите исправление.',409)
+ const after=[next.gender,next.movement,next.braceletMaterial,next.dialColor,next.braceletColor]
+ if(JSON.stringify(prev)===JSON.stringify(after))return json({ok:true,unchanged:true,watchVariantId:variantId})
+ if(row.catalog_variant_id)
+   return error('Эта позиция уже связана со складским SKU. Как в Main, нельзя переписывать идентичность используемой позиции. Создайте новую комплектацию и удалите старую после разбора остатков и резервов.',409)
+ for(const [kind,key] of cols){
+   if(kind==='leatherColors'&&next.braceletMaterial!=='leather')continue
+   const table=kind==='leatherColors'?'watch_reference_values':'watch_reference_values_v5'
+   const values=await db.prepare(`SELECT value FROM ${table} WHERE kind=? AND is_active=1`)
+     .bind(kind).all<{value:string}>()
+   if(!(values.results||[]).some(x=>x.value.toLocaleUpperCase('ru-RU')===next[key].toLocaleUpperCase('ru-RU')))
+     return error('Значение «'+next[key]+'» отсутствует в общем справочнике. Сначала добавьте его.',409)
+ }
+ const collision=await db.prepare(`SELECT v.id FROM watch_variants v
+   LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
+   WHERE v.watch_product_id=? AND v.id<>?
+   AND v.gender=?
+   AND COALESCE(a.movement,v.movement)=?
+   AND COALESCE(a.bracelet_material,v.bracelet_material)=?
+   AND COALESCE(a.dial_color,v.dial_color)=?
+   AND COALESCE(a.bracelet_color,v.bracelet_color)=? LIMIT 1`)
+   .bind(productId,variantId,...after).first<{id:number}>()
+ if(collision)return error('Такая комплектация уже существует. Выберите её вместо создания дубля.',409)
+ try{
+   // Both writes occur in ONE D1 transaction; keep old CHECK-backed enum values
+   // unchanged, and store new display identity only in the V5 extension.
+   const result=await db.batch([
+     db.prepare(`UPDATE watch_variants SET gender=? WHERE id=? AND watch_product_id=?
+       AND is_active=1 AND catalog_variant_id IS NULL AND gender=?`)
+       .bind(next.gender,variantId,productId,row.gender),
+     db.prepare(`INSERT INTO watch_variant_attributes_v5(
+       watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
+     ) SELECT v.id,v.watch_product_id,v.gender,?,?,?,?
+       FROM watch_variants v
+       WHERE v.id=? AND v.watch_product_id=? AND v.is_active=1 AND v.catalog_variant_id IS NULL
+       ON CONFLICT(watch_variant_id) DO UPDATE SET
+         gender=excluded.gender,movement=excluded.movement,
+         bracelet_material=excluded.bracelet_material,dial_color=excluded.dial_color,
+         bracelet_color=excluded.bracelet_color`)
+       .bind(next.movement,next.braceletMaterial,next.dialColor,next.braceletColor,variantId,productId),
+   ])
+   if(Number(result[0].meta?.changes||0)!==1||Number(result[1].meta?.changes||0)!==1)
+     return error('Позиция изменилась во время сохранения. Обновите каталог.',409)
+   return json({ok:true,watchVariantId:variantId,edited:true,stockCreated:false,historyPreserved:true})
+ }catch{
+   return error('Не удалось обновить: позиция могла измениться одновременно или стать дубликатом. Обновите список.',409)
+ }
+}
