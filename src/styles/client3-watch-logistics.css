@@ -75,3 +75,17 @@
 .client3-logistics-dispatch-confirm span{color:#166534;font-size:13px}
 .client3-logistics-dispatch-confirm button{justify-self:start}
 @media(max-width:650px){.client3-logistics-brands{overflow-x:auto}.client3-logistics-brands>.workshop-channel-tab{flex:0 0 142px}}
+
+/* Main per-item dispatch planner adapted for compact watch logistics. */
+.watch-main-logistics-item .watch-logistics-select-line{display:flex;gap:10px;align-items:flex-start;cursor:pointer;min-width:0;font-size:.86rem;font-weight:680}
+.watch-logistics-select-line input{width:17px;height:17px;flex:0 0 17px;margin:2px 0 0;accent-color:#166534}
+.watch-logistics-select-line>span{display:grid;gap:4px;min-width:0}
+.watch-logistics-select-line small{font-weight:400}
+.watch-main-logistics-item.is-dispatched{background:#f0fdf4;border-color:#bbf7d0}
+.watch-main-logistics-item.is-blocked{background:#fffbeb;border-color:#fde68a}
+.watch-main-logistics-item.is-dispatched .watch-logistics-select-line,
+.watch-main-logistics-item.is-blocked .watch-logistics-select-line{cursor:default}
+.watch-logistics-actions{gap:8px;flex-wrap:wrap}
+.watch-logistics-actions small{max-width:420px}
+.watch-main-logistics-send-status.is-awaiting{white-space:normal}
+@media(max-width:710px){.watch-logistics-select-line>span{overflow-wrap:anywhere}.watch-logistics-actions{align-items:stretch}}
