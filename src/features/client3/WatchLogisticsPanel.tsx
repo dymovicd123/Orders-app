@@ -191,7 +191,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         <small>{code==='all'?'Общая очередь':'Отдельные заказы бренда'}</small>
       </button>)}
     </div>}
-    {error && <p role="alert" className="watch-logistics-error">{error}</p>
+    {error && <p role="alert" className="watch-logistics-error">{error}</p>}
     {feedback && <p role="status" className="watch-logistics-feedback">{feedback}</p>}
     {busy && <p role="status">Загрузка логистики…</p>}
     {!busy && !error && groups.length === 0 && <p>В выбранной очереди заказов нет.</p>}
