@@ -217,6 +217,34 @@ const exchangeOriginalSent=await parse(dispatchClient3WatchOrder(db,manager,1,ex
 assert.equal(exchangeOriginalSent.status,200,JSON.stringify(exchangeOriginalSent))
 const beforeExchangeStock=sqlite.prepare("SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=? AND inventory_source='warehouse'")
  .get(newCatalogVariantId)
+// Simulate a worker failure AFTER Main claimed the old item and exchange header,
+// but BEFORE the watch metadata is durably attached. The same request must resume.
+const actualPrepare=db.prepare
+let interruptOnce=true
+db.prepare=query=>{
+  const statement=actualPrepare(query)
+  if(!query.includes('INSERT INTO watch_order_item_details(order_item_id,watch_variant_id,engraving_text,created_at)'))
+    return statement
+  return {
+    ...statement,
+    bind(...args){
+      const bound=statement.bind(...args)
+      return {...bound,run:async()=>{
+        if(interruptOnce){interruptOnce=false;throw new Error('SIMULATED_WATCH_ATTACHMENT_INTERRUPTED')}
+        return bound.run()
+      }}
+    },
+  }
+}
+const interruptedExchange=await parse(exchangeClient3Watch(db,manager,1,exchangeOrder.orderId,{
+ requestId:'watch-exchange-operation-000001',newWatchVariantId:2,newSource:'office',
+ engravingText:'NEW ENGRAVING',reason:'Customer requested steel strap',
+}))
+assert.equal(interruptedExchange.status,409,JSON.stringify(interruptedExchange))
+assert.equal(interruptOnce,false)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM exchanges WHERE order_id=?').get(exchangeOrder.orderId).n,1,
+ 'Core exchange owns old SKU despite lost watch attachment')
+db.prepare=actualPrepare
 const newExchange=await parse(exchangeClient3Watch(db,manager,1,exchangeOrder.orderId,{
  requestId:'watch-exchange-operation-000001',newWatchVariantId:2,newSource:'office',
  engravingText:'NEW ENGRAVING',reason:'Customer requested steel strap',
