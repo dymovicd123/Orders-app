@@ -1,5 +1,5 @@
 name: Client3 watch multi-line exchange and split settlement acceptance
-# Revalidate request-id replay after finished exchange updates canonical total and original item quantity.
+# Verify full TS/Vite compilation after confirmed split surcharge/refund lifecycle and replay tests.
 # Recheck two-row return after resolving an unrelated existing fixture identifier.
 # Real Main watch reservation rewrite passed. Verify final strict build after type cleanups.
 # Revalidate complete register fixture payment comment and current Main money model.
