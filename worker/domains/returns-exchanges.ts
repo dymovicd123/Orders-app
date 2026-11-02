@@ -16,6 +16,8 @@ import { normalizeOrderItems } from './order-core.ts'
 import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { correctMistakenOrderHandover, fulfillOrderReservationsV2, reactivateReleasedOrderReservationV2, releaseOrderReservationV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
+import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
+import { correctShippingMarkerAfterStandaloneReturn } from './order-shipping-scoped-correction.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 
@@ -45,6 +47,19 @@ export async function correctMistakenOrderHandoverWithCurrentExchange(
     throw new Error('Снять отметку «Отправлен» можно только после подтверждения, что текущий товар фактически НЕ передавался клиенту.');
   }
 
+  // A past standalone physical Return does not prohibit correcting a later
+  // mistaken status-only send. Never replay or undo the older Return movement.
+  const standaloneReturn = await readStandaloneItemReturnBlocker(db, orderId)
+  if (standaloneReturn) {
+    const activeExchange = await db.prepare(
+      `SELECT EXISTS(SELECT 1 FROM exchanges e
+        WHERE e.order_id = ? AND COALESCE(e.status,'completed') <> 'cancelled') AS active_exchange`,
+    ).bind(orderId).first<{ active_exchange: number }>()
+    if (toInt(activeExchange?.active_exchange, 0)) {
+      throw new CriticalOperationConflictError('В заказе одновременно возврат и обмен. Для исправления выберите конкретную отправку.')
+    }
+    return correctShippingMarkerAfterStandaloneReturn(db, orderId, { actor: input.actor })
+  }
   const downstream = await db.prepare(
     `SELECT
        EXISTS(
