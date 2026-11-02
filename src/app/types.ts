@@ -879,6 +879,8 @@ export type OrderRecord = {
     quantity: number
     availableOperationQuantity?: number
     stockWriteoffStatus?: string | null
+    pendingExchangeDispatchId?: number | null
+    pendingExchangeWorkshopId?: number | null
     unitPrice: number
     catalogPriceSnapshot?: number | null
     lineTotal: number
