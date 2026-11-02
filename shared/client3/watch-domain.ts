@@ -6,7 +6,8 @@ export type WatchMechanism = 'quartz' | 'mechanical'
 export type WatchBraceletMaterial = 'steel' | 'leather' | 'rubber'
 export type WatchDialColor = 'black' | 'white' | 'silver' | 'gold' | 'green' | 'orange' | 'brown' | 'multicolor'
 export type WatchSource = 'office' | 'showcase'
-export type WatchPaymentMethod = 'KASPI RED' | 'KASPI GOLD' | 'Рассрочка'
+// Current payment choices are read from the shared Client3 references table.
+export type WatchPaymentMethod = string
 
 export const WATCH_DIAL_COLORS = [
   'black','white','silver','gold','green','orange','brown','multicolor',
@@ -110,7 +111,7 @@ export function watchDeadlineToUTC(value: unknown): string {
 export function validateWatchOrderInput(input: WatchOrderInput) {
   const brand=normalizeWatchBrand(input.brand)
   const source=enumOne(input.source,['office','showcase'],'место хранения')
-  const paymentMethod=enumOne(input.paymentMethod,WATCH_PAYMENTS,'способ оплаты')
+  const paymentMethod=required(input.paymentMethod,'способ оплаты',80)
   if (typeof input.urgent!=='boolean') fail('Срочность должна быть задана явно')
   const recipientName=required(input.recipientName,'ФИО получателя',200)
   const recipientPhone=required(input.recipientPhone,'номер телефона',50)
