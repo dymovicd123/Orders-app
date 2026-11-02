@@ -1,84 +1,166 @@
-import {useRef,useState,type FormEvent} from 'react'
+import {useEffect,useRef,useState,type FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {WATCH_PAYMENTS} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-return.css'
 
+type Line={
+ id:number;productName:string;quantity:number;returnableQuantity:number;shipped:number;
+ source:string;gender:string;movement:string;braceletMaterial:string;
+ dialColor:string;braceletColor:string;engravingText:string
+}
 type ReturnOrder={
- orderId:number;externalId:string;watchDescription?:string|null
- shippingStatus:string;lineCount:number;returnableQuantity:number
- receivedAmount:number;returnAmount:number
+ orderId:number;externalId:string;shippingStatus:string;lineCount:number;
+ receivedAmount:number;returnAmount:number;itemLines:string
 }
 type ReturnKind='money_only'|'items_only'|'both'
-const amt=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
+const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
+function rows(raw:string):Line[]{
+ try{const x=JSON.parse(raw||'[]') as Line[];return Array.isArray(x)?x.filter(y=>y.id>0&&y.quantity>0):[]}
+ catch{return []}
+}
 export function WatchReturnForm({brand,order,onDone,onCancel}:{
  brand:WatchBrand;order:ReturnOrder;onDone:()=>void;onCancel:()=>void
 }){
- const shipped=order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'
- const canItems=shipped&&order.lineCount===1&&order.returnableQuantity>0
+ const lines=rows(order.itemLines)
+ const returnable=lines.filter(x=>Number(x.shipped)>0&&Number(x.returnableQuantity)>0)
  const maxRefund=Math.max(0,Number(order.receivedAmount)-Number(order.returnAmount))
- const [kind,setKind]=useState<ReturnKind>(canItems?(maxRefund>0?'both':'items_only'):'money_only')
- const [quantity,setQuantity]=useState(String(Math.max(1,order.returnableQuantity)))
- const [amount,setAmount]=useState(String(Math.max(0,maxRefund)))
- const [paymentMethod,setPaymentMethod]=useState<(typeof WATCH_PAYMENTS)[number]>('KASPI GOLD')
+ const [kind,setKind]=useState<ReturnKind>(returnable.length?(maxRefund?'both':'items_only'):'money_only')
+ const [selected,setSelected]=useState<Record<number,number>>(
+   Object.fromEntries(returnable.map(x=>[x.id,Number(x.returnableQuantity)])))
+ const [amount,setAmount]=useState(String(maxRefund))
+ const [methods,setMethods]=useState<string[]>([...WATCH_PAYMENTS])
+ const [refunds,setRefunds]=useState<Array<{method:string;amount:string}>>([
+   {method:'KASPI GOLD',amount:String(maxRefund)}])
  const [reason,setReason]=useState('')
  const [confirmed,setConfirmed]=useState(false)
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const key=useRef<{fingerprint:string;requestId:string}|null>(null)
- const items=kind!=='money_only',money=kind!=='items_only'
- const save=async(e:FormEvent)=>{
+ const isItems=kind!=='money_only',isMoney=kind!=='items_only'
+ useEffect(()=>{
+   const ctrl=new AbortController()
+   void fetch('/api/client3/watches/references',{credentials:'include',signal:ctrl.signal,cache:'no-store'})
+     .then(async res=>{
+       const body=await res.json() as {ok?:boolean;rows?:Array<{kind:string;value:string}>}
+       const values=(body.rows||[]).filter(x=>x.kind==='paymentMethods').map(x=>x.value)
+       if(!ctrl.signal.aborted&&res.ok&&body.ok&&values.length){
+         setMethods(values)
+         setRefunds(prev=>prev.map(x=>({...x,method:values.includes(x.method)?x.method:values[0]})))
+       }
+     }).catch(()=>{})
+   return ()=>ctrl.abort()
+ },[])
+ const updateRefund=(index:number,change:Partial<{method:string;amount:string}>)=>{
+   setRefunds(old=>old.map((x,i)=>i===index?{...x,...change}:x));setConfirmed(false)
+ }
+ const submit=async(e:FormEvent)=>{
    e.preventDefault()
-   const qty=items?Number(quantity):0
-   const refund=money?Number(amount):0
-   if(busy||!confirmed||!reason.trim()||items&&(!canItems||!Number.isSafeInteger(qty)||qty<1||qty>order.returnableQuantity)
-      ||money&&(!Number.isSafeInteger(refund)||refund<1||refund>maxRefund)){
-      setError('Проверьте вид возврата, количество, сумму, причину и подтверждение.');return
+   const items=isItems?returnable.filter(x=>Number(selected[x.id]||0)>0)
+     .map(x=>({orderItemId:x.id,quantity:Number(selected[x.id])})):[]
+   const amountValue=isMoney?Number(amount):0
+   const parts=isMoney?refunds.map(x=>({method:x.method,amount:Number(x.amount)})):[]
+   if(busy||!confirmed||!reason.trim()||isItems&&!items.length||
+      items.some(x=>!Number.isSafeInteger(x.quantity)||x.quantity<1||
+        x.quantity>Number(returnable.find(v=>v.id===x.orderItemId)?.returnableQuantity))||
+      isMoney&&(!Number.isSafeInteger(amountValue)||amountValue<1||amountValue>maxRefund||
+        parts.some(x=>!methods.includes(x.method)||!Number.isSafeInteger(x.amount)||x.amount<1)||
+        parts.reduce((t,x)=>t+x.amount,0)!==amountValue)){
+     setError('Проверьте позиции, количество, суммы по способам возврата и подтверждение.');return
    }
-   const payload={brand,kind,quantity:qty,amount:refund,paymentMethod,reason:reason.trim()}
-   const fingerprint=JSON.stringify([order.orderId,payload])
+   const body={brand,kind,quantity:items.reduce((t,x)=>t+x.quantity,0),items,
+     amount:amountValue,paymentMethod:parts[0]?.method||'',refundParts:parts,
+     reason:reason.trim()}
+   const fingerprint=JSON.stringify([order.orderId,body])
    if(key.current?.fingerprint!==fingerprint)
      key.current={fingerprint,requestId:'watch-return-'+crypto.randomUUID()}
    setBusy(true);setError('')
    try{
-     const response=await fetch('/api/client3/watches/orders/'+order.orderId+'/return',{
+     const res=await fetch('/api/client3/watches/orders/'+order.orderId+'/return',{
        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({...payload,requestId:key.current.requestId}),
+       body:JSON.stringify({...body,requestId:key.current.requestId}),
      })
-     const data=await response.json() as {ok:boolean;message?:string}
-     if(!response.ok||!data.ok)throw new Error(data.message||'Возврат не сохранён')
-     key.current=null
-     onDone()
-   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить возврат')}
+     const result=await res.json() as {ok?:boolean;message?:string}
+     if(!res.ok||!result.ok)throw new Error(result.message||'Возврат не сохранён')
+     key.current=null;onDone()
+   }catch(cause){setError(cause instanceof Error?cause.message:'Возврат не оформлен')}
    finally{setBusy(false)}
  }
- return <form className="watch-return-form" onSubmit={e=>void save(e)}>
+ const chosenQty=returnable.reduce((n,x)=>n+Math.max(0,Number(selected[x.id]||0)),0)
+ return <form className="watch-return-form" onSubmit={e=>void submit(e)}>
    <h4>Возврат по заказу {order.externalId}</h4>
-   <p><strong>Часы:</strong> {order.watchDescription||'Данные комплектации доступны в заказе'}</p>
-   <p>Доступно к возврату: {order.returnableQuantity} шт. · Денег к возврату: {amt(maxRefund)}</p>
-   <label>Вид возврата<select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
-     <option value="money_only">Только деньги</option>
-     {canItems&&<option value="items_only">Только товар</option>}
-     {canItems&&maxRefund>0&&<option value="both">Товар и деньги</option>}
-   </select></label>
-   {items&&<label>Количество часов<input type="number" min={1} max={order.returnableQuantity}
-     value={quantity} onChange={e=>{setQuantity(e.target.value);setConfirmed(false)}} required/></label>}
-   {money&&<>
-     <label>Сумма возврата, ₸<input type="number" min={1} max={maxRefund}
-       value={amount} onChange={e=>{setAmount(e.target.value);setConfirmed(false)}} required/></label>
-     <label>Способ возврата<select value={paymentMethod}
-       onChange={e=>{setPaymentMethod(e.target.value as typeof paymentMethod);setConfirmed(false)}}>
-       {WATCH_PAYMENTS.map(method=><option key={method}>{method}</option>)}
-     </select></label>
+   <p>Выберите конкретные отправленные часы. Деньги и физическая приёмка оформляются отдельно: регистрация возврата не добавляет остаток на склад.</p>
+   <label>Вид возврата
+     <select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
+       {maxRefund>0&&<option value="money_only">Только деньги</option>}
+       {!!returnable.length&&<option value="items_only">Только товар</option>}
+       {!!returnable.length&&maxRefund>0&&<option value="both">Товар и деньги</option>}
+     </select>
+   </label>
+   {isItems&&<div className="watch-return-items">
+     <strong>Возвращаемые часы · {chosenQty} шт.</strong>
+     {returnable.map(line=><label key={line.id} className="watch-return-item-row">
+       <span><strong>{line.productName}</strong>
+         <small>{line.gender==='male'?'Мужские':'Женские'} · {line.movement} ·
+           {line.braceletMaterial} · {line.dialColor}{line.braceletColor?' · '+line.braceletColor:''}</small>
+         {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
+         <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
+       </span>
+       <input type="number" min={0} max={line.returnableQuantity} step={1}
+         value={selected[line.id]??0} aria-label={'Вернуть штук: '+line.productName}
+         onChange={e=>{
+           setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
+           setConfirmed(false)
+         }}/>
+     </label>)}
+   </div>}
+   {isMoney&&<>
+     <label>Всего вернуть денег, ₸ (не более {money(maxRefund)})
+       <input type="number" min={1} max={maxRefund} step={1} value={amount} required
+         onChange={e=>{
+           const v=e.target.value
+           setAmount(v);setRefunds(p=>p.length===1?[{...p[0],amount:v}]:p)
+           setConfirmed(false)
+         }}/>
+     </label>
+     <div className="watch-return-split-payments">
+       <strong>Как возвращаете деньги</strong>
+       {refunds.map((part,index)=><div className="watch-return-pay-part" key={index}>
+         <label>Способ {index+1}
+           <select value={part.method} onChange={e=>updateRefund(index,{method:e.target.value})}>
+             {methods.map(method=><option key={method} value={method}>{method}</option>)}
+           </select></label>
+         <label>Сумма, ₸
+           <input type="number" min={1} step={1} required value={part.amount}
+             onChange={e=>updateRefund(index,{amount:e.target.value})}/>
+         </label>
+         {refunds.length>1&&<button type="button" className="secondary"
+           onClick={()=>{
+             setRefunds(p=>p.filter((_,i)=>i!==index));setConfirmed(false)
+           }}>Убрать</button>}
+       </div>)}
+       {refunds.length<3&&<button className="secondary" type="button"
+         onClick={()=>{setRefunds(p=>[...p,{method:methods[0]||'',amount:''}]);setConfirmed(false)}}>
+         + Ещё один способ оплаты
+       </button>}
+       <small>Суммы всех способов должны равняться {money(Number(amount)||0)}.
+         Каждая часть учитывается отдельно.</small>
+     </div>
    </>}
-   <label>Причина<input maxLength={300} value={reason} required
-     onChange={e=>{setReason(e.target.value);setConfirmed(false)}} placeholder="Причина возврата"/></label>
-   {items&&<p>Часы будут отмечены как ожидающие приёмки. Склад увеличится только после отдельного подтверждения физического получения.</p>}
+   <label>Причина
+     <input required maxLength={300} value={reason}
+       onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
+   </label>
+   {isItems&&<p>Физически полученные часы нужно отдельно подтвердить в разделе приёмки возвратов.</p>}
    <label className="watch-return-confirm"><input type="checkbox" checked={confirmed}
      onChange={e=>setConfirmed(e.target.checked)}/>
-     Подтверждаю оформление возврата {money?amt(Number(amount)):'без денежного возврата'}
+     Подтверждаю возврат {isItems?chosenQty+' шт.':''}
+     {isMoney?' и '+money(Number(amount)||0):' без возврата денег'}
    </label>
    {error&&<p role="alert" className="watch-return-error">{error}</p>}
-   <div className="watch-return-actions"><button type="submit" disabled={busy||!confirmed}>{busy?'Сохраняю…':'Оформить возврат'}</button>
-     <button type="button" disabled={busy} onClick={onCancel}>Отмена</button></div>
+   <div className="watch-return-actions">
+     <button type="submit" disabled={busy||!confirmed}>
+       {busy?'Сохраняю…':'Оформить возврат'}</button>
+     <button type="button" disabled={busy} onClick={onCancel}>Отмена</button>
+   </div>
  </form>
 }
