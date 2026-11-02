@@ -1,0 +1,111 @@
+name: Client3 Stage4 final release (isolated third Worker)
+on:
+  push:
+    branches: [client3/step4-finalization-20261103]
+    paths: ['.github/workflows/client3-stage4-final-release-20261103.yml']
+permissions:
+  contents: read
+  actions: read
+  issues: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Exact accepted source and strictly isolated third Worker
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/step4-finalization-20261103
+          test "$(git rev-parse HEAD^)" = a480e4f0ab45d7134d112abf39068c475cd3358d
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-stage4-final-release-20261103.yml
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41525588649 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41525588649 --jq .head_sha)" = a480e4f0ab45d7134d112abf39068c475cd3358d
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Build exact accepted application
+        run: |
+          set -euo pipefail
+          npm run build
+      - name: Check remote Client3 schema, history and fingerprint (READ ONLY)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-stage4-migrations
+          ! grep -Eq '000[0-9]+.*\.sql' /tmp/client3-stage4-migrations
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM financial_events) AS events_count,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_sum,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_sum,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements_count,
+              (SELECT COUNT(*) FROM watch_order_item_details) AS watch_links,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_variant_attributes_v5') AS extension_exists" \
+            | jq -ce '.[0].results[0] | select(.orders_count>=2 and .payments_count>=2 and .monitoring_admin==1 and .extension_exists==1)' > /tmp/client3-stage4-before
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+      - name: Publish only isolated Client3 Worker (NO D1 MIGRATIONS)
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Read-only live HTTP checks, verify protected actions and unchanged D1
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          test "$(curl -sSL -o /tmp/client3-stage4-html -w '%{http_code}' --max-time 30 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-stage4-html
+          for endpoint in exchange-set return; do
+            code=$(curl -sS -o /tmp/client3-stage4-protected -w '%{http_code}' --max-time 30 -X POST \
+              -H 'Content-Type: application/json' --data '{"brand":"TAUWACH"}' \
+              "$base/api/client3/watches/orders/1/$endpoint")
+            test "$code" = 401 -o "$code" = 403
+          done
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM financial_events) AS events_count,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical_sum,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_sum,
+              (SELECT COUNT(*) FROM inventory_movements) AS movements_count,
+              (SELECT COUNT(*) FROM watch_order_item_details) AS watch_links,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_variant_attributes_v5') AS extension_exists" \
+            | jq -ce '.[0].results[0]' > /tmp/client3-stage4-after
+          diff -u /tmp/client3-stage4-before /tmp/client3-stage4-after
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+          echo CLIENT3_STAGE4_FINAL_RELEASE_SUCCESS
+      - name: Record released stage 4 in tracked Client3 issue
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Stage4 final Client3-only release SUCCESS. Exact source acceptance: https://github.com/dymovicd123/Orders-app/actions/runs/41525588649. Release: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Multi-line Returns and Exchanges, split refund/extra payment, two-to-two SKU and engraving links, pending physical receipt, partial-order action UI. Third Worker only, NO D1 migrations, historical counts/FK/sums unchanged. Main/Branch2 untouched. Logged-in browser QA is not yet complete."
+      - name: Record a blocked or failed release
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Stage4 Client3-only release BLOCKED/FAILED. Source a480e4f0ab45d7134d112abf39068c475cd3358d; run https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Inspect exact failed step before claiming deployment. Main/Branch2 not targeted."
