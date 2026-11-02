@@ -62,6 +62,11 @@ export async function listClient3WatchOrders(
         wd.delivery_full_address AS deliveryAddress,wd.postal_code AS postalCode,wd.urgent,
         wd.shipping_deadline_at AS shippingDeadlineAt,
         lj.status AS engravingStatus,
+        (SELECT COUNT(DISTINCT oi3.id) FROM order_items oi3
+          JOIN order_dispatch_items di3 ON di3.order_item_id=oi3.id
+          JOIN order_dispatches d3 ON d3.id=di3.dispatch_id
+          WHERE oi3.order_id=o.id AND oi3.quantity>0
+            AND di3.quantity>COALESCE(di3.cancelled_quantity,0)) AS shippedLineCount,
         (SELECT COUNT(*) FROM inventory_reservations rr
           WHERE rr.order_id=o.id AND rr.status='unresolved') AS unresolvedReservations,
         -- Main-style expansions: show each real payment and each item, not only
@@ -74,6 +79,10 @@ export async function listClient3WatchOrders(
           'id',oi.id,
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,'unitPrice',oi.unit_price,'source',oi.source_type,
+          'shipped',EXISTS(SELECT 1 FROM order_dispatch_items di2
+            JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
+            WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
+              AND di2.quantity>COALESCE(di2.cancelled_quantity,0)),
           'engravingText',COALESCE(wi2.engraving_text,''),
           'gender',COALESCE(wv2.gender,''),'movement',COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.movement,''),
           'braceletMaterial',COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.bracelet_material,''),
