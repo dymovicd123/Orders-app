@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
+import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
@@ -248,6 +249,7 @@ export function WatchClient3App() {
                 <div>Витрина: <strong>{sourceFree(model, false)}</strong> шт.</div>
               </article>)}
             </div>
+            {user.role==='admin' && brand && <WatchCatalogEditor brand={brand}/>}
           </section>}
     </main>
   </div>
