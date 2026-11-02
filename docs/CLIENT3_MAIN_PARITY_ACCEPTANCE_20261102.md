@@ -248,3 +248,19 @@ Administrators may now **«Исправить ошибочную отправк�
 - Release workflow `.github/workflows/client3-stage5-bulk-release-20261103.yml` accepts **only** the exact fully tested commit `fc4aa10e5cf986573905e4d3e92481dda6cd3866` and targets the third Worker with D1 count/fingerprint/foreign-key safeguards and without migrations. **Release SUCCESS:** https://github.com/dymovicd123/Orders-app/actions/runs/41528703776. Verified third Worker only, no remote D1 writes/migrations, unchanged historical counts, reservations and foreign-key check. Main/Branch2 untouched.
 
 **Remaining in Stage 5:** true full/session-based inventory revisions, authenticated desktop/mobile practical QA, deeper semantic resolver aliases and remaining Main inventory parity details. Main and Branch2 must remain unmodified.
+
+
+## 03.11.2026 — Corrective UX release: ONE warehouse operation workspace
+
+User screenshot exposed a regression: a second `Массовые складские операции` panel was added below the original Main-derived `Складские операции` panel, even though the Main warehouse actions already support multiple positions. This duplicated both the operation chooser and the physical recount UI, and is not the desired Main-parity design.
+
+**Corrective source acceptance SUCCESS** https://github.com/dymovicd123/Orders-app/actions/runs/41529929795
+**Corrective isolated Client3 Worker release SUCCESS** https://github.com/dymovicd123/Orders-app/actions/runs/41530259039
+
+- Deleted redundant `WatchBulkOperations.tsx` and `client3-watch-bulk.css`; deleted the duplicate `WatchSelectiveRecount` screen from `WatchWarehouseStage5.tsx`. That file now contains only read-only warehouse history.
+- The existing `WatchWarehouseMain.tsx` Main-derived operation layout is now the **sole** form for arrival, write-off, transfer and correction/recount. Existing Main StocktakeProductChoice/StocktakeSizeCountCell primitives and existing Main `193-unified-inventory-operations.css` semantic palettes remain. Users can input multiple watch variants per model, switch models without clearing chosen quantities, then review all 1–30 exact lines and save one atomic operation. `count` routes to the already-proven Main quick-count-batch engine; other modes route to the already-proven `bulk` Main inventory movements/transfer engine. No client-side per-line write loop.
+- Kept exact Office/Showcase distinction, explicit stock/reserve guards and shortage acknowledgment, idempotent request ID, required writeoff reason and familiar green/red/blue/amber Main W12 accents. No Problems queue.
+- Full real Main-domain stock/return/exchange/order regression and build passed. Worker-only deployment did no migrations or remote D1 writes; verified preserved orders/payment/movement/stock/reserve counters and FK before/after; Main/Branch2 untouched.
+- One intermediate release run was blocked at pre-deploy gate (41530072485; no deployment). Diagnostic guard rerun deployed successfully (41530259039) after verifying the accepted source unchanged. Do not treat the blocked run as an application regression.
+
+**Next:** full Main stocktake session workflow and practical logged-in browser/mobile acceptance, plus deliberately-configured resolver alias edge cases; do not reintroduce a separate bulk operations screen.
