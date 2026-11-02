@@ -1,0 +1,54 @@
+name: Main Stage4 receipt-inbox compatibility (isolated, no deploy)
+on:
+  push:
+    branches: [candidate/main-stage345-port-20261102]
+    paths:
+      - '.github/workflows/main-stage4-receipt-port-20261102.yml'
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/candidate/main-stage345-port-20261102' && startsWith(github.event.head_commit.message, 'candidate(stage4-qa):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Import only verified Branch2 physical receipt inbox into current Main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/candidate/main-stage345-port-20261102
+          test "$(git rev-parse HEAD^)" = '0bd130dab61133749b7088204d8d4d1f2cc11e07'
+          git fetch -q origin +refs/heads/branch2:refs/remotes/origin/branch2
+          python3 scripts/prepare-main-stage4-receipt-inboxes-20261102.py
+          git diff --stat
+          git diff --name-only | grep -E '^(wrangler.jsonc|migrations/|package.json|package-lock.json)$' && exit 13 || true
+      - name: Actual endpoint, Stage3-5 and Main integration regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/test-work733-smart-exchange-inbox-20261101.mjs
+          node --experimental-strip-types scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs
+          node --experimental-strip-types scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs
+          node --experimental-strip-types scripts/test-stage5b-http-routes-20261101.mjs
+          npm run release:check
+          npm run build
+          npm audit --omit=dev --audit-level=high
+          echo STAGE4_MAIN_RECEIPT_INBOX_AND_STAGE345_PASS
+      - name: Save candidate only after successful full checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/App.tsx worker/domains/activity.ts worker/domains/returns-exchanges.ts src/features/sections/OrderReturnsSection.tsx src/features/sections/OrderExchangeSection.tsx src/features/sections/OrderExchangeSmartSection.tsx scripts/test-work733-smart-exchange-inbox-20261101.mjs
+          git commit -m 'candidate(stage4): independent Return and Exchange receipt inboxes and truthful pending status'
+          git push origin HEAD:refs/heads/candidate/main-stage345-port-20261102

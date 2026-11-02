@@ -25,6 +25,8 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     returnHistoryFilters,
     returnHistoryHasMore,
     returnHistorySummary,
+    returnPendingInbox = { rows: [], pendingQuantity: 0, hasMore: false, busy: false, error: '' },
+    loadReturnPendingInbox,
     loadReturnHistory,
     returnSelectedOrder,
     receiveReturnedItemAction,
@@ -88,7 +90,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
     if (item.lifecycleStatus === 'applied') return `Получен → ${destination}`
     return `Получен → ${destination}; статус учёта: ${item.lifecycleStatus}`
   }
-  const pendingReturnIntake = returnHistory.flatMap((entry: any) => (
+  const pendingReturnIntake = returnPendingInbox.rows.flatMap((entry: any) => (
     entry.operationType === 'order_return' && entry.status !== 'cancelled'
       ? (entry.items || [])
           .filter((item: any) => item.physicalTracking && !item.physicalReceivedAt)
@@ -110,6 +112,22 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
         : 'warehouse'
   const selectedReturnLines = (returnDraft.items || []).filter((item: any) => item.issuedToClient !== false && Number(item.quantity || 0) > 0)
   const selectedReturnQuantity = selectedReturnLines.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+  const returnMoneySelected = Number(returnDraft.amount || 0) > 0
+  const returnGoodsSelected = selectedReturnQuantity > 0
+  const returnKind = returnMoneySelected && returnGoodsSelected
+    ? 'Возврат товаров и денег'
+    : returnMoneySelected
+      ? 'Возврат только денег'
+      : returnGoodsSelected
+        ? 'Возврат только товаров'
+        : 'Возврат не заполнен'
+  const pendingSelectedQty = selectedReturnLines
+    .filter((item: any) => item.physicalState === 'pending')
+    .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+  const arrivedStockQty = selectedReturnLines
+    .filter((item: any) => item.physicalState === 'warehouse' || item.physicalState === 'boutique')
+    .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.quantity || 0)), 0)
+  const arrivedNoStockQty = selectedReturnQuantity - pendingSelectedQty - arrivedStockQty
   const patchReturnItem = (orderItemId: number, patch: Record<string, unknown>) => setReturnDraft((current: any) => ({
     ...current,
     items: current.items.map((entry: any) => Number(entry.orderItemId || 0) === Number(orderItemId || 0)
@@ -119,7 +137,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
   const toggleReturnItem = (item: any) => {
     if (item.issuedToClient === false) return
     const selected = Number(item.quantity || 0) > 0
-    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : 1 })
+    patchReturnItem(item.orderItemId, { quantity: selected ? 0 : Math.max(1, Number(item.maxQuantity || 1)), physicalState: 'pending', restock: false })
   }
   const markReturnArrived = (item: any) => {
     const physicalState = defaultReturnDestination(item)
@@ -154,19 +172,21 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                   <div>
                     <span>Ожидают приёмки</span>
-                    <strong>{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <strong>{returnPendingInbox.pendingQuantity} шт.</strong>
                   </div>
                 </div>
               </div>
-              {Number(returnHistorySummary.pendingPhysicalQuantity || 0) > 0 ? (
+              {returnPendingInbox.error ? <p className="history-load-state is-error" role="alert">{returnPendingInbox.error} <button type="button" className="secondary compact" onClick={() => void loadReturnPendingInbox()}>Повторить</button></p> : null}
+              {returnPendingInbox.busy && !returnPendingInbox.rows.length ? <p className="history-load-state">Проверяю ожидающие вещи…</p> : null}
+              {Number(returnPendingInbox.pendingQuantity || 0) > 0 ? (
                 <section className="intake-queue" aria-label="Товары, ожидающие приёмки по возвратам">
                   <div className="intake-queue-head">
                     <div>
                       <span className="intake-queue-kicker">Нужно принять</span>
                       <h3>Товары едут обратно</h3>
-                      <p>Когда вещь приехала, отметьте это здесь. Искать нужный возврат в истории не нужно.</p>
+                      <p>Когда вещь приехала, отметьте это здесь. Искать нужный возврат в истории не нужно. Очередь показывает все ожидающие вещи, независимо от поиска ниже; самые старые — первыми.</p>
                     </div>
-                    <strong className="intake-queue-count">{returnHistorySummary.pendingPhysicalQuantity} шт.</strong>
+                    <strong className="intake-queue-count">{returnPendingInbox.pendingQuantity} шт.</strong>
                   </div>
                   {pendingReturnIntake.length ? (
                     <div className="intake-queue-list">
@@ -221,12 +241,12 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                   ) : (
                     <div className="intake-queue-missing">
-                      <span>Счётчик показывает ожидающие вещи, но они не попали в загруженные последние операции.</span>
-                      <button className="secondary compact" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>Загрузить ещё</button>
+                      <span>Первая страница ожидающих ещё загружается. Если вещь не видна, откройте следующие ожидающие.</span>
+                      <button className="secondary compact" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Загрузить ещё</button>
                     </div>
                   )}
-                  {returnHistoryHasMore && loadedPendingReturnQuantity < Number(returnHistorySummary.pendingPhysicalQuantity || 0) ? (
-                    <button className="secondary compact intake-queue-more" type="button" disabled={returnHistoryBusy} onClick={() => void loadReturnHistory({ append: true })}>Показать ещё ожидающие</button>
+                  {returnPendingInbox.hasMore && loadedPendingReturnQuantity < Number(returnPendingInbox.pendingQuantity || 0) ? (
+                    <button className="secondary compact intake-queue-more" type="button" disabled={returnPendingInbox.busy} onClick={() => void loadReturnPendingInbox(true)}>Показать ещё ожидающие</button>
                   ) : null}
                 </section>
               ) : null}
@@ -272,6 +292,11 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                         <div>
                           <strong>{returnSelectedOrder.external_id}</strong>
                           <span>{returnSelectedOrder.order_date} · {returnSelectedOrder.manager_name || '—'} · {returnSelectedOrder.customer_name || returnSelectedOrder.customer_phone || '—'}</span>
+                          <span className={`status-pill ${returnSelectedOrder.shipping_status === 'sent' ? 'status-online' : 'status-warning'}`}>
+                            По системе: {returnSelectedOrder.shipping_status === 'sent'
+                              ? `Отправлен${returnSelectedOrder.shipping_date ? ` · ${returnSelectedOrder.shipping_date}` : ''}`
+                              : 'Не отправлен'}
+                          </span>
                         </div>
                         <span className="status-pill status-warning">
                           Доступно {formatMoney(Math.max(0, Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0)))}
@@ -346,7 +371,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                       <div className="mini-item order-payment-card">
                         <div className="mini-item-head">
                           <strong>Какие товары возвращаются</strong>
-                          <span className="muted-small">Выбор товара фиксирует физический возврат, но не рассчитывает деньги автоматически. Выбирайте товар только если клиент действительно получал его; сумма возврата денег указывается отдельно.</span>
+                          <span className="muted-small">В отправленных заказах автоматически отмечены доступные к возврату выданные товары. В неотправленных заказах позиции выбирают вручную. Снимите лишнее и проверьте количество. Пока не подтвердили физическое получение, товары считаются «Ещё едет обратно» и НЕ увеличивают остаток. Деньги указывают отдельно.</span>
                         </div>
                         {returnDraft.items.some((item: any) => item.issuedToClient === false) ? (
                           <div className="history-note">
@@ -485,12 +510,25 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                           )}
                         </div>
 
-                        <div className="return-smart-summary">
+                        <div className="return-smart-summary" role="status" aria-live="polite">
                           <div>
-                            <span>Выбрано товаров</span>
+                            <span>Вид операции — проверьте перед сохранением</span>
+                            <strong>{returnKind}</strong>
+                          </div>
+                          <div>
+                            <span>Деньги клиенту</span>
+                            <strong>{formatMoney(Number(returnDraft.amount || 0))} ₸</strong>
+                          </div>
+                          <div>
+                            <span>Выбранные товары</span>
                             <strong>{selectedReturnLines.length} поз. · {selectedReturnQuantity} шт.</strong>
                           </div>
-                          <p>Товары и деньги учитываются отдельно: сумма возврата выше должна совпадать с фактической договорённостью с клиентом.</p>
+                          {returnGoodsSelected ? (
+                            <p>Ещё едут: {pendingSelectedQty} шт. · Уже получили на склад/бутик: {arrivedStockQty} шт. · Получены без остатка: {arrivedNoStockQty} шт.</p>
+                          ) : returnMoneySelected ? (
+                            <p><strong>Товары не выбраны.</strong> Система зафиксирует только возврат денег. Физическое получение вещей не будет зарегистрировано.</p>
+                          ) : <p>Укажите сумму возврата или выберите хотя бы один товар.</p>}
+                          <p>Перед подтверждением убедитесь, что выбор товаров и их физический статус соответствуют фактам. Не отмечайте «Уже вернули», пока вещь не приехала.</p>
                         </div>
                       </div>
                     </div>
@@ -547,7 +585,9 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                         <summary>
                           <div className="history-card-date"><strong>{entry.returnDate || '—'}</strong><span>Возврат</span></div>
                           <div className="history-card-main"><strong>{entry.externalId}</strong><span>{entry.customer}{entry.city ? ` · ${entry.city}` : ''} · Менеджер: {entry.manager || '—'}</span></div>
-                          <div className="history-card-amount"><strong>{formatMoney(entry.amount)}</strong><span>{entry.items?.length ? `${entry.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.` : 'Без списка товаров'}</span></div>
+                          <div className="history-card-amount"><strong>{formatMoney(entry.amount)}</strong><span>{entry.items?.length
+                                  ? `${entry.amount > 0 ? 'Товары и деньги' : 'Только товары'} · ${entry.items.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)} шт.`
+                                  : entry.amount > 0 ? 'Только деньги · товары не указаны' : 'Товары не указаны'}</span></div>
                           <span className={`status-pill ${entry.status === 'cancelled' ? 'status-offline' : 'status-online'}`}>{entry.status === 'cancelled' ? 'Отменён' : 'Проведён'}</span>
                           <span className="history-card-open">Подробнее</span>
                         </summary>
@@ -625,7 +665,7 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                                 ) : null}
                               </div>
                             ))}
-                            {!entry.items?.length ? <div className="history-product-card"><span>Товары в этой старой записи не указаны.</span></div> : null}
+                            {!entry.items?.length ? <div className="history-product-card"><span>Товары в операции не указаны. Физический возврат не зафиксирован — это может быть возврат только денег. Не добавляйте товар в остаток без подтверждения.</span></div> : null}
                           </div>
                           {entry.comment ? <div className="history-note"><span>Комментарий возврата</span><strong>{entry.comment}</strong></div> : null}
                           {entry.cancellationComment ? <div className="history-note is-danger"><span>Причина отмены</span><strong>{entry.cancellationComment}</strong></div> : null}

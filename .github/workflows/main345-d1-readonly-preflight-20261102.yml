@@ -1,0 +1,74 @@
+name: Main 345 native D1 + production READ-ONLY preflight
+on:
+  push:
+    branches: [candidate/main-stage345-port-20261102]
+    paths:
+      - '.github/workflows/main345-d1-readonly-preflight-20261102.yml'
+permissions:
+  contents: read
+jobs:
+  d1-safe:
+    if: github.ref == 'refs/heads/candidate/main-stage345-port-20261102' && startsWith(github.event.head_commit.message, 'candidate(d1-preflight):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify immutable production isolation and additive migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
+          grep -Fq '"name": "orders-app"' wrangler.jsonc
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+          grep -Fq '"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"' wrangler.jsonc
+          test -f migrations/0119_v72_order_dispatch_lineage.sql
+          ! grep -Eq '^[[:space:]]*(DROP|ALTER|UPDATE|DELETE|INSERT|REPLACE)[[:space:]]' migrations/0119_v72_order_dispatch_lineage.sql
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          echo 'PRODUCTION_TARGET_ISOLATION_AND_ADDITIVE_MIGRATION_PASS'
+      - run: npm ci
+      - name: Native Wrangler D1 migration 0119 on new isolated schema (LOCAL ONLY)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/orders345-disposable-local
+          cat > /tmp/orders345-seed.sql <<'SQL'
+          CREATE TABLE orders (id INTEGER PRIMARY KEY);
+          CREATE TABLE order_items (id INTEGER PRIMARY KEY,order_id INTEGER);
+          CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY);
+          CREATE TABLE inventory_reservations (id INTEGER PRIMARY KEY);
+          CREATE TABLE inventory_movements (id INTEGER PRIMARY KEY);
+          SQL
+          # A tiny isolated pre-0119 schema avoids legacy migrations with SQLITE_AUTH
+          # under Wrangler local, while the real Worker/SQLite suite below applies
+          # every repository migration and verifies end-to-end business semantics.
+          npx wrangler d1 execute orders_db_prod --local --persist-to /tmp/orders345-disposable-local --file /tmp/orders345-seed.sql
+          npx wrangler d1 execute orders_db_prod --local --persist-to /tmp/orders345-disposable-local --file migrations/0119_v72_order_dispatch_lineage.sql
+          npx wrangler d1 execute orders_db_prod --local --persist-to /tmp/orders345-disposable-local --json --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('order_dispatches','order_dispatch_items','order_dispatch_corrections') ORDER BY name" > /tmp/orders345-local-proof.json
+          node -e "const f=require('/tmp/orders345-local-proof.json');const n=(Array.isArray(f)?f:[f]).flatMap(x=>x.results||[]).map(x=>x.name).sort();if(n.join(',')!=='order_dispatch_corrections,order_dispatch_items,order_dispatches')process.exit(2);console.log('NATIVE_WRANGLER_D1_0119_TABLES_PASS',n.length)"
+      - name: Actual Worker SQLite, money/stock, and build regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs
+          node --experimental-strip-types scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs
+          node --experimental-strip-types scripts/test-stage5b-http-routes-20261101.mjs
+          node --experimental-strip-types scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+          npm run release:check
+          npm run build
+      - name: Production SELECT-only schema and counts; no customer or financial row output
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_prod --remote --json --command="SELECT (SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('order_dispatches','order_dispatch_items','order_dispatch_corrections')) AS existing_dispatch_tables,(SELECT count(*) FROM orders) AS orders_count,(SELECT count(*) FROM order_items) AS item_count,(SELECT count(*) FROM inventory_reservations WHERE status IN ('active','unresolved')) AS pending_reservations,(SELECT count(*) FROM exchanges) AS exchanges_count,(SELECT count(*) FROM returns) AS returns_count,(SELECT count(*) FROM sqlite_master WHERE type='table' AND name='order_manager_audit') AS manager_audit_exists" > /tmp/orders345-prod-preflight.json
+          node -e "const o=require('/tmp/orders345-prod-preflight.json');const r=(Array.isArray(o)?o:[o]).flatMap(z=>z.results||[])[0];if(!r || r.existing_dispatch_tables!==0 || r.orders_count<1 || r.item_count<1){console.error('PRODUCTION_SCHEMA_PRECONDITION_FAILED');process.exit(3)}console.log('PRODUCTION_SELECT_ONLY_PRECHECK_PASS',JSON.stringify(r))"
+          echo 'MAIN_NOT_MUTATED_NO_REMOTE_MIGRATION_NO_DEPLOY'

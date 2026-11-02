@@ -16,8 +16,26 @@ import { normalizeOrderItems } from './order-core.ts'
 import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { correctMistakenOrderHandover, fulfillOrderReservationsV2, reactivateReleasedOrderReservationV2, releaseOrderReservationV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
+import { readStandaloneItemReturnBlocker } from './order-delete-return-blocker.ts'
+import { correctShippingMarkerAfterStandaloneReturn } from './order-shipping-scoped-correction.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
+
+// Item-level dispatch is authoritative even while another item of the same
+// order has not been shipped. In particular, ready Workshop goods have no
+// stock_writeoff_status='fulfilled' warehouse movement to infer from.
+async function orderItemWasActuallyDispatched(db:D1Database, item:Record<string,unknown>|null) {
+  if(!item) return false
+  if(orderItemWasPhysicallyIssued(item)) return true
+  const orderItemId=toInt(item.id,0)
+  if(!orderItemId) return false
+  const row=await db.prepare(
+    `SELECT COALESCE(SUM(di.quantity-di.cancelled_quantity),0) AS issued
+     FROM order_dispatch_items di
+     WHERE di.order_item_id=?`
+  ).bind(orderItemId).first<{issued:number}>()
+  return toInt(row?.issued,0)>0
+}
 
 export async function correctMistakenOrderHandoverWithCurrentExchange(
   db: D1Database,
@@ -29,6 +47,19 @@ export async function correctMistakenOrderHandoverWithCurrentExchange(
     throw new Error('Снять отметку «Отправлен» можно только после подтверждения, что текущий товар фактически НЕ передавался клиенту.');
   }
 
+  // A past standalone physical Return does not prohibit correcting a later
+  // mistaken status-only send. Never replay or undo the older Return movement.
+  const standaloneReturn = await readStandaloneItemReturnBlocker(db, orderId)
+  if (standaloneReturn) {
+    const activeExchange = await db.prepare(
+      `SELECT EXISTS(SELECT 1 FROM exchanges e
+        WHERE e.order_id = ? AND COALESCE(e.status,'completed') <> 'cancelled') AS active_exchange`,
+    ).bind(orderId).first<{ active_exchange: number }>()
+    if (toInt(activeExchange?.active_exchange, 0)) {
+      throw new CriticalOperationConflictError('В заказе одновременно возврат и обмен. Для исправления выберите конкретную отправку.')
+    }
+    return correctShippingMarkerAfterStandaloneReturn(db, orderId, { actor: input.actor })
+  }
   const downstream = await db.prepare(
     `SELECT
        EXISTS(
@@ -357,7 +388,7 @@ export async function createReturn(
     const isWorkshop = Boolean(toInt(orderItem.is_workshop, 0));
     const stockStatus = cleanText(orderItem.stock_writeoff_status);
     const sentFallback = cleanText((existing as any).shipping_status) === 'sent' && (isWorkshop || !stockStatus);
-    const issuedToClient = orderItemWasPhysicallyIssued(orderItem) || sentFallback;
+    const issuedToClient = await orderItemWasActuallyDispatched(db,orderItem) || sentFallback;
     // A historical item can claim to be issued while its original stock obligation
     // still has an active/unresolved reservation. Crediting a physical return in
     // that contradictory state would leave the same SKU both returned and reserved,
@@ -408,6 +439,59 @@ export async function createReturn(
 
   const createdAt = cleanText(operationContext.createdAt) || operationStartedAt;
   const returnEventKey = `1901:${criticalOperation.requestId}:return-refund`;
+  // Claim the remaining returnable units inside the SAME D1 transaction as
+  // the Return and refund. Two workers may both pass the read-only preflight:
+  // only the first guarded INSERT can then claim the last unit.
+  const returnItemClaim = (validated: typeof validatedSelectedItems[number], currentReturnId: number | null) => {
+    const { selected, orderItem, quantity, inventorySource, physicalTracking, physicalState } = validated;
+    const targetIdSql = currentReturnId
+      ? '?'
+      : '(SELECT target_id FROM critical_operations WHERE request_id = ?)';
+    return db.prepare(
+      `INSERT INTO return_items (
+         return_id, order_item_id, product_name_snapshot, quantity, amount, inventory_source, restocked,
+         physical_tracking, physical_received_at,
+         gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot, created_at
+       )
+       SELECT ${targetIdSql}, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE EXISTS (
+         SELECT 1 FROM order_items oi
+         WHERE oi.id = ? AND oi.order_id = ? AND oi.quantity >= ?
+           + COALESCE((
+             SELECT SUM(ri.quantity)
+             FROM return_items ri
+             JOIN returns r ON r.id = ri.return_id
+             WHERE r.order_id = ? AND ri.order_item_id = ?
+               AND COALESCE(r.status, 'completed') <> 'cancelled'
+               AND ${noStandaloneReturnSql}
+           ), 0)
+       )`
+    ).bind(
+      currentReturnId || criticalOperation!.requestId,
+      selected.orderItemId, cleanText(orderItem.product_name_snapshot), quantity, selected.amount,
+      inventorySource, physicalTracking ? 1 : 0, physicalTracking && physicalState !== 'pending' ? createdAt : null,
+      cleanText(orderItem.gender_snapshot) || null, cleanText(orderItem.color_snapshot) || null,
+      cleanText(orderItem.material_snapshot) || null, cleanText(orderItem.length_snapshot) || null,
+      cleanText(orderItem.size_snapshot) || null, createdAt,
+      selected.orderItemId, orderId, quantity, orderId, selected.orderItemId,
+    );
+  };
+  const returnItemClaimMapping = (index: number) => db.prepare(
+    `INSERT INTO critical_operation_entities
+       (request_id, entity_type, entity_key, entity_id, created_at)
+     VALUES (?, 'return_item', ?, CASE WHEN changes() = 1 THEN last_insert_rowid() ELSE NULL END, ?)`
+  ).bind(criticalOperation!.requestId, `return:item:${index + 1}`, createdAt);
+
+  const claimConflict = (error: unknown): never => {
+    const message = cleanText(error instanceof Error ? error.message : error);
+    if (/NOT NULL constraint failed.*critical_operation_entities\.entity_id/i.test(message)) {
+      throw new CriticalOperationConflictError(
+        'Количество для возврата уже изменилось в другом действии. Обновите заказ и повторите. Деньги и склад этим запросом не изменены.'
+      );
+    }
+    throw error;
+  };
+
   let returnId = toInt(criticalOperation.row.target_id, 0);
   if (!returnId) {
     const leaseUntil = Date.now() + 45_000;
@@ -441,6 +525,11 @@ export async function createReturn(
          WHERE request_id = ? AND status = 'started' AND lease_token = ?`
       ).bind(cleanText((existing as any).external_id), leaseUntil, createdAt, criticalOperation.requestId, criticalOperation.leaseToken),
     ];
+    // Claim each physical item atomically before any money or stock event.
+    // A concurrent Exchange that retires the original item makes the claim fail.
+    for (const [index, validated] of validatedSelectedItems.entries()) {
+      createStatements.push(returnItemClaim(validated, null), returnItemClaimMapping(index));
+    }
     if (amount > 0) {
       createStatements.push(refundMoneyEventStatement(db, {
         eventKey: returnEventKey,
@@ -459,9 +548,8 @@ export async function createReturn(
     // If two employees both read the same refundable amount, the losing batch
     // intentionally fails returns.amount NOT NULL before recording money,
     // stock obligations or the critical operation's target.
-    let insertReturn: D1Result<unknown>;
     try {
-      [insertReturn] = await db.batch(createStatements);
+      await db.batch(createStatements);
     } catch (error) {
       const raw = cleanText(error instanceof Error ? error.message : error);
       if (/not null constraint failed:\s*returns\.amount/i.test(raw)) {
@@ -469,9 +557,8 @@ export async function createReturn(
           'Доступная сумма возврата изменилась: другой сотрудник уже оформил возврат денег. Ничего не списано. Обновите заказ.',
         );
       }
-      throw error;
+      claimConflict(error);
     }
-    returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
     returnId = toInt(criticalOperation.row.target_id, 0) || returnId;
   }
@@ -479,28 +566,22 @@ export async function createReturn(
   const stockReturns: unknown[] = [];
   const pendingInventory: unknown[] = [];
   for (const validated of validatedSelectedItems) {
-    const { selected, orderItem, quantity, wantsRestock, isWorkshop, physicalTracking, physicalState, inventorySource } = validated;
+    const { selected, orderItem, quantity, wantsRestock, isWorkshop, inventorySource } = validated;
 
-    const returnItemMapped = await insertCriticalMappedEntity(
-      db,
-      criticalOperation,
-      'return_item',
-      `return:item:${validatedSelectedItems.indexOf(validated) + 1}`,
-      db.prepare(
-        `INSERT INTO return_items (
-          return_id, order_item_id, product_name_snapshot, quantity, amount, inventory_source, restocked,
-          physical_tracking, physical_received_at,
-          gender_snapshot, color_snapshot, material_snapshot, length_snapshot, size_snapshot, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        returnId, selected.orderItemId, cleanText(orderItem.product_name_snapshot), quantity, selected.amount,
-        inventorySource, physicalTracking ? 1 : 0, physicalTracking && physicalState !== 'pending' ? createdAt : null,
-        cleanText(orderItem.gender_snapshot) || null, cleanText(orderItem.color_snapshot) || null,
-        cleanText(orderItem.material_snapshot) || null, cleanText(orderItem.length_snapshot) || null,
-        cleanText(orderItem.size_snapshot) || null, createdAt,
-      ),
-    );
-    const returnItemId = returnItemMapped.id;
+    // Previously committed claim remains mapped after uncertain HTTP responses.
+    // Old interrupted requests are guarded by a fresh atomic claim, never replayed blindly.
+    const itemIndex = validatedSelectedItems.indexOf(validated);
+    const itemKey = `return:item:${itemIndex + 1}`;
+    let returnItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return_item', itemKey);
+    if (!returnItemId) {
+      try {
+        await db.batch([returnItemClaim(validated, returnId), returnItemClaimMapping(itemIndex)]);
+      } catch (error) {
+        claimConflict(error);
+      }
+      returnItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return_item', itemKey) || 0;
+    }
+    if (!returnItemId) throw new CriticalOperationConflictError('Не удалось безопасно зафиксировать позицию возврата.');
 
     if (wantsRestock) {
       const resolved = await resolveInventoryLifecycleCandidate(db, orderItem, isWorkshop);
@@ -1281,6 +1362,7 @@ export async function createExchange(
     throw new Error('Обмен больше не принимает полный остаток товара. Обновите форму и подтвердите только выдаваемые вещи.');
   }
   const physicalIssueConfirmed = (input.newItem as any)?.issuePossessionConfirmed === true;
+  const shipmentState = cleanText((input.newItem as any)?.shipmentState);
   const newItems = normalizeOrderItems(input.newItem ? [input.newItem] : [], normalizeSourceType((existing as any).source_type));
   if (!newItems.length) throw new Error('Новая позиция обмена не заполнена.');
 
@@ -1424,6 +1506,9 @@ export async function createExchange(
   const effectiveReplacementSource: OrderItemSourceType = input.newSourceWasManuallyChanged
     ? requestedNewItem.sourceType
     : inheritedReplacementSource;
+  if (!requestedNewItem.isWorkshop && shipmentState !== 'sent' && shipmentState !== 'pending') {
+    throw new CriticalOperationConflictError('Укажите, отправлен ли новый товар клиенту.');
+  }
   const newItem = {
     ...requestedNewItem,
     sourceType: effectiveReplacementSource,
@@ -1535,9 +1620,45 @@ export async function createExchange(
       toInt(operationContext.oldWorkshopTaskId, 0) || null, cleanText(operationContext.oldWorkshopTaskStatus) || null,
       toInt(operationContext.oldWorkshopTaskQuantity, 0) || null, cleanText(oldItem.stock_writeoff_status) || null, timestamp,
     );
-    exchangeId = await updateCriticalOperationTargetFromLastInsert(
-      db, criticalOperation, 'exchange', cleanText((existing as any).external_id), exchangeStatement, 'exchange_created',
-    );
+    // The Legacy endpoint also shares the original sold units with standalone
+    // Returns. Claim the old quantity in the SAME transaction as its Exchange
+    // header, before any old-item physical intake can execute. This closes the
+    // Return-first and Exchange-first preflight race without orphan exchanges.
+    const claimTargetQuantity = Math.max(0, rawOldQuantity - oldQuantity);
+    const oldItemClaims: D1PreparedStatement[] = [
+      db.prepare(
+        `UPDATE order_items
+         SET quantity = ?, line_total = unit_price * ?,
+             stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+         WHERE id = ? AND order_id = ? AND quantity = ?
+           AND quantity >= ? + COALESCE((
+             SELECT SUM(ri.quantity)
+             FROM return_items ri
+             JOIN returns r ON r.id = ri.return_id
+             WHERE r.order_id = ? AND ri.order_item_id = ?
+               AND COALESCE(r.status, 'completed') <> 'cancelled'
+               AND ${noStandaloneReturnSql}
+           ), 0)`
+      ).bind(
+        claimTargetQuantity, claimTargetQuantity, claimTargetQuantity,
+        oldItemId, orderId, rawOldQuantity, oldQuantity, orderId, oldItemId,
+      ),
+      db.prepare(`SELECT json('LEGACY_EXCHANGE_OLD_ITEM_CLAIM_CONFLICT') WHERE changes() <> 1`),
+    ];
+    try {
+      exchangeId = await updateCriticalOperationTargetFromLastInsert(
+        db, criticalOperation, 'exchange', cleanText((existing as any).external_id),
+        exchangeStatement, 'exchange_created', oldItemClaims,
+      );
+    } catch (error) {
+      const message = cleanText(error instanceof Error ? error.message : error);
+      if (/LEGACY_EXCHANGE_OLD_ITEM_CLAIM_CONFLICT|malformed JSON/i.test(message)) {
+        throw new CriticalOperationConflictError(
+          'Старая вещь уже занята другим возвратом или обменом. Обновите заказ: второй обмен остановлен без складских и денежных действий.'
+        );
+      }
+      throw error;
+    }
   }
   if (!exchangeId) throw new Error('Exchange record was not created.');
   const oldExchangeItemMapped = await insertCriticalMappedEntity(
@@ -1598,13 +1719,25 @@ export async function createExchange(
   // order_items.quantity tracks exchange replacement only. Standalone returns stay in
   // return_items, so subtracting them here would make the next operation count them twice.
   const remainingOldQuantity = Math.max(0, rawOldQuantity - oldQuantity);
-  await db.prepare(
-    `UPDATE order_items
-     SET quantity = ?,
-         line_total = unit_price * ?,
-         stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
-     WHERE id = ? AND order_id = ?`
-  ).bind(remainingOldQuantity, remainingOldQuantity, remainingOldQuantity, oldItemId, orderId).run();
+  // New critical operations already claimed the old units atomically above.
+  // An interrupted pre-upgrade Legacy exchange may still need to apply its
+  // original mutation. Never overwrite a quantity changed by another actor.
+  const claimState = await db.prepare('SELECT quantity FROM order_items WHERE id = ? AND order_id = ?')
+    .bind(oldItemId, orderId).first<{ quantity: number }>();
+  const currentOldQuantity = Math.max(0, toInt(claimState?.quantity, -1));
+  if (currentOldQuantity === rawOldQuantity) {
+    const changed = await db.prepare(
+      `UPDATE order_items
+       SET quantity = ?, line_total = unit_price * ?,
+           stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+       WHERE id = ? AND order_id = ? AND quantity = ?`
+    ).bind(remainingOldQuantity, remainingOldQuantity, remainingOldQuantity, oldItemId, orderId, rawOldQuantity).run();
+    if (toInt(changed.meta?.changes, 0) !== 1) {
+      throw new CriticalOperationConflictError('Количество старой вещи изменилось во время обмена. Обновите заказ.');
+    }
+  } else if (currentOldQuantity !== remainingOldQuantity) {
+    throw new CriticalOperationConflictError('Старая вещь уже изменена другим действием. Обновите заказ перед продолжением обмена.');
+  }
 
   if (toInt(operationContext.oldWorkshopTaskId, 0)) {
     const previousTaskQuantity = Math.max(0, toInt(operationContext.oldWorkshopTaskQuantity, 0));
@@ -1674,10 +1807,10 @@ export async function createExchange(
       isWorkshop: false,
       productId: resolvedNew.productId,
       variantId: resolvedNew.variantId,
-      pendingReason: inventoryLifecyclePendingReason(resolvedNew, false),
+      pendingReason: shipmentState === 'pending' ? 'awaiting_dispatch' : inventoryLifecyclePendingReason(resolvedNew, false),
       timestamp,
     });
-    if (resolvedNew.variantId) {
+    if (shipmentState === 'sent' && resolvedNew.variantId) {
       newStockWriteOff = await applyCanonicalInventoryLifecycleEvent(
         db,
         newEvent.id,
@@ -1686,7 +1819,7 @@ export async function createExchange(
         `Физическое списание новой позиции обмена #${exchangeId}`,
         { outboundPossessionConfirmed: physicalIssueConfirmed },
       );
-    } else {
+    } else if (shipmentState === 'sent') {
       pendingInventory.push({ eventId: newEvent.id, eventType: newEvent.event_type, productName: cleanText(insertedNewOrderItem.product_name_snapshot), source: newItem.inventorySource });
     }
   }
@@ -2128,8 +2261,14 @@ export async function listExchanges(db: D1Database, url: URL) {
   const dateFrom = cleanText(url.searchParams.get('dateFrom'));
   const dateTo = cleanText(url.searchParams.get('dateTo'));
   const status = cleanText(url.searchParams.get('status')).toLowerCase();
+  const pendingOnly = url.searchParams.get('pendingOnly') === '1';
   const where: string[] = [];
   const bindings: Array<string | number> = [];
+  if (pendingOnly) where.push(`COALESCE(e.status,'completed') <> 'cancelled'
+    AND EXISTS (SELECT 1 FROM exchange_items pe
+      WHERE pe.exchange_id = e.id AND pe.role = 'old'
+      AND pe.physical_tracking = 1 AND pe.physical_received_at IS NULL)`);
+
   if (orderId) { where.push('e.order_id = ?'); bindings.push(orderId); }
   if (dateFrom) { where.push('e.exchange_date >= ?'); bindings.push(normalizeDate(dateFrom)); }
   if (dateTo) { where.push('e.exchange_date <= ?'); bindings.push(normalizeDate(dateTo)); }
@@ -2215,7 +2354,7 @@ export async function listExchanges(db: D1Database, url: URL) {
      LEFT JOIN inventory_lifecycle_events old_lifecycle ON old_lifecycle.id = (SELECT le.id FROM inventory_lifecycle_events le WHERE le.operation_type = 'exchange' AND le.operation_id = e.id AND le.event_type = 'exchange_old_in' ORDER BY le.id DESC LIMIT 1)
      LEFT JOIN inventory_lifecycle_events new_lifecycle ON new_lifecycle.id = (SELECT le.id FROM inventory_lifecycle_events le WHERE le.operation_type = 'exchange' AND le.operation_id = e.id AND le.event_type = 'exchange_new_out' ORDER BY le.id DESC LIMIT 1)
      ${whereSql}
-     ORDER BY e.exchange_date DESC, e.id DESC LIMIT ? OFFSET ?`
+     ORDER BY e.exchange_date ${pendingOnly ? 'ASC' : 'DESC'}, e.id ${pendingOnly ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?`
   ).bind(...bindings, limit, offset).all<Record<string, unknown>>();
   const baseRows = result.results || [];
   const pageExchangeIds = baseRows.map((row) => toInt(row.id, 0)).filter(Boolean);
@@ -3012,7 +3151,7 @@ export type ExchangeSetOldInput = {
   expectedCatalogPriceSnapshot?: number | null
 }
 
-export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number]
+export type ExchangeSetNewInput = NonNullable<OrderInput['items']>[number] & { shipmentState?: 'sent' | 'pending' }
 
 export type ExchangeSetInput = {
   requestId?: string
@@ -3067,6 +3206,7 @@ type ExchangeSetOldPlan = {
 
 type ExchangeSetNewPlan = {
   inputIndex: number
+  shipmentState: 'sent' | 'pending'
   item: NonNullable<ReturnType<typeof normalizeOrderItems>[number]> & { catalogPriceSnapshot: number | null }
   productId: number | null
   variantId: number | null
@@ -3611,10 +3751,14 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             inventorySource: null,
             stockKey: null,
             physicalIssueConfirmed: false,
+            shipmentState: 'pending',
           })
           continue
         }
-
+        const shipmentState = cleanText((requested as any).shipmentState)
+        if (shipmentState !== 'sent' && shipmentState !== 'pending') {
+          throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: укажите, отправлен ли товар клиенту.`)
+        }
         const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
@@ -3624,7 +3768,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         }
         const physicalIssueConfirmed = (requested as any).issuePossessionConfirmed === true
         let stockKey: string | null = null
-        if (variantId) {
+        if (variantId && shipmentState === 'sent') {
           stockKey = `${inventorySource}:${variantId}`
           const group = stockGroups.get(stockKey) || {
             source: inventorySource,
@@ -3637,7 +3781,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           group.allConfirmed = group.allConfirmed && physicalIssueConfirmed
           stockGroups.set(stockKey, group)
         }
-        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed })
+        newPlans.push({ inputIndex: index, item: effectiveItem, productId, variantId, inventorySource, stockKey, physicalIssueConfirmed, shipmentState })
       }
 
       for (const group of stockGroups.values()) {
@@ -3708,7 +3852,39 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         : executionPlan.newItems[0]?.item.sourceType === 'boutique'
           ? 'boutique'
           : 'warehouse'
-      exchangeId = await updateCriticalOperationTargetFromLastInsert(
+      // Claim every original unit in the same atomic D1 transaction as the
+      // exchange header. A standalone Return and a Set V2 exchange may both
+      // validate the same preflight state; only one can reserve the last unit.
+      // The order-item quantity is the shared committed claim seen by Return.
+      // This is resumable: the original Exchange plan keeps initial/target
+      // quantities and its next step is exchange_created in the SAME batch.
+      const oldItemClaims: D1PreparedStatement[] = executionPlan.oldItems.flatMap((plan) => [
+        db.prepare(
+          `UPDATE order_items
+           SET quantity = ?, line_total = unit_price * ?,
+               stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+           WHERE id = ? AND order_id = ? AND quantity = ?
+             AND quantity >= ? + COALESCE((
+               SELECT SUM(ri.quantity)
+               FROM return_items ri
+               JOIN returns r ON r.id = ri.return_id
+               WHERE r.order_id = ? AND ri.order_item_id = ?
+                 AND COALESCE(r.status, 'completed') <> 'cancelled'
+                 AND ${noStandaloneReturnSql}
+             ), 0)`
+        ).bind(
+          plan.targetQuantity, plan.targetQuantity, plan.targetQuantity,
+          plan.orderItemId, executionPlan.orderId, plan.initialQuantity,
+          plan.quantity, executionPlan.orderId, plan.orderItemId,
+        ),
+        // SQLite changes() is exactly the direct-row count in the preceding
+        // statement (unlike D1 meta.changes, which can count triggers).
+        // A stale claim must abort the entire header transaction; otherwise a
+        // phantom Exchange and double physical old-item intake can survive.
+        db.prepare(`SELECT json('EXCHANGE_OLD_ITEM_CLAIM_CONFLICT') WHERE changes() <> 1`),
+      ])
+      try {
+        exchangeId = await updateCriticalOperationTargetFromLastInsert(
         db,
         criticalOperation,
         'exchange',
@@ -3732,7 +3908,19 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           timestamp,
         ),
         'exchange_created',
+        oldItemClaims,
       )
+      } catch (error) {
+        // The fail-closed SQL assertion throws 'malformed JSON' when a
+        // Return/another Exchange has already claimed an original unit.
+        const message = cleanText(error instanceof Error ? error.message : error)
+        if (/EXCHANGE_OLD_ITEM_CLAIM_CONFLICT|malformed JSON/i.test(message)) {
+          throw new CriticalOperationConflictError(
+            'Одна из старых вещей уже оформлена другим возвратом или обменом. Обновите заказ: второй обмен остановлен без складских и денежных действий.'
+          )
+        }
+        throw error
+      }
     }
 
     const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
@@ -3929,10 +4117,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           isWorkshop: false,
           productId: resolved.productId,
           variantId: resolved.variantId,
-          pendingReason: inventoryLifecyclePendingReason(resolved, false),
+          pendingReason: plan.shipmentState === 'pending' ? 'awaiting_dispatch' : inventoryLifecyclePendingReason(resolved, false),
           timestamp,
         })
-        if (resolved.variantId) {
+        if (plan.shipmentState === 'sent' && resolved.variantId) {
           await applyCanonicalInventoryLifecycleEvent(
             db,
             event.id,
@@ -3941,9 +4129,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             `Физическое списание новой позиции обмена #${exchangeId}`,
             { outboundPossessionConfirmed: plan.physicalIssueConfirmed },
           )
-        } else {
+        } else if (plan.shipmentState === 'sent') {
           pendingInventory.push({ eventId: event.id, eventType: event.event_type, productName: cleanText(inserted.product_name_snapshot), source: plan.inventorySource })
         }
+        // Unsent exchange replacements retain their active reserve and do not affect physical stock.
       }
 
       completedNew = index + 1

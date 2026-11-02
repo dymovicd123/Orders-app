@@ -284,7 +284,7 @@ try {
     oldItems:[{orderItemId:item.id,quantity:1,physicalState:'warehouse',
       expectedActiveQuantity:2,expectedUnitPrice:10000,expectedLineTotal:20000,expectedCatalogPriceSnapshot:null}],
     newItems:[{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:newColor,material:'СТАНДАРТ',
-      length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,unitPrice:10000,catalogPriceSnapshot:null}],
+      length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,unitPrice:10000,catalogPriceSnapshot:null,shipmentState:'sent'}],
     paymentAmount:0,paymentMethod:'',refundMethod:'',comment:'Тест равного обмена',
   }
   const switched=await api('/api/exchanges/set','POST',exchangeSetPayload,{expectedStatus:201,requestId:'stability-set-swap-once'})
@@ -350,7 +350,7 @@ try {
     orderId:legacyId,exchangeDate:'2026-10-20',oldItemId:legacyOld.id,oldQuantity:1,
     oldPhysicalState:'warehouse',oldReturnSource:'warehouse',
     newItem:{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:newColor,
-      material:'СТАНДАРТ',length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1},
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,shipmentState:'sent'},
     financialAction:'none',financialAmount:0,paymentMethod:'',comment:'Тест совместимого обмена',
   }
   const legacySwap=await api('/api/exchanges','POST',legacyExchangePayload,{
@@ -405,7 +405,7 @@ try {
   const pair1={
     orderId:multiId,exchangeDate:'2026-10-20',
     oldItemId:multiOld[0].id,oldQuantity:1,oldPhysicalState:'warehouse',oldReturnSource:'warehouse',
-    newItem:{...legacyCreatePayload.items[0],color:newColor},
+    newItem:{...legacyCreatePayload.items[0],color:newColor,shipmentState:'sent'},
     financialAction:'none',financialAmount:0,paymentMethod:'',comment:'Первый из двух обменов',
   }
   const first=await api('/api/exchanges','POST',pair1,{
@@ -424,7 +424,7 @@ try {
   assert.equal(Number(stock().quantity),beforeMultiOld+1)
   assert.equal(Number(newStock().quantity),beforeMultiNew-1)
   const pair2={
-    ...pair1,oldItemId:multiOld[1].id,newItem:{...legacyCreatePayload.items[0]},
+    ...pair1,oldItemId:multiOld[1].id,newItem:{...legacyCreatePayload.items[0],shipmentState:'sent'},
     financialAction:'extra_payment',financialAmount:1000,paymentMethod:'НАЛИЧКА',
     comment:'Второй обмен — единственная доплата',
   }
@@ -505,7 +505,7 @@ try {
     expectedStatus:500,requestId:'stability-recover-mid-return',
   })
   assert.equal(injected.data.ok,false)
-  assert.equal(count('returns','order_id='+failedId),1,'Return header committed before injected failure')
+  assert.equal(count('returns','order_id='+failedId),0,'Atomic Return must not leave an orphan refund header when item claim fails')
   assert.equal(Number(stock().quantity),0,'Uncompleted Return must not restock physical')
   const recovered=await api('/api/returns','POST',failedReturnPayload,{
     expectedStatus:201,requestId:'stability-recover-mid-return',
@@ -525,7 +525,7 @@ try {
   })
   assert.equal(Number(stock().quantity),0,'Recovered-and-cancelled Return must restore physical')
   assert.equal(Number(sql('SELECT return_amount FROM orders WHERE id=?',failedId).return_amount),0)
-  console.log('MAIN_RETURN_INJECTED_FAILURE_RECOVERY_PASSED: committed header/refund before failed item, request replay preserves exactly one money/stock event and cancels safely')
+  console.log('MAIN_RETURN_INJECTED_FAILURE_RECOVERY_PASSED: header and item roll back together, request replay creates exactly one money/stock event and cancels safely')
   // REGRESSION: partial LEGACY exchange of an UNISSUED old line (quantity 2).
   // It must free ONE unit of that line's reserve, never the other unissued unit.
   await api('/api/inventory/movements','POST',{
@@ -559,7 +559,7 @@ try {
     orderId:unissuedId,exchangeDate:'2026-10-20',
     oldItemId:unissuedItem.id,oldQuantity:1,
     oldPhysicalState:'not_issued',oldReturnSource:'none',
-    newItem:{...legacyCreatePayload.items[0],color:newColor,quantity:1},
+    newItem:{...legacyCreatePayload.items[0],color:newColor,quantity:1,shipmentState:'sent'},
     financialAction:'none',financialAmount:0,paymentMethod:'',
     comment:'Частичный обмен невыданной вещи: 2 старые, одна заменяется',
   }

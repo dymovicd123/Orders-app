@@ -678,6 +678,10 @@ function App() {
   const [returnHistoryFilters, setReturnHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
   const [returnHistoryHasMore, setReturnHistoryHasMore] = useState(false)
   const [returnHistorySummary, setReturnHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, activeAmount: 0, pendingPhysicalQuantity: 0, count: 0 })
+  const [returnPendingInbox, setReturnPendingInbox] = useState({
+    rows: [] as ReturnHistoryEntry[], pendingQuantity: 0, hasMore: false, busy: false, error: '',
+  })
+  const returnPendingInboxToken = useRef(0)
   const [exchangeSelectedOrderId, setExchangeSelectedOrderId] = useState<number | null>(null)
   const [exchangeDraft, setExchangeDraft] = useState<ExchangeDraft>(createExchangeDraft())
   const [exchangeBusy, setExchangeBusy] = useState(false)
@@ -687,6 +691,10 @@ function App() {
   const [exchangeHistoryFilters, setExchangeHistoryFilters] = useState({ q: '', dateFrom: '', dateTo: '', status: 'all' })
   const [exchangeHistoryHasMore, setExchangeHistoryHasMore] = useState(false)
   const [exchangeHistorySummary, setExchangeHistorySummary] = useState({ activeCount: 0, cancelledCount: 0, pendingPhysicalQuantity: 0, count: 0 })
+  const [exchangePendingInbox, setExchangePendingInbox] = useState({
+    rows: [] as ExchangeHistoryEntry[], pendingQuantity: 0, hasMore: false, busy: false, error: '',
+  })
+  const exchangePendingInboxToken = useRef(0)
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([])
   const [activityBusy, setActivityBusy] = useState(false)
   const [activityFilters, setActivityFilters] = useState({ q: '', eventType: 'all', orderId: '' })
@@ -2302,6 +2310,52 @@ function App() {
     return data
   }
 
+  // These independent oldest-first queues are NOT controlled by history q/date/status.
+  // Staff must see pending physical items even after searching for an unrelated
+  // order or when a September operation falls outside the newest 50 records.
+  async function loadReturnPendingInbox(append = false) {
+    const token = ++returnPendingInboxToken.current
+    setReturnPendingInbox(current => ({ ...current, busy: true, error: '' }))
+    try {
+      const params = new URLSearchParams({ pendingOnly: '1', limit: '50',
+        offset: String(append ? returnPendingInbox.rows.length : 0) })
+      const response = await apiFetch(`/api/returns?${params.toString()}`)
+      const data = await readJsonResponse<ReturnHistoryResponse>(response, 'Ожидающие возвраты')
+      if (!response.ok) throw new Error('Не удалось обновить очередь приёмки возвратов.')
+      if (token !== returnPendingInboxToken.current) return
+      setReturnPendingInbox(current => ({
+        rows: append ? [...current.rows, ...(data.returns || [])] : (data.returns || []),
+        pendingQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
+        hasMore: Boolean(data.hasMore), busy: false, error: '',
+      }))
+    } catch (err) {
+      if (token !== returnPendingInboxToken.current) return
+      setReturnPendingInbox(current => ({ ...current, busy: false,
+        error: err instanceof Error ? err.message : 'Не удалось проверить ожидающие возвраты.' }))
+    }
+  }
+  async function loadExchangePendingInbox(append = false) {
+    const token = ++exchangePendingInboxToken.current
+    setExchangePendingInbox(current => ({ ...current, busy: true, error: '' }))
+    try {
+      const params = new URLSearchParams({ pendingOnly: '1', limit: '50',
+        offset: String(append ? exchangePendingInbox.rows.length : 0) })
+      const response = await apiFetch(`/api/exchanges?${params.toString()}`)
+      const data = await readJsonResponse<ExchangeHistoryResponse>(response, 'Ожидающие обмены')
+      if (!response.ok) throw new Error('Не удалось обновить очередь приёмки обменов.')
+      if (token !== exchangePendingInboxToken.current) return
+      setExchangePendingInbox(current => ({
+        rows: append ? [...current.rows, ...(data.exchanges || [])] : (data.exchanges || []),
+        pendingQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
+        hasMore: Boolean(data.hasMore), busy: false, error: '',
+      }))
+    } catch (err) {
+      if (token !== exchangePendingInboxToken.current) return
+      setExchangePendingInbox(current => ({ ...current, busy: false,
+        error: err instanceof Error ? err.message : 'Не удалось проверить ожидающие обмены.' }))
+    }
+  }
+
   async function loadReturnHistory(options: { append?: boolean; filters?: typeof returnHistoryFilters } = {}) {
     const nextFilters = options.filters || returnHistoryFilters
     const append = Boolean(options.append)
@@ -2326,6 +2380,7 @@ function App() {
         pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0),
         count: Number(data.count || 0),
       })
+      if (!append) void loadReturnPendingInbox()
       return rows
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить историю возвратов.'
@@ -2355,6 +2410,7 @@ function App() {
       setExchangeHistory((current) => append ? [...current, ...rows] : rows)
       setExchangeHistoryHasMore(Boolean(data.hasMore))
       setExchangeHistorySummary({ activeCount: Number(data.summary?.activeCount || 0), cancelledCount: Number(data.summary?.cancelledCount || 0), pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0), count: Number(data.count || 0) })
+      if (!append) void loadExchangePendingInbox()
       return rows
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить историю обменов.'
@@ -8674,9 +8730,10 @@ function removeDebtPayment(index: number) {
           if (!freshResponse.ok || freshResult.ok === false || !freshResult.order || freshResult.order.id !== resolvedOrder.id) {
             throw new Error(freshResult.message || 'Не удалось получить свежий заказ после уточнения товара.')
           }
-          const sent = await markOrderSentToClient(freshResult.order)
-          if (!sent) return false
+          upsertOrderInState(freshResult.order)
+          setSelectedOrderId(freshResult.order.id)
           setOrderCatalogResolutionOrder(null)
+          setMessage('Товар уточнён. Выберите готовые вещи через «Отправить товары».')
           return true
         }}
         onEditOrder={async (blockedOrder: OrderRecord) => {
@@ -8915,7 +8972,9 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text),
+        onShipmentChange: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false) },
+        setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Детали заказа">
@@ -8927,11 +8986,11 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'returns'} label="Возврат">
-        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, handleEditOrder, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
+        <OrderReturnsSection ctx={{ cancelReturnEntry, closeReturnForm, createReturnDraft, formatMoney, FriendlyNumberInput, handleEditOrder, isAdmin, loadReturnHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, returnBusy, returnDraft, returnFormRef, returnHistory, returnHistoryBusy, returnHistoryError, returnHistoryFilters, returnHistoryHasMore, returnHistorySummary, returnPendingInbox, loadReturnPendingInbox, returnSelectedOrder, saveReturn, sectorStyle, setOrderPanel, setReturnDraft, setReturnHistoryFilters, SmartPickerInput, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'exchange'} label="Обмен">
-        <OrderExchangeSection ctx={{ addExchangeSetNewItem, applyExchangeItemPatch, applyExchangeProductPick, applyExchangeSetNewItemPatch, applyExchangeSetNewProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, removeExchangeSetNewItem, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
+        <OrderExchangeSection ctx={{ addExchangeSetNewItem, applyExchangeItemPatch, applyExchangeProductPick, applyExchangeSetNewItemPatch, applyExchangeSetNewProductPick, cancelExchangeEntry, closeExchangeForm, correctExchangeFinancialEntry, createExchangeDraft, exchangeBusy, exchangeDraft, exchangeFormRef, exchangeHistory, exchangeHistoryBusy, exchangeHistoryError, exchangeHistoryFilters, exchangeHistoryHasMore, exchangeHistorySummary, exchangePendingInbox, loadExchangePendingInbox, exchangeSelectedOrder, formatMoney, FriendlyNumberInput, getOrderSourceAvailability, isAdmin, loadExchangeHistory, ManagerBadge, managerColorFor, orderPanelStyle, receiveReturnedItemAction, reconcileKnownInventoryLifecycle, removeExchangeSetNewItem, saveExchange, sectorStyle, setExchangeDraft, setExchangeHistoryFilters, setOrderPanel, SmartPickerInput, sourceLabel, suggestionValues }} />
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'team'} label="Команда">
