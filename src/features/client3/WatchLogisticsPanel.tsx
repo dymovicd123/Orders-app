@@ -227,7 +227,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
           const selectedIds=dispatchSelection[order.orderId]||[]
           const selected=selectable.filter(item=>item.orderItemId&&(
             selectedIds.includes(item.orderItemId)||
-            (items.length===1&&selectedIds.length===0)))
+            (items.length===1&&dispatchSelection[order.orderId]===undefined)))
           const overdue=order.engravingStatus!=='ready'&&order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
             Number.isFinite(Date.parse(order.shippingDeadlineAt))&&Date.parse(order.shippingDeadlineAt)<Date.now()
           return <Fragment key={order.orderId}>
@@ -265,7 +265,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                       <label className="watch-logistics-select-line">
                         <input type="checkbox" disabled={!canDispatch||!enabled||dispatching!==null}
                           checked={Boolean(enabled&&item.orderItemId&&(
-                            (items.length===1&&selectedIds.length===0)||
+                            (items.length===1&&dispatchSelection[order.orderId]===undefined)||
                             selectedIds.includes(item.orderItemId)))}
                           onChange={e=>{if(item.orderItemId)setSelected(order.orderId,item.orderItemId,e.target.checked)}}/>
                         <span>{item.modelName||'Модель не определена'} · {item.quantity||0} шт.
