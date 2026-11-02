@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
+import '../../styles/188f-stock-trust.css'
+import '../../styles/client3-watch-main-create.css'
 import '../../styles/client3-watch-order.css'
 import {
   WATCH_OPTIONS, WATCH_PAYMENTS, validateWatchOrderInput,
