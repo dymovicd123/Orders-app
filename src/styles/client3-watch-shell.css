@@ -1,0 +1,41 @@
+.watch-shell { min-height: 100vh; background: #f1f5f9; color: #17243a; font-family: inherit; }
+.watch-shell button { font: inherit; cursor: pointer; }
+.watch-shell-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  padding: 22px max(18px, calc((100vw - 1240px) / 2)); background: #fff; border-bottom: 1px solid #e2e8f0; }
+.watch-shell-header h1 { margin: 0; font-size: 1.3rem; letter-spacing: -.02em; }
+.watch-shell-header h1 span { color: #64748b; font-weight: 500; }
+.watch-shell-header p { margin: 3px 0 0; font-size: .83rem; color: #64748b; }
+.watch-shell-session { display: flex; gap: 12px; align-items: center; color: #475569; font-size: .88rem; }
+.watch-shell-session button, .watch-shell-nav button, .watch-shell-secondary { border: 1px solid #cbd5e1; padding: 8px 13px; border-radius: 9px; background: #fff; color: #334155; }
+.watch-shell-nav { display: flex; flex-wrap: wrap; gap: 8px; max-width: 1240px; margin: 0 auto; padding: 16px 14px 4px; }
+.watch-shell-nav button { font-weight: 600; }
+.watch-shell-nav button[aria-current=page] { background: #1e40af; color: #fff; border-color: #1e40af; }
+.watch-shell-content { max-width: 1280px; margin: 0 auto; padding: 8px 4px 30px; }
+.watch-shell-error { color: #b91c1c; max-width: 1100px; margin: 12px auto; padding: 10px; }
+.watch-shell-catalog { background: #fff; border-radius: 13px; padding: 22px; margin: 10px; }
+.watch-shell-catalog-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.watch-shell-catalog-header h2 { margin: 0; font-size: 1.35rem; }
+.watch-shell-catalog-header label { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.watch-shell-catalog-header select { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
+.watch-shell-catalog > p { color: #64748b; }
+.watch-shell-model-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.watch-shell-model-list article { border: 1px solid #e2e8f0; border-radius: 11px; padding: 16px; }
+.watch-shell-model-list article p { color: #64748b; font-size: .87rem; margin: 8px 0 12px; }
+.watch-shell-model-list article > div { margin-top: 6px; }
+.watch-shell-auth { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: #f1f5f9; }
+.watch-shell-auth-card { width: min(100%, 430px); box-sizing: border-box; background: #fff; border: 1px solid #dbe3ef; border-radius: 16px; padding: 28px; }
+.watch-shell-auth-card h1 { font-size: 1.4rem; margin: 0 0 8px; color: #17243a; }
+.watch-shell-auth-card p { color: #64748b; }
+.watch-shell-auth-card form { display: grid; gap: 14px; }
+.watch-shell-auth-card form label { display: grid; gap: 6px; color: #334155; font-weight: 600; }
+.watch-shell-auth-card input { padding: 11px; border: 1px solid #cbd5e1; border-radius: 8px; width: 100%; box-sizing: border-box; font: inherit; }
+.watch-shell-auth-card form button { border: 0; background: #1d4ed8; color: #fff; border-radius: 9px; padding: 12px; font-weight: 600; }
+.watch-shell-auth-card button:disabled { opacity: .5; cursor: not-allowed; }
+.watch-shell-auth-card .watch-shell-secondary { margin-top: 12px; }
+@media(max-width:650px) {
+  .watch-shell-header { padding: 15px; }
+  .watch-shell-content { padding: 4px 0 24px; }
+  .watch-shell-catalog { padding: 14px; }
+  .watch-shell-nav { padding: 12px 10px 4px; }
+  .watch-shell-auth-card { padding: 20px; }
+}
