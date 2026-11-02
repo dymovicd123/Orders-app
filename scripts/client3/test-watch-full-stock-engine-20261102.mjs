@@ -7,6 +7,7 @@ import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writ
 import {countClient3WatchStock,countClient3WatchStockBatch} from '../../worker/domains/client3-watch-stocktake.ts'
 import {listClient3WatchStockHistory} from '../../worker/domains/client3-watch-history.ts'
 import {applyClient3WatchBulkOperation} from '../../worker/domains/client3-watch-bulk.ts'
+import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -236,9 +237,79 @@ const roleBlocked=await parse(applyClient3WatchBulkOperation(db,{
  id:2,role:'manager',managerId:2,employeeRole:'Менеджер',
 },1,{...bulkArrival,requestId:'watch-bulk-manager-20261103-01'}))
 assert.equal(roleBlocked.status,403)
+// Main-critical regression from actual client screenshots: OTAN is a valid
+// brand product even before it has ANY watch variants. Inline creation must
+// register the missing identity and allow a physical receipt from the same
+// stock workflow without creating phantom stock at the catalog step.
+const modelOnly=await parse(registerWatchModel(db,admin,1,{modelName:'OTAN'}))
+assert.equal(modelOnly.status,201,JSON.stringify(modelOnly))
+const otanModelId=modelOnly.watchProductId
+const catalogBefore=await parse(listWatchCatalogDrafts(db,admin,1))
+assert.equal(catalogBefore.ok,true)
+const otanShell=catalogBefore.rows.filter(r=>r.watchProductId===otanModelId)
+assert.equal(otanShell.length,1)
+assert.equal(otanShell[0].watchVariantId,null,
+ 'Model-only item must remain in catalog (Main arrival selection shows it)')
+const physicalBeforeVariant=count('inventory_movements')
+const defaultsFor=kind=>sqlite.prepare(
+ 'SELECT value FROM watch_reference_values_v5 WHERE kind=? AND is_active=1 ORDER BY id LIMIT 1')
+ .get(kind)?.value
+const chosenMovement=defaultsFor('movements')
+const chosenBracelet=sqlite.prepare(
+ "SELECT value FROM watch_reference_values_v5 WHERE kind='bracelets' AND value='steel' AND is_active=1 LIMIT 1")
+ .get()?.value || defaultsFor('bracelets')
+const chosenDial=defaultsFor('dials')
+const leatherColor=chosenBracelet==='leather'?sqlite.prepare(
+ "SELECT value FROM watch_reference_values WHERE kind='leatherColors' AND is_active=1 LIMIT 1")
+ .get()?.value:''
+assert(chosenMovement&&chosenBracelet&&chosenDial&&
+ (chosenBracelet!=='leather'||leatherColor),'Main-backed watch references must exist for inline registration')
+const variantPayload={
+ watchProductId:otanModelId,gender:'male',movement:chosenMovement,
+ braceletMaterial:chosenBracelet,dialColor:chosenDial,braceletColor:leatherColor,
+}
+const newVariant=await parse(registerWatchVariant(db,admin,1,variantPayload))
+assert.equal(newVariant.status,201,JSON.stringify(newVariant))
+const otanWatchId=newVariant.watchVariantId
+const duplicateVariant=await parse(registerWatchVariant(db,admin,1,variantPayload))
+assert.equal(duplicateVariant.watchVariantId,otanWatchId,'No duplicate watch variants')
+const canonical=await parse(provisionClient3WatchSku(db,admin,1,otanWatchId))
+assert.equal(canonical.status,200,JSON.stringify(canonical))
+assert(Number(canonical.canonicalVariantId)>0)
+const reProvision=await parse(provisionClient3WatchSku(db,admin,1,otanWatchId))
+assert.equal(reProvision.canonicalVariantId,canonical.canonicalVariantId)
+assert.equal(count('inventory_movements'),physicalBeforeVariant,
+ 'Adding product, variant, and SKU cannot silently receive goods')
+const catalogAfter=await parse(listWatchCatalogDrafts(db,admin,1))
+assert(catalogAfter.rows.some(r=>r.watchProductId===otanModelId &&
+ r.watchVariantId===otanWatchId&&r.catalogVariantId===canonical.canonicalVariantId))
+const otanArrival={
+ kind:'arrival',source:'office',requestId:'otan-model-only-to-arrival-test-20261103',
+ items:[{watchVariantId:otanWatchId,quantity:4}],comment:'Main missing variant inline admission',
+}
+const receivedOtan=await parse(applyClient3WatchBulkOperation(db,admin,1,otanArrival))
+assert.equal(receivedOtan.status,200,JSON.stringify(receivedOtan))
+const otanStock=()=>sqlite.prepare(
+ "SELECT quantity FROM inventory_stock WHERE variant_id=? AND inventory_source='warehouse'")
+ .get(canonical.canonicalVariantId)?.quantity||0
+assert.equal(otanStock(),4)
+assert.equal((await parse(applyClient3WatchBulkOperation(db,admin,1,otanArrival))).duplicate,true)
+assert.equal(otanStock(),4)
+const foreignOtan=await parse(applyClient3WatchBulkOperation(db,admin,2,{
+ ...otanArrival,requestId:'otan-model-foreign-brand-20261103',
+}))
+assert.equal(foreignOtan.status,409,'Cannot select other brand model from Main-backed stock')
+assert.equal(otanStock(),4)
+const otanCorrection=await parse(countClient3WatchStockBatch(db,admin,1,{
+ source:'office',confirmed:true,requestId:'otan-new-sku-recount-20261103',
+ items:[{watchVariantId:otanWatchId,expectedPhysical:4,countedQuantity:5}],
+}))
+assert.equal(otanCorrection.status,200,JSON.stringify(otanCorrection))
+assert.equal(otanStock(),5)
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 assert.equal(count('orders'),baseOrders,'Warehouse operations cannot create business orders')
 assert.equal(count('payments'),basePayments,'Warehouse operations cannot record money')
 assert(count('inventory_movements')>=initialMovement+3,'All warehouse operations must leave movement history')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
-console.log('CLIENT3_FULL_MAIN_STOCK_ENGINE_PASS: real Main multi-line arrival/writeoff/transfer, atomic stocktake, brand/reservation/replay and money invariants')
+console.log('CLIENT3_FULL_MAIN_STOCK_ENGINE_PASS: Main model-only to inline variant and physical receipt, 4 operation modes, brand/reservation/replay/foreign keys')
