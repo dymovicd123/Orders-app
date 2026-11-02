@@ -144,6 +144,10 @@ removed=await parse(deleteClient3WatchCatalog(db,admin,1,{kind:'product',watchPr
 assert.equal(removed.ok,true)
 assert.equal(sql.prepare('SELECT is_active FROM watch_products WHERE id=?').get(p).is_active,0)
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM watch_variants WHERE id=?').get(v).n,1)
+// The earlier reference deletion test removed this example from active choices.
+assert.equal((await parse(createClient3WatchReference(db,admin,{
+  kind:'movements',value:'Механизм с турбийоном',
+}))).ok,true)
 // Main editing parity: model rename is presentation-only, with optimistic locking.
 const editable=await parse(registerWatchModel(db,admin,1,{modelName:'Тест Редактируемая Модель'}))
 assert.equal(editable.status,201)
