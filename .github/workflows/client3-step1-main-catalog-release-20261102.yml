@@ -1,5 +1,5 @@
 name: Client3 Step1 Main catalog + editable references RELEASE (third only)
-# Deploy FK-safe V5 after complete isolated QA including historic watch order links.
+# Deploy V5 extension tables after proven Main-stock, money, historical FK and deletion checks.
 on:
   push:
     branches: [client3/step1-main-catalog-references-20261102]
