@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite'
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
 import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker/domains/client3-watch-inventory.ts'
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
+import {countClient3WatchStock} from '../../worker/domains/client3-watch-stocktake.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -81,6 +82,18 @@ const writeoffRepeat=await parse(writeoffClient3WatchStock(db,admin,1,writeoff))
 assert.equal(writeoffRepeat.duplicate,true)
 assert.equal(stock('warehouse').quantity,2)
 assert.equal((await parse(writeoffClient3WatchStock(db,admin,1,{...writeoff,quantity:2}))).status,409)
+const physicalCount={watchVariantId:1,source:'office',expectedPhysical:2,countedQuantity:3,
+ confirmed:true,requestId:'watch-recount-real-001'}
+const counted=await parse(countClient3WatchStock(db,admin,1,physicalCount))
+assert.equal(counted.status,200,JSON.stringify(counted))
+assert.equal(counted.ok,true)
+assert.equal(stock('warehouse').quantity,3)
+const countReplay=await parse(countClient3WatchStock(db,admin,1,physicalCount))
+assert.equal(countReplay.ok,true)
+assert.equal(stock('warehouse').quantity,3)
+const countConflict=await parse(countClient3WatchStock(db,admin,1,{...physicalCount,countedQuantity:5}))
+assert.equal(countConflict.status,409)
+assert.equal(stock('warehouse').quantity,3)
 assert.equal(count('orders'),baseOrders,'Warehouse operations cannot create business orders')
 assert.equal(count('payments'),basePayments,'Warehouse operations cannot record money')
 assert(count('inventory_movements')>=initialMovement+3,'All warehouse operations must leave movement history')
