@@ -53,3 +53,24 @@ DROP INDEX IF EXISTS idx_watch_variants_product;
 DROP TABLE watch_variants;
 ALTER TABLE watch_variants_v5 RENAME TO watch_variants;
 CREATE INDEX idx_watch_variants_product ON watch_variants(watch_product_id,is_active);
+
+-- Aborts the entire transaction rather than partially retiring a group if
+-- concurrent physical/order activity begins after its preview.
+CREATE TRIGGER trg_watch_variant_safe_remove_v5
+BEFORE UPDATE OF is_active ON watch_variants
+WHEN OLD.is_active=1 AND NEW.is_active=0 AND OLD.catalog_variant_id IS NOT NULL
+AND (
+ EXISTS(SELECT 1 FROM inventory_stock s WHERE s.variant_id=OLD.catalog_variant_id
+   AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
+ OR EXISTS(SELECT 1 FROM inventory_reservations r WHERE r.variant_id=OLD.catalog_variant_id
+   AND r.status='active' AND COALESCE(r.quantity,0)<>0)
+ OR EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+   WHERE oi.variant_id=OLD.catalog_variant_id AND oi.quantity>0
+   AND o.order_status='active' AND o.shipping_status<>'sent')
+ OR EXISTS(SELECT 1 FROM inventory_lifecycle_events e WHERE e.variant_id=OLD.catalog_variant_id
+   AND e.status='pending')
+ OR EXISTS(SELECT 1 FROM inventory_stocktake_items i
+   JOIN inventory_stocktake_sessions ss ON ss.id=i.session_id
+   WHERE i.variant_id=OLD.catalog_variant_id AND ss.status='active')
+)
+BEGIN SELECT RAISE(ABORT,'watch_variant_in_use'); END;
