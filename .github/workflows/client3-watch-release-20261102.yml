@@ -1,0 +1,127 @@
+name: Client3 one-time release - isolated watches only
+on:
+  push:
+    branches: [client3/watch-release-20261102]
+    paths: ['.github/workflows/client3-watch-release-20261102.yml']
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: isolated-client3-watch-release
+  cancel-in-progress: false
+jobs:
+  release-third-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Refuse every non-Client3 target
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/watch-release-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Full real Main warehouse and watch order lifecycle acceptance
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-migration-chain-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-api-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node scripts/client3/test-watch-shell-20261102.mjs
+          npm run build
+      - name: Save baseline counts and totals (never client information)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM app_users) AS users_count,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS paid,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM financial_events) AS event_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brands') AS watch_ready,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_dispatches') AS dispatch_ready" | jq -ce '.[0].results[0]' > /tmp/client3-before.json
+          jq -e '.orders_count>=2 and .items_count>=2 and .payments_count>=2 and .users_count>=4 and .managers_count>=3 and .stock_rows>=2 and .watch_ready==0 and .dispatch_ready==0' /tmp/client3-before.json
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-migrations-before.txt
+          grep -Fq 0001_client3_stage5_dispatch_lineage.sql /tmp/client3-migrations-before.txt
+          grep -Fq 0002_client3_watch_foundation.sql /tmp/client3-migrations-before.txt
+          grep -Fq 0003_watch_manager_brand_audit.sql /tmp/client3-migrations-before.txt
+          test "$(grep -Ec '\.sql[[:space:]│]*$' /tmp/client3-migrations-before.txt)" -eq 3
+          echo "Legacy counts preserved prior to migration."
+      - name: Capture recovery point in PRIVATE Actions artifact
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info orders_db_client3_old_client --config wrangler.jsonc > /tmp/client3-recovery-bookmark.txt
+          grep -Eiq bookmark /tmp/client3-recovery-bookmark.txt
+          cp /tmp/client3-before.json /tmp/client3-recovery-before.json
+          echo "Time Travel bookmark captured privately; no value printed."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client3-watch-private-time-travel-recovery
+          path: |
+            /tmp/client3-recovery-bookmark.txt
+            /tmp/client3-recovery-before.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Apply ONLY reviewed Client3 migrations on third D1
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+      - name: Prove business data unchanged and watch+Stage5 schema created
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM app_users) AS users_count,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved,
+            (SELECT COALESCE(SUM(amount),0) FROM payments) AS paid,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM financial_events) AS event_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brands') AS watch_ready,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='order_dispatches') AS dispatch_ready" | jq -ce '.[0].results[0]' > /tmp/client3-after.json
+          jq -e '.watch_ready==1 and .dispatch_ready==1' /tmp/client3-after.json
+          jq -S '.watch_ready=0 | .dispatch_ready=0' /tmp/client3-after.json > /tmp/client3-after-normalized.json
+          jq -S '.' /tmp/client3-before.json > /tmp/client3-before-normalized.json
+          diff -u /tmp/client3-before-normalized.json /tmp/client3-after-normalized.json
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json --command="SELECT COUNT(*) AS n FROM pragma_foreign_key_check" | jq -e '.[0].results[0].n==0'
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json --command="SELECT
+            (SELECT COUNT(*) FROM watch_brands) AS brands,
+            (SELECT COUNT(*) FROM order_dispatches) AS dispatches,
+            (SELECT COUNT(*) FROM watch_order_details) AS orders,
+            (SELECT COUNT(*) FROM watch_manager_brands) AS assigned" | jq -e '.[0].results[0] | .brands==2 and .dispatches==0 and .orders==0 and .assigned==0'
+          echo "CLIENT3 D1 MIGRATION VERIFIED; NO LEGACY DATA ALTERED."
+      - name: Deploy ONLY orders-app-client3-old-client Worker
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Report isolated release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3-only release SUCCESS: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}. Three additive watch/Stage5 migrations applied to exact third D1 with private Time Travel recovery artifact; legacy order/payment/stock counters unchanged and FK clean. Third Worker orders-app-client3-old-client deployed. Main/Branch2 untouched. Exchanges, multi-position shipping, stocktake and visual UI acceptance remain pending."
