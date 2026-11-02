@@ -79,7 +79,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
   }
   return <section className="watch-orders">
     <header className="watch-orders-header">
-      <div><h2>Заказы часов</h2><p>Заказы, оплаты и задолженности отображаются отдельно по брендам.</p></div>
+      <div><h2>Список заказов</h2><p>Поиск, статусы, оплата и действия по выбранному бренду.</p></div>
       <button type="button" disabled={busy} onClick={()=>setRefresh(x=>x+1)}>Обновить</button>
     </header>
     <div className="watch-orders-filters">
