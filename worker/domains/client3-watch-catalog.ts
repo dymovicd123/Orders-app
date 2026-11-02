@@ -16,8 +16,10 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
       wp.catalog_product_id AS catalogProductId,wp.is_active AS productActive,
       wv.id AS watchVariantId,wv.catalog_variant_id AS catalogVariantId,
-      wv.gender,wv.movement,wv.bracelet_material AS braceletMaterial,
-      wv.dial_color AS dialColor,wv.bracelet_color AS braceletColor,
+      wv.gender,COALESCE(wv.custom_movement,wv.movement) AS movement,
+      COALESCE(wv.custom_bracelet_material,wv.bracelet_material) AS braceletMaterial,
+      COALESCE(wv.custom_dial_color,wv.dial_color) AS dialColor,
+      COALESCE(wv.custom_bracelet_color,wv.bracelet_color) AS braceletColor,
       wv.is_active AS variantActive,
       (SELECT ep.sale_price FROM catalog_variants cv JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE cv.id=wv.catalog_variant_id LIMIT 1) AS catalogPriceSnapshot,
       COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='warehouse'),0) AS officePhysical,
@@ -105,7 +107,7 @@ export async function registerWatchVariant(
   ).bind(productId,brandId).first<{id:number}>()
   if(!product)return error('WATCH_MODEL_FORBIDDEN','Модель не существует в выбранном бренде.',404)
   const values=[productId,v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]
-  const find='SELECT id,is_active,catalog_variant_id FROM watch_variants WHERE watch_product_id=? AND gender=? AND movement=? AND bracelet_material=? AND dial_color=? AND bracelet_color=? LIMIT 1'
+  const find='SELECT id,is_active,catalog_variant_id FROM watch_variants WHERE watch_product_id=? AND gender=? AND COALESCE(custom_movement,movement)=? AND COALESCE(custom_bracelet_material,bracelet_material)=? AND COALESCE(custom_dial_color,dial_color)=? AND COALESCE(custom_bracelet_color,bracelet_color)=? LIMIT 1'
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
   if(old){
     if(old.is_active===0) {
@@ -134,9 +136,19 @@ export async function registerWatchVariant(
     return json({ok:true,watchVariantId:old.id,alreadyExists:true,active:true,stockLinked:old.catalog_variant_id!=null})
   }
   try{
+    const legacy=['quartz','mechanical'].includes(v.movement) &&
+      ['steel','leather','rubber'].includes(v.braceletMaterial) &&
+      ['black','white','silver','gold','green','orange','brown','multicolor'].includes(v.dialColor)
+    // Old constrained columns remain as FK-safe compatibility anchors.
+    // Custom values live in additive columns, while the randomized leather
+    // sentinel guarantees the old UNIQUE key never merges separate SKU IDs.
+    const anchor=legacy?[v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]:
+      ['quartz','leather','black','__WATCH_V5__'+crypto.randomUUID().replaceAll('-','')]
+    const overrides=legacy?[null,null,null,null]:
+      [v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]
     const result=await db.prepare(
-      'INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(?,?,?,?,?,?)',
-    ).bind(...values).run()
+      'INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color,custom_movement,custom_bracelet_material,custom_dial_color,custom_bracelet_color) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    ).bind(productId,v.gender,...anchor,...overrides).run()
     const id=Number(result.meta?.last_row_id||0)
     if(!Number.isSafeInteger(id)||id<=0)throw new Error('Не удалось подтвердить комплектацию часов.')
     return json({ok:true,watchVariantId:id,created:true,stockLinked:false},{status:201})
