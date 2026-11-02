@@ -53,7 +53,7 @@ export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
    finally{setBusy(false)}
  }
  return <section className="watch-returns">
-   <header><div><h2>Приём возвратов</h2>
+   <header><div><h2>Ожидают физической приёмки</h2>
      <p>Только часы, по которым оформлен возврат, но ещё не подтверждено физическое поступление.</p>
    </div><button disabled={busy} onClick={()=>setReload(x=>x+1)}>Обновить</button></header>
    <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setSelected(null);setConfirmed(false)}}>
