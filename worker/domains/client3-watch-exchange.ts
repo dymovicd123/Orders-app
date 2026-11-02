@@ -36,6 +36,37 @@ export async function exchangeClient3Watch(
    WHERE o.id=? AND wd.brand_id=? LIMIT 1
  `).bind(orderId,brandId).first<Record<string,unknown>>()
  if(!order)return deny('WATCH_EXCHANGE_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
+ // An accepted exchange may have retired the original item. Check immutable
+ // critical result BEFORE looking for a remaining active old item.
+ const prior=await db.prepare(
+   'SELECT operation_type,status,target_id,response_json FROM critical_operations WHERE request_id=? LIMIT 1',
+ ).bind(input.requestId).first<{operation_type:string;status:string;target_id:number|null;response_json:string|null}>()
+ if(prior?.status==='completed'){
+   if(prior.operation_type!=='exchange_create'||!prior.target_id)
+     return deny('WATCH_EXCHANGE_REPLAY_CONFLICT','Идентификатор использован для другого действия.')
+   const saved=await db.prepare(`
+     SELECT ex.order_id,ex.comment,ex.new_source_type,
+       wi.watch_variant_id,wi.engraving_text
+     FROM exchanges ex
+     JOIN watch_order_details wd ON wd.order_id=ex.order_id
+     JOIN watch_order_item_details wi ON wi.order_item_id=ex.new_order_item_id
+     WHERE ex.id=? AND ex.order_id=? AND wd.brand_id=? LIMIT 1
+   `).bind(prior.target_id,orderId,brandId).first<Record<string,unknown>>()
+   if(!saved||String(saved.comment||'')!==reason||
+      String(saved.new_source_type)!==source||
+      Number(saved.watch_variant_id)!==newWatchVariantId||
+      String(saved.engraving_text)!==input.engravingText.trim())
+     return deny('WATCH_EXCHANGE_REPLAY_CONFLICT','Данные повторной операции отличаются от уже сохранённого обмена.')
+   try {
+     const remembered=JSON.parse(prior.response_json||'null') as Record<string,unknown>|null
+     if(remembered?.ok===true)return json({...remembered,alreadyCommitted:true,
+       brandId,orderId,newWatchVariantId,newShippingStatus:'pending'})
+   }catch{ /* Do not create another exchange from an unreadable completed result. */ }
+   return deny('WATCH_EXCHANGE_REPLAY_UNVERIFIED','Обмен уже выполнен, но ответ не удалось восстановить.')
+ }
+ if(prior&&prior.operation_type!=='exchange_create')
+   return deny('WATCH_EXCHANGE_REPLAY_CONFLICT','Этот идентификатор уже использован в другом действии.')
+
  if(order.order_status==='archived'||order.order_status==='deleted')
    return deny('WATCH_EXCHANGE_CLOSED','Заказ закрыт.')
  if(order.shipping_status!=='sent'||order.pricing_mode!=='itemized_v1')
