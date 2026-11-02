@@ -100,3 +100,25 @@
   .watch-shell-create-page .watch-order-form>.primary{width:calc(100% - 24px);margin:0 12px 15px}
   .watch-shell-create-page .watch-order-form>.watch-order-form-error{margin:0 12px}
 }
+
+/* Port of Main/CreateOrderSection's create-hero, step-card, step-head and KPI anatomy. */
+.watch-shell-create-page .main-order-create{grid-template-columns:1fr!important;gap:17px!important;background:#f8fafc;padding:18px!important}
+.watch-shell-create-page .main-order-create .create-hero{margin:0;padding:16px 19px;background:white;border:1px solid #e2e8f0;border-radius:13px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px}
+.watch-shell-create-page .main-order-create .create-hero .card-label{display:block;font-size:.72rem;font-weight:790;letter-spacing:.075em;text-transform:uppercase;color:#64748b;margin-bottom:5px}
+.watch-shell-create-page .main-order-create .create-hero h2{font-size:1.23rem;font-weight:750;margin:0 0 4px}
+.watch-shell-create-page .main-order-create .create-hero p{font-size:.85rem;margin:0;color:#64748b}
+.watch-shell-create-page .main-order-create .orders-workspace-kpis{display:flex;flex-wrap:wrap;gap:9px}
+.watch-shell-create-page .main-order-create .orders-workspace-kpis>div{display:grid;gap:3px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc;padding:8px 12px;min-width:100px}
+.watch-shell-create-page .main-order-create .orders-workspace-kpis span{font-size:.72rem;color:#64748b}
+.watch-shell-create-page .main-order-create .orders-workspace-kpis strong{font-size:.91rem;color:#0f172a}
+.watch-shell-create-page .main-order-create fieldset.order-step-card,
+.watch-shell-create-page .main-order-create fieldset.order-step-card:nth-of-type(2){margin:0!important;background:#fff;border:1px solid #e0e8f2;border-radius:13px;padding:16px 19px 20px;box-shadow:0 1px 4px #10213409}
+.watch-shell-create-page .main-order-create .order-step-head{display:flex;align-items:center;gap:13px;font-size:1rem;line-height:1.35;font-weight:730;padding:6px 12px;background:#fff;margin:0 0 10px 0}
+.watch-shell-create-page .main-order-create .order-step-head .order-step-index{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px;border-radius:9px;color:#1d4ed8;background:#eaf2ff;font-weight:800;font-size:.88rem}
+.watch-shell-create-page .main-order-create .order-step-head>span:last-child{display:grid;gap:2px}
+.watch-shell-create-page .main-order-create .order-step-head small{color:#64748b;font-size:.74rem;font-weight:400}
+.watch-shell-create-page .main-order-create .watch-order-form-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.watch-shell-create-page .main-order-create .watch-order-form-wide{grid-column:span 2}
+.watch-shell-create-page .main-order-create>.primary{grid-column:1;min-width:205px;margin:0 0 5px auto!important}
+@media(max-width:1080px){.watch-shell-create-page .main-order-create .watch-order-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.watch-shell-create-page .main-order-create .watch-order-form-wide{grid-column:1/-1}}
+@media(max-width:600px){.watch-shell-create-page .main-order-create{padding:10px!important}.watch-shell-create-page .main-order-create .orders-workspace-kpis{width:100%}.watch-shell-create-page .main-order-create .orders-workspace-kpis>div{flex:1;min-width:80px}.watch-shell-create-page .main-order-create .watch-order-form-grid{grid-template-columns:1fr}.watch-shell-create-page .main-order-create .watch-order-form-wide{grid-column:1}.watch-shell-create-page .main-order-create>.primary{width:100%;margin:0!important}}
