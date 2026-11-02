@@ -11,7 +11,7 @@ import '../../styles/client3-watch-stock-browser.css'
 type Source='office'|'showcase'
 type Group={key:string;modelName:string;rows:WatchOrderChoice[]}
 type ModelApi={ok:boolean;models?:WatchOrderChoice[];message?:string}
-const amount=(n:number)=>Math.max(0,Number(n)||0).toLocaleString('ru-RU')
+const amount=(n:number)=>(Number(n)||0).toLocaleString('ru-RU')
 const sourceLabel=(source:Source)=>source==='office'?'Офис':'Витрина'
 const stats=(row:WatchOrderChoice,source:Source)=>{
   const physical=Math.max(0,Number(source==='office'?row.officePhysical:row.showcasePhysical)||0)
