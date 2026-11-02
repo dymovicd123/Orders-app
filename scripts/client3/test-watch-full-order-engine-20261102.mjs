@@ -191,6 +191,33 @@ assert.equal(stock('warehouse').quantity,physicalBeforeReturn+1)
 const intakeReplay=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
 assert.equal(intakeReplay.ok,true)
 assert.equal(stock('warehouse').quantity,physicalBeforeReturn+1)
+// Mixed-method payment acceptance: keep separate Main ledger rows and do not
+// duplicate either money or reservations on a retry.
+const mixedPurchase={...purchase,requestId:'watch-real-order-mixed-0001',
+  paymentMethod:'KASPI RED',receivedAmount:27000,
+  payments:[{method:'KASPI RED',amount:10000},{method:'KASPI GOLD',amount:17000}],
+}
+const beforeMixedPayments=count('payments')
+const mixed=await parse(createClient3WatchOrder(db,manager,1,mixedPurchase))
+assert.equal(mixed.status,201,JSON.stringify(mixed))
+const mixedRows=sqlite.prepare('SELECT method,amount FROM payments WHERE order_id=? ORDER BY id').all(mixed.orderId)
+assert.deepEqual(mixedRows.map(x=>[x.method,x.amount]),[
+  ['KASPI RED',10000],['KASPI GOLD',17000],
+])
+assert.equal(sqlite.prepare('SELECT received_amount,debt_amount FROM orders WHERE id=?').get(mixed.orderId).debt_amount,13000)
+const mixedReplay=await parse(createClient3WatchOrder(db,manager,1,mixedPurchase))
+assert.equal(mixedReplay.orderId,mixed.orderId)
+assert.equal(count('payments'),beforeMixedPayments+2,'Retries cannot duplicate split payment ledger rows')
+const alteredMixed=await parse(createClient3WatchOrder(db,manager,1,{
+  ...mixedPurchase,payments:[{method:'KASPI RED',amount:9000},{method:'KASPI GOLD',amount:18000}],
+}))
+assert.equal(alteredMixed.status,409,'A reused requestId with different payment allocation must conflict')
+const badMixed=await parse(createClient3WatchOrder(db,manager,1,{
+  ...mixedPurchase,requestId:'watch-real-order-mixed-bad1',receivedAmount:27000,
+  payments:[{method:'KASPI RED',amount:10000},{method:'KASPI GOLD',amount:16000}],
+}))
+assert.equal(badMixed.status,400,'Payments sum mismatch must fail before any money write')
+assert.equal(count('payments'),beforeMixedPayments+2)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
