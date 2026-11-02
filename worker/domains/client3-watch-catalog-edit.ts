@@ -127,7 +127,9 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
            AND NOT EXISTS(SELECT 1 FROM inventory_reservations ir WHERE ir.variant_id=catalog_variants.id)
            AND NOT EXISTS(SELECT 1 FROM inventory_lifecycle_events le WHERE le.variant_id=catalog_variants.id)
            AND NOT EXISTS(SELECT 1 FROM inventory_transfer_items ti WHERE ti.variant_id=catalog_variants.id)
-           AND NOT EXISTS(SELECT 1 FROM inventory_stocktake_items si WHERE si.variant_id=catalog_variants.id)`)
+           AND NOT EXISTS(SELECT 1 FROM inventory_stocktake_items si WHERE si.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_stock_checks sc WHERE sc.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM workshop_tasks wt WHERE wt.variant_id=catalog_variants.id)`)
          .bind(execution.id,gender,color,material,WATCH_LENGTH,now,canonicalId,owned.product_id,owned.stock_position_id),
        db.prepare(`UPDATE watch_variants SET gender=?,movement='quartz',
          bracelet_material='leather',dial_color='black',bracelet_color=?
