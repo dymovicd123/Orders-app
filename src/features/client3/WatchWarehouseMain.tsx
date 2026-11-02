@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
 import {StocktakeProductChoice,StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'
 import {WatchOperationInlineCatalog} from './WatchOperationInlineCatalog'
+import {WatchPersistentRevision} from './WatchPersistentRevision'
 import {WATCH_OPTIONS,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/182-inventory-stocktake-human.css'
 import '../../styles/183-inventory-stocktake-workflow.css'
@@ -64,6 +65,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
   const [mode,setMode]=useState<Operation>('arrival')
+  const [persistentRevision,setPersistentRevision]=useState(false)
+  const [revisionActive,setRevisionActive]=useState(false)
   const [source,setSource]=useState<Source>('office')
   const [stage,setStage]=useState<Stage>('select')
   const [search,setSearch]=useState('')
@@ -267,9 +270,27 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
         {mode==='transfer'&&<div className="w7-transfer-target"><span aria-hidden="true">→</span>
           <strong>{location(source==='office'?'showcase':'office')}</strong></div>}
       </div>
+      {mode==='count'&&<div className="client3-revision-mode">
+        <strong>Способ проверки</strong>
+        <div role="group" aria-label="Тип проверки">
+          <button type="button" className={!persistentRevision?'is-active':''}
+            disabled={revisionActive} onClick={()=>{setPersistentRevision(false);setStage('select')}}>
+            Быстрая корректировка
+          </button>
+          <button type="button" className={persistentRevision?'is-active':''}
+            onClick={()=>{setPersistentRevision(true);setStage('select')}}>
+            Ревизия с сохранением прогресса
+          </button>
+        </div>
+      </div>}
       {error&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{error}</div>}
       {notice&&<div className="stocktake-inline-notice" role="status">{notice}</div>}
-      {loading?<div className="stocktake-inline-notice">Загружаем каталог и остатки…</div>:
+      {mode==='count'&&persistentRevision&&revisionActive?
+        <WatchPersistentRevision key={brand+'-'+source+'-active'}
+          brand={brand} source={source} models={models} variants={variants}
+          selectedModelIds={selectedModelIds} onActiveChange={setRevisionActive}
+          onStockChanged={()=>{refresh();onStockChanged?.()}}/>:
+      loading?<div className="stocktake-inline-notice">Загружаем каталог и остатки…</div>:
       stage==='select'?<section className="stocktake-e-start stocktake-e-start-v5">
         <div className="stocktake-start-intro">
           <span className="stocktake-step-kicker">Шаг 1 · Выбор товаров</span>
@@ -347,15 +368,20 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
                 setShowInlineAdd(false);setError('');refresh()
               }}/>}
         </div>
-        <div className="stocktake-start-submit">
-          <div>{selectedModels.length?
-            'Выбрано: '+selectedModels.length+' товаров · '+selectedPositionCount+' комплектаций':
-            'Выберите хотя бы один товар'}</div>
-          <button className="primary stocktake-e-start-button" type="button"
-            disabled={saving||!selectedModels.length} onClick={beginSelected}>
-            Начать работу с выбранными товарами
-          </button>
-        </div>
+        {mode==='count'&&persistentRevision?
+          <WatchPersistentRevision key={brand+'-'+source+'-select'}
+            brand={brand} source={source} models={models} variants={variants}
+            selectedModelIds={selectedModelIds} onActiveChange={setRevisionActive}
+            onStockChanged={()=>{refresh();onStockChanged?.()}}/>:
+          <div className="stocktake-start-submit">
+            <div>{selectedModels.length?
+              'Выбрано: '+selectedModels.length+' товаров · '+selectedPositionCount+' комплектаций':
+              'Выберите хотя бы один товар'}</div>
+            <button className="primary stocktake-e-start-button" type="button"
+              disabled={saving||!selectedModels.length} onClick={beginSelected}>
+              Начать работу с выбранными товарами
+            </button>
+          </div>}
       </section>:stage==='quantities'?<section className="client3-main-stock-step">
         <div className="stocktake-e-product-nav stocktake-e-product-nav-v5">
           <div><span>Шаг 2 · Количество</span>
