@@ -1,4 +1,6 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
+import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
+import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import { json, readJson } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
 import { normalizeWatchBrand, type WatchBrand } from '../../shared/client3/watch-domain.ts'
@@ -226,6 +228,23 @@ export async function markWatchLogisticsReady(
 export async function routeClient3Watches(
   db:D1Database,request:Request,url:URL,actor:AuthUser,
 ):Promise<Response|null> {
+  if(url.pathname==='/api/client3/watches/catalog'&&request.method==='GET') {
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listWatchCatalogDrafts(db,actor,scope.row!.id)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='POST') {
+    const input=await readJson<{brand?:unknown;modelName?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return registerWatchModel(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/variants'&&request.method==='POST') {
+    const input=await readJson<WatchVariantInput & {brand?:unknown;watchProductId?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return registerWatchVariant(db,actor,scope.row!.id,input)
+  }
   if(url.pathname==='/api/client3/watches/orders'&&request.method==='POST') {
     const raw=await readJson<WatchCreateInput>(request)
     const scope=await scopedBrand(db,actor,raw?.brand,'sales')
