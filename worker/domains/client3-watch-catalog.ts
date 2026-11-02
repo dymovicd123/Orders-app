@@ -97,8 +97,10 @@ export async function registerWatchVariant(
     ['movements',v.movement],['bracelets',v.braceletMaterial],['dials',v.dialColor],
     ...(v.braceletMaterial==='leather'?[['leatherColors',v.braceletColor]]:[]),
   ]){
+    const name=['movements','bracelets','dials'].includes(kind)
+      ?'watch_reference_values_v5':'watch_reference_values'
     const listed=await db.prepare(
-      'SELECT value FROM watch_reference_values WHERE kind=? AND is_active=1',
+      `SELECT value FROM ${name} WHERE kind=? AND is_active=1`,
     ).bind(kind).all<{value:string}>()
     if(!(listed.results||[]).some(row=>row.value.toLocaleUpperCase('ru-RU')===value.toLocaleUpperCase('ru-RU')))
       return error('WATCH_REFERENCE_NOT_FOUND','Характеристика «'+value+'» отсутствует в справочнике '+kind+'.',409)
