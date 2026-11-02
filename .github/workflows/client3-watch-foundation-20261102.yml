@@ -39,6 +39,10 @@ jobs:
         run: node scripts/client3/test-watch-shell-20261102.mjs
       - name: Brand-owned watch order attachment on disposable SQLite
         run: node --experimental-strip-types scripts/client3/test-watch-order-commit-20261102.mjs
+      - name: Register watch catalogue drafts with strict brand identity on disposable SQLite
+        run: node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
+      - name: Read brand-scoped watch orders and financial summaries on disposable SQLite
+        run: node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
       - name: Full Main foundation build on isolated tenant code
         run: npm run build
       - name: Dependencies audit
