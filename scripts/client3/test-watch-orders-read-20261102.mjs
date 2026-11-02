@@ -19,6 +19,7 @@ sql.exec([
 'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY);',
 'CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER,order_item_id INTEGER,quantity INTEGER,cancelled_quantity INTEGER);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
+'CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
 'CREATE TABLE financial_events(id INTEGER PRIMARY KEY,order_id INTEGER,event_date TEXT,event_type TEXT,amount_delta INTEGER,payment_method TEXT,external_order_id TEXT,reason TEXT,comment TEXT);',
 `INSERT INTO managers VALUES(1,'Alice',1),(2,'Bob',1);`,
 'INSERT INTO app_users VALUES(9);',
@@ -33,6 +34,8 @@ sql.exec([
 "INSERT INTO financial_events VALUES(4,3,'2026-10-01','order_payment',30000,'KASPI GOLD','W-3',NULL,NULL);",
 ].join('\n'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
+sql.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
+sql.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
 sql.exec([
 'INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1),(2,2);',
 "INSERT INTO watch_order_details(order_id,brand_id,recipient_name,recipient_phone,delivery_full_address,postal_code,city,delivery_method,urgent,shipping_deadline_at) VALUES(1,1,'Private Customer 1','777','Address 1','050000','Almaty','Kazpost',0,'2026-11-05T12:00:00Z');",
@@ -67,6 +70,10 @@ assert.equal(aliceMonth.totals.orderCount,1)
 assert.equal(aliceMonth.totals.totalAmount,20000)
 assert.equal(aliceMonth.totals.receivedAmount,10000)
 assert.equal(aliceMonth.totals.debtAmount,10000)
+assert.equal((await query(alice,'brand=TAUWACH&shipping=not_sent&payment=debt')).rows.length,1)
+assert.equal((await query(alice,'brand=TAUWACH&shipping=sent')).rows.length,1)
+assert.equal((await query(alice,'brand=TAUWACH&payment=paid')).rows.length,1)
+assert.equal((await query(alice,'brand=TAUWACH&payment=invalid')).httpStatus,400)
 const split=JSON.parse(aliceMonth.rows[0].paymentLines)
 assert.deepEqual(split.map(x=>[x.method,x.amount]),[['KASPI RED',4000],['KASPI GOLD',6000]])
 const lines=JSON.parse(aliceMonth.rows[0].itemLines)
