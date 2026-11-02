@@ -25,6 +25,7 @@ export type WatchLogisticsRow = {
   reservationStatus: string | null
   stockWriteoffStatus: string | null
   shippedQuantity: number
+  dispatchItemId: number | null
   itemSource: 'warehouse' | 'boutique' | null
   modelName: string | null
   engravingText: string | null
@@ -40,6 +41,7 @@ type Props = {
   allowedBrands?: readonly WatchBrand[]
   canCompleteEngraving: boolean
   canDispatch?: boolean
+  canCorrectDispatch?:boolean
 }
 
 type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; message?: string }
@@ -84,7 +86,7 @@ function statusText(status: WatchLogisticsRow['engravingStatus']) {
 
 /** Main's operational workflow: engraving readiness and actual dispatch remain
  * separate confirmed actions; both use isolated brand-scoped Client3 routes. */
-export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false}:Props) {
+export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false}:Props) {
   const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
   const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'>('unshipped')
@@ -94,6 +96,10 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
   const [dispatchSelection,setDispatchSelection]=useState<Record<number,number[]>>({})
   const [dispatchQuantities,setDispatchQuantities]=useState<Record<number,Record<number,number>>>({})
+  const [correctionTarget,setCorrectionTarget]=useState<{orderId:number;dispatchItemId:number}|null>(null)
+  const [correctionReason,setCorrectionReason]=useState('')
+  const [correcting,setCorrecting]=useState<number|null>(null)
+  const correctionIds=useRef<Record<number,string>>({})
   const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -148,6 +154,30 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     }
   }, [canCompleteEngraving, saving])
 
+  const correctDispatch=async(order:WatchLogisticsRow)=>{
+    if(!canCorrectDispatch||!correctionTarget||correcting!==null||
+       correctionTarget.orderId!==order.orderId||correctionReason.trim().length<8)return
+    const id=correctionTarget.dispatchItemId
+    setCorrecting(id);setError('');setFeedback('')
+    const requestId=correctionIds.current[id]||='watch-correct-send-'+crypto.randomUUID()
+    try{
+      const data=await readApi<{
+        ok:boolean;message?:string;physicalRestoredQuantity?:number;needsStockCheck?:boolean
+      }>('/api/client3/watches/orders/'+order.orderId+'/dispatch-correction',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({brand:order.brand,dispatchItemId:id,
+          reason:correctionReason.trim(),requestId}),
+      })
+      delete correctionIds.current[id]
+      setCorrectionTarget(null);setCorrectionReason('')
+      setDispatchSelection(prev=>({...prev,[order.orderId]:[]}))
+      setFeedback(data.needsStockCheck
+        ?'Запись об отправке исправлена, но физический остаток не увеличен: нужна проверка склада.'
+        :'Ошибочная отправка исправлена через Main. Резерв и остаток пересчитаны.')
+      setRefreshKey(value=>value+1)
+    }catch(cause){setError(cause instanceof Error?cause.message:'Исправление отправки заблокировано')}
+    finally{setCorrecting(null)}
+  }
   const setSelected=(orderId:number,itemId:number,enabled:boolean)=>{
     setDispatchConfirm(null)
     delete dispatchIds.current[orderId]
@@ -297,9 +327,39 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                         item.reservationStatus!=='active'?'Ожидает товар / резерв':
                         item.engravingText?.trim()&&order.engravingStatus!=='ready'?'Ожидает гравировки':
                         'Готов к отправке'}</strong></div>
+                      {canCorrectDispatch&&isSent&&item.dispatchItemId&&
+                        <button type="button" className="secondary compact watch-dispatch-correction-open"
+                          disabled={correcting!==null||dispatching!==null}
+                          onClick={()=>{
+                            setCorrectionTarget({orderId:order.orderId,dispatchItemId:item.dispatchItemId!})
+                            setCorrectionReason('')
+                            setDispatchConfirm(null)
+                          }}>Исправить ошибочную отправку</button>}
                     </div>
                   })}
                 </div>
+                {canCorrectDispatch&&correctionTarget?.orderId===order.orderId&&
+                  <div className="watch-dispatch-correction-confirm">
+                    <strong>Исправление ошибочно отмеченной отправки</strong>
+                    <p>Используйте только если отправку отметили по ошибке. Если часы
+                      действительно у клиента, оформляйте возврат, а не отмену отправки.
+                      Main проверит историю ревизий и решит, можно ли восстановить физический остаток.</p>
+                    <label>Причина исправления (от 8 символов)
+                      <textarea required rows={2} maxLength={500} value={correctionReason}
+                        onChange={e=>{
+                          setCorrectionReason(e.target.value)
+                          delete correctionIds.current[correctionTarget.dispatchItemId]
+                        }}/>
+                    </label>
+                    <div className="watch-logistics-actions">
+                      <button type="button" className="watch-dispatch-correction-commit"
+                        disabled={correcting!==null||dispatching!==null||correctionReason.trim().length<8}
+                        onClick={()=>void correctDispatch(order)}>
+                        {correcting!==null?'Исправляю…':'Подтвердить исправление'}</button>
+                      <button type="button" className="secondary compact" disabled={correcting!==null}
+                        onClick={()=>setCorrectionTarget(null)}>Отмена</button>
+                    </div>
+                  </div>}
                 <div className="watch-logistics-actions">
                   {order.engravingStatus==='ready'?<span>Гравировка завершена</span>:
                     canCompleteEngraving?<button type="button" disabled={saving!==null}
