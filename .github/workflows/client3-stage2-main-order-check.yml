@@ -1,5 +1,5 @@
 name: Client3 Stage2 Main order creation acceptance
-# Revalidate complete Main register after correcting filters parameter order.
+# Revalidate compiler after typing legacy single-item input alongside multi-item payload.
 on:
   push:
     branches: [client3/step2-main-order-create-table-20261102]
