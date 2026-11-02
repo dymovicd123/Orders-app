@@ -32,5 +32,7 @@ jobs:
           node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+      - name: Watch catalog business semantics and no accidental physical stock changes
+        run: node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
       - name: Main CSS integrated TypeScript/Vite production build
         run: npm run build
