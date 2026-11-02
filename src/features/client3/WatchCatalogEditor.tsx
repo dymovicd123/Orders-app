@@ -71,6 +71,18 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить модель')}
     finally{setBusy(false)}
   }
+  const provisionVariant=async(variantId:number)=>{
+    if(busy)return
+    setBusy(true);setError('');setNotice('')
+    try{
+      const result=await post('/api/client3/watches/catalog/provision',{watchVariantId:variantId})
+      if(!result.ok)throw new Error(result.message||'Не удалось подготовить SKU')
+      setNotice('Складской SKU подготовлен. Физическое количество не изменилось. Для наличия оформите приход.')
+      setReload(x=>x+1)
+    }catch(cause){
+      setError(cause instanceof Error?cause.message:'Не удалось подготовить SKU')
+    }finally{setBusy(false)}
+  }
   const createVariant=async(e:FormEvent<HTMLFormElement>)=>{
     e.preventDefault();if(busy||modelId<=0)return
     setBusy(true);setError('');setNotice('')
@@ -133,6 +145,10 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
                 ...(row.braceletColor?['Ремешок: '+row.braceletColor]:[])].join(' · ')
             : 'Без комплектаций'}</span>
           <small>{row.catalogProductId&&row.catalogVariantId?'Связан со складом':'Не привязан к складу — продажа недоступна'}</small>
+          {row.watchVariantId&&row.productActive===1&&row.variantActive===1&&(!row.catalogProductId||!row.catalogVariantId)&&
+            <button type="button" disabled={busy} onClick={()=>void provisionVariant(row.watchVariantId!)}>
+              Подготовить складской SKU
+            </button>}
         </article>)}
       </div>}
   </section>
