@@ -215,3 +215,23 @@ Administrators may now **«Исправить ошибочную отправк�
 
 **Stage 4 engineering and automated acceptance: DONE / LIVE.**
 **Acceptance limitation:** authenticated real-user desktop/mobile browser interaction and operator training remain part of final UX/role sign-off. Do not equate isolated SQLite tests with a human browser session. Next priority is Stage 5 Main-level warehouse operations/history/revisions, then Stage 6 finance/permissions and final client acceptance.
+
+
+## 03.11.2026 — Stage 5 warehouse / resolver, first tested milestone
+
+**Isolated candidate:** `client3/stage5-warehouse-resolver-20261103`.
+**Actual Main + full temporary SQLite/D1-domain acceptance SUCCESS:** https://github.com/dymovicd123/Orders-app/actions/runs/41527305176.
+
+**Implemented:**
+- Client3-only, admin-controlled `POST /api/client3/watches/stock/count-batch` (1–30 exact watch SKUs, one brand, one Office/Showcase). Each watch ID is mapped to its existing canonical Main variant *before* invoking Main `quickInventoryStocktakeBatch`, which atomically checks stale counters, revision conflicts, duplicate keys and physical stock updates. Explicit shortage acknowledgement; no invented receipts/payments.
+- Main-derived human input cells, select-by-model multi-line correction, a final confirmation, and a protected per-brand/source movement history view. `GET /api/client3/watches/stock/history` filters at the SQL level by canonical watch SKU and brand, paginates by movement ID, no Problems/attention queue.
+- Known-watch resolver before free-entry creation: Unicode-safe model name/characteristic matching, mapped RU default labels, canonical active reference values, exact existing watch variant and stock identity even at zero physical, retired/ambiguous fail-closed. Unknown watches still follow Main-like unrestricted manual order registration and pending reserves; one unique match never forces a catalogue dropdown or Enter confirmation.
+- Real SQLite integrated acceptance includes cross-brand refusal, manager denial on stock writes, two-SKU atomic recount and stale/reused request failures, read-only history isolation, known SKU no-duplicate/no-stock side effects, retired model refusal, orders, financial and return/exchange suites. TS/Vite build passes.
+
+**Not Stage 5 full Main parity yet:**
+1. Full multi-step stocktake sessions, plus better selective/full source handover and administrative controls.
+2. Main-style multi-position arrivals, write-offs and Office↔Showcase transfers (currently one SKU per operation).
+3. Full operational history UI review with logged-in desktop/mobile roles. History exists, but not the heavy Problems queue by user request.
+4. Resolver semantic coverage for deliberately configured synonyms/compound aliases and cross-flow end-to-end recovery. It now resolves unique case/whitespace/reference matches and existing SKU; do not claim every Main resolver scenario is identical.
+
+**Release scope:** third Worker only, no migration. Never copy historical Main/Branch2 data or expose Main APIs through Client3. UI/role browser acceptance remains pending.
