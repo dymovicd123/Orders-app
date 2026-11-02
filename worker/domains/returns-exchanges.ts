@@ -4343,8 +4343,8 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
               {method:executionPlan.refundMethod,amount:executionPlan.refundAmount}
             ]).map((part,index)=>refundMoneyEventStatement(db,{
               eventKey:executionPlan.refundParts?.length
-                ?`1901:${criticalOperation.requestId}:exchange-set-refund:part:${index}`
-                :`1901:${criticalOperation.requestId}:exchange-set-refund`,
+                ?`1901:${criticalOperation!.requestId}:exchange-set-refund:part:${index}`
+                :`1901:${criticalOperation!.requestId}:exchange-set-refund`,
               orderId:executionPlan.orderId,externalOrderId:executionPlan.externalOrderId,
               returnDate:executionPlan.exchangeDate,amount:part.amount,
               paymentMethod:part.method,timestamp,eventType:'exchange_refund',
