@@ -223,3 +223,31 @@
 - W3: отдельный *server-side* платёжный ledger / касса, отчёты/долги/менеджерские ограничения по брендам; UI-агрегаты заказов не являются кассой.
 - W4: item-level возвраты/обмены, подтверждение приёмки и сохранение SKU/бренда.
 - W5: backup/Time Travel bookmark, offline replay against complete real schema snapshot, staged Client3-only migration, браузерная QA, наблюдение и выпуск. Main/Branch2 неприкосновенны.
+
+## 13. Release checkpoint — 2026-11-02 · real Client3 production release
+
+**Release verified: [GitHub Actions #41458153580](https://github.com/dymovicd123/Orders-app/actions/runs/41458153580) SUCCESS.** Released from isolated snapshot `client3/watch-release-20261102`, deploy commit `92a454e8d469b9b33883a145a2a890aa8ece0fe2`, source snapshot `d8a9dfc43e2081ffc97550a0e53eb051b2038e1d`.
+
+- Live third Worker: `orders-app-client3-old-client`, Version ID `3ba7813b-c794-47a6-90e8-078af1525513`, URL `https://orders-app-client3-old-client.orders-clothes.workers.dev`.
+- A separate single-use release branch/workflow tested full Main migrations + watch backend order, catalog price, payment, reservation, itemized engraving, Stage5 shipping, brand-segregated finance, return and physical receipt, SSR shell and TypeScript/Vite.
+- Before D1 mutation: exact third D1 UUID `0717f239-6d81-4837-8586-777d94e22c53`, environment target name, 3 expected migration names, legacy row counts/sums, Time Travel recovery bookmark. Bookmark stored only in **private GitHub Actions recovery artifact** for maintainers with 7-day retention (never published to issue).
+- Applied `0001_client3_stage5_dispatch_lineage.sql`, `0002_client3_watch_foundation.sql`, `0003_watch_manager_brand_audit.sql` only to **orders_db_client3_old_client**. D1 migration backup automatically captured by Wrangler; **legacy row counts, stock physical/reserved aggregates, money sums and FK remained identical**.
+- Third Worker published only after post-migration checks passed. Main/Branch2 untouched.
+- Postrelease public HTTP smoke via [#41458490332](https://github.com/dymovicd123/Orders-app/actions/runs/41458490332) SUCCESS: main UI and JS bundle HTTP 200, unauthenticated brand and old orders routes denied. No authenticated visual browser QA yet.
+- Two pre-existing historical orders remain deliberately **unbranded** and visible via admin-only `/api/client3/watches/legacy-orders`; no automated migration/relabeling of their brand, money, reservations or items.
+- All three former managers remain **unassigned** to TAUWACH/WACHIZEN by default: admin must assign staff access explicitly from «Доступ к брендам» before managers can sell.
+
+### Release boundaries that must remain obvious
+
+- Single exact watch SKU per created order and full-item shipment (multi-SKU selective dispatch currently blocked).
+- Exchanges and their physical intake are **not shipped**; do not enable legacy unbranded exchange route.
+- Full warehouse stocktake not provided as UI yet (next quick SKU physical recount).
+- Financial tab is brand-filtered **financial_events** and per-payment-method net movement, not an independently reconciled physical cashbox or bank balance.
+- No claim of authenticated browser QA or comprehensive old-data business reconciliation; manual admin acceptance remains necessary.
+
+## 14. Same-day W2g follow-up — guarded SKU physical recount
+
+- Added server-only `POST /api/client3/watches/stock/count` and an admin form in catalog for one exact brand SKU and Office/Showcase. Compares `expectedPhysical` to existing stock, calls existing Main `quickInventoryStocktakeBatch` (no DIY write), preserves active reservations, requires explicit physical-count confirmation.
+- Count below active reservations requires a second explicit shortage acknowledgement. Main handles stale stock and idempotent replay.
+- Added positive real-engine quick count + same-request replay + changed-request rejection to `scripts/client3/test-watch-full-stock-engine-20261102.mjs`. [Isolated test #41458912439](https://github.com/dymovicd123/Orders-app/actions/runs/41458912439) SUCCESS.
+- A **separate third Worker-only hotfix** branch/workflow `client3/watch-update-stocktake-20261102` checks existing migrated schema and only deploys worker/assets, never reapplies D1 migrations. Update status must be verified before marking this feature live.
