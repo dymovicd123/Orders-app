@@ -80,3 +80,15 @@
 - После каждого релиза дописывать в этот файл: статус **не начато / в работе / в коде, не выпущено / выпущено / проверено в браузере**, ссылку на конкретный Actions run и реальные открытые проблемы.
 - **Не закрывать этап по SSR, CI, наличию CSS-классов или зеленой сборке.** Не писать «как в Main», пока действия не работают так же.
 - Приоритет: P0 = блокирует нормальную продажу/товарооборот; P1 = функциональное доведение и удобство; P2 = второстепенные разделы.
+
+## 02.11.2026 — Step 1 / verified Client3 release
+
+**Released:** https://github.com/dymovicd123/Orders-app/actions/runs/41495945406 (SUCCESS). Branch `client3/step1-main-catalog-references-20261102`.
+
+- Shared reference administrator actions: add/edit/delete (mechanism, bracelet material, dial color, leather strap color, payment method, delivery). New mechanism/bracelet/dial choices are in extension table `watch_reference_values_v5`; existing references are not rebuilt. Embedded whitespace retained in values; repeated whitespace normalized.
+- Watch SKU custom attributes are stored in `watch_variant_attributes_v5` referencing unchanged `watch_variants.id`. Old check-constraint fields, all existing watch/order IDs and Main's complex catalog triggers remain untouched.
+- Original Main `assertCatalogVariantMayDeactivate` reused for server deletion preview. Admin can remove one SKU, an execution group or a whole watch model from active workspace, preserving historic links; actual physical stock/reservations and unresolved work block removal. Retirement events written to original Main journal.
+- Client3 D1 V5 extension applied and all historical counts verified unchanged; remote `PRAGMA foreign_key_check` clean; exact third Worker deployed; anonymous access to protected watch API refused.
+- CI isolated checks: https://github.com/dymovicd123/Orders-app/actions/runs/41495558612 (SUCCESS). Tested full Main migrations, custom values with spaces, historical sold watch FK integrity, stock-blocked SKU removal, group removal, original retirement events, order/exchange/warehouse regression and TS/Vite build.
+
+**Remaining within full Step 1:** complete Main-equivalent *editing* of existing product names and variant attributes (not just creating/retiring), detailed brand-specific catalog usability and authenticated visual QA on desktop/mobile. Do not report Step 1 as fully closed until these have been implemented and tested. The user specifically requested deletion rather than mere hide toggles; the customer-facing action is deletion, with Main-compatible historical retention.
