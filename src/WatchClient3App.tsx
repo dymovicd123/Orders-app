@@ -118,7 +118,7 @@ export function WatchClient3App() {
   }, [user?.id, user?.mustChangePassword])
 
   useEffect(() => {
-    if (!user || user.mustChangePassword || !((tab === 'catalog' && brand) || (tab === 'create' && brands.length))) {
+    if (!user || user.mustChangePassword || !(((tab === 'catalog'||tab === 'warehouse') && brand) || (tab === 'create' && brands.length))) {
       setModels([])
       return
     }
@@ -155,7 +155,7 @@ export function WatchClient3App() {
     setLastOrderBrand(draft.brand)
     setWarning(result.pendingReservation?(result.warning||'Резерв часов требует проверки.'): '')
     setError('')
-    navigate('orders')
+    goTo('orders')
   }
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
