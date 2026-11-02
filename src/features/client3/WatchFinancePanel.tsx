@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import '../../styles/client3-watch-finance.css'
 type Event={id:number;eventDate:string;eventType:string;amountDelta:number;paymentMethod:string|null;externalOrderId:string;comment:string|null}
 type Method={method:string;incoming:number;outgoing:number;net:number}
@@ -53,15 +54,17 @@ export function WatchFinancePanel({brands}:{brands:readonly WatchBrand[]}) {
           <span>Поступило: {amount(m.incoming)} · Возвраты: {amount(m.outgoing)} · Итог: {amount(m.net)}</span></div>)}
       </div>}
       {result.rows.length===0?<p>За этот месяц денежных событий нет.</p>:
-        <div className="watch-finance-list">
-          {result.rows.map(event=><article key={event.id}>
-            <div><strong>{event.externalOrderId}</strong><small>{event.eventDate} · {event.paymentMethod||'Способ не указан'}</small></div>
-            <div><strong>{event.eventType}</strong><small>{event.comment||'Движение по заказу'}</small></div>
-            <strong className={event.amountDelta<0?'watch-finance-out':'watch-finance-in'}>
-              {event.amountDelta>0?'+':''}{amount(event.amountDelta)}
-            </strong>
-          </article>)}
-        </div>}
+        <LinkedTableScroll className="watch-main-finance-scroll" ariaLabel="История денежных событий">
+          <table className="watch-main-finance-table">
+            <thead><tr><th>Дата</th><th>Заказ</th><th>Операция</th><th>Способ оплаты</th><th>Комментарий</th><th>Сумма</th></tr></thead>
+            <tbody>{result.rows.map(event=><tr key={event.id}>
+              <td>{event.eventDate}</td><td><strong>{event.externalOrderId||'—'}</strong></td>
+              <td>{event.eventType}</td><td>{event.paymentMethod||'Не указан'}</td>
+              <td>{event.comment||'—'}</td><td className={event.amountDelta<0?'watch-finance-out':'watch-finance-in'}>
+                {event.amountDelta>0?'+':''}{amount(event.amountDelta)}</td>
+            </tr>)}</tbody>
+          </table>
+        </LinkedTableScroll>}
       <div className="watch-finance-pages"><button disabled={busy||page===0} onClick={()=>setPage(p=>p-1)}>Назад</button>
         <span>Страница {page+1}</span>
         <button disabled={busy||!result.hasMore} onClick={()=>setPage(p=>p+1)}>Дальше</button></div>
