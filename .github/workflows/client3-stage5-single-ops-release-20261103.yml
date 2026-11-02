@@ -18,14 +18,17 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 2}
+        with: {fetch-depth: 3}
       - uses: actions/setup-node@v4
         with: {node-version: '24',cache: npm}
       - name: Release gate exact accepted candidate, third Worker and D1 only
         run: |
-          set -euo pipefail
+          set -eEuo pipefail
+          trap 'printf "RELEASE_GATE_FAILED line %s: %s\\n" "$LINENO" "$BASH_COMMAND"' ERR
           test "$GITHUB_REF" = refs/heads/client3/stage5-single-main-operations-20261103
-          test "$(git rev-parse HEAD^)" = 705a05d9d5283cd50b204235819c507d8a61b27e
+          test "$(git rev-parse HEAD^)" = c5e2d46d244ced570f8f106221689da056a6e18d
+          # Only the audited workflow itself may differ from accepted application SHA.
+          test "$(git diff --name-only 705a05d9d5283cd50b204235819c507d8a61b27e HEAD)" = .github/workflows/client3-stage5-single-ops-release-20261103.yml
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-stage5-single-ops-release-20261103.yml
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41529929795 --jq .conclusion)" = success
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41529929795 --jq .head_sha)" = 705a05d9d5283cd50b204235819c507d8a61b27e
