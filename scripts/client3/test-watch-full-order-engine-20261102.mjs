@@ -8,6 +8,7 @@ import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
+import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -497,6 +498,63 @@ const wrongPrice=await parse(correctClient3WatchItemPrices(db,manager,1,editOrde
 assert.equal(wrongPrice.status,409,'Stale saved price cannot overwrite latest financial total')
 assert.equal(count('inventory_movements'),beforeCorrectMoves)
 assert.equal(count('payments'),beforeCorrectPayments)
+// Admin-only watch-specific operational metadata: no Main stock/money changes.
+const watchBefore=sqlite.prepare(`SELECT delivery_full_address AS deliveryAddress,
+ postal_code AS postalCode,urgent,shipping_deadline_at AS shippingDeadlineAt
+ FROM watch_order_details WHERE order_id=?`).get(editOrderId)
+const engraveBefore=sqlite.prepare(`SELECT oi.id AS orderItemId,wi.engraving_text AS engravingText
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(editOrderId)
+const expectedWatch={deliveryAddress:watchBefore.deliveryAddress,
+ postalCode:watchBefore.postalCode,urgent:watchBefore.urgent===1,
+ shippingDeadlineAt:watchBefore.shippingDeadlineAt,items:engraveBefore}
+const afterWatch={...expectedWatch,deliveryAddress:'Улица Новая 10',
+ postalCode:'010000',urgent:!expectedWatch.urgent,
+ shippingDeadlineAt:'2026-11-18T12:00:00.000Z',
+ items:engraveBefore.map(x=>({...x,engravingText:'Новая гравировка'}))}
+const adminWatchRequest={requestId:'watch-admin-logistic-edit-20261103-01',
+ expected:expectedWatch,next:afterWatch}
+const beforeAdminMovements=count('inventory_movements'),beforeAdminMoney=count('payments')
+const adminWatchChanged=await parse(correctClient3AdminWatchDetails(
+ db,admin,1,editOrderId,adminWatchRequest))
+assert.equal(adminWatchChanged.ok,true,JSON.stringify(adminWatchChanged))
+assert.equal(sqlite.prepare('SELECT delivery_full_address FROM watch_order_details WHERE order_id=?')
+ .get(editOrderId).delivery_full_address,'Улица Новая 10')
+assert.equal(sqlite.prepare('SELECT engraving_text FROM watch_order_item_details WHERE order_item_id=?')
+ .get(engraveBefore[0].orderItemId).engraving_text,'Новая гравировка')
+assert.equal((await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId,adminWatchRequest))).alreadyApplied,true)
+assert.equal((await parse(correctClient3AdminWatchDetails(db,manager,1,editOrderId,{
+ ...adminWatchRequest,requestId:'watch-manager-should-deny-20261103'
+}))).status,403)
+assert.equal((await parse(correctClient3AdminWatchDetails(db,admin,2,editOrderId,{
+ ...adminWatchRequest,requestId:'watch-cross-admin-20261103'
+}))).status,404)
+assert.equal((await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId,{
+ ...adminWatchRequest,requestId:'watch-admin-stale-20261103',
+ next:{...afterWatch,deliveryAddress:'Хочу переписать без обновления'}
+}))).status,409)
+assert.equal(count('inventory_movements'),beforeAdminMovements)
+assert.equal(count('payments'),beforeAdminMoney)
+sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-03T14:00:00Z' WHERE order_id=?")
+ .run(editOrderId)
+const readyBlocked=await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId,{
+ requestId:'watch-admin-ready-engraving-20261103',expected:afterWatch,
+ next:{...afterWatch,items:afterWatch.items.map(x=>({...x,engravingText:'Нельзя после готово'}))}
+}))
+assert.equal(readyBlocked.status,409,'Engraving is immutable once marked ready')
+const shippedDetail=sqlite.prepare(`SELECT delivery_full_address AS deliveryAddress,
+ postal_code AS postalCode,urgent,shipping_deadline_at AS shippingDeadlineAt
+ FROM watch_order_details WHERE order_id=?`).get(selectiveOrder.orderId)
+const shippedItems=sqlite.prepare(`SELECT oi.id AS orderItemId,wi.engraving_text AS engravingText
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(selectiveOrder.orderId)
+const shippedExpected={deliveryAddress:shippedDetail.deliveryAddress,postalCode:shippedDetail.postalCode,
+ urgent:shippedDetail.urgent===1,shippingDeadlineAt:shippedDetail.shippingDeadlineAt,items:shippedItems}
+const shippedBlocked=await parse(correctClient3AdminWatchDetails(db,admin,1,selectiveOrder.orderId,{
+ requestId:'watch-admin-shipped-20261103',expected:shippedExpected,
+ next:{...shippedExpected,postalCode:'999999'}
+}))
+assert.equal(shippedBlocked.status,409,'Admin cannot revise historical shipment destination')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
