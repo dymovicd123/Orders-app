@@ -11,6 +11,7 @@ import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
+import {listClient3WatchReferences,createClient3WatchReference} from './client3-watch-references.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import { json, readJson } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
@@ -240,6 +241,12 @@ export async function markWatchLogisticsReady(
 export async function routeClient3Watches(
   db:D1Database,request:Request,url:URL,actor:AuthUser,
 ):Promise<Response|null> {
+  if(url.pathname==='/api/client3/watches/references'&&request.method==='GET')
+    return listClient3WatchReferences(db,actor)
+  if(url.pathname==='/api/client3/watches/references'&&request.method==='POST'){
+    const input=await readJson<{kind?:unknown;value?:unknown}>(request)
+    return createClient3WatchReference(db,actor,input)
+  }
   if(url.pathname==='/api/client3/watches/stock/count'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;source?:unknown;expectedPhysical?:unknown;countedQuantity?:unknown;requestId?:unknown;confirmed?:unknown;allowShortage?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
