@@ -4,15 +4,13 @@ import {DatabaseSync} from 'node:sqlite'
 import {createClient3WatchReference,listClient3WatchReferences} from '../../worker/domains/client3-watch-references.ts'
 
 const sqlite=new DatabaseSync(':memory:')
-sqlite.exec(`PRAGMA foreign_keys=ON;
-  CREATE TABLE watch_variants (
-    bracelet_material TEXT NOT NULL, bracelet_color TEXT NOT NULL DEFAULT ''
-  );
-  INSERT INTO watch_variants VALUES ('leather','ЧЁРНЫЙ'),('steel','');
-`)
-const migration=fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8')
-sqlite.exec(migration)
-sqlite.exec(migration)
+sqlite.exec('PRAGMA foreign_keys=ON')
+for(const file of fs.readdirSync('migrations').filter(x=>/^\\d+.*\\.sql$/.test(x)).sort())
+  sqlite.exec(fs.readFileSync('migrations/'+file,'utf8'))
+for(const file of fs.readdirSync('migrations/client3-watch').filter(x=>/^\\d+.*\\.sql$/.test(x)).sort())
+  sqlite.exec(fs.readFileSync('migrations/client3-watch/'+file,'utf8'))
+sqlite.exec("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'TEST')")
+sqlite.exec("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'male','quartz','leather','black','ЧЁРНЫЙ')")
 const prepared=(sql,args=[])=>({
   bind(...values){return prepared(sql,values)},
   async first(){return sqlite.prepare(sql).get(...args)||null},
@@ -52,10 +50,12 @@ const unauthorized=await parse(createClient3WatchReference(db,manager,{
   kind:'paymentMethods',value:'Fake',
 }))
 assert.equal(unauthorized.status,403)
-const protectedKind=await parse(createClient3WatchReference(db,admin,{
-  kind:'movements',value:'unsafe',
+const custom=await parse(createClient3WatchReference(db,admin,{
+  kind:'movements',value:'Механизм с турбийоном',
 }))
-assert.equal(protectedKind.status,400)
+assert.equal(custom.status,201)
+assert((await parse(listClient3WatchReferences(db,manager))).rows.some(x=>
+  x.kind==='movements'&&x.value==='Механизм с турбийоном'))
 assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM watch_reference_values WHERE kind='leatherColors' AND value='ТЁМНО-СИНИЙ'").get().c,1)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
