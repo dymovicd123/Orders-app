@@ -58,6 +58,8 @@ jobs:
           assert(resolver.includes('normalizeCatalogProductIdentityKey'))
           assert(resolver.includes('watchReferenceIdentityKey'))
           assert(resolver.includes('WATCH_SYNONYMS'))
+          assert(resolver.includes("standard('bracelets',raw.braceletMaterial"))
+          assert(resolver.includes("standard('movements',raw.movement"))
           assert(resolver.includes('matchReference('))
           assert(resolver.includes('Характеристика «'))
           assert(resolver.includes("known.length>1"))
