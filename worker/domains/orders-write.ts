@@ -1930,10 +1930,30 @@ export async function updateOrderCritical(
 
         rewritePreResolvedCatalog = [];
         const observedByVariant = new Map<string, number>();
-        for (const item of nextItems) {
-          const resolved = item.isWorkshop
-            ? await resolveWorkshopCatalogProductOnly(db, item)
-            : await resolveCatalogProductAndVariant(db, item, timestamp);
+        for (const [index,item] of nextItems.entries()) {
+          const exact=options.watchRewrite?.lines[index];
+          let resolved:{productId:number|null;variantId:number|null};
+          if(exact){
+            // Watch SKU identity is not inferable from the Main garment
+            // resolver's name/size projection: the Client3 server already
+            // verified each SKU against the chosen watch brand. Verify again
+            // INSIDE the Main critical preflight before reversing old reserves.
+            const verified=await db.prepare(`SELECT wv.id FROM watch_variants wv
+              JOIN watch_products wp ON wp.id=wv.watch_product_id
+              JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id
+              WHERE wv.id=? AND wp.brand_id=? AND wp.catalog_product_id=?
+                AND wv.catalog_variant_id=? AND wv.is_active=1
+                AND wp.is_active=1 AND cv.is_active=1 LIMIT 1`)
+              .bind(exact.watchVariantId,options.watchRewrite!.brandId,
+                exact.catalogProductId,exact.catalogVariantId).first<{id:number}>();
+            if(!verified?.id)
+              throw new CriticalOperationConflictError('Комплектация часов изменена или удалена из каталога. Обновите заказ.');
+            resolved={productId:exact.catalogProductId,variantId:exact.catalogVariantId};
+          }else{
+            resolved=item.isWorkshop
+              ?await resolveWorkshopCatalogProductOnly(db,item)
+              :await resolveCatalogProductAndVariant(db,item,timestamp);
+          }
           rewritePreResolvedCatalog.push({ productId: resolved.productId, variantId: resolved.variantId });
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
