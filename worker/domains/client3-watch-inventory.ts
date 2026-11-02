@@ -124,7 +124,10 @@ export async function transferClient3WatchStock(
         'SELECT COALESCE(SUM(quantity),0) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock WHERE inventory_source=? AND variant_id=?',
       ).bind(fromSource,Number(row.variantId)).first<{physical:number;reserved:number}>()
       const physical=Math.max(0,Number(stock?.physical||0))
-      const reserved=Math.max(0,Number(stock?.reserved||0))
+      const activeReservations=await db.prepare(
+        "SELECT COALESCE(SUM(quantity),0) AS reserved FROM inventory_reservations WHERE inventory_source=? AND variant_id=? AND status='active'",
+      ).bind(fromSource,Number(row.variantId)).first<{reserved:number}>()
+      const reserved=Math.max(0,Number(stock?.reserved||0),Number(activeReservations?.reserved||0))
       if(physical!==expectedPhysical)
         return fail('WATCH_TRANSFER_STALE','Остаток изменился. Обновите страницу перед перемещением.',409)
       if(physical-reserved<quantity)
