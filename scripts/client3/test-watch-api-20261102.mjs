@@ -20,6 +20,7 @@ sql.exec(`
  CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER);
  CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER);
+ CREATE TABLE inventory_reservations(order_item_id INTEGER PRIMARY KEY,status TEXT);
  INSERT INTO managers(id,name) VALUES (1,'Alice'),(2,'Bob');
  INSERT INTO app_users VALUES (9);
  INSERT INTO catalog_products VALUES(10),(11);
@@ -29,6 +30,7 @@ sql.exec(`
  INSERT INTO order_items VALUES(200,1,1),(201,2,1);
  INSERT INTO inventory_stock VALUES(1,'warehouse',100,4,1),(2,'boutique',100,2,0),(3,'warehouse',101,9,0);
  INSERT INTO payments VALUES(1,1,90000),(2,2,60000);
+ INSERT INTO inventory_reservations VALUES(200,'active'),(201,'active');
 `)
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0003_watch_manager_brand_audit.sql','utf8'))
@@ -91,6 +93,7 @@ const allUrl=new URL('https://test.invalid/api/client3/watches/logistics')
 x=await j(await listWatchLogistics(db,alice,allUrl))
 assert.equal(x.rows.length,1);assert.equal(x.rows[0].brand,'TAUWACH')
 assert.equal(x.rows[0].engravingText,'A + M')
+assert.equal(x.rows[0].reservationStatus,'active')
 assert.equal(x.rows[0].postalCode,'050000')
 assert.equal(x.rows[0].legacySource,'warehouse')
 assert.equal(x.rows[0].shippingStatus,'not_sent')
