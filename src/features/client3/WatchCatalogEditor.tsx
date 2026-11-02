@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
+import '../../styles/w6-catalog-browse.css'
+import '../../styles/w6-2-catalog-master-detail.css'
+import '../../styles/w6-2-catalog-density.css'
+import '../../styles/w6-3-catalog-polish.css'
+import '../../styles/w6-4-catalog-sku-card.css'
+import '../../styles/w6-4a-variant-editor-visibility.css'
+import '../../styles/w9-warehouse-catalog-cleanup.css'
+import '../../styles/client3-watch-main-catalog.css'
 import '../../styles/client3-watch-catalog-editor.css'
 
 type CatalogRow={
@@ -37,6 +45,11 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
   const [rows,setRows]=useState<CatalogRow[]>([])
   const [operation,setOperation]=useState<'arrival'|'transfer'|'writeoff'|'count'>('arrival')
   const [modelName,setModelName]=useState('')
+  const [catalogSearch,setCatalogSearch]=useState('')
+  const [catalogGender,setCatalogGender]=useState<'all'|'male'|'female'>('all')
+  const [showNewModel,setShowNewModel]=useState(false)
+  const [showNewVariant,setShowNewVariant]=useState(false)
+
   const [modelId,setModelId]=useState(0)
   const [gender,setGender]=useState<WatchVariantInput['gender']>('male')
   const [movement,setMovement]=useState<WatchVariantInput['movement']>('quartz')
@@ -253,6 +266,186 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
       setReload(x=>x+1)
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию')}
     finally{setBusy(false)}
+  }
+  if(view==='catalog'){
+    const query=catalogSearch.trim().toLocaleLowerCase('ru')
+    const catalogModels=models.filter(model=>{
+      if(!model.name.toLocaleLowerCase('ru').includes(query))return false
+      if(catalogGender==='all')return true
+      return rows.some(row=>row.watchProductId===model.id&&row.gender===catalogGender)
+    })
+    const selected=models.find(model=>model.id===modelId)
+    const variants=rows.filter(row=>row.watchProductId===modelId&&row.watchVariantId)
+    const positionCount=rows.filter(row=>row.watchVariantId).length
+    const hasExplicitDetail=Boolean(selected)||showNewModel
+    const variantLabel=(row:CatalogRow)=>[
+      textFor(WATCH_OPTIONS.genders,row.gender),
+      textFor(WATCH_OPTIONS.movements,row.movement),
+      textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial),
+      textFor(WATCH_OPTIONS.dialColors,row.dialColor),
+      row.braceletColor?'Ремешок: '+row.braceletColor:''
+    ].filter(Boolean).join(' · ')
+    return <div className="inventory-catalog-panel w6-catalog-panel client3-watch-catalog-main"
+      id="catalog" data-catalog-view="main-master-detail">
+      <div className="inventory-panel-headline w6-catalog-headline catalog-clean-headline">
+        <div><h3>Товары</h3><p>Каталог моделей часов, комплектации и цены.</p></div>
+        <div className="w6-catalog-head-actions">
+          <button type="button" className="secondary compact" disabled={loading}
+            onClick={()=>setReload(x=>x+1)}>Обновить</button>
+        </div>
+      </div>
+      <div className="catalog-clean-taskbar" aria-label="Настройки каталога">
+        <div className="catalog-clean-taskbar-main"><span className="catalog-clean-taskbar-label">
+          {brand} · Модели, исполнение и цена</span></div>
+        <button type="button" className="catalog-clean-settings"
+          onClick={()=>{setShowNewModel(false);setShowNewVariant(true);if(!selected&&models.length)setModelId(models[0].id)}}>
+          Характеристики часов</button>
+      </div>
+      <div className="w6-catalog-toolbar">
+        <label className="w6-catalog-search"><span>Поиск</span>
+          <input value={catalogSearch} onChange={e=>setCatalogSearch(e.target.value)}
+            placeholder="Название модели…"/></label>
+        <div className="catalog-category-switcher w6-catalog-category-switcher">
+          {([['all','Все'],['male','Мужские'],['female','Женские']] as const).map(([key,label])=>
+            <button key={key} type="button" className={catalogGender===key?'is-active':''}
+              onClick={()=>setCatalogGender(key)}>{label}</button>)}
+        </div>
+        <div className="w6-catalog-toolbar-actions">
+          <button className="primary w6-toolbar-new-product" type="button"
+            onClick={()=>{setShowNewModel(true);setShowNewVariant(false);setModelName('')}}>
+            + Новый товар</button>
+        </div>
+        <div className="w6-catalog-stats" aria-label="Сводка каталога">
+          <span>Всего: <b>{models.length}</b> моделей</span>
+          <span><b>{positionCount}</b> комплектаций</span>
+          <span><b>{rows.filter(row=>row.watchVariantId&&!row.catalogVariantId).length}</b> без складского SKU</span>
+        </div>
+      </div>
+      {error&&<p role="alert" className="watch-catalog-editor-error">{error}</p>}
+      {notice&&<p role="status" className="watch-catalog-editor-notice">{notice}</p>}
+      <div className={'catalog-master-detail '+(hasExplicitDetail?'has-explicit-selection ':'')+
+        (showNewModel?'is-new-product':'')}>
+        <aside className="catalog-master-pane" aria-label="Список товаров">
+          <div className="catalog-master-pane-head"><strong>{catalogModels.length} моделей</strong>
+            <span>в текущем фильтре</span></div>
+          <div className="catalog-master-list">
+            {catalogModels.map(model=><button key={model.id} type="button"
+              className={'catalog-master-row '+(!showNewModel&&modelId===model.id?'is-selected':'')}
+              onClick={()=>{setModelId(model.id);setShowNewModel(false);setShowNewVariant(false);setError('')}}>
+              <span><strong>{model.name}</strong>
+                <em>{rows.filter(row=>row.watchProductId===model.id&&row.watchVariantId).length} позиций</em>
+              </span><b aria-hidden="true">›</b>
+            </button>)}
+            {catalogModels.length===0&&<div className="empty-state compact-empty">
+              {loading?'Загружаем каталог…':'Моделей нет. Добавьте новую модель или измените фильтр.'}</div>}
+          </div>
+        </aside>
+        <section className="catalog-detail-pane" aria-label="Карточка товара">
+          <button className="catalog-detail-back secondary compact" type="button"
+            onClick={()=>{setShowNewModel(false);setShowNewVariant(false);setModelId(0)}}>
+            ← К товарам</button>
+          {showNewModel?<div className="catalog-detail-editor catalog-new-product-editor">
+            <div className="catalog-detail-editor-head">
+              <div><span className="catalog-detail-eyebrow">Новый товар</span>
+                <h3>Добавить модель часов</h3>
+                <p>Добавьте название. Комплектации создаются в карточке модели.</p></div>
+              <button type="button" className="secondary compact"
+                onClick={()=>setShowNewModel(false)}>Отмена</button>
+            </div>
+            <form className="catalog-product-form catalog-product-form-v2 w6-new-product-form"
+              onSubmit={async e=>{await createModel(e);setShowNewModel(false)}}>
+              <label className="wide-field"><span>Название модели</span>
+                <input required maxLength={150} value={modelName}
+                  onChange={e=>setModelName(e.target.value)} placeholder="Название часов"/></label>
+              <button type="submit" className="primary" disabled={busy||!modelName.trim()}>
+                {busy?'Сохраняю…':'Добавить товар'}</button>
+            </form>
+          </div>:selected?<div>
+            <header className="catalog-detail-head">
+              <div className="catalog-detail-title">
+                <span className="catalog-detail-eyebrow">Товар</span><h2>{selected.name}</h2>
+                <div className="catalog-detail-meta catalog-product-commercial-anchor">
+                  <span><b>{variants.length}</b> комплектаций</span>
+                  <span><b>{variants.filter(v=>v.catalogVariantId).length}</b> складских SKU</span>
+                </div>
+              </div>
+              <div className="catalog-detail-actions">
+                <button type="button" className="primary compact"
+                  onClick={()=>setShowNewVariant(true)}>+ Позиция</button>
+              </div>
+            </header>
+            {showNewVariant&&<section className="catalog-detail-editor catalog-variant-editor-v2 w6-variant-editor catalog-clean-editor">
+              <div className="catalog-detail-editor-head">
+                <div><span className="catalog-detail-eyebrow">Новая позиция</span>
+                  <h3>Добавить комплектацию</h3>
+                  <p>Пол, механизм, браслет и цвета часов. Размеры и длина не используются.</p></div>
+                <button type="button" className="secondary compact"
+                  onClick={()=>setShowNewVariant(false)}>Закрыть</button>
+              </div>
+              <form className="subgrid inventory-subgrid catalog-variant-form-grid w6-variant-form-grid"
+                onSubmit={async e=>{await createVariant(e);setShowNewVariant(false)}}>
+                <label>Пол<select value={gender} onChange={e=>setGender(e.target.value as typeof gender)}>
+                  {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+                </select></label>
+                <label>Механизм<select value={movement} onChange={e=>setMovement(e.target.value as typeof movement)}>
+                  {WATCH_OPTIONS.movements.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+                </select></label>
+                <label>Браслет<select value={braceletMaterial}
+                  onChange={e=>setBraceletMaterial(e.target.value as typeof braceletMaterial)}>
+                  {WATCH_OPTIONS.braceletMaterials.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+                </select></label>
+                <label>Цвет циферблата<select value={dialColor}
+                  onChange={e=>setDialColor(e.target.value as typeof dialColor)}>
+                  {WATCH_OPTIONS.dialColors.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+                </select></label>
+                {braceletMaterial==='leather'&&<label>Цвет кожаного ремешка
+                  <input required maxLength={80} value={braceletColor}
+                    onChange={e=>setBraceletColor(e.target.value)}/></label>}
+                <button className="primary" type="submit" disabled={busy||!modelId}>
+                  {busy?'Сохраняю…':'Добавить позицию'}</button>
+              </form>
+            </section>}
+            <div className="client3-main-catalog-variants">
+              {variants.map(row=>{
+                const office=Number(row.officePhysical)||0
+                const showcase=Number(row.showcasePhysical)||0
+                return <article className="client3-main-catalog-variant" key={row.watchVariantId}>
+                  <div className="client3-main-catalog-variant-head">
+                    <div><span className="catalog-detail-eyebrow">ИСПОЛНЕНИЕ</span>
+                      <h4>{variantLabel(row)}</h4>
+                      <small>Офис: {office} · Витрина: {showcase}</small></div>
+                    <strong>{office+showcase} <small>на месте</small></strong>
+                  </div>
+                  {row.watchVariantId&&row.catalogProductId&&row.catalogVariantId?
+                  <div className="client3-main-catalog-variant-price">
+                    <span>Цена продажи по каталогу, ₸</span>
+                    {priceVariantId===row.watchVariantId?<div className="client3-main-catalog-price-editor">
+                      <input type="number" min={0} max={1000000000} step={1}
+                        aria-label="Новая цена по каталогу" value={priceDraft}
+                        onChange={e=>setPriceDraft(e.target.value)}/>
+                      <button type="button" className="primary compact" disabled={busy}
+                        onClick={()=>void savePrice(row)}>Сохранить</button>
+                      <button type="button" className="secondary compact" disabled={busy}
+                        onClick={()=>setPriceVariantId(null)}>Отмена</button>
+                    </div>:<div className="client3-main-catalog-price-editor">
+                      <strong>{row.catalogPriceSnapshot==null?'Не задана':Number(row.catalogPriceSnapshot).toLocaleString('ru-RU')+' ₸'}</strong>
+                      <button type="button" className="secondary compact"
+                        onClick={()=>{setPriceVariantId(row.watchVariantId);setPriceDraft(row.catalogPriceSnapshot==null?'':String(row.catalogPriceSnapshot))}}>
+                        Изменить цену</button>
+                    </div>}
+                  </div>:<div className="client3-main-catalog-variant-price">
+                    <span>Складская позиция ещё не подготовлена — продажа недоступна</span>
+                    {row.watchVariantId&&<button type="button" className="primary compact" disabled={busy}
+                      onClick={()=>void provisionVariant(row.watchVariantId!)}>Подготовить складской SKU</button>}
+                  </div>}
+                </article>
+              })}
+              {!variants.length&&<div className="empty-state">Комплектаций ещё нет. Нажмите «+ Позиция».</div>}
+            </div>
+          </div>:<div className="empty-state">Выберите модель слева или добавьте новый товар.</div>}
+        </section>
+      </div>
+    </div>
   }
   return <section className={"watch-catalog-editor watch-catalog-editor-"+view}>
     {view==='catalog'?<header><h3>Модели и комплектации · {brand}</h3>
