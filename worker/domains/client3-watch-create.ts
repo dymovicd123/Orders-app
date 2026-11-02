@@ -1,7 +1,7 @@
 import { json } from '../core/http.ts'
 import type { AuthUser, OrderInput } from '../core/types.ts'
 import {
-  validateWatchOrderInput, WATCH_PAYMENTS, type WatchBrand, type WatchOrderInput,
+  validateWatchOrderInput, type WatchBrand, type WatchOrderInput,
   type WatchPaymentMethod,
 } from '../../shared/client3/watch-domain.ts'
 import { createOrder } from './orders-write.ts'
@@ -60,9 +60,15 @@ export async function createClient3WatchOrder(
       : raw.payments
     if(!Array.isArray(entries)||entries.length>8)
       return fail('WATCH_PAYMENTS_INVALID','Можно указать до восьми отдельных оплат.')
+    const configured=await db.prepare(
+      "SELECT value FROM watch_reference_values WHERE kind='paymentMethods' AND is_active=1",
+    ).all<{value:string}>()
+    const paymentMethods=new Set((configured.results||[]).map(row=>row.value))
+    if(!paymentMethods.has(input.paymentMethod))
+      return fail('WATCH_PAYMENT_METHOD_INVALID','Способ оплаты отсутствует в справочниках.')
     let received=0
     for(const entry of entries){
-      if(!entry || !WATCH_PAYMENTS.includes(entry.method) ||
+      if(!entry || !paymentMethods.has(entry.method) ||
         typeof entry.amount!=='number'||!Number.isSafeInteger(entry.amount)||entry.amount<=0)
         return fail('WATCH_PAYMENT_INVALID','У каждой оплаты укажите способ и положительную сумму в тенге.')
       received+=entry.amount
