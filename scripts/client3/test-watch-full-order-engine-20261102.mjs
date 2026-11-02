@@ -966,7 +966,10 @@ const attached=sqlite.prepare(`SELECT wi.watch_variant_id,wi.engraving_text,oi.s
  FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
  WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1`)
  .get(stage4Pay.created.orderId)
-assert.equal(attached.watch_variant_id,2)
+assert.notEqual(attached.watch_variant_id,1,'New SKU must not be the original watch')
+assert.equal(sqlite.prepare(`SELECT wp.brand_id FROM watch_variants wv
+ JOIN watch_products wp ON wp.id=wv.watch_product_id WHERE wv.id=?`)
+ .get(attached.watch_variant_id).brand_id,1)
 assert.equal(attached.engraving_text,'Новая гравировка')
 const previousPaymentCount=count('payments')
 const retryExtra=await parse(exchangeClient3WatchSet(
