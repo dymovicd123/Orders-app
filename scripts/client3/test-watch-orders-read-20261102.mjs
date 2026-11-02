@@ -44,6 +44,7 @@ sql.exec(`CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT,phone_
  ALTER TABLE order_items ADD COLUMN line_total INTEGER;
  ALTER TABLE order_items ADD COLUMN catalog_price_snapshot INTEGER;
  UPDATE order_items SET line_total=unit_price*quantity;`)
+sql.exec('ALTER TABLE payments ADD COLUMN comment TEXT')
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
