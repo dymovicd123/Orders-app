@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite'
 import {createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference,
   listClient3WatchReferences} from '../../worker/domains/client3-watch-references.ts'
 import {registerWatchModel,registerWatchVariant} from '../../worker/domains/client3-watch-catalog.ts'
+import {editClient3WatchModel,editClient3WatchVariant} from '../../worker/domains/client3-watch-catalog-edit.ts'
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
@@ -143,6 +144,62 @@ removed=await parse(deleteClient3WatchCatalog(db,admin,1,{kind:'product',watchPr
 assert.equal(removed.ok,true)
 assert.equal(sql.prepare('SELECT is_active FROM watch_products WHERE id=?').get(p).is_active,0)
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM watch_variants WHERE id=?').get(v).n,1)
+// Main editing parity: model rename is presentation-only, with optimistic locking.
+const editable=await parse(registerWatchModel(db,admin,1,{modelName:'Тест Редактируемая Модель'}))
+assert.equal(editable.status,201)
+const editableId=editable.watchProductId
+const rename=await parse(editClient3WatchModel(db,admin,1,{
+ watchProductId:editableId,expectedName:'Тест Редактируемая Модель',
+ modelName:'Часы   с   пробелами',
+}))
+assert.equal(rename.ok,true,JSON.stringify(rename))
+assert.equal(sql.prepare('SELECT model_name FROM watch_products WHERE id=?').get(editableId).model_name,'Часы с пробелами')
+assert.equal((await parse(editClient3WatchModel(db,admin,1,{
+ watchProductId:editableId,expectedName:'Тест Редактируемая Модель',modelName:'Опоздавший запрос',
+}))).status,409)
+assert.equal((await parse(editClient3WatchModel(db,manager,1,{
+ watchProductId:editableId,expectedName:'Часы с пробелами',modelName:'Нельзя',
+}))).status,403)
+// Brand scope: a matching ID in another brand cannot be renamed from brand 1.
+assert.equal((await parse(editClient3WatchModel(db,admin,2,{
+ watchProductId:editableId,expectedName:'Часы с пробелами',modelName:'Чужой',
+}))).status,404)
+const oldDraft={gender:'female',movement:'quartz',braceletMaterial:'steel',dialColor:'black',braceletColor:''}
+const savedDraft=await parse(registerWatchVariant(db,admin,1,{watchProductId:editableId,...oldDraft}))
+assert.equal(savedDraft.status,201)
+const draftId=savedDraft.watchVariantId
+const updatedDraft={gender:'female',movement:'Механизм с турбийоном',
+ braceletMaterial:'Мягкая кожа',dialColor:'Тёмно синий',braceletColor:''}
+const changedDraft=await parse(editClient3WatchVariant(db,admin,1,{
+ watchProductId:editableId,watchVariantId:draftId,expected:oldDraft,...updatedDraft,
+}))
+assert.equal(changedDraft.ok,true,JSON.stringify(changedDraft))
+const rowDraft=sql.prepare('SELECT * FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId)
+assert.equal(rowDraft.movement,'Механизм с турбийоном')
+assert.equal(rowDraft.bracelet_material,'Мягкая кожа')
+assert.equal(sql.prepare('SELECT catalog_variant_id FROM watch_variants WHERE id=?').get(draftId).catalog_variant_id,null)
+assert.equal((await parse(editClient3WatchVariant(db,admin,1,{
+ watchProductId:editableId,watchVariantId:draftId,expected:oldDraft,...oldDraft,
+}))).status,409,'Stale edit cannot overwrite a prior draft')
+assert.equal((await parse(editClient3WatchVariant(db,manager,1,{
+ watchProductId:editableId,watchVariantId:draftId,expected:updatedDraft,...oldDraft,
+}))).status,403)
+assert.equal((await parse(editClient3WatchVariant(db,admin,2,{
+ watchProductId:editableId,watchVariantId:draftId,expected:updatedDraft,...oldDraft,
+}))).status,404)
+const secondDraft=await parse(registerWatchVariant(db,admin,1,{watchProductId:editableId,...oldDraft}))
+assert.equal(secondDraft.status,201)
+assert.equal((await parse(editClient3WatchVariant(db,admin,1,{
+ watchProductId:editableId,watchVariantId:secondDraft.watchVariantId,expected:oldDraft,...updatedDraft,
+}))).status,409,'Duplicate SKU prevention works across extension and legacy representations')
+const preparedDraft=await parse(provisionClient3WatchSku(db,admin,1,draftId))
+assert.equal(preparedDraft.status,200,JSON.stringify(preparedDraft))
+const linkedEdit=await parse(editClient3WatchVariant(db,admin,1,{
+ watchProductId:editableId,watchVariantId:draftId,expected:updatedDraft,...oldDraft,
+}))
+assert.equal(linkedEdit.status,409,'Linked identity not rewritten')
+assert.equal(sql.prepare('SELECT catalog_variant_id FROM watch_variants WHERE id=?').get(draftId).catalog_variant_id,preparedDraft.canonicalVariantId)
+assert.equal(sql.prepare('SELECT movement FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId).movement,'Механизм с турбийоном')
 assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(),[])
 sql.close()
 console.log('CLIENT3_MAIN_STEP1_PASS: editable multiword refs, custom canonical SKU, protected deletes, history intact')
