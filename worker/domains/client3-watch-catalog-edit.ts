@@ -94,7 +94,7 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
    // correct new watch from using that former combination. Preserve the watch ID.
    const sentinel='__WATCH_V5__'+crypto.randomUUID().replaceAll('-','')
    const result=await db.batch([
-     db.prepare(`UPDATE watch_variants v
+     db.prepare(`UPDATE watch_variants AS v
        SET gender=?,movement='quartz',bracelet_material='leather',
          dial_color='black',bracelet_color=?
        WHERE id=? AND watch_product_id=? AND is_active=1
