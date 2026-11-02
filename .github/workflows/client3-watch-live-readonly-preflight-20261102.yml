@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           url=https://orders-app-client3-old-client.orders-clothes.workers.dev
-          curl --fail-with-body --retry 3 -fsS "$url/api/auth/status" \
+          curl --fail-with-body --retry 3 -sS "$url/api/auth/status" \
             | jq -c '{ok,hasUsers,setupReady}' > /tmp/client3-setup-status.json
           jq -e '.ok==true' /tmp/client3-setup-status.json
           cat /tmp/client3-setup-status.json
