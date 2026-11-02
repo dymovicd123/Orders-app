@@ -376,7 +376,7 @@ const alreadySent=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOr
  items:[{orderItemId:selectRows[1].id,quantity:1}],
 }))
 assert.equal(alreadySent.status,409,'Sent line must not dispatch twice')
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready' WHERE order_id=?")
+sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T13:30:00Z' WHERE order_id=?")
  .run(selectiveOrder.orderId)
 const sendRemaining=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
  requestId:'watch-selective-send-1-20261102',
