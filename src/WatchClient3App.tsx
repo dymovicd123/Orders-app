@@ -3,6 +3,7 @@ import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
 import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
 import {WatchWarehouseMain} from './features/client3/WatchWarehouseMain'
+import {WatchStockMainBrowse} from './features/client3/WatchStockMainBrowse'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
@@ -342,8 +343,11 @@ export function WatchClient3App() {
           {canAdmin&&brand?(activeSection==='catalog'?
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
               onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
-            <WatchWarehouseMain key={activeSection+'-'+brand} brand={brand}
-              onStockChanged={()=>setCatalogVersion(x=>x+1)}/>):
+            activeSection==='operations'?
+              <WatchWarehouseMain key={'operation-'+brand} brand={brand}
+                onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
+              <WatchStockMainBrowse key={'stock-'+brand+'-'+catalogVersion}
+                brand={brand} canCorrect={canAdmin} onCorrect={()=>goTo('operations')}/>):
             <div className="watch-shell-model-list">
               {viewModels.map(model=><article key={model.watchVariantId}>
                 <strong>{model.modelName}</strong>
