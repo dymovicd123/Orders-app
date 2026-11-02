@@ -23,6 +23,20 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
+type WatchSection = 'orders'|'create'|'logistics'|'warehouse'|'catalog'|'returns'|'finance'|'staff'|'accounts'|'legacy'
+const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
+  orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
+  create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
+  logistics:{title:'Логистика',description:'Гравировка, сроки исполнения и подготовка к отправке.',area:'Рабочие процессы'},
+  warehouse:{title:'Склад',description:'Реальные остатки, резервы и складские операции.',area:'Товары и склад'},
+  catalog:{title:'Каталог товаров',description:'Модели, комплектации и каталожные цены.',area:'Товары и склад'},
+  returns:{title:'Приём возвратов',description:'Физическое поступление часов после возврата или обмена.',area:'Рабочие процессы'},
+  finance:{title:'Финансы',description:'Движение денежных средств и итоги продаж по брендам.',area:'Финансы'},
+  staff:{title:'Доступ к брендам',description:'Назначение менеджеров на TAUWACH и WACHIZEN.',area:'Администрирование'},
+  accounts:{title:'Учётные записи',description:'Доступ сотрудников и управление администраторами.',area:'Администрирование'},
+  legacy:{title:'Исторические заказы',description:'Заказы до перехода на новую систему, без изменения данных.',area:'Администрирование'},
+}
+const sections=Object.keys(sectionMeta) as WatchSection[]
 type LoginResponse = { ok: boolean; user?: User; message?: string }
 async function api<T extends { ok: boolean; message?: string }>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...init })
@@ -53,7 +67,8 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff' | 'orders' | 'finance' | 'returns' | 'legacy' | 'accounts'>('orders')
+  const [tab, setTab] = useState<WatchSection>('orders')
+  const [mobileNavOpen,setMobileNavOpen]=useState(false)
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
@@ -76,6 +91,16 @@ export function WatchClient3App() {
     } finally { setChecking(false) }
   }, [])
   useEffect(() => { void refreshAuth() }, [refreshAuth])
+  useEffect(()=>{
+    const syncHash=()=>{
+      const section=window.location.hash.slice(1) as WatchSection
+      if(sections.includes(section))setTab(section)
+    }
+    syncHash()
+    window.addEventListener('hashchange',syncHash)
+    return ()=>window.removeEventListener('hashchange',syncHash)
+  },[])
+
 
   useEffect(() => {
     if (!user || user.mustChangePassword) { setBrands([]); setBrand(''); return }
@@ -130,7 +155,7 @@ export function WatchClient3App() {
     setLastOrderBrand(draft.brand)
     setWarning(result.pendingReservation?(result.warning||'Резерв часов требует проверки.'): '')
     setError('')
-    setTab('orders')
+    navigate('orders')
   }
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
@@ -206,70 +231,134 @@ export function WatchClient3App() {
     </div>
   </main>
 
+  const canSales=brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')
+  const canAdmin=user.role==='admin'
+  const goTo=(next:WatchSection)=>{
+    setTab(next);setMobileNavOpen(false);setError('')
+    if(next==='create'){setSuccess('');setWarning('')}
+    if(window.location.hash!=='#'+next)window.location.hash=next
+  }
+  // Keep navigation role-aware even when the location hash is changed manually.
+  const activeSection:WatchSection=
+    (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
+    (!canSales&&['orders','create','warehouse','catalog','finance','returns'].includes(tab))
+      ? 'logistics':tab
+  const navItem=(section:WatchSection,label:string,important=false)=>
+    <button key={section} type="button"
+      className={'watch-shell-nav-item'+(important?' is-primary':'')}
+      aria-current={activeSection===section?'page':undefined}
+      onClick={()=>goTo(section)}>
+      <span className="watch-shell-nav-mark" aria-hidden="true"/>
+      <span>{label}</span>
+      {important&&<span className="watch-shell-nav-plus" aria-hidden="true">+</span>}
+    </button>
+  const meta=sectionMeta[activeSection]
   return <div className="watch-shell">
-    <header className="watch-shell-header">
-      <div><h1>TAUWACH <span>/ WACHIZEN</span></h1><p>Система часов и логистики</p></div>
-      <div className="watch-shell-session"><span>{fullName(user)}</span>
-        <button type="button" disabled={busy} onClick={() => void logout()}>Выйти</button>
+    <aside className={'watch-shell-sidebar'+(mobileNavOpen?' is-open':'')} aria-label="Боковая панель">
+      <div className="watch-shell-sidebar-top">
+        <div className="watch-shell-brand-mark" aria-hidden="true">S</div>
+        <div><strong>Система заказов</strong><small>Рабочая панель</small></div>
+        <button className="watch-shell-sidebar-close" type="button"
+          aria-label="Закрыть меню" onClick={()=>setMobileNavOpen(false)}>×</button>
       </div>
-    </header>
-    <nav className="watch-shell-nav" aria-label="Разделы">
-      {brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')&&<button type="button" aria-current={tab==='orders'?'page':undefined}
-        onClick={()=>setTab('orders')}>Заказы</button>}
-      <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
-        onClick={() => setTab('logistics')}>Логистика</button>
-      {brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')&&
-        <button type="button" aria-current={tab==='finance'?'page':undefined}
-          onClick={()=>setTab('finance')}>Финансы</button>}
-      {brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')&&
-        <button type="button" aria-current={tab==='returns'?'page':undefined}
-          onClick={()=>setTab('returns')}>Приём возвратов</button>}
-      {user.role==='admin'&&<button type="button" aria-current={tab==='legacy'?'page':undefined}
-        onClick={()=>setTab('legacy')}>Старая история</button>}
-      {user.role==='admin'&&<button type="button" aria-current={tab==='accounts'?'page':undefined}
-        onClick={()=>setTab('accounts')}>Учётные записи</button>}
-      {user.role==='admin'&&<button type="button" aria-current={tab==='staff'?'page':undefined}
-        onClick={()=>setTab('staff')}>Доступ к брендам</button>}
-      {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'create' ? 'page' : undefined}
-        onClick={() => { setTab('create');setError('');setSuccess('');setWarning('') }}>Новый заказ</button>}
-      {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'catalog' ? 'page' : undefined}
-        onClick={() => setTab('catalog')}>Каталог и остатки</button>}
-    </nav>
-    <main className="watch-shell-content">
-      {error && <p role="alert" className="watch-shell-error">{error}</p>}
-      {success && <p role="status" className="watch-shell-success">{success}</p>}
-      {warning && <p role="alert" className="watch-shell-warning">{warning}</p>}
-      {tab === 'accounts' ? <WatchUserAccessPanel/> : tab === 'legacy' ? <WatchLegacyOrdersPanel/> : tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'returns' ? (brands.length ? <WatchReturnsPanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'finance' ? (brands.length ? <WatchFinancePanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'orders' ? (brands.length ? <WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
-        ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
-          : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
-              isAdmin={user.role==='admin'} managers={managerChoices}
-              deliveryMethods={['Казпочта','Курьер','Самовывоз','Межгород']}
-              onSave={saveWatchOrder}/>
-        : tab === 'logistics'
-        ? <WatchLogisticsPanel brand="all"
-            canCompleteEngraving={user.role === 'admin' || user.employeeRole === 'Логист'}/>
-        : <section className="watch-shell-catalog">
-            <div className="watch-shell-catalog-header"><h2>Каталог часов</h2>
-              <label>Бренд <select value={brand} onChange={event => { setBrand(event.target.value as WatchBrand); setError('') }}>
-                {brands.map(x => <option key={x.code} value={x.code}>{x.name}</option>)}
+      <nav className="watch-shell-nav" aria-label="Основные разделы">
+        {canSales&&<div className="watch-shell-nav-group">
+          <div className="watch-shell-nav-group-label">Продажи</div>
+          {navItem('orders','Заказы')}
+          {navItem('create','Новый заказ',true)}
+        </div>}
+        <div className="watch-shell-nav-group">
+          <div className="watch-shell-nav-group-label">Рабочие процессы</div>
+          {navItem('logistics','Логистика')}
+          {canSales&&navItem('returns','Приём возвратов')}
+        </div>
+        {canSales&&<div className="watch-shell-nav-group">
+          <div className="watch-shell-nav-group-label">Товары и склад</div>
+          {navItem('warehouse','Склад')}
+          {navItem('catalog','Каталог товаров')}
+        </div>}
+        {canSales&&<div className="watch-shell-nav-group">
+          <div className="watch-shell-nav-group-label">Финансы</div>
+          {navItem('finance','Движение денег')}
+        </div>}
+        {canAdmin&&<div className="watch-shell-nav-group">
+          <div className="watch-shell-nav-group-label">Администрирование</div>
+          {navItem('staff','Доступ к брендам')}
+          {navItem('accounts','Учётные записи')}
+          {navItem('legacy','Исторические заказы')}
+        </div>}
+      </nav>
+      <div className="watch-shell-sidebar-account">
+        <span className="watch-shell-sidebar-avatar" aria-hidden="true">{fullName(user).slice(0,1).toUpperCase()}</span>
+        <div className="watch-shell-sidebar-user"><strong>{fullName(user)}</strong>
+          <small>{canAdmin?'Администратор':user.employeeRole||'Сотрудник'}</small></div>
+        <button className="watch-shell-signout" type="button" disabled={busy} onClick={()=>void logout()}>Выйти</button>
+      </div>
+    </aside>
+    {mobileNavOpen&&<button type="button" className="watch-shell-backdrop" aria-label="Закрыть меню"
+      onClick={()=>setMobileNavOpen(false)}/>}
+    <div className="watch-shell-workspace">
+      <header className="watch-shell-topbar">
+        <button className="watch-shell-menu-toggle" type="button" aria-label="Открыть меню разделов"
+          aria-expanded={mobileNavOpen} onClick={()=>setMobileNavOpen(x=>!x)}>
+          <span/><span/><span/>
+        </button>
+        <div className="watch-shell-breadcrumb"><span>{meta.area}</span><span aria-hidden="true">/</span><strong>{meta.title}</strong></div>
+        <div className="watch-shell-topbar-right">
+          {canSales&&activeSection!=='create'&&<button type="button" className="watch-shell-action" onClick={()=>goTo('create')}>+ Новый заказ</button>}
+          <span className="watch-shell-topbar-user">{fullName(user)}</span>
+        </div>
+      </header>
+      <main className="watch-shell-content" id="watch-main-content">
+        <div className="watch-shell-page-head">
+          <div><span className="watch-shell-page-kicker">{meta.area}</span>
+            <h1>{meta.title}</h1><p>{meta.description}</p></div>
+          {activeSection==='create'&&<button type="button" className="watch-shell-back-link" onClick={()=>goTo('orders')}>← К списку заказов</button>}
+        </div>
+        {error&&<p role="alert" className="watch-shell-error">{error}</p>}
+        {success&&<p role="status" className="watch-shell-success">{success}</p>}
+        {warning&&<p role="alert" className="watch-shell-warning">{warning}</p>}
+        {activeSection==='accounts'?<WatchUserAccessPanel/>:
+          activeSection==='legacy'?<WatchLegacyOrdersPanel/>:
+          activeSection==='staff'?<WatchBrandAccessPanel/>:
+          activeSection==='returns'?(brands.length?<WatchReturnsPanel brands={brands.map(x=>x.code)}/>:<p>Нет доступных брендов.</p>):
+          activeSection==='finance'?(brands.length?<WatchFinancePanel brands={brands.map(x=>x.code)}/>:<p>Нет доступных брендов.</p>):
+          activeSection==='orders'?(brands.length?<WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/>:<p className="watch-shell-loading">Загрузка доступных брендов…</p>):
+          activeSection==='create'?
+            <section className="watch-shell-create-page">
+              {catalogBusy?<p className="watch-shell-loading">Загрузка доступных часов…</p>:
+                <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
+                  isAdmin={canAdmin} managers={managerChoices}
+                  deliveryMethods={['Казпочта','Курьер','Самовывоз','Межгород']}
+                  onSave={saveWatchOrder}/>}
+            </section>:
+          activeSection==='logistics'?
+            <WatchLogisticsPanel brand="all" canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>:
+          <section className="watch-shell-catalog">
+            <div className="watch-shell-catalog-header">
+              <div><h2>{activeSection==='warehouse'?'Остатки и операции':'Каталог моделей'}</h2>
+                <p>{activeSection==='warehouse'?'Наличие и резервы раздельно по офису и витрине.':'Модели и комплектации для выбранного бренда.'}</p></div>
+              <label>Бренд<select value={brand} onChange={event=>{setBrand(event.target.value as WatchBrand);setError('')}}>
+                {brands.map(x=><option key={x.code} value={x.code}>{x.name}</option>)}
               </select></label>
             </div>
-            <p>Наличие раздельно по офису и витрине; резерв уже вычтен из доступного количества.</p>
-            {catalogBusy && <p>Загружаем каталог…</p>}
-            {!catalogBusy && models.length === 0 && <p>Модели не добавлены или нет доступа.</p>}
-            <div className="watch-shell-model-list">
-              {models.map(model => <article key={model.watchVariantId}>
-                <strong>{model.modelName}</strong>
-                <p>{model.gender === 'male' ? 'Мужские' : 'Женские'} ·
-                  {model.movement === 'quartz' ? 'Кварц' : 'Механика'} ·
-                  {optionLabel(WATCH_OPTIONS.braceletMaterials, model.braceletMaterial)} · {optionLabel(WATCH_OPTIONS.dialColors, model.dialColor)}
-                  {model.braceletColor ? ' · ремешок: ' + model.braceletColor : ''}</p>
-                <div>Офис: <strong>{sourceFree(model, true)}</strong> шт.</div>
-                <div>Витрина: <strong>{sourceFree(model, false)}</strong> шт.</div>
-              </article>)}
-            </div>
-            {user.role==='admin' && brand && <WatchCatalogEditor brand={brand} onStockChanged={()=>setCatalogVersion(x=>x+1)}/>}
+            {catalogBusy&&<p className="watch-shell-loading">Загружаем товары…</p>}
+            {canAdmin&&brand?
+              <WatchCatalogEditor key={activeSection+'-'+brand} brand={brand}
+                view={activeSection==='warehouse'?'warehouse':'catalog'}
+                onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
+              <div className="watch-shell-model-list">
+                {models.map(model=><article key={model.watchVariantId}>
+                  <strong>{model.modelName}</strong>
+                  <p>{model.gender==='male'?'Мужские':'Женские'} · {optionLabel(WATCH_OPTIONS.braceletMaterials,model.braceletMaterial)}
+                    · {optionLabel(WATCH_OPTIONS.dialColors,model.dialColor)}</p>
+                  <div>Офис: <strong>{sourceFree(model,true)}</strong> шт.</div>
+                  <div>Витрина: <strong>{sourceFree(model,false)}</strong> шт.</div>
+                </article>)}
+                {!catalogBusy&&models.length===0&&<p>Моделей пока нет.</p>}
+              </div>}
           </section>}
-    </main>
+      </main>
+    </div>
   </div>
 }
