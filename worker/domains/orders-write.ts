@@ -707,7 +707,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
       db,
       'order_create',
       input.requestId,
-      input,
+      watchCommit ? { ...input, client3Watch: watchCommit } : input,
       { externalId: proposedExternalId, createdAt: requestedAt },
     );
     if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
