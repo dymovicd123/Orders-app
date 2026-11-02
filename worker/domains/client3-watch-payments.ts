@@ -15,6 +15,14 @@ export async function addClient3WatchDebtPayment(
    return fail('WATCH_PAYMENT_FORBIDDEN','Оплату принимает менеджер или администратор.',403)
  if(!Number.isSafeInteger(brandId)||brandId<=0||!Number.isSafeInteger(orderId)||orderId<=0)
    return fail('WATCH_PAYMENT_ORDER_INVALID','Выберите заказ и бренд.',400)
+ if(actor.role!=='admin'){
+   const grant=await db.prepare(`SELECT 1 AS ok FROM watch_manager_brands mb
+     JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+     WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1`)
+     .bind(actor.managerId||0,brandId).first<{ok:number}>()
+   if(!grant?.ok)return fail('WATCH_PAYMENT_BRAND_FORBIDDEN',
+     'Нет доступа к оплатам этого бренда.',403)
+ }
  const owned=await db.prepare(`SELECT o.id FROM watch_order_details wd
    JOIN orders o ON o.id=wd.order_id
    WHERE o.id=? AND wd.brand_id=? AND o.order_status NOT IN ('deleted','archived')`)
@@ -34,8 +42,9 @@ export async function addClient3WatchDebtPayment(
  if(!(configured.results||[]).some(x=>x.value.toLocaleUpperCase('ru-RU')===method.toLocaleUpperCase('ru-RU')))
    return fail('WATCH_PAYMENT_METHOD_INVALID','Способ оплаты отсутствует в справочнике.',400)
  const paymentDate=typeof input.paymentDate==='string'?input.paymentDate:''
- if(!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)||
-   new Date(paymentDate+'T00:00:00Z').toISOString().slice(0,10)!==paymentDate)
+ const parsedDate=Date.parse(paymentDate+'T00:00:00Z')
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)||!Number.isFinite(parsedDate)||
+   new Date(parsedDate).toISOString().slice(0,10)!==paymentDate)
    return fail('WATCH_PAYMENT_DATE_INVALID','Укажите правильную дату оплаты.',400)
  const comment=typeof input.comment==='string'?input.comment.trim():''
  if(comment.length>300)return fail('WATCH_PAYMENT_COMMENT_INVALID','Комментарий не более 300 символов.',400)
