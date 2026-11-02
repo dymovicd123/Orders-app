@@ -8,7 +8,6 @@ old=origin/stage5-old
 paths=(
   migrations/0119_v72_order_dispatch_lineage.sql
   scripts/test-catalog-resolver-r10-acceptance-matrix.mjs
-  scripts/test-main-current-business-release-20261031.mjs
   scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
   scripts/test-stage5b-http-routes-20261101.mjs
   src/App.tsx
@@ -34,6 +33,22 @@ if ! git apply --3way --index /tmp/main-stage5-previous.patch; then
   exit 30
 fi
 echo 'PR752_THREE_WAY_APPLY_PASS'
+# Keep latest Main regression checklist; add accepted Stage5 cases without
+# restoring older Main PR752 snapshot of the gate.
+python3 - <<'PY'
+from pathlib import Path
+p=Path('scripts/test-main-current-business-release-20261031.mjs')
+s=p.read_text()
+needle=" 'scripts/test-old-order-post-stocktake-handover-r1.mjs',"
+assert s.count(needle)==1
+cases=[
+ "scripts/test-stage5-client-quantity-replay-20261102.mjs",
+ "scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs",
+ "scripts/test-stage5b-http-routes-20261101.mjs",
+]
+s=s.replace(needle, "".join(" '"+case+"',\n" for case in cases)+needle)
+p.write_text(s)
+PY
 # PR752 was an intentionally older candidate. Bring NEW Stage5-only modules
 # to the currently accepted Branch2 version, without overwriting Main
 # stage1/2 worker, stock, resolver or existing order-write integration.
