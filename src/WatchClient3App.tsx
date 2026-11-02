@@ -301,7 +301,8 @@ export function WatchClient3App() {
         }}/>
         {activeSection==='orders'?(brands.length?
           <WatchOrdersPanel key={'orders-'+catalogVersion}
-            initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/>:
+            initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}
+            onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>:
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
         activeSection==='create'?
           <section className="watch-shell-create-page">
@@ -320,12 +321,16 @@ export function WatchClient3App() {
         activeSection==='exchange'?<>
           <article className="card wide"><div className="card-label">Обмены</div>
             <div className="card-meta">Откройте отправленный заказ и выберите «Обменять часы». Для сохранности остатков действуют проверки точного SKU, цены и отправки.</div></article>
-          {brands.length&&<WatchOrdersPanel key={'exchange-'+catalogVersion} allowedBrands={brands.map(x=>x.code)}/>}
+          {brands.length&&<WatchOrdersPanel key={'exchange-'+catalogVersion}
+            allowedBrands={brands.map(x=>x.code)}
+            onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>}
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}
-      {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion}
-        brand="all" canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}
+      {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand}
+        brand={brand||'all'} allowedBrands={brands.map(x=>x.code)}
+        canDispatch={canSales}
+        canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}}
       {['warehouse','operations','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
           <div className="warehouse-w2-primary" aria-label="Разделы склада">
