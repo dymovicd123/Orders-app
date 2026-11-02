@@ -1,0 +1,29 @@
+name: Client3 unused linked SKU edit — Main safety checks
+on:
+  push:
+    branches: [client3/step1-unused-linked-sku-edit-20261102]
+    paths: ['.github/workflows/client3-unused-linked-edit-check.yml']
+permissions: {contents: read}
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Confirm third tenant
+        run: |
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+      - run: npm ci
+      - name: Linked SKU correction and Main stock/order parity
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-main-step1-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node scripts/client3/test-main-workflow-parity-20261102.mjs
+          npm run build
