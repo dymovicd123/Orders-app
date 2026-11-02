@@ -1,334 +1,332 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import {useMemo,useRef,useState,type FormEvent} from 'react'
 import '../../styles/188f-stock-trust.css'
 import '../../styles/client3-watch-main-create.css'
 import '../../styles/client3-watch-order.css'
 import {
-  WATCH_OPTIONS, WATCH_PAYMENTS, validateWatchOrderInput,
-  type WatchBrand, type WatchSource, type WatchPaymentMethod,
+ WATCH_OPTIONS,WATCH_PAYMENTS,validateWatchOrderInput,
+ type WatchBrand,type WatchSource,type WatchPaymentMethod,
 } from '../../../shared/client3/watch-domain'
 
-export type WatchOrderChoice = {
-  brand: WatchBrand
-  watchProductId: number
-  watchVariantId: number
-  catalogVariantId: number
-  modelName: string
-  gender: 'male' | 'female'
-  movement: 'quartz' | 'mechanical'
-  braceletMaterial: 'steel' | 'leather' | 'rubber'
-  dialColor: 'black' | 'white' | 'silver' | 'gold' | 'green' | 'orange' | 'brown' | 'multicolor'
-  braceletColor: string
-  officePhysical: number
-  officeReserved: number
-  showcasePhysical: number
-  showcaseReserved: number
-  catalogPriceSnapshot?: number | null
+export type WatchOrderChoice={
+ brand:WatchBrand;watchProductId:number;watchVariantId:number;catalogVariantId:number;
+ modelName:string;gender:'male'|'female';movement:string;braceletMaterial:string;
+ dialColor:string;braceletColor:string;
+ officePhysical:number;officeReserved:number;showcasePhysical:number;showcaseReserved:number;
+ catalogPriceSnapshot?:number|null
 }
-export type WatchOrderDraftPayload = ReturnType<typeof validateWatchOrderInput> & {
-  shippingDeadlineLocal: string
-  requestId: string
-  receivedAmount: number
-  payments: Array<{method:WatchPaymentMethod;amount:number}>
-  managerId?: number
-  watchVariantId: number
-  catalogVariantId: number
-  quantity: number
-  catalogPriceSnapshot: number | null
-  unitPrice: number
-  engravingText: string
+type DraftLine={id:string;watchVariantId:number;source:WatchSource;quantity:number;
+ unitPrice:string;engravingText:string}
+export type WatchOrderDraftPayload=ReturnType<typeof validateWatchOrderInput>&{
+ shippingDeadlineLocal:string;requestId:string;receivedAmount:number;
+ payments:Array<{method:WatchPaymentMethod;amount:number}>;managerId?:number;
+ items:Array<{watchVariantId:number;catalogVariantId:number;quantity:number;unitPrice:number;
+   source:WatchSource;engravingText:string}>
+ // Backwards compatibility with early third-tenant Clients and Main tests.
+ watchVariantId:number;catalogVariantId:number;quantity:number;unitPrice:number;engravingText:string;
+ catalogPriceSnapshot:number|null
 }
-type Props = {
-  allowedBrands: readonly WatchBrand[]
-  catalog: readonly WatchOrderChoice[]
-  managers?: readonly {brand:WatchBrand;id:number;name:string}[]
-  isAdmin?: boolean
-  deliveryMethods: readonly string[]
-  paymentMethods?: readonly string[]
-  onSave: (draft: WatchOrderDraftPayload) => Promise<void> | void
+type Props={
+ allowedBrands:readonly WatchBrand[];catalog:readonly WatchOrderChoice[];
+ managers?:readonly {brand:WatchBrand;id:number;name:string}[];
+ isAdmin?:boolean;deliveryMethods:readonly string[];paymentMethods?:readonly string[];
+ onSave:(draft:WatchOrderDraftPayload)=>Promise<void>|void
 }
-const genderLabel=(v:string)=>v==='male'?'Мужские':'Женские'
-const fromOptions=(rows:readonly {value:string,label:string}[],v:string)=>
-  rows.find(x=>x.value===v)?.label||v
-function available(row:WatchOrderChoice,source:WatchSource):number {
-  return Math.max(0,Number(source==='office'?row.officePhysical-row.officeReserved:
-    row.showcasePhysical-row.showcaseReserved)||0)
-}
-function descriptor(row:WatchOrderChoice):string {
-  const movement=fromOptions(WATCH_OPTIONS.movements,row.movement)
-  const bracelet=fromOptions(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial)
-  const dial=fromOptions(WATCH_OPTIONS.dialColors,row.dialColor)
-  return [row.modelName,genderLabel(row.gender),movement,bracelet,'циферблат: '+dial,
-    ...(row.braceletMaterial==='leather'?['ремешок: '+row.braceletColor]:[])].join(' · ')
-}
+const display=(choices:readonly {value:string;label:string}[],value:string)=>
+ choices.find(x=>x.value===value)?.label||value
+const descriptor=(x:WatchOrderChoice)=>[
+ x.modelName,x.gender==='male'?'Мужские':'Женские',
+ display(WATCH_OPTIONS.movements,x.movement),
+ display(WATCH_OPTIONS.braceletMaterials,x.braceletMaterial),
+ 'циферблат '+display(WATCH_OPTIONS.dialColors,x.dialColor),
+ ...(x.braceletColor?['ремешок '+x.braceletColor]:[]),
+].join(' · ')
+const free=(x:WatchOrderChoice,source:WatchSource)=>Math.max(0,Number(source==='office'?
+ x.officePhysical-x.officeReserved:x.showcasePhysical-x.showcaseReserved)||0)
+const newLine=():DraftLine=>({
+ id:crypto.randomUUID(),watchVariantId:0,source:'office',quantity:1,unitPrice:'',engravingText:'',
+})
 
-/** Tenant-specific draft. Caller must POST only through authorized Client3 API. */
-export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,deliveryMethods,paymentMethods=WATCH_PAYMENTS,onSave}:Props) {
-  const [brand,setBrand]=useState<WatchBrand|''>('')
-  const [source,setSource]=useState<WatchSource|''>('')
-  const [variantId,setVariantId]=useState(0)
-  const [quantity,setQuantity]=useState(1)
-  const [unitPrice,setUnitPrice]=useState('')
-  const [paymentRows,setPaymentRows]=useState<Array<{method:WatchPaymentMethod;amount:string}>>([
-    {method:'KASPI GOLD',amount:'0'},
-  ])
-  const [managerId,setManagerId]=useState(0)
-  const requestRef=useRef<{fingerprint:string;requestId:string}|null>(null)
-  const [engravingText,setEngravingText]=useState('')
-  const [recipientName,setRecipientName]=useState('')
-  const [recipientPhone,setRecipientPhone]=useState('')
-  const [address,setAddress]=useState('')
-  const [postalCode,setPostalCode]=useState('')
-  const [city,setCity]=useState('')
-  const [deliveryMethod,setDeliveryMethod]=useState(deliveryMethods[0]||'')
-  const [shippingDeadlineLocal,setShippingDeadlineLocal]=useState('')
-  const [urgent,setUrgent]=useState(false)
-  const receivedAmount=paymentRows.reduce((sum,row)=>sum+(Number(row.amount)||0),0)
-  const paymentMethod=paymentRows.find(row=>Number(row.amount)>0)?.method||paymentRows[0].method
-  const paymentInputsValid=paymentRows.length>=1&&paymentRows.length<=8&&
-    paymentRows.every((row,index)=>paymentMethods.includes(row.method)&&
-      row.amount.trim()!==''&&Number.isSafeInteger(Number(row.amount))&&
-      Number(row.amount)>=(index===0?0:1))
-  const [busy,setBusy]=useState(false)
-  const [error,setError]=useState('')
-  const rows=useMemo(()=>catalog.filter(x=>x.brand===brand),[catalog,brand])
-  const staff=managers.filter(x=>x.brand===brand)
-  const chosen=rows.find(x=>x.watchVariantId===variantId)
-  const free=chosen&&source?available(chosen,source):0
-  const price=Number(unitPrice)
-  const canSave=Boolean(
-    brand!==''&&source!==''&&allowedBrands.includes(brand as WatchBrand)&&chosen&&chosen.catalogVariantId>0&&
-    Number.isSafeInteger(quantity)&&quantity>0&&quantity<=free&&
-    unitPrice.trim()!==''&&Number.isSafeInteger(price)&&price>=0&&Number.isSafeInteger(price*quantity)&&
-    paymentInputsValid&&Number.isSafeInteger(receivedAmount)&&
-    receivedAmount<=price*quantity&&
-    (!isAdmin||staff.some(x=>x.id===managerId))&&!busy
-  )
-  const submit=async(event:FormEvent<HTMLFormElement>)=>{
-    event.preventDefault()
-    setError('')
-    if(!canSave||!chosen||!brand||!source){setError('Укажите бренд, источник, точную комплектацию, количество и цену.');return}
-    try{
-      const base=validateWatchOrderInput({
-        brand,source,recipientName,recipientPhone,address,postalCode,city,deliveryMethod,
-        shippingDeadlineLocal,urgent,paymentMethod,
-      })
-      const payload={...base,shippingDeadlineLocal,
-        watchVariantId:chosen.watchVariantId,catalogVariantId:chosen.catalogVariantId,
-        quantity,catalogPriceSnapshot:chosen.catalogPriceSnapshot??null,unitPrice:price,
-        receivedAmount, payments:paymentRows.filter(row=>Number(row.amount)>0)
-          .map(row=>({method:row.method,amount:Number(row.amount)})),
-        engravingText:engravingText.trim(),
-        ...(isAdmin?{managerId}:{})}
-      const fingerprint=JSON.stringify(payload)
-      if(requestRef.current?.fingerprint!==fingerprint)
-        requestRef.current={fingerprint,requestId:'watch-'+crypto.randomUUID()}
-      setBusy(true)
-      await onSave({
-        ...payload,requestId:requestRef.current!.requestId,
-      })
-    }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить заказ.')}finally{setBusy(false)}
-  }
-  const total=unitPrice.trim()!==''&&Number.isSafeInteger(price*quantity)?price*quantity:0
-  const received=receivedAmount
-  const debt=Math.max(0,total-received)
-  return <form className="main-watch-create card wide sector-orders" id="create"
-    onSubmit={event=>void submit(event)}>
-    <div className="create-hero">
-      <div><div className="card-label">Новый заказ</div>
-        <div className="card-meta">Выберите бренд и точку, затем заполните данные, часы и оплату.</div></div>
-      <div className="orders-workspace-kpis create-kpis">
-        <div><span>Товаров</span><strong>{chosen?quantity:0}</strong></div>
-        <div><span>Оплат</span><strong>{paymentRows.filter(row=>Number(row.amount)>0).length}</strong></div>
-        <div><span>Долг</span><strong>{chosen&&unitPrice.trim()!==''?debt.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
-      </div>
-    </div>
-    <section className="order-step-card">
-      <div className="order-step-head"><div className="order-step-index">1</div>
-        <div><h3>Клиент и условия заказа</h3>
-          <p>Бренд и источник выбираются до товара. Данные получателя и условия отправки.</p></div>
-      </div>
-      <div className="main-watch-create-grid">
-        <label>Бренд *
-          <select required value={brand} onChange={e=>{
-            setBrand(e.target.value as WatchBrand);setSource('');setVariantId(0);
-            setManagerId(0);setQuantity(1);setUnitPrice('');setError('')
-          }}>
-            <option value="">Выберите бренд</option>
-            {allowedBrands.map(value=><option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>Источник *
-          <select required value={source} disabled={!brand} onChange={e=>{
-            setSource(e.target.value as WatchSource);setVariantId(0);
-            setQuantity(1);setUnitPrice('');setError('')
-          }}>
-            <option value="">Выберите источник</option>
-            {WATCH_OPTIONS.sources.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-          </select>
-          <small>{!brand?'Сначала выберите бренд':'Часы предлагаются только из выбранной точки'}</small>
-        </label>
-        <div className="main-watch-create-spacer" aria-hidden="true"/>
-        <label>ФИО получателя *
-          <input required value={recipientName} onChange={e=>setRecipientName(e.target.value)}
-            autoComplete="name"/>
-        </label>
-        <label>Телефон клиента *
-          <input type="tel" required value={recipientPhone}
-            onChange={e=>setRecipientPhone(e.target.value)} autoComplete="tel"/>
-        </label>
-        <label>Город *
-          <input required value={city} onChange={e=>setCity(e.target.value)}/>
-        </label>
-        <label>Доставка *
-          <select required value={deliveryMethod} onChange={e=>setDeliveryMethod(e.target.value)}>
-            {deliveryMethods.map(x=><option key={x} value={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>Почтовый индекс *
-          <input required value={postalCode} onChange={e=>setPostalCode(e.target.value)}/>
-        </label>
-        <label>Отправить до · Алматы *
-          <input type="datetime-local" required value={shippingDeadlineLocal}
-            onChange={e=>setShippingDeadlineLocal(e.target.value)}/>
-        </label>
-        <label className="main-watch-create-wide">Полный адрес доставки *
-          <textarea required rows={2} value={address} onChange={e=>setAddress(e.target.value)}/>
-        </label>
-        <label className="main-watch-create-urgent"><input type="checkbox" checked={urgent}
-          onChange={e=>setUrgent(e.target.checked)}/>Срочный заказ</label>
-      </div>
-    </section>
-    <section className="order-step-card">
-      <div className="order-step-head order-step-head-split">
-        <div className="order-step-head-main"><div className="order-step-index">2</div>
-          <div><h3>Товары в заказе</h3>
-            <p>Показываются только часы выбранного бренда и источника. Цена и наличие проверяются перед сохранением.</p></div>
-        </div>
-      </div>
-      {!brand||!source?<div className="main-watch-create-placeholder">
-        Сначала выберите бренд и источник в первом блоке.
-      </div>:<div className="main-watch-create-item">
-        <div className="main-watch-create-item-head"><strong>Позиция 1</strong>
-          <span>{brand} · {source==='office'?'Офис':'Витрина'}</span></div>
-        <div className="main-watch-create-grid">
-          <label className="main-watch-create-wide">Модель и комплектация *
-            <select required value={variantId} onChange={e=>{
-              const x=rows.find(row=>row.watchVariantId===Number(e.target.value))
-              setVariantId(Number(e.target.value));setQuantity(1)
-              setUnitPrice(x?.catalogPriceSnapshot==null?'':String(x.catalogPriceSnapshot))
-            }}>
-              <option value={0}>Выберите часы из {source==='office'?'офиса':'витрины'}</option>
-              {rows.filter(x=>x.catalogVariantId&&available(x,source)>0).map(row=>
-                <option key={row.watchVariantId} value={row.watchVariantId}>
-                  {descriptor(row)} · доступно {available(row,source)}
-                </option>)}
-            </select>
-            <small>{!rows.some(x=>x.catalogVariantId&&available(x,source)>0)?
-              'Свободных часов на этой точке нет. Переключите источник или оформите приход.':
-              'В списке только подготовленные и доступные комплектации.'}</small>
-          </label>
-          <label>Количество *
-            <input type="number" required min={1} step={1} max={Math.max(1,free)}
-              value={quantity} onChange={e=>setQuantity(Number(e.target.value))}/>
-          </label>
-          <label>Цена по каталогу
-            <output>{chosen?.catalogPriceSnapshot==null?'Нет цены':
-              chosen.catalogPriceSnapshot.toLocaleString('ru-RU')+' ₸'}</output>
-          </label>
-          <label>Цена продажи, ₸ *
-            <input type="number" required min={0} step={1} value={unitPrice}
-              onChange={e=>setUnitPrice(e.target.value)}/>
-          </label>
-          <label className="main-watch-create-wide">Комментарий логисту / текст гравировки
-            <textarea rows={2} value={engravingText} onChange={e=>setEngravingText(e.target.value)}
-              placeholder="Надпись для гравировки и уточнения для логиста"/>
-          </label>
-        </div>
-        {chosen&&free<quantity&&<p className="main-watch-create-validation" role="alert">
-          Доступно {free} шт. в этой точке. Уменьшите количество или смените источник.
-        </p>}
-      </div>}
-    </section>
-    <section className="order-step-card">
-      <div className="order-step-head"><div className="order-step-index">3</div>
-        <div><h3>Оплаты</h3>
-          <p>Добавляйте оплаты отдельно: например, часть через Kaspi Gold, часть через Kaspi Red. Каждая сумма попадёт в финансовую историю Main.</p></div>
-      </div>
-      <div className="main-watch-create-item">
-        {isAdmin&&<div className="main-watch-create-grid">
-          <label>Менеджер *
-            <select required value={managerId} onChange={e=>setManagerId(Number(e.target.value))}>
-              <option value={0}>Выберите менеджера бренда</option>
-              {staff.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
-            </select>
-          </label>
-        </div>}
-        {paymentRows.map((row,index)=><div className="main-watch-create-item" key={index}>
-          <div className="main-watch-create-item-head"><strong>Оплата {index+1}</strong>
-            {index>0&&<button type="button" className="secondary compact"
-              onClick={()=>setPaymentRows(rows=>rows.filter((_,i)=>i!==index))}>Удалить оплату</button>}
-          </div>
-          <div className="main-watch-create-grid">
-            <label>Способ оплаты
-              <select value={row.method} onChange={e=>setPaymentRows(rows=>rows.map((item,i)=>
-                i===index?{...item,method:e.target.value as WatchPaymentMethod}:item))}>
-                {paymentMethods.map(p=><option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-            <label>Получено, ₸ *
-              <input type="number" min={index===0?0:1} step={1} required
-                value={row.amount} onChange={e=>setPaymentRows(rows=>rows.map((item,i)=>
-                  i===index?{...item,amount:e.target.value}:item))}/>
-            </label>
-          </div>
-        </div>)}
-        <div className="actions">
-          <button type="button" className="secondary" disabled={paymentRows.length>=8}
-            onClick={()=>setPaymentRows(rows=>[...rows,{method:'KASPI GOLD',amount:''}])}>
-            + Добавить способ оплаты</button>
-          <strong>Получено: {received.toLocaleString('ru-RU')} ₸ · Долг: {debt.toLocaleString('ru-RU')} ₸</strong>
-        </div>
-        {received>total&&<p className="main-watch-create-validation" role="alert">
-          Сумма оплат превышает стоимость заказа.</p>}
-      </div>
-    </section>
-    <section className="order-step-card">
-      <div className="order-step-head"><div className="order-step-index">4</div>
-        <div><h3>Проверка заказа</h3>
-          <p>Перед сохранением сверьте выбранные часы, источник, оплату и долг.</p></div>
-      </div>
-      <div className="main-watch-create-review">
-        <div className="order-create-item-summary-head"><strong>Итог по заказу</strong>
-          <span>{canSave?'Готов к сохранению':'Нужно проверить'}</span></div>
-        <div className="main-watch-create-totals">
-          <div><span>ИТОГО ПО ПОЗИЦИЯМ</span><strong>{chosen&&unitPrice!==''?total.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
-          <div><span>ПОЛУЧЕНО</span><strong>{received.toLocaleString('ru-RU')} ₸</strong></div>
-          <div><span>ДОЛГ</span><strong>{chosen&&unitPrice!==''?debt.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
-          <div><span>ПОЗИЦИИ</span><strong>{chosen?'1':'0'}</strong></div>
-        </div>
-        <div className="main-watch-create-summary">
-          <strong>Состав заказа</strong>
-          <div><span>{chosen?descriptor(chosen):'Товар не выбран'}</span>
-            {chosen&&<b>{source==='office'?'Офис':'Витрина'} · × {quantity}</b>}</div>
-        </div>
-        {!brand||!source?<p className="main-watch-create-validation">Выберите бренд и источник.</p>:null}
-        {!chosen&&<p className="main-watch-create-validation">Выберите часы из доступных остатков.</p>}
-        {chosen&&unitPrice.trim()===''&&<p className="main-watch-create-validation">Укажите цену продажи.</p>}
-        {isAdmin&&managerId===0&&<p className="main-watch-create-validation">Выберите менеджера бренда.</p>}
-        {error&&<p role="alert" className="main-watch-create-validation">{error}</p>}
-        <div className="actions order-create-actions form-bottom-actions">
-          <button className="primary" type="submit" disabled={!canSave}>
-            {busy?'Сохраняю…':'Сохранить заказ'}</button>
-          <button className="secondary" type="reset" disabled={busy}
-            onClick={e=>{e.preventDefault()
-              if(!window.confirm('Очистить введённые данные?'))return
-              setBrand('');setSource('');setVariantId(0);setQuantity(1);setUnitPrice('')
-              setPaymentRows([{method:'KASPI GOLD',amount:'0'}]);setManagerId(0);setEngravingText('');setRecipientName('')
-              setRecipientPhone('');setAddress('');setPostalCode('');setCity('')
-              setShippingDeadlineLocal('');setUrgent(false);setError('');requestRef.current=null}}>
-            Очистить форму</button>
-        </div>
-      </div>
-    </section>
-  </form>
+/** Same workflow as Main's CreateOrderSection: brand → multiple lines with own
+ * sources and quantities → multiple payments → review. Stock is informative,
+ * never a precondition for accepting an order.
+ */
+export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
+ deliveryMethods,paymentMethods=WATCH_PAYMENTS,onSave}:Props){
+ const [brand,setBrand]=useState<WatchBrand|''>('')
+ const [lines,setLines]=useState<DraftLine[]>([newLine()])
+ const [payments,setPayments]=useState<Array<{method:string;amount:string}>>([
+   {method:paymentMethods[0]||'KASPI GOLD',amount:'0'},
+ ])
+ const [managerId,setManagerId]=useState(0)
+ const [recipientName,setRecipientName]=useState('')
+ const [recipientPhone,setRecipientPhone]=useState('')
+ const [city,setCity]=useState('')
+ const [address,setAddress]=useState('')
+ const [postalCode,setPostalCode]=useState('')
+ const [deliveryMethod,setDeliveryMethod]=useState(deliveryMethods[0]||'')
+ const [shippingDeadlineLocal,setShippingDeadlineLocal]=useState('')
+ const [urgent,setUrgent]=useState(false)
+ const [busy,setBusy]=useState(false)
+ const [error,setError]=useState('')
+ const requestRef=useRef<{fingerprint:string;requestId:string}|null>(null)
+ const scoped=useMemo(()=>catalog.filter(x=>x.brand===brand&&x.catalogVariantId>0),
+   [catalog,brand])
+ const staff=managers.filter(x=>x.brand===brand)
+ const update=(id:string,patch:Partial<DraftLine>)=>setLines(all=>all.map(x=>x.id===id?{...x,...patch}:x))
+ const matches=lines.map(line=>scoped.find(x=>x.watchVariantId===line.watchVariantId))
+ const lineTotal=(line:DraftLine)=>line.unitPrice.trim()!==''?line.quantity*Number(line.unitPrice):0
+ const total=lines.reduce((sum,line)=>sum+(Number.isFinite(lineTotal(line))?lineTotal(line):0),0)
+ const received=payments.reduce((sum,row)=>sum+(Number(row.amount)||0),0)
+ const debt=Math.max(0,total-received)
+ const paymentMethod=payments.find(x=>Number(x.amount)>0)?.method||payments[0]?.method||paymentMethods[0]||'KASPI GOLD'
+ const validLines=lines.length>0&&lines.length<=20&&lines.every((line,index)=>
+   Boolean(matches[index])&&Number.isSafeInteger(line.quantity)&&line.quantity>=1&&line.quantity<=1000&&
+   line.unitPrice.trim()!==''&&Number.isSafeInteger(Number(line.unitPrice))&&
+   Number(line.unitPrice)>=0&&Number(line.unitPrice)<=1000000000&&line.engravingText.length<=500)
+ const validPayments=payments.length>=1&&payments.length<=8&&payments.every((row,index)=>
+   paymentMethods.includes(row.method)&&row.amount.trim()!==''&&
+   Number.isSafeInteger(Number(row.amount))&&Number(row.amount)>=(index===0?0:1))
+ const canSave=Boolean(brand&&allowedBrands.includes(brand as WatchBrand)&&validLines&&
+   Number.isSafeInteger(total)&&Number.isSafeInteger(received)&&received<=total&&
+   validPayments&&(!isAdmin||staff.some(x=>x.id===managerId))&&
+   recipientName.trim()&&recipientPhone.trim()&&city.trim()&&address.trim()&&postalCode.trim()&&
+   deliveryMethod.trim()&&shippingDeadlineLocal&&!busy)
+ const reset=()=>{
+   setBrand('');setLines([newLine()]);setManagerId(0)
+   setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0'}])
+   setRecipientName('');setRecipientPhone('');setCity('');setAddress('');setPostalCode('')
+   setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false)
+   setError('');requestRef.current=null
+ }
+ const submit=async(event:FormEvent<HTMLFormElement>)=>{
+   event.preventDefault();setError('')
+   if(!brand||!canSave){setError('Выберите бренд, заполните товары, данные клиента и оплаты.');return}
+   try{
+     const selected=lines.map((line,index)=>({
+       watchVariantId:line.watchVariantId,catalogVariantId:matches[index]!.catalogVariantId,
+       quantity:line.quantity,unitPrice:Number(line.unitPrice),source:line.source,
+       engravingText:line.engravingText.trim(),
+     }))
+     const first=selected[0]
+     const base=validateWatchOrderInput({
+       brand,source:first.source,recipientName,recipientPhone,city,address,postalCode,
+       deliveryMethod,shippingDeadlineLocal,urgent,paymentMethod,
+     })
+     const payload={
+       ...base,shippingDeadlineLocal,items:selected,
+       watchVariantId:first.watchVariantId,catalogVariantId:first.catalogVariantId,
+       quantity:first.quantity,unitPrice:first.unitPrice,engravingText:first.engravingText,
+       catalogPriceSnapshot:matches[0]?.catalogPriceSnapshot??null,
+       receivedAmount:received,payments:payments.filter(x=>Number(x.amount)>0)
+         .map(x=>({method:x.method,amount:Number(x.amount)})),
+       ...(isAdmin?{managerId}:{}),
+     }
+     const fingerprint=JSON.stringify(payload)
+     if(requestRef.current?.fingerprint!==fingerprint)
+       requestRef.current={fingerprint,requestId:'watch-'+crypto.randomUUID()}
+     setBusy(true)
+     await onSave({...payload,requestId:requestRef.current!.requestId})
+   }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить заказ.')}
+   finally{setBusy(false)}
+ }
+ return <form className="main-watch-create card wide sector-orders" id="create"
+   onSubmit={event=>void submit(event)}>
+   <div className="create-hero">
+     <div><div className="card-label">Новый заказ</div>
+       <div className="card-meta">Форма по логике Main: бренд обязателен; отсутствие часов на складе не запрещает регистрацию.</div></div>
+     <div className="orders-workspace-kpis create-kpis">
+       <div><span>Товаров</span><strong>{lines.filter(x=>x.watchVariantId>0).reduce((n,x)=>n+x.quantity,0)}</strong></div>
+       <div><span>Оплат</span><strong>{payments.filter(x=>Number(x.amount)>0).length}</strong></div>
+       <div><span>Долг</span><strong>{debt.toLocaleString('ru-RU')} ₸</strong></div>
+     </div>
+   </div>
+   <section className="order-step-card">
+     <div className="order-step-head"><div className="order-step-index">1</div>
+       <div><h3>Клиент и условия заказа</h3>
+         <p>Выберите бренд. Контакты, доставка и крайний срок передаются логистике.</p></div>
+     </div>
+     <div className="main-watch-create-grid">
+       <label>Бренд *
+         <select required value={brand} onChange={e=>{
+           setBrand(e.target.value as WatchBrand);setLines([newLine()]);setManagerId(0);setError('')
+         }}>
+           <option value="">Выберите бренд</option>
+           {allowedBrands.map(x=><option value={x} key={x}>{x}</option>)}
+         </select>
+       </label>
+       <label>ФИО получателя *
+         <input required maxLength={200} value={recipientName} autoComplete="name"
+           onChange={e=>setRecipientName(e.target.value)}/>
+       </label>
+       <label>Телефон *
+         <input required maxLength={50} type="tel" value={recipientPhone}
+           onChange={e=>setRecipientPhone(e.target.value)} autoComplete="tel"/>
+       </label>
+       <label>Город *
+         <input required maxLength={100} value={city} onChange={e=>setCity(e.target.value)}/>
+       </label>
+       <label>Доставка *
+         <select required value={deliveryMethod}
+           onChange={e=>setDeliveryMethod(e.target.value)}>
+           {deliveryMethods.map(x=><option key={x} value={x}>{x}</option>)}
+         </select>
+       </label>
+       <label>Индекс *
+         <input required maxLength={20} value={postalCode} onChange={e=>setPostalCode(e.target.value)}/>
+       </label>
+       <label>Отправить до (Алматы) *
+         <input required type="datetime-local" value={shippingDeadlineLocal}
+           onChange={e=>setShippingDeadlineLocal(e.target.value)}/>
+       </label>
+       <label className="main-watch-create-wide">Адрес *
+         <textarea required rows={2} maxLength={500} value={address}
+           onChange={e=>setAddress(e.target.value)}/>
+       </label>
+       <label className="main-watch-create-urgent">
+         <input type="checkbox" checked={urgent} onChange={e=>setUrgent(e.target.checked)}/>
+         Срочный заказ
+       </label>
+     </div>
+   </section>
+   <section className="order-step-card">
+     <div className="order-step-head order-step-head-split">
+       <div className="order-step-head-main"><div className="order-step-index">2</div>
+         <div><h3>Товары заказа</h3>
+           <p>Как в Main: добавляйте несколько позиций, указывайте источник отдельно.
+             Отсутствие остатка отмечается предупреждением, но не блокирует сохранение.</p></div>
+       </div>
+       <button type="button" className="primary compact" disabled={!brand||lines.length>=20}
+         onClick={()=>setLines(all=>[...all,newLine()])}>+ Добавить товар</button>
+     </div>
+     {!brand?<div className="main-watch-create-placeholder">Сначала выберите бренд.</div>:
+       <div className="main-watch-create-list">
+         {lines.map((line,index)=>{
+           const chosen=matches[index]
+           const available=chosen?free(chosen,line.source):0
+           return <article className="main-watch-create-item" key={line.id}>
+             <div className="main-watch-create-item-head">
+               <strong>Позиция {index+1}</strong>
+               {lines.length>1&&<button type="button" className="secondary compact"
+                 onClick={()=>setLines(all=>all.filter(x=>x.id!==line.id))}>Удалить</button>}
+             </div>
+             <div className="main-watch-create-grid">
+               <label className="main-watch-create-wide">Модель и характеристики часов *
+                 <select required value={line.watchVariantId} onChange={e=>{
+                   const chosen=scoped.find(x=>x.watchVariantId===Number(e.target.value))
+                   update(line.id,{watchVariantId:Number(e.target.value),
+                     unitPrice:chosen?.catalogPriceSnapshot==null?'':String(chosen.catalogPriceSnapshot)})
+                 }}>
+                   <option value={0}>Выберите часы из каталога {brand}</option>
+                   {scoped.map(x=><option key={x.watchVariantId} value={x.watchVariantId}>
+                     {descriptor(x)} · офис {free(x,'office')} / витрина {free(x,'showcase')}
+                   </option>)}
+                 </select>
+                 <small>Все активные комплектации бренда, независимо от наличия в выбранной точке.</small>
+               </label>
+               <label>Источник позиции *
+                 <select value={line.source}
+                   onChange={e=>update(line.id,{source:e.target.value as WatchSource})}>
+                   {WATCH_OPTIONS.sources.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
+                 </select>
+               </label>
+               <label>Количество *
+                 <input type="number" min={1} max={1000} required value={line.quantity}
+                   onChange={e=>update(line.id,{quantity:Number(e.target.value)})}/>
+               </label>
+               <label>Цена по каталогу
+                 <output>{chosen?.catalogPriceSnapshot==null?'Не задана':
+                   chosen.catalogPriceSnapshot.toLocaleString('ru-RU')+' ₸'}</output>
+               </label>
+               <label>Цена продажи, ₸ *
+                 <input type="number" min={0} max={1000000000} step={1} required
+                   value={line.unitPrice} onChange={e=>update(line.id,{unitPrice:e.target.value})}/>
+               </label>
+               <label className="main-watch-create-wide">Комментарий логисту / гравировка
+                 <textarea rows={2} maxLength={500} value={line.engravingText}
+                   onChange={e=>update(line.id,{engravingText:e.target.value})}
+                   placeholder="Текст гравировки и пожелания клиента"/>
+               </label>
+             </div>
+             {chosen&&line.quantity>available&&<p className="main-watch-create-validation"
+               role="status">Недостаточно в наличии: свободно {available} шт. Заказ можно сохранить;
+               недостающие часы будут ожидать поступления или уточнения резерва.</p>}
+           </article>
+         })}
+       </div>}
+     {brand&&<button type="button" className="secondary" disabled={lines.length>=20}
+       onClick={()=>setLines(all=>[...all,newLine()])}>+ Добавить товар</button>}
+   </section>
+   <section className="order-step-card">
+     <div className="order-step-head"><div className="order-step-index">3</div>
+       <div><h3>Менеджер и оплаты</h3><p>Можно принять несколько оплат разными способами.</p></div>
+     </div>
+     {isAdmin&&<div className="main-watch-create-grid">
+       <label>Менеджер бренда *
+         <select required value={managerId} onChange={e=>setManagerId(Number(e.target.value))}>
+           <option value={0}>Выберите менеджера</option>
+           {staff.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+         </select>
+       </label>
+     </div>}
+     {payments.map((row,index)=><div className="main-watch-create-item" key={index}>
+       <div className="main-watch-create-item-head">
+         <strong>Оплата {index+1}</strong>
+         {index>0&&<button type="button" className="secondary compact"
+           onClick={()=>setPayments(all=>all.filter((_,i)=>i!==index))}>Удалить</button>}
+       </div>
+       <div className="main-watch-create-grid">
+         <label>Способ оплаты
+           <select required value={row.method}
+             onChange={e=>setPayments(all=>all.map((x,i)=>i===index?{...x,method:e.target.value}:x))}>
+             {paymentMethods.map(x=><option value={x} key={x}>{x}</option>)}
+           </select>
+         </label>
+         <label>Получено, ₸ *
+           <input type="number" min={index===0?0:1} step={1} required
+             value={row.amount}
+             onChange={e=>setPayments(all=>all.map((x,i)=>i===index?{...x,amount:e.target.value}:x))}/>
+         </label>
+       </div>
+     </div>)}
+     <div className="actions">
+       <button type="button" className="secondary" disabled={payments.length>=8}
+         onClick={()=>setPayments(all=>[...all,{method:paymentMethods[0]||'KASPI GOLD',amount:''}])}>
+         + Добавить оплату
+       </button>
+       <strong>Получено {received.toLocaleString('ru-RU')} ₸ · Долг {debt.toLocaleString('ru-RU')} ₸</strong>
+     </div>
+   </section>
+   <section className="order-step-card">
+     <div className="order-step-head"><div className="order-step-index">4</div>
+       <div><h3>Проверка заказа</h3><p>Сверьте позиции и деньги перед сохранением.</p></div>
+     </div>
+     <div className="main-watch-create-review">
+       <div className="main-watch-create-totals">
+         <div><span>СУММА</span><strong>{total.toLocaleString('ru-RU')} ₸</strong></div>
+         <div><span>ОПЛАЧЕНО</span><strong>{received.toLocaleString('ru-RU')} ₸</strong></div>
+         <div><span>ДОЛГ</span><strong>{debt.toLocaleString('ru-RU')} ₸</strong></div>
+         <div><span>ПОЗИЦИИ</span><strong>{lines.length}</strong></div>
+       </div>
+       <div className="main-watch-create-summary">
+         <strong>Состав заказа · {brand||'Бренд не выбран'}</strong>
+         {lines.map((line,index)=><div key={line.id}>
+           <span>{matches[index]?descriptor(matches[index]!):'Часы не выбраны'}</span>
+           <b>{line.source==='office'?'Офис':'Витрина'} · ×{line.quantity}</b>
+         </div>)}
+       </div>
+       {!brand&&<p className="main-watch-create-validation">Выберите бренд.</p>}
+       {received>total&&<p className="main-watch-create-validation">Оплата превышает сумму.</p>}
+       {error&&<p className="main-watch-create-validation" role="alert">{error}</p>}
+       <div className="actions order-create-actions form-bottom-actions">
+         <button className="primary" type="submit" disabled={!canSave}>
+           {busy?'Сохранение…':'Сохранить заказ'}
+         </button>
+         <button className="secondary" type="button" disabled={busy}
+           onClick={()=>{if(window.confirm('Очистить введённые данные?'))reset()}}>
+           Очистить
+         </button>
+       </div>
+     </div>
+   </section>
+ </form>
 }
