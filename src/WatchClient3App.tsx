@@ -401,7 +401,7 @@ export function WatchClient3App() {
             activeSection==='history'?
               <WatchWarehouseHistory key={'history-'+brand+'-'+catalogVersion} brand={brand} revision={catalogVersion}/>:
             activeSection==='operations'?
-              <WatchWarehouseMain key={'operation-'+brand+'-'+catalogVersion} brand={brand}
+              <WatchWarehouseMain key={'operation-'+brand} brand={brand}
                 onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
               <WatchStockMainBrowse key={'stock-'+brand+'-'+catalogVersion}
                 brand={brand} canCorrect={canAdmin} onCorrect={()=>goTo('operations')}/>):
