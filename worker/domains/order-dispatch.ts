@@ -20,7 +20,7 @@ const fail = (message: string): never => { throw new CriticalOperationConflictEr
 export async function dispatchSelectedCompleteOrderLines(
   db: D1Database,
   orderId: number,
-  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string },
+  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string; watchSplitBrandId?:number },
 ) {
   const requestId = cleanText(input.requestId)
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(requestId)) fail('Повторите отправку после обновления заказа.')
@@ -61,6 +61,24 @@ export async function dispatchSelectedCompleteOrderLines(
     }
     return { ...found, originalQuantity: found.quantity, quantity: row.quantity }
   })
+  // Client3 partial rows require a new, correctly branded watch line.
+  // Validate before queuing any shipment; Main remains unchanged for garment orders.
+  if(input.watchSplitBrandId!==undefined){
+    if(!Number.isSafeInteger(input.watchSplitBrandId)||input.watchSplitBrandId<1)
+      fail('Бренд часов не подтверждён.')
+    for(const item of selected.filter(x=>x.quantity<x.originalQuantity)){
+      if(item.sourceType==='workshop')fail('Часы из цеха нельзя разделить.')
+      const watch=await db.prepare(`SELECT wi.watch_variant_id FROM watch_order_item_details wi
+        JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=?
+        JOIN watch_products wp ON wp.id=wv.watch_product_id AND wp.brand_id=?
+        JOIN order_items oi ON oi.id=wi.order_item_id AND oi.order_id=?
+        WHERE wi.order_item_id=? LIMIT 1`)
+        .bind(item.variantId,input.watchSplitBrandId,orderId,item.orderItemId)
+        .first<{watch_variant_id:number}>()
+      if(!watch?.watch_variant_id)
+        fail('Связь комплектации и гравировки не найдена. Отправка остановлена без списания.')
+    }
+  }
   const selectedStock=selected.filter(x=>x.sourceType!=='workshop')
   const selectedWorkshop=selected.filter(x=>x.sourceType==='workshop')
   const selectedReplacements = selectedStock.filter(x=>toInt(x.exchangeEventId,0)>0)
@@ -283,6 +301,31 @@ export async function dispatchSelectedCompleteOrderLines(
         WHERE id=? AND quantity=? AND stock_writeoff_status='reserved'`
       ).bind(item.quantity,item.quantity,item.orderItemId,item.originalQuantity),
     )
+    if(input.watchSplitBrandId!==undefined){
+      // Must be in the SAME D1 batch as Main's split and stock movements.
+      // The remaining item gets the exact SKU and engraving of the original.
+      statements.push(
+        db.prepare(`INSERT INTO watch_order_item_details(
+          order_item_id,watch_variant_id,engraving_text,created_at)
+          SELECT ${splitItemSql},wi.watch_variant_id,wi.engraving_text,?
+          FROM watch_order_item_details wi
+          JOIN watch_variants wv ON wv.id=wi.watch_variant_id
+          JOIN watch_products wp ON wp.id=wv.watch_product_id
+          JOIN order_items oi ON oi.id=wi.order_item_id
+          WHERE wi.order_item_id=? AND oi.order_id=?
+            AND wp.brand_id=? AND wv.catalog_variant_id=oi.variant_id`)
+          .bind(orderId,splitKey,stamp,item.orderItemId,orderId,input.watchSplitBrandId),
+        db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
+          SELECT 'human_inventory_v2','__watch_split_link_conflict__',?
+          WHERE NOT EXISTS(
+            SELECT 1 FROM watch_order_item_details fresh
+            JOIN watch_order_item_details old ON old.order_item_id=?
+            WHERE fresh.order_item_id=${splitItemSql}
+              AND fresh.watch_variant_id=old.watch_variant_id
+              AND fresh.engraving_text=old.engraving_text)`)
+          .bind(stamp,item.orderItemId,orderId,splitKey),
+      )
+    }
   }
   for(const g of groups.values()){
     statements.push(
