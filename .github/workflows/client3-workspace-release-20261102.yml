@@ -1,0 +1,101 @@
+name: Client3 workspace sidebar redesign (Worker-only, NO D1 MIGRATIONS)
+on:
+  push:
+    branches: [client3/workspace-release-20261102]
+    paths: ['.github/workflows/client3-workspace-release-20261102.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  third-only-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Refuse to target any tenant except the exact installed third Worker
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/workspace-release-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Full Client3 stock/order/return/exchange + distinct workspace acceptance
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node scripts/client3/test-watch-shell-20261102.mjs
+          node scripts/client3/test-watch-workspace-layout-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
+          ! grep -Fq '<h1>TAUWACH / WACHIZEN</h1>' src/WatchClient3App.tsx
+          ! grep -Fq 'Вход в систему часов' src/WatchClient3App.tsx
+          grep -Fq "WatchUserAccessPanel" src/WatchClient3App.tsx
+          npm run build
+      - name: Read-only verify existing watch schema and legacy rows in third D1
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM watch_brands) AS brands_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='order_dispatches' AND type='table') AS stage5,
+              (SELECT COUNT(*) FROM watch_order_item_details) AS watch_item_count" \
+            | jq -ce '.[0].results[0] | select(.orders_count>=2 and .payments_count>=2 and .users_count>=5 and .monitoring_admin==1 and .brands_count==2 and .stage5==1)' > /tmp/watch-exchange-before.json
+          echo "Third-only installed schema verified; no D1 changes authorized."
+      - name: Deploy ONLY third Worker with existing database schema (NO migrations)
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Public site and blocked unauthenticated watch access smoke
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          code=$(curl -sSL -o /tmp/client3-exchange-live.html -w '%{http_code}' --max-time 25 "$base/")
+          test "$code" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-exchange-live.html
+          api=$(curl -sS -o /tmp/client3-exchange-unauth.json -w '%{http_code}' --max-time 25 "$base/api/client3/watches/brands")
+          test "$api" = 401 -o "$api" = 403
+          echo "Public HTML alive and unauthenticated brand API denied."
+      - name: Read-only reverify historical minimum and installed watch tables
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM watch_brands) AS brands_count,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='order_dispatches' AND type='table') AS stage5,
+              (SELECT COUNT(*) FROM watch_order_item_details) AS watch_item_count" \
+            | jq -ce '.[0].results[0]' > /tmp/watch-exchange-after.json
+          jq -e --slurpfile before /tmp/watch-exchange-before.json '
+            .orders_count >= $before[0].orders_count and
+            .payments_count >= $before[0].payments_count and
+            .users_count >= $before[0].users_count and
+            .monitoring_admin == 1 and
+            .brands_count == 2 and .stage5 == 1
+          ' /tmp/watch-exchange-after.json
+      - name: Report successful third-only exchange release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 workspace redesign SUCCESS: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}. Main-style grouped sidebar navigation, dedicated order creation, separated catalog/warehouse, source-specific stock operation tabs and mobile drawer passed TypeScript/Vite, static layout and full Main stock/order/exchange tests. UI-only third Worker successfully deployed. No D1 migrations, no remote D1 writes and no changes to Main or Branch2. Owner-monitor administrator remains in third D1."
