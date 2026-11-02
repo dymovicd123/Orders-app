@@ -87,7 +87,8 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   const canSave=Boolean(
     allowedBrands.includes(brand)&&chosen&&chosen.catalogVariantId>0&&
     Number.isSafeInteger(quantity)&&quantity>0&&quantity<=free&&
-    Number.isSafeInteger(price)&&price>=0&&Number.isSafeInteger(Number(receivedAmount))&&
+    unitPrice.trim()!==''&&Number.isSafeInteger(price)&&price>=0&&Number.isSafeInteger(price*quantity)&&
+    receivedAmount.trim()!==''&&Number.isSafeInteger(Number(receivedAmount))&&
     Number(receivedAmount)>=0&&Number(receivedAmount)<=price*quantity&&
     (!isAdmin||staff.some(x=>x.id===managerId))&&!busy
   )
@@ -133,7 +134,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
           </select>
         </label>
         <label className="watch-order-form-wide">Модель и комплектация
-          <select value={variantId} onChange={e=>{setVariantId(Number(e.target.value));setQuantity(1);setUnitPrice('')}} required>
+          <select value={variantId} onChange={e=>{const selected=rows.find(row=>row.watchVariantId===Number(e.target.value));setVariantId(Number(e.target.value));setQuantity(1);setUnitPrice(selected?.catalogPriceSnapshot==null?'':String(selected.catalogPriceSnapshot))}} required>
             <option value={0}>Выберите часы из {source==='office'?'офиса':'витрины'}</option>
             {rows.map(row=><option key={row.watchVariantId} value={row.watchVariantId}
               disabled={!row.catalogVariantId||available(row,source)<=0}>
