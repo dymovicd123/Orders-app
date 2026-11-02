@@ -2,9 +2,9 @@
 export const WATCH_BRANDS = ['TAUWACH', 'WACHIZEN'] as const
 export type WatchBrand = typeof WATCH_BRANDS[number]
 export type WatchGender = 'male' | 'female'
-export type WatchMechanism = 'quartz' | 'mechanical'
-export type WatchBraceletMaterial = 'steel' | 'leather' | 'rubber'
-export type WatchDialColor = 'black' | 'white' | 'silver' | 'gold' | 'green' | 'orange' | 'brown' | 'multicolor'
+export type WatchMechanism = string
+export type WatchBraceletMaterial = string
+export type WatchDialColor = string
 export type WatchSource = 'office' | 'showcase'
 // Current payment choices are read from the shared Client3 references table.
 export type WatchPaymentMethod = string
@@ -67,9 +67,11 @@ function required(value: unknown, label: string, max = 300): string {
 }
 export function normalizeWatchVariant(input: WatchVariantInput): CanonicalWatchVariant {
   const gender=enumOne(input.gender,['male','female'],'пол')
-  const movement=enumOne(input.movement,['quartz','mechanical'],'механизм')
-  const braceletMaterial=enumOne(input.braceletMaterial,['steel','leather','rubber'],'материал браслета')
-  const dialColor=enumOne(input.dialColor,WATCH_DIAL_COLORS,'цвет циферблата')
+  // Actual allowed values are checked against tenant-wide reference values in
+  // registerWatchVariant. Spaces inside names are preserved (Main reference model).
+  const movement=required(input.movement,'механизм',80)
+  const braceletMaterial=required(input.braceletMaterial,'материал браслета',80)
+  const dialColor=required(input.dialColor,'цвет циферблата',80)
   const braceletColor=norm(input.braceletColor).toLocaleUpperCase('ru-RU')
   if (braceletMaterial==='leather' && !braceletColor) fail('Для кожаного ремешка укажите цвет')
   if (braceletMaterial!=='leather' && braceletColor) fail('Цвет ремешка сейчас учитывается только для кожи')
