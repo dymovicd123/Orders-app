@@ -325,24 +325,25 @@ export function WatchClient3App() {
       {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion}
         brand="all" canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}
       {['warehouse','operations','catalog'].includes(activeSection)&&<>
-        <article className="card wide client3-main-erp-inventory-tabs">
-          <button className={'secondary compact '+(activeSection==='warehouse'?'is-active':'')} type="button"
-            onClick={()=>goTo('warehouse')}>Остатки</button>
-          {canAdmin&&<button className={'secondary compact '+(activeSection==='operations'?'is-active':'')} type="button"
-            onClick={()=>goTo('operations')}>Операции</button>}
-          <button className={'secondary compact '+(activeSection==='catalog'?'is-active':'')} type="button"
-            onClick={()=>goTo('catalog')}>Товары</button>
-        </article>
+        <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
+          <div className="warehouse-w2-primary" aria-label="Разделы склада">
+            {([
+              {section:'warehouse' as const,label:'Остатки',hint:'Товар на месте, резерв и доступность'},
+              {section:'catalog' as const,label:'Товары',hint:'Модели и комплектации часов'},
+              ...(canAdmin?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'}]:[]),
+            ]).map(item=><button key={item.section} type="button"
+              className={activeSection===item.section?'is-active':''} title={item.hint}
+              aria-current={activeSection===item.section?'page':undefined}
+              onClick={()=>goTo(item.section)}><strong>{item.label}</strong></button>)}
+          </div>
+        </div>
         <div className="watch-shell-catalog">
-          <div className="watch-shell-catalog-header">
-            <div><h2>{activeSection==='catalog'?'Товары':
-              activeSection==='operations'?'Складские операции':'Остатки'}</h2>
-              <p>{activeSection==='catalog'?'Модели и комплектации часов.':
-                'Количество, резерв и движения по выбранному бренду.'}</p></div>
-            <label>Бренд<select value={brand}
+          <div className="client3-inventory-brand-filter">
+            <span>Бренд</span>
+            <select aria-label="Бренд склада" value={brand}
               onChange={event=>{setBrand(event.target.value as WatchBrand);setError('')}}>
               {brands.map(row=><option key={row.code} value={row.code}>{row.name}</option>)}
-            </select></label>
+            </select>
           </div>
           {canAdmin&&brand?(activeSection==='catalog'?
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
