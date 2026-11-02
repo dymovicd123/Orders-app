@@ -43,9 +43,9 @@ const validName=(x:unknown):string=>{
   return name
 }
 export async function registerWatchModel(
-  db:D1Database,actor:AuthUser,brandId:number,input:{modelName?:unknown},
+  db:D1Database,actor:AuthUser,brandId:number,input:{modelName?:unknown},options:{fromVerifiedOrder?:boolean}={},
 ) {
-  if(actor.role!=='admin')return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять модели может только администратор.',403)
+  if(actor.role!=='admin'&&!options.fromVerifiedOrder)return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять модели может только администратор.',403)
   let name:string
   try{name=validName(input?.modelName)}catch(cause){
     return error('WATCH_MODEL_INVALID',cause instanceof Error?cause.message:'Некорректное название модели.')
@@ -57,6 +57,7 @@ export async function registerWatchModel(
   ).bind(brandId,name).first<{id:number;is_active:number}>()
   if(existing){
     if(existing.is_active===0){
+      if(options.fromVerifiedOrder)return error('WATCH_MODEL_RETIRED','Эта модель была удалена из каталога. Администратор должен отдельно решить вопрос восстановления.',409)
       // Main restores the historical product shell without creating stock.
       await db.prepare('UPDATE watch_products SET is_active=1 WHERE id=? AND brand_id=? AND is_active=0')
         .bind(existing.id,brandId).run()
@@ -83,8 +84,9 @@ export async function registerWatchModel(
 export async function registerWatchVariant(
   db:D1Database,actor:AuthUser,brandId:number,
   input:WatchVariantInput & {watchProductId?:unknown},
+  options:{fromVerifiedOrder?:boolean}={},
 ) {
-  if(actor.role!=='admin')return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять комплектации может только администратор.',403)
+  if(actor.role!=='admin'&&!options.fromVerifiedOrder)return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять комплектации может только администратор.',403)
   const productId=Number(input?.watchProductId)
   if(!Number.isSafeInteger(productId)||productId<=0)return error('WATCH_MODEL_INVALID','Выберите модель часов.')
   let v:ReturnType<typeof normalizeWatchVariant>
@@ -120,6 +122,7 @@ export async function registerWatchVariant(
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
   if(old){
     if(old.is_active===0) {
+      if(options.fromVerifiedOrder)return error('WATCH_VARIANT_RETIRED','Комплектация удалена. Не восстанавливайте её автоматически через создание заказа.',409)
       // Main restoration: revive the exact historical identity, but never invent
       // stock or repair any unrelated retired execution. No duplicate SKU is made.
       if(old.catalog_variant_id){
