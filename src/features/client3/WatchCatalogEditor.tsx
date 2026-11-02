@@ -45,7 +45,7 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
   const models=Array.from(new Map(rows.map(row=>[row.watchProductId,{id:row.watchProductId,name:row.modelName}])).values())
   useEffect(()=>{
     const controller=new AbortController()
-    setLoading(true);setRows([]);setError('');setNotice('')
+    setLoading(true);setRows([]);setError('')
     void callApi('/api/client3/watches/catalog?brand='+encodeURIComponent(brand),{signal:controller.signal})
       .then(data=>{if(!controller.signal.aborted){
         setRows(data.rows||[])
