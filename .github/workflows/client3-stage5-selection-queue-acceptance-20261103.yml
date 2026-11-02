@@ -62,6 +62,7 @@ jobs:
           assert(operations.includes('stocktake-selective-chips'))
           assert(operations.includes('selectedModels.map(([id,name])=><button'))
           assert(operations.includes('onClick={clearModels}'))
+          assert(operations.includes('filter(([id])=>!ids.has(Number(id)))'))
           assert(operations.includes('disabled={saving||!selectedModels.length} onClick={beginSelected}'))
           assert(operations.includes('Начать работу с выбранными товарами'))
           assert(operations.includes('client3-main-stock-model-navigation-list'))
