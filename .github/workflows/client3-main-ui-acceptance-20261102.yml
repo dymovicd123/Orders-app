@@ -19,6 +19,11 @@ jobs:
           test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
           test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
       - run: npm ci
+      - name: Verify Main's actual view components are reused instead of rebuilding them
+        run: |
+          grep -Fq "StocktakeProductChoice,StocktakeSizeCountCell" src/features/client3/WatchWarehouseMain.tsx
+          grep -Fq 'LinkedTableScroll' src/features/client3/WatchOrdersPanel.tsx
+          grep -Fq 'order-step-card' src/features/client3/WatchOrderForm.tsx
       - name: Main frontend widget and watch sandbox assertions
         run: |
           node scripts/client3/test-watch-shell-20261102.mjs
