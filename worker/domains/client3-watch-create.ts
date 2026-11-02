@@ -55,7 +55,7 @@ export async function createClient3WatchOrder(
 
     // Never trust client variant IDs, model names, stock figures or brand headers.
     const variant=await db.prepare(
-      'SELECT wv.id AS watch_id,wv.catalog_variant_id,wp.catalog_product_id,cp.name AS canonical_name,cv.is_active AS catalog_active,wp.is_active AS product_active,wv.is_active AS variant_active,ep.sale_price AS catalog_price FROM watch_variants wv JOIN watch_products wp ON wp.id=wv.watch_product_id JOIN catalog_products cp ON cp.id=wp.catalog_product_id JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id AND cv.product_id=wp.catalog_product_id LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE wv.id=? AND wp.brand_id=? LIMIT 1',
+      `SELECT wv.id AS watch_id,wv.catalog_variant_id,wp.catalog_product_id,cp.name AS canonical_name,cv.is_active AS catalog_active,wp.is_active AS product_active,wv.is_active AS variant_active,ep.sale_price AS catalog_price FROM watch_variants wv JOIN watch_products wp ON wp.id=wv.watch_product_id JOIN catalog_products cp ON cp.id=wp.catalog_product_id JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id AND cv.product_id=wp.catalog_product_id LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE wv.id=? AND wp.brand_id=? LIMIT 1`,
     ).bind(raw.watchVariantId,brandId).first<Record<string,unknown>>()
     const productId=Number(variant?.catalog_product_id||0)
     const variantId=Number(variant?.catalog_variant_id||0)
@@ -127,8 +127,11 @@ export async function createClient3WatchOrder(
     }
     // Existing Main critical operation writes money + canonical item + reservations.
     // Its completion is delayed until the brand-owned watch attachment is durable.
-    const response=await createOrder(db,order,actor,watch)
-    const pendingReservation=(response.stockWriteOff||[]).some(item=>(item as {reservationStatus?:string}).reservationStatus!=='active')
+    const result=await createOrder(db,order,actor,watch)
+    if(!result || typeof result!=='object' || !('ok' in result) || result.ok!==true)
+      throw new Error('Операция создания не вернула подтверждение. Повторите тот же запрос.')
+    const response=result as {ok:true;stockWriteOff?:Array<{reservationStatus?:string}>;[key:string]:unknown}
+    const pendingReservation=(response.stockWriteOff||[]).some(item=>item.reservationStatus!=='active')
     return json({...response,brand:input.brand,engravingShippingIndependent:true,
       pendingReservation,
       ...(pendingReservation?{warning:'Заказ записан, но резерв товара ожидает проверки. Не отправляйте его до устранения нехватки.'}:{}),

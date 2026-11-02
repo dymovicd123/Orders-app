@@ -145,3 +145,136 @@
 - Последние push-CI и удалённый schema preflight через доступный API ещё **не подтверждены**; полный end-to-end не объявляется успешным.
 
 **Открыто:** W1c migration path + Time Travel bookmark; W2 canonical SKU, склад, несколько позиций; W3 брендовая касса, финансовые события, отчёты; W4 обмены/возвраты/отправка; W5 QA и guarded Client3-only release. Main и Branch2 не трогать.
+
+## 10. Checkpoint W2d · 2026-11-02 · подтверждённый CI, canonical SKU и физический приход
+
+### Подтверждённая приёмка кода
+- Для запуска PR-ориентированных checks создан **черновой PR #775 (DO NOT MERGE)** только между двумя Client3-ветками: `client3/watch-redesign-20261102` → `client3/watch-ci-accept-20261102`. Ни main, ни branch2 не являются base и не изменялись.
+- CI обнаружил и позволил исправить реальную TS-синтаксическую ошибку в SQL строки создания заказа, некорректную SQLite-фикстуру менеджеров и TypeScript-сужение результата `createOrder`.
+- Финальная на данный checkpoint приёмка **GitHub Actions #41442139938 — SUCCESS**: isolated Worker/D1 identity, Node/SQLite watch domain, API/access, SSR watch form/logistics/shell, order-details idempotency, catalog drafts, per-brand orders, canonical SKU provisioning, arrival guards, TypeScript+Vite, npm audit. Сборка проверена, однако сквозное создание заказа на фактической Client3 D1 ещё НЕ проверялось.
+
+### W2d · Подготовка SKU
+- Административный `POST /api/client3/watches/catalog/provision`: только для выбранного бренда и точного watchVariantId. Использует раздельные стабильные внутренние имена canonical продуктов `WATCH_<brand>_MODEL_<id>`, Main `ensureCatalogExecutionV3` и `createCatalogCombinationV3`. Цвет кожаного ремешка участвует в материале/ключе SKU. Одинаковое видимое название в другом бренде получает отдельный canonical product/variant.
+- Повторная подготовка не создаёт второе SKU. Перед ответом перепроверяются привязка к бренду, товару, исполнению и варианту. Это только привязка каталога: **inventory_stock, inventory_movements, payments, orders не создаются и не меняются**.
+- В админ-каталоге кнопка «Подготовить складской SKU». Изолированный SQLite тест: сквозной mapping, разделение брендов/цветов, идемпотентность и отсутствие ghost-остатков.
+
+### W2d · Приход
+- Отдельный `POST /api/client3/watches/stock/arrival`, admin-only, бренд/SKU проверены на сервере, офис/витрина как warehouse/boutique. Приход вызывает **существующий Main `applyInventoryMovement`** с exact canonical variant, строгой проверкой количества и `requestId`; прямая вставка в остатки исключена.
+- В каталоге отдельная форма физического прихода (SKU, источник, количество, необязательный комментарий), обновление доступного остатка после успешного запроса. Приход нельзя сохранить по черновику без canonical mapping.
+- Тест ролей, недопустимых источников/количеств, неизвестной комплектации и отсутствия физического stock update прошёл. **Позитивный arrival end-to-end на актуальной Main+D1 схеме ещё требуется**, поэтому приход не объявляется окончательно принятым.
+- Без деплоя/remote writes, реальная Client3 D1 со старыми записями не менялась.
+
+### Следующий путь
+1. W1c: получить точный результат READ-ONLY schema preflight, провести отдельный план инкрементальных Main + watch миграций без потери старых данных; Time Travel bookmark перед apply.
+2. W2: полноценные операции перемещения/списания/ревизии и проверка положительного прихода с защитой от повторного сохранения.
+3. W3/W4: серверные брендовые финансы/кассы/оплаты/возвраты/обмены/отправка, никаких опасных generic-legacy мутаций.
+4. W5: отдельная браузерная QA и Client3-only релиз; Main и Branch2 не затрагивать.
+
+## 11. Checkpoint W1c / W2e · 2026-11-02 · реальная read-only D1 сверена, перемещение часов
+
+### W1c: подтверждённая структура реальной третьей базы
+- **GitHub Actions #41444881347 и расширенный #41445219435 SUCCESS.** Оба изолированных workflow выполнили SELECT/PRAGMA только к `orders_db_client3_old_client`. Никаких D1 writes, миграций или деплоев.
+- Не персональные контрольные количества: 2 заказа, 2 позиции, 2 оплаты, 4 пользователя, 3 менеджера, 2 товара, 2 варианта и 2 строки остатков. Эти данные нужно сверить повторно непосредственно перед миграцией.
+- Из расширенного обязательного перечня колонок **отсутствуют только шесть watch-domain полей/таблиц**: `watch_brands.code`, `watch_products.model_name`, `watch_variants.bracelet_color`, `watch_order_details.brand_id`, `watch_order_item_details.engraving_text`, `watch_logistics_jobs.status`. Main order/catalog/stock/reservation/critical-operation колонки в этой выборочной проверке присутствуют.
+- В ядре уже есть `inventory_operations`, `inventory_movements`, `inventory_operation_request_fingerprints`, `inventory_reservations`, `inventory_model_meta`, `critical_operations`, `critical_operation_entities`, `catalog_stock_positions`, `catalog_execution_prices`.
+- **Отсутствуют все три таблицы Stage5 dispatch**, проверенные отдельным count. Перед вводом dispatch/returns нужно восстановить их схемы и зависимости из Main и применить только к Client3. Пока их нет, никаких «Отправить»/«Частичная отправка» в Client3 не открывать.
+- Документированная live-структура значительно ближе к Main, чем считалось ранее; удалять или пересоздавать D1 нельзя. Миграции watch 0002/0003 подготовлены, **но ещё не применены**, как и Stage5. Перед любыми write-операциями: Time Travel bookmark, точные before-counts, офлайн clone/dry-run, проверка FK и регрессий, только Client3 deployment gate.
+
+### W2e: свободное перемещение часов (source-only)
+- Администратор может отправить строго связанную watch SKU из офиса в витрину или обратно через `POST /api/client3/watches/stock/transfer`. Точный бренд/SKU определяется сервером, внешний склад запрещён.
+- Использует существующее Main `applyInventoryTransfer` с `requestId` и `expectedQuantity`. Для нового запроса проверяются фактический остаток, совпадение со снимком формы и **максимум зарезервированного** по inventory_stock и активному inventory_reservations. Зарезервированные часы намеренно не перемещаются.
+- При повторе ранее записанной операции проверка текущего остатка не мешает получить прежний ответ; изменение входных данных с тем же ключом отбрасывает ядро. Любое предупреждение о гонке резервов обязательно передаётся интерфейсу.
+- Административный каталог показывает физические/зарезервированные остатки обоих источников (резерв отображается по более строгому из двух источников данных), доступное количество и форму перемещения.
+- Добавлен адаптерный тест положительного прихода и перемещения на SQLite с имитацией Main movement boundary. Проверяет replay, отказ чужому бренду, недостаток свободных часов, несвежий резерв. **Это НЕ положительный end-to-end тест реального Main applyInventoryTransfer и не приёмка live D1.**
+
+### Следующий путь
+1. Разобрать точные additive Stage5 dispatch миграции Main, смоделировать цепочку на disposable clone schema; только затем безопасно готовить watch 0002/0003.
+2. W2: write-off, корректировка/ревизия и положительные тесты реального складского движка с полной схемой, отдельно проверять активные резервы.
+3. W3/W4: брендовая касса/отчёты и item-scoped обмены/возвраты/отправка; не включать старые универсальные POST.
+4. W5: браузерная QA и деплой исключительно третьей системы после bookmark/backup/rollback plan.
+
+## 12. Checkpoint W1d / W2f · 2026-11-02 · Stage5 migration + реальный складской движок на disposable D1
+
+**Только исходники Client3, ничего не развернуто и ни одна remote D1 не изменена.**
+
+### W1d · Клиентская цепочка миграций Stage5 + Watches
+
+- Найден оригинальный Main `migrations/0119_v72_order_dispatch_lineage.sql`: все три таблицы `order_dispatches`, `order_dispatch_items`, `order_dispatch_corrections` и их индексы содержатся в одной additive DDL миграции, без backfill и переделки прошлых отправок.
+- В `migrations/client3-watch/` добавлена `0001_client3_stage5_dispatch_lineage.sql` (ровно оригинальный DDL после комментария), затем `0002_client3_watch_foundation.sql` и `0003_watch_manager_brand_audit.sql`. `wrangler.jsonc` указывает исключительно на этот каталог Client3; не переносить миграции в Main/Branch2.
+- SQLite-тест `scripts/client3/test-watch-migration-chain-20261102.mjs` проверил source parity с Main, FK, создание и коррекцию отправки через реальную новую схему, повтор DDL, **нулевую выдуманную историю отправок и неизменность старых заказов, оплат, пользователей и остатков**. CI #41448231773 — SUCCESS.
+- Реальная D1 preflight #41445219435 показала наличие требуемых основных Main таблиц/колонок и отсутствие именно шести watch-domain schema элементов и трёх dispatch-таблиц, при контрольных числах 2 заказа / 2 строки / 2 оплаты / 4 пользователя / 3 менеджера / 2 остатка. Это **не разрешение автоматически применять** 0001–0003: проверить D1 migration journal, перед применением получить bookmark и сверить baseline/counters/FK/rollback.
+
+### W2f · Списание часов
+
+- Добавлен `POST /api/client3/watches/stock/writeoff` — администратор, текущий бренд/SKU, офис/витрина, физическое количество, текущий снимок остатков, обязательная причина и idempotent requestId.
+- Часы с чужой брендовoй идентичностью, неподготовленным SKU, несвежим остатком или недостаточным свободным остатком не списываются. Сравнивается максимум cached `inventory_stock.reserved_quantity` и живого `inventory_reservations`. Сервер передаёт запрос настоящему Main `applyInventoryMovement(...,'writeoff')`, не пишет физические остатки вручную.
+- Для новых списаний после успешного сохранения выполняется read-only проверка резервов и выдаётся предупреждение при расхождении. В UI отдельный раздел с **обязательным явным подтверждением** и комментарием.
+- `scripts/client3/test-watch-writeoff-20261102.mjs` проверяет отказ при ошибочной роли/бренде/резерве/остатке, повтор и конфликт ключа (адаптерная SQLite-модель); CI #41448524184 SUCCESS.
+
+### W2f · Реальный тест Main warehouse engine на полной схеме
+
+- В отличие от предыдущих mock-тестов, `scripts/client3/test-watch-full-stock-engine-20261102.mjs` поднимает **все Main SQL миграции + Client3 watch 0001–0003** на disposable SQLite, формирует реальную canonical SKU по существующей функции, затем вызывает настоящие `receiveClient3WatchArrival`, `transferClient3WatchStock` и `writeoffClient3WatchStock` без подмены складского движка.
+- Проверено: приход 5 → перемещение 2 офис→витрина → списание 1 с офиса; итог офис=2, витрина=2; повторы без удвоения, изменённые запросы с прежними requestId отклонены; `inventory_movements` увеличивается, `orders/payments` не изменяются, FK чистые.
+- **GitHub Actions #41448810644 — SUCCESS**, включая этот тест, все прежние Client3 тесты, TypeScript/Vite сборку и проверку зависимостей. Это результат теста на полной схеме, **не на живой Client3 D1**.
+
+### Открытые границы
+
+- W2: selective/manual count correction и полноценная ревизия, сквозное создание заказа и резерва, затем физическая отправка/частичная выдача с Stage5 механизмом.
+- W3: отдельный *server-side* платёжный ledger / касса, отчёты/долги/менеджерские ограничения по брендам; UI-агрегаты заказов не являются кассой.
+- W4: item-level возвраты/обмены, подтверждение приёмки и сохранение SKU/бренда.
+- W5: backup/Time Travel bookmark, offline replay against complete real schema snapshot, staged Client3-only migration, браузерная QA, наблюдение и выпуск. Main/Branch2 неприкосновенны.
+
+## 13. Release checkpoint — 2026-11-02 · real Client3 production release
+
+**Release verified: [GitHub Actions #41458153580](https://github.com/dymovicd123/Orders-app/actions/runs/41458153580) SUCCESS.** Released from isolated snapshot `client3/watch-release-20261102`, deploy commit `92a454e8d469b9b33883a145a2a890aa8ece0fe2`, source snapshot `d8a9dfc43e2081ffc97550a0e53eb051b2038e1d`.
+
+- Live third Worker: `orders-app-client3-old-client`, Version ID `3ba7813b-c794-47a6-90e8-078af1525513`, URL `https://orders-app-client3-old-client.orders-clothes.workers.dev`.
+- A separate single-use release branch/workflow tested full Main migrations + watch backend order, catalog price, payment, reservation, itemized engraving, Stage5 shipping, brand-segregated finance, return and physical receipt, SSR shell and TypeScript/Vite.
+- Before D1 mutation: exact third D1 UUID `0717f239-6d81-4837-8586-777d94e22c53`, environment target name, 3 expected migration names, legacy row counts/sums, Time Travel recovery bookmark. Bookmark stored only in **private GitHub Actions recovery artifact** for maintainers with 7-day retention (never published to issue).
+- Applied `0001_client3_stage5_dispatch_lineage.sql`, `0002_client3_watch_foundation.sql`, `0003_watch_manager_brand_audit.sql` only to **orders_db_client3_old_client**. D1 migration backup automatically captured by Wrangler; **legacy row counts, stock physical/reserved aggregates, money sums and FK remained identical**.
+- Third Worker published only after post-migration checks passed. Main/Branch2 untouched.
+- Postrelease public HTTP smoke via [#41458490332](https://github.com/dymovicd123/Orders-app/actions/runs/41458490332) SUCCESS: main UI and JS bundle HTTP 200, unauthenticated brand and old orders routes denied. No authenticated visual browser QA yet.
+- Two pre-existing historical orders remain deliberately **unbranded** and visible via admin-only `/api/client3/watches/legacy-orders`; no automated migration/relabeling of their brand, money, reservations or items.
+- All three former managers remain **unassigned** to TAUWACH/WACHIZEN by default: admin must assign staff access explicitly from «Доступ к брендам» before managers can sell.
+
+### Release boundaries that must remain obvious
+
+- Single exact watch SKU per created order and full-item shipment (multi-SKU selective dispatch currently blocked).
+- Exchanges and their physical intake are **not shipped**; do not enable legacy unbranded exchange route.
+- Full warehouse stocktake not provided as UI yet (next quick SKU physical recount).
+- Financial tab is brand-filtered **financial_events** and per-payment-method net movement, not an independently reconciled physical cashbox or bank balance.
+- No claim of authenticated browser QA or comprehensive old-data business reconciliation; manual admin acceptance remains necessary.
+
+## 14. Same-day W2g follow-up — guarded SKU physical recount
+
+- Added server-only `POST /api/client3/watches/stock/count` and an admin form in catalog for one exact brand SKU and Office/Showcase. Compares `expectedPhysical` to existing stock, calls existing Main `quickInventoryStocktakeBatch` (no DIY write), preserves active reservations, requires explicit physical-count confirmation.
+- Count below active reservations requires a second explicit shortage acknowledgement. Main handles stale stock and idempotent replay.
+- Added positive real-engine quick count + same-request replay + changed-request rejection to `scripts/client3/test-watch-full-stock-engine-20261102.mjs`. [Isolated test #41458912439](https://github.com/dymovicd123/Orders-app/actions/runs/41458912439) SUCCESS.
+- A **separate third Worker-only hotfix** branch/workflow `client3/watch-update-stocktake-20261102` checks existing migrated schema and only deploys worker/assets, never reapplies D1 migrations. Update status must be verified before marking this feature live.
+
+## 15. W4a · 2026-11-02 · одноштучный обмен часов того же бренда (код принят тестами)
+
+- Уже живая третья система (release #41458153580, stocktake hotfix #41459113919) остаётся отдельной от Main/Branch2.
+- Реализована **узкая безопасная первая версия обмена**: у исходной позиции должен быть подтверждённый физический Stage5 dispatch; ровно одна активная позиция и количество 1; новый SKU берётся только из активного каталога **того же бренда** с положительным свободным остатком в Офисе/Витрине; фактическая цена продажи **не меняется**; финансовых доплат/возвратов в обмене нет.
+- Полностью задействован Main `createExchange` со старой позицией `oldPhysicalState='pending'`, новой `shipmentState='pending'`, itemized pricing/critical-operation fingerprint и точным SKU. Перед завершением критической операции новая позиция получает отдельные `watch_order_item_details` (SKU + гравировка). Старое состояние «Готово» сбрасывается с аудитом, когда нужна новая гравировка. Новые часы не считаются отправленными до отдельного Stage5 dispatch; старые — до отдельного физического приёма.
+- `WatchExchangeForm` в таблице заказов показывает доступные варианты, требует причину, подтверждение 1 шт. и явно предупреждает об отсутствии доплаты; UI после обмена видит только **активную** SKU (старый item.quantity=0 остаётся в истории), очередь возвратов включает старую позицию обмена; сдача старого товара отдельно через Main `receiveReturnedItem`.
+- Добавлена безопасная идемпотентность completed-replay и восстановление started critical operation по сохранённой original exchange target и itemized catalog snapshot; при ошибке сети после retiring old item тот же `requestId` продолжает исходную операцию, не создаёт дубль.
+- `scripts/client3/test-watch-full-exchange-engine-20261102.mjs` поднимает всю Main+D1 schema, выполняет реальные Main handlers и дополнительно **инжектирует сбой между созданием обмена и сохранением watch metadata**, затем успешно продолжает по прежнему requestId. Проверяет гравировку, резерв нового SKU, реальный приём старого SKU, физическую отправку новой позиции и отсутствие дублей. [GitHub Actions #41462472915](https://github.com/dymovicd123/Orders-app/actions/runs/41462472915) SUCCESS.
+- Только в изолированной release ветке `client3/watch-exchange-update-20261102` запущен Worker-only release gate [#41462775342](https://github.com/dymovicd123/Orders-app/actions/runs/41462775342). **Нет новых SQL миграций**, D1 только SELECT. Точный Worker/D1 binding и контрольные записи проверяются до/после Worker deploy. Статус релиза отдельно фиксируется по исходу Actions; на момент записи это НЕ подтверждение успешного деплоя.
+- **Нельзя выдавать эту версию за полный W4**: частичные обмены, несколько позиций, замена между брендами, разница цены/доплата/возврат средств остаются запрещены. Нужна browser QA под реальной сессией admin/manager/logist (не делать реальных тестовых складских операций в старой живой D1 без согласованных тестовых SKU).
+
+## 16. 2026-11-02 · W4a exchange Worker-only release подтверждён
+
+- **GitHub Actions #41462775342 SUCCESS**, отдельная release-ветка `client3/watch-exchange-update-20261102` (commit `b36f44c4fb92a93fb4358d015afeb80894e4faa3`). Пройдены реальные Main складские, order/payment, return+exchange+retry тесты на полной disposable SQLite.
+- На точном Worker `orders-app-client3-old-client` применён **только код**, без D1 schema migrations и без SQL-записей в пользовательскую БД. Предварительный read-only count+schema guard, публичный HTML/unauthorized-API smoke и итоговая read-only проверка контрольных записей — все SUCCESS. Main/Branch2 не затронуты.
+- **LIVE URL**: https://orders-app-client3-old-client.orders-clothes.workers.dev
+- Отчёт релиза: https://github.com/dymovicd123/Orders-app/issues/774#issuecomment-6579773344
+- Поддерживается **только** обмен *одной отправленной позиции* на *одну другую SKU-позицию того же бренда* и *с той же фактической ценой продажи*. Отдельная гравировка, логистика, резерв, фактическая отправка замены и физическая приёмка старых часов. Частичные/суммовые/мультипозиционные и межбрендовые обмены — пока заблокированы, не притворяться поддержанными.
+- **Открытые приёмочные задачи**: реальный браузерный проход админ/менеджер/логист, настройка brand assignments для настоящих менеджеров, требуемые пользователю расширенные кассовые функции (не путать с уже работающим `financial_events`), сложные обмены, множественные позиции и частичные отправки, если клиент действительно использует такие сценарии. Никаких фиктивных брендов старым заказам и автоматической подстановки неизвестных остатков/цен.
+
+## 17. Client3 обычный вход и админ-управление · 2026-11-02
+
+- По запросу владельца экран входа упрощён: заголовок **«Вход»**, без TAUWACH/WACHIZEN или «система часов» и без постоянно видимой кнопки повтора проверки. Повторная проверка соединения показывается только при ошибке.
+- Для действующего администратора Client3 добавлен таб **«Учётные записи»**: список текущих аккаунтов, создание отдельного администратора с логином/отображаемым именем/временным паролем. Использует существующий серверный маршрут `POST /api/auth/users`, который требует полноценной **активной admin-сессии**, журналирует создание и выставляет `must_change_password=1`. Новая самостоятельная публичная регистрация НЕ добавлена.
+- **Подтверждено:** изолированный Worker-only release [#41464482036](https://github.com/dymovicd123/Orders-app/actions/runs/41464482036) SUCCESS, сайт/запрет неавторизованного брендового API, полная тестовая цепочка склада/обменов, read-only проверка прежних данных. Main/Branch2 и схема третьей D1 не изменялись.
+- **Важная незавершённость:** личный аккаунт владельца **ещё не создан**, потому что сторонний прямой SQL bootstrap/учётные данные нельзя безопасно размещать в публичном GitHub репозитории. Нельзя заявлять, что новый логин/пароль выданы. Требуется действующая авторизованная admin-сессия для добавления через «Учётные записи» либо отдельный защищённый канал/процесс выдачи.

@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { WatchBrand } from '../../../shared/client3/watch-domain'
+import {WatchReturnForm} from './WatchReturnForm'
+import {WatchExchangeForm} from './WatchExchangeForm'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
@@ -7,7 +9,9 @@ type WatchOrder={
   recipientName:string;recipientPhone:string;city:string;deliveryMethod:string
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
-  lineCount:number;urgent:number;shippingDeadlineAt:string
+  lineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
+  firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
+  activeWatchVariantId:number|null;pendingReplacement:number
 }
 type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
@@ -26,6 +30,11 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
   const [data,setData]=useState<OrdersResponse|null>(null)
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
+  const [sendConfirm,setSendConfirm]=useState<number|null>(null)
+  const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
+  const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
+  const [sendingId,setSendingId]=useState<number|null>(null)
+  const shipRequests=useRef<Record<number,string>>({})
   useEffect(()=>{
     const controller=new AbortController()
     setBusy(true);setError('');setData(null)
@@ -50,6 +59,24 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
     }).finally(()=>{if(!controller.signal.aborted)setBusy(false)})
     return ()=>controller.abort()
   },[brand,month,query,page,refresh])
+  const sendOrder=async(orderId:number)=>{
+    if(sendingId!==null||sendConfirm!==orderId)return
+    setSendingId(orderId);setError('')
+    if(!shipRequests.current[orderId])shipRequests.current[orderId]='watch-send-'+crypto.randomUUID()
+    try{
+      const response=await fetch('/api/client3/watches/orders/'+orderId+'/send',{
+        method:'POST',credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({brand,requestId:shipRequests.current[orderId]}),
+      })
+      const result=await response.json() as {ok:boolean;message?:string}
+      if(!response.ok||!result.ok)throw new Error(result.message||'Не удалось отправить часы')
+      delete shipRequests.current[orderId]
+      setSendConfirm(null)
+      setRefresh(x=>x+1)
+    }catch(cause){setError(cause instanceof Error?cause.message:'Ошибка отправки')}
+    finally{setSendingId(null)}
+  }
   return <section className="watch-orders">
     <header className="watch-orders-header">
       <div><h2>Заказы часов</h2><p>Заказы, оплаты и задолженности отображаются отдельно по брендам.</p></div>
@@ -94,9 +121,43 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
               <div><small>Оплата</small><strong>{sum(order.receivedAmount)} / {sum(order.totalAmount)}</strong>
                 <span>Долг: {sum(order.debtAmount)}</span></div>
               <div><small>Состояние</small>
-                <strong>{order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
-                <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span></div>
+                <strong>{order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
+                <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span>
+                {(order.pendingReplacement||order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено')&&order.lineCount===1&&(order.returnableQuantity??1)>0&&
+                  (order.engravedLines===0||order.engravingStatus==='ready')&&
+                  <div className="watch-orders-shipping">
+                    {sendConfirm===order.orderId?<>
+                      <small>Подтверждаете фактическую отправку? Товар будет списан со склада.</small>
+                      <button type="button" disabled={sendingId!==null} onClick={()=>void sendOrder(order.orderId)}>
+                        {sendingId===order.orderId?'Сохраняю…':'Подтвердить отправку'}
+                      </button>
+                      <button type="button" disabled={sendingId!==null} onClick={()=>setSendConfirm(null)}>Отмена</button>
+                    </>:<button type="button" disabled={sendingId!==null}
+                      onClick={()=>setSendConfirm(order.orderId)}>Отправить клиенту</button>}
+                  </div>}
+                {(order.pendingReplacement||order.shippingStatus!=='sent')&&order.engravedLines>0&&order.engravingStatus!=='ready'&&
+                  <small>Сначала завершите гравировку в логистике.</small>}
+              </div>
             </div>
+            {order.watchDescription&&<p className="watch-orders-sku">{order.watchDescription}</p>}
+            {(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&
+              !order.pendingReplacement&&order.lineCount===1&&order.returnableQuantity===1&&
+              (exchangeOrderId===order.orderId?
+                <WatchExchangeForm brand={brand} order={order}
+                  onCancel={()=>setExchangeOrderId(null)}
+                  onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>
+                :<button className="watch-orders-return-open" type="button"
+                  onClick={()=>{setReturnOrderId(null);setSendConfirm(null);setExchangeOrderId(order.orderId)}}>
+                  Обменять часы
+                </button>)}
+            {order.lineCount===1&&(Math.max(0,order.receivedAmount-order.returnAmount)>0||
+              ((order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&order.returnableQuantity>0))&&
+              (returnOrderId===order.orderId?
+                <WatchReturnForm brand={brand} order={order}
+                  onCancel={()=>setReturnOrderId(null)}
+                  onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>
+                :<button className="watch-orders-return-open" type="button"
+                  onClick={()=>{setSendConfirm(null);setReturnOrderId(order.orderId)}}>Оформить возврат</button>)}
           </article>)}
         </div>}
       <div className="watch-orders-pages">

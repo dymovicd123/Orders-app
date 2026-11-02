@@ -43,6 +43,22 @@ jobs:
         run: node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
       - name: Read brand-scoped watch orders and financial summaries on disposable SQLite
         run: node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+      - name: Exact brand-owned canonical SKU provisioning without physical arrivals
+        run: node --experimental-strip-types scripts/client3/test-watch-provision-20261102.mjs
+      - name: Reject unmapped watch arrivals and unsafe inventory sources
+        run: node --experimental-strip-types scripts/client3/test-watch-arrival-guards-20261102.mjs
+      - name: Positive watch arrival adapter and retry contract (simulated Main movement boundary)
+        run: node --experimental-strip-types scripts/client3/test-watch-arrival-adapter-20261102.mjs
+      - name: Stage5 + watch additive migration chain preserves legacy Client3 data
+        run: node --experimental-strip-types scripts/client3/test-watch-migration-chain-20261102.mjs
+      - name: Watch SKU writeoff rejects reserved watches and idempotent duplication
+        run: node --experimental-strip-types scripts/client3/test-watch-writeoff-20261102.mjs
+      - name: Real Main warehouse handlers on fully migrated disposable D1 (watch stock E2E)
+        run: node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+      - name: Real watch create + reserve + payment on fully migrated disposable D1
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Real Main one-unit same-brand watches exchange with exact SKU and engraving
+        run: node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
       - name: Full Main foundation build on isolated tenant code
         run: npm run build
       - name: Dependencies audit

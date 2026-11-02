@@ -6,6 +6,7 @@ on:
       - '.github/workflows/client3-watch-live-readonly-preflight-20261102.yml'
 permissions:
   contents: read
+  issues: write
 jobs:
   remote-select-only:
     runs-on: ubuntu-latest
@@ -57,23 +58,68 @@ jobs:
           set -euo pipefail
           npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json \
             --command="WITH required(table_name,column_name) AS (VALUES
+              ('orders','id'),
+              ('orders','order_date'),
+              ('orders','manager_id'),
+              ('orders','manager_snapshot_name'),
+              ('orders','order_status'),
+              ('orders','external_id'),
+              ('orders','total_amount'),
+              ('orders','received_amount'),
+              ('orders','debt_amount'),
               ('orders','pricing_mode'),
               ('orders','shipping_status'),
               ('orders','source_type'),
               ('orders','return_amount'),
+              ('order_items','id'),
+              ('order_items','order_id'),
+              ('order_items','product_id'),
+              ('order_items','variant_id'),
+              ('order_items','quantity'),
+              ('order_items','is_workshop'),
+              ('order_items','source_type'),
               ('order_items','catalog_price_snapshot'),
               ('order_items','inventory_obligation_key'),
               ('order_items','stock_writeoff_status'),
+              ('inventory_stock','inventory_source'),
+              ('inventory_stock','variant_id'),
+              ('inventory_stock','quantity'),
               ('inventory_stock','reserved_quantity'),
+              ('inventory_reservations','status'),
+              ('inventory_reservations','quantity'),
+              ('inventory_reservations','variant_id'),
               ('inventory_reservations','order_item_id'),
               ('inventory_reservations','inventory_source'),
+              ('critical_operations','operation_type'),
               ('critical_operations','request_id'),
               ('critical_operations','context_json'),
               ('critical_operation_entities','entity_id'),
+              ('catalog_products','id'),
+              ('catalog_products','name'),
+              ('catalog_products','category'),
+              ('catalog_products','gender_scope'),
+              ('catalog_products','is_active'),
+              ('catalog_stock_positions','id'),
+              ('catalog_stock_positions','product_id'),
+              ('catalog_stock_positions','material'),
+              ('catalog_stock_positions','length'),
+              ('catalog_variants','id'),
+              ('catalog_variants','product_id'),
+              ('catalog_variants','gender'),
+              ('catalog_variants','color'),
+              ('catalog_variants','material'),
+              ('catalog_variants','length'),
+              ('catalog_variants','size_label'),
+              ('catalog_variants','is_active'),
               ('catalog_variants','stock_position_id'),
               ('catalog_variants','category'),
+              ('catalog_execution_prices','stock_position_id'),
+              ('catalog_execution_prices','category'),
               ('catalog_execution_prices','sale_price'),
+              ('app_users','id'),
               ('app_users','manager_id'),
+              ('managers','id'),
+              ('managers','name'),
               ('managers','is_active'),
               ('watch_brands','code'),
               ('watch_products','model_name'),
@@ -89,6 +135,42 @@ jobs:
           echo "Client3 missing columns (schema names only, NO CLIENT DATA):"
           cat /tmp/client3-schema-gaps.json
           echo "Missing schema columns: $(jq length /tmp/client3-schema-gaps.json)"
+      - name: Read-only migration metadata and storage prerequisites (names only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN
+              ('inventory_operations','inventory_operation_request_fingerprints',
+               'inventory_movements','inventory_model_meta','critical_operations',
+               'critical_operation_entities','catalog_stock_positions',
+               'catalog_execution_prices','inventory_reservations',
+               'watch_brands','watch_order_details','watch_manager_brand_events')
+             ORDER BY name" \
+            | jq -ce '.[0].results | map(.name)' > /tmp/client3-required-tables.json
+          echo "Client3 existing supporting table names (NO CLIENT DATA):"
+          cat /tmp/client3-required-tables.json
+      - name: Post W1c schema-only finding to issue 774
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Client3 W1c · automatic READ-ONLY schema preflight"
+            echo ""
+            echo "GitHub Actions run: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}"
+            echo "Database: \`orders_db_client3_old_client\` (exact third installation only)."
+            echo ""
+            echo "Required schema gaps (table/column identifiers only; NO customer records):"
+            jq -r 'if length==0 then "None in the selected required-column set." else .[] | "- " + .table_name + "." + .column_name end' /tmp/client3-schema-gaps.json
+            echo ""
+            echo "Present infrastructure tables (names only):"
+            jq -r 'if length==0 then "None of the selected tables." else .[] | "- " + . end' /tmp/client3-required-tables.json
+            echo ""
+            echo "**No Client3 D1 writes, migrations or Worker deployments were executed.**"
+          } > /tmp/client3-w1c-issue-comment.txt
+          gh issue comment 774 --repo dymovicd123/Orders-app --body-file /tmp/client3-w1c-issue-comment.txt
       - name: Public third Worker auth readiness and unauthorized API guard
         shell: bash
         run: |
@@ -101,3 +183,11 @@ jobs:
           status="$(curl -sS -o /dev/null -w '%{http_code}' "$url/api/orders")"
           test "$status" = 401
           echo CLIENT3_LIVE_READ_ONLY_PRECHECK_PASS_NO_REMOTE_WRITES
+      - name: Report blocked W1c preflight (no customer data)
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "### Client3 W1c preflight blocked\n\nRead-only GitHub Actions run: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}\n\nMigration and deployment remain blocked. Inspect the run for the failing stage; this task did not authorize any D1 write."

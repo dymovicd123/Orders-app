@@ -1,4 +1,14 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
+import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
+import {exchangeClient3Watch} from './client3-watch-exchange.ts'
+import {getClient3WatchFinance} from './client3-watch-finance.ts'
+import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
+import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
+import {countClient3WatchStock} from './client3-watch-stocktake.ts'
+import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
+import { provisionClient3WatchSku } from './client3-watch-provision.ts'
+import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
+import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
@@ -165,7 +175,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     JOIN watch_brands wb ON wb.id=wd.brand_id
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
     JOIN watch_logistics_jobs lj ON lj.order_id=wd.order_id
-    LEFT JOIN order_items oi ON oi.order_id=wd.order_id
+    LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND oi.quantity>0
     LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
     LEFT JOIN watch_variants v ON v.id=wditem.watch_variant_id
@@ -230,6 +240,42 @@ export async function markWatchLogisticsReady(
 export async function routeClient3Watches(
   db:D1Database,request:Request,url:URL,actor:AuthUser,
 ):Promise<Response|null> {
+  if(url.pathname==='/api/client3/watches/stock/count'&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown;source?:unknown;expectedPhysical?:unknown;countedQuantity?:unknown;requestId?:unknown;confirmed?:unknown;allowShortage?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return countClient3WatchStock(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/stock/writeoff'&&request.method==='POST') {
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;expectedPhysical?:unknown;requestId?:unknown;comment?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return writeoffClient3WatchStock(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/stock/transfer'&&request.method==='POST') {
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;expectedPhysical?:unknown;requestId?:unknown;comment?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return transferClient3WatchStock(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/stock/arrival'&&request.method==='POST') {
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;requestId?:unknown;comment?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return receiveClient3WatchArrival(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/prices'&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown;salePrice?:unknown;expectedPrice?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return updateClient3WatchCatalogPrice(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/provision'&&request.method==='POST') {
+    const input=await readJson<{brand?:unknown;watchVariantId?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return provisionClient3WatchSku(db,actor,scope.row!.id,Number(input.watchVariantId))
+  }
   if(url.pathname==='/api/client3/watches/catalog'&&request.method==='GET') {
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
@@ -246,6 +292,45 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return registerWatchVariant(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/returns/pending'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listPendingClient3WatchReturns(db,actor,scope.row!.id)
+  }
+  const exchangeMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchange$/.exec(url.pathname)
+  if(exchangeMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;newWatchVariantId?:unknown;newSource?:unknown;engravingText?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return exchangeClient3Watch(db,actor,scope.row!.id,Number(exchangeMatch[1]),input)
+  }
+  const watchReturnMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return$/.exec(url.pathname)
+  if(watchReturnMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;paymentMethod?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return createClient3WatchReturn(db,actor,scope.row!.id,Number(watchReturnMatch[1]),input)
+  }
+  const watchReceiveMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return\/receive$/.exec(url.pathname)
+  if(watchReceiveMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;returnId?:unknown;returnItemId?:unknown;destination?:unknown;operationType?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return receiveClient3WatchReturn(db,actor,scope.row!.id,Number(watchReceiveMatch[1]),input)
+  }
+  const sendMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/send$/.exec(url.pathname)
+  if(sendMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
+  }
+  if(url.pathname==='/api/client3/watches/legacy-orders'&&request.method==='GET')return listLegacyClient3Orders(db,actor)
+  if(url.pathname==='/api/client3/watches/finance'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return getClient3WatchFinance(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/orders'&&request.method==='GET') {
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')

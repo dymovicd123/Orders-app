@@ -11,14 +11,24 @@ sql.exec([
 'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);',
 'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);',
 "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_date TEXT,manager_id INTEGER,manager_snapshot_name TEXT,source_type TEXT,shipping_status TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,return_amount INTEGER);",
-'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER);',
+'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,product_name_snapshot TEXT);',
+'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
+'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);',
+'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,status TEXT);',
+'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY);',
+'CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER,order_item_id INTEGER,quantity INTEGER,cancelled_quantity INTEGER);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
-'INSERT INTO managers VALUES(1,"Alice",1),(2,"Bob",1);',
+'CREATE TABLE financial_events(id INTEGER PRIMARY KEY,order_id INTEGER,event_date TEXT,event_type TEXT,amount_delta INTEGER,payment_method TEXT,external_order_id TEXT,reason TEXT,comment TEXT);',
+`INSERT INTO managers VALUES(1,'Alice',1),(2,'Bob',1);`,
 'INSERT INTO app_users VALUES(9);',
 "INSERT INTO orders VALUES(1,'W-1','2026-11-01',1,'Alice','warehouse','not_sent','active',20000,10000,10000,0);",
 "INSERT INTO orders VALUES(2,'W-2','2026-11-02',2,'Bob','boutique','sent','active',60000,60000,0,0);",
 "INSERT INTO orders VALUES(3,'W-3','2026-10-01',1,'Alice','warehouse','sent','active',30000,30000,0,0);",
-'INSERT INTO order_items VALUES(101,1),(102,2),(103,3);',
+'INSERT INTO order_items VALUES(101,1,1,\'WATCH ONE\'),(102,2,1,\'WATCH TWO\'),(103,3,1,\'WATCH THREE\');',
+"INSERT INTO financial_events VALUES(1,1,'2026-11-01','order_payment',10000,'KASPI GOLD','W-1',NULL,NULL);",
+"INSERT INTO financial_events VALUES(2,1,'2026-11-02','order_refund',-1500,'KASPI GOLD','W-1',NULL,NULL);",
+"INSERT INTO financial_events VALUES(3,2,'2026-11-02','order_payment',60000,'KASPI RED','W-2',NULL,NULL);",
+"INSERT INTO financial_events VALUES(4,3,'2026-10-01','order_payment',30000,'KASPI GOLD','W-3',NULL,NULL);",
 ].join('\n'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec([
@@ -55,6 +65,10 @@ assert.equal(aliceMonth.totals.orderCount,1)
 assert.equal(aliceMonth.totals.totalAmount,20000)
 assert.equal(aliceMonth.totals.receivedAmount,10000)
 assert.equal(aliceMonth.totals.debtAmount,10000)
+const pct=await query(alice,'brand=TAUWACH&q=%25')
+assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
+const underscore=await query(alice,'brand=TAUWACH&q=_')
+assert.equal(underscore.rows.length,0,'Underscore search is literal, not LIKE wildcard')
 const forbidden=await query(alice,'brand=WACHIZEN')
 assert.equal(forbidden.httpStatus,403)
 assert(!JSON.stringify(forbidden).includes('Private Customer 2'))
@@ -74,5 +88,34 @@ const searched=await query(alice,'brand=TAUWACH&q=Private%20Customer%201')
 assert.equal(searched.rows.length,1)
 const invalid=await query(alice,'brand=TAUWACH&from=2026-02-30')
 assert.equal(invalid.httpStatus,400)
+const finance=async(actor,params)=>{
+  const url=new URL('https://example.test/api/client3/watches/finance?'+params)
+  const response=await routeClient3Watches(db,new Request(url),url,actor)
+  assert(response,'Finance route must exist')
+  return {httpStatus:response.status,...await response.json()}
+}
+const aliceFinance=await finance(alice,'brand=TAUWACH&month=2026-11')
+assert.equal(aliceFinance.httpStatus,200)
+assert.equal(aliceFinance.totals.eventCount,2)
+assert.equal(aliceFinance.totals.incoming,10000)
+assert.equal(aliceFinance.totals.outgoing,1500)
+assert.equal(aliceFinance.totals.net,8500)
+assert.equal(aliceFinance.methods[0].method,'KASPI GOLD')
+assert(!JSON.stringify(aliceFinance).includes('W-2'),'Cannot leak WACHIZEN money events')
+const deniedFinance=await finance(alice,'brand=WACHIZEN&month=2026-11')
+assert.equal(deniedFinance.httpStatus,403)
+const bobFinance=await finance(bob,'brand=WACHIZEN&month=2026-11')
+assert.equal(bobFinance.totals.net,60000)
+const olderFinance=await finance(admin,'brand=TAUWACH&month=2026-10')
+assert.equal(olderFinance.totals.net,30000)
+const badFinance=await finance(admin,'brand=TAUWACH&month=2026-13')
+assert.equal(badFinance.httpStatus,400)
+const oldUrl=new URL('https://example.test/api/client3/watches/legacy-orders')
+const oldAdmin=await routeClient3Watches(db,new Request(oldUrl),oldUrl,admin)
+assert.equal(oldAdmin.status,200)
+assert.deepEqual((await oldAdmin.json()).rows,[],'All fixture orders have watch domains')
+const oldManager=await routeClient3Watches(db,new Request(oldUrl),oldUrl,alice)
+assert.equal(oldManager.status,403)
+
 sql.close()
 console.log('CLIENT3_WATCH_ORDERS_READ_PASS: scoped manager ledger, brand totals, date validation, pagination, search')

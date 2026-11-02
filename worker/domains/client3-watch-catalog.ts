@@ -18,7 +18,12 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
       wv.id AS watchVariantId,wv.catalog_variant_id AS catalogVariantId,
       wv.gender,wv.movement,wv.bracelet_material AS braceletMaterial,
       wv.dial_color AS dialColor,wv.bracelet_color AS braceletColor,
-      wv.is_active AS variantActive
+      wv.is_active AS variantActive,
+      (SELECT ep.sale_price FROM catalog_variants cv JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE cv.id=wv.catalog_variant_id LIMIT 1) AS catalogPriceSnapshot,
+      COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='warehouse'),0) AS officePhysical,
+      MAX(COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='warehouse'),0), COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=wv.catalog_variant_id AND r.inventory_source='warehouse' AND r.status='active'),0)) AS officeReserved,
+      COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='boutique'),0) AS showcasePhysical,
+      MAX(COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='boutique'),0), COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=wv.catalog_variant_id AND r.inventory_source='boutique' AND r.status='active'),0)) AS showcaseReserved
     FROM watch_products wp
     LEFT JOIN watch_variants wv ON wv.watch_product_id=wp.id
     WHERE wp.brand_id=?

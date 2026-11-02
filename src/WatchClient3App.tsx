@@ -3,6 +3,9 @@ import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
 import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
+import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
+import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
+import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
@@ -49,13 +52,14 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff' | 'orders'>('orders')
+  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff' | 'orders' | 'finance' | 'returns' | 'legacy'>('orders')
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [catalogBusy, setCatalogBusy] = useState(false)
+  const [catalogVersion,setCatalogVersion]=useState(0)
 
   const refreshAuth = useCallback(async () => {
     setChecking(true)
@@ -103,7 +107,7 @@ export function WatchClient3App() {
       .catch(cause=>{if(!controller.signal.aborted){setModels([]);setError(cause instanceof Error?cause.message:'Каталог недоступен')}})
       .finally(()=>{if(!controller.signal.aborted)setCatalogBusy(false)})
     return () => controller.abort()
-  }, [user?.id, user?.mustChangePassword, brand, tab, brands])
+  }, [user?.id, user?.mustChangePassword, brand, tab, brands, catalogVersion])
 
   useEffect(()=>{
     if(tab!=='create'||user?.role!=='admin'||!brands.length){setManagerChoices([]);return}
@@ -214,6 +218,14 @@ export function WatchClient3App() {
         onClick={()=>setTab('orders')}>Заказы</button>}
       <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
         onClick={() => setTab('logistics')}>Логистика</button>
+      {brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')&&
+        <button type="button" aria-current={tab==='finance'?'page':undefined}
+          onClick={()=>setTab('finance')}>Финансы</button>}
+      {brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')&&
+        <button type="button" aria-current={tab==='returns'?'page':undefined}
+          onClick={()=>setTab('returns')}>Приём возвратов</button>}
+      {user.role==='admin'&&<button type="button" aria-current={tab==='legacy'?'page':undefined}
+        onClick={()=>setTab('legacy')}>Старая история</button>}
       {user.role==='admin'&&<button type="button" aria-current={tab==='staff'?'page':undefined}
         onClick={()=>setTab('staff')}>Доступ к брендам</button>}
       {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'create' ? 'page' : undefined}
@@ -225,7 +237,7 @@ export function WatchClient3App() {
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       {success && <p role="status" className="watch-shell-success">{success}</p>}
       {warning && <p role="alert" className="watch-shell-warning">{warning}</p>}
-      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'orders' ? (brands.length ? <WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
+      {tab === 'legacy' ? <WatchLegacyOrdersPanel/> : tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'returns' ? (brands.length ? <WatchReturnsPanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'finance' ? (brands.length ? <WatchFinancePanel brands={brands.map(x=>x.code)}/> : <p>Нет доступных брендов</p>) : tab === 'orders' ? (brands.length ? <WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
         ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
           : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
               isAdmin={user.role==='admin'} managers={managerChoices}
@@ -254,7 +266,7 @@ export function WatchClient3App() {
                 <div>Витрина: <strong>{sourceFree(model, false)}</strong> шт.</div>
               </article>)}
             </div>
-            {user.role==='admin' && brand && <WatchCatalogEditor brand={brand}/>}
+            {user.role==='admin' && brand && <WatchCatalogEditor brand={brand} onStockChanged={()=>setCatalogVersion(x=>x+1)}/>}
           </section>}
     </main>
   </div>

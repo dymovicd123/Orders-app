@@ -1,6 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { readJson } from '../core/http.ts'
+import {persistWatchExchangeItem,type WatchExchangeCommit} from './client3-watch-exchange-commit.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
@@ -1229,11 +1230,14 @@ export async function createExchange(
     paymentMethod?: string;
     comment?: string;
   },
+  watchExchangeCommit?:WatchExchangeCommit,
 ) {
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
   const operationStartedAt = new Date().toISOString();
-  criticalOperation = await beginCriticalOperation(db, 'exchange_create', input.requestId, input, { startedAt: operationStartedAt });
+  criticalOperation = await beginCriticalOperation(db, 'exchange_create', input.requestId,
+    watchExchangeCommit?{...input,client3WatchExchange:watchExchangeCommit}:input,
+    { startedAt: operationStartedAt });
   if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse;
   let operationContext = parseCriticalContext<Record<string, any>>(criticalOperation.row);
   const orderId = toInt(input.orderId, 0);
@@ -1772,6 +1776,10 @@ export async function createExchange(
   const newOrderItemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'order_item', 'exchange_new:item:1');
 
   await db.prepare(`UPDATE exchanges SET new_order_item_id = ? WHERE id = ?`).bind(newOrderItemId, exchangeId).run();
+  if(watchExchangeCommit){
+    if(!newOrderItemId)throw new CriticalOperationConflictError('Новый товар часов не был создан. Повторите запрос.');
+    await persistWatchExchangeItem(db,orderId,newOrderItemId,exchangeId,watchExchangeCommit);
+  }
   const newExchangeItemMapped = await insertCriticalMappedEntity(
     db, criticalOperation, 'exchange_item', 'exchange:new',
     db.prepare(
