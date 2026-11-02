@@ -106,3 +106,29 @@
  box-shadow:inset 0 0 0 1px var(--w12-accent)!important;
 }
 .client3-main-stock-operation .client3-main-stock-quantity-info b{color:var(--w12-accent)!important}
+
+/* Stage 5 consolidation: one Main-style workflow for both single- and multi-SKU work.
+   No second "mass operations" panel or separate duplicate recount panel. */
+.client3-main-stock-skus-multi{grid-template-columns:repeat(auto-fill,minmax(280px,1fr));align-items:stretch}
+.client3-main-stock-sku-edit{cursor:default;min-width:0;gap:10px}
+.client3-main-stock-sku-edit .stocktake-size-cell{width:100%;max-width:260px}
+.client3-main-stock-sku-edit:has(.stocktake-size-cell.is-filled){
+  border-color:var(--w12-border,#93c5fd);
+  background:var(--w12-tint,#eff6ff);
+}
+.client3-main-stock-operation .stocktake-e-footer{
+ display:flex;align-items:center;gap:12px;justify-content:flex-end;flex-wrap:wrap;
+ margin-top:18px;padding-top:15px;border-top:1px solid #e2e8f0
+}
+.client3-main-stock-operation .stocktake-e-footer>span,
+.client3-main-stock-operation .stocktake-e-footer>strong{margin-inline-end:auto}
+.client3-main-stock-operation .stocktake-e-review-row+.stocktake-e-review-row{border-top:1px solid #e2e8f0}
+.client3-main-stock-operation .stocktake-e-review-list{max-width:none!important}
+.client3-main-stock-operation .stocktake-start-intro{margin-bottom:10px}
+@media(max-width:700px){
+ .client3-main-stock-skus-multi{grid-template-columns:1fr}
+ .client3-main-stock-operation .stocktake-e-footer>button{flex:1 1 140px}
+ .client3-main-stock-operation .stocktake-e-review-row{
+   grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+ .client3-main-stock-operation .stocktake-e-review-name{grid-column:1/-1}
+}
