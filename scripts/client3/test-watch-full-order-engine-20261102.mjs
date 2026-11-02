@@ -11,6 +11,7 @@ import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../w
 import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from '../../worker/domains/client3-watch-admin-order.ts'
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
+import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -658,7 +659,72 @@ const shippedDelete=await parse(deleteClient3AdminOrder(db,admin,1,selectiveOrde
  comment:'Cannot delete physically dispatched watches'
 }))
 assert.equal(shippedDelete.status,409)
+// Full watch-specific composition: Main owns all reserve/money rewrites,
+// and critical mapped rows must retain SKU identity and engraving.
+const composeSale=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-compose-create-20261103',
+ receivedAmount:15000,engravingText:'',
+ items:[
+  {watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:41000,
+   source:'office',engravingText:'Клиент 1'},
+  {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,quantity:1,
+   unitPrice:22000,source:'showcase',engravingText:'Клиент 2'},
+ ],
+}))
+assert.equal(composeSale.status,201,JSON.stringify(composeSale))
+const composeBefore=sqlite.prepare(`SELECT oi.id AS orderItemId,wi.watch_variant_id AS watchVariantId,
+ oi.quantity,oi.unit_price AS unitPrice,oi.source_type AS source,
+ wi.engraving_text AS engravingText,oi.catalog_price_snapshot AS catalogPriceSnapshot
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(composeSale.orderId)
+assert.equal(composeBefore.length,2)
+const composeExpected=composeBefore.map(x=>({...x,
+ source:x.source==='warehouse'?'office':'showcase'}))
+const composeLines=[
+ {orderItemId:composeBefore[0].orderItemId,watchVariantId:1,
+   source:'office',quantity:2,unitPrice:41000,engravingText:'Клиент 1'},
+ {orderItemId:null,watchVariantId:2,
+   source:'office',quantity:1,unitPrice:22000,engravingText:'Новая гравировка'},
+]
+const composeInput={requestId:'watch-compose-edit-20261103-01',
+ expected:composeExpected,items:composeLines}
+const oldReservationN=count('inventory_reservations')
+const composeManagerDenied=await parse(rewriteClient3AdminWatchItems(db,manager,1,composeSale.orderId,composeInput))
+assert.equal(composeManagerDenied.status,403)
+const composeCrossBrand=await parse(rewriteClient3AdminWatchItems(db,admin,2,composeSale.orderId,composeInput))
+assert.equal(composeCrossBrand.status,404)
+const rewritten=await parse(rewriteClient3AdminWatchItems(db,admin,1,composeSale.orderId,composeInput))
+assert.equal(rewritten.ok,true,JSON.stringify(rewritten))
+const postCompose=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.unit_price,oi.source_type,
+ wi.watch_variant_id,wi.engraving_text,oi.variant_id
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(composeSale.orderId)
+assert.equal(postCompose.length,2)
+assert.deepEqual(postCompose.map(x=>[x.watch_variant_id,x.quantity,x.source_type,x.engraving_text]),[
+ [1,2,'warehouse','Клиент 1'],[2,1,'warehouse','Новая гравировка'],
+ ])
+assert(postCompose.every(x=>x.id!==composeBefore[1].orderItemId),
+ 'Retired removed watch row must not be reused without an exact reservation match')
+assert.equal(sqlite.prepare('SELECT quantity FROM order_items WHERE id=?')
+ .get(composeBefore[1].orderItemId).quantity,0)
+assert.equal(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(composeSale.orderId).total_amount,104000)
+assert.equal(sqlite.prepare('SELECT received_amount FROM orders WHERE id=?')
+ .get(composeSale.orderId).received_amount,15000)
+assert(count('inventory_reservations')>=oldReservationN,
+ 'Main must retain reserve history rather than silently discard reservations')
+const oldMoney=count('payments')
+assert.equal((await parse(rewriteClient3AdminWatchItems(db,admin,1,composeSale.orderId,{
+ ...composeInput,requestId:'watch-compose-stale-20261103-01',
+ }))).status,409)
+assert.equal(count('payments'),oldMoney)
+const noOverpay=await parse(rewriteClient3AdminWatchItems(db,admin,1,composeSale.orderId,{
+ ...composeInput,requestId:'watch-compose-overpay-20261103-01',
+ items:[{...composeLines[0],unitPrice:1}],
+}))
+assert.equal(noOverpay.status,409)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
+console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: stock, order, payment, engraving, dispatch, refund, composition and physical return receipt')
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: stock, order, payment, engraving, dispatch, refund and physical return receipt')
