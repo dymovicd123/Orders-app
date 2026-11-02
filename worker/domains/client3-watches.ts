@@ -1,5 +1,6 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
+import {correctClient3WatchDispatch} from './client3-watch-dispatch-correction.ts'
 import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
@@ -184,6 +185,11 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       COALESCE((SELECT SUM(di.quantity-di.cancelled_quantity)
         FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
         WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id),0) AS shippedQuantity,
+      (SELECT di2.id FROM order_dispatch_items di2
+        JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
+        WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
+          AND di2.quantity>COALESCE(di2.cancelled_quantity,0)
+        ORDER BY di2.id DESC LIMIT 1) AS dispatchItemId,
       wditem.engraving_text AS engravingText,
       v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
       COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
@@ -435,6 +441,14 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return addClient3WatchDebtPayment(db,actor,scope.row!.id,Number(paymentMatch[1]),input)
+  }
+  const correctionMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/dispatch-correction$/.exec(url.pathname)
+  if(correctionMatch&&request.method==='POST'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return correctClient3WatchDispatch(db,actor,scope.row!.id,
+      Number(correctionMatch[1]),input)
   }
   const sendMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/send$/.exec(url.pathname)
   if(sendMatch&&request.method==='POST'){
