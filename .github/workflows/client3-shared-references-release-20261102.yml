@@ -70,7 +70,7 @@ jobs:
       - name: Apply ONLY the additive Client3 references migration
         run: |
           set -euo pipefail
-          npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc --yes
+          npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
       - name: Verify migration, shared values and unchanged orders, payments and staff
         run: |
           set -euo pipefail
