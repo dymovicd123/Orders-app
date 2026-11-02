@@ -131,3 +131,17 @@
 .watch-corrections-checkbox{display:flex!important;align-items:center;gap:8px}
 .watch-corrections-checkbox input{width:17px!important;height:17px!important;flex:none}
 @media(max-width:650px){.watch-corrections-item textarea{flex-basis:100%;width:100%}}
+
+/* Main impact preview, intentionally distinct from ordinary corrections. */
+.watch-admin-actions{margin:12px 0 2px;padding:13px;border:1px solid #dce4ee;background:#f8fafc;border-radius:10px}
+.watch-admin-actions-buttons{display:flex;gap:9px;flex-wrap:wrap;margin-top:9px}
+.watch-admin-action-form{display:grid;gap:12px;margin-top:14px;padding:14px;background:#fff;border:1px solid #dce4ee;border-radius:9px}
+.watch-admin-action-form p{margin:0;color:#475569;font-size:12px;line-height:1.5}
+.watch-admin-action-form>label,.watch-admin-action-form form>label{display:grid;gap:6px;font-size:12px}
+.watch-admin-action-form :is(input,textarea,select){box-sizing:border-box;width:100%;max-width:100%;min-width:0;border:1px solid #cbd5e1;border-radius:7px;padding:9px 11px;font:inherit}
+.watch-admin-delete-confirm{display:flex!important;gap:9px!important;align-items:flex-start;line-height:1.45}
+.watch-admin-delete-confirm input{flex:0 0 17px;width:17px;height:17px;padding:0;margin:1px 0 0;accent-color:#b91c1c}
+.watch-admin-delete-reason{font-weight:700;color:#b91c1c!important}
+.watch-admin-delete-trigger{color:#9f1239!important}
+.watch-admin-delete-confirm-button{background:#b91c1c!important;color:#fff!important}
+@media(max-width:650px){.watch-admin-actions-buttons>button{flex:1 1 155px}}
