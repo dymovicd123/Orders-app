@@ -7,6 +7,7 @@ import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writ
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
+import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -436,6 +437,66 @@ assert.deepEqual(sqlite.prepare('SELECT method,amount,payment_kind FROM payments
  .all(mixed.orderId).slice(-2).map(x=>[x.method,x.amount,x.payment_kind]),[
   ['KASPI GOLD',6000,'debt_close'],['KASPI RED',7000,'debt_close'],
  ])
+// Main manager edit scopes reused verbatim by the third tenant: no stock/money
+// rewrite for metadata; recorded price changes only the selected order item.
+const editOrderId=manualSaved.orderId
+const snapshot=()=>sqlite.prepare(`SELECT o.order_date AS orderDate,
+ COALESCE(o.customer_name_override,c.display_name,'') AS customerName,
+ COALESCE(c.phone_normalized,'') AS customerPhone,
+ COALESCE(o.city,'') AS city,COALESCE(o.delivery_type,'') AS deliveryType,
+ COALESCE(o.comment,'') AS comment,
+ o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
+ o.debt_amount AS debtAmount,o.return_amount AS returnAmount,
+ o.shipping_status AS shippingStatus,o.order_status AS orderStatus
+ FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?`).get(editOrderId)
+const beforeEdit=snapshot()
+const metaFields=['orderDate','customerName','customerPhone','city','deliveryType','comment']
+const expectedMeta=Object.fromEntries(metaFields.map(key=>[key,beforeEdit[key]]))
+const nextMeta={...expectedMeta,customerName:'Новый Получатель',
+ customerPhone:'+77015550999',city:'Астана',
+ deliveryType:'Курьер',comment:'Изменено в таблице менеджером'}
+const stateFields=['totalAmount','receivedAmount','debtAmount','returnAmount','shippingStatus','orderStatus']
+const expectedState=Object.fromEntries(stateFields.map(key=>[key,beforeEdit[key]]))
+const beforeCorrectMoves=count('inventory_movements'),beforeCorrectPayments=count('payments')
+const metaRequest={requestId:'watch-manager-meta-20261103-1',
+ expected:expectedMeta,next:nextMeta,expectedState}
+const corrected=await parse(correctClient3WatchMetadata(db,manager,1,editOrderId,metaRequest))
+assert.equal(corrected.ok,true,JSON.stringify(corrected))
+assert.equal(snapshot().customerName,'Новый Получатель')
+assert.equal(snapshot().city,'Астана')
+assert.equal(sqlite.prepare('SELECT recipient_name,city,delivery_method FROM watch_order_details WHERE order_id=?')
+ .get(editOrderId).recipient_name,'Новый Получатель')
+const metaRetry=await parse(correctClient3WatchMetadata(db,manager,1,editOrderId,metaRequest))
+assert.equal(metaRetry.ok,true,'Main idempotent metadata correction')
+const deniedDate=await parse(correctClient3WatchMetadata(db,manager,1,editOrderId,{
+ ...metaRequest,requestId:'watch-manager-date-denied-20261103',
+ expected:nextMeta,next:{...nextMeta,orderDate:'2026-10-01'},
+}))
+assert.equal(deniedDate.status,403)
+const metaCross=await parse(correctClient3WatchMetadata(db,manager,2,editOrderId,{
+ ...metaRequest,requestId:'watch-manager-cross-meta-20261103',
+}))
+assert.equal(metaCross.status,403)
+assert.equal(count('inventory_movements'),beforeCorrectMoves,'Metadata does not change stock')
+assert.equal(count('payments'),beforeCorrectPayments,'Metadata does not rewrite payments')
+const rawPrice=sqlite.prepare(`SELECT id AS orderItemId,unit_price AS expectedUnitPrice,
+ quantity AS expectedQuantity,line_total AS expectedLineTotal,
+ catalog_price_snapshot AS expectedCatalogPriceSnapshot
+ FROM order_items WHERE order_id=? AND quantity>0`).get(editOrderId)
+const priceRequest={requestId:'watch-manager-price-20261103-1',
+ changes:[{...rawPrice,unitPrice:rawPrice.expectedUnitPrice+1000}]}
+const beforePriceTotal=snapshot().totalAmount
+const priceResult=await parse(correctClient3WatchItemPrices(db,manager,1,editOrderId,priceRequest))
+assert.equal(priceResult.ok,true,JSON.stringify(priceResult))
+assert.equal(snapshot().totalAmount,beforePriceTotal+rawPrice.expectedQuantity*1000)
+const repeatPrice=await parse(correctClient3WatchItemPrices(db,manager,1,editOrderId,priceRequest))
+assert.equal(repeatPrice.ok,true,'Same Main critical request must be idempotent')
+const wrongPrice=await parse(correctClient3WatchItemPrices(db,manager,1,editOrderId,{
+ ...priceRequest,requestId:'watch-manager-stale-price-20261103',
+}))
+assert.equal(wrongPrice.status,409,'Stale saved price cannot overwrite latest financial total')
+assert.equal(count('inventory_movements'),beforeCorrectMoves)
+assert.equal(count('payments'),beforeCorrectPayments)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
