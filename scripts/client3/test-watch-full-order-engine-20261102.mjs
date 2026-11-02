@@ -14,6 +14,7 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
+import {ensureManualWatchOrderSku,watchIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -77,6 +78,25 @@ assert(vid>0)
 const stock=source=>sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?').get(source,vid)
 const count=table=>sqlite.prepare('SELECT COUNT(*) AS n FROM '+table).get().n
 const baseOrders=count('orders'),basePayments=count('payments')
+// Stage 5 resolver: recognize unique existing brand SKU despite Unicode model
+// case and Russian labels, without creating a duplicate identity or stock.
+assert.equal(watchIdentityKey('  тест – часы  '),watchIdentityKey('ТЕСТ-ЧАСЫ'))
+const skuCountBeforeResolve=count('watch_variants')
+const modelCountBeforeResolve=count('watch_products')
+const resolvedWatch=await ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'real engine test',gender:'male',movement:'Кварцевые',
+ braceletMaterial:'Кожа',dialColor:'Чёрный',braceletColor:'чёрный',
+})
+assert.equal(resolvedWatch.watchVariantId,1)
+assert.equal(resolvedWatch.catalogVariantId,vid)
+assert.equal(count('watch_variants'),skuCountBeforeResolve)
+assert.equal(count('watch_products'),modelCountBeforeResolve)
+assert.equal(count('inventory_stock'),0,'Resolver cannot invent stock')
+sqlite.prepare("INSERT INTO watch_products(brand_id,model_name,is_active) VALUES(1,'УДАЛЁННЫЕ ЧАСЫ',0)").run()
+await assert.rejects(ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'удалённые часы',gender:'female',movement:'quartz',
+ braceletMaterial:'steel',dialColor:'black',braceletColor:'',
+}),/удалена/)
 const initialMovement=count('inventory_movements')
 const receipt={source:'office',watchVariantId:1,quantity:5,comment:'Physical receipt test',requestId:'watch-real-receipt-0001'}
 const a=await parse(receiveClient3WatchArrival(db,admin,1,receipt))
