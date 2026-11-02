@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-catalog-editor.css'
 
@@ -28,7 +28,7 @@ function textFor(choices:readonly {value:string;label:string}[],code:string|null
 }
 
 /** An unmapped watch is a draft. It cannot be sold or counted as physical stock. */
-export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
+export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onStockChanged?:()=>void}) {
   const [rows,setRows]=useState<CatalogRow[]>([])
   const [modelName,setModelName]=useState('')
   const [modelId,setModelId]=useState(0)
@@ -42,6 +42,12 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
+  const [arrivalVariantId,setArrivalVariantId]=useState(0)
+  const [arrivalSource,setArrivalSource]=useState<'office'|'showcase'>('office')
+  const [arrivalQuantity,setArrivalQuantity]=useState('1')
+  const [arrivalComment,setArrivalComment]=useState('')
+  const arrivalRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
+  const linked=rows.filter(row=>row.watchVariantId && row.catalogProductId && row.catalogVariantId && row.productActive===1 && row.variantActive===1)
   const models=Array.from(new Map<number,{id:number;name:string}>(
     rows.map(row=>[row.watchProductId,{id:row.watchProductId,name:row.modelName}])
   ).values())
@@ -82,6 +88,28 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
     }catch(cause){
       setError(cause instanceof Error?cause.message:'Не удалось подготовить SKU')
     }finally{setBusy(false)}
+  }
+  const createArrival=async(e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault()
+    const quantity=Number(arrivalQuantity)
+    if(busy || !linked.some(x=>x.watchVariantId===arrivalVariantId) ||
+      !Number.isSafeInteger(quantity)||quantity<1||quantity>1000){
+      setError('Выберите подготовленные часы и количество от 1 до 1000.');return
+    }
+    const payload={watchVariantId:arrivalVariantId,quantity,source:arrivalSource,comment:arrivalComment.trim()}
+    const fingerprint=JSON.stringify([brand,payload])
+    if(arrivalRequest.current?.fingerprint!==fingerprint)
+      arrivalRequest.current={fingerprint,requestId:'arrival-'+crypto.randomUUID()}
+    setBusy(true);setError('');setNotice('')
+    try{
+      await post('/api/client3/watches/stock/arrival',
+        {...payload,requestId:arrivalRequest.current.requestId})
+      arrivalRequest.current=null
+      setNotice('Физический приход сохранён. Наличие обновлено в складском учёте.')
+      setReload(x=>x+1)
+      onStockChanged?.()
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить приход')}
+    finally{setBusy(false)}
   }
   const createVariant=async(e:FormEvent<HTMLFormElement>)=>{
     e.preventDefault();if(busy||modelId<=0)return
@@ -133,6 +161,27 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
         <button type="submit" disabled={busy||!modelId}>Добавить комплектацию</button>
       </form>
     </div>
+    <form className="watch-catalog-editor-arrival" onSubmit={e=>void createArrival(e)}>
+      <h4>Физический приход часов</h4>
+      <p>Только реальные полученные часы. Эта операция увеличивает остаток и записывается в складскую историю.</p>
+      <label>Комплектация
+        <select value={arrivalVariantId} onChange={e=>setArrivalVariantId(Number(e.target.value))} required>
+          <option value={0}>Выберите подготовленный SKU</option>
+          {linked.map(row=><option key={row.watchVariantId!} value={row.watchVariantId!}>
+            {row.modelName} · {textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial)} · {textFor(WATCH_OPTIONS.dialColors,row.dialColor)}
+            {row.braceletColor?' · '+row.braceletColor:''}
+          </option>)}
+        </select>
+      </label>
+      <label>Место хранения<select value={arrivalSource} onChange={e=>setArrivalSource(e.target.value as 'office'|'showcase')}>
+        <option value="office">Офис</option><option value="showcase">Витрина</option>
+      </select></label>
+      <label>Количество<input type="number" min={1} max={1000} step={1} required
+        value={arrivalQuantity} onChange={e=>setArrivalQuantity(e.target.value)}/></label>
+      <label>Комментарий<input maxLength={300} value={arrivalComment}
+        onChange={e=>setArrivalComment(e.target.value)} placeholder="Например, номер накладной"/></label>
+      <button type="submit" disabled={busy||!arrivalVariantId||!linked.length}>Сохранить приход</button>
+    </form>
     <h4>Зарегистрированные часы</h4>
     {loading?<p>Загрузка…</p>:models.length===0?<p>Для бренда пока не зарегистрированы модели.</p>:
       <div className="watch-catalog-editor-list">
