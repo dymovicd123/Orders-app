@@ -1,4 +1,5 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
+import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import { json, readJson } from '../core/http.ts'
@@ -245,6 +246,11 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return registerWatchVariant(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/orders'&&request.method==='GET') {
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchOrders(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/orders'&&request.method==='POST') {
     const raw=await readJson<WatchCreateInput>(request)
