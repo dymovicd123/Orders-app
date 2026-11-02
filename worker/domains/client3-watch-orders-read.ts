@@ -49,6 +49,7 @@ export async function listClient3WatchOrders(
         wd.city,wd.delivery_method AS deliveryMethod,wd.urgent,
         wd.shipping_deadline_at AS shippingDeadlineAt,
         lj.status AS engravingStatus,
+        (SELECT COUNT(*) FROM watch_order_item_details wi JOIN order_items oi ON oi.id=wi.order_item_id WHERE oi.order_id=o.id AND length(trim(wi.engraving_text))>0) AS engravedLines,
         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id=o.id) AS lineCount
       FROM watch_order_details wd
       JOIN orders o ON o.id=wd.order_id
