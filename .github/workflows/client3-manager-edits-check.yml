@@ -1,5 +1,5 @@
 name: Client3 Main manager corrections verification
-# Use Client3 integration tests; older Main-only UI assertions refer to the separate Main monolith.
+# Test read projection with Main customer and price columns in third-tenant SQLite fixture.
 on:
   push:
     branches: [client3/step2-manager-admin-edits-from-main-20261103]
