@@ -8,6 +8,7 @@ import {countClient3WatchStock,countClient3WatchStockBatch} from '../../worker/d
 import {listClient3WatchStockHistory} from '../../worker/domains/client3-watch-history.ts'
 import {applyClient3WatchBulkOperation} from '../../worker/domains/client3-watch-bulk.ts'
 import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
+import {getClient3WatchRevision,startClient3WatchRevision,changeClient3WatchRevision} from '../../worker/domains/client3-watch-revision-session.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -306,6 +307,105 @@ const otanCorrection=await parse(countClient3WatchStockBatch(db,admin,1,{
 }))
 assert.equal(otanCorrection.status,200,JSON.stringify(otanCorrection))
 assert.equal(otanStock(),5)
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+// Stage5 durable sessions: use the actual Main stocktake tables, auto-recovery,
+// stale-write conflict detection, no cross-brand read/write and atomic completion.
+// No extra parallel UI or hidden physical/financial movement on draft save.
+const makeUrl=(src='office')=>new URL('https://test.local/api/client3/watches/stock/revision?source='+src)
+const stockState=variantId=>sqlite.prepare(
+ "SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=?"
+).get(variantId)
+const full=await parse(startClient3WatchRevision(db,admin,1,{source:'office',full:true}))
+assert.equal(full.status,200,JSON.stringify(full))
+assert.equal(full.session.scope,'full')
+assert(full.session.items.length>=3,'Brand full stocktake must include active stocked watch variants')
+assert(full.session.items.every(x=>x.watchVariantId>0))
+const sessionId=full.session.id
+const resume=await parse(startClient3WatchRevision(db,admin,1,{
+ source:'office',full:false,modelIds:[otanModelId],
+}))
+assert.equal(resume.resumed,true)
+assert.equal(resume.session.id,sessionId)
+const owned=await parse(getClient3WatchRevision(db,admin,1,makeUrl()))
+assert.equal(owned.session.id,sessionId)
+const otherBrand=await parse(getClient3WatchRevision(db,admin,2,makeUrl()))
+assert.equal(otherBrand.session,null)
+assert.equal(otherBrand.blocked,true)
+const otherStart=await parse(startClient3WatchRevision(db,admin,2,{
+ source:'office',full:true,
+}))
+assert.equal(otherStart.status,409)
+const wrongModel=await parse(startClient3WatchRevision(db,admin,1,{
+ source:'showcase',full:false,modelIds:[9999999],
+}))
+assert.equal(wrongModel.status,409)
+const first=full.session.items.find(x=>x.variantId===vid)
+assert(first,'Full brand check must include initial real watch')
+const starting=stockState(vid).quantity
+const stored=await parse(changeClient3WatchRevision(db,admin,1,'count',{
+ sessionId,itemId:first.id,countedQuantity:starting+2,
+}))
+assert.equal(stored.status,200,JSON.stringify(stored))
+assert.equal(stored.session.countedCount,1)
+assert.equal(stockState(vid).quantity,starting,'Draft count must not change stock before completion')
+const afterReload=await parse(getClient3WatchRevision(db,admin,1,makeUrl()))
+assert.equal(afterReload.session.items.find(x=>x.id===first.id).countedQuantity,starting+2,
+ 'Count survives a fresh session read/reopen')
+const foreignCount=await parse(changeClient3WatchRevision(db,admin,2,'count',{
+ sessionId,itemId:first.id,countedQuantity:100,
+}))
+assert.equal(foreignCount.status,409)
+const wrongItem=await parse(changeClient3WatchRevision(db,admin,1,'count',{
+ sessionId,itemId:99999999,countedQuantity:3,
+}))
+assert.equal(wrongItem.status,404)
+sqlite.prepare("UPDATE inventory_stock SET quantity=quantity+1 WHERE variant_id=? AND inventory_source='warehouse'")
+ .run(vid)
+const physicalMoved=stockState(vid).quantity
+const blockedCompletion=await parse(changeClient3WatchRevision(db,admin,1,'complete',{sessionId}))
+assert.equal(blockedCompletion.status,409,'Main refuses stale completion atomically')
+assert.equal(blockedCompletion.code,'recount_required')
+assert.equal(stockState(vid).quantity,physicalMoved)
+const recount=await parse(changeClient3WatchRevision(db,admin,1,'count',{
+ sessionId,itemId:first.id,countedQuantity:physicalMoved+1,
+}))
+assert.equal(recount.status,200,JSON.stringify(recount))
+assert.equal(recount.session.recountCount,0)
+const movementCountBeforeClosing=count('inventory_movements')
+const doneRevision=await parse(changeClient3WatchRevision(db,admin,1,'complete',{sessionId}))
+assert.equal(doneRevision.status,200,JSON.stringify(doneRevision))
+assert.equal(doneRevision.session.status,'completed')
+assert.equal(stockState(vid).quantity,physicalMoved+1)
+assert.equal(count('inventory_movements'),movementCountBeforeClosing+1)
+const repeatClose=await parse(changeClient3WatchRevision(db,admin,1,'complete',{sessionId}))
+assert.equal(repeatClose.status,200)
+assert.equal(count('inventory_movements'),movementCountBeforeClosing+1,
+ 'Main completed session idempotence prevents duplicate movements')
+assert.equal((await parse(getClient3WatchRevision(db,admin,1,makeUrl()))).session,null)
+const selective=await parse(startClient3WatchRevision(db,admin,1,{
+ source:'office',full:false,modelIds:[otanModelId],
+}))
+assert.equal(selective.status,200)
+assert.equal(selective.session.scope,'selective')
+assert(selective.session.items.every(x=>x.productName==='OTAN'))
+const selectiveId=selective.session.id
+const selectiveItem=selective.session.items[0]
+const currentOtan=otanStock()
+const held=await parse(changeClient3WatchRevision(db,admin,1,'count',{
+ sessionId:selectiveId,itemId:selectiveItem.id,countedQuantity:currentOtan+7,
+}))
+assert.equal(held.status,200)
+const canceled=await parse(changeClient3WatchRevision(db,admin,1,'cancel',{
+ sessionId:selectiveId,
+}))
+assert.equal(canceled.status,200)
+assert.equal(canceled.session.status,'cancelled')
+assert.equal(otanStock(),currentOtan,'Cancellation cannot write physical quantity')
+assert.equal((await parse(getClient3WatchRevision(db,admin,1,makeUrl()))).session,null)
+const managerDenied=await parse(startClient3WatchRevision(db,{
+ id:100,role:'manager',managerId:1,employeeRole:'Менеджер',
+},1,{source:'office',full:true}))
+assert.equal(managerDenied.status,403)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 assert.equal(count('orders'),baseOrders,'Warehouse operations cannot create business orders')
 assert.equal(count('payments'),basePayments,'Warehouse operations cannot record money')
