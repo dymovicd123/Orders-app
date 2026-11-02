@@ -31,3 +31,5 @@
 .watch-orders-shipping small{width:100%;color:#a16207}
 .watch-orders-shipping button{font-size:.8rem;padding:7px 9px;background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
 .watch-orders-shipping button:nth-of-type(1){background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+
+.watch-orders-sku{margin:0;padding:10px 16px;color:#475569;font-size:.86rem;border-top:1px solid #f1f5f9}.watch-orders-return-open{margin:4px 16px 13px;border:1px solid #cbd5e1;color:#1d4ed8;background:#fff;font-size:.82rem!important;padding:7px 10px!important}
