@@ -10,6 +10,7 @@ import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
 import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
 import {WatchUserAccessPanel} from './features/client3/WatchUserAccessPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
+import {WatchReferencesSection} from './features/client3/WatchReferencesSection'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import {Client3MainChrome} from './features/client3/Client3MainChrome'
 import {OrdersHeaderSection} from './features/sections/OrdersHeaderSection'
@@ -29,7 +30,7 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'orders'|'create'|'logistics'|'warehouse'|'operations'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'
+type WatchSection = 'orders'|'create'|'logistics'|'warehouse'|'operations'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
   orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
   create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
@@ -42,6 +43,7 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   finance:{title:'Финансы',description:'Движение денежных средств и итоги продаж по брендам.',area:'Финансы'},
   staff:{title:'Доступ к брендам',description:'Назначение менеджеров на TAUWACH и WACHIZEN.',area:'Администрирование'},
   accounts:{title:'Учётные записи',description:'Доступ сотрудников и управление администраторами.',area:'Администрирование'},
+  references:{title:'Справочники',description:'Бренды и параметры часов, доставка и оплата.',area:'Справочники'},
   legacy:{title:'Исторические заказы',description:'Заказы до перехода на новую систему, без изменения данных.',area:'Администрирование'},
 }
 const sections=Object.keys(sectionMeta) as WatchSection[]
@@ -264,7 +266,7 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['orders','create','warehouse','operations','catalog','finance','returns','exchange'].includes(tab))
+    (!canSales&&['orders','create','warehouse','operations','catalog','finance','returns','exchange','references'].includes(tab))
       ? 'logistics':tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
@@ -338,13 +340,22 @@ export function WatchClient3App() {
           </div>
         </div>
         <div className="watch-shell-catalog">
-          <div className="client3-inventory-brand-filter">
-            <span>Бренд</span>
-            <select aria-label="Бренд склада" value={brand}
-              onChange={event=>{setBrand(event.target.value as WatchBrand);setError('')}}>
-              {brands.map(row=><option key={row.code} value={row.code}>{row.name}</option>)}
-            </select>
-          </div>
+          <section className="client3-brand-workspace" aria-label="Независимые бренды склада">
+            <div className="client3-brand-workspace-context">
+              <div className="card-label">Бренд склада</div>
+              <strong>{brand||'Бренд не выбран'}</strong>
+              <p>У каждого бренда свои модели, комплектации и остатки. Действия применяются только к выбранному бренду.</p>
+            </div>
+            <div className="client3-brand-workspace-tabs" role="group" aria-label="Переключить бренд склада">
+              {brands.map(row=><button key={row.code} type="button"
+                aria-pressed={brand===row.code}
+                className={brand===row.code?'is-active':''}
+                onClick={()=>{setBrand(row.code);setError('')}}>
+                <strong>{row.name}</strong>
+                <small>{brand===row.code?'Выбран сейчас':'Перейти к бренду'}</small>
+              </button>)}
+            </div>
+          </section>
           {canAdmin&&brand?(activeSection==='catalog'?
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
               onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
@@ -365,6 +376,10 @@ export function WatchClient3App() {
             </div>}
         </div>
       </>}
+      {activeSection==='references'&&brand&&<WatchReferencesSection
+        brand={brand} brands={brands.map(x=>x.code)}
+        onBrandChange={setBrand} onOpenCatalog={()=>goTo('catalog')}
+        onOpenStaff={canAdmin?()=>goTo('staff'):undefined}/>}
       {activeSection==='finance'&&brands.length>0&&
         <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}/>}
       {['staff','accounts'].includes(activeSection)&&canAdmin&&<>
