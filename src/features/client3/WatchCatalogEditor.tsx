@@ -47,6 +47,12 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
+  const [countVariantId,setCountVariantId]=useState(0)
+  const [countSource,setCountSource]=useState<'office'|'showcase'>('office')
+  const [countedQuantity,setCountedQuantity]=useState('')
+  const [countConfirmed,setCountConfirmed]=useState(false)
+  const [shortageConfirmed,setShortageConfirmed]=useState(false)
+  const countRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
   const [priceVariantId,setPriceVariantId]=useState<number|null>(null)
   const [priceDraft,setPriceDraft]=useState('')
   const [arrivalVariantId,setArrivalVariantId]=useState(0)
@@ -66,6 +72,10 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
   const [writeoffConfirmed,setWriteoffConfirmed]=useState(false)
   const writeoffRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
   const linked=rows.filter(row=>row.watchVariantId && row.catalogProductId && row.catalogVariantId && row.productActive===1 && row.variantActive===1)
+  const selectedCount=linked.find(row=>row.watchVariantId===countVariantId)
+  const countExpected=Number(countSource==='office'?selectedCount?.officePhysical:selectedCount?.showcasePhysical)||0
+  const countReserved=Number(countSource==='office'?selectedCount?.officeReserved:selectedCount?.showcaseReserved)||0
+  const hasCountShortage=countedQuantity!==''&&Number(countedQuantity)<countReserved
   const selectedTransfer=linked.find(row=>row.watchVariantId===transferVariantId)
   const transferPhysical=Math.max(0,Number(transferSource==='office'?selectedTransfer?.officePhysical:selectedTransfer?.showcasePhysical)||0)
   const transferReserved=Math.max(0,Number(transferSource==='office'?selectedTransfer?.officeReserved:selectedTransfer?.showcaseReserved)||0)
@@ -203,6 +213,33 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить цену')}
     finally{setBusy(false)}
   }
+  const savePhysicalCount=async(e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault()
+    const actual=Number(countedQuantity)
+    if(busy||!selectedCount||!countConfirmed||countedQuantity.trim()===''||
+       !Number.isSafeInteger(actual)||actual<0||
+       (actual<countReserved&&!shortageConfirmed)){
+      setError('Укажите фактическое количество, подтвердите пересчёт и возможную недостачу.');return
+    }
+    const payload={watchVariantId:countVariantId,source:countSource,
+      expectedPhysical:countExpected,countedQuantity:actual,
+      confirmed:true,allowShortage:shortageConfirmed}
+    const fingerprint=JSON.stringify([brand,payload])
+    if(countRequest.current?.fingerprint!==fingerprint)
+      countRequest.current={fingerprint,requestId:'watch-count-'+crypto.randomUUID()}
+    setBusy(true);setError('');setNotice('')
+    try{
+      const result=await post('/api/client3/watches/stock/count',{
+        ...payload,requestId:countRequest.current.requestId
+      })
+      countRequest.current=null
+      setCountConfirmed(false);setShortageConfirmed(false);setCountedQuantity('')
+      setNotice(result.attention?'Пересчёт сохранён. '+result.attention:'Фактическое количество сохранено в истории склада.')
+      setReload(n=>n+1)
+      onStockChanged?.()
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить пересчёт')}
+    finally{setBusy(false)}
+  }
   const createVariant=async(e:FormEvent<HTMLFormElement>)=>{
     e.preventDefault();if(busy||modelId<=0)return
     setBusy(true);setError('');setNotice('')
@@ -322,6 +359,33 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       <button type="submit" disabled={busy||!selectedWriteoff||writeoffFree<1||!writeoffConfirmed||!writeoffReason.trim()}>
         Списать часы
       </button>
+    </form>
+    <form className="watch-catalog-editor-arrival" onSubmit={e=>void savePhysicalCount(e)}>
+      <h4>Пересчёт фактического количества</h4>
+      <p>Если количество отличается от системы, запишите реально пересчитанные часы. Резервы клиентов сохраняются.</p>
+      <label>Комплектация<select required value={countVariantId}
+        onChange={e=>{setCountVariantId(Number(e.target.value));setCountConfirmed(false);setShortageConfirmed(false)}}>
+        <option value={0}>Выберите подготовленные часы</option>
+        {linked.map(row=><option key={row.watchVariantId!} value={row.watchVariantId!}>
+          {row.modelName} · {textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial)} · {textFor(WATCH_OPTIONS.dialColors,row.dialColor)}
+          {row.braceletColor?' · '+row.braceletColor:''}
+        </option>)}
+      </select></label>
+      <label>Место<select value={countSource} onChange={e=>{setCountSource(e.target.value as 'office'|'showcase');setCountConfirmed(false);setShortageConfirmed(false)}}>
+        <option value="office">Офис</option><option value="showcase">Витрина</option>
+      </select></label>
+      <p>По системе: {countExpected} шт. · Резерв: {countReserved} шт.</p>
+      <label>Фактически пересчитано<input type="number" min={0} step={1} required
+        value={countedQuantity} onChange={e=>{setCountedQuantity(e.target.value);setCountConfirmed(false);setShortageConfirmed(false)}}/></label>
+      {hasCountShortage&&<label className="watch-catalog-editor-confirm"><input type="checkbox"
+        checked={shortageConfirmed} onChange={e=>setShortageConfirmed(e.target.checked)}/>
+        Подтверждаю недостачу: фактическое количество меньше зарезервированного
+      </label>}
+      <label className="watch-catalog-editor-confirm"><input type="checkbox" checked={countConfirmed}
+        onChange={e=>setCountConfirmed(e.target.checked)}/>
+        Подтверждаю, что пересчитал(а) указанные часы физически
+      </label>
+      <button type="submit" disabled={busy||!selectedCount||!countConfirmed||(hasCountShortage&&!shortageConfirmed)}>Сохранить пересчёт</button>
     </form>
     <h4>Зарегистрированные часы</h4>
     {loading?<p>Загрузка…</p>:models.length===0?<p>Для бренда пока не зарегистрированы модели.</p>:
