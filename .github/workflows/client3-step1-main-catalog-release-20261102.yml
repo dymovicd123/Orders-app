@@ -63,13 +63,25 @@ jobs:
               (SELECT COUNT(*) FROM watch_reference_values) AS references_count" \
             | jq -ce '.[0].results[0] | select(.orders_count>=2 and .payments_count>=2 and .users_count>=5 and .monitoring_admin==1 and .references_count>=7)' > /tmp/client3-step1-before
           npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-step1-pending
-          grep -Fq '0005_client3_editable_sku_references.sql' /tmp/client3-step1-pending
           ! grep -Eq '000[1234]_client3_' /tmp/client3-step1-pending
-          test "$(grep -Ec '000[0-9]+.*\.sql' /tmp/client3-step1-pending)" = 1
+          if grep -Fq '0005_client3_editable_sku_references.sql' /tmp/client3-step1-pending; then
+            test "$(grep -Ec '000[0-9]+.*\.sql' /tmp/client3-step1-pending)" = 1
+            touch /tmp/client3-step1-migration-needed
+          else
+            test "$(grep -Ec '000[0-9]+.*\.sql' /tmp/client3-step1-pending || true)" = 0
+            npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+              --command="SELECT COUNT(*) AS schema_ready FROM sqlite_master WHERE type='table' AND name IN ('watch_reference_values_v5','watch_variant_attributes_v5')" \
+              | jq -e '.[0].results[0].schema_ready==2'
+            echo 'V5 already applied; skip schema changes.'
+          fi
       - name: Apply ONLY additive V5 reference/SKU migration to third D1
         run: |
           set -euo pipefail
-          npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+          if test -f /tmp/client3-step1-migration-needed; then
+            npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+          else
+            echo 'No pending migration; read-only re-verification.'
+          fi
       - name: Verify every historical count, FK integrity and reference seeds
         run: |
           set -euo pipefail
@@ -84,9 +96,9 @@ jobs:
               (SELECT COUNT(*) FROM watch_order_item_details) AS watch_order_items_count,
               (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
               (SELECT COUNT(*) FROM inventory_reservations) AS reserves_count,
-              (SELECT COUNT(*) FROM watch_reference_values WHERE kind='movements') AS movement_references,
-              (SELECT COUNT(*) FROM watch_reference_values WHERE kind='bracelets') AS bracelet_references,
-              (SELECT COUNT(*) FROM watch_reference_values WHERE kind='dials') AS dial_references" \
+              (SELECT COUNT(*) FROM watch_reference_values_v5 WHERE kind='movements') AS movement_references,
+              (SELECT COUNT(*) FROM watch_reference_values_v5 WHERE kind='bracelets') AS bracelet_references,
+              (SELECT COUNT(*) FROM watch_reference_values_v5 WHERE kind='dials') AS dial_references" \
             | jq -ce '.[0].results[0]' > /tmp/client3-step1-after
           jq -e --slurpfile b /tmp/client3-step1-before '
             .orders_count==$b[0].orders_count and .items_count==$b[0].items_count and
