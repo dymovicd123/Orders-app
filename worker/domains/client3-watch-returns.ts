@@ -1,14 +1,12 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {createReturn,receiveReturnedItem} from './returns-exchanges.ts'
-import type {WatchPaymentMethod} from '../../shared/client3/watch-domain.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type ReturnInput={
   requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;
-  items?:unknown;paymentMethod?:unknown;reason?:unknown
+  items?:unknown;paymentMethod?:unknown;refundParts?:unknown;reason?:unknown
 }
-const methods=new Set<WatchPaymentMethod>(['KASPI GOLD','KASPI RED','Рассрочка'])
 const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
 const dateAlmaty=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 
@@ -34,8 +32,22 @@ export async function createClient3WatchReturn(
    (!itemSelected&&quantity!==0) || (kind==='items_only'&&amount!==0) ||
    (kind!=='items_only'&&amount<=0))
    return fail('WATCH_RETURN_QUANTITY_INVALID','Исправьте количество и сумму возврата.',400)
- if(amount>0 && !methods.has(input.paymentMethod as WatchPaymentMethod))
+ const refunds=Array.isArray(input.refundParts)?input.refundParts as Array<{method?:unknown;amount?:unknown}>:[]
+ if(refunds.length>3||refunds.some(p=>!p||typeof p.method!=='string'||
+    !p.method.trim()||!Number.isSafeInteger(p.amount)||Number(p.amount)<1)||
+   (refunds.length>0&&refunds.reduce((t,p)=>t+Number(p.amount),0)!==amount))
+   return fail('WATCH_RETURN_SPLIT_INVALID','Суммы всех способов возврата должны точно совпадать с общей суммой.',400)
+ const selectedMethods=amount>0?(refunds.length?refunds.map(p=>String(p.method).trim()):
+   [String(input.paymentMethod||'').trim()]):[]
+ if(selectedMethods.some(x=>!x))
    return fail('WATCH_RETURN_METHOD_INVALID','Выберите способ возврата денег.',400)
+ if(selectedMethods.length){
+   const available=await db.prepare(`SELECT value FROM watch_reference_values
+     WHERE kind='paymentMethods' AND is_active=1`).all<{value:string}>()
+   if(selectedMethods.some(method=>!(available.results||[]).some(v=>
+     v.value.toLocaleUpperCase('ru-RU')===method.toLocaleUpperCase('ru-RU'))))
+     return fail('WATCH_RETURN_METHOD_INVALID','Выберите действующий способ возврата из общего справочника.',400)
+ }
  const row=await db.prepare(
    `SELECT o.id,o.order_status,o.shipping_status,wd.brand_id
     FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
@@ -85,7 +97,8 @@ export async function createClient3WatchReturn(
  try {
    const response=await createReturn(db,{
      requestId:input.requestId as string,orderId,returnDate:dateAlmaty(),
-     amount,paymentMethod:amount>0?input.paymentMethod as string:undefined,
+     amount,paymentMethod:amount>0?selectedMethods[0]:undefined,
+     ...(refunds.length?{refundParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
      comment:reason,restockSource:'none',
      items:selected,
    })
