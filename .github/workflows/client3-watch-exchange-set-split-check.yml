@@ -1,5 +1,5 @@
 name: Client3 watch multi-line exchange and split settlement acceptance
-# Final include cancellation and exact per-method reversal for both refund and extra-payment exchanges.
+# Validate cancelExchangeSetV2 direct-result API and split money reversal behavior.
 # Recheck two-row return after resolving an unrelated existing fixture identifier.
 # Real Main watch reservation rewrite passed. Verify final strict build after type cleanups.
 # Revalidate complete register fixture payment comment and current Main money model.
