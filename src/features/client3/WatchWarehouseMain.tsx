@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
 import {StocktakeProductChoice,StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'
-import {WatchWarehouseHistory} from './WatchWarehouseStage5'
+import {WatchOperationInlineCatalog} from './WatchOperationInlineCatalog'
 import {WATCH_OPTIONS,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/182-inventory-stocktake-human.css'
 import '../../styles/183-inventory-stocktake-workflow.css'
@@ -66,6 +66,7 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const [source,setSource]=useState<Source>('office')
   const [stage,setStage]=useState<Stage>('select')
   const [search,setSearch]=useState('')
+  const [showInlineAdd,setShowInlineAdd]=useState(false)
   const [selectedModel,setSelectedModel]=useState<number|null>(null)
   const [draft,setDraft]=useState<Record<number,string>>({})
   const [reason,setReason]=useState('')
@@ -91,8 +92,11 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
     r.watchVariantId&&r.catalogVariantId&&r.catalogProductId&&
     r.variantActive===1&&r.productActive===1
   ),[rows])
+  // Main includes all active catalog products, even with ZERO registered variants.
+  // Model-only rows must remain visible in arrival / correction workflows.
   const models=useMemo(()=>
-    Array.from(new Map(variants.map(r=>[r.watchProductId,r.modelName])).entries()),[variants])
+    Array.from(new Map(rows.filter(r=>r.productActive===1)
+      .map(r=>[r.watchProductId,r.modelName])).entries()),[rows])
   const current=variants.filter(v=>v.watchProductId===selectedModel)
   const selected=variants.filter(v=>v.watchVariantId!==null&&
     draft[v.watchVariantId]!==undefined&&draft[v.watchVariantId]!=='')
@@ -110,6 +114,7 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const reset=()=>{
     setStage('select');setSelectedModel(null);setDraft({});setSearch('')
     setReason('');setConfirmed(false);setShortageConfirmed(false);setError('');setNotice('')
+    setShowInlineAdd(false)
     requestRef.current=null
   }
   const selectMode=(next:Operation)=>{
@@ -232,12 +237,29 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
                   v.watchVariantId!==null&&draft[v.watchVariantId]!==undefined).length
                 return <StocktakeProductChoice key={id} checked={selectedModel===id}
                   onToggle={()=>{setSelectedModel(id);setStage('quantities');setError('')}}
-                  name={name} description={count?count+' выбрано':'Выбрать комплектации'}/>
+                  name={name} description={count?count+' выбрано':
+                    variants.filter(v=>v.watchProductId===id).length?
+                      'Выбрать комплектации':'Комплектаций пока нет · можно добавить'}/>
               })}
             {!models.length&&<div className="stocktake-product-list-empty">
-              Нет подготовленных комплектаций. Добавьте модель и характеристики во вкладке «Товары».
+              В каталоге нет моделей часов выбранного бренда.
+              {mode==='arrival'||mode==='count'?' Добавьте новую модель прямо здесь.':''}
             </div>}
           </div>
+          {(mode==='arrival'||mode==='count')&&<div className="client3-main-stock-missing">
+            <button className="secondary compact" type="button" disabled={saving}
+              onClick={()=>setShowInlineAdd(v=>!v)}>
+              + Нужного товара или варианта нет в каталоге
+            </button>
+          </div>}
+          {showInlineAdd&&(mode==='arrival'||mode==='count')&&
+            <WatchOperationInlineCatalog key={brand+'-new-'+String(selectedModel)}
+              brand={brand} models={models} selectedModelId={selectedModel}
+              onCancel={()=>setShowInlineAdd(false)}
+              onCreated={(modelId)=>{
+                setSelectedModel(modelId);setStage('quantities')
+                setShowInlineAdd(false);setError('');refresh()
+              }}/>}
         </div>
         {selected.length>0&&<div className="stocktake-e-footer stocktake-e-footer-v4">
           <strong>Выбрано: {selected.length} из 30 комплектаций</strong>
@@ -252,6 +274,12 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
           <button type="button" className="ghost compact" disabled={saving}
             onClick={()=>setStage('select')}>← К выбору моделей</button>
         </div>
+        {!current.length&&<div className="stocktake-product-list-empty">
+          У этой модели пока нет складских комплектаций.
+          {mode==='arrival'||mode==='count'?
+            ' Создайте нужную комплектацию здесь, чтобы затем ввести количество.':
+            ' Для этой операции нужны уже существующие часы со свободным остатком.'}
+        </div>}
         <div className="client3-main-stock-skus client3-main-stock-skus-multi">
           {current.map(row=>{
             const original=sourceSnapshot(row,source)
@@ -267,6 +295,18 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
             </div>
           })}
         </div>
+        {(mode==='arrival'||mode==='count')&&<div className="client3-main-stock-missing">
+          <button className="secondary compact" type="button" disabled={saving}
+            onClick={()=>setShowInlineAdd(v=>!v)}>+ Добавить комплектацию этой модели</button>
+        </div>}
+        {showInlineAdd&&(mode==='arrival'||mode==='count')&&
+          <WatchOperationInlineCatalog key={brand+'-variant-'+String(selectedModel)}
+            brand={brand} models={models} selectedModelId={selectedModel}
+            onCancel={()=>setShowInlineAdd(false)}
+            onCreated={(modelId)=>{
+              setSelectedModel(modelId);setShowInlineAdd(false);setError('')
+              refresh()
+            }}/>}
         {mode==='writeoff'&&<label className="w6-stocktake-reason">
           Причина списания (обязательно)
           <input value={reason} maxLength={300} placeholder="Почему списываем часы"
@@ -334,6 +374,5 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
         </div>
       </section>}
     </div>
-    <WatchWarehouseHistory key={brand+'-'+reload} brand={brand} revision={reload}/>
   </div>
 }
