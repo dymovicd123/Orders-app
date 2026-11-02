@@ -40,7 +40,10 @@ export async function exchangeClient3WatchSet(
  if(!o)return fail('WATCH_EXCHANGE_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
  if(o.order_status==='deleted'||o.order_status==='archived'||o.pricing_mode!=='itemized_v1')
    return fail('WATCH_EXCHANGE_CLOSED','Обмен недоступен для закрытого или исторического заказа.',409)
- if(Number(raw.expectedOrderTotal)!==Number(o.total_amount))
+ const prior=await db.prepare(`SELECT status,target_id FROM critical_operations
+   WHERE operation_type='exchange_set_create' AND request_id=?`)
+   .bind(raw.requestId).first<{status:string;target_id:number|null}>()
+ if(!prior&&Number(raw.expectedOrderTotal)!==Number(o.total_amount))
    return fail('WATCH_EXCHANGE_TOTAL_STALE','Итог заказа изменился. Обновите карточку.',409)
  const unique=new Set<number>()
  const ids=raw.oldItems.map(x=>Number(x.orderItemId))
@@ -57,12 +60,10 @@ export async function exchangeClient3WatchSet(
  const found=new Map((oldRows.results||[]).map(r=>[Number(r.id),r]))
  if(found.size!==ids.length||[...found.values()].some(r=>Number(r.brand_id)!==brandId))
    return fail('WATCH_EXCHANGE_BRAND','Старые часы не принадлежат выбранному бренду.',403)
- const prior=await db.prepare(`SELECT status,target_id FROM critical_operations
-   WHERE operation_type='exchange_set_create' AND request_id=?`)
-   .bind(raw.requestId).first<{status:string;target_id:number|null}>()
+
  for(const line of raw.oldItems){
    const snapshot=found.get(line.orderItemId)!
-   const retry=prior?.status==='started'&&Number(prior.target_id||0)>0
+   const retry=prior?.status==='started'||prior?.status==='completed'
    if(!Number.isSafeInteger(line.quantity)||line.quantity<1||line.quantity>1000||
      !['not_issued','pending'].includes(line.physicalState)||
      line.expectedUnitPrice!==Number(snapshot.unit_price)||
