@@ -72,7 +72,10 @@ assert.ok(stockModal.includes('prompt.question ||') && stockModal.includes('prom
 const returnSection = read('src/features/sections/OrderReturnsSection.tsx')
 const exchangeSection = read('src/features/sections/OrderExchangeSection.tsx')
 assert.ok(returnSection.includes("item.isWorkshop ? 'no_stock' : 'warehouse'"), 'Return intake queue loses Workshop no-stock default')
-assert.ok(exchangeSection.includes("entry.oldIsWorkshop ? 'no_stock' : 'warehouse'"), 'Exchange intake queue loses Workshop no-stock default')
+assert.ok(exchangeSection.includes("receiptDestinations[receiptKey] || (isWorkshop ? 'no_stock' : 'warehouse')"),
+  'Active Exchange intake queue must default Workshop returns to no_stock')
+assert.ok(exchangeSection.includes("receiptDestinations[\`exchange:\${entry.id}:\${entry.oldOperationItemId}\`] || (entry.oldIsWorkshop ? 'no_stock' : 'warehouse')"),
+  'Legacy Exchange history fallback must also preserve the no_stock Workshop default')
 
 const historyPanel = read('src/features/inventory/views/renderInventoryHistoryPanel.tsx')
 assert.ok(historyPanel.includes('Физическая операция') && historyPanel.includes('transferLineQuantity'), 'Inventory history still hides physical operation quantity behind stock delta')
