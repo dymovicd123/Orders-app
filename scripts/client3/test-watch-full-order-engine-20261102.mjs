@@ -723,6 +723,84 @@ const noOverpay=await parse(rewriteClient3AdminWatchItems(db,admin,1,composeSale
  items:[{...composeLines[0],unitPrice:1}],
 }))
 assert.equal(noOverpay.status,409)
+// Client3 Stage 3: ship 1 out of 3 from ONE SKU line. Main splits the
+// reservation and item; the held remainder must inherit the exact watch SKU
+// and engraving in that same D1 atomic batch.
+const partialReceipt=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:1,quantity:10,comment:'Partial watch split shipment',
+ requestId:'watch-partial-receipt-20261103-01',
+}))
+assert.equal(partialReceipt.ok,true,JSON.stringify(partialReceipt))
+const partialCreated=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-partial-create-20261103-01',
+ quantity:3,unitPrice:48000,receivedAmount:12000,engravingText:'Гравировка для трёх часов',
+ items:[{watchVariantId:1,catalogVariantId:vid,quantity:3,unitPrice:48000,
+   source:'office',engravingText:'Гравировка для трёх часов'}],
+}))
+assert.equal(partialCreated.status,201,JSON.stringify(partialCreated))
+assert.equal(partialCreated.pendingReservation,false)
+sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at=? WHERE order_id=?")
+ .run('2026-11-03T10:00:00Z',partialCreated.orderId)
+const partialOriginal=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.line_total,
+ ir.id AS reserve_id,ir.status AS reserve_status,wi.watch_variant_id,wi.engraving_text
+ FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0`).get(partialCreated.orderId)
+assert.equal(partialOriginal.quantity,3)
+assert.equal(partialOriginal.reserve_status,'active')
+const moneyBeforePartial=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(partialCreated.orderId)
+const paymentCountBeforePartial=count('payments')
+const quantityBeforePartial=stock('warehouse').quantity
+const reservedBeforePartial=stock('warehouse').reserved_quantity
+const splitDispatch={requestId:'watch-partial-send-20261103-01',
+ items:[{orderItemId:partialOriginal.id,quantity:1}]}
+const partialSent=await parse(dispatchClient3WatchOrder(db,manager,1,partialCreated.orderId,splitDispatch))
+assert.equal(partialSent.status,200,JSON.stringify(partialSent))
+assert.equal(partialSent.shippedQuantity,1)
+assert.equal(stock('warehouse').quantity,quantityBeforePartial-1)
+assert.equal(stock('warehouse').reserved_quantity,reservedBeforePartial-1)
+const splitRows=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.line_total,
+ oi.stock_writeoff_status,ir.status AS reserve_status,ir.quantity AS reserved_qty,
+ wi.watch_variant_id,wi.engraving_text
+ FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(partialCreated.orderId)
+assert.equal(splitRows.length,2,'One shipped row + one held remainder')
+const shippedPart=splitRows.find(x=>x.id===partialOriginal.id)
+const remainingPart=splitRows.find(x=>x.id!==partialOriginal.id)
+assert.deepEqual([shippedPart.quantity,shippedPart.reserve_status,shippedPart.stock_writeoff_status],
+ [1,'fulfilled','fulfilled'])
+assert.deepEqual([remainingPart.quantity,remainingPart.reserve_status,remainingPart.stock_writeoff_status],
+ [2,'active','reserved'])
+assert.equal(shippedPart.reserved_qty,1)
+assert.equal(remainingPart.reserved_qty,2)
+assert.equal(remainingPart.watch_variant_id,partialOriginal.watch_variant_id)
+assert.equal(remainingPart.engraving_text,partialOriginal.engraving_text)
+assert.equal(shippedPart.line_total+remainingPart.line_total,partialOriginal.line_total,
+ 'Partial shipment must preserve total original line price')
+assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(partialCreated.orderId),moneyBeforePartial)
+assert.equal(count('payments'),paymentCountBeforePartial)
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(partialCreated.orderId).shipping_status,'not_sent')
+const repeatedPart=await parse(dispatchClient3WatchOrder(db,manager,1,partialCreated.orderId,splitDispatch))
+assert.equal(repeatedPart.alreadyCommitted,true,'Same partial shipment must not repeat a stock movement')
+const overqtyPart=await parse(dispatchClient3WatchOrder(db,manager,1,partialCreated.orderId,{
+ requestId:'watch-partial-overqty-20261103-01',
+ items:[{orderItemId:remainingPart.id,quantity:3}],
+}))
+assert.equal(overqtyPart.status,409,'Cannot dispatch more than remaining 2')
+const lastPart=await parse(dispatchClient3WatchOrder(db,manager,1,partialCreated.orderId,{
+ requestId:'watch-partial-send-20261103-02',
+ items:[{orderItemId:remainingPart.id,quantity:2}],
+}))
+assert.equal(lastPart.status,200,JSON.stringify(lastPart))
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(partialCreated.orderId).shipping_status,'sent')
+assert.equal(stock('warehouse').quantity,quantityBeforePartial-3)
+assert.equal(stock('warehouse').reserved_quantity,reservedBeforePartial-3)
+assert.equal(count('payments'),paymentCountBeforePartial)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+ .get(partialCreated.orderId).n,2)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
