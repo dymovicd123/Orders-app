@@ -23,6 +23,10 @@ export async function listClient3WatchOrders(
   }catch(cause){return bad(cause instanceof Error?cause.message:'Некорректная дата.')}
   {
     if(from&&through&&from>through)return bad('Начало периода позже окончания.')
+    const shipping=url.searchParams.get('shipping')||'all'
+    const payment=url.searchParams.get('payment')||'all'
+    if(!['all','sent','not_sent'].includes(shipping)||!['all','debt','paid'].includes(payment))
+      return bad('Неизвестный фильтр заказов.')
     const q=(url.searchParams.get('q')||'').trim()
     if(q.length>100)return bad('Слишком длинный поисковый запрос.')
     const rawLimit=Number(url.searchParams.get('limit')||50)
@@ -31,13 +35,21 @@ export async function listClient3WatchOrders(
       ||!Number.isSafeInteger(rawOffset)||rawOffset<0||rawOffset>100000)
       return bad('Некорректная страница заказов.')
     const qLike='%'+q.replace(/[\\%_]/g, s=>'\\'+s)+'%'
-    const args=[brandId,from,from,through,through,q?1:0,qLike,qLike,qLike] as const
+    const args=[brandId,from,from,through,through,shipping,shipping,payment,payment,q?1:0,
+      qLike,qLike,qLike,qLike] as const
     const where=`wd.brand_id=? AND o.order_status NOT IN ('archived','deleted')
       AND (? IS NULL OR o.order_date>=?)
       AND (? IS NULL OR o.order_date<=?)
+      AND (?='all' OR (?='sent' AND o.shipping_status='sent') OR (?='not_sent' AND o.shipping_status<>'sent'))
+      AND (?='all' OR (?='debt' AND o.debt_amount>0) OR (?='paid' AND o.debt_amount<=0))
       AND (?=0 OR o.external_id LIKE ? ESCAPE '\\'
         OR wd.recipient_name LIKE ? ESCAPE '\\'
-        OR wd.recipient_phone LIKE ? ESCAPE '\\')`
+        OR wd.recipient_phone LIKE ? ESCAPE '\\'
+        OR EXISTS (SELECT 1 FROM order_items oi2
+          LEFT JOIN watch_order_item_details wi3 ON wi3.order_item_id=oi2.id
+          LEFT JOIN watch_variants v3 ON v3.id=wi3.watch_variant_id
+          LEFT JOIN watch_products p3 ON p3.id=v3.watch_product_id
+          WHERE oi2.order_id=o.id AND p3.model_name LIKE ? ESCAPE '\\'))`
     const rows=await db.prepare(`
       SELECT o.id AS orderId,o.external_id AS externalId,o.order_date AS orderDate,
         o.manager_id AS managerId,o.manager_snapshot_name AS managerName,
@@ -46,9 +58,12 @@ export async function listClient3WatchOrders(
         o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
         o.debt_amount AS debtAmount,o.return_amount AS returnAmount,
         wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
-        wd.city,wd.delivery_method AS deliveryMethod,wd.urgent,
+        wd.city,wd.delivery_method AS deliveryMethod,
+        wd.delivery_full_address AS deliveryAddress,wd.postal_code AS postalCode,wd.urgent,
         wd.shipping_deadline_at AS shippingDeadlineAt,
         lj.status AS engravingStatus,
+        (SELECT COUNT(*) FROM inventory_reservations rr
+          WHERE rr.order_id=o.id AND rr.status='unresolved') AS unresolvedReservations,
         -- Main-style expansions: show each real payment and each item, not only
         -- the first item plus an aggregate received amount.
         (SELECT COALESCE(json_group_array(json_object(
