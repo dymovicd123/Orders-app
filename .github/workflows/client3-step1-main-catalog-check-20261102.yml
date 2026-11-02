@@ -1,5 +1,5 @@
 name: Client3 Step1 Main catalog and references — isolated acceptance
-# Validate additive V5, stock-blocked individual delete, grouped delete, and original retirement journal.
+# Validate V5 via separate watch/reference tables, preserving all original Main schema/triggers.
 on:
   push:
     branches: [client3/step1-main-catalog-references-20261102]
