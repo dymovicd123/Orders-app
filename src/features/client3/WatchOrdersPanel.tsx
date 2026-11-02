@@ -3,6 +3,7 @@ import type { WatchBrand } from '../../../shared/client3/watch-domain'
 import {WatchReturnForm} from './WatchReturnForm'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
+import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
@@ -49,6 +50,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
   const [error,setError]=useState('')
   const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
+  const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [expanded,setExpanded]=useState<number|null>(null)
   useEffect(()=>{
     const controller=new AbortController()
@@ -164,7 +166,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                 </td>
                 <td><button type="button" className="watch-main-detail-button"
                   aria-expanded={expanded===order.orderId}
-                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null)}}>
+                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null)}}>
                   {expanded===order.orderId?'Скрыть':'Открыть'}
                 </button></td>
               </tr>
@@ -217,6 +219,11 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                     </section>
                   </div>
                   <div className="watch-main-order-actions">
+                    {order.debtAmount>0&&debtOrderId!==order.orderId&&
+                      <button type="button" className="secondary compact"
+                        onClick={()=>{setDebtOrderId(order.orderId);setReturnOrderId(null);setExchangeOrderId(null)}}>
+                        Закрыть долг
+                      </button>}
                     {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
                       (onOpenLogistics?<button type="button"
                         onClick={()=>onOpenLogistics(brand)}>Подготовить / отправить в логистике</button>:
@@ -232,6 +239,11 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
                       <button type="button" onClick={()=>{setReturnOrderId(order.orderId);setExchangeOrderId(null)}}>
                         Оформить возврат</button>}
                   </div>
+
+                  {debtOrderId===order.orderId&&<WatchDebtPaymentForm
+                    brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
+                    debt={order.debtAmount} onCancel={()=>setDebtOrderId(null)}
+                    onDone={()=>{setDebtOrderId(null);setRefresh(v=>v+1)}}/>}
                   {exchangeOrderId===order.orderId&&<WatchExchangeForm brand={brand} order={order}
                     onCancel={()=>setExchangeOrderId(null)}
                     onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>}
