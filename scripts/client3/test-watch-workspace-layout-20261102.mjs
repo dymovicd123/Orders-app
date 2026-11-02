@@ -12,6 +12,7 @@ for(const group of ['Продажи','Рабочие процессы','Това
 }
 assert(shell.includes('<aside className={'), 'Navigation belongs in a fixed sidebar')
 assert(shell.includes('watch-shell-sidebar'), 'Workspace sidebar must exist')
+assert(shell.includes('watch-shell-nav-svg')&&shell.includes('sectionIcons'), 'Navigation items need distinct vector icons rather than repeated markers')
 assert(shell.includes('watch-shell-workspace'), 'Content and sidebar must be separate')
 assert(shell.includes('watch-shell-topbar'), 'Workspace header must be independent of navigation')
 assert(shell.includes('watch-shell-page-head'), 'Each page needs its own title and context')
