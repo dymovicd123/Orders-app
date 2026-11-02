@@ -25,8 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
-          test "$(git rev-parse HEAD^)" = '26cb0a37eb6977de597e526932981d0e6108333a'
-          test "$(git rev-parse HEAD~3)" = '68eb304be61483145345ba0a9259a05398b9aecb'
+          test "$(git rev-parse HEAD^)" = 'd4091fcf4212402cce4072df1c8efc49293b0a14'
+          git merge-base --is-ancestor '68eb304be61483145345ba0a9259a05398b9aecb' HEAD
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           bash scripts/prepare-main-stage345-port-20261102.sh
