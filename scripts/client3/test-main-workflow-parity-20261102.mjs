@@ -75,7 +75,7 @@ try{
     onOpenCatalog:()=>{},onOpenStaff:()=>{},
   }))
   for(const label of ['Характеристики и настройки','TAUWACH','WACHIZEN','Пол',
-    'Механизм','Браслет','Цвет циферблата','Цвет ремешка',
+    'Механизм','Материал браслета','Цвет циферблата','Цвет ремешка',
     'Способы оплаты','Доставка']){
     assert(html.includes(label),'Missing useful watch reference list: '+label)
   }
