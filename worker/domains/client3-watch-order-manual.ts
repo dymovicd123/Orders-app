@@ -1,5 +1,5 @@
 import type {AuthUser} from '../core/types.ts'
-import {normalizeWatchVariant,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
+import {normalizeWatchVariant,WATCH_OPTIONS,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
 import {registerWatchModel,registerWatchVariant} from './client3-watch-catalog.ts'
 import {provisionClient3WatchSku} from './client3-watch-provision.ts'
 
@@ -7,56 +7,124 @@ export type ManualWatchOrderItem=WatchVariantInput&{modelName:string}
 type Result={ok:boolean;watchProductId?:number;watchVariantId?:number;canonicalVariantId?:number;message?:string}
 const parse=async(response:Response):Promise<Result>=>{
  const result=await response.json() as Result
- if(!response.ok||result.ok!==true)throw new Error(result.message||'Не удалось зарегистрировать комплектацию часов.')
+ if(!response.ok||result.ok!==true)throw new Error(result.message||'Не удалось подтвердить комплектацию часов.')
  return result
 }
-/** Main-style free-entry for an authorized brand manager. No physical stock is
- * ever created: only shared reference values, SKU identity and pending order.
- * This helper is not a public HTTP route.
+const clean=(x:unknown)=>typeof x==='string'?x.trim().replace(/\s+/g,' '):''
+/** Strict semantic equality, never fuzzy guess or silent translation to another model. */
+export const watchIdentityKey=(x:unknown)=>clean(x).normalize('NFKC')
+ .replace(/[‐‑–—−]/g,'-').replace(/\s*-\s*/g,'-')
+ .toLocaleUpperCase('ru-RU')
+
+const standard=(raw:unknown,options:readonly {value:string;label:string}[])=>{
+ const key=watchIdentityKey(raw)
+ const option=options.find(x=>watchIdentityKey(x.value)===key||watchIdentityKey(x.label)===key)
+ return option?option.value:clean(raw)
+}
+
+/** Main-style known-SKU-first: exact brand and all characteristics, even when free stock is zero.
+ * Only one semantic match is accepted. Ambiguous/retired identity requires admin review.
+ * Unknown model/variant still follows the authorized free-entry creation path.
  */
 export async function ensureManualWatchOrderSku(
  db:D1Database,actor:AuthUser,brandId:number,raw:ManualWatchOrderItem,
 ):Promise<{watchVariantId:number;catalogVariantId:number}>{
- if(!Number.isSafeInteger(brandId)||brandId<1)throw new Error('Выберите бренд.')
+ if(!Number.isSafeInteger(brandId)||brandId<1)throw Error('Выберите бренд.')
  if(actor.role!=='admin'){
    if(!actor.managerId||actor.employeeRole==='Логист')
-     throw new Error('Менеджер не может создать часы в этом бренде.')
+     throw Error('Менеджер не может создать часы в этом бренде.')
    const granted=await db.prepare(`SELECT 1 AS ok FROM watch_manager_brands mb
      JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
      WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1`)
      .bind(actor.managerId,brandId).first<{ok:number}>()
-   if(!granted?.ok)throw new Error('Выбранный бренд недоступен этому менеджеру.')
+   if(!granted?.ok)throw Error('Выбранный бренд недоступен этому менеджеру.')
  }
- const modelName=typeof raw?.modelName==='string'?raw.modelName.trim().replace(/\s+/g,' '):''
- if(!modelName||modelName.length>150)
-   throw new Error('Введите название модели (не более 150 символов).')
- const variant=normalizeWatchVariant(raw)
- for(const [kind,value] of [
-   ['movements',variant.movement],
-   ['bracelets',variant.braceletMaterial],
-   ['dials',variant.dialColor],
-   ...(variant.braceletMaterial==='leather'?[['leatherColors',variant.braceletColor]]:[]),
- ]){
-   const table=kind==='leatherColors'?'watch_reference_values':'watch_reference_values_v5'
-   const existing=await db.prepare(`SELECT id,value,is_active FROM ${table} WHERE kind=? AND value=? COLLATE NOCASE`)
-     .bind(kind,value).first<{id:number;value:string;is_active:number}>()
-   if(existing?.is_active===0)
-     throw new Error('Характеристика «'+value+'» удалена из справочника. Обратитесь к администратору.')
-   if(!existing){
-     await db.prepare(`INSERT OR IGNORE INTO ${table}(kind,value) VALUES(?,?)`)
-       .bind(kind,value).run()
+ const inputName=clean(raw?.modelName)
+ if(!inputName||inputName.length>150)throw Error('Введите название модели (не более 150 символов).')
+ const choice={
+   gender:raw.gender,
+   movement:standard(raw.movement,WATCH_OPTIONS.movements),
+   braceletMaterial:standard(raw.braceletMaterial,WATCH_OPTIONS.braceletMaterials),
+   dialColor:standard(raw.dialColor,WATCH_OPTIONS.dialColors),
+   braceletColor:raw.braceletColor,
+ }
+ const candidate=normalizeWatchVariant(choice)
+ const fields=[
+   {kind:'movements',value:candidate.movement,table:'watch_reference_values_v5'},
+   {kind:'bracelets',value:candidate.braceletMaterial,table:'watch_reference_values_v5'},
+   {kind:'dials',value:candidate.dialColor,table:'watch_reference_values_v5'},
+   ...(candidate.braceletMaterial==='leather'
+     ?[{kind:'leatherColors',value:candidate.braceletColor,table:'watch_reference_values'}]:[]),
+ ]
+ // Resolve existing registered reference spellings without Enter or re-confirming
+ // unique values; fail closed on ambiguity and explicitly retired values.
+ const refs:Record<string,string>={}
+ const missing:Array<{kind:string;value:string;table:string}>=[]
+ for(const field of fields){
+   const existing=await db.prepare(`SELECT value,is_active FROM ${field.table} WHERE kind=?`)
+     .bind(field.kind).all<{value:string;is_active:number}>()
+   const matches=(existing.results||[]).filter(x=>watchIdentityKey(x.value)===watchIdentityKey(field.value))
+   if(matches.length>1)throw Error('Характеристика «'+field.value+'» неоднозначна. Уточните справочник.')
+   if(matches.length===1){
+     if(matches[0].is_active!==1)throw Error('Характеристика «'+field.value+'» удалена. Обратитесь к администратору.')
+     refs[field.kind]=matches[0].value
+   }else{
+     refs[field.kind]=field.value
+     missing.push(field)
    }
  }
+ const variant=normalizeWatchVariant({
+   ...candidate,movement:refs.movements,braceletMaterial:refs.bracelets,
+   dialColor:refs.dials,braceletColor:refs.leatherColors||'',
+ })
+ const models=await db.prepare(`SELECT id,model_name,is_active FROM watch_products WHERE brand_id=?`)
+   .bind(brandId).all<{id:number;model_name:string;is_active:number}>()
+ const known=(models.results||[]).filter(row=>
+   watchIdentityKey(row.model_name)===watchIdentityKey(inputName))
+ if(known.length>1)throw Error('Название модели неоднозначно. Уточните карточки каталога.')
+ if(known.length===1&&known[0].is_active!==1)
+   throw Error('Эта модель удалена из каталога. Для восстановления нужен администратор.')
+ const modelName=known.length===1?known[0].model_name:inputName
+ // Resolve whole existing watch variant (including leather strap colour), even
+ // if the original catalogue canonicalized its case differently.
+ if(known.length===1){
+   const found=await db.prepare(`SELECT wv.id,wv.is_active,wv.catalog_variant_id,wv.gender,
+       COALESCE(a.movement,wv.movement) AS movement,
+       COALESCE(a.bracelet_material,wv.bracelet_material) AS bracelet_material,
+       COALESCE(a.dial_color,wv.dial_color) AS dial_color,
+       COALESCE(a.bracelet_color,wv.bracelet_color) AS bracelet_color
+     FROM watch_variants wv LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=wv.id
+     WHERE wv.watch_product_id=?`)
+     .bind(known[0].id).all<Record<string,unknown>>()
+   const matched=(found.results||[]).filter(v=>
+     v.gender===variant.gender &&
+     watchIdentityKey(v.movement)===watchIdentityKey(variant.movement)&&
+     watchIdentityKey(v.bracelet_material)===watchIdentityKey(variant.braceletMaterial)&&
+     watchIdentityKey(v.dial_color)===watchIdentityKey(variant.dialColor)&&
+     watchIdentityKey(v.bracelet_color)===watchIdentityKey(variant.braceletColor))
+   if(matched.length>1)throw Error('Найдено несколько одинаковых комплектаций. Нужна проверка каталога.')
+   if(matched.length===1){
+     if(Number(matched[0].is_active)!==1)
+       throw Error('Комплектация удалена из каталога. Восстановление должен подтвердить администратор.')
+     const prepared=await parse(await provisionClient3WatchSku(
+       db,actor,brandId,Number(matched[0].id),{fromVerifiedOrder:true}))
+     if(!prepared.canonicalVariantId)throw Error('Складской SKU не удалось подтвердить.')
+     return {watchVariantId:Number(matched[0].id),catalogVariantId:prepared.canonicalVariantId}
+   }
+ }
+ // Unknown identity: create only the missing reference values; do NOT add stock.
+ for(const field of missing){
+   await db.prepare(`INSERT OR IGNORE INTO ${field.table}(kind,value) VALUES(?,?)`)
+     .bind(field.kind,field.value).run()
+ }
  const model=await parse(await registerWatchModel(db,actor,brandId,{modelName},{fromVerifiedOrder:true}))
- if(!model.watchProductId)throw new Error('Не удалось подтвердить модель часов.')
+ if(!model.watchProductId)throw Error('Не удалось подтвердить модель часов.')
  const sku=await parse(await registerWatchVariant(db,actor,brandId,{
    watchProductId:model.watchProductId,...variant,
  },{fromVerifiedOrder:true}))
- if(!sku.watchVariantId)throw new Error('Не удалось подтвердить комплект часов.')
+ if(!sku.watchVariantId)throw Error('Не удалось подтвердить комплект часов.')
  const prepared=await parse(await provisionClient3WatchSku(
-   db,actor,brandId,sku.watchVariantId,{fromVerifiedOrder:true},
- ))
- if(!prepared.canonicalVariantId)
-   throw new Error('Не удалось подтвердить новую складскую идентичность.')
+   db,actor,brandId,sku.watchVariantId,{fromVerifiedOrder:true}))
+ if(!prepared.canonicalVariantId)throw Error('Не удалось подтвердить новую складскую идентичность.')
  return {watchVariantId:sku.watchVariantId,catalogVariantId:prepared.canonicalVariantId}
 }
