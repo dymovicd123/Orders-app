@@ -4,6 +4,7 @@ import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from './client3-watch-admin-order.ts'
+import {correctClient3AdminPaymentMethod} from './client3-watch-admin-payment-method.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
@@ -369,6 +370,14 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return receiveClient3WatchReturn(db,actor,scope.row!.id,Number(watchReceiveMatch[1]),input)
+  }
+  const methodMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/payment-method$/.exec(url.pathname)
+  if(methodMatch&&request.method==='PATCH'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return correctClient3AdminPaymentMethod(db,actor,scope.row!.id,Number(methodMatch[1]),
+      input as Parameters<typeof correctClient3AdminPaymentMethod>[4])
   }
   const adminDeleteMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/delete$/.exec(url.pathname)
   if(adminDeleteMatch&&(request.method==='GET'||request.method==='POST')){
