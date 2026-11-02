@@ -4,6 +4,7 @@ import {
   validateWatchOrderInput, type WatchBrand, type WatchOrderInput,
 } from '../../shared/client3/watch-domain.ts'
 import { createOrder } from './orders-write.ts'
+import { isHumanInventoryModelEnabled } from './catalog.ts'
 import { OrderInputValidationError } from './order-core.ts'
 import { OrderStockShortageError } from './order-reservations.ts'
 import type { WatchOrderCommit } from './client3-watch-order-commit.ts'
@@ -36,6 +37,8 @@ export async function createClient3WatchOrder(
     return fail('WATCH_CREATE_FORBIDDEN','Создание заказов доступно менеджеру или администратору.',403)
   try {
     const input=validateWatchOrderInput(raw)
+    if(!await isHumanInventoryModelEnabled(db))
+      return fail('WATCH_INVENTORY_NOT_READY','Учёт резервов часов ещё не подготовлен. Создание заказа остановлено.',503)
     if (!Number.isSafeInteger(brandId)||brandId<=0) return fail('WATCH_BRAND_INVALID','Неизвестный бренд')
     if (!Number.isSafeInteger(raw.watchVariantId)||raw.watchVariantId<=0
       || !Number.isSafeInteger(raw.quantity)||raw.quantity<1||raw.quantity>1000)
@@ -125,7 +128,11 @@ export async function createClient3WatchOrder(
     // Existing Main critical operation writes money + canonical item + reservations.
     // Its completion is delayed until the brand-owned watch attachment is durable.
     const response=await createOrder(db,order,actor,watch)
-    return json({...response,brand:input.brand,engravingShippingIndependent:true},{status:201})
+    const pendingReservation=(response.stockWriteOff||[]).some(item=>item.reservationStatus!=='active')
+    return json({...response,brand:input.brand,engravingShippingIndependent:true,
+      pendingReservation,
+      ...(pendingReservation?{warning:'Заказ записан, но резерв товара ожидает проверки. Не отправляйте его до устранения нехватки.'}:{}),
+    },{status:201})
   } catch (cause) {
     if (cause instanceof OrderStockShortageError)
       return fail(cause.code,cause.message,409)
