@@ -866,8 +866,8 @@ const multiInput={requestId:'watch-two-lines-refund-20261103-01',kind:'both',
         {orderItemId:remainingPart.id,quantity:1}],
 }
 const physicalBeforeMulti=stock('warehouse').quantity
-const multi=await parse(createClient3WatchReturn(db,manager,1,partialCreated.orderId,multiInput))
-assert.equal(multi.status,200,JSON.stringify(multi))
+const multiWatchReturn=await parse(createClient3WatchReturn(db,manager,1,partialCreated.orderId,multiInput))
+assert.equal(multiWatchReturn.status,200,JSON.stringify(multiWatchReturn))
 assert.equal(stock('warehouse').quantity,physicalBeforeMulti,'No automatic return receipt')
 const multiRow=sqlite.prepare('SELECT id,amount FROM returns WHERE order_id=? ORDER BY id DESC LIMIT 1')
  .get(partialCreated.orderId)
