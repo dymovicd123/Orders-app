@@ -8,6 +8,7 @@ on:
       - 'worker/domains/orders-relations.ts'
       - 'worker/domains/returns-exchanges.ts'
       - 'scripts/test-old-order-post-stocktake-guard-r1.mjs'
+      - 'src/app/types.ts'
 permissions:
   contents: read
 jobs:
