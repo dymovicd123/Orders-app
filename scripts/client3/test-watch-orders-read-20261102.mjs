@@ -16,7 +16,7 @@ sql.exec([
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
 'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);',
 'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,status TEXT);',
-'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY);',
+'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY,order_id INTEGER);',
 'CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER,order_item_id INTEGER,quantity INTEGER,cancelled_quantity INTEGER);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
 'CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
@@ -32,6 +32,8 @@ sql.exec([
 "INSERT INTO financial_events VALUES(2,1,'2026-11-02','order_refund',-1500,'KASPI GOLD','W-1',NULL,NULL);",
 "INSERT INTO financial_events VALUES(3,2,'2026-11-02','order_payment',60000,'KASPI RED','W-2',NULL,NULL);",
 "INSERT INTO financial_events VALUES(4,3,'2026-10-01','order_payment',30000,'KASPI GOLD','W-3',NULL,NULL);",
+"INSERT INTO order_dispatches(id,order_id) VALUES(10,1);",
+"INSERT INTO order_dispatch_items VALUES(11,10,101,1,0);",
 ].join('\n'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
@@ -81,6 +83,8 @@ assert.equal(lines.length,1)
 assert.equal(lines[0].productName,'WATCH ONE')
 assert.equal(lines[0].unitPrice,20000)
 assert.equal(lines[0].source,'warehouse')
+assert.equal(aliceMonth.rows[0].shippedLineCount,1,'Dispatch exists even when whole order status is not sent')
+assert.equal(lines[0].shipped,1,'Per-item shipment marker is derived from Main dispatch history')
 const pct=await query(alice,'brand=TAUWACH&q=%25')
 assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
 const underscore=await query(alice,'brand=TAUWACH&q=_')
