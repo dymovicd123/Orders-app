@@ -42,7 +42,9 @@ export function WatchCatalogEditor({brand}:{brand:WatchBrand}) {
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
-  const models=Array.from(new Map(rows.map(row=>[row.watchProductId,{id:row.watchProductId,name:row.modelName}])).values())
+  const models=Array.from(new Map<number,{id:number;name:string}>(
+    rows.map(row=>[row.watchProductId,{id:row.watchProductId,name:row.modelName}])
+  ).values())
   useEffect(()=>{
     const controller=new AbortController()
     setLoading(true);setRows([]);setError('')
