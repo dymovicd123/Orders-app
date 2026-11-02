@@ -313,7 +313,7 @@ export function WatchClient3App() {
           <article className="card wide"><div className="card-label">Возвраты</div>
             <div className="card-meta">Для оформления возврата выберите исходный заказ во вкладке «Все заказы». Ниже находится очередь физической приёмки возвратов и старых часов после обмена.</div>
             <button type="button" className="secondary compact" onClick={()=>goTo('orders')}>Открыть заказы</button></article>
-          {brands.length&&<WatchReturnsPanel brands={brands.map(x=>x.code)}/>}
+          {brands.length&&<WatchReturnsPanel key={'returns-'+catalogVersion} brands={brands.map(x=>x.code)}/>}
         </>:
         activeSection==='exchange'?<>
           <article className="card wide"><div className="card-label">Обмены</div>
@@ -348,7 +348,7 @@ export function WatchClient3App() {
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
               onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
             activeSection==='operations'?
-              <WatchWarehouseMain key={'operation-'+brand} brand={brand}
+              <WatchWarehouseMain key={'operation-'+brand+'-'+catalogVersion} brand={brand}
                 onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
               <WatchStockMainBrowse key={'stock-'+brand+'-'+catalogVersion}
                 brand={brand} canCorrect={canAdmin} onCorrect={()=>goTo('operations')}/>):
