@@ -1,4 +1,5 @@
 name: Client3 Main manager corrections verification
+# Use Client3 integration tests; older Main-only UI assertions refer to the separate Main monolith.
 on:
   push:
     branches: [client3/step2-manager-admin-edits-from-main-20261103]
@@ -22,8 +23,6 @@ jobs:
       - name: Main manager price/metadata correction, Client3 regression and compiled UI
         run: |
           set -euo pipefail
-          node scripts/test-safe-order-metadata-edit-20261017.mjs
-          node scripts/test-order-recorded-price-correction-r1.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
