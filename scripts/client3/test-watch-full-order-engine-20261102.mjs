@@ -6,6 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
+import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -393,6 +394,48 @@ const alienSelect=await parse(dispatchClient3WatchOrder(db,manager,2,selectiveOr
  requestId:'watch-selective-foreign-20261102',items:[{orderItemId:selectRows[0].id,quantity:1}],
 }))
 assert.equal(alienSelect.status,404,'No cross-brand shipment access')
+// Main critical debt_close: partial and complete payments from watch Orders,
+// with brand authorization, no duplicated money and no stock side effects.
+const beforeDebtMovements=count('inventory_movements')
+const firstDebtInput={
+ requestId:'watch-debt-settlement-20261102-1',paymentDate:'2026-11-02',
+ method:'KASPI GOLD',amount:6000,comment:'Частично погасили долг',
+}
+const debtFirst=await parse(addClient3WatchDebtPayment(db,manager,1,mixed.orderId,firstDebtInput))
+assert.equal(debtFirst.status,201,JSON.stringify(debtFirst))
+assert.equal(debtFirst.ok,true)
+assert.equal(sqlite.prepare('SELECT debt_amount FROM orders WHERE id=?').get(mixed.orderId).debt_amount,7000)
+const paymentAfterFirstDebt=count('payments')
+const debtReplay=await parse(addClient3WatchDebtPayment(db,manager,1,mixed.orderId,firstDebtInput))
+assert.equal(debtReplay.ok,true)
+assert.equal(count('payments'),paymentAfterFirstDebt,'Request retry cannot duplicate debt payment')
+const debtChanged=await parse(addClient3WatchDebtPayment(db,manager,1,mixed.orderId,{
+ ...firstDebtInput,amount:6500,
+}))
+assert.equal(debtChanged.status,409,'Same requestId and different amount must conflict')
+const debtTooLarge=await parse(addClient3WatchDebtPayment(db,manager,1,mixed.orderId,{
+ ...firstDebtInput,requestId:'watch-debt-overpay-20261102',amount:8000,
+}))
+assert.equal(debtTooLarge.status,409,'Cannot pay beyond remaining debt')
+const debtInvalidDate=await parse(addClient3WatchDebtPayment(db,manager,1,mixed.orderId,{
+ ...firstDebtInput,requestId:'watch-debt-date-20261102',paymentDate:'2026-02-30',
+}))
+assert.equal(debtInvalidDate.status,400)
+const alienDebt=await parse(addClient3WatchDebtPayment(db,manager,2,mixed.orderId,{
+ ...firstDebtInput,requestId:'watch-debt-foreign-20261102',
+}))
+assert.equal(alienDebt.status,403,'Manager cannot close another brand debt')
+const debtLast=await parse(addClient3WatchDebtPayment(db,manager,1,mixed.orderId,{
+ ...firstDebtInput,requestId:'watch-debt-settlement-20261102-2',amount:7000,method:'KASPI RED',
+}))
+assert.equal(debtLast.status,201,JSON.stringify(debtLast))
+assert.equal(sqlite.prepare('SELECT debt_amount,received_amount FROM orders WHERE id=?')
+ .get(mixed.orderId).debt_amount,0)
+assert.equal(count('inventory_movements'),beforeDebtMovements,'Debt payment never moves physical inventory')
+assert.deepEqual(sqlite.prepare('SELECT method,amount,payment_kind FROM payments WHERE order_id=? ORDER BY id')
+ .all(mixed.orderId).slice(-2).map(x=>[x.method,x.amount,x.payment_kind]),[
+  ['KASPI GOLD',6000,'debt_close'],['KASPI RED',7000,'debt_close'],
+ ])
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
