@@ -301,7 +301,7 @@ assert.equal(manualDenied.status,403)
 const crossBrandLine=await parse(createClient3WatchOrder(db,manager,2,{
  ...multiPurchase,brand:'WACHIZEN',requestId:'watch-multiline-foreign-20261102',
 }))
-assert.equal(crossBrandLine.status,409)
+assert.equal(crossBrandLine.status,403,'Brand permissions are enforced before multi-line validation')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
