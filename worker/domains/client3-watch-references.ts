@@ -78,3 +78,39 @@ export async function deleteClient3WatchReference(db:D1Database,actor:AuthUser,i
     .bind(id).run()
   return json({ok:true,deleted:true,changed:Number(changed.meta?.changes||0)})
 }
+
+/** Main references editor: rename an unused characteristic, preserving historical IDs. */
+export async function updateClient3WatchReference(
+ db:D1Database,actor:AuthUser,raw:{id?:unknown;kind?:unknown;value?:unknown},
+){
+ if(actor.role!=='admin')return fail('Редактировать справочники может администратор.',403)
+ const id=Number(raw.id)
+ if(!Number.isSafeInteger(id)||id<1||typeof raw.kind!=='string'||
+   !allowed.includes(raw.kind as WatchReferenceKind)||typeof raw.value!=='string')
+   return fail('Укажите существующее значение и справочник.')
+ const value=normalized(raw.value)
+ if(!value||value.length>80||/[\u0000-\u001f\u007f]/.test(value))
+   return fail('Введите значение от 1 до 80 символов.')
+ const row=await db.prepare('SELECT id,kind,value FROM watch_reference_values WHERE id=? AND is_active=1')
+   .bind(id).first<{id:number;kind:WatchReferenceKind;value:string}>()
+ if(!row||row.kind!==raw.kind)return fail('Значение не найдено. Обновите страницу.',404)
+ const canonical=row.kind==='leatherColors'?identity(value):value
+ if(identity(row.value)===identity(canonical))return json({ok:true,id,value:row.value,unchanged:true})
+ const duplicate=await db.prepare('SELECT id,value FROM watch_reference_values WHERE kind=?')
+   .bind(row.kind).all<{id:number;value:string}>()
+ if((duplicate.results||[]).some(x=>x.id!==id&&identity(x.value)===identity(canonical)))
+   return fail('Такое значение уже существует. Используйте существующее.',409)
+ const columns:Record<string,string>={movements:'movement',bracelets:'bracelet_material',
+   dials:'dial_color',leatherColors:'bracelet_color'}
+ if(columns[row.kind]){
+   const count=await db.prepare(`SELECT COUNT(*) AS n FROM watch_variants v
+     JOIN watch_products wp ON wp.id=v.watch_product_id
+     WHERE v.is_active=1 AND wp.is_active=1 AND v.${columns[row.kind]}=?`)
+     .bind(row.value).first<{n:number}>()
+   if(Number(count?.n)>0)return fail('Характеристика используется в товаре. Сначала измените или удалите соответствующую позицию; историю трогать нельзя.',409)
+ }
+ const saved=await db.prepare('UPDATE watch_reference_values SET value=? WHERE id=? AND kind=? AND value=? AND is_active=1')
+   .bind(canonical,id,row.kind,row.value).run()
+ if(Number(saved.meta?.changes||0)!==1)return fail('Справочник изменился одновременно. Обновите список.',409)
+ return json({ok:true,id,value:canonical,updated:true})
+}
