@@ -5,6 +5,7 @@ import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provi
 import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker/domains/client3-watch-inventory.ts'
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
+import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -123,7 +124,32 @@ const unsafeReplay=await parse(createClient3WatchOrder(db,manager,1,{...purchase
 assert.equal(unsafeReplay.status,409)
 const deniedBrand=await parse(createClient3WatchOrder(db,manager,2,{...purchase,brand:'WACHIZEN',requestId:'watch-real-order-000002'}))
 assert.equal(deniedBrand.status,409,'Direct handler denies a SKU that is not owned by the supplied brand; outer route enforces manager 403')
+const beforeShippingPayment=count('payments')
+const beforeShip=stock('warehouse')
+const blockedEngraving=await parse(dispatchClient3WatchOrder(db,manager,1,firstPurchase.orderId,{
+  requestId:'watch-real-ship-000001',
+}))
+assert.equal(blockedEngraving.status,409,'Physical shipping must require engraving to be ready')
+assert.equal(stock('warehouse').quantity,beforeShip.quantity)
+sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T12:00:00Z' WHERE order_id=?").run(firstPurchase.orderId)
+const shipped=await parse(dispatchClient3WatchOrder(db,manager,1,firstPurchase.orderId,{
+  requestId:'watch-real-ship-000001',
+}))
+assert.equal(shipped.status,200,JSON.stringify(shipped))
+assert.equal(shipped.ok,true)
+assert.equal(stock('warehouse').quantity,beforeShip.quantity-1)
+assert.equal(count('payments'),beforeShippingPayment,'Shipping cannot record payment')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?').get(firstPurchase.orderId).n,1)
+const shipReplay=await parse(dispatchClient3WatchOrder(db,manager,1,firstPurchase.orderId,{
+  requestId:'watch-real-ship-000001',
+}))
+assert.equal(shipReplay.alreadyCommitted,true)
+assert.equal(stock('warehouse').quantity,beforeShip.quantity-1)
+const foreignShip=await parse(dispatchClient3WatchOrder(db,manager,2,firstPurchase.orderId,{
+  requestId:'watch-real-ship-000002',
+}))
+assert.equal(foreignShip.status,404)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
-console.log('CLIENT3_FULL_MAIN_STOCK_ORDER_PASS: real stock movements and order creation, brand attachment, payment/reserve and replay')
+console.log('CLIENT3_FULL_MAIN_STOCK_ORDER_DISPATCH_PASS: real stock, order, reserve, payment, engraving gate and Stage5 shipping')
