@@ -31,6 +31,8 @@ jobs:
         run: node --experimental-strip-types scripts/client3/test-watch-foundation-20261102.mjs
       - name: Brand-scoped HTTP handlers and reliable engraving ready on SQLite
         run: node --experimental-strip-types scripts/client3/test-watch-api-20261102.mjs
+      - name: Render real watch order form with two colors, engravings and Kazpost data
+        run: node scripts/client3/test-watch-form-20261102.mjs
       - name: Full Main foundation build on isolated tenant code
         run: npm run build
       - name: Dependencies audit
