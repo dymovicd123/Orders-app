@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
-import {receiveClient3WatchArrival} from '../../worker/domains/client3-watch-inventory.ts'
+import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker/domains/client3-watch-inventory.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -15,6 +15,7 @@ sqlite.exec([
  'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,product_id INTEGER,stock_position_id INTEGER,category TEXT,gender TEXT,color TEXT,material TEXT,length TEXT,size_label TEXT,is_active INTEGER);',
  'CREATE TABLE inventory_model_meta(key TEXT PRIMARY KEY,value TEXT);',
  'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,reserved_quantity INTEGER);',
+ 'CREATE TABLE inventory_transfer_documents(id INTEGER PRIMARY KEY,request_id TEXT UNIQUE);',
  "INSERT INTO inventory_model_meta VALUES('human_inventory_v2','active');",
  'INSERT INTO managers VALUES(1);',
  'INSERT INTO app_users VALUES(1);',
@@ -89,7 +90,53 @@ const crossBrand=await read(receiveClient3WatchArrival(db,admin,2,{
 },movementWriter))
 assert.equal(crossBrand.status,409)
 assert.equal(requests.length,2)
+
+const transferRequests=new Map()
+const transferWriter=async(_db,input,actor,includeInventory)=>{
+  assert.equal(actor,'client3-watch:1')
+  assert.equal(includeInventory,false)
+  assert.equal(input.fromSource,'warehouse')
+  assert.equal(input.toSource,'boutique')
+  assert.equal(input.items.length,1)
+  assert.equal(input.items[0].variantId,100)
+  assert.equal(input.items[0].expectedQuantity,3)
+  const fingerprint=JSON.stringify([input.fromSource,input.toSource,input.items,input.comment])
+  if(transferRequests.has(input.requestId)){
+    if(transferRequests.get(input.requestId)!==fingerprint)throw Error('Transfer request replay mismatch')
+    return {ok:true,duplicate:true,warnings:[]}
+  }
+  transferRequests.set(input.requestId,fingerprint)
+  sqlite.prepare('INSERT INTO inventory_transfer_documents(request_id) VALUES(?)').run(input.requestId)
+  sqlite.prepare('UPDATE inventory_stock SET quantity=quantity-? WHERE inventory_source=? AND variant_id=?')
+    .run(input.items[0].quantity,input.fromSource,100)
+  sqlite.prepare('UPDATE inventory_stock SET quantity=quantity+? WHERE inventory_source=? AND variant_id=?')
+    .run(input.items[0].quantity,input.toSource,100)
+  return {ok:true,duplicate:false,warnings:[]}
+}
+sqlite.prepare("UPDATE inventory_stock SET reserved_quantity=1 WHERE inventory_source='warehouse'").run()
+const transferInput={watchVariantId:1,source:'office',quantity:3,
+ expectedPhysical:3,requestId:'transfer-test-001',comment:'to showcase'}
+const reserved=await read(transferClient3WatchStock(db,admin,1,transferInput,transferWriter))
+assert.equal(reserved.status,409,'Reserved stock may not be transferred')
+assert.equal(transferRequests.size,0)
+const limited={...transferInput,quantity:2}
+const moved=await read(transferClient3WatchStock(db,admin,1,limited,transferWriter))
+assert.equal(moved.status,200)
+assert.equal(moved.ok,true)
+assert.equal(transferRequests.size,1)
+assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse'").get().quantity,1)
+assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='boutique'").get().quantity,4)
+const replay=await read(transferClient3WatchStock(db,admin,1,limited,transferWriter))
+assert.equal(replay.ok,true)
+assert.equal(replay.duplicate,true)
+assert.equal(transferRequests.size,1)
+assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='boutique'").get().quantity,4)
+const different=await read(transferClient3WatchStock(db,admin,1,{...limited,quantity:1},transferWriter))
+assert.equal(different.status,409,'A changed payload with the same key must conflict')
+assert.equal((await read(transferClient3WatchStock(db,manager,1,limited,transferWriter))).status,403)
+assert.equal((await read(transferClient3WatchStock(db,admin,2,limited,transferWriter))).status,409)
+assert.equal((await read(transferClient3WatchStock(db,admin,1,{...limited,source:'external'},transferWriter))).status,400)
 assert.deepEqual(sqlite.prepare('SELECT * FROM orders').all(),[])
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
-console.log('CLIENT3_WATCH_ARRIVAL_ADAPTER_PASS: exact canonical SKU, split sources, replay, conflict, foreign-brand rejection (simulated movement boundary)')
+console.log('CLIENT3_WATCH_STOCK_ADAPTER_PASS: arrival+transfer, exact SKU, split sources, reservation gate and replay (simulated movement boundaries)')
