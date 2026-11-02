@@ -3,7 +3,7 @@ on:
   push:
     branches: [client3/watch-redesign-20261102]
   pull_request:
-    branches: [client3/isolated-stabilization-20261020]
+    branches: [client3/isolated-stabilization-20261020, client3/watch-ci-accept-20261102]
 permissions:
   contents: read
 jobs:
