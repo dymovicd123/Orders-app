@@ -33,8 +33,9 @@ function textFor(choices:readonly {value:string;label:string}[],code:string|null
 }
 
 /** An unmapped watch is a draft. It cannot be sold or counted as physical stock. */
-export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onStockChanged?:()=>void}) {
+export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:WatchBrand;view?:'catalog'|'warehouse';onStockChanged?:()=>void}) {
   const [rows,setRows]=useState<CatalogRow[]>([])
+  const [operation,setOperation]=useState<'arrival'|'transfer'|'writeoff'|'count'>('arrival')
   const [modelName,setModelName]=useState('')
   const [modelId,setModelId]=useState(0)
   const [gender,setGender]=useState<WatchVariantInput['gender']>('male')
@@ -253,13 +254,34 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию')}
     finally{setBusy(false)}
   }
-  return <section className="watch-catalog-editor">
-    <header><h3>Управление моделями · {brand}</h3>
-      <p>Новые часы сначала регистрируются в каталоге. До связи с точным складским SKU они не доступны для продажи или прихода.</p>
-    </header>
+  return <section className={"watch-catalog-editor watch-catalog-editor-"+view}>
+    {view==='catalog'?<header><h3>Модели и комплектации · {brand}</h3>
+      <p>Добавляйте модели, настраивайте варианты и цены. Учёт физического товара находится отдельно в разделе «Склад».</p>
+    </header>:<header><h3>Учёт остатков · {brand}</h3>
+      <p>Наличие и резервы по двум источникам. Выберите операцию ниже, чтобы изменить складские остатки.</p>
+    </header>}
+    {view==='warehouse'&&<>
+      <div className="watch-warehouse-summary">
+        <div><small>Физически в офисе</small><strong>{linked.reduce((sum,row)=>sum+Math.max(0,Number(row.officePhysical)||0),0)} шт.</strong></div>
+        <div><small>Физически на витрине</small><strong>{linked.reduce((sum,row)=>sum+Math.max(0,Number(row.showcasePhysical)||0),0)} шт.</strong></div>
+        <div><small>Свободный остаток</small><strong>{linked.reduce((sum,row)=>sum+Math.max(0,(Number(row.officePhysical)||0)-(Number(row.officeReserved)||0))+Math.max(0,(Number(row.showcasePhysical)||0)-(Number(row.showcaseReserved)||0)),0)} шт.</strong></div>
+      </div>
+      <div className="watch-warehouse-table" role="region" aria-label="Остатки часов" tabIndex={0}>
+        <table><thead><tr><th>Модель и комплектация</th><th>Офис</th><th>Резерв</th><th>Витрина</th><th>Резерв</th></tr></thead>
+          <tbody>{linked.map(row=><tr key={row.watchVariantId}>
+            <td><strong>{row.modelName}</strong><small>{[textFor(WATCH_OPTIONS.genders,row.gender),textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial),textFor(WATCH_OPTIONS.dialColors,row.dialColor),row.braceletColor].filter(Boolean).join(' · ')}</small></td>
+            <td>{row.officePhysical}</td><td>{row.officeReserved}</td><td>{row.showcasePhysical}</td><td>{row.showcaseReserved}</td>
+          </tr>)}</tbody></table>
+        {!linked.length&&!loading&&<p>Подготовленных складских SKU пока нет. Создайте комплектации в каталоге.</p>}
+      </div>
+      <div className="watch-warehouse-operation-tabs" role="group" aria-label="Складская операция">
+        {([['arrival','Приход'],['transfer','Перемещение'],['writeoff','Списание'],['count','Пересчёт']] as const).map(([value,label])=>
+          <button key={value} type="button" aria-pressed={operation===value} onClick={()=>{setOperation(value);setError('');setNotice('')}}>{label}</button>)}
+      </div>
+    </>}
     {error&&<p role="alert" className="watch-catalog-editor-error">{error}</p>}
     {notice&&<p role="status" className="watch-catalog-editor-notice">{notice}</p>}
-    <div className="watch-catalog-editor-forms">
+    {view==='catalog'&&<div className="watch-catalog-editor-forms">
       <form onSubmit={e=>void createModel(e)}>
         <h4>Новая модель</h4>
         <label>Название модели<input value={modelName} maxLength={150}
@@ -289,8 +311,8 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
             placeholder="Чёрный, коричневый…"/></label>}
         <button type="submit" disabled={busy||!modelId}>Добавить комплектацию</button>
       </form>
-    </div>
-    <form className="watch-catalog-editor-arrival" onSubmit={e=>void createArrival(e)}>
+    </div>}
+    {view==='warehouse'&&operation==='arrival'&&<form className="watch-catalog-editor-arrival" onSubmit={e=>void createArrival(e)}>
       <h4>Физический приход часов</h4>
       <p>Только реальные полученные часы. Эта операция увеличивает остаток и записывается в складскую историю.</p>
       <label>Комплектация
@@ -310,8 +332,8 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       <label>Комментарий<input maxLength={300} value={arrivalComment}
         onChange={e=>setArrivalComment(e.target.value)} placeholder="Например, номер накладной"/></label>
       <button type="submit" disabled={busy||!arrivalVariantId||!linked.length}>Сохранить приход</button>
-    </form>
-    <form className="watch-catalog-editor-arrival" onSubmit={e=>void createTransfer(e)}>
+    </form>}
+    {view==='warehouse'&&operation==='transfer'&&<form className="watch-catalog-editor-arrival" onSubmit={e=>void createTransfer(e)}>
       <h4>Переместить часы</h4>
       <p>Перемещаются только свободные часы — товары с активными резервами остаются на исходной точке.</p>
       <label>Комплектация<select required value={transferVariantId} onChange={e=>setTransferVariantId(Number(e.target.value))}>
@@ -330,8 +352,8 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       <label>Комментарий<input maxLength={300} value={transferComment}
         onChange={e=>setTransferComment(e.target.value)} placeholder="Например, передали на витрину"/></label>
       <button type="submit" disabled={busy||!selectedTransfer||transferFree<1}>Переместить часы</button>
-    </form>
-    <form className="watch-catalog-editor-arrival" onSubmit={e=>void createWriteoff(e)}>
+    </form>}
+    {view==='warehouse'&&operation==='writeoff'&&<form className="watch-catalog-editor-arrival" onSubmit={e=>void createWriteoff(e)}>
       <h4>Списание часов</h4>
       <p>Списать можно только свободные часы. Резервы покупателей защищены, причина обязательна.</p>
       <label>Комплектация<select required value={writeoffVariantId}
@@ -359,8 +381,8 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       <button type="submit" disabled={busy||!selectedWriteoff||writeoffFree<1||!writeoffConfirmed||!writeoffReason.trim()}>
         Списать часы
       </button>
-    </form>
-    <form className="watch-catalog-editor-arrival" onSubmit={e=>void savePhysicalCount(e)}>
+    </form>}
+    {view==='warehouse'&&operation==='count'&&<form className="watch-catalog-editor-arrival" onSubmit={e=>void savePhysicalCount(e)}>
       <h4>Пересчёт фактического количества</h4>
       <p>Если количество отличается от системы, запишите реально пересчитанные часы. Резервы клиентов сохраняются.</p>
       <label>Комплектация<select required value={countVariantId}
@@ -386,8 +408,8 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
         Подтверждаю, что пересчитал(а) указанные часы физически
       </label>
       <button type="submit" disabled={busy||!selectedCount||!countConfirmed||(hasCountShortage&&!shortageConfirmed)}>Сохранить пересчёт</button>
-    </form>
-    <h4>Зарегистрированные часы</h4>
+    </form>}
+    {view==='catalog'&&<><h4>Зарегистрированные часы</h4>
     {loading?<p>Загрузка…</p>:models.length===0?<p>Для бренда пока не зарегистрированы модели.</p>:
       <div className="watch-catalog-editor-list">
         {rows.map(row=><article key={row.watchVariantId||'model-'+row.watchProductId}>
@@ -418,6 +440,6 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
               Подготовить складской SKU
             </button>}
         </article>)}
-      </div>}
+      </div>}</>}
   </section>
 }
