@@ -1,4 +1,5 @@
 name: Client3 Stage2 Main order creation acceptance
+# Run after adapting order register fixture to reference and reservation schemas.
 on:
   push:
     branches: [client3/step2-main-order-create-table-20261102]
