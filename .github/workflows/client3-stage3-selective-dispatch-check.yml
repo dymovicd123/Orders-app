@@ -1,5 +1,5 @@
 name: Client3 Stage3 selective watch dispatch acceptance
-# Main per-item dispatch: verify readiness constraint, other reserve and money preserved.
+# Recheck exact Main dispatch after fixing selected-line JSX mapping syntax.
 on:
   push:
     branches: [client3/step3-selective-watch-dispatch-20261102]
