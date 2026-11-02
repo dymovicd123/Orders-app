@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
-import type { WatchOrderChoice } from './features/client3/WatchOrderForm'
+import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
 
 type User = {
@@ -14,6 +14,8 @@ type User = {
 type AuthStatus = { ok: boolean; user: User | null; hasUsers: boolean; setupReady: boolean; message?: string }
 type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: string }>; message?: string }
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
+type ManagerChoice = {brand: WatchBrand;id:number;name:string}
+type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
 type LoginResponse = { ok: boolean; user?: User; message?: string }
 async function api<T extends { ok: boolean; message?: string }>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...init })
@@ -44,7 +46,9 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<'logistics' | 'catalog'>('logistics')
+  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create'>('logistics')
+  const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
+  const [success,setSuccess] = useState('')
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [catalogBusy, setCatalogBusy] = useState(false)
 
@@ -79,21 +83,43 @@ export function WatchClient3App() {
   }, [user?.id, user?.mustChangePassword])
 
   useEffect(() => {
-    if (!user || user.mustChangePassword || tab !== 'catalog' || !brand) {
+    if (!user || user.mustChangePassword || !((tab === 'catalog' && brand) || (tab === 'create' && brands.length))) {
       setModels([])
       return
     }
     const controller = new AbortController()
     setCatalogBusy(true)
-    void api<ModelResponse>('/api/client3/watches/models?brand=' + encodeURIComponent(brand), {
-      signal: controller.signal,
-    }).then(result => {
-      if (!controller.signal.aborted) setModels(result.models || [])
-    }).catch(cause => {
-      if (!controller.signal.aborted) { setModels([]); setError(cause instanceof Error ? cause.message : 'Каталог недоступен') }
-    }).finally(() => { if (!controller.signal.aborted) setCatalogBusy(false) })
+    setModels([])
+    const toLoad:WatchBrand[]=tab==='create'?brands.map(x=>x.code):[brand as WatchBrand]
+    void Promise.all(toLoad.map(code=>api<ModelResponse>(
+      '/api/client3/watches/models?brand=' + encodeURIComponent(code), {signal:controller.signal}
+    ).then(result=>(result.models||[]).map(model=>({...model,brand:code})))))
+      .then(groups=>{if(!controller.signal.aborted)setModels(groups.flat())})
+      .catch(cause=>{if(!controller.signal.aborted){setModels([]);setError(cause instanceof Error?cause.message:'Каталог недоступен')}})
+      .finally(()=>{if(!controller.signal.aborted)setCatalogBusy(false)})
     return () => controller.abort()
-  }, [user?.id, user?.mustChangePassword, brand, tab])
+  }, [user?.id, user?.mustChangePassword, brand, tab, brands])
+
+  useEffect(()=>{
+    if(tab!=='create'||user?.role!=='admin'||!brands.length){setManagerChoices([]);return}
+    const controller=new AbortController()
+    void Promise.all(brands.map(x=>api<ManagerResponse>(
+      '/api/client3/watches/managers?brand='+encodeURIComponent(x.code),{signal:controller.signal}
+    ).then(result=>result.managers.map(manager=>({...manager,brand:x.code})))))
+      .then(groups=>{if(!controller.signal.aborted)setManagerChoices(groups.flat())})
+      .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Менеджеры недоступны')})
+    return ()=>controller.abort()
+  },[user?.id,user?.role,tab,brands])
+
+  const saveWatchOrder=async(draft:WatchOrderDraftPayload)=>{
+    const result=await api<{ok:boolean;orderId:number;externalId:string;message?:string}>(
+      '/api/client3/watches/orders',{
+        method:'POST',headers:jsonHeaders,body:JSON.stringify(draft),
+      })
+    setSuccess('Заказ '+(result.externalId||'#'+result.orderId)+' сохранён. Товар не отправлен.')
+    setError('')
+    setTab('logistics')
+  }
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -179,12 +205,21 @@ export function WatchClient3App() {
     <nav className="watch-shell-nav" aria-label="Разделы">
       <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
         onClick={() => setTab('logistics')}>Логистика</button>
+      {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'create' ? 'page' : undefined}
+        onClick={() => { setTab('create');setError('');setSuccess('') }}>Новый заказ</button>}
       {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'catalog' ? 'page' : undefined}
         onClick={() => setTab('catalog')}>Каталог и остатки</button>}
     </nav>
     <main className="watch-shell-content">
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
-      {tab === 'logistics'
+      {success && <p role="status" className="watch-shell-success">{success}</p>}
+      {tab === 'create'
+        ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
+          : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
+              isAdmin={user.role==='admin'} managers={managerChoices}
+              deliveryMethods={['Казпочта','Курьер','Самовывоз','Межгород']}
+              onSave={saveWatchOrder}/>
+        : tab === 'logistics'
         ? <WatchLogisticsPanel brand="all"
             canCompleteEngraving={user.role === 'admin' || user.employeeRole === 'Логист'}/>
         : <section className="watch-shell-catalog">
