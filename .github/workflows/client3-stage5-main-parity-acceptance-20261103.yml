@@ -29,6 +29,7 @@ jobs:
           import {readFileSync} from 'node:fs'
           const operations=readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8')
           const create=readFileSync('src/features/client3/WatchOperationInlineCatalog.tsx','utf8')
+          const catalog=readFileSync('src/features/client3/WatchCatalogEditor.tsx','utf8')
           const history=readFileSync('src/features/client3/WatchWarehouseStage5.tsx','utf8')
           const navigation=readFileSync('src/WatchClient3App.tsx','utf8')
           const chrome=readFileSync('src/features/client3/Client3MainChrome.tsx','utf8')
@@ -47,6 +48,7 @@ jobs:
           assert(create.includes('/api/client3/watches/catalog/variants'))
           assert(create.includes('/api/client3/watches/catalog/provision'))
           assert(create.includes('onCreated(modelId,variant.watchVariantId)'))
+          assert(catalog.includes("await post('/api/client3/watches/catalog/provision'"))
           assert(operations.includes("mode==='arrival'||mode==='count'"))
           assert(operations.includes("count-batch':'bulk'"))
           assert(operations.includes('draftBySource[source]'))
