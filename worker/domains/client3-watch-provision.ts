@@ -23,8 +23,9 @@ export const WATCH_LENGTH='СТАНДАРТ'
  */
 export async function provisionClient3WatchSku(
   db:D1Database,actor:AuthUser,brandId:number,watchVariantId:number,
+ options:{fromVerifiedOrder?:boolean}={},
 ) {
-  if(actor.role!=='admin')return bad('WATCH_SKU_ADMIN_ONLY','Подготовить складскую идентичность может только администратор.',403)
+  if(actor.role!=='admin'&&!options.fromVerifiedOrder)return bad('WATCH_SKU_ADMIN_ONLY','Подготовить складскую идентичность может только администратор.',403)
   if(!Number.isSafeInteger(brandId)||brandId<=0||!Number.isSafeInteger(watchVariantId)||watchVariantId<=0)
     return bad('WATCH_SKU_INVALID','Выберите комплектацию часов.')
 
