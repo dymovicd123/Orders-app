@@ -4,6 +4,7 @@ on:
     branches: [candidate/main-stage345-port-20261102]
     paths:
       - '.github/workflows/main345-selective-qa-20261102.yml'
+      - 'worker/domains/pending-reservation.ts'
 permissions:
   contents: read
 jobs:
