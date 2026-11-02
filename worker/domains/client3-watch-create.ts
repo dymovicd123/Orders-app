@@ -1,7 +1,8 @@
 import { json } from '../core/http.ts'
 import type { AuthUser, OrderInput } from '../core/types.ts'
 import {
-  validateWatchOrderInput, type WatchBrand, type WatchOrderInput,
+  validateWatchOrderInput, WATCH_PAYMENTS, type WatchBrand, type WatchOrderInput,
+  type WatchPaymentMethod,
 } from '../../shared/client3/watch-domain.ts'
 import { createOrder } from './orders-write.ts'
 import { isHumanInventoryModelEnabled } from './catalog.ts'
@@ -15,6 +16,7 @@ export type WatchCreateInput = WatchOrderInput & {
   quantity: number
   unitPrice: number
   receivedAmount?: number
+  payments?: Array<{method:WatchPaymentMethod;amount:number}>
   engravingText: string
   requestId: string
   managerId?: number
@@ -50,7 +52,27 @@ export async function createClient3WatchOrder(
     const price=strictAmount(raw.unitPrice)
     const total=raw.quantity*price
     if (!Number.isSafeInteger(total)) return fail('WATCH_TOTAL_INVALID','Сумма заказа слишком велика.')
-    const received=strictAmount(raw.receivedAmount ?? 0)
+    // Preserve Main's multi-payment ledger: every payment is a separate money event,
+    // never a synthetic single-method sum. Older Client3 clients remain compatible.
+    const entries=raw.payments===undefined
+      ? (strictAmount(raw.receivedAmount??0)>0
+          ? [{method:input.paymentMethod,amount:strictAmount(raw.receivedAmount)}] : [])
+      : raw.payments
+    if(!Array.isArray(entries)||entries.length>8)
+      return fail('WATCH_PAYMENTS_INVALID','Можно указать до восьми отдельных оплат.')
+    let received=0
+    for(const entry of entries){
+      if(!entry || !WATCH_PAYMENTS.includes(entry.method) ||
+        typeof entry.amount!=='number'||!Number.isSafeInteger(entry.amount)||entry.amount<=0)
+        return fail('WATCH_PAYMENT_INVALID','У каждой оплаты укажите способ и положительную сумму в тенге.')
+      received+=entry.amount
+      if(!Number.isSafeInteger(received))
+        return fail('WATCH_PAYMENT_INVALID','Общая сумма оплат слишком велика.')
+    }
+    if(raw.receivedAmount!==undefined && strictAmount(raw.receivedAmount)!==received)
+      return fail('WATCH_PAYMENT_TOTAL_MISMATCH','Итог оплат не совпадает с введённой полученной суммой.')
+    if(entries.length && input.paymentMethod!==entries[0].method)
+      return fail('WATCH_PAYMENT_METHOD_MISMATCH','Основной способ оплаты должен соответствовать первой оплате.')
     if (received>total) return fail('WATCH_OVERPAYMENT','Полученная сумма превышает цену заказа.')
 
     // Never trust client variant IDs, model names, stock figures or brand headers.
@@ -121,9 +143,10 @@ export async function createClient3WatchOrder(
         catalogPriceSnapshot:priceSnapshot,sourceType:source,
         audienceType:'ВЗРОСЛЫЙ',shortageAcknowledged:true,
       }],
-      payments:received>0
-        ? [{method:input.paymentMethod,amount:received,paymentKind:'primary'}]
-        : [],
+      payments:entries.map((entry,index)=>({
+        method:entry.method,amount:entry.amount,
+        paymentKind:index===0?'primary' as const:'extra' as const,
+      })),
     }
     // Existing Main critical operation writes money + canonical item + reservations.
     // Its completion is delayed until the brand-owned watch attachment is durable.
