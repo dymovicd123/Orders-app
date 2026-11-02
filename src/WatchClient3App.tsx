@@ -330,7 +330,7 @@ export function WatchClient3App() {
       {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand}
         brand={brand||'all'} allowedBrands={brands.map(x=>x.code)}
         canDispatch={canSales}
-        canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}}
+        canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}
       {['warehouse','operations','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
           <div className="warehouse-w2-primary" aria-label="Разделы склада">
