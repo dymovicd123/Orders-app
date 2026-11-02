@@ -49,20 +49,29 @@ export async function listClient3WatchOrders(
         wd.city,wd.delivery_method AS deliveryMethod,wd.urgent,
         wd.shipping_deadline_at AS shippingDeadlineAt,
         lj.status AS engravingStatus,
-        (SELECT oi.id FROM order_items oi WHERE oi.order_id=o.id ORDER BY oi.id LIMIT 1) AS firstItemId,
+        EXISTS (
+          SELECT 1 FROM exchanges e JOIN order_items repl ON repl.id=e.new_order_item_id
+          WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
+            AND repl.quantity>0 AND NOT EXISTS (
+              SELECT 1 FROM order_dispatch_items di
+              JOIN order_dispatches d ON d.id=di.dispatch_id
+              WHERE di.order_item_id=repl.id AND di.quantity>di.cancelled_quantity
+            )
+        ) AS pendingReplacement,
+        (SELECT oi.id FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS firstItemId,
         (SELECT oi.quantity-COALESCE((SELECT SUM(ri.quantity) FROM return_items ri
           JOIN returns r ON r.id=ri.return_id
           WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'),0)
-          FROM order_items oi WHERE oi.order_id=o.id ORDER BY oi.id LIMIT 1) AS returnableQuantity,
+          FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS returnableQuantity,
         (SELECT wp.model_name || ' · ' || CASE wv.gender WHEN 'male' THEN 'Мужские' ELSE 'Женские' END ||
           ' · ' || wv.movement || ' · ' || wv.bracelet_material || ' · ' || wv.dial_color ||
           CASE WHEN length(wv.bracelet_color)>0 THEN ' · ' || wv.bracelet_color ELSE '' END
           FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
           JOIN watch_variants wv ON wv.id=wi.watch_variant_id
           JOIN watch_products wp ON wp.id=wv.watch_product_id
-          WHERE oi.order_id=o.id LIMIT 1) AS watchDescription,
-        (SELECT COUNT(*) FROM watch_order_item_details wi JOIN order_items oi ON oi.id=wi.order_item_id WHERE oi.order_id=o.id AND length(trim(wi.engraving_text))>0) AS engravedLines,
-        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id=o.id) AS lineCount
+          WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS watchDescription,
+        (SELECT COUNT(*) FROM watch_order_item_details wi JOIN order_items oi ON oi.id=wi.order_item_id WHERE oi.order_id=o.id AND oi.quantity>0 AND length(trim(wi.engraving_text))>0) AS engravedLines,
+        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0) AS lineCount
       FROM watch_order_details wd
       JOIN orders o ON o.id=wd.order_id
       LEFT JOIN watch_logistics_jobs lj ON lj.order_id=o.id
