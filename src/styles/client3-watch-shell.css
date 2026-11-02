@@ -39,3 +39,6 @@
   .watch-shell-nav { padding: 12px 10px 4px; }
   .watch-shell-auth-card { padding: 20px; }
 }
+.watch-shell-success {max-width:1240px;margin:12px auto;color:#166534;font-weight:600;padding:0 14px}
+.watch-shell-warning {max-width:1240px;margin:12px auto;color:#9a3412;background:#fffbeb;border:1px solid #facc15;border-radius:9px;padding:12px 14px;font-weight:600}
+.watch-shell-loading {padding:16px;text-align:center;color:#64748b}
