@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { WatchBrand } from '../../../shared/client3/watch-domain'
+import {WatchReturnForm} from './WatchReturnForm'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
@@ -8,6 +9,7 @@ type WatchOrder={
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
   lineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
+  firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
 }
 type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
@@ -27,6 +29,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [sendConfirm,setSendConfirm]=useState<number|null>(null)
+  const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
   const [sendingId,setSendingId]=useState<number|null>(null)
   const shipRequests=useRef<Record<number,string>>({})
   useEffect(()=>{
@@ -133,6 +136,15 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
                   <small>Сначала завершите гравировку в логистике.</small>}
               </div>
             </div>
+            {order.watchDescription&&<p className="watch-orders-sku">{order.watchDescription}</p>}
+            {order.lineCount===1&&(Math.max(0,order.receivedAmount-order.returnAmount)>0||
+              ((order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&order.returnableQuantity>0))&&
+              (returnOrderId===order.orderId?
+                <WatchReturnForm brand={brand} order={order}
+                  onCancel={()=>setReturnOrderId(null)}
+                  onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>
+                :<button className="watch-orders-return-open" type="button"
+                  onClick={()=>{setSendConfirm(null);setReturnOrderId(order.orderId)}}>Оформить возврат</button>)}
           </article>)}
         </div>}
       <div className="watch-orders-pages">
