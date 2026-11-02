@@ -81,9 +81,20 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
        JOIN watch_variants wv ON wv.catalog_variant_id=oi.variant_id
        WHERE wv.id=? AND o.order_status='active' AND o.shipping_status<>'sent' AND oi.quantity>0)`)
    .bind(id,scope.model.id,id,id,id))
- for(const id of canonical)statements.push(db.prepare(
-   'UPDATE catalog_variants SET is_active=0 WHERE id=? AND is_active=1',
- ).bind(id))
+ // Same Main retirement history table used by CatalogVariant PATCH.
+ const now=new Date().toISOString()
+ for(const id of canonical){
+   statements.push(db.prepare(
+     'UPDATE catalog_variants SET is_active=0,updated_at=? WHERE id=? AND is_active=1',
+   ).bind(now,id))
+   statements.push(db.prepare(`INSERT INTO catalog_retirement_history_events (
+     event_type,product_id,product_name,stock_position_id,variant_id,
+     material,length,category,gender,color,size_label,variant_count,created_at
+   ) SELECT 'variant',cv.product_id,p.name,cv.stock_position_id,cv.id,
+      cv.material,cv.length,cv.category,cv.gender,cv.color,cv.size_label,1,?
+      FROM catalog_variants cv JOIN catalog_products p ON p.id=cv.product_id
+      WHERE cv.id=? AND cv.is_active=0 AND cv.updated_at=?`).bind(now,id,now))
+ }
  if(scope.kind==='product')statements.push(db.prepare(
    'UPDATE watch_products SET is_active=0 WHERE id=? AND brand_id=? AND is_active=1',
  ).bind(scope.model.id,brandId))
