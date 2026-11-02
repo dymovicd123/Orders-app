@@ -1,5 +1,5 @@
 name: Client3 Stage2 free-item Main order acceptance
-# Include early 403 brand entitlement and Main-style manual watch creation.
+# Assert both single-line and multi-line brand denial before free-entry SKU writes.
 on:
   push:
     branches: [client3/step2-main-free-watch-entry-20261102]
