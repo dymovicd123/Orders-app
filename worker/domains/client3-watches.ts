@@ -8,6 +8,7 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from './client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from './client3-watch-admin-composition.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
+import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
@@ -356,6 +357,14 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
     return listPendingClient3WatchReturns(db,actor,scope.row!.id)
+  }
+  const exchangeSetMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchange-set$/.exec(url.pathname)
+  if(exchangeSetMatch&&request.method==='POST'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return exchangeClient3WatchSet(db,actor,scope.row!.id,
+      Number(exchangeSetMatch[1]),input as Parameters<typeof exchangeClient3WatchSet>[4])
   }
   const exchangeMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchange$/.exec(url.pathname)
   if(exchangeMatch&&request.method==='POST'){
