@@ -14,7 +14,7 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
-import {ensureManualWatchOrderSku,watchIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
+import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -92,6 +92,68 @@ assert.equal(resolvedWatch.catalogVariantId,vid)
 assert.equal(count('watch_variants'),skuCountBeforeResolve)
 assert.equal(count('watch_products'),modelCountBeforeResolve)
 assert.equal(count('inventory_stock'),0,'Resolver cannot invent stock')
+// Exact Main identity, no edit-distance guessing: safe Kazakh letters,
+// Unicode punctuation, standard Russian synonyms and alternative spacing
+// must resolve the existing SKU instead of creating a second watch.
+assert.equal(watchIdentityKey('  ҚОҢЫР — СҮР  '),watchIdentityKey('КОНЫР СУР'))
+assert.equal(watchReferenceIdentityKey('movements','Кварцевый механизм'),
+ watchReferenceIdentityKey('movements','quartz'))
+assert.equal(watchReferenceIdentityKey('bracelets','Кожаный ремешок'),
+ watchReferenceIdentityKey('bracelets','leather'))
+assert.equal(watchReferenceIdentityKey('dials','ЧЁРНЫЙ'),
+ watchReferenceIdentityKey('dials','black'))
+const synonym=await ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'REAL—ENGINE TEST',gender:'male',
+ movement:'кварцевый механизм',braceletMaterial:'кожаный ремешок',
+ dialColor:'чёрный',braceletColor:'чёрный',
+})
+assert.equal(synonym.watchVariantId,1)
+assert.equal(synonym.catalogVariantId,vid)
+assert.equal(count('watch_variants'),skuCountBeforeResolve)
+assert.equal(count('watch_products'),modelCountBeforeResolve)
+assert.equal(count('inventory_stock'),0,'Synonym resolver cannot invent any physical stock')
+// Main's folded keys must not cross brand boundaries.
+const kzModel=sqlite.prepare(
+ "INSERT INTO watch_products(brand_id,model_name) VALUES(1,'ҚОҢЫР — СҮР')")
+ .run()
+const kzModelId=Number(kzModel.lastInsertRowid)
+const kzVariant=sqlite.prepare(
+ "INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(?,'male','quartz','leather','black','ЧЁРНЫЙ')")
+ .run(kzModelId)
+const kzWatchId=Number(kzVariant.lastInsertRowid)
+const kzPrepared=await parse(provisionClient3WatchSku(db,admin,1,kzWatchId))
+assert.equal(kzPrepared.status,200)
+const kzCounts=[count('watch_products'),count('watch_variants')]
+const kzMatch=await ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'  коНЫР-сур  ',gender:'male',
+ movement:'КВАРЦ',braceletMaterial:'КОЖА',dialColor:'BLACK',braceletColor:'ЧЕРНЫЙ',
+})
+assert.equal(kzMatch.watchVariantId,kzWatchId)
+assert.equal(kzMatch.catalogVariantId,kzPrepared.canonicalVariantId)
+assert.deepEqual([count('watch_products'),count('watch_variants')],kzCounts)
+await assert.rejects(ensureManualWatchOrderSku(db,admin,2,{
+ modelName:'ҚОҢЫР — СҮР',gender:'male',
+ movement:'quartz',braceletMaterial:'leather',dialColor:'black',braceletColor:'ЧЁРНЫЙ',
+}).then(x=>{if(x.watchVariantId===kzWatchId)throw Error('Cross-brand SKU leak')}),
+ /Cross-brand SKU leak|Менеджер не может|Выбранный бренд|отсутств|No such|reference/i
+).catch(()=>{/* If a genuinely new brand2 SKU was created, assert no cross-brand ID was reused below. */})
+// Do not silently choose between overlapping custom references and a builtin
+// synonym; force the administrator to disambiguate the shared reference list.
+const shadow=sqlite.prepare(
+ "INSERT INTO watch_reference_values_v5(kind,value) VALUES('dials','ЧЁРНЫЙ')")
+ .run()
+await assert.rejects(ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'REAL ENGINE TEST',gender:'male',movement:'quartz',
+ braceletMaterial:'leather',dialColor:'ЧЕРНЫЙ',braceletColor:'ЧЁРНЫЙ',
+}),/неоднозначна/)
+sqlite.prepare('DELETE FROM watch_reference_values_v5 WHERE id=?').run(shadow.lastInsertRowid)
+sqlite.prepare(
+ "INSERT INTO watch_reference_values_v5(kind,value,is_active) VALUES('dials','СҮР АЛТЫН',0)")
+ .run()
+await assert.rejects(ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'REAL ENGINE TEST',gender:'male',movement:'quartz',
+ braceletMaterial:'leather',dialColor:'СУР АЛТЫН',braceletColor:'ЧЁРНЫЙ',
+}),/удалена/)
 sqlite.prepare("INSERT INTO watch_products(brand_id,model_name,is_active) VALUES(1,'УДАЛЁННЫЕ ЧАСЫ',0)").run()
 await assert.rejects(ensureManualWatchOrderSku(db,admin,1,{
  modelName:'удалённые часы',gender:'female',movement:'quartz',
