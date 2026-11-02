@@ -1,0 +1,34 @@
+name: Client3 watches deployed public smoke check
+on:
+  push:
+    branches: [client3/watch-release-20261102]
+    paths: ['.github/workflows/client3-watch-smoke-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  public-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Public UI, asset bundle, and protected route smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          code=$(curl -sSL --max-time 20 -o /tmp/client3-home.html -w '%{http_code}' "$base/")
+          test "$code" = 200
+          grep -Eq 'id="root"|id="app"|type="module"' /tmp/client3-home.html
+          echo "CLIENT3_PUBLIC_UI_200"
+          asset=$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' /tmp/client3-home.html | head -1)
+          test -n "$asset"
+          code=$(curl -sSL --max-time 20 -o /dev/null -w '%{http_code}' "$base$asset")
+          test "$code" = 200
+          echo "CLIENT3_JS_BUNDLE_200"
+          auth=$(curl -sS --max-time 20 -o /tmp/client3-no-cookie.json -w '%{http_code}' "$base/api/client3/watches/brands")
+          test "$auth" != 200
+          test "$auth" != 500
+          echo "CLIENT3_BRAND_AUTH_GUARD_HTTP_$auth"
+          old=$(curl -sS --max-time 20 -o /tmp/client3-no-cookie-old.json -w '%{http_code}' "$base/api/orders")
+          test "$old" != 200
+          echo "CLIENT3_OLD_ORDER_API_UNAUTH_HTTP_$old"
+          echo "CLIENT3_DEPLOYED_SMOKE_PASS"
