@@ -1605,9 +1605,45 @@ export async function createExchange(
       toInt(operationContext.oldWorkshopTaskId, 0) || null, cleanText(operationContext.oldWorkshopTaskStatus) || null,
       toInt(operationContext.oldWorkshopTaskQuantity, 0) || null, cleanText(oldItem.stock_writeoff_status) || null, timestamp,
     );
-    exchangeId = await updateCriticalOperationTargetFromLastInsert(
-      db, criticalOperation, 'exchange', cleanText((existing as any).external_id), exchangeStatement, 'exchange_created',
-    );
+    // The Legacy endpoint also shares the original sold units with standalone
+    // Returns. Claim the old quantity in the SAME transaction as its Exchange
+    // header, before any old-item physical intake can execute. This closes the
+    // Return-first and Exchange-first preflight race without orphan exchanges.
+    const claimTargetQuantity = Math.max(0, rawOldQuantity - oldQuantity);
+    const oldItemClaims: D1PreparedStatement[] = [
+      db.prepare(
+        `UPDATE order_items
+         SET quantity = ?, line_total = unit_price * ?,
+             stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+         WHERE id = ? AND order_id = ? AND quantity = ?
+           AND quantity >= ? + COALESCE((
+             SELECT SUM(ri.quantity)
+             FROM return_items ri
+             JOIN returns r ON r.id = ri.return_id
+             WHERE r.order_id = ? AND ri.order_item_id = ?
+               AND COALESCE(r.status, 'completed') <> 'cancelled'
+               AND ${noStandaloneReturnSql}
+           ), 0)`
+      ).bind(
+        claimTargetQuantity, claimTargetQuantity, claimTargetQuantity,
+        oldItemId, orderId, rawOldQuantity, oldQuantity, orderId, oldItemId,
+      ),
+      db.prepare(`SELECT json('LEGACY_EXCHANGE_OLD_ITEM_CLAIM_CONFLICT') WHERE changes() <> 1`),
+    ];
+    try {
+      exchangeId = await updateCriticalOperationTargetFromLastInsert(
+        db, criticalOperation, 'exchange', cleanText((existing as any).external_id),
+        exchangeStatement, 'exchange_created', oldItemClaims,
+      );
+    } catch (error) {
+      const message = cleanText(error instanceof Error ? error.message : error);
+      if (/LEGACY_EXCHANGE_OLD_ITEM_CLAIM_CONFLICT|malformed JSON/i.test(message)) {
+        throw new CriticalOperationConflictError(
+          'Старая вещь уже занята другим возвратом или обменом. Обновите заказ: второй обмен остановлен без складских и денежных действий.'
+        );
+      }
+      throw error;
+    }
   }
   if (!exchangeId) throw new Error('Exchange record was not created.');
   const oldExchangeItemMapped = await insertCriticalMappedEntity(
@@ -1668,13 +1704,25 @@ export async function createExchange(
   // order_items.quantity tracks exchange replacement only. Standalone returns stay in
   // return_items, so subtracting them here would make the next operation count them twice.
   const remainingOldQuantity = Math.max(0, rawOldQuantity - oldQuantity);
-  await db.prepare(
-    `UPDATE order_items
-     SET quantity = ?,
-         line_total = unit_price * ?,
-         stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
-     WHERE id = ? AND order_id = ?`
-  ).bind(remainingOldQuantity, remainingOldQuantity, remainingOldQuantity, oldItemId, orderId).run();
+  // New critical operations already claimed the old units atomically above.
+  // An interrupted pre-upgrade Legacy exchange may still need to apply its
+  // original mutation. Never overwrite a quantity changed by another actor.
+  const claimState = await db.prepare('SELECT quantity FROM order_items WHERE id = ? AND order_id = ?')
+    .bind(oldItemId, orderId).first<{ quantity: number }>();
+  const currentOldQuantity = Math.max(0, toInt(claimState?.quantity, -1));
+  if (currentOldQuantity === rawOldQuantity) {
+    const changed = await db.prepare(
+      `UPDATE order_items
+       SET quantity = ?, line_total = unit_price * ?,
+           stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+       WHERE id = ? AND order_id = ? AND quantity = ?`
+    ).bind(remainingOldQuantity, remainingOldQuantity, remainingOldQuantity, oldItemId, orderId, rawOldQuantity).run();
+    if (toInt(changed.meta?.changes, 0) !== 1) {
+      throw new CriticalOperationConflictError('Количество старой вещи изменилось во время обмена. Обновите заказ.');
+    }
+  } else if (currentOldQuantity !== remainingOldQuantity) {
+    throw new CriticalOperationConflictError('Старая вещь уже изменена другим действием. Обновите заказ перед продолжением обмена.');
+  }
 
   if (toInt(operationContext.oldWorkshopTaskId, 0)) {
     const previousTaskQuantity = Math.max(0, toInt(operationContext.oldWorkshopTaskQuantity, 0));
@@ -3783,7 +3831,39 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         : executionPlan.newItems[0]?.item.sourceType === 'boutique'
           ? 'boutique'
           : 'warehouse'
-      exchangeId = await updateCriticalOperationTargetFromLastInsert(
+      // Claim every original unit in the same atomic D1 transaction as the
+      // exchange header. A standalone Return and a Set V2 exchange may both
+      // validate the same preflight state; only one can reserve the last unit.
+      // The order-item quantity is the shared committed claim seen by Return.
+      // This is resumable: the original Exchange plan keeps initial/target
+      // quantities and its next step is exchange_created in the SAME batch.
+      const oldItemClaims: D1PreparedStatement[] = executionPlan.oldItems.flatMap((plan) => [
+        db.prepare(
+          `UPDATE order_items
+           SET quantity = ?, line_total = unit_price * ?,
+               stock_writeoff_status = CASE WHEN ? <= 0 THEN 'exchanged' ELSE stock_writeoff_status END
+           WHERE id = ? AND order_id = ? AND quantity = ?
+             AND quantity >= ? + COALESCE((
+               SELECT SUM(ri.quantity)
+               FROM return_items ri
+               JOIN returns r ON r.id = ri.return_id
+               WHERE r.order_id = ? AND ri.order_item_id = ?
+                 AND COALESCE(r.status, 'completed') <> 'cancelled'
+                 AND ${noStandaloneReturnSql}
+             ), 0)`
+        ).bind(
+          plan.targetQuantity, plan.targetQuantity, plan.targetQuantity,
+          plan.orderItemId, executionPlan.orderId, plan.initialQuantity,
+          plan.quantity, executionPlan.orderId, plan.orderItemId,
+        ),
+        // SQLite changes() is exactly the direct-row count in the preceding
+        // statement (unlike D1 meta.changes, which can count triggers).
+        // A stale claim must abort the entire header transaction; otherwise a
+        // phantom Exchange and double physical old-item intake can survive.
+        db.prepare(`SELECT json('EXCHANGE_OLD_ITEM_CLAIM_CONFLICT') WHERE changes() <> 1`),
+      ])
+      try {
+        exchangeId = await updateCriticalOperationTargetFromLastInsert(
         db,
         criticalOperation,
         'exchange',
@@ -3807,7 +3887,19 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
           timestamp,
         ),
         'exchange_created',
+        oldItemClaims,
       )
+      } catch (error) {
+        // The fail-closed SQL assertion throws 'malformed JSON' when a
+        // Return/another Exchange has already claimed an original unit.
+        const message = cleanText(error instanceof Error ? error.message : error)
+        if (/EXCHANGE_OLD_ITEM_CLAIM_CONFLICT|malformed JSON/i.test(message)) {
+          throw new CriticalOperationConflictError(
+            'Одна из старых вещей уже оформлена другим возвратом или обменом. Обновите заказ: второй обмен остановлен без складских и денежных действий.'
+          )
+        }
+        throw error
+      }
     }
 
     const humanInventoryModelEnabled = await isHumanInventoryModelEnabled(db)
