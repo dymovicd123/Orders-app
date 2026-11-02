@@ -26,8 +26,12 @@ for(const cls of ['references-hero','reference-kind-grid','references-toolbar',
 }
 assert(refs.includes('WATCH_OPTIONS')&&refs.includes('WATCH_PAYMENTS'),
   'Watch references use server-domain-compatible choices instead of clothing values')
-assert(refs.includes("'/api/client3/watches/catalog?brand='"),
-  'Leather strap color values must be brand-scoped')
+assert(refs.includes("'/api/client3/watches/references'"),
+  'Watch characteristics must come from the shared brand-neutral references API')
+assert(!refs.includes('onBrandChange(value)')&&!refs.includes('watch-references-brand-scope'),
+  'References must not force a brand selector for characteristics')
+assert(refs.includes('Добавить в справочник')&&refs.includes("method:'POST'"),
+  'Admin must be able to add real shared references rather than fake edits')
 assert(!refs.includes('/api/references'),'Never allow brand-unsafe Main references write routes')
 
 assert(shell.includes('client3-brand-workspace')&&shell.includes('client3-brand-workspace-tabs'),
@@ -70,12 +74,12 @@ try{
     brand:'TAUWACH',brands:['TAUWACH','WACHIZEN'],onBrandChange:()=>{},
     onOpenCatalog:()=>{},onOpenStaff:()=>{},
   }))
-  for(const label of ['Все рабочие справочники','TAUWACH','WACHIZEN','Пол',
-    'Механизм','Браслет','Цвет циферблата','Цвет кожаного ремешка',
+  for(const label of ['Характеристики и настройки','TAUWACH','WACHIZEN','Пол',
+    'Механизм','Браслет','Цвет циферблата','Цвет ремешка',
     'Способы оплаты','Доставка']){
     assert(html.includes(label),'Missing useful watch reference list: '+label)
   }
-  assert(html.includes('aria-pressed="true"'), 'Current brand must be announced')
+  assert(!html.includes('Выбранный бренд справочников'),'Shared reference lists must have no mandatory brand selector')
   assert(!html.includes('ДЖИНСА')&&!html.includes('42 размер'), 'No clothing options')
 
   const {WatchLogisticsPanel}=await server.ssrLoadModule('/src/features/client3/WatchLogisticsPanel.tsx')
