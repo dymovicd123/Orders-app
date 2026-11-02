@@ -1,5 +1,5 @@
 name: Client3 Stage2 free-item Main order acceptance
-# Revalidate compiler after typing legacy single-item input alongside multi-item payload.
+# Include early 403 brand entitlement and Main-style manual watch creation.
 on:
   push:
     branches: [client3/step2-main-free-watch-entry-20261102]
