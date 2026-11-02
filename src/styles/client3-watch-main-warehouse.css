@@ -1,0 +1,52 @@
+
+.client3-main-stock{display:grid;gap:14px;min-width:0}
+.client3-main-stock>.inventory-calm-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:15px;border:1px solid #dce5f0;background:#fff;border-radius:12px;padding:18px 20px}
+.client3-main-stock>.inventory-calm-head h3{font-size:1.17rem;margin:0 0 4px}
+.client3-main-stock>.inventory-calm-head p{margin:0;font-size:.86rem;color:#64748b}
+.client3-main-stock>.inventory-calm-head button{background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px}
+.client3-main-stock-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:0!important}
+.client3-main-stock-totals>div{display:grid;gap:5px;padding:16px 18px;border:1px solid #dce5f0;background:#fff;border-radius:12px}
+.client3-main-stock-totals small{font-size:.77rem;color:#64748b}
+.client3-main-stock-totals strong{font-size:1.42rem;font-weight:780;font-variant-numeric:tabular-nums}
+.client3-main-stock-operation{margin:0!important;width:100%!important;max-width:none!important;border:1px solid #dae3ee;background:#fff;border-radius:13px;padding:18px 18px 22px!important;box-shadow:0 4px 15px #13294208}
+.client3-main-stock-operation .stocktake-e-head{padding:2px 2px 12px!important}
+.client3-main-stock-operation .stocktake-e-start{margin:0!important}
+.client3-main-stock-operation .w7-operation-location{border-top:1px solid #e9eff6;padding-top:16px;margin-top:10px}
+.client3-main-stock-operation .stocktake-start-modes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.client3-main-stock-operation .stocktake-start-mode{display:grid;align-content:center;gap:3px;min-height:65px;padding:10px 11px;border:1px solid #dce5f0;border-radius:9px;background:#f8fafc;text-align:left;cursor:pointer}
+.client3-main-stock-operation .stocktake-start-mode.is-active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+.client3-main-stock-operation .stocktake-start-mode strong{font-size:.86rem}
+.client3-main-stock-operation .stocktake-start-mode span{font-size:.72rem;line-height:1.4}
+.client3-main-stock-operation .stocktake-source-switch{display:flex;gap:7px}
+.client3-main-stock-operation .stocktake-source-switch button{border:1px solid #cbd5e1;background:#fff;padding:8px 16px;border-radius:9px;cursor:pointer}
+.client3-main-stock-operation .stocktake-source-switch button.is-active{background:#1d4ed8;border-color:#1d4ed8;color:white}
+.client3-main-stock-operation .stocktake-selective-list{display:grid;gap:7px;max-height:300px;overflow-y:auto}
+.client3-main-stock-operation .stocktake-selective-picker{margin:14px auto!important;width:100%!important}
+.client3-main-stock-operation .stocktake-e-start-v5{max-width:none!important}
+.client3-main-stock-step{display:grid;gap:16px;margin:10px 0 0}
+.client3-main-stock-skus{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.client3-main-stock-sku{display:grid;gap:7px;align-content:start;text-align:left;border:1px solid #dce5f0;border-radius:10px;background:#fff;padding:14px;cursor:pointer;min-height:84px}
+.client3-main-stock-sku.is-selected{border-color:#2563eb;background:#eff6ff;box-shadow:0 0 0 1px #2563eb}
+.client3-main-stock-sku strong{font-size:.85rem;line-height:1.45}
+.client3-main-stock-sku span{font-size:.75rem;color:#64748b}
+.client3-main-stock-quantity{display:grid;grid-template-columns:minmax(210px,260px) minmax(0,1fr);gap:15px;align-items:center;border:1px solid #e2e8f0;border-radius:11px;background:#fafcff;padding:17px}
+.client3-main-stock-quantity .stocktake-size-cell{min-width:0}
+.client3-main-stock-quantity-info{display:grid;gap:7px;font-size:.82rem;color:#64748b}
+.client3-main-stock-quantity-info strong{color:#334155}
+.client3-main-stock-quantity-info b{font-size:1.2rem;color:#1d4ed8}
+.client3-main-stock-step .w6-stocktake-reason{margin:0!important}
+.client3-main-stock-step .stocktake-e-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #e2e8f0;padding:15px 0 0}
+.client3-main-stock-step .stocktake-e-footer button,.client3-main-stock-step .stocktake-e-review-actions .primary{background:#1d4ed8;color:white;border:1px solid #1d4ed8;border-radius:9px;padding:11px 16px;font-weight:700}
+.client3-main-stock-step .stocktake-e-review-list{border:1px solid #e2e8f0;border-radius:11px;overflow:hidden}
+.client3-main-stock-step .stocktake-e-review-row{display:grid;grid-template-columns:minmax(170px,2fr) repeat(3,minmax(82px,1fr));gap:12px;align-items:center;padding:14px 16px}
+.client3-main-stock-step .stocktake-e-review-name{display:grid;gap:5px}
+.client3-main-stock-step .stocktake-e-review-name span{color:#64748b;font-size:.77rem}
+.client3-main-stock-step .stocktake-e-review-quantity{display:grid;gap:6px}
+.client3-main-stock-step .stocktake-e-review-quantity span{font-size:.73rem;color:#64748b}
+.client3-main-stock-step .stocktake-e-review-quantity strong{font-size:1.12rem}
+.client3-main-stock-confirm{display:flex;align-items:flex-start;gap:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:13px;font-weight:600;font-size:.86rem}
+.client3-main-stock-confirm input{width:18px;height:18px;flex:0 0 18px;margin:1px 0 0}
+.client3-main-stock-step .stocktake-e-review-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:12px}
+.client3-main-stock-step .stocktake-e-review-actions .secondary{background:#fff;border:1px solid #cbd5e1;border-radius:9px;padding:11px 16px}
+@media(max-width:1150px){.client3-main-stock-totals{grid-template-columns:repeat(2,1fr)}.client3-main-stock-operation .stocktake-start-modes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.client3-main-stock-operation{padding:11px!important}.client3-main-stock-totals>div{padding:12px}.client3-main-stock-operation .stocktake-start-mode{min-height:70px}.client3-main-stock-skus{grid-template-columns:1fr}.client3-main-stock-quantity{grid-template-columns:1fr}.client3-main-stock-step .stocktake-e-review-row{grid-template-columns:repeat(3,minmax(0,1fr))}.client3-main-stock-step .stocktake-e-review-name{grid-column:1/-1}.client3-main-stock-step .stocktake-e-review-actions>*{flex:1}}
