@@ -1,5 +1,5 @@
 name: Client3 Stage2 free-item Main order acceptance
-# Assert both single-line and multi-line brand denial before free-entry SKU writes.
+# Complete watch lifecycle: earlier 403 brand scope and mixed exchange tests.
 on:
   push:
     branches: [client3/step2-main-free-watch-entry-20261102]
