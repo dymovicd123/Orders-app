@@ -14,7 +14,7 @@ sql.exec(`
  CREATE TABLE app_users (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_products (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY,product_id INTEGER REFERENCES catalog_products(id));
- CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER);
+ CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,source_type TEXT DEFAULT 'warehouse',shipping_status TEXT DEFAULT 'not_sent');
  CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER);
  CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER);
@@ -22,7 +22,7 @@ sql.exec(`
  INSERT INTO app_users VALUES (9);
  INSERT INTO catalog_products VALUES(10),(11);
  INSERT INTO catalog_variants VALUES(100,10),(101,11);
- INSERT INTO orders VALUES (1,'TEST-1','active',90000,90000,0),(2,'TEST-2','active',120000,60000,60000);
+ INSERT INTO orders(id,external_id,order_status,total_amount,received_amount,debt_amount) VALUES (1,'TEST-1','active',90000,90000,0),(2,'TEST-2','active',120000,60000,60000);
  INSERT INTO order_items VALUES(200,1,1),(201,2,1);
  INSERT INTO inventory_stock VALUES(1,'warehouse',100,4,1),(2,'boutique',100,2,0),(3,'warehouse',101,9,0);
  INSERT INTO payments VALUES(1,1,90000),(2,2,60000);
@@ -83,6 +83,8 @@ x=await j(await listWatchLogistics(db,alice,allUrl))
 assert.equal(x.rows.length,1);assert.equal(x.rows[0].brand,'TAUWACH')
 assert.equal(x.rows[0].engravingText,'A + M')
 assert.equal(x.rows[0].postalCode,'050000')
+assert.equal(x.rows[0].legacySource,'warehouse')
+assert.equal(x.rows[0].shippingStatus,'not_sent')
 assert.equal(x.rows[0].urgent,1)
 assert.equal(x.rows[0].shippingDeadlineAt,'2026-11-15T12:00:00Z')
 assert(!Object.prototype.hasOwnProperty.call(x.rows[0],'total_amount'),'Logistic DTO must not contain money')
