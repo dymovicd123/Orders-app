@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - name: Main-style distinct workspace shell, grouped navigation and mobile layout
         run: node scripts/client3/test-watch-workspace-layout-20261102.mjs
+      - name: Catalog and warehouse underlying business rules
+        run: node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
       - name: Auth gating and Client3 API isolation (SSR)
         run: node scripts/client3/test-watch-shell-20261102.mjs
       - name: Real full-schema order and exchange regression
