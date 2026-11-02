@@ -3,6 +3,7 @@ import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
 import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
 import {WatchWarehouseMain} from './features/client3/WatchWarehouseMain'
+import {WatchWarehouseHistory} from './features/client3/WatchWarehouseStage5'
 import {WatchStockMainBrowse} from './features/client3/WatchStockMainBrowse'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
@@ -30,7 +31,7 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'orders'|'create'|'logistics'|'warehouse'|'operations'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+type WatchSection = 'orders'|'create'|'logistics'|'warehouse'|'operations'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
   orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
   create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
@@ -39,6 +40,7 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   catalog:{title:'Каталог товаров',description:'Модели, комплектации и каталожные цены.',area:'Товары и склад'},
   exchange:{title:'Обмен часов',description:'Полная замена одной позиции без изменения цены.',area:'Продажи'},
   operations:{title:'Операции склада',description:'Приход, списание, перемещение и пересчёт.',area:'Товары и склад'},
+  history:{title:'История склада',description:'Реальные движения товаров по брендам и точкам.',area:'Товары и склад'},
   returns:{title:'Приём возвратов',description:'Физическое поступление часов после возврата или обмена.',area:'Рабочие процессы'},
   finance:{title:'Финансы',description:'Движение денежных средств и итоги продаж по брендам.',area:'Финансы'},
   staff:{title:'Доступ к брендам',description:'Назначение менеджеров на TAUWACH и WACHIZEN.',area:'Администрирование'},
@@ -296,7 +298,7 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['orders','create','warehouse','operations','catalog','finance','returns','exchange','references'].includes(tab))
+    (!canSales&&['orders','create','warehouse','operations','history','catalog','finance','returns','exchange','references'].includes(tab))
       ? 'logistics':tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
@@ -362,13 +364,13 @@ export function WatchClient3App() {
         brand={brand||'all'} allowedBrands={brands.map(x=>x.code)}
         canDispatch={canSales} canCorrectDispatch={canAdmin}
         canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}
-      {['warehouse','operations','catalog'].includes(activeSection)&&<>
+      {['warehouse','operations','history','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
           <div className="warehouse-w2-primary" aria-label="Разделы склада">
             {([
               {section:'warehouse' as const,label:'Остатки',hint:'Товар на месте, резерв и доступность'},
               {section:'catalog' as const,label:'Товары',hint:'Модели и комплектации часов'},
-              ...(canAdmin?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'}]:[]),
+              ...(canAdmin?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'},{section:'history' as const,label:'История',hint:'Складские движения по товарам'}]:[]),
             ]).map(item=><button key={item.section} type="button"
               className={activeSection===item.section?'is-active':''} title={item.hint}
               aria-current={activeSection===item.section?'page':undefined}
@@ -396,6 +398,8 @@ export function WatchClient3App() {
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
               onStockChanged={()=>setCatalogVersion(x=>x+1)}
               onOpenReferences={()=>goTo('references')}/>:
+            activeSection==='history'?
+              <WatchWarehouseHistory key={'history-'+brand+'-'+catalogVersion} brand={brand} revision={catalogVersion}/>:
             activeSection==='operations'?
               <WatchWarehouseMain key={'operation-'+brand+'-'+catalogVersion} brand={brand}
                 onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
