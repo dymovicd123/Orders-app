@@ -56,11 +56,21 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
   const [transferQuantity,setTransferQuantity]=useState('1')
   const [transferComment,setTransferComment]=useState('')
   const transferRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
+  const [writeoffVariantId,setWriteoffVariantId]=useState(0)
+  const [writeoffSource,setWriteoffSource]=useState<'office'|'showcase'>('office')
+  const [writeoffQuantity,setWriteoffQuantity]=useState('1')
+  const [writeoffReason,setWriteoffReason]=useState('')
+  const [writeoffConfirmed,setWriteoffConfirmed]=useState(false)
+  const writeoffRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
   const linked=rows.filter(row=>row.watchVariantId && row.catalogProductId && row.catalogVariantId && row.productActive===1 && row.variantActive===1)
   const selectedTransfer=linked.find(row=>row.watchVariantId===transferVariantId)
   const transferPhysical=Math.max(0,Number(transferSource==='office'?selectedTransfer?.officePhysical:selectedTransfer?.showcasePhysical)||0)
   const transferReserved=Math.max(0,Number(transferSource==='office'?selectedTransfer?.officeReserved:selectedTransfer?.showcaseReserved)||0)
   const transferFree=Math.max(0,transferPhysical-transferReserved)
+  const selectedWriteoff=linked.find(row=>row.watchVariantId===writeoffVariantId)
+  const writeoffPhysical=Math.max(0,Number(writeoffSource==='office'?selectedWriteoff?.officePhysical:selectedWriteoff?.showcasePhysical)||0)
+  const writeoffReserved=Math.max(0,Number(writeoffSource==='office'?selectedWriteoff?.officeReserved:selectedWriteoff?.showcaseReserved)||0)
+  const writeoffFree=Math.max(0,writeoffPhysical-writeoffReserved)
   const models=Array.from(new Map<number,{id:number;name:string}>(
     rows.map(row=>[row.watchProductId,{id:row.watchProductId,name:row.modelName}])
   ).values())
@@ -145,6 +155,31 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       setReload(x=>x+1)
       onStockChanged?.()
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось переместить часы')}
+    finally{setBusy(false)}
+  }
+  const createWriteoff=async(e:FormEvent<HTMLFormElement>)=>{
+    e.preventDefault()
+    const quantity=Number(writeoffQuantity)
+    if(busy||!writeoffConfirmed||!writeoffReason.trim()||!selectedWriteoff||
+      !Number.isSafeInteger(quantity)||quantity<1||quantity>writeoffFree){
+      setError('Проверьте свободный остаток, причину и подтверждение списания.');return
+    }
+    const payload={watchVariantId:writeoffVariantId,source:writeoffSource,quantity,
+      expectedPhysical:writeoffPhysical,comment:writeoffReason.trim()}
+    const fingerprint=JSON.stringify([brand,payload])
+    if(writeoffRequest.current?.fingerprint!==fingerprint)
+      writeoffRequest.current={fingerprint,requestId:'writeoff-'+crypto.randomUUID()}
+    setBusy(true);setError('');setNotice('')
+    try {
+      const result=await post('/api/client3/watches/stock/writeoff',{
+        ...payload,requestId:writeoffRequest.current.requestId
+      })
+      writeoffRequest.current=null
+      setWriteoffConfirmed(false)
+      setNotice(result.attention?'Списание сохранено. '+result.attention:'Списание сохранено в истории склада.')
+      setReload(x=>x+1)
+      onStockChanged?.()
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось списать часы')}
     finally{setBusy(false)}
   }
   const createVariant=async(e:FormEvent<HTMLFormElement>)=>{
@@ -237,6 +272,35 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
       <label>Комментарий<input maxLength={300} value={transferComment}
         onChange={e=>setTransferComment(e.target.value)} placeholder="Например, передали на витрину"/></label>
       <button type="submit" disabled={busy||!selectedTransfer||transferFree<1}>Переместить часы</button>
+    </form>
+    <form className="watch-catalog-editor-arrival" onSubmit={e=>void createWriteoff(e)}>
+      <h4>Списание часов</h4>
+      <p>Списать можно только свободные часы. Резервы покупателей защищены, причина обязательна.</p>
+      <label>Комплектация<select required value={writeoffVariantId}
+        onChange={e=>{setWriteoffVariantId(Number(e.target.value));setWriteoffConfirmed(false)}}>
+        <option value={0}>Выберите подготовленный SKU</option>
+        {linked.map(row=><option key={row.watchVariantId!} value={row.watchVariantId!}>
+          {row.modelName} · {textFor(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial)} · {textFor(WATCH_OPTIONS.dialColors,row.dialColor)}{row.braceletColor?' · '+row.braceletColor:''}
+        </option>)}
+      </select></label>
+      <label>Откуда<select value={writeoffSource}
+        onChange={e=>{setWriteoffSource(e.target.value as 'office'|'showcase');setWriteoffConfirmed(false)}}>
+        <option value="office">Офис</option><option value="showcase">Витрина</option>
+      </select></label>
+      <p>По системе: {writeoffPhysical} шт. · Резерв: {writeoffReserved} шт. · Свободно: {writeoffFree} шт.</p>
+      <label>Количество<input type="number" min={1} max={writeoffFree} step={1} required
+        value={writeoffQuantity} onChange={e=>{setWriteoffQuantity(e.target.value);setWriteoffConfirmed(false)}}/></label>
+      <label>Причина списания<input value={writeoffReason} maxLength={300} required
+        onChange={e=>{setWriteoffReason(e.target.value);setWriteoffConfirmed(false)}}
+        placeholder="Например, повреждение при перевозке"/></label>
+      <label className="watch-catalog-editor-confirm"><input type="checkbox"
+        checked={writeoffConfirmed} disabled={busy}
+        onChange={e=>setWriteoffConfirmed(e.target.checked)}/>
+        Подтверждаю физическое списание {writeoffQuantity||'0'} шт. из {writeoffSource==='office'?'офиса':'витрины'}
+      </label>
+      <button type="submit" disabled={busy||!selectedWriteoff||writeoffFree<1||!writeoffConfirmed||!writeoffReason.trim()}>
+        Списать часы
+      </button>
     </form>
     <h4>Зарегистрированные часы</h4>
     {loading?<p>Загрузка…</p>:models.length===0?<p>Для бренда пока не зарегистрированы модели.</p>:
