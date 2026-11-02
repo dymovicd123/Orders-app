@@ -1,0 +1,15 @@
+.watch-staff {background:#fff;border:1px solid #e2e8f0;border-radius:14px;margin:10px;padding:20px}
+.watch-staff header {display:flex;align-items:end;justify-content:space-between;flex-wrap:wrap;gap:16px}
+.watch-staff header h2{margin:0 0 5px;font-size:1.35rem}
+.watch-staff header p{margin:0;color:#64748b}
+.watch-staff header button,.watch-staff article button{font:inherit;background:#fff;border:1px solid #cbd5e1;border-radius:9px;padding:9px 12px;cursor:pointer}
+.watch-staff article button{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.watch-staff button:disabled{opacity:.55;cursor:not-allowed}
+.watch-staff-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:20px}
+.watch-staff-list article{display:grid;gap:12px;align-content:start;border:1px solid #e2e8f0;border-radius:10px;padding:16px}
+.watch-staff-choices{display:flex;flex-wrap:wrap;gap:12px}
+.watch-staff-choices label{display:flex;gap:6px;align-items:center;color:#334155;font-size:.91rem;cursor:pointer}
+.watch-staff-choices input{width:18px;height:18px}
+.watch-staff-error{color:#b91c1c;font-weight:600}
+.watch-staff-notice{color:#166534}
+@media(max-width:650px){.watch-staff{padding:14px}}
