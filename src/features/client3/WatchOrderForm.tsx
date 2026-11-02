@@ -28,6 +28,7 @@ export type WatchOrderDraftPayload = ReturnType<typeof validateWatchOrderInput> 
   shippingDeadlineLocal: string
   requestId: string
   receivedAmount: number
+  payments: Array<{method:WatchPaymentMethod;amount:number}>
   managerId?: number
   watchVariantId: number
   catalogVariantId: number
@@ -66,7 +67,9 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   const [variantId,setVariantId]=useState(0)
   const [quantity,setQuantity]=useState(1)
   const [unitPrice,setUnitPrice]=useState('')
-  const [receivedAmount,setReceivedAmount]=useState('0')
+  const [paymentRows,setPaymentRows]=useState<Array<{method:WatchPaymentMethod;amount:string}>>([
+    {method:'KASPI GOLD',amount:'0'},
+  ])
   const [managerId,setManagerId]=useState(0)
   const requestRef=useRef<{fingerprint:string;requestId:string}|null>(null)
   const [engravingText,setEngravingText]=useState('')
@@ -78,7 +81,12 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   const [deliveryMethod,setDeliveryMethod]=useState(deliveryMethods[0]||'')
   const [shippingDeadlineLocal,setShippingDeadlineLocal]=useState('')
   const [urgent,setUrgent]=useState(false)
-  const [paymentMethod,setPaymentMethod]=useState<WatchPaymentMethod>('KASPI GOLD')
+  const receivedAmount=paymentRows.reduce((sum,row)=>sum+(Number(row.amount)||0),0)
+  const paymentMethod=paymentRows.find(row=>Number(row.amount)>0)?.method||paymentRows[0].method
+  const paymentInputsValid=paymentRows.length>=1&&paymentRows.length<=8&&
+    paymentRows.every((row,index)=>WATCH_PAYMENTS.includes(row.method)&&
+      row.amount.trim()!==''&&Number.isSafeInteger(Number(row.amount))&&
+      Number(row.amount)>=(index===0?0:1))
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const rows=useMemo(()=>catalog.filter(x=>x.brand===brand),[catalog,brand])
@@ -90,8 +98,8 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
     brand!==''&&source!==''&&allowedBrands.includes(brand as WatchBrand)&&chosen&&chosen.catalogVariantId>0&&
     Number.isSafeInteger(quantity)&&quantity>0&&quantity<=free&&
     unitPrice.trim()!==''&&Number.isSafeInteger(price)&&price>=0&&Number.isSafeInteger(price*quantity)&&
-    receivedAmount.trim()!==''&&Number.isSafeInteger(Number(receivedAmount))&&
-    Number(receivedAmount)>=0&&Number(receivedAmount)<=price*quantity&&
+    paymentInputsValid&&Number.isSafeInteger(receivedAmount)&&
+    receivedAmount<=price*quantity&&
     (!isAdmin||staff.some(x=>x.id===managerId))&&!busy
   )
   const submit=async(event:FormEvent<HTMLFormElement>)=>{
@@ -106,7 +114,9 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
       const payload={...base,shippingDeadlineLocal,
         watchVariantId:chosen.watchVariantId,catalogVariantId:chosen.catalogVariantId,
         quantity,catalogPriceSnapshot:chosen.catalogPriceSnapshot??null,unitPrice:price,
-        receivedAmount:Number(receivedAmount),engravingText:engravingText.trim(),
+        receivedAmount, payments:paymentRows.filter(row=>Number(row.amount)>0)
+          .map(row=>({method:row.method,amount:Number(row.amount)})),
+        engravingText:engravingText.trim(),
         ...(isAdmin?{managerId}:{})}
       const fingerprint=JSON.stringify(payload)
       if(requestRef.current?.fingerprint!==fingerprint)
@@ -118,7 +128,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить заказ.')}finally{setBusy(false)}
   }
   const total=unitPrice.trim()!==''&&Number.isSafeInteger(price*quantity)?price*quantity:0
-  const received=Number(receivedAmount)||0
+  const received=receivedAmount
   const debt=Math.max(0,total-received)
   return <form className="main-watch-create card wide sector-orders" id="create"
     onSubmit={event=>void submit(event)}>
@@ -127,7 +137,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
         <div className="card-meta">Выберите бренд и точку, затем заполните данные, часы и оплату.</div></div>
       <div className="orders-workspace-kpis create-kpis">
         <div><span>Товаров</span><strong>{chosen?quantity:0}</strong></div>
-        <div><span>Оплат</span><strong>{received>0?1:0}</strong></div>
+        <div><span>Оплат</span><strong>{paymentRows.filter(row=>Number(row.amount)>0).length}</strong></div>
         <div><span>Долг</span><strong>{chosen&&unitPrice.trim()!==''?debt.toLocaleString('ru-RU')+' ₸':'—'}</strong></div>
       </div>
     </div>
@@ -241,28 +251,44 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
     <section className="order-step-card">
       <div className="order-step-head"><div className="order-step-index">3</div>
         <div><h3>Оплаты</h3>
-          <p>Укажите способ оплаты и фактически полученную сумму. Остальное останется долгом.</p></div>
+          <p>Добавляйте оплаты отдельно: например, часть через Kaspi Gold, часть через Kaspi Red. Каждая сумма попадёт в финансовую историю Main.</p></div>
       </div>
       <div className="main-watch-create-item">
-        <div className="main-watch-create-item-head"><strong>Оплата 1</strong>
-          <span>{total.toLocaleString('ru-RU')} ₸ по заказу</span></div>
-        <div className="main-watch-create-grid">
-          {isAdmin&&<label>Менеджер *
+        {isAdmin&&<div className="main-watch-create-grid">
+          <label>Менеджер *
             <select required value={managerId} onChange={e=>setManagerId(Number(e.target.value))}>
               <option value={0}>Выберите менеджера бренда</option>
               {staff.map(x=><option value={x.id} key={x.id}>{x.name}</option>)}
             </select>
-          </label>}
-          <label>Способ оплаты
-            <select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value as WatchPaymentMethod)}>
-              {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
           </label>
-          <label>Получено от клиента, ₸ *
-            <input type="number" min={0} step={1} max={Math.max(0,total)} required
-              value={receivedAmount} onChange={e=>setReceivedAmount(e.target.value)}/>
-          </label>
+        </div>}
+        {paymentRows.map((row,index)=><div className="main-watch-create-item" key={index}>
+          <div className="main-watch-create-item-head"><strong>Оплата {index+1}</strong>
+            {index>0&&<button type="button" className="secondary compact"
+              onClick={()=>setPaymentRows(rows=>rows.filter((_,i)=>i!==index))}>Удалить оплату</button>}
+          </div>
+          <div className="main-watch-create-grid">
+            <label>Способ оплаты
+              <select value={row.method} onChange={e=>setPaymentRows(rows=>rows.map((item,i)=>
+                i===index?{...item,method:e.target.value as WatchPaymentMethod}:item))}>
+                {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+            <label>Получено, ₸ *
+              <input type="number" min={index===0?0:1} step={1} required
+                value={row.amount} onChange={e=>setPaymentRows(rows=>rows.map((item,i)=>
+                  i===index?{...item,amount:e.target.value}:item))}/>
+            </label>
+          </div>
+        </div>)}
+        <div className="actions">
+          <button type="button" className="secondary" disabled={paymentRows.length>=8}
+            onClick={()=>setPaymentRows(rows=>[...rows,{method:'KASPI GOLD',amount:''}])}>
+            + Добавить способ оплаты</button>
+          <strong>Получено: {received.toLocaleString('ru-RU')} ₸ · Долг: {debt.toLocaleString('ru-RU')} ₸</strong>
         </div>
+        {received>total&&<p className="main-watch-create-validation" role="alert">
+          Сумма оплат превышает стоимость заказа.</p>}
       </div>
     </section>
     <section className="order-step-card">
@@ -296,7 +322,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
             onClick={e=>{e.preventDefault()
               if(!window.confirm('Очистить введённые данные?'))return
               setBrand('');setSource('');setVariantId(0);setQuantity(1);setUnitPrice('')
-              setReceivedAmount('0');setManagerId(0);setEngravingText('');setRecipientName('')
+              setPaymentRows([{method:'KASPI GOLD',amount:'0'}]);setManagerId(0);setEngravingText('');setRecipientName('')
               setRecipientPhone('');setAddress('');setPostalCode('');setCity('')
               setShippingDeadlineLocal('');setUrgent(false);setError('');requestRef.current=null}}>
             Очистить форму</button>
