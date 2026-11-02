@@ -16,8 +16,8 @@ const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
 }
-export function WatchOrdersPanel({allowedBrands}:{allowedBrands:readonly WatchBrand[]}) {
-  const [brand,setBrand]=useState<WatchBrand>(allowedBrands[0]||'TAUWACH')
+export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand}) {
+  const [brand,setBrand]=useState<WatchBrand>(initialBrand&&allowedBrands.includes(initialBrand)?initialBrand:allowedBrands[0]||'TAUWACH')
   const [month,setMonth]=useState(initialMonth)
   const [search,setSearch]=useState('')
   const [query,setQuery]=useState('')
