@@ -46,7 +46,7 @@ export async function createClient3WatchReference(
   }catch(cause){
     const concurrent=await db.prepare(
       'SELECT value FROM watch_reference_values WHERE kind=? AND value=? COLLATE NOCASE LIMIT 1',
-    ).bind(raw.kind,normalized).first<{value:string}>()
+    ).bind(raw.kind,canonical).first<{value:string}>()
     if(concurrent)return json({ok:true,value:concurrent.value,alreadyExists:true,sharedAcrossBrands:true})
     throw cause
   }
