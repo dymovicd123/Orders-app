@@ -1,4 +1,5 @@
 name: Client3 multiwatch return and split refund acceptance
+# Recheck two-row return after resolving an unrelated existing fixture identifier.
 # Real Main watch reservation rewrite passed. Verify final strict build after type cleanups.
 # Revalidate complete register fixture payment comment and current Main money model.
 # Verify guarded admin delete with distinct second-manager fixture.
