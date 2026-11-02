@@ -303,8 +303,17 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
         watchProductId:modelId,gender,movement,braceletMaterial,dialColor,
         braceletColor:braceletMaterial==='leather'?braceletColor:'',
       })
-      setNotice(result.alreadyExists?'Такая комплектация уже существует.':'Комплектация зарегистрирована без изменения остатков.')
+      // Main's stock-ready catalog identity: no second manual SKU step.
+      // Provision does NOT add physical stock or movement; the arrival still does.
+      if(!result.watchVariantId)throw Error('Не удалось определить новую комплектацию.')
+      await post('/api/client3/watches/catalog/provision',{
+        watchVariantId:result.watchVariantId,
+      })
+      setNotice(result.alreadyExists?
+        'Комплектация уже существует. Складской SKU подготовлен.':
+        'Комплектация и складской SKU созданы без изменения остатков. Теперь можно оформить приход.')
       setReload(x=>x+1)
+      onStockChanged?.()
       return true
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию');return false}
     finally{setBusy(false)}
