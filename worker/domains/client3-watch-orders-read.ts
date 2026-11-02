@@ -49,6 +49,27 @@ export async function listClient3WatchOrders(
         wd.city,wd.delivery_method AS deliveryMethod,wd.urgent,
         wd.shipping_deadline_at AS shippingDeadlineAt,
         lj.status AS engravingStatus,
+        -- Main-style expansions: show each real payment and each item, not only
+        -- the first item plus an aggregate received amount.
+        (SELECT COALESCE(json_group_array(json_object(
+          'id',p.id,'method',p.method,'amount',p.amount,
+          'date',p.payment_date,'kind',p.payment_kind
+        )),'[]') FROM payments p WHERE p.order_id=o.id) AS paymentLines,
+        (SELECT COALESCE(json_group_array(json_object(
+          'id',oi.id,
+          'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
+          'quantity',oi.quantity,'unitPrice',oi.unit_price,'source',oi.source_type,
+          'engravingText',COALESCE(wi2.engraving_text,''),
+          'gender',COALESCE(wv2.gender,''),'movement',COALESCE(wv2.movement,''),
+          'braceletMaterial',COALESCE(wv2.bracelet_material,''),
+          'dialColor',COALESCE(wv2.dial_color,''),
+          'braceletColor',COALESCE(wv2.bracelet_color,'')
+        )),'[]')
+          FROM order_items oi
+          LEFT JOIN watch_order_item_details wi2 ON wi2.order_item_id=oi.id
+          LEFT JOIN watch_variants wv2 ON wv2.id=wi2.watch_variant_id
+          LEFT JOIN watch_products wp2 ON wp2.id=wv2.watch_product_id
+          WHERE oi.order_id=o.id AND oi.quantity>0) AS itemLines,
         EXISTS (
           SELECT 1 FROM exchanges e JOIN order_items repl ON repl.id=e.new_order_item_id
           WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
