@@ -43,5 +43,6 @@ jobs:
           grep -Fq 'warehouse-w2-navigation' src/WatchClient3App.tsx
           grep -Fq '<section className="order-step-card">' src/features/client3/WatchOrderForm.tsx
           grep -Fq 'rows.filter(x=>x.catalogVariantId&&available(x,source)>0)' src/features/client3/WatchOrderForm.tsx
+          grep -Fq 'Почтовый индекс' src/features/client3/WatchOrderForm.tsx
       - name: Main CSS integrated TypeScript/Vite production build
         run: npm run build
