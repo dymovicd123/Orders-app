@@ -157,12 +157,13 @@ export default {
           const response = await routeClient3Watches(env.DB, request, url, authUser);
           if (response) return response;
         }
-        if (authUser && authUser.role !== 'admin' &&
-            url.pathname.startsWith('/api/') &&
-            !url.pathname.startsWith('/api/auth/') &&
-            url.pathname !== '/api/health') {
+        if (authUser && url.pathname.startsWith('/api/') &&
+            !url.pathname.startsWith('/api/auth/') && url.pathname !== '/api/health' &&
+            // Legacy order, stock, cash and exchange mutations carry no brand
+            // identity. Even the admin must use the new Client3-owned writes.
+            (request.method !== 'GET' || authUser.role !== 'admin')) {
           return json({ok:false,code:'WATCH_NATIVE_ROUTE_REQUIRED',
-            message:'Брендовый доступ доступен только через новый интерфейс часов.'},{status:403});
+            message:'Для изменений используйте отдельные брендовые операции системы часов.'},{status:403});
         }
       }
 
