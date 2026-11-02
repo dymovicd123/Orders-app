@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { WatchBrand } from '../../../shared/client3/watch-domain'
+import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import '../../styles/client3-watch-logistics.css'
 
 export type WatchLogisticsRow = {
@@ -85,6 +86,7 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
   const [filter, setFilter] = useState<'pending' | 'engraving' | 'ready' | 'all'>('all')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
+  const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -157,58 +159,58 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
     {feedback && <p role="status" className="watch-logistics-feedback">{feedback}</p>}
     {busy && <p role="status">Загрузка логистики…</p>}
     {!busy && !error && groups.length === 0 && <p>В выбранной очереди заказов нет.</p>}
-    <div className="watch-logistics-orders">
-      {groups.map(({ order, items }) => {
-        const overdue = order.engravingStatus !== 'ready'
-          && order.shippingStatus !== 'sent' && order.shippingStatus !== 'Отправлено'
-          && Number.isFinite(Date.parse(order.shippingDeadlineAt))
-          && Date.parse(order.shippingDeadlineAt) < Date.now()
-        return <article className="watch-logistics-order" key={order.orderId}>
-          <div className="watch-logistics-order-header">
-            <div>
-              <strong>Заказ {order.externalId || '#' + order.orderId}</strong>
-              <span className="watch-logistics-brand">{order.brand} · {order.legacySource === 'boutique' ? 'Витрина' : 'Офис'}</span>
-            </div>
-            <span className={'watch-logistics-status ' + (order.engravingStatus === 'ready' ? 'is-ready' : '')}>
-              {statusText(order.engravingStatus)}
-            </span>
-          </div>
-          <div className="watch-logistics-summary">
-            <div><small>Получатель</small><strong>{order.recipientName}</strong><span>{order.recipientPhone}</span></div>
-            <div><small>Отправить до (Алматы)</small>
-              <strong>{formatWatchDeadline(order.shippingDeadlineAt)}</strong>
-              {Boolean(order.urgent) && <span className="watch-logistics-urgent">Срочный</span>}
-              {overdue && <span className="watch-logistics-urgent">Срок подготовки прошёл</span>}
-            </div>
-            <div><small>Доставка · {order.deliveryMethod} · {order.shippingStatus === 'sent' || order.shippingStatus === 'Отправлено' ? 'Отправлено' : 'Не отправлено'}</small>
-              <strong>{order.city}, {order.postalCode}</strong><span>{order.address}</span>
-            </div>
-          </div>
-          <div className="watch-logistics-items">
-            {items.map(item => <div className="watch-logistics-item" key={item.orderItemId}>
-              <div><strong>{item.modelName || 'Модель не определена'} · {item.quantity || 0} шт.</strong>
-                <small className={item.reservationStatus==='active'||item.reservationStatus==='fulfilled'?'':'watch-logistics-urgent'}>
-                  Резерв: {item.reservationStatus==='active'?'Подтверждён':item.reservationStatus==='fulfilled'?'Выдан': 'Требует проверки'}
-                </small>
-                <small>{[item.movement, item.braceletMaterial, item.dialColor,
-                  item.braceletColor].filter(Boolean).join(' · ')}</small></div>
-              <div><small>Текст гравировки</small>
-                <span className="watch-logistics-engraving">{item.engravingText || 'Не указан'}</span>
-              </div>
-            </div>)}
-          </div>
-          <div className="watch-logistics-actions">
-            {order.engravingStatus === 'ready'
-              ? <span>Гравировка завершена</span>
-              : canCompleteEngraving
-                ? <button type="button" disabled={saving !== null}
-                    onClick={() => void complete(order.orderId)}>
-                    {saving === order.orderId ? 'Сохраняю…' : 'Готово · гравировка'}
-                  </button>
-                : <span>Завершение гравировки доступно логисту или администратору.</span>}
-          </div>
-        </article>
-      })}
-    </div>
+    <LinkedTableScroll className="watch-main-logistics-scroll" ariaLabel="Очередь логистики">
+      <table className="watch-main-logistics-table">
+        <thead><tr>
+          <th>Заказ</th><th>Бренд / источник</th><th>Получатель</th>
+          <th>Отправить до</th><th>Гравировка</th><th>Товаров</th><th>Действие</th>
+        </tr></thead>
+        <tbody>{groups.map(({order,items})=>{
+          const overdue=order.engravingStatus!=='ready'&&order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
+            Number.isFinite(Date.parse(order.shippingDeadlineAt))&&Date.parse(order.shippingDeadlineAt)<Date.now()
+          return <Fragment key={order.orderId}>
+            <tr className={'watch-main-logistics-row'+(expanded===order.orderId?' is-open':'')}>
+              <td><strong>{order.externalId||'#'+order.orderId}</strong>
+                {Boolean(order.urgent)&&<small className="watch-logistics-urgent">Срочно</small>}</td>
+              <td>{order.brand}<small>{order.legacySource==='boutique'?'Витрина':'Офис'}</small></td>
+              <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
+              <td>{formatWatchDeadline(order.shippingDeadlineAt)}
+                {overdue&&<small className="watch-logistics-urgent">Срок прошёл</small>}</td>
+              <td><span className={'watch-logistics-status '+(order.engravingStatus==='ready'?'is-ready':'')}>
+                {statusText(order.engravingStatus)}</span></td>
+              <td>{items.length}</td>
+              <td><button type="button" className="secondary compact" aria-expanded={expanded===order.orderId}
+                onClick={()=>setExpanded(v=>v===order.orderId?null:order.orderId)}>
+                {expanded===order.orderId?'Скрыть':'Открыть'}</button></td>
+            </tr>
+            {expanded===order.orderId&&<tr className="watch-main-logistics-expanded"><td colSpan={7}>
+              <section className="watch-main-logistics-detail">
+                <div className="watch-main-logistics-detail-head">
+                  <div><small>Получатель и адрес</small><strong>{order.recipientName} · {order.recipientPhone}</strong>
+                    <span>{order.city}, {order.postalCode} · {order.address}</span></div>
+                  <div><small>Доставка</small><strong>{order.deliveryMethod}</strong>
+                    <span>{order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Уже отправлен':'Не отправлен'}</span></div>
+                </div>
+                <div className="watch-main-logistics-items">
+                  {items.map(item=><div key={item.orderItemId} className="watch-main-logistics-item">
+                    <div><strong>{item.modelName||'Модель не определена'} · {item.quantity||0} шт.</strong>
+                      <small>{[item.movement,item.braceletMaterial,item.dialColor,item.braceletColor].filter(Boolean).join(' · ')}</small></div>
+                    <div><small>Текст гравировки</small><strong>{item.engravingText||'Не указан'}</strong></div>
+                    <div><small>Резерв</small><strong>{item.reservationStatus==='active'?'Подтверждён':item.reservationStatus==='fulfilled'?'Выдан':'Требует проверки'}</strong></div>
+                  </div>)}
+                </div>
+                <div className="watch-logistics-actions">
+                  {order.engravingStatus==='ready'?<span>Гравировка завершена</span>:
+                    canCompleteEngraving?<button type="button" disabled={saving!==null}
+                      onClick={()=>void complete(order.orderId)}>
+                      {saving===order.orderId?'Сохраняю…':'Готово · гравировка'}
+                    </button>:<span>Завершить может логист или администратор.</span>}
+                </div>
+              </section>
+            </td></tr>}
+          </Fragment>
+        })}</tbody>
+      </table>
+    </LinkedTableScroll>
   </section>
 }
