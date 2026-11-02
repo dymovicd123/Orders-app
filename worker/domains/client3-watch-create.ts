@@ -40,10 +40,10 @@ export async function createClient3WatchOrder(
    if(typeof raw.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,128}$/.test(raw.requestId))
      return fail('WATCH_REQUEST_ID_INVALID','Некорректный идентификатор сохранения.')
 
-   const requested=raw.items===undefined?[{
-     watchVariantId:raw.watchVariantId,catalogVariantId:raw.catalogVariantId,
-     quantity:raw.quantity,unitPrice:raw.unitPrice,source:raw.source,
-     engravingText:raw.engravingText,
+   const requested:WatchCreateItem[]=raw.items===undefined?[{
+     watchVariantId:raw.watchVariantId??0,catalogVariantId:raw.catalogVariantId,
+     quantity:raw.quantity??0,unitPrice:raw.unitPrice??NaN,source:raw.source,
+     engravingText:raw.engravingText??'',
    }]:raw.items
    if(!Array.isArray(requested)||!requested.length||requested.length>20)
      return fail('WATCH_ITEMS_INVALID','Укажите от 1 до 20 позиций часов.')
