@@ -373,14 +373,14 @@ export async function routeClient3Watches(
     const input=await readJson<Record<string,unknown>>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
-    return correctClient3WatchMetadata(db,actor,scope.row!.id,Number(metaMatch[1]),input)
+    return correctClient3WatchMetadata(db,actor,scope.row!.id,Number(metaMatch[1]),input as Parameters<typeof correctClient3WatchMetadata>[4])
   }
   const pricesMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/prices$/.exec(url.pathname)
   if(pricesMatch&&request.method==='PATCH'){
     const input=await readJson<Record<string,unknown>>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
-    return correctClient3WatchItemPrices(db,actor,scope.row!.id,Number(pricesMatch[1]),input)
+    return correctClient3WatchItemPrices(db,actor,scope.row!.id,Number(pricesMatch[1]),input as Parameters<typeof correctClient3WatchItemPrices>[4])
   }
   const paymentMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/payments$/.exec(url.pathname)
   if(paymentMatch&&request.method==='POST'){
