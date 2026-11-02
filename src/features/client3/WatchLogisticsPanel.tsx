@@ -21,6 +21,7 @@ export type WatchLogisticsRow = {
   readyAt: string | null
   orderItemId: number | null
   quantity: number | null
+  reservationStatus: string | null
   modelName: string | null
   engravingText: string | null
   gender: string | null
@@ -186,6 +187,9 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
           <div className="watch-logistics-items">
             {items.map(item => <div className="watch-logistics-item" key={item.orderItemId}>
               <div><strong>{item.modelName || 'Модель не определена'} · {item.quantity || 0} шт.</strong>
+                <small className={item.reservationStatus==='active'||item.reservationStatus==='fulfilled'?'':'watch-logistics-urgent'}>
+                  Резерв: {item.reservationStatus==='active'?'Подтверждён':item.reservationStatus==='fulfilled'?'Выдан': 'Требует проверки'}
+                </small>
                 <small>{[item.movement, item.braceletMaterial, item.dialColor,
                   item.braceletColor].filter(Boolean).join(' · ')}</small></div>
               <div><small>Текст гравировки</small>
