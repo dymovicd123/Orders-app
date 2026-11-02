@@ -1,55 +1,26 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "orders-app",
-	"main": "worker/index.ts",
-	"build": {
-		"command": "npm run build"
-	},
-	"compatibility_date": "2026-07-06",
-	"d1_databases": [
-  	{
-    	"binding": "DB",
-    	"database_name": "orders_db_prod",
-    	"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"
-  	}
-	],
-	"assets": {
-		"directory": "./dist/client",
-		"not_found_handling": "single-page-application",
-		"run_worker_first": ["/api/*"]
-	},
-	"observability": {
-		"enabled": true
-	},
-	"upload_source_maps": true,
-	"compatibility_flags": [
-		"nodejs_compat"
-	]
-	/**
-	 * Smart Placement
-	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
-	 */
-	// "placement": {  "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orders-app-client3-old-client",
+  "main": "worker/index.ts",
+  "build": { "command": "npm run build" },
+  "compatibility_date": "2026-07-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "CLIENT3_INSTALLATION": "1",
+    "CLIENT3_WATCHES": "1",
+    "CLIENT3_BOOTSTRAP_SHA256": "d12cfd35245c69573b1a7609d66c440943f9ba40d0b33e3a33912e550865632a"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "orders_db_client3_old_client",
+    "database_id": "0717f239-6d81-4837-8586-777d94e22c53",
+    "migrations_dir": "migrations/client3-watch"
+  }],
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "observability": { "enabled": true },
+  "upload_source_maps": true
 }
