@@ -51,6 +51,44 @@ jobs:
           jq -e '.orders_count>=0 and .users_count>=0 and .stage5_dispatch_tables>=0 and .watch_domain_tables>=0' /tmp/client3-readonly-snapshot.json
           echo "Client3 current non-personal counts and schema summary:"
           cat /tmp/client3-readonly-snapshot.json
+      - name: W1c schema-only compatibility inventory (no customer content, no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json \
+            --command="WITH required(table_name,column_name) AS (VALUES
+              ('orders','pricing_mode'),
+              ('orders','shipping_status'),
+              ('orders','source_type'),
+              ('orders','return_amount'),
+              ('order_items','catalog_price_snapshot'),
+              ('order_items','inventory_obligation_key'),
+              ('order_items','stock_writeoff_status'),
+              ('inventory_stock','reserved_quantity'),
+              ('inventory_reservations','order_item_id'),
+              ('inventory_reservations','inventory_source'),
+              ('critical_operations','request_id'),
+              ('critical_operations','context_json'),
+              ('critical_operation_entities','entity_id'),
+              ('catalog_variants','stock_position_id'),
+              ('catalog_variants','category'),
+              ('catalog_execution_prices','sale_price'),
+              ('app_users','manager_id'),
+              ('managers','is_active'),
+              ('watch_brands','code'),
+              ('watch_products','model_name'),
+              ('watch_variants','bracelet_color'),
+              ('watch_order_details','brand_id'),
+              ('watch_order_item_details','engraving_text'),
+              ('watch_logistics_jobs','status')
+            ) SELECT r.table_name,r.column_name,
+              EXISTS(SELECT 1 FROM pragma_table_info(r.table_name) col
+                     WHERE col.name=r.column_name) AS present
+            FROM required r ORDER BY r.table_name,r.column_name" \
+            | jq -ce '.[0].results | map(select(.present==0))' > /tmp/client3-schema-gaps.json
+          echo "Client3 missing columns (schema names only, NO CLIENT DATA):"
+          cat /tmp/client3-schema-gaps.json
+          echo "Missing schema columns: $(jq length /tmp/client3-schema-gaps.json)"
       - name: Public third Worker auth readiness and unauthorized API guard
         shell: bash
         run: |
