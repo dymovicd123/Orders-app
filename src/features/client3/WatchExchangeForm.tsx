@@ -60,7 +60,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
    return ()=>abort.abort()
  },[brand])
  const choose=(id:number,update:Partial<OldChoice>)=>{
-   setChosen(state=>({...state,[id]:{quantity:'0',physicalState:'',...state[id],...update}}))
+   setChosen(state=>({...state,[id]:{...(state[id]||{quantity:'0',physicalState:''}),...update}}))
    setConfirmed(false)
  }
  const update=(key:string,update:Partial<NewLine>)=>{
