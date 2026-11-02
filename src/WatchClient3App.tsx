@@ -44,18 +44,6 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   accounts:{title:'Учётные записи',description:'Доступ сотрудников и управление администраторами.',area:'Администрирование'},
   legacy:{title:'Исторические заказы',description:'Заказы до перехода на новую систему, без изменения данных.',area:'Администрирование'},
 }
-const sectionIcons:Record<WatchSection,string>={
-  orders:'M5 3h14v18H5z M8 8h8 M8 12h8 M8 16h5',
-  create:'M12 5v14 M5 12h14',
-  logistics:'M3 7h12v11H3z M15 10h4l3 4v4h-7 M6 20h3 M17 20h3',
-  warehouse:'M3 8l9-5 9 5v12H3z M3 8l9 5 9-5 M12 13v7',
-  catalog:'M4 4h8l9 9-8 8-9-9z M8.5 8.5h.01',
-  returns:'M8 3L4 7l4 4 M4 7h11a5 5 0 0 1 0 10H5',
-  finance:'M4 20V10 M9 20V6 M14 20v-9 M19 20V4',
-  staff:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8a4 4 0 0 0 0 8 M19 8v6 M16 11h6',
-  accounts:'M12 11a4 4 0 1 0 0-8a4 4 0 0 0 0 8 M4 21v-3a8 8 0 0 1 16 0v3 M8 21h8',
-  legacy:'M3 12a9 9 0 1 0 3-7 M3 3v6h6 M12 7v5l4 2',
-}
 const sections=Object.keys(sectionMeta) as WatchSection[]
 type LoginResponse = { ok: boolean; user?: User; message?: string }
 async function api<T extends { ok: boolean; message?: string }>(path: string, init?: RequestInit): Promise<T> {
@@ -65,7 +53,6 @@ async function api<T extends { ok: boolean; message?: string }>(path: string, in
   return result
 }
 const jsonHeaders = { 'Content-Type': 'application/json' }
-function fullName(user: User) { return user.displayName || 'Сотрудник' }
 function optionLabel(rows: readonly {value:string;label:string}[], value: string) {
   return rows.find(row => row.value === value)?.label || value
 }
@@ -88,7 +75,6 @@ export function WatchClient3App() {
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
   const [tab, setTab] = useState<WatchSection>('orders')
-  const [mobileNavOpen,setMobileNavOpen]=useState(false)
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
@@ -254,7 +240,7 @@ export function WatchClient3App() {
   const canSales=brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')
   const canAdmin=user.role==='admin'
   const goTo=(next:WatchSection)=>{
-    setTab(next);setMobileNavOpen(false);setError('')
+    setTab(next);setError('')
     if(next==='create'){setSuccess('');setWarning('')}
     if(window.location.hash!=='#'+next)window.location.hash=next
   }
