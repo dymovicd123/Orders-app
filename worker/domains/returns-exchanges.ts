@@ -3210,6 +3210,8 @@ export type ExchangeSetInput = {
   paymentAmount?: number
   paymentMethod?: string
   refundMethod?: string
+  paymentParts?:Array<{method:string;amount:number}>
+  refundParts?:Array<{method:string;amount:number}>
   comment?: string
 }
 
@@ -3275,8 +3277,10 @@ type ExchangeSetExecutionPlan = {
   dueBeforeSettlement: number
   paymentAmount: number
   paymentMethod: string
+  paymentParts?:Array<{method:string;amount:number}>
   refundAmount: number
   refundMethod: string
+  refundParts?:Array<{method:string;amount:number}>
   finalNetPaid: number
   financialAction: 'none' | 'extra_payment' | 'refund'
   financialAmount: number
@@ -3850,10 +3854,30 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         addedValue,
         paymentAmount,
       })
-      const paymentMethod = cleanText(input.paymentMethod)
-      const refundMethod = cleanText(input.refundMethod)
-      if (paymentAmount > 0 && !paymentMethod) throw new CriticalOperationConflictError('Выберите способ оплаты денег, полученных сейчас.')
-      if (settlement.refundAmount > 0 && !refundMethod) throw new CriticalOperationConflictError('Выберите способ возврата денег клиенту.')
+      // Client3 optionally submits separate money methods for real-world
+      // mixed cash/card payments. Exact totals are checked BEFORE any exchange
+      // item, stock or financial event is committed.
+      const validateParts=(parts:ExchangeSetInput['paymentParts'],total:number,label:string)=>{
+        if(parts===undefined||parts.length===0)return [] as Array<{method:string;amount:number}>
+        if(!Array.isArray(parts)||parts.length>3)
+          throw new CriticalOperationConflictError('Не более трёх способов '+label+'.')
+        const normalized=parts.map(p=>({method:cleanText(p?.method),amount:Number(p?.amount)}))
+        if(normalized.some(p=>!p.method||p.method.length>80||
+           !Number.isSafeInteger(p.amount)||p.amount<1)||
+           normalized.reduce((sum,p)=>sum+p.amount,0)!==total)
+          throw new CriticalOperationConflictError('Части '+label+' не совпадают с общей суммой.')
+        return normalized
+      }
+      const paymentParts=validateParts(input.paymentParts,paymentAmount,'доплаты')
+      const refundParts=validateParts(input.refundParts,settlement.refundAmount,'возврата')
+      const paymentMethod=paymentParts.length>1?'РАЗНЫЕ СПОСОБЫ':
+        paymentParts.length===1?paymentParts[0].method:cleanText(input.paymentMethod)
+      const refundMethod=refundParts.length>1?'РАЗНЫЕ СПОСОБЫ':
+        refundParts.length===1?refundParts[0].method:cleanText(input.refundMethod)
+      if(paymentAmount>0&&!paymentMethod)
+        throw new CriticalOperationConflictError('Выберите способ оплаты денег, полученных сейчас.')
+      if(settlement.refundAmount>0&&!refundMethod)
+        throw new CriticalOperationConflictError('Выберите способ возврата денег клиенту.')
 
       const financialAction: ExchangeSetExecutionPlan['financialAction'] = paymentAmount > 0
         ? 'extra_payment'
@@ -3876,8 +3900,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         dueBeforeSettlement: settlement.dueBeforeSettlement,
         paymentAmount,
         paymentMethod,
+        paymentParts:paymentParts.length?paymentParts:undefined,
         refundAmount: settlement.refundAmount,
         refundMethod,
+        refundParts:refundParts.length?refundParts:undefined,
         finalNetPaid: settlement.finalNetPaid,
         financialAction,
         financialAmount,
