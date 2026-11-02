@@ -68,6 +68,12 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const [stage,setStage]=useState<Stage>('select')
   const [search,setSearch]=useState('')
   const [showInlineAdd,setShowInlineAdd]=useState(false)
+  // Main's selected-product queue is separate from the active product editor.
+  // A checkbox NEVER opens the quantity step, for any operation mode.
+  const [selectedModelIdsBySource,setSelectedModelIdsBySource]=useState<Record<Source,number[]>>({
+    office:[],showcase:[],
+  })
+  const selectedModelIds=selectedModelIdsBySource[source]
   const [selectedModel,setSelectedModel]=useState<number|null>(null)
   const [draftBySource,setDraftBySource]=useState<Record<Source,Record<number,string>>>({
     office:{},showcase:{},
@@ -102,8 +108,40 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
     Array.from(new Map(rows.filter(r=>r.productActive===1)
       .map(r=>[r.watchProductId,r.modelName])).entries()),[rows])
   const current=variants.filter(v=>v.watchProductId===selectedModel)
-  const selected=variants.filter(v=>v.watchVariantId!==null&&
-    draft[v.watchVariantId]!==undefined&&draft[v.watchVariantId]!=='')
+  const selected=variants.filter(v=>selectedModelIds.includes(v.watchProductId)&&
+    v.watchVariantId!==null&&draft[v.watchVariantId]!==undefined&&draft[v.watchVariantId]!=='')
+  const selectedModels=models.filter(([id])=>selectedModelIds.includes(id))
+  const selectedPositionCount=selectedModels.reduce((sum,[id])=>
+    sum+variants.filter(v=>v.watchProductId===id).length,0)
+  const chosenIndex=selectedModels.findIndex(([id])=>id===selectedModel)
+  const toggleModel=(modelId:number)=>{
+    if(saving)return
+    const wasSelected=selectedModelIds.includes(modelId)
+    setSelectedModelIdsBySource(prev=>({...prev,[source]:wasSelected?
+      prev[source].filter(id=>id!==modelId):[...prev[source],modelId]}))
+    if(wasSelected){
+      // Never submit hidden quantities for a model removed from Main's queue.
+      const ids=new Set(variants.filter(v=>v.watchProductId===modelId)
+        .map(v=>v.watchVariantId).filter((id):id is number=>id!==null))
+      setDraftBySource(prev=>({...prev,[source]:Object.fromEntries(
+        Object.entries(prev[source]).filter(([id])=>!ids.has(Number(id))
+      )}))
+      if(selectedModel===modelId)setSelectedModel(null)
+    }
+    setConfirmed(false);setShortageConfirmed(false);requestRef.current=null
+  }
+  const clearModels=()=>{
+    setSelectedModelIdsBySource(prev=>({...prev,[source]:[]}))
+    setDraftBySource(prev=>({...prev,[source]:{}}))
+    setSelectedModel(null);setConfirmed(false);setShortageConfirmed(false)
+    requestRef.current=null
+  }
+  const beginSelected=()=>{
+    if(saving||selectedModels.length===0)return
+    setSelectedModel(selectedModels[0][0])
+    setShowInlineAdd(false);setError('');setNotice('')
+    setStage('quantities')
+  }
   const invalid=selected.some(v=>{
     const value=draft[v.watchVariantId!]
     return !validQuantity(value,mode)||(mode==='writeoff'||mode==='transfer')&&
@@ -117,7 +155,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const rowReserved=variants.reduce((s,v)=>s+number(v.officeReserved)+number(v.showcaseReserved),0)
   const reset=()=>{
     setStage('select');setSelectedModel(null);
-    setDraftBySource({office:{},showcase:{}});setSearch('')
+    setDraftBySource({office:{},showcase:{}})
+    setSelectedModelIdsBySource({office:[],showcase:[]});setSearch('')
     setReason('');setConfirmed(false);setShortageConfirmed(false);setError('');setNotice('')
     setShowInlineAdd(false)
     requestRef.current=null
@@ -179,6 +218,7 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
         throw new Error(result.message||'Складская операция не была подтверждена.')
       const total=selected.length
       setDraftBySource(prev=>({...prev,[source]:{}}))
+      setSelectedModelIdsBySource(prev=>({...prev,[source]:[]}))
       setStage('select');setSelectedModel(null);setSearch('');setReason('')
       setConfirmed(false);setShortageConfirmed(false);setShowInlineAdd(false)
       requestRef.current=null
@@ -240,24 +280,53 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
           <div className="stocktake-selective-head">
             <label><span>Найдите модель</span><input placeholder="Название модели…"
               value={search} onChange={e=>setSearch(e.target.value)}/></label>
-            <div className="stocktake-selective-count"><strong>{models.length} моделей</strong>
-              <span>{variants.length} комплектаций</span></div>
+            <div className="stocktake-selective-count">
+              <strong>{selectedModels.length?
+                selectedModels.length+' товаров выбрано':'Выберите товары'}</strong>
+              <span>{selectedModels.length?
+                selectedPositionCount+' комплектаций':'Можно выбрать один или несколько товаров'}</span>
+            </div>
           </div>
+          {selectedModels.length>0&&<div className="stocktake-selective-queue">
+            <div className="stocktake-selective-queue-head">
+              <div><strong>Вы будете изменять</strong>
+                <span>{selectedModels.length} товаров · {selectedPositionCount} комплектаций</span></div>
+              <button className="ghost compact" type="button" disabled={saving}
+                onClick={clearModels}>Очистить</button>
+            </div>
+            <div className="stocktake-selective-chips">
+              {selectedModels.map(([id,name])=><button key={id} type="button"
+                className="stocktake-selective-chip" disabled={saving}
+                title="Убрать товар из операции" onClick={()=>toggleModel(id)}>
+                <span>{name}</span>
+                <small>{variants.filter(v=>v.watchProductId===id).length} поз.</small>
+                <b aria-hidden="true">×</b>
+              </button>)}
+            </div>
+          </div>}
           <div className="stocktake-selective-list stocktake-selective-list-v5">
-            {models.filter(([,name])=>name.toLowerCase().includes(search.trim().toLowerCase()))
+            {[...models].filter(([,name])=>name.toLocaleLowerCase('ru-RU')
+              .includes(search.trim().toLocaleLowerCase('ru-RU')))
+              .sort((a,b)=>Number(selectedModelIds.includes(b[0]))-
+                Number(selectedModelIds.includes(a[0]))||
+                a[1].localeCompare(b[1],'ru'))
               .map(([id,name])=>{
-                const count=variants.filter(v=>v.watchProductId===id&&
-                  v.watchVariantId!==null&&draft[v.watchVariantId]!==undefined).length
-                return <StocktakeProductChoice key={id} checked={selectedModel===id}
-                  onToggle={()=>{setSelectedModel(id);setStage('quantities');setError('')}}
-                  name={name} description={count?count+' выбрано':
-                    variants.filter(v=>v.watchProductId===id).length?
-                      'Выбрать комплектации':'Комплектаций пока нет · можно добавить'}/>
+                const count=variants.filter(v=>v.watchProductId===id).length
+                const checked=selectedModelIds.includes(id)
+                return <StocktakeProductChoice key={id} checked={checked}
+                  onToggle={()=>toggleModel(id)}
+                  name={name} description={count?
+                    count+' поз.'+(checked?' · выбрано':''):
+                    'Комплектаций пока нет'+(checked?' · выбрано':'')}/>
               })}
-            {!models.length&&<div className="stocktake-product-list-empty">
+            {!models.length?<div className="stocktake-product-list-empty">
               В каталоге нет моделей часов выбранного бренда.
               {mode==='arrival'||mode==='count'?' Добавьте новую модель прямо здесь.':''}
-            </div>}
+            </div>:!models.some(([,name])=>name.toLocaleLowerCase('ru-RU')
+              .includes(search.trim().toLocaleLowerCase('ru-RU')))&&
+              <div className="stocktake-product-list-empty">
+                По поиску ничего не найдено. Выбранные товары остаются в списке выше.
+              </div>}
           </div>
           {(mode==='arrival'||mode==='count')&&<div className="client3-main-stock-missing">
             <button className="secondary compact" type="button" disabled={saving}
@@ -267,25 +336,47 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
           </div>}
           {showInlineAdd&&(mode==='arrival'||mode==='count')&&
             <WatchOperationInlineCatalog key={brand+'-new-'+String(selectedModel)}
-              brand={brand} models={models} selectedModelId={selectedModel}
+              brand={brand} models={models} selectedModelId={null}
               onCancel={()=>setShowInlineAdd(false)}
               onCreated={(modelId)=>{
-                setSelectedModel(modelId);setStage('quantities')
+                // Newly created product is added to the selection queue;
+                // it must NOT launch the quantity editor automatically.
+                setSelectedModelIdsBySource(prev=>({...prev,
+                  [source]:Array.from(new Set([...prev[source],modelId]))}))
                 setShowInlineAdd(false);setError('');refresh()
               }}/>}
         </div>
-        {selected.length>0&&<div className="stocktake-e-footer stocktake-e-footer-v4">
-          <strong>Выбрано: {selected.length} из 30 комплектаций</strong>
-          <button type="button" className="primary compact stocktake-review-button"
-            disabled={!ready} onClick={review}>Проверить все позиции</button>
-        </div>}
+        <div className="stocktake-start-submit">
+          <div>{selectedModels.length?
+            'Выбрано: '+selectedModels.length+' товаров · '+selectedPositionCount+' комплектаций':
+            'Выберите хотя бы один товар'}</div>
+          <button className="primary stocktake-e-start-button" type="button"
+            disabled={saving||!selectedModels.length} onClick={beginSelected}>
+            Начать работу с выбранными товарами
+          </button>
+        </div>
       </section>:stage==='quantities'?<section className="client3-main-stock-step">
         <div className="stocktake-e-product-nav stocktake-e-product-nav-v5">
           <div><span>Шаг 2 · Количество</span>
             <h4>{models.find(([id])=>id===selectedModel)?.[1]||'Модель'}</h4>
             <small>Заполните нужные комплектации. Остальные оставьте пустыми.</small></div>
           <button type="button" className="ghost compact" disabled={saving}
-            onClick={()=>setStage('select')}>← К выбору моделей</button>
+            onClick={()=>{setShowInlineAdd(false);setStage('select')}}>← К выбору моделей</button>
+        </div>
+        <div className="client3-main-stock-model-navigation">
+          <div className="client3-main-stock-model-navigation-head">
+            <strong>Выбранные товары</strong>
+            <span>{Math.max(0,chosenIndex+1)} из {selectedModels.length}</span>
+          </div>
+          <div className="client3-main-stock-model-navigation-list">
+            {selectedModels.map(([id,name])=><button type="button" key={id}
+              disabled={saving} aria-pressed={selectedModel===id}
+              className={selectedModel===id?'is-active':''}
+              onClick={()=>{setSelectedModel(id);setShowInlineAdd(false);setError('')}}>
+              {name}
+              <small>{variants.filter(v=>v.watchProductId===id).length} поз.</small>
+            </button>)}
+          </div>
         </div>
         {!current.length&&<div className="stocktake-product-list-empty">
           У этой модели пока нет складских комплектаций.
@@ -333,7 +424,12 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
         <div className="stocktake-e-footer stocktake-e-footer-v4">
           <span>{selected.length} из 30 позиций{invalid?' · Проверьте количество и свободный остаток':''}</span>
           <button type="button" className="secondary compact" disabled={saving}
-            onClick={()=>setStage('select')}>Добавить другую модель</button>
+            onClick={()=>{setShowInlineAdd(false);setStage('select')}}>Изменить выбранные товары</button>
+          {chosenIndex>=0&&chosenIndex<selectedModels.length-1&&
+            <button type="button" className="secondary compact" disabled={saving}
+              onClick={()=>{setSelectedModel(selectedModels[chosenIndex+1][0]);setShowInlineAdd(false)}}>
+              Следующий товар →
+            </button>}
           <button type="button" className="primary compact stocktake-review-button"
             disabled={!ready} onClick={review}>Проверить {selected.length} позиций</button>
         </div>
