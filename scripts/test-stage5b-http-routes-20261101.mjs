@@ -55,14 +55,27 @@ try{
  const none=await api('GET',prefix+'/dispatches')
  assert.deepEqual(none.dispatches,[])
  const payload={requestId:'stage5-http-selected-01',items:[{orderItemId:9561,quantity:1}]}
- const sent=await api('POST',prefix+'/dispatches',payload)
- assert.equal(sent.shippedQuantity,1)
- assert.equal(sent.shippedLines,1)
+ // Simulate a browser losing the RESPONSE after the Worker committed the POST.
+ // Do not parse or deliver this reply to the client. The retry must use the
+ // SAME requestId/payload and return an idempotent readback, not ship twice.
+ const lostResponse=await worker.fetch(new Request('https://test-only.invalid'+prefix+'/dispatches',{
+   method:'POST',headers:{Cookie:'orders_session='+token,'Content-Type':'application/json'},
+   body:JSON.stringify(payload),
+ }),{DB})
+ assert.equal(lostResponse.status,200)
  assert.deepEqual({...snapshot()},{quantity:4,reserved_quantity:2})
  assert.equal(movementCount(),1)
+ const sent=await api('POST',prefix+'/dispatches',payload)
+ assert.equal(sent.alreadyCommitted,true,'Retry must acknowledge the committed first POST')
+ assert(sent.dispatchId>0)
+ assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM order_dispatches WHERE request_id=?").get(payload.requestId).n,1)
+ assert.deepEqual({...snapshot()},{quantity:4,reserved_quantity:2})
+ assert.equal(movementCount(),1,'Lost response + same-id retry must not write stock again')
  const replay=await api('POST',prefix+'/dispatches',payload)
  assert.equal(replay.alreadyCommitted,true)
+ assert.equal(replay.dispatchId,sent.dispatchId)
  assert.equal(movementCount(),1)
+ console.log('STAGE5_POSTCOMMIT_LOST_RESPONSE_REPLAY_HTTP_PASS')
  await api('POST',prefix+'/dispatches',{requestId:'stage5-http-selected-01',items:[{orderItemId:9561,quantity:2}]},409)
  await api('PATCH',prefix,{shippingStatus:'sent',shippingDate:'2026-11-01'},409)
  await api('POST',prefix+'/correct',{physicalOutcome:'not_issued'},409)
