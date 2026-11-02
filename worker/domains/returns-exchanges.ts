@@ -4690,43 +4690,54 @@ export async function cancelExchangeSetV2(
       await restoreWorkshopSnapshot(db, planItem.workshopSnapshot, timestamp)
     }
 
-    const financialAction = cleanText(exchange.financial_action)
-    const financialAmount = Math.max(0, toInt(exchange.financial_amount, 0))
-    if (financialAction === 'extra_payment' && financialAmount > 0) {
-      const paymentId = toInt(exchange.payment_id, 0)
-      if (paymentId) {
-        await removeSinglePaymentWithMoneyEvent(db, {
-          paymentId,
-          orderId,
-          externalOrderId: cleanText(exchange.external_id),
-          timestamp,
-          relatedType: 'exchange_extra',
-          reason: 'exchange_cancel',
-          comment,
+    const financialAction=cleanText(exchange.financial_action)
+    const financialAmount=Math.max(0,toInt(exchange.financial_amount,0))
+    if(financialAction==='extra_payment'&&financialAmount>0){
+      const splitIds=await db.prepare(`SELECT ce.entity_id
+        FROM critical_operation_entities ce JOIN critical_operations co
+          ON co.request_id=ce.request_id
+        WHERE co.operation_type='exchange_set_create' AND co.target_id=?
+          AND ce.entity_type='payment' AND ce.entity_key LIKE 'exchange:set:payment:part:%'
+        ORDER BY ce.entity_key`).bind(exchangeId).all<{entity_id:number}>()
+      const ids=(splitIds.results||[]).map(row=>Number(row.entity_id))
+      if(plan.paymentParts?.length){
+        if(ids.length!==plan.paymentParts.length)
+          throw new CriticalOperationConflictError('Не найдены все части доплаты. Отмена остановлена.')
+        const amounts=await db.prepare(`SELECT id,amount FROM payments
+          WHERE order_id=? AND id IN (${ids.map(()=>'?').join(',')})`)
+          .bind(orderId,...ids).all<{id:number;amount:number}>()
+        const actual=new Map((amounts.results||[]).map(row=>[Number(row.id),Number(row.amount)]))
+        if(ids.some((id,index)=>actual.get(id)!==plan.paymentParts![index].amount))
+          throw new CriticalOperationConflictError('Части доплаты изменились. Отмена остановлена.')
+      }
+      for(const paymentId of ids.length?ids:[toInt(exchange.payment_id,0)]){
+        if(!paymentId)continue
+        await removeSinglePaymentWithMoneyEvent(db,{
+          paymentId,orderId,externalOrderId:cleanText(exchange.external_id),
+          timestamp,relatedType:'exchange_extra',
+          reason:'exchange_cancel',comment,
         })
       }
-    } else if (financialAction === 'refund' && financialAmount > 0) {
-      const refundReturnId = toInt(exchange.refund_return_id, 0)
-      if (refundReturnId) {
+    }else if(financialAction==='refund'&&financialAmount>0){
+      const refundReturnId=toInt(exchange.refund_return_id,0)
+      if(refundReturnId){
+        const parts=plan.refundParts?.length?plan.refundParts:[
+          {method:cleanText(exchange.payment_method),amount:financialAmount}]
+        if(parts.reduce((n,x)=>n+x.amount,0)!==financialAmount)
+          throw new CriticalOperationConflictError('Части возврата при обмене не сходятся.')
         await db.batch([
-          db.prepare(
-            `UPDATE returns
-             SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
-             WHERE id = ? AND order_id = ?`
-          ).bind(timestamp, comment, refundReturnId, orderId),
-          refundReversalMoneyEventStatement(db, {
-            eventKey: `189c:exchange-set:${exchangeId}:refund-cancelled`,
-            orderId,
-            externalOrderId: cleanText(exchange.external_id),
-            amount: financialAmount,
-            paymentMethod: cleanText(exchange.payment_method) || null,
-            timestamp,
-            relatedType: 'exchange_refund',
-            sourceId: exchangeId,
-            sourceRef: `exchanges:${exchangeId}`,
-            reason: 'exchange_cancel',
-            comment,
-          }),
+          db.prepare(`UPDATE returns SET status='cancelled',
+             cancelled_at=?,cancellation_comment=? WHERE id=? AND order_id=?`)
+            .bind(timestamp,comment,refundReturnId,orderId),
+          ...parts.map((part,index)=>refundReversalMoneyEventStatement(db,{
+            eventKey:plan.refundParts?.length
+              ?`189c:exchange-set:${exchangeId}:refund-cancelled:part:${index}`
+              :`189c:exchange-set:${exchangeId}:refund-cancelled`,
+            orderId,externalOrderId:cleanText(exchange.external_id),
+            amount:part.amount,paymentMethod:part.method,timestamp,
+            relatedType:'exchange_refund',sourceId:exchangeId,
+            sourceRef:`exchanges:${exchangeId}`,reason:'exchange_cancel',comment,
+          })),
         ])
       }
     }
