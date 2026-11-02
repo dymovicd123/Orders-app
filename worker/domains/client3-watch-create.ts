@@ -9,10 +9,11 @@ import {isHumanInventoryModelEnabled} from './catalog.ts'
 import {OrderInputValidationError} from './order-core.ts'
 import {OrderStockShortageError} from './order-reservations.ts'
 import type {WatchCommitLine,WatchOrderCommit} from './client3-watch-order-commit.ts'
+import {ensureManualWatchOrderSku,type ManualWatchOrderItem} from './client3-watch-order-manual.ts'
 
 export type WatchCreateItem={
  watchVariantId:number;catalogVariantId?:number;quantity:number;unitPrice:number;
- source:WatchSource;engravingText:string
+ source:WatchSource;engravingText:string;manual?:ManualWatchOrderItem
 }
 export type WatchCreateInput=WatchOrderInput&{
  items?:WatchCreateItem[]
@@ -40,6 +41,18 @@ export async function createClient3WatchOrder(
    if(typeof raw.requestId!=='string'||!/^[a-zA-Z0-9_-]{8,128}$/.test(raw.requestId))
      return fail('WATCH_REQUEST_ID_INVALID','Некорректный идентификатор сохранения.')
 
+   // Verify employee-brand entitlement BEFORE registering any free-entry reference
+   // or SKU. Main's initial order path uses the same active manager ownership.
+   const managerId=actor.role==='admin'?Number(raw.managerId||actor.managerId||0):Number(actor.managerId||0)
+   if(!Number.isSafeInteger(managerId)||managerId<1)
+     return fail('WATCH_MANAGER_REQUIRED','Выберите менеджера.')
+   const assignment=await db.prepare(`SELECT 1 AS ok FROM watch_manager_brands mb
+     JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+     WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1`)
+     .bind(managerId,brandId).first<{ok:number}>()
+   if(!assignment)return fail('WATCH_MANAGER_BRAND_FORBIDDEN',
+     'Менеджер не назначен выбранному бренду.',403)
+
    const requested:WatchCreateItem[]=raw.items===undefined?[{
      watchVariantId:raw.watchVariantId??0,catalogVariantId:raw.catalogVariantId,
      quantity:raw.quantity??0,unitPrice:raw.unitPrice??NaN,source:raw.source,
@@ -61,13 +74,16 @@ export async function createClient3WatchOrder(
    }catch{ /* Core validates the original request fingerprint. */ }
 
    for(const [index,item] of requested.entries()){
-     if(!item||!Number.isSafeInteger(item.watchVariantId)||item.watchVariantId<1||
+     if(!item||(!item.manual&&(!Number.isSafeInteger(item.watchVariantId)||item.watchVariantId<1))||
        !Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>1000||
        !allowedSources.has(item.source))
        return fail('WATCH_ITEM_INVALID','Позиция '+(index+1)+': выберите комплектацию, источник и количество.')
      if(typeof item.engravingText!=='string'||item.engravingText.length>500)
        return fail('WATCH_ENGRAVING_INVALID','Позиция '+(index+1)+': текст гравировки не более 500 символов.')
      const price=amount(item.unitPrice,'Цена позиции '+(index+1))
+     const selected=item.manual
+       ?await ensureManualWatchOrderSku(db,actor,brandId,item.manual)
+       :{watchVariantId:item.watchVariantId,catalogVariantId:item.catalogVariantId}
      const row=await db.prepare(`SELECT wv.id AS watch_id,wv.catalog_variant_id,
        wp.catalog_product_id,cp.name AS canonical_name,
        cv.is_active AS catalog_active,wp.is_active AS product_active,
@@ -79,18 +95,18 @@ export async function createClient3WatchOrder(
        LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id
          AND ep.category=COALESCE(cv.category,'adult')
        WHERE wv.id=? AND wp.brand_id=? LIMIT 1`)
-       .bind(item.watchVariantId,brandId).first<Record<string,unknown>>()
+       .bind(selected.watchVariantId,brandId).first<Record<string,unknown>>()
      const productId=Number(row?.catalog_product_id||0),variantId=Number(row?.catalog_variant_id||0)
      if(!productId||!variantId||Number(row?.catalog_active)!==1||
        Number(row?.product_active)!==1||Number(row?.variant_active)!==1)
        return fail('WATCH_SKU_UNAVAILABLE','Позиция '+(index+1)+': комплектация отсутствует в активном каталоге.',409)
-     if(item.catalogVariantId!==undefined&&item.catalogVariantId!==variantId)
+     if(selected.catalogVariantId!==undefined&&selected.catalogVariantId!==variantId)
        return fail('WATCH_SKU_STALE','Позиция '+(index+1)+': SKU изменился. Обновите каталог.',409)
      const frozen=frozenPrices[index]
      const priceSnapshot=frozen===null||(typeof frozen==='number'&&Number.isSafeInteger(frozen)&&frozen>=0)
        ?frozen:row!.catalog_price==null?null:Number(row!.catalog_price)
      checked.push({
-       line:{watchVariantId:item.watchVariantId,catalogProductId:productId,
+       line:{watchVariantId:selected.watchVariantId,catalogProductId:productId,
          catalogVariantId:variantId,source:item.source,engravingText:item.engravingText.trim()},
        quantity:item.quantity,price,catalogPriceSnapshot:priceSnapshot,
        canonicalName:String(row!.canonical_name),
@@ -124,16 +140,6 @@ export async function createClient3WatchOrder(
    if(entries.length&&input.paymentMethod!==entries[0].method)
      return fail('WATCH_PAYMENT_METHOD_MISMATCH','Основной способ оплаты должен совпадать с первой оплатой.')
    if(received>total)return fail('WATCH_OVERPAYMENT','Получено больше суммы заказа.')
-
-   const managerId=actor.role==='admin'?Number(raw.managerId||actor.managerId||0):Number(actor.managerId||0)
-   if(!Number.isSafeInteger(managerId)||managerId<1)
-     return fail('WATCH_MANAGER_REQUIRED','Выберите менеджера.')
-   const assignment=await db.prepare(`SELECT 1 AS ok FROM watch_manager_brands mb
-     JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
-     WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1`)
-     .bind(managerId,brandId).first<{ok:number}>()
-   if(!assignment)return fail('WATCH_MANAGER_BRAND_FORBIDDEN',
-     'Менеджер не назначен выбранному бренду.',403)
 
    const first=checked[0].line
    const watch:WatchOrderCommit={
