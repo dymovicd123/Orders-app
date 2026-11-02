@@ -24,6 +24,8 @@ jobs:
           grep -Fq "StocktakeProductChoice,StocktakeSizeCountCell" src/features/client3/WatchWarehouseMain.tsx
           grep -Fq 'LinkedTableScroll' src/features/client3/WatchOrdersPanel.tsx
           grep -Fq 'order-step-card' src/features/client3/WatchOrderForm.tsx
+          grep -Fq 'LinkedTableScroll' src/features/client3/WatchLogisticsPanel.tsx
+          grep -Fq 'LinkedTableScroll' src/features/client3/WatchFinancePanel.tsx
       - name: Main frontend widget and watch sandbox assertions
         run: |
           node scripts/client3/test-watch-shell-20261102.mjs
