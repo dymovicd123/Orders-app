@@ -15,6 +15,7 @@ type CatalogRow={
   dialColor:string|null
   braceletColor:string|null
   variantActive:number|null
+  catalogPriceSnapshot:number|null
   officePhysical:number
   officeReserved:number
   showcasePhysical:number
@@ -46,6 +47,8 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
+  const [priceVariantId,setPriceVariantId]=useState<number|null>(null)
+  const [priceDraft,setPriceDraft]=useState('')
   const [arrivalVariantId,setArrivalVariantId]=useState(0)
   const [arrivalSource,setArrivalSource]=useState<'office'|'showcase'>('office')
   const [arrivalQuantity,setArrivalQuantity]=useState('1')
@@ -182,6 +185,24 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось списать часы')}
     finally{setBusy(false)}
   }
+  const savePrice=async(row:CatalogRow)=>{
+    if(busy||!row.watchVariantId)return
+    const salePrice=Number(priceDraft)
+    if(priceDraft.trim()===''||!Number.isSafeInteger(salePrice)||salePrice<0||salePrice>1000000000){
+      setError('Цена каталога должна быть целым числом тенге от 0.');return
+    }
+    setBusy(true);setError('');setNotice('')
+    try{
+      await post('/api/client3/watches/catalog/prices',{
+        watchVariantId:row.watchVariantId,salePrice,expectedPrice:row.catalogPriceSnapshot??null,
+      })
+      setPriceVariantId(null)
+      setNotice('Цена по каталогу сохранена. Она будет подставляться при создании новых заказов.')
+      setReload(x=>x+1)
+      onStockChanged?.()
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить цену')}
+    finally{setBusy(false)}
+  }
   const createVariant=async(e:FormEvent<HTMLFormElement>)=>{
     e.preventDefault();if(busy||modelId<=0)return
     setBusy(true);setError('');setNotice('')
@@ -314,6 +335,20 @@ export function WatchCatalogEditor({brand,onStockChanged}:{brand:WatchBrand;onSt
                 ...(row.braceletColor?['Ремешок: '+row.braceletColor]:[])].join(' · ')
             : 'Без комплектаций'}</span>
           <small>{row.catalogProductId&&row.catalogVariantId?'Связан со складом':'Не привязан к складу — продажа недоступна'}</small>
+          {row.watchVariantId&&row.catalogProductId&&row.catalogVariantId&&
+            <div className="watch-catalog-editor-price">
+              <strong>Каталожная цена: {row.catalogPriceSnapshot==null?'не установлена':Number(row.catalogPriceSnapshot).toLocaleString('ru-RU')+' ₸'}</strong>
+              {priceVariantId===row.watchVariantId?<>
+                <input type="number" min={0} max={1000000000} step={1}
+                  aria-label="Новая цена по каталогу" value={priceDraft}
+                  onChange={e=>setPriceDraft(e.target.value)}/>
+                <button type="button" disabled={busy} onClick={()=>void savePrice(row)}>Сохранить цену</button>
+                <button type="button" disabled={busy} onClick={()=>setPriceVariantId(null)}>Отмена</button>
+              </>:<button type="button" disabled={busy}
+                  onClick={()=>{setPriceVariantId(row.watchVariantId);setPriceDraft(row.catalogPriceSnapshot==null?'':String(row.catalogPriceSnapshot))}}>
+                  Изменить цену
+                </button>}
+            </div>}
           {row.watchVariantId&&row.productActive===1&&row.variantActive===1&&(!row.catalogProductId||!row.catalogVariantId)&&
             <button type="button" disabled={busy} onClick={()=>void provisionVariant(row.watchVariantId!)}>
               Подготовить складской SKU
