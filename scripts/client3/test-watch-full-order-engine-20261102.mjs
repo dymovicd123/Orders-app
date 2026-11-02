@@ -14,7 +14,7 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
-import {cancelExchangeSetV2} from '../../worker/domains/returns-exchanges.ts'
+import {cancelExchangeSetV2,cancelReturn} from '../../worker/domains/returns-exchanges.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -909,6 +909,29 @@ const firstIntake=await parse(receiveClient3WatchReturn(db,manager,1,partialCrea
 assert.equal(firstIntake.ok,true,JSON.stringify(firstIntake))
 assert.equal(stock('warehouse').quantity,physicalBeforeMulti+1)
 assert.equal(count('financial_events'),eventsAfterMulti,'Stock receipt cannot refund again')
+const splitMoneyOnly={requestId:'watch-split-refund-cancel-20261103',
+ kind:'money_only',amount:2000,quantity:0,items:[],
+ paymentMethod:'KASPI GOLD',
+ refundParts:[{method:'KASPI GOLD',amount:1500},{method:'KASPI RED',amount:500}],
+ reason:'Раздельный денежный возврат для последующей корректировки'}
+const moneyOnlySaved=await parse(createClient3WatchReturn(
+ db,manager,1,partialCreated.orderId,splitMoneyOnly))
+assert.equal(moneyOnlySaved.ok,true,JSON.stringify(moneyOnlySaved))
+const moneyOnlyId=sqlite.prepare('SELECT id FROM returns WHERE order_id=? ORDER BY id DESC LIMIT 1')
+ .get(partialCreated.orderId).id
+const moneyOnlyCanceled=await cancelReturn(db,moneyOnlyId,{
+ requestId:'watch-split-refund-cancel-action-20261103',
+ comment:'Отмена ошибочно распределённого денежного возврата',
+})
+assert.equal(moneyOnlyCanceled.ok,true)
+const canceledParts=sqlite.prepare(`SELECT payment_method,amount_delta FROM financial_events
+ WHERE event_type='refund_reversal' AND related_type='order_refund'
+ AND source_ref=? ORDER BY event_key`).all('returns:'+moneyOnlyId)
+assert.deepEqual(canceledParts.map(x=>[x.payment_method,x.amount_delta]),[
+ ['KASPI GOLD',1500],['KASPI RED',500]])
+assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
+ .get(partialCreated.orderId).return_amount,9000)
+
 // Stage4 Main set exchange: real multi-method extra payment, new watch SKU and
 // engraving, money/inventory kept in Main, old watch receipt stays pending.
 const exchSetArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
