@@ -3603,11 +3603,22 @@ export function deriveExchangeSetSettlement(input: {
   }
 }
 
-export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInput) {
+type Client3WatchExchangeSetCommit={
+ brandId:number
+ lines:Array<{watchVariantId:number;catalogProductId:number;
+   catalogVariantId:number;engravingText:string}>
+}
+export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInput,
+  options:{watchCommit?:Client3WatchExchangeSetCommit}={}) {
   let criticalOperation: CriticalOperationHandle | null = null
   try {
     const startedAt = new Date().toISOString()
-    criticalOperation = await beginCriticalOperation(db, 'exchange_set_create', input.requestId, input, { startedAt })
+    // The third Worker's trusted watch SKU map is part of the immutable
+    // operation fingerprint, but not accepted via Main's generic request API.
+    const watchCommit=options.watchCommit
+    criticalOperation = await beginCriticalOperation(db, 'exchange_set_create',
+      input.requestId,watchCommit?{...input,__client3WatchCommit:watchCommit}:input,
+      { startedAt })
     if (criticalOperation.cachedResponse) return criticalOperation.cachedResponse
 
     let operationContext = parseCriticalContext<ExchangeSetOperationContext>(criticalOperation.row)
@@ -3810,7 +3821,26 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         if (shipmentState !== 'sent' && shipmentState !== 'pending') {
           throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: укажите, отправлен ли товар клиенту.`)
         }
-        const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
+        const watch=watchCommit?.lines[index]
+        let resolved:{productId:number|null;variantId:number|null}
+        if(watch){
+          if(watchCommit!.lines.length!==rawNewItems.length||
+            !Number.isSafeInteger(watchCommit!.brandId)||watchCommit!.brandId<1)
+            throw new CriticalOperationConflictError('Некорректный план комплектаций часов.')
+          const sku=await db.prepare(`SELECT wv.id FROM watch_variants wv
+            JOIN watch_products wp ON wp.id=wv.watch_product_id
+            JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id
+            WHERE wv.id=? AND wv.catalog_variant_id=?
+              AND wp.catalog_product_id=? AND wp.brand_id=?
+              AND wv.is_active=1 AND wp.is_active=1 AND cv.is_active=1`)
+            .bind(watch.watchVariantId,watch.catalogVariantId,
+              watch.catalogProductId,watchCommit!.brandId).first<{id:number}>()
+          if(!sku?.id)throw new CriticalOperationConflictError(
+            'Комплектация новых часов отсутствует в выбранном бренде.')
+          resolved={productId:watch.catalogProductId,variantId:watch.catalogVariantId}
+        }else{
+          resolved=await resolveCatalogProductAndVariantV2(db,effectiveItem)
+        }
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
         const inventorySource: SourceType = effectiveItem.sourceType === 'boutique' ? 'boutique' : 'warehouse'
@@ -4136,6 +4166,39 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         undefined,
         writePlan,
       )
+      if(watchCommit){
+        if(watchCommit.lines.length!==executionPlan.newItems.length)
+          throw new CriticalOperationConflictError('Комплектации новых часов изменились.')
+        const statements:D1PreparedStatement[]=[]
+        for(const [index,watch] of watchCommit.lines.entries()){
+          const orderItemId=await criticalOperationEntityId(db,
+            criticalOperation.requestId,'order_item',`exchange_set_new:item:${index+1}`)
+          if(!orderItemId)
+            throw new CriticalOperationConflictError('Новая позиция часов не найдена после записи.')
+          statements.push(db.prepare(`INSERT INTO watch_order_item_details(
+            order_item_id,watch_variant_id,engraving_text,created_at)
+            SELECT oi.id,?, ?,? FROM order_items oi
+            JOIN watch_variants wv ON wv.id=? AND wv.catalog_variant_id=oi.variant_id
+            JOIN watch_products wp ON wp.id=wv.watch_product_id
+            WHERE oi.id=? AND oi.order_id=? AND wp.brand_id=?
+              AND wp.catalog_product_id=oi.product_id
+            ON CONFLICT(order_item_id) DO NOTHING`)
+            .bind(watch.watchVariantId,watch.engravingText,timestamp,
+              watch.watchVariantId,orderItemId,executionPlan.orderId,watchCommit.brandId))
+          statements.push(db.prepare(`SELECT json('WATCH_EXCHANGE_LINK_CONFLICT')
+            WHERE NOT EXISTS(SELECT 1 FROM watch_order_item_details wi
+              WHERE wi.order_item_id=? AND wi.watch_variant_id=?
+                AND wi.engraving_text=?)`)
+            .bind(orderItemId,watch.watchVariantId,watch.engravingText))
+        }
+        statements.push(db.prepare(`UPDATE watch_logistics_jobs
+          SET status='pending',ready_at=NULL
+          WHERE order_id=? AND EXISTS(
+            SELECT 1 FROM watch_order_details wd WHERE wd.order_id=?
+              AND wd.brand_id=?)`)
+          .bind(executionPlan.orderId,executionPlan.orderId,watchCommit.brandId))
+        await db.batch(statements)
+      }
       operationContext = { ...operationContext, newContentInserted: true }
       await advanceCriticalOperation(db, criticalOperation, 'new_content_inserted', { context: operationContext })
     }
