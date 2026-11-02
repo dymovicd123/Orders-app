@@ -1,5 +1,6 @@
 import {useRef,useState,type FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {WatchAdminCompositionEditor} from './WatchAdminCompositionEditor'
 
 export type WatchCorrectionOrder={
  orderId:number;orderDate:string;externalId:string;
@@ -47,7 +48,7 @@ const fromOrder=(order:WatchCorrectionOrder):AdminWatch=>({
 export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Props){
  const expected=initial(order)
  const items=lines(order.itemLines)
- const [mode,setMode]=useState<'metadata'|'prices'|'watch'>('metadata')
+ const [mode,setMode]=useState<'metadata'|'prices'|'watch'|'composition'>('metadata')
  const [next,setNext]=useState<Metadata>(expected)
  const [prices,setPrices]=useState<Record<number,string>>(
    Object.fromEntries(items.map(x=>[x.id,String(x.unitPrice)])))
@@ -127,8 +128,14 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        onClick={()=>{setMode('prices');setError('')}}>Записанная цена</button>
      {isAdmin&&<button type="button" className={mode==='watch'?'primary':'secondary'}
        onClick={()=>{setMode('watch');setError('')}}>Данные часов и логистики</button>}
+     {isAdmin&&<button type="button" className={mode==='composition'?'primary':'secondary'}
+       onClick={()=>{setMode('composition');setError('')}}>Состав товаров</button>}
    </div>
-   <form onSubmit={e=>void submit(e)}>
+   {mode==='composition'&&isAdmin
+     ?<WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
+       itemLines={order.itemLines} receivedAmount={order.receivedAmount}
+       onDone={onDone} onCancel={onCancel}/>
+     :<form onSubmit={e=>void submit(e)}>
      {mode==='metadata'?<>
        <p className="watch-corrections-hint">Исправление контактов, города, доставки и комментария не меняет
          состав, остатки, отправку или оплаты.</p>
@@ -202,6 +209,6 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
          {busy?'Сохранение…':'Сохранить исправление'}</button>
        <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Отмена</button>
      </div>
-   </form>
+   </form>}
  </section>
 }
