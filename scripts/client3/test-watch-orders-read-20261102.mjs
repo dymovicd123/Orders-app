@@ -11,7 +11,8 @@ sql.exec([
 'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);',
 'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);',
 "CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_date TEXT,manager_id INTEGER,manager_snapshot_name TEXT,source_type TEXT,shipping_status TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,return_amount INTEGER);",
-'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,product_name_snapshot TEXT);',
+'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,product_name_snapshot TEXT,unit_price INTEGER,source_type TEXT);',
+'CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,amount INTEGER,payment_kind TEXT);',
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
 'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);',
 'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,status TEXT);',
@@ -24,7 +25,8 @@ sql.exec([
 "INSERT INTO orders VALUES(1,'W-1','2026-11-01',1,'Alice','warehouse','not_sent','active',20000,10000,10000,0);",
 "INSERT INTO orders VALUES(2,'W-2','2026-11-02',2,'Bob','boutique','sent','active',60000,60000,0,0);",
 "INSERT INTO orders VALUES(3,'W-3','2026-10-01',1,'Alice','warehouse','sent','active',30000,30000,0,0);",
-'INSERT INTO order_items VALUES(101,1,1,\'WATCH ONE\'),(102,2,1,\'WATCH TWO\'),(103,3,1,\'WATCH THREE\');',
+'INSERT INTO order_items VALUES(101,1,1,\'WATCH ONE\',20000,\'warehouse\'),(102,2,1,\'WATCH TWO\',60000,\'boutique\'),(103,3,1,\'WATCH THREE\',30000,\'warehouse\');',
+"INSERT INTO payments VALUES(1,1,'2026-11-01','KASPI RED',4000,'primary'),(2,1,'2026-11-01','KASPI GOLD',6000,'extra'),(3,2,'2026-11-02','KASPI GOLD',60000,'primary');",
 "INSERT INTO financial_events VALUES(1,1,'2026-11-01','order_payment',10000,'KASPI GOLD','W-1',NULL,NULL);",
 "INSERT INTO financial_events VALUES(2,1,'2026-11-02','order_refund',-1500,'KASPI GOLD','W-1',NULL,NULL);",
 "INSERT INTO financial_events VALUES(3,2,'2026-11-02','order_payment',60000,'KASPI RED','W-2',NULL,NULL);",
@@ -65,6 +67,13 @@ assert.equal(aliceMonth.totals.orderCount,1)
 assert.equal(aliceMonth.totals.totalAmount,20000)
 assert.equal(aliceMonth.totals.receivedAmount,10000)
 assert.equal(aliceMonth.totals.debtAmount,10000)
+const split=JSON.parse(aliceMonth.rows[0].paymentLines)
+assert.deepEqual(split.map(x=>[x.method,x.amount]),[['KASPI RED',4000],['KASPI GOLD',6000]])
+const lines=JSON.parse(aliceMonth.rows[0].itemLines)
+assert.equal(lines.length,1)
+assert.equal(lines[0].productName,'WATCH ONE')
+assert.equal(lines[0].unitPrice,20000)
+assert.equal(lines[0].source,'warehouse')
 const pct=await query(alice,'brand=TAUWACH&q=%25')
 assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
 const underscore=await query(alice,'brand=TAUWACH&q=_')
