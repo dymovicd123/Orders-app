@@ -175,7 +175,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     JOIN watch_brands wb ON wb.id=wd.brand_id
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
     JOIN watch_logistics_jobs lj ON lj.order_id=wd.order_id
-    LEFT JOIN order_items oi ON oi.order_id=wd.order_id
+    LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND oi.quantity>0
     LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
     LEFT JOIN watch_variants v ON v.id=wditem.watch_variant_id
