@@ -7,7 +7,8 @@ import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
   orderId:number;externalId:string;orderDate:string;managerName:string|null
-  recipientName:string;recipientPhone:string;city:string;deliveryMethod:string
+  recipientName:string;recipientPhone:string;city:string;deliveryMethod:string;
+  deliveryAddress:string;postalCode:string;unresolvedReservations:number
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
   lineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
@@ -35,6 +36,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
   const [brand,setBrand]=useState<WatchBrand>(initialBrand&&allowedBrands.includes(initialBrand)?initialBrand:allowedBrands[0]||'TAUWACH')
   const [month,setMonth]=useState(initialMonth)
   const [search,setSearch]=useState('')
+  const [shipping,setShipping]=useState<'all'|'sent'|'not_sent'>('all')
+  const [payment,setPayment]=useState<'all'|'debt'|'paid'>('all')
   const [query,setQuery]=useState('')
   const [page,setPage]=useState(0)
   const [refresh,setRefresh]=useState(0)
@@ -47,7 +50,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
   useEffect(()=>{
     const controller=new AbortController()
     setBusy(true);setError('');setData(null)
-    const params=new URLSearchParams({brand,limit:'50',offset:String(page*50)})
+    const params=new URLSearchParams({brand,limit:'50',offset:String(page*50),shipping,payment})
     if(month) {
       const [year,m]=month.split('-').map(Number)
       if(year>2000&&m>=1&&m<=12){
@@ -67,7 +70,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
       if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Ошибка загрузки')
     }).finally(()=>{if(!controller.signal.aborted)setBusy(false)})
     return ()=>controller.abort()
-  },[brand,month,query,page,refresh])
+  },[brand,month,query,page,refresh,shipping,payment])
   return <section className="watch-orders">
     <header className="watch-orders-header">
       <div><h2>Список заказов</h2><p>Поиск, статусы, оплата и действия по выбранному бренду.</p></div>
@@ -78,6 +81,18 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
         {allowedBrands.map(code=><option key={code} value={code}>{code}</option>)}
       </select></label>
       <label>Месяц<input type="month" value={month} onChange={e=>{setMonth(e.target.value);setPage(0)}}/></label>
+      <label>Отправка
+        <select value={shipping} onChange={e=>{setShipping(e.target.value as typeof shipping);setPage(0)}}>
+          <option value="all">Все</option><option value="not_sent">Не отправлены</option>
+          <option value="sent">Отправлены</option>
+        </select>
+      </label>
+      <label>Оплата
+        <select value={payment} onChange={e=>{setPayment(e.target.value as typeof payment);setPage(0)}}>
+          <option value="all">Все</option><option value="debt">С долгом</option>
+          <option value="paid">Без долга</option>
+        </select>
+      </label>
       <form onSubmit={e=>{e.preventDefault();setPage(0);setQuery(search.trim())}}>
         <label>Поиск по заказу, ФИО или телефону
           <input value={search} maxLength={100} onChange={e=>setSearch(e.target.value)} placeholder="Номер заказа или клиент"/>
@@ -95,39 +110,70 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
         <div><small>Остаток долга</small><strong>{sum(data.totals.debtAmount)}</strong></div>
         <div><small>Учтено возвратов</small><strong>{sum(data.totals.returnAmount)}</strong></div>
       </div>
-      <p className="watch-orders-note">Суммы взяты из текущих записей заказов. Это не отчёт о движениях кассы или чистой прибыли.</p>
+      <p className="watch-orders-note">Суммы и долги взяты из заказов. Неотправленные часы с отсутствующим остатком остаются видимыми в таблице.</p>
       {data.rows.length===0?<p>Заказов за выбранный период нет.</p>:
         <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
           <table className="data-table orders-table watch-main-orders-table">
             <thead><tr>
-              <th>Заказ</th><th>Дата</th><th>Клиент</th><th>Товар</th><th>Источник</th>
-              <th>Сумма</th><th>Оплачено</th><th>Состояние</th><th aria-label="Действия"/>
+              <th>Дата / заказ</th><th>Менеджер</th><th>Клиент</th><th>Город</th>
+              <th>Товары</th><th>Доставка / комментарий</th><th>Оплаты</th>
+              <th>Сумма</th><th>Получено</th><th>Долг</th><th>Статус</th><th>Действия</th>
             </tr></thead>
             <tbody>{data.rows.map(order=><Fragment key={order.orderId}>
               <tr className={'watch-main-order-row'+(expanded===order.orderId?' is-open':'')}>
-                <td><strong>{order.externalId||'#'+order.orderId}</strong>{order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}</td>
-                <td>{order.orderDate}</td>
-                <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small><small>{order.city}</small></td>
-                <td className="watch-main-order-sku">{order.watchDescription||'—'}</td>
-                <td>{order.legacySource==='warehouse'?'Офис':'Витрина'}</td>
+                <td><strong>{order.externalId||'#'+order.orderId}</strong>
+                  <small>{order.orderDate}</small>
+                  {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}</td>
+                <td>{order.managerName||'—'}</td>
+                <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
+                <td>{order.city||'—'}</td>
+                <td className="watch-main-order-sku">
+                  {parsedRows<ItemLine>(order.itemLines).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
+                    <strong>{line.productName}</strong><small>{line.quantity} шт. ·
+                      {line.source==='warehouse'?' Офис':' Витрина'} ·
+                      {[line.movement,line.braceletMaterial,line.dialColor].filter(Boolean).join(' / ')}</small>
+                  </div>)}
+                  {order.lineCount>3&&<small>Ещё {order.lineCount-3} поз.</small>}
+                </td>
+                <td className="watch-main-order-delivery">
+                  <strong>{order.deliveryMethod||'—'}</strong>
+                  <small>{order.shippingDeadlineAt?'До '+new Date(order.shippingDeadlineAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty'}):'Без срока'}</small>
+                  {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}
+                  {parsedRows<ItemLine>(order.itemLines).some(x=>x.engravingText)&&
+                    <small>Есть текст гравировки</small>}
+                </td>
+                <td className="watch-main-order-payments">
+                  {parsedRows<PaymentLine>(order.paymentLines).slice(0,2).map(x=>
+                    <span className="order-payment-chip" key={x.id}>{x.method}: {sum(x.amount)}</span>)}
+                  {parsedRows<PaymentLine>(order.paymentLines).length>2&&<small>
+                    + ещё {parsedRows<PaymentLine>(order.paymentLines).length-2}</small>}
+                  {parsedRows<PaymentLine>(order.paymentLines).length===0&&<small>Не оплачено</small>}
+                </td>
                 <td className="watch-main-money">{sum(order.totalAmount)}</td>
-                <td className="watch-main-money">{sum(order.receivedAmount)}<small>Долг: {sum(order.debtAmount)}</small></td>
+                <td className="watch-main-money">{sum(order.receivedAmount)}</td>
+                <td className={'watch-main-money '+(order.debtAmount>0?'is-debt':'is-paid')}>
+                  {order.debtAmount>0?sum(order.debtAmount):'Оплачено'}</td>
                 <td><span className={'watch-main-order-status'+(order.pendingReplacement?' is-awaiting':order.shippingStatus==='sent'?' is-sent':' is-awaiting')}>
                   {order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}
-                  </span></td>
+                  </span>
+                  {order.unresolvedReservations>0&&<small className="watch-main-stock-warning">
+                    Требует поступления/резерва: {order.unresolvedReservations}</small>}
+                </td>
                 <td><button type="button" className="watch-main-detail-button"
                   aria-expanded={expanded===order.orderId}
                   onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null)}}>
                   {expanded===order.orderId?'Скрыть':'Открыть'}
                 </button></td>
               </tr>
-              {expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={9}>
+              {expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={12}>
                 <section className="watch-main-order-detail" aria-label={'Детали заказа '+order.externalId}>
                   <div className="watch-main-order-detail-grid">
                     <div><small>Покупатель</small><strong>{order.recipientName}</strong>
-                      <span>{order.recipientPhone} · {order.city}</span><span>{order.deliveryMethod}</span></div>
+                      <span>{order.recipientPhone} · {order.city}</span>
+                      <span>{order.deliveryMethod} · {order.postalCode||''}</span>
+                      {order.deliveryAddress&&<span>{order.deliveryAddress}</span>}</div>
                     <div><small>Менеджер</small><strong>{order.managerName||'Не указан'}</strong>
-                      <span>{order.lineCount} позиций · {order.legacySource==='warehouse'?'Офис':'Витрина'}</span></div>
+                      <span>{order.lineCount} позиций</span></div>
                     <div><small>Оплата</small><strong>{sum(order.receivedAmount)} из {sum(order.totalAmount)}</strong>
                       <span>Долг: {sum(order.debtAmount)} · Возвраты: {sum(order.returnAmount)}</span></div>
                     <div><small>Доставка и гравировка</small>
