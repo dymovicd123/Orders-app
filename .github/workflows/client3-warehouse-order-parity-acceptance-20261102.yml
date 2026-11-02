@@ -36,5 +36,11 @@ jobs:
           node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
       - name: Watch catalog business semantics and no accidental physical stock changes
         run: node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
+      - name: Confirm original Main warehouse / catalog styles are included
+        run: |
+          grep -Fq 'w6-catalog-browse.css' src/features/client3/WatchCatalogEditor.tsx
+          grep -Fq 'w6-2-catalog-master-detail.css' src/features/client3/WatchCatalogEditor.tsx
+          grep -Fq 'warehouse-w2-navigation' src/WatchClient3App.tsx
+          grep -Fq '<section className="order-step-card">' src/features/client3/WatchOrderForm.tsx
       - name: Main CSS integrated TypeScript/Vite production build
         run: npm run build
