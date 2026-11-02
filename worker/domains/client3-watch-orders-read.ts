@@ -35,7 +35,7 @@ export async function listClient3WatchOrders(
       ||!Number.isSafeInteger(rawOffset)||rawOffset<0||rawOffset>100000)
       return bad('Некорректная страница заказов.')
     const qLike='%'+q.replace(/[\\%_]/g, s=>'\\'+s)+'%'
-    const args=[brandId,from,from,through,through,shipping,shipping,payment,payment,q?1:0,
+    const args=[brandId,from,from,through,through,shipping,shipping,shipping,payment,payment,payment,q?1:0,
       qLike,qLike,qLike,qLike] as const
     const where=`wd.brand_id=? AND o.order_status NOT IN ('archived','deleted')
       AND (? IS NULL OR o.order_date>=?)
