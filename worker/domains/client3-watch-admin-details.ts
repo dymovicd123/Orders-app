@@ -16,7 +16,9 @@ const valid=(x:unknown):x is WatchFields=>{
   typeof z.urgent!=='boolean'||typeof z.shippingDeadlineAt!=='string'||
   z.shippingDeadlineAt.length>35||!Array.isArray(z.items)||z.items.length<1||z.items.length>50)return false
  const date=Date.parse(z.shippingDeadlineAt)
- if(!Number.isFinite(date)||new Date(date).toISOString()!==z.shippingDeadlineAt)return false
+ if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(z.shippingDeadlineAt)||
+   !Number.isFinite(date)||
+   new Date(date).toISOString().slice(0,19)!==z.shippingDeadlineAt.slice(0,19))return false
  const seen=new Set<number>()
  for(const entry of z.items as Line[]){
    if(!entry||!Number.isSafeInteger(entry.orderItemId)||entry.orderItemId<1||
