@@ -62,10 +62,15 @@ export async function createClient3WatchOrder(
     if (raw.catalogVariantId!==undefined && raw.catalogVariantId!==variantId)
       return fail('WATCH_SKU_STALE','Комплектация часов изменилась. Обновите каталог.',409)
     const source=input.legacySource
+    // An uncertain network retry must reach the existing critical operation even
+    // if this order's first attempt already consumed the available stock.
+    const inFlight=await db.prepare(
+      "SELECT 1 AS found FROM critical_operations WHERE request_id=? AND operation_type='order_create' LIMIT 1",
+    ).bind(raw.requestId).first<{found:number}>()
     const stock=await db.prepare(
       'SELECT COALESCE(SUM(quantity),0) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock WHERE variant_id=? AND inventory_source=?',
     ).bind(variantId,source).first<{physical:number;reserved:number}>()
-    if (Number(stock?.physical||0)-Number(stock?.reserved||0)<raw.quantity)
+    if (!inFlight && Number(stock?.physical||0)-Number(stock?.reserved||0)<raw.quantity)
       return fail('WATCH_STOCK_SHORTAGE','В выбранном источнике недостаточно свободных часов.',409)
     // Manager identity comes from the session (or an explicit admin selection).
     // Admin cannot attribute another manager's brand sales without entitlement.
