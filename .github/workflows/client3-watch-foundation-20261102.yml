@@ -29,6 +29,8 @@ jobs:
       - run: npm ci
       - name: Watch SKU, authorized brands, deadline, clean migration on disposable SQLite
         run: node --experimental-strip-types scripts/client3/test-watch-foundation-20261102.mjs
+      - name: Brand-scoped HTTP handlers and reliable engraving ready on SQLite
+        run: node --experimental-strip-types scripts/client3/test-watch-api-20261102.mjs
       - name: Full Main foundation build on isolated tenant code
         run: npm run build
       - name: Dependencies audit
