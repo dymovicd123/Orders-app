@@ -115,13 +115,51 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
       })
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить заказ.')}finally{setBusy(false)}
   }
-  return <form className="watch-order-form" onSubmit={event=>void submit(event)}>
-    <header className="watch-order-form-header">
-      <h2>Данные заказа</h2>
-      <p>Сначала выберите наличие, затем укажите оплату, гравировку и доставку.</p>
+  return <form className="watch-order-form main-order-create" onSubmit={event=>void submit(event)}>
+    <header className="watch-order-form-header create-hero">
+      <div><span className="card-label">Новый заказ</span>
+        <h2>Оформление заказа</h2><p>Клиент, часы, стоимость и подготовка к отправке.</p></div>
+      <div className="orders-workspace-kpis create-kpis">
+        <div><span>Количество</span><strong>{quantity} шт.</strong></div>
+        <div><span>Сумма</span><strong>{(price*quantity).toLocaleString('ru-RU')} ₸</strong></div>
+        <div><span>К оплате</span><strong>{Math.max(0,price*quantity-Number(receivedAmount||0)).toLocaleString('ru-RU')} ₸</strong></div>
+      </div>
     </header>
-    <fieldset>
-      <legend>Часы и наличие</legend>
+    <fieldset className="order-step-card">
+      <legend className="order-step-head"><span className="order-step-index">1</span><span><strong>Клиент и доставка</strong><small>Получатель, адрес и точное время отправки</small></span></legend>
+      <div className="watch-order-form-grid">
+        <label>ФИО получателя
+          <input value={recipientName} onChange={e=>setRecipientName(e.target.value)} required/>
+        </label>
+        <label>Номер телефона
+          <input type="tel" value={recipientPhone} onChange={e=>setRecipientPhone(e.target.value)} required/>
+        </label>
+        <label className="watch-order-form-wide">Полный адрес доставки
+          <textarea rows={2} value={address} onChange={e=>setAddress(e.target.value)} required/>
+        </label>
+        <label>Индекс
+          <input value={postalCode} onChange={e=>setPostalCode(e.target.value)} required/>
+        </label>
+        <label>Город
+          <input value={city} onChange={e=>setCity(e.target.value)} required/>
+        </label>
+        <label>Способ доставки
+          <select value={deliveryMethod} onChange={e=>setDeliveryMethod(e.target.value)} required>
+            {deliveryMethods.map(x=><option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <label>Отправить до · Алматы
+          <input type="datetime-local" value={shippingDeadlineLocal}
+            onChange={e=>setShippingDeadlineLocal(e.target.value)} required/>
+        </label>
+        <label className="watch-order-form-urgent">
+          <input type="checkbox" checked={urgent} onChange={e=>setUrgent(e.target.checked)}/>
+          Срочный заказ
+        </label>
+      </div>
+    </fieldset>
+    <fieldset className="order-step-card">
+      <legend className="order-step-head"><span className="order-step-index">2</span><span><strong>Часы и стоимость</strong><small>Модель, наличие, цена, оплата и гравировка</small></span></legend>
       <div className="watch-order-form-grid">
         <label>Бренд
           <select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setVariantId(0);setManagerId(0)}}>
@@ -170,39 +208,6 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
         <label className="watch-order-form-wide">Комментарий логисту · Текст гравировки
           <textarea value={engravingText} onChange={e=>setEngravingText(e.target.value)}
             placeholder="Что выгравировать на этих часах" rows={2}/>
-        </label>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend>Доставка · Казпочта и другие способы</legend>
-      <div className="watch-order-form-grid">
-        <label>ФИО получателя
-          <input value={recipientName} onChange={e=>setRecipientName(e.target.value)} required/>
-        </label>
-        <label>Номер телефона
-          <input type="tel" value={recipientPhone} onChange={e=>setRecipientPhone(e.target.value)} required/>
-        </label>
-        <label className="watch-order-form-wide">Полный адрес доставки
-          <textarea rows={2} value={address} onChange={e=>setAddress(e.target.value)} required/>
-        </label>
-        <label>Индекс
-          <input value={postalCode} onChange={e=>setPostalCode(e.target.value)} required/>
-        </label>
-        <label>Город
-          <input value={city} onChange={e=>setCity(e.target.value)} required/>
-        </label>
-        <label>Способ доставки
-          <select value={deliveryMethod} onChange={e=>setDeliveryMethod(e.target.value)} required>
-            {deliveryMethods.map(x=><option key={x} value={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>Отправить до · Алматы
-          <input type="datetime-local" value={shippingDeadlineLocal}
-            onChange={e=>setShippingDeadlineLocal(e.target.value)} required/>
-        </label>
-        <label className="watch-order-form-urgent">
-          <input type="checkbox" checked={urgent} onChange={e=>setUrgent(e.target.checked)}/>
-          Срочный заказ
         </label>
       </div>
     </fieldset>
