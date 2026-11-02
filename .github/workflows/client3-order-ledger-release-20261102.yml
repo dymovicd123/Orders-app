@@ -1,0 +1,81 @@
+name: Client3 order ledger per-line details RELEASE (third only, NO DB writes)
+on:
+  push:
+    branches: [client3/order-ledger-main-parity-20261102]
+    paths: ['.github/workflows/client3-order-ledger-release-20261102.yml']
+permissions: {contents: read}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Exact third Worker only (never Main or Branch2)
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/order-ledger-main-parity-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Run money/identity/ledger tests plus Vite build before release
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-shared-references-20261102.mjs
+          node scripts/client3/test-main-workflow-parity-20261102.mjs
+          node scripts/client3/test-watch-form-20261102.mjs
+          npm run build
+      - name: Read-only baseline preserving live Client3 records
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COUNT(*) FROM watch_variants) AS sku_count,
+              (SELECT COUNT(*) FROM watch_reference_values WHERE is_active=1) AS refs_count" \
+            | jq -ce '.[0].results[0] | select(.orders_count>=2 and .payments_count>=2 and .users_count>=5 and .monitoring_admin==1 and .refs_count>=7)' > /tmp/client3-readonly-before.json
+      - name: Deploy ONLY third Worker code (no migrations or D1 writes)
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Auth denial, public shell and read-only DB identity recheck
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          test "$(curl -sSL -o /tmp/client3-html -w '%{http_code}' --max-time 25 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-html
+          status=$(curl -sS -o /tmp/client3-unauth -w '%{http_code}' --max-time 25 "$base/api/client3/watches/orders?brand=TAUWACH")
+          test "$status" = 401 -o "$status" = 403
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1) AS monitoring_admin,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_count,
+              (SELECT COUNT(*) FROM watch_variants) AS sku_count,
+              (SELECT COUNT(*) FROM watch_reference_values WHERE is_active=1) AS refs_count" \
+            | jq -ce '.[0].results[0]' > /tmp/client3-readonly-after.json
+          jq -e --slurpfile before /tmp/client3-readonly-before.json '
+            .orders_count==$before[0].orders_count and
+            .payments_count==$before[0].payments_count and
+            .users_count==$before[0].users_count and
+            .stock_count==$before[0].stock_count and
+            .sku_count==$before[0].sku_count and
+            .refs_count==$before[0].refs_count and .monitoring_admin==1
+          ' /tmp/client3-readonly-after.json
+          echo "CLIENT3_LEDGER_DETAILS_RELEASED_ONLY_THIRD"
