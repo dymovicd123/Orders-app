@@ -34,6 +34,7 @@ const db={prepare(statement){
  return {bind(...values){params=values;return this},async first(){return sqlite.prepare(statement).get(...params)||null}}
 }}
 const admin={id:1,role:'admin',managerId:null,employeeRole:'Администратор'}
+const manager={id:2,role:'manager',managerId:1,employeeRole:'Менеджер'}
 const seen=new Map()
 const requests=[]
 // Simulated, idempotent Main movement boundary: tests watch adapter mapping, NOT the
