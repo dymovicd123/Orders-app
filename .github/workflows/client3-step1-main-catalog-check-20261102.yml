@@ -1,0 +1,31 @@
+name: Client3 Step1 Main catalog and references — isolated acceptance
+on:
+  push:
+    branches: [client3/step1-main-catalog-references-20261102]
+    paths: ['.github/workflows/client3-step1-main-catalog-check-20261102.yml']
+permissions: {contents: read}
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Confirm exact third tenant
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/step1-main-catalog-references-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+      - run: npm ci
+      - name: Real Main migration chain and watch catalogue deletion/characteristics
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-main-step1-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node scripts/client3/test-main-workflow-parity-20261102.mjs
+          npm run build
