@@ -34,7 +34,9 @@ export type WatchLogisticsRow = {
 
 type Props = {
   brand: WatchBrand | 'all'
+  allowedBrands?: readonly WatchBrand[]
   canCompleteEngraving: boolean
+  canDispatch?: boolean
 }
 
 type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; message?: string }
@@ -77,30 +79,34 @@ function statusText(status: WatchLogisticsRow['engravingStatus']) {
   return 'Ожидает гравировки'
 }
 
-/**
- * Logistics is engraving preparation only. The ready button NEVER calls the
- * shipping, reservation, cash or workshop salary routes.
- */
-export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
+/** Main's operational workflow: engraving readiness and actual dispatch remain
+ * separate confirmed actions; both use isolated brand-scoped Client3 routes. */
+export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false}:Props) {
+  const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
-  const [filter, setFilter] = useState<'pending' | 'engraving' | 'ready' | 'all'>('all')
+  const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'>('unshipped')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
+  const [dispatching,setDispatching]=useState<number|null>(null)
+  const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
   const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   // Retain the same idempotency key across a failed/ambiguous network retry.
   const requestIds = useRef<Record<number, string>>({})
-  const groups = useMemo(() => groupWatchLogistics(rows), [rows])
+  const dispatchIds=useRef<Record<number,string>>({})
+  const groups=useMemo(()=>groupWatchLogistics(rows).filter(({order})=>
+    filter==='unshipped'?order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено':
+    filter==='sent'?order.shippingStatus==='sent'||order.shippingStatus==='Отправлено':true),[rows,filter])
 
   useEffect(() => {
     const controller = new AbortController()
     setBusy(true)
     setRows([])
     setError('')
-    const params = new URLSearchParams({ status: filter })
-    if (brand !== 'all') params.set('brand', brand)
+    const params=new URLSearchParams({status:filter==='sent'||filter==='unshipped'?'all':filter})
+    if(brandScope!=='all')params.set('brand',brandScope)
     void readApi<LogisticsResponse>('/api/client3/watches/logistics?' + params.toString(), {
       signal: controller.signal,
     }).then(data => {
@@ -112,7 +118,7 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
       }
     }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
     return () => controller.abort()
-  }, [brand, filter, refreshKey])
+  }, [brandScope, filter, refreshKey])
 
   const complete = useCallback(async (orderId: number) => {
     if (!canCompleteEngraving || saving !== null) return
@@ -137,16 +143,36 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
     }
   }, [canCompleteEngraving, saving])
 
-  return <section className="watch-logistics">
+  const send=useCallback(async(order:WatchLogisticsRow)=>{
+    if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
+    setDispatching(order.orderId);setError('');setFeedback('')
+    const requestId=dispatchIds.current[order.orderId]||=
+      'watch-send-'+crypto.randomUUID()
+    try{
+      await readApi<{ok:boolean;message?:string}>(
+        '/api/client3/watches/orders/'+order.orderId+'/send',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({brand:order.brand,requestId}),
+        })
+      delete dispatchIds.current[order.orderId]
+      setDispatchConfirm(null)
+      setFeedback('Отправка зафиксирована. Складской резерв и движение обработаны системой.')
+      setRefreshKey(value=>value+1)
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')}
+    finally{setDispatching(null)}
+  },[canDispatch,dispatching,dispatchConfirm])
+  return <section className="watch-logistics workshop-workspace">
     <div className="watch-logistics-heading">
       <div>
         <h2>Логистика</h2>
-        <p>Гравировка и подготовка отправлений. «Готово» не отправляет товар и не изменяет кассу.</p>
+        <p>Рабочая очередь подготовки и отправки часов. «Готово» завершает гравировку, «Отправить» — отдельное складское действие.</p>
       </div>
       <div className="watch-logistics-controls">
         <label>Статус
           <select value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>
-            <option value="all">Все</option>
+            <option value="all">Все заказы</option>
+            <option value="unshipped">К отправке</option>
+            <option value="sent">Отправлены</option>
             <option value="pending">Ожидает</option>
             <option value="engraving">В работе</option>
             <option value="ready">Готово</option>
@@ -155,7 +181,17 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
         <button type="button" disabled={busy} onClick={() => setRefreshKey(value => value + 1)}>Обновить</button>
       </div>
     </div>
-    {error && <p role="alert" className="watch-logistics-error">{error}</p>}
+    {allowedBrands.length>1&&<div className="workshop-channel-tabs client3-logistics-brands"
+        role="group" aria-label="Бренды логистики">
+      {(['all',...allowedBrands] as const).map(code=><button key={code} type="button"
+        className={'workshop-channel-tab '+(brandScope===code?'is-active':'')}
+        aria-pressed={brandScope===code}
+        onClick={()=>{setBrandScope(code);setExpanded(null);setDispatchConfirm(null)}}>
+        <span>{code==='all'?'Все бренды':code}</span>
+        <small>{code==='all'?'Общая очередь':'Отдельные заказы бренда'}</small>
+      </button>)}
+    </div>}
+    {error && <p role="alert" className="watch-logistics-error">{error}</p>
     {feedback && <p role="status" className="watch-logistics-feedback">{feedback}</p>}
     {busy && <p role="status">Загрузка логистики…</p>}
     {!busy && !error && groups.length === 0 && <p>В выбранной очереди заказов нет.</p>}
@@ -163,7 +199,7 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
       <table className="watch-main-logistics-table">
         <thead><tr>
           <th>Заказ</th><th>Бренд / источник</th><th>Получатель</th>
-          <th>Отправить до</th><th>Гравировка</th><th>Товаров</th><th>Действие</th>
+          <th>Отправить до</th><th>Гравировка</th><th>Отправка</th><th>Поз.</th><th>Действие</th>
         </tr></thead>
         <tbody>{groups.map(({order,items})=>{
           const overdue=order.engravingStatus!=='ready'&&order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
@@ -178,12 +214,14 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
                 {overdue&&<small className="watch-logistics-urgent">Срок прошёл</small>}</td>
               <td><span className={'watch-logistics-status '+(order.engravingStatus==='ready'?'is-ready':'')}>
                 {statusText(order.engravingStatus)}</span></td>
+              <td><span className={'watch-main-logistics-send-status '+(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'is-sent':'is-awaiting')}>
+                {order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Не отправлен'}</span></td>
               <td>{items.length}</td>
               <td><button type="button" className="secondary compact" aria-expanded={expanded===order.orderId}
                 onClick={()=>setExpanded(v=>v===order.orderId?null:order.orderId)}>
                 {expanded===order.orderId?'Скрыть':'Открыть'}</button></td>
             </tr>
-            {expanded===order.orderId&&<tr className="watch-main-logistics-expanded"><td colSpan={7}>
+            {expanded===order.orderId&&<tr className="watch-main-logistics-expanded"><td colSpan={8}>
               <section className="watch-main-logistics-detail">
                 <div className="watch-main-logistics-detail-head">
                   <div><small>Получатель и адрес</small><strong>{order.recipientName} · {order.recipientPhone}</strong>
@@ -205,6 +243,27 @@ export function WatchLogisticsPanel({ brand, canCompleteEngraving }: Props) {
                       onClick={()=>void complete(order.orderId)}>
                       {saving===order.orderId?'Сохраняю…':'Готово · гравировка'}
                     </button>:<span>Завершить может логист или администратор.</span>}
+                  {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
+                    canDispatch&&items.length===1&&Number(items[0].quantity)>0&&
+                    (order.engravingStatus==='ready'||items.every(i=>!i.engravingText?.trim()))&&
+                    (dispatchConfirm===order.orderId?
+                    <div className="client3-logistics-dispatch-confirm">
+                      <strong>Подтвердить фактическую отправку?</strong>
+                      <span>Система оформит движение товара и снимет резерв; гравировка и деньги не изменятся.</span>
+                      <button type="button" disabled={dispatching!==null||saving!==null}
+                        onClick={()=>void send(order)}>
+                        {dispatching===order.orderId?'Сохраняю…':'Подтвердить отправку'}</button>
+                      <button type="button" className="secondary compact" disabled={dispatching!==null}
+                        onClick={()=>setDispatchConfirm(null)}>Отмена</button>
+                    </div>:
+                    <button type="button" className="client3-logistics-dispatch-button"
+                      disabled={saving!==null||dispatching!==null}
+                      onClick={()=>setDispatchConfirm(order.orderId)}>Отправить клиенту</button>)}
+                  {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
+                    items.some(i=>i.engravingText?.trim())&&order.engravingStatus!=='ready'&&
+                    <small>Перед отправкой завершите гравировку.</small>}
+                  {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
+                    !canDispatch&&<small>Отправку подтверждает администратор или менеджер.</small>}
                 </div>
               </section>
             </td></tr>}
