@@ -65,8 +65,8 @@ export async function createClient3WatchOrder(
     // An uncertain network retry must reach the existing critical operation even
     // if this order's first attempt already consumed the available stock.
     const inFlight=await db.prepare(
-      "SELECT 1 AS found FROM critical_operations WHERE request_id=? AND operation_type='order_create' LIMIT 1",
-    ).bind(raw.requestId).first<{found:number}>()
+      "SELECT context_json FROM critical_operations WHERE request_id=? AND operation_type='order_create' LIMIT 1",
+    ).bind(raw.requestId).first<{context_json:string}>()
     const stock=await db.prepare(
       'SELECT COALESCE(SUM(quantity),0) AS physical,COALESCE(SUM(reserved_quantity),0) AS reserved FROM inventory_stock WHERE variant_id=? AND inventory_source=?',
     ).bind(variantId,source).first<{physical:number;reserved:number}>()
@@ -85,6 +85,19 @@ export async function createClient3WatchOrder(
     if (!assignment)
       return fail('WATCH_MANAGER_BRAND_FORBIDDEN','Выбранный менеджер не назначен этому бренду.',403)
 
+    // The first accepted critical-operation plan owns the catalogue price
+    // snapshot. A retry must never be repriced by a newer live catalogue.
+    let priceSnapshot=variant!.catalog_price == null ? null : Number(variant!.catalog_price)
+    if(inFlight?.context_json){
+      try{
+        const saved=JSON.parse(inFlight.context_json) as {
+          plan?:{itemizedWritePlan?:{lines?:Array<{catalogPriceSnapshot?:number|null}>}}
+        }
+        const frozen=saved.plan?.itemizedWritePlan?.lines?.[0]?.catalogPriceSnapshot
+        if(frozen===null || (typeof frozen==='number' && Number.isSafeInteger(frozen) && frozen>=0))
+          priceSnapshot=frozen
+      }catch{ /* Core critical operation will validate the original fingerprint. */ }
+    }
     const watch:WatchOrderCommit={
       brand:input.brand as WatchBrand,brandId,watchVariantId:raw.watchVariantId,
       catalogProductId:productId,catalogVariantId:variantId,source:input.source,
@@ -102,7 +115,7 @@ export async function createClient3WatchOrder(
       pricingMode:'itemized_v1',
       items:[{
         productName:String(variant!.canonical_name),quantity:raw.quantity,unitPrice:price,
-        catalogPriceSnapshot:variant!.catalog_price == null ? null : Number(variant!.catalog_price),sourceType:source,
+        catalogPriceSnapshot:priceSnapshot,sourceType:source,
         audienceType:'ВЗРОСЛЫЙ',shortageAcknowledged:true,
       }],
       payments:received>0
