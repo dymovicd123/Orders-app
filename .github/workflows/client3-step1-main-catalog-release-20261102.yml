@@ -1,4 +1,5 @@
 name: Client3 Step1 Main catalog + editable references RELEASE (third only)
+# Deploy FK-safe V5 after complete isolated QA including historic watch order links.
 on:
   push:
     branches: [client3/step1-main-catalog-references-20261102]
