@@ -200,7 +200,31 @@ export async function handleSimpleAdminStatus(env: Env, request: Request) {
 }
 
 
+function client3InviteConfigured(env: Env): boolean {
+  return cleanText(env.CLIENT3_INSTALLATION) === '1' &&
+    /^[0-9a-f]{64}$/i.test(cleanText(env.CLIENT3_BOOTSTRAP_SHA256));
+}
+
+function client3SecretConfigured(env: Env): boolean {
+  const secret = cleanText(env.ADMIN_MODE_PASSWORD);
+  return secret.length >= 16 && !['admin', 'password'].includes(secret.toLowerCase());
+}
+
+async function verifyClient3Invite(env: Env, input: string): Promise<boolean> {
+  if (!client3InviteConfigured(env)) return false;
+  const code = cleanText(input).toUpperCase().replace(/[\s-]/g, '');
+  if (!/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{24}$/.test(code)) return false;
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code)));
+  const actual = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  const expected = cleanText(env.CLIENT3_BOOTSTRAP_SHA256).toLowerCase();
+  let difference = 0;
+  for (let i = 0; i < 64; i++) difference |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+  return difference === 0;
+}
+
 export async function verifySimpleAdminPassword(db: D1Database, env: Env, password: string) {
+  // Client3 is isolated and MUST NEVER accept the generic admin/admin fallback.
+  if (cleanText(env.CLIENT3_INSTALLATION) === '1' && !client3SecretConfigured(env)) return false;
   const storedHash = await getAppSetting(db, SIMPLE_ADMIN_PASSWORD_HASH_SETTING, '');
   if (storedHash) {
     if (passwordHashNeedsEdgeReset(storedHash)) return false;
@@ -565,9 +589,12 @@ export async function createSession(db: D1Database, userId: number) {
 }
 
 
-export async function handleAuthStatus(db: D1Database, request: Request) {
+export async function handleAuthStatus(db: D1Database, env: Env, request: Request) {
   const [userCount, user] = await Promise.all([countAuthUsers(db), getCurrentAuthUser(db, request)]);
-  const response = json({ ok: true, hasUsers: userCount > 0, authDisabled: false, user: user ? authUserPayload(user) : null });
+  const thirdSetup = cleanText(env.CLIENT3_INSTALLATION) === '1';
+  const configured = !thirdSetup || client3SecretConfigured(env) || client3InviteConfigured(env);
+  const response = json({ ok: true, hasUsers: userCount > 0, authDisabled: false,
+    setupReady: userCount > 0 || configured, user: user ? authUserPayload(user) : null });
   if (!user && readCookie(request, 'orders_session')) {
     response.headers.append('Set-Cookie', makeSessionCookie(request, '', 0));
   }
@@ -585,6 +612,11 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
       message: 'Первый администратор уже создан.',
     }, { status: 409 });
   }
+  if (cleanText(env.CLIENT3_INSTALLATION) === '1' &&
+      !client3InviteConfigured(env) && !client3SecretConfigured(env)) {
+    return json({ok:false,code:'AUTH_BOOTSTRAP_NOT_CONFIGURED',
+      message:'Система ещё не активирована владельцем: код первого запуска не настроен.'},{status:503})
+  }
   const input = await readJson<{
     login?: unknown;
     password?: unknown;
@@ -600,8 +632,12 @@ export async function handleAuthSetup(db: D1Database, env: Env, request: Request
   const loginError = authLoginError(login);
   if (loginError) return json({ ok: false, message: loginError }, { status: 400 });
   if (password.length < 8) return json({ ok: false, message: 'Пароль должен быть не короче 8 символов.' }, { status: 400 });
-  if (bootstrapLogin !== getAdminModeLogin(env) || !(await verifySimpleAdminPassword(db, env, bootstrapPassword))) {
-    return json({ ok: false, message: 'Неверный логин или пароль текущего администратора.' }, { status: 401 });
+  if (bootstrapLogin !== getAdminModeLogin(env) ||
+      (!(await verifyClient3Invite(env,bootstrapPassword)) &&
+       !(await verifySimpleAdminPassword(db,env,bootstrapPassword)))) {
+    return json({ok:false, message:cleanText(env.CLIENT3_INSTALLATION)==='1'
+      ? 'Неверный код первого запуска.'
+      : 'Неверный логин или пароль текущего администратора.'},{status:401});
   }
   const passwordHash = await hashPassword(password);
   const now = new Date().toISOString();
