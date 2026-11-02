@@ -40,6 +40,7 @@ jobs:
           node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
           node scripts/client3/test-watch-shell-20261102.mjs
           node scripts/client3/test-main-foundation-parity-20261102.mjs
+          ! grep -Fq 'Math.max(0,Number(n)||0).toLocaleString' src/features/client3/WatchStockMainBrowse.tsx
           node scripts/client3/test-watch-form-20261102.mjs
           node scripts/client3/test-watch-logistics-20261102.mjs
           grep -Fq 'StocktakeProductChoice,StocktakeSizeCountCell' src/features/client3/WatchWarehouseMain.tsx
