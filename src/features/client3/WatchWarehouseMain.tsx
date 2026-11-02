@@ -163,7 +163,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   }
   const selectMode=(next:Operation)=>{
     if(saving||next===mode)return
-    if(selected.length&&!window.confirm('Сменить операцию и очистить введённые количества?'))return
+    if((selected.length||selectedModelIdsBySource.office.length||selectedModelIdsBySource.showcase.length)&&
+      !window.confirm('Сменить операцию и очистить выбранные товары и количества?'))return
     reset();setMode(next)
   }
   const selectSource=(next:Source)=>{
