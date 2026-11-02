@@ -83,8 +83,6 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
  },[brand,source])
  const productIds=useMemo(()=>[...new Set((session?.items||[]).map(x=>x.productId))],[session])
  const currentItems=(session?.items||[]).filter(x=>x.productId===group)
- const unsaved=Object.keys(draft).filter(id=>draft[Number(id)]!==(saved[Number(id)]||'')&&
-   (draft[Number(id)]===''||validCount(draft[Number(id)])))
  const invalid=Object.keys(draft).some(id=>draft[Number(id)]!==''&&!validCount(draft[Number(id)]))
  const dirty=Object.keys(draft).some(id=>draft[Number(id)]!==(saved[Number(id)]||''))
  const saveOne=async(id:number,value:string)=>{
