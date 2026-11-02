@@ -23,6 +23,9 @@ export type WatchLogisticsRow = {
   orderItemId: number | null
   quantity: number | null
   reservationStatus: string | null
+  stockWriteoffStatus: string | null
+  shippedQuantity: number
+  itemSource: 'warehouse' | 'boutique' | null
   modelName: string | null
   engravingText: string | null
   gender: string | null
@@ -89,6 +92,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [saving, setSaving] = useState<number | null>(null)
   const [dispatching,setDispatching]=useState<number|null>(null)
   const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
+  const [dispatchSelection,setDispatchSelection]=useState<Record<number,number[]>>({})
   const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -143,7 +147,19 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     }
   }, [canCompleteEngraving, saving])
 
-  const send=useCallback(async(order:WatchLogisticsRow)=>{
+  const setSelected=(orderId:number,itemId:number,enabled:boolean)=>{
+    setDispatchConfirm(null)
+    delete dispatchIds.current[orderId]
+    setDispatchSelection(prev=>{
+      const old=prev[orderId]||[]
+      return {...prev,[orderId]:enabled?[...new Set([...old,itemId])]:old.filter(id=>id!==itemId)}
+    })
+  }
+  const eligible=(order:WatchLogisticsRow,item:WatchLogisticsRow)=>Boolean(
+    item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
+    item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
+    (!item.engravingText?.trim()||order.engravingStatus==='ready'))
+  const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
     if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
     setDispatching(order.orderId);setError('');setFeedback('')
     const requestId=dispatchIds.current[order.orderId]||=
@@ -152,11 +168,13 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       await readApi<{ok:boolean;message?:string}>(
         '/api/client3/watches/orders/'+order.orderId+'/send',{
           method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({brand:order.brand,requestId}),
+          body:JSON.stringify({brand:order.brand,requestId,
+            items:selected.map(row=>({orderItemId:row.orderItemId,quantity:row.quantity}))}),
         })
       delete dispatchIds.current[order.orderId]
       setDispatchConfirm(null)
-      setFeedback('Отправка зафиксирована. Складской резерв и движение обработаны системой.')
+      setDispatchSelection(prev=>({...prev,[order.orderId]:[]}))
+      setFeedback('Выбранные часы отправлены. Остальные позиции и их резервы не затронуты.')
       setRefreshKey(value=>value+1)
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')}
     finally{setDispatching(null)}
@@ -165,7 +183,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     <div className="watch-logistics-heading">
       <div>
         <h2>Логистика</h2>
-        <p>Рабочая очередь подготовки и отправки часов. «Готово» завершает гравировку, «Отправить» — отдельное складское действие.</p>
+        <p>Выберите готовые позиции заказа. «Готово» завершает гравировку, а отправка списывает только выбранные часы.</p>
       </div>
       <div className="watch-logistics-controls">
         <label>Статус
@@ -202,6 +220,14 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
           <th>Отправить до</th><th>Гравировка</th><th>Отправка</th><th>Поз.</th><th>Действие</th>
         </tr></thead>
         <tbody>{groups.map(({order,items})=>{
+          const dispatched=items.filter(i=>Number(i.shippedQuantity||0)>0).length
+          const shipStatus=order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'
+            ?'Отправлен':dispatched>0?'Частично отправлен':'Не отправлен'
+          const selectable=items.filter(item=>eligible(order,item))
+          const selectedIds=dispatchSelection[order.orderId]||[]
+          const selected=selectable.filter(item=>item.orderItemId&&(
+            selectedIds.includes(item.orderItemId)||
+            (items.length===1&&selectedIds.length===0)))
           const overdue=order.engravingStatus!=='ready'&&order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
             Number.isFinite(Date.parse(order.shippingDeadlineAt))&&Date.parse(order.shippingDeadlineAt)<Date.now()
           return <Fragment key={order.orderId}>
@@ -215,7 +241,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
               <td><span className={'watch-logistics-status '+(order.engravingStatus==='ready'?'is-ready':'')}>
                 {statusText(order.engravingStatus)}</span></td>
               <td><span className={'watch-main-logistics-send-status '+(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'is-sent':'is-awaiting')}>
-                {order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Не отправлен'}</span></td>
+                {shipStatus}</span></td>
               <td>{items.length}</td>
               <td><button type="button" className="secondary compact" aria-expanded={expanded===order.orderId}
                 onClick={()=>setExpanded(v=>v===order.orderId?null:order.orderId)}>
@@ -227,15 +253,33 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                   <div><small>Получатель и адрес</small><strong>{order.recipientName} · {order.recipientPhone}</strong>
                     <span>{order.city}, {order.postalCode} · {order.address}</span></div>
                   <div><small>Доставка</small><strong>{order.deliveryMethod}</strong>
-                    <span>{order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Уже отправлен':'Не отправлен'}</span></div>
+                    <span>{shipStatus}</span></div>
                 </div>
                 <div className="watch-main-logistics-items">
-                  {items.map(item=><div key={item.orderItemId} className="watch-main-logistics-item">
-                    <div><strong>{item.modelName||'Модель не определена'} · {item.quantity||0} шт.</strong>
-                      <small>{[item.movement,item.braceletMaterial,item.dialColor,item.braceletColor].filter(Boolean).join(' · ')}</small></div>
-                    <div><small>Текст гравировки</small><strong>{item.engravingText||'Не указан'}</strong></div>
-                    <div><small>Резерв</small><strong>{item.reservationStatus==='active'?'Подтверждён':item.reservationStatus==='fulfilled'?'Выдан':'Требует проверки'}</strong></div>
-                  </div>)}
+                  {items.map(item=>{
+                    const enabled=eligible(order,item)
+                    const isSent=Number(item.shippedQuantity||0)>0||
+                      item.stockWriteoffStatus==='fulfilled'
+                    return <div key={item.orderItemId} className={
+                      'watch-main-logistics-item'+(isSent?' is-dispatched':'')+(!enabled&&!isSent?' is-blocked':'')}>
+                      <label className="watch-logistics-select-line">
+                        <input type="checkbox" disabled={!canDispatch||!enabled||dispatching!==null}
+                          checked={Boolean(enabled&&item.orderItemId&&(
+                            (items.length===1&&selectedIds.length===0)||
+                            selectedIds.includes(item.orderItemId)))}
+                          onChange={e=>{if(item.orderItemId)setSelected(order.orderId,item.orderItemId,e.target.checked)}}/>
+                        <span>{item.modelName||'Модель не определена'} · {item.quantity||0} шт.
+                          <small>{item.itemSource==='boutique'?'Витрина':'Офис'} ·
+                            {[item.movement,item.braceletMaterial,item.dialColor,item.braceletColor].filter(Boolean).join(' · ')}</small>
+                        </span>
+                      </label>
+                      <div><small>Гравировка</small><strong>{item.engravingText||'Не требуется'}</strong></div>
+                      <div><small>Состояние</small><strong>{isSent?'Отправлен':
+                        item.reservationStatus!=='active'?'Ожидает товар / резерв':
+                        item.engravingText?.trim()&&order.engravingStatus!=='ready'?'Ожидает гравировки':
+                        'Готов к отправке'}</strong></div>
+                    </div>
+                  }})}
                 </div>
                 <div className="watch-logistics-actions">
                   {order.engravingStatus==='ready'?<span>Гравировка завершена</span>:
@@ -244,24 +288,33 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                       {saving===order.orderId?'Сохраняю…':'Готово · гравировка'}
                     </button>:<span>Завершить может логист или администратор.</span>}
                   {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
-                    canDispatch&&items.length===1&&Number(items[0].quantity)>0&&
-                    (order.engravingStatus==='ready'||items.every(i=>!i.engravingText?.trim()))&&
+                    canDispatch&&selected.length>0&&
                     (dispatchConfirm===order.orderId?
                     <div className="client3-logistics-dispatch-confirm">
-                      <strong>Подтвердить фактическую отправку?</strong>
-                      <span>Система оформит движение товара и снимет резерв; гравировка и деньги не изменятся.</span>
+                      <strong>Подтвердить отправку {selected.length} поз. / {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.?</strong>
+                      <span>Будут отправлены только выбранные строки. Остальные сохранятся в заказе и резерве. Деньги не изменятся.</span>
                       <button type="button" disabled={dispatching!==null||saving!==null}
-                        onClick={()=>void send(order)}>
+                        onClick={()=>void send(order,selected)}>
                         {dispatching===order.orderId?'Сохраняю…':'Подтвердить отправку'}</button>
                       <button type="button" className="secondary compact" disabled={dispatching!==null}
                         onClick={()=>setDispatchConfirm(null)}>Отмена</button>
                     </div>:
                     <button type="button" className="client3-logistics-dispatch-button"
                       disabled={saving!==null||dispatching!==null}
-                      onClick={()=>setDispatchConfirm(order.orderId)}>Отправить клиенту</button>)}
+                      onClick={()=>setDispatchConfirm(order.orderId)}>Отправить выбранное</button>)}
                   {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
-                    items.some(i=>i.engravingText?.trim())&&order.engravingStatus!=='ready'&&
-                    <small>Перед отправкой завершите гравировку.</small>}
+                    items.some(i=>i.engravingText?.trim()&&Number(i.shippedQuantity||0)===0)&&
+                    order.engravingStatus!=='ready'&&
+                    <small>Часы с гравировкой отправляются после отметки «Готово». Остальные можно отправить отдельно.</small>}
+                  {canDispatch&&items.length>1&&selectable.length>0&&
+                    <button type="button" className="secondary compact"
+                      disabled={dispatching!==null}
+                      onClick={()=>{
+                        setDispatchConfirm(null);delete dispatchIds.current[order.orderId]
+                        setDispatchSelection(prev=>({...prev,[order.orderId]:selectable.map(x=>x.orderItemId!).filter(Boolean)}))
+                      }}>Выбрать все готовые</button>}
+                  {canDispatch&&selectable.length===0&&items.some(i=>Number(i.shippedQuantity||0)===0)&&
+                    <small>Нет позиций, готовых к отправке: проверьте гравировку, остатки или резервы.</small>}
                   {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
                     !canDispatch&&<small>Отправку подтверждает администратор или менеджер.</small>}
                 </div>
