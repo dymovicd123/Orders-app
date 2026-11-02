@@ -25,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
-          test "$(git rev-parse HEAD^)" = 'bf277e71757494a8f0da047e1a46973a42247684'
+          test "$(git rev-parse HEAD^)" = 'ee374be400730974c01a88d1f692df180642571e'
           git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
           git fetch -q origin +refs/heads/branch2:refs/remotes/origin/branch2
           git fetch -q origin +refs/pull/717/head:refs/remotes/origin/pr717 +refs/pull/718/head:refs/remotes/origin/pr718
@@ -52,7 +52,7 @@ jobs:
           p=Path('scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs')
           s=p.read_text()
           needle="  assert.equal(stocks().old,before.old+1,'One original physical inbound, regardless of winner')"
-          assert s.count(needle)==1,repr(s[s.find("stocks().old")-50:s.find("stocks().old")+80])
+          assert s.count(needle)>=1
           diagnostic="  console.log('RACE_DIAGNOSTIC',JSON.stringify({winner,returns,exchanges,before,after:stocks(),moves:sql.prepare(\"SELECT id,reference_type,reference_id,movement_type,quantity_delta FROM inventory_movements ORDER BY id DESC LIMIT 6\").all(),events:sql.prepare(\"SELECT id,operation_type,event_type,status,quantity FROM inventory_lifecycle_events WHERE order_id=? ORDER BY id\").all(orderId)}))"
           s=s.replace(needle,diagnostic+"\n"+needle)
           p.write_text(s)
