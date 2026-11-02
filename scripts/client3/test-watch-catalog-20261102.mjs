@@ -12,11 +12,11 @@ sqlite.exec([
 'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY);',
 'CREATE TABLE orders(id INTEGER PRIMARY KEY);',
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY);',
-'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,quantity INTEGER);',
+'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,reserved_quantity INTEGER DEFAULT 0);',
 'CREATE TABLE payments(id INTEGER PRIMARY KEY,amount INTEGER);',
 'INSERT INTO managers VALUES(1);',
 'INSERT INTO app_users VALUES(1);',
-'INSERT INTO inventory_stock VALUES(1,3);',
+'INSERT INTO inventory_stock(id,variant_id,inventory_source,quantity,reserved_quantity) VALUES(1,999,\'warehouse\',3,0);',
 'INSERT INTO payments VALUES(1,10000);',
 ].join('\n'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
