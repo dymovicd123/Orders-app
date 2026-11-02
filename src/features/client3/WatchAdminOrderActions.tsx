@@ -119,7 +119,7 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
    </div>
    {mode==='manager'&&<form className="watch-admin-action-form" onSubmit={e=>void setManager(e)}>
      <strong>Ответственный за заказ {externalId}</strong>
-     <p>Переназначение возможно только действующему менеджеру этого бренда. Main ведёт историю изменения.</p>
+     <p>Переназначение возможно только действующему менеджеру этого бренда. Изменение проходит через редактор Main с проверкой прав бренда.</p>
      <label>Новый менеджер
        <select required value={target} onChange={e=>setTarget(Number(e.target.value))}>
          <option value={0}>Выберите менеджера</option>
