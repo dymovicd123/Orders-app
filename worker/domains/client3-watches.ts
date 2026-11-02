@@ -1,3 +1,4 @@
+import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import { json, readJson } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
 import { normalizeWatchBrand, type WatchBrand } from '../../shared/client3/watch-domain.ts'
@@ -152,6 +153,12 @@ export async function markWatchLogisticsReady(
 export async function routeClient3Watches(
   db:D1Database,request:Request,url:URL,actor:AuthUser,
 ):Promise<Response|null> {
+  if(url.pathname==='/api/client3/watches/orders'&&request.method==='POST') {
+    const raw=await readJson<WatchCreateInput>(request)
+    const scope=await scopedBrand(db,actor,raw?.brand,'sales')
+    if(scope.error)return scope.error
+    return createClient3WatchOrder(db,actor,scope.row!.id,raw)
+  }
   if(url.pathname==='/api/client3/watches/brands'&&request.method==='GET')
     return listWatchBrands(db,actor)
   if(url.pathname==='/api/client3/watches/models'&&request.method==='GET')
