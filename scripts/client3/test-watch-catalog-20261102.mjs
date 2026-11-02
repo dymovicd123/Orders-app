@@ -23,6 +23,7 @@ sqlite.exec([
 ].join('\n'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
 sqlite.exec("INSERT INTO watch_reference_values(kind,value) VALUES('leatherColors','ЧЁРНЫЙ'),('leatherColors','КОРИЧНЕВЫЙ')")
 const db={
   prepare(query){
