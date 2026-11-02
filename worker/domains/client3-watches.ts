@@ -11,7 +11,7 @@ import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
-import {listClient3WatchReferences,createClient3WatchReference} from './client3-watch-references.ts'
+import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from './client3-watch-references.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import { json, readJson } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
@@ -247,6 +247,13 @@ export async function routeClient3Watches(
     const input=await readJson<{kind?:unknown;value?:unknown}>(request)
     return createClient3WatchReference(db,actor,input)
   }
+  if(url.pathname==='/api/client3/watches/references'&&request.method==='PATCH'){
+    const data=await readJson<{id?:unknown;kind?:unknown;value?:unknown}>(request)
+    return updateClient3WatchReference(db,actor,data)
+  }
+  const refDelete=/^\/api\/client3\/watches\/references\/(\d+)$/.exec(url.pathname)
+  if(refDelete&&request.method==='DELETE')
+    return deleteClient3WatchReference(db,actor,Number(refDelete[1]))
   if(url.pathname==='/api/client3/watches/stock/count'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;source?:unknown;expectedPhysical?:unknown;countedQuantity?:unknown;requestId?:unknown;confirmed?:unknown;allowShortage?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
