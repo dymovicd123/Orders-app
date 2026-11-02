@@ -33,7 +33,7 @@ import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
-export type WatchMainRoute='orders'|'create'|'returns'|'logistics'|'warehouse'|'catalog'|'finance'|'staff'|'accounts'|'legacy'
+export type WatchMainRoute='orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'
 type User={id:number;role:string;employeeRole?:string;displayName?:string}
 const nav=[
   {route:'orders',module:'orders',label:'Заказы'},
@@ -49,6 +49,8 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   returns:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   logistics:{title:'Логистика',subtitle:'Гравировка, готовность и сроки отправки'},
   warehouse:{title:'Склад',subtitle:'Остатки, операции и товары'},
+  operations:{title:'Склад',subtitle:'Остатки, операции и товары'},
+  exchange:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   catalog:{title:'Склад',subtitle:'Остатки, операции и товары'},
   finance:{title:'Финансы',subtitle:'Движение денег по брендам'},
   staff:{title:'Команда',subtitle:'Сотрудники и доступ к брендам'},
@@ -65,8 +67,8 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
     return ()=>document.body.classList.remove('mobile-nav-open')
   },[mobileNavOpen])
   const isAdmin=user.role==='admin'
-  const current=section==='create'||section==='returns'||section==='legacy'?'orders':
-    section==='catalog'?'warehouse':section==='accounts'?'staff':section
+  const current=section==='create'||section==='returns'||section==='exchange'||section==='legacy'?'orders':
+    section==='catalog'||section==='operations'?'warehouse':section==='accounts'?'staff':section
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'
   return <main className="erp-shell client3-main-erp" data-sector={current}>
