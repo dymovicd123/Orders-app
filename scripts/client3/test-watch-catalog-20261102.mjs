@@ -13,6 +13,7 @@ sqlite.exec([
 'CREATE TABLE orders(id INTEGER PRIMARY KEY);',
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,reserved_quantity INTEGER DEFAULT 0);',
+ 'CREATE TABLE inventory_reservations(id INTEGER PRIMARY KEY,variant_id INTEGER,inventory_source TEXT,quantity INTEGER,status TEXT);',
 'CREATE TABLE payments(id INTEGER PRIMARY KEY,amount INTEGER);',
 'INSERT INTO managers VALUES(1);',
 'INSERT INTO app_users VALUES(1);',
