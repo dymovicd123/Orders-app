@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { WatchBrand } from '../../../shared/client3/watch-domain'
 import {WatchReturnForm} from './WatchReturnForm'
+import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import '../../styles/client3-watch-orders.css'
 
@@ -34,6 +35,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
   const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
   const [sendingId,setSendingId]=useState<number|null>(null)
+  const [expanded,setExpanded]=useState<number|null>(null)
   const shipRequests=useRef<Record<number,string>>({})
   useEffect(()=>{
     const controller=new AbortController()
@@ -106,60 +108,79 @@ export function WatchOrdersPanel({allowedBrands,initialBrand}:{allowedBrands:rea
       </div>
       <p className="watch-orders-note">Суммы взяты из текущих записей заказов. Это не отчёт о движениях кассы или чистой прибыли.</p>
       {data.rows.length===0?<p>Заказов за выбранный период нет.</p>:
-        <div className="watch-orders-list">
-          {data.rows.map(order=><article key={order.orderId}>
-            <div className="watch-orders-row-heading">
-              <strong>{order.externalId||'#'+order.orderId}</strong>
-              <span>{order.orderDate}</span>
-              <span>{order.legacySource==='warehouse'?'Офис':'Витрина'}</span>
-            </div>
-            <div className="watch-orders-row-details">
-              <div><small>Получатель</small><strong>{order.recipientName}</strong>
-                <span>{order.city} · {order.recipientPhone}</span></div>
-              <div><small>Менеджер</small><strong>{order.managerName||'Не указан'}</strong>
-                <span>{order.lineCount} позиций · {order.deliveryMethod}</span></div>
-              <div><small>Оплата</small><strong>{sum(order.receivedAmount)} / {sum(order.totalAmount)}</strong>
-                <span>Долг: {sum(order.debtAmount)}</span></div>
-              <div><small>Состояние</small>
-                <strong>{order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
-                <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span>
-                {(order.pendingReplacement||order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено')&&order.lineCount===1&&(order.returnableQuantity??1)>0&&
-                  (order.engravedLines===0||order.engravingStatus==='ready')&&
-                  <div className="watch-orders-shipping">
-                    {sendConfirm===order.orderId?<>
-                      <small>Подтверждаете фактическую отправку? Товар будет списан со склада.</small>
-                      <button type="button" disabled={sendingId!==null} onClick={()=>void sendOrder(order.orderId)}>
-                        {sendingId===order.orderId?'Сохраняю…':'Подтвердить отправку'}
-                      </button>
-                      <button type="button" disabled={sendingId!==null} onClick={()=>setSendConfirm(null)}>Отмена</button>
-                    </>:<button type="button" disabled={sendingId!==null}
-                      onClick={()=>setSendConfirm(order.orderId)}>Отправить клиенту</button>}
-                  </div>}
-                {(order.pendingReplacement||order.shippingStatus!=='sent')&&order.engravedLines>0&&order.engravingStatus!=='ready'&&
-                  <small>Сначала завершите гравировку в логистике.</small>}
-              </div>
-            </div>
-            {order.watchDescription&&<p className="watch-orders-sku">{order.watchDescription}</p>}
-            {(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&
-              !order.pendingReplacement&&order.lineCount===1&&order.returnableQuantity===1&&
-              (exchangeOrderId===order.orderId?
-                <WatchExchangeForm brand={brand} order={order}
-                  onCancel={()=>setExchangeOrderId(null)}
-                  onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>
-                :<button className="watch-orders-return-open" type="button"
-                  onClick={()=>{setReturnOrderId(null);setSendConfirm(null);setExchangeOrderId(order.orderId)}}>
-                  Обменять часы
-                </button>)}
-            {order.lineCount===1&&(Math.max(0,order.receivedAmount-order.returnAmount)>0||
-              ((order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&order.returnableQuantity>0))&&
-              (returnOrderId===order.orderId?
-                <WatchReturnForm brand={brand} order={order}
-                  onCancel={()=>setReturnOrderId(null)}
-                  onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>
-                :<button className="watch-orders-return-open" type="button"
-                  onClick={()=>{setSendConfirm(null);setReturnOrderId(order.orderId)}}>Оформить возврат</button>)}
-          </article>)}
-        </div>}
+        <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
+          <table className="watch-main-orders-table">
+            <thead><tr>
+              <th>Заказ</th><th>Дата</th><th>Клиент</th><th>Товар</th><th>Источник</th>
+              <th>Сумма</th><th>Оплачено</th><th>Состояние</th><th aria-label="Действия"/>
+            </tr></thead>
+            <tbody>{data.rows.map(order=><Fragment key={order.orderId}>
+              <tr className={'watch-main-order-row'+(expanded===order.orderId?' is-open':'')}>
+                <td><strong>{order.externalId||'#'+order.orderId}</strong>{order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}</td>
+                <td>{order.orderDate}</td>
+                <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small><small>{order.city}</small></td>
+                <td className="watch-main-order-sku">{order.watchDescription||'—'}</td>
+                <td>{order.legacySource==='warehouse'?'Офис':'Витрина'}</td>
+                <td className="watch-main-money">{sum(order.totalAmount)}</td>
+                <td className="watch-main-money">{sum(order.receivedAmount)}<small>Долг: {sum(order.debtAmount)}</small></td>
+                <td><span className={'watch-main-order-status'+(order.pendingReplacement?' is-awaiting':order.shippingStatus==='sent'?' is-sent':' is-awaiting')}>
+                  {order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}
+                  </span></td>
+                <td><button type="button" className="watch-main-detail-button"
+                  aria-expanded={expanded===order.orderId}
+                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setSendConfirm(null)}}>
+                  {expanded===order.orderId?'Скрыть':'Открыть'}
+                </button></td>
+              </tr>
+              {expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={9}>
+                <section className="watch-main-order-detail" aria-label={'Детали заказа '+order.externalId}>
+                  <div className="watch-main-order-detail-grid">
+                    <div><small>Покупатель</small><strong>{order.recipientName}</strong>
+                      <span>{order.recipientPhone} · {order.city}</span><span>{order.deliveryMethod}</span></div>
+                    <div><small>Менеджер</small><strong>{order.managerName||'Не указан'}</strong>
+                      <span>{order.lineCount} позиций · {order.legacySource==='warehouse'?'Офис':'Витрина'}</span></div>
+                    <div><small>Оплата</small><strong>{sum(order.receivedAmount)} из {sum(order.totalAmount)}</strong>
+                      <span>Долг: {sum(order.debtAmount)} · Возвраты: {sum(order.returnAmount)}</span></div>
+                    <div><small>Доставка и гравировка</small>
+                      <strong>{order.pendingReplacement?'Замена ожидает отправки':order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':'Не отправлено'}</strong>
+                      <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span></div>
+                  </div>
+                  {order.watchDescription&&<p className="watch-orders-sku">{order.watchDescription}</p>}
+                  <div className="watch-main-order-actions">
+                    {(order.pendingReplacement||order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено')&&order.lineCount===1&&(order.returnableQuantity??1)>0&&
+                      (order.engravedLines===0||order.engravingStatus==='ready')&&
+                      (sendConfirm===order.orderId?
+                        <div className="watch-orders-shipping">
+                          <small>Подтвердите фактическую отправку. Товар будет списан со склада.</small>
+                          <button type="button" disabled={sendingId!==null} onClick={()=>void sendOrder(order.orderId)}>
+                            {sendingId===order.orderId?'Сохраняю…':'Подтвердить отправку'}</button>
+                          <button type="button" disabled={sendingId!==null} onClick={()=>setSendConfirm(null)}>Отмена</button>
+                        </div>:
+                        <button type="button" onClick={()=>setSendConfirm(order.orderId)} disabled={sendingId!==null}>Отправить клиенту</button>)}
+                    {(order.pendingReplacement||order.shippingStatus!=='sent')&&order.engravedLines>0&&order.engravingStatus!=='ready'&&
+                      <small>Сначала подтвердите готовность гравировки в логистике.</small>}
+                    {(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&
+                      !order.pendingReplacement&&order.lineCount===1&&order.returnableQuantity===1&&
+                      exchangeOrderId!==order.orderId&&
+                      <button type="button" onClick={()=>{setExchangeOrderId(order.orderId);setReturnOrderId(null);setSendConfirm(null)}}>
+                        Обменять часы</button>}
+                    {order.lineCount===1&&(Math.max(0,order.receivedAmount-order.returnAmount)>0||
+                      ((order.shippingStatus==='sent'||order.shippingStatus==='Отправлено')&&order.returnableQuantity>0))&&
+                      returnOrderId!==order.orderId&&
+                      <button type="button" onClick={()=>{setReturnOrderId(order.orderId);setExchangeOrderId(null);setSendConfirm(null)}}>
+                        Оформить возврат</button>}
+                  </div>
+                  {exchangeOrderId===order.orderId&&<WatchExchangeForm brand={brand} order={order}
+                    onCancel={()=>setExchangeOrderId(null)}
+                    onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>}
+                  {returnOrderId===order.orderId&&<WatchReturnForm brand={brand} order={order}
+                    onCancel={()=>setReturnOrderId(null)}
+                    onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>}
+                </section>
+              </td></tr>}
+            </Fragment>)}</tbody>
+          </table>
+        </LinkedTableScroll>}
       <div className="watch-orders-pages">
         <button type="button" disabled={busy||page===0} onClick={()=>setPage(x=>x-1)}>Назад</button>
         <span>Страница {page+1}</span>
