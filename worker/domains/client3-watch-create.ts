@@ -127,8 +127,11 @@ export async function createClient3WatchOrder(
     }
     // Existing Main critical operation writes money + canonical item + reservations.
     // Its completion is delayed until the brand-owned watch attachment is durable.
-    const response=await createOrder(db,order,actor,watch)
-    const pendingReservation=(response.stockWriteOff||[]).some(item=>(item as {reservationStatus?:string}).reservationStatus!=='active')
+    const result=await createOrder(db,order,actor,watch)
+    if(!result || typeof result!=='object' || !('ok' in result) || result.ok!==true)
+      throw new Error('Операция создания не вернула подтверждение. Повторите тот же запрос.')
+    const response=result as {ok:true;stockWriteOff?:Array<{reservationStatus?:string}>;[key:string]:unknown}
+    const pendingReservation=(response.stockWriteOff||[]).some(item=>item.reservationStatus!=='active')
     return json({...response,brand:input.brand,engravingShippingIndependent:true,
       pendingReservation,
       ...(pendingReservation?{warning:'Заказ записан, но резерв товара ожидает проверки. Не отправляйте его до устранения нехватки.'}:{}),
