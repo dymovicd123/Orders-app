@@ -29,8 +29,11 @@ export async function provisionClient3WatchSku(
     return bad('WATCH_SKU_INVALID','Выберите комплектацию часов.')
 
   const row=await db.prepare(`
-    SELECT v.id,v.watch_product_id,v.catalog_variant_id,v.gender,v.movement,
-      v.bracelet_material,v.dial_color,v.bracelet_color,
+    SELECT v.id,v.watch_product_id,v.catalog_variant_id,v.gender,
+      COALESCE(v.custom_movement,v.movement) AS movement,
+      COALESCE(v.custom_bracelet_material,v.bracelet_material) AS bracelet_material,
+      COALESCE(v.custom_dial_color,v.dial_color) AS dial_color,
+      COALESCE(v.custom_bracelet_color,v.bracelet_color) AS bracelet_color,
       wp.brand_id,wp.catalog_product_id,wp.model_name,b.code AS brand
     FROM watch_variants v
     JOIN watch_products wp ON wp.id=v.watch_product_id AND wp.is_active=1
