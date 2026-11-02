@@ -199,6 +199,11 @@ assert.equal((await parse(editClient3WatchVariant(db,admin,1,{
 const preparedDraft=await parse(provisionClient3WatchSku(db,admin,1,draftId))
 assert.equal(preparedDraft.status,200,JSON.stringify(preparedDraft))
 // Main permits rewriting a linked canonical SKU only BEFORE ANY operational use.
+// A catalog price set before correcting an unused SKU must remain available.
+const oldStockPosition=sql.prepare('SELECT stock_position_id FROM catalog_variants WHERE id=?')
+ .get(preparedDraft.canonicalVariantId).stock_position_id
+sql.prepare(`INSERT INTO catalog_execution_prices(stock_position_id,category,cost_price,sale_price,created_at,updated_at)
+ VALUES(?,'adult',15000,25000,'2026-11-02','2026-11-02')`).run(oldStockPosition)
 const unusedLinkedNext={gender:'female',movement:'mechanical',braceletMaterial:'steel',dialColor:'white',braceletColor:''}
 const existingCanonicalId=preparedDraft.canonicalVariantId
 const linkedEdit=await parse(editClient3WatchVariant(db,admin,1,{
@@ -212,6 +217,10 @@ const canonicalAfterEdit=sql.prepare('SELECT gender,color,material,stock_positio
 assert.equal(canonicalAfterEdit.gender,'ЖЕН')
 assert.equal(canonicalAfterEdit.color,'WATCH_DIAL_WHITE')
 assert.equal(canonicalAfterEdit.material,'WATCH_MECHANICAL_STEEL')
+const editedPrice=sql.prepare('SELECT cost_price,sale_price FROM catalog_execution_prices WHERE stock_position_id=? AND category=?')
+ .get(canonicalAfterEdit.stock_position_id,'adult')
+assert.equal(editedPrice.sale_price,25000,'Catalog price must survive correction')
+assert.equal(editedPrice.cost_price,15000,'Cost price must survive correction')
 // Now record real inventory usage; a further identity rewrite must be rejected.
 sql.prepare(`INSERT INTO inventory_stock(
  inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity
