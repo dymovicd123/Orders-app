@@ -31,7 +31,8 @@ export async function exchangeClient3Watch(
  const source=watchSourceToLegacy(input.newSource as WatchSource)
  const order=await db.prepare(`
    SELECT o.id,o.order_status,o.shipping_status,o.total_amount,o.pricing_mode,
-     wd.brand_id FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
+     wd.brand_id,wb.code AS brand_code FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
+     JOIN watch_brands wb ON wb.id=wd.brand_id
    WHERE o.id=? AND wd.brand_id=? LIMIT 1
  `).bind(orderId,brandId).first<Record<string,unknown>>()
  if(!order)return deny('WATCH_EXCHANGE_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
@@ -108,7 +109,7 @@ export async function exchangeClient3Watch(
    shipmentState:'pending',
  } as NonNullable<OrderInput['items']>[number]
  const commit:WatchExchangeCommit={
-   brand:brandId===1?'TAUWACH':'WACHIZEN',brandId,oldOrderItemId:Number(old.id),
+   brand:String(order.brand_code) as WatchExchangeCommit['brand'],brandId,oldOrderItemId:Number(old.id),
    watchVariantId:newWatchVariantId,catalogProductId:Number(sku.productId),
    catalogVariantId:Number(sku.variantId),source,engravingText:input.engravingText.trim(),
  }
