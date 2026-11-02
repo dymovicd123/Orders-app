@@ -74,6 +74,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
   if(status&& !['pending','engraving','ready','all'].includes(status))return BAD('Некорректный статус логистики')
   const rows=await db.prepare(`
     SELECT o.id AS orderId,o.external_id AS externalId,wb.code AS brand,
+      o.source_type AS legacySource,o.shipping_status AS shippingStatus,
       wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
       wd.delivery_full_address AS address,wd.postal_code AS postalCode,wd.city,
       wd.delivery_method AS deliveryMethod,wd.urgent,
