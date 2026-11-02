@@ -112,3 +112,26 @@ export async function receiveClient3WatchReturn(
    return fail('WATCH_RECEIPT_FAILED',cause instanceof Error?cause.message:'Не удалось принять возвращённые часы.')
  }
 }
+
+/** Brand-scoped pending physical intake; no stock is changed by this read. */
+export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUser,brandId:number){
+ if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
+   return fail('WATCH_RECEIPT_FORBIDDEN','Приём товара доступен менеджеру и администратору.',403)
+ const data=await db.prepare(`
+   SELECT ri.id AS returnItemId,ri.return_id AS returnId,r.order_id AS orderId,
+     o.external_id AS externalOrderId,ri.quantity,r.return_date AS returnDate,
+     wp.model_name AS modelName,wv.gender,wv.bracelet_material AS braceletMaterial,
+     wv.dial_color AS dialColor,wv.bracelet_color AS braceletColor
+   FROM return_items ri
+   JOIN returns r ON r.id=ri.return_id
+   JOIN orders o ON o.id=r.order_id
+   JOIN watch_order_details wd ON wd.order_id=r.order_id
+   JOIN watch_order_item_details wi ON wi.order_item_id=ri.order_item_id
+   JOIN watch_variants wv ON wv.id=wi.watch_variant_id
+   JOIN watch_products wp ON wp.id=wv.watch_product_id
+   WHERE wd.brand_id=? AND COALESCE(r.status,'completed')<>'cancelled'
+     AND ri.physical_tracking=1 AND ri.physical_received_at IS NULL
+   ORDER BY r.return_date DESC,ri.id DESC LIMIT 100
+ `).bind(brandId).all<Record<string,unknown>>()
+ return json({ok:true,brandId,rows:data.results||[]})
+}
