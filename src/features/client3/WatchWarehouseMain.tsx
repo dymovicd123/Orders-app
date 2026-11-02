@@ -409,6 +409,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
             brand={brand} models={models} selectedModelId={selectedModel}
             onCancel={()=>setShowInlineAdd(false)}
             onCreated={(modelId)=>{
+              setSelectedModelIdsBySource(prev=>({...prev,
+                [source]:Array.from(new Set([...prev[source],modelId]))}))
               setSelectedModel(modelId);setShowInlineAdd(false);setError('')
               refresh()
             }}/>}
