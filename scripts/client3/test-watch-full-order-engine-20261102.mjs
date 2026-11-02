@@ -558,25 +558,25 @@ const shippedBlocked=await parse(correctClient3AdminWatchDetails(db,admin,1,sele
 assert.equal(shippedBlocked.status,409,'Admin cannot revise historical shipment destination')
 // Main admin action parity: brand-scoped manager transfer + read-only
 // consequence preview before irreversible logical order deletion.
-sqlite.prepare("INSERT INTO managers(id,name) VALUES(2,'Second Watch Manager')").run()
-sqlite.prepare('INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(2,1)').run()
+sqlite.prepare("INSERT INTO managers(id,name) VALUES(900,'Second Watch Manager')").run()
+sqlite.prepare('INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(900,1)').run()
 const beforeTransferMoney=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
  .get(editOrderId)
 const beforeTransferPhysical=count('inventory_movements')
 const transferManager={requestId:'watch-admin-reassign-20261103-01',
- managerId:2,expectedManagerId:1}
+ managerId:900,expectedManagerId:1}
 const reassigned=await parse(reassignClient3AdminOrderManager(db,admin,1,editOrderId,transferManager))
 assert.equal(reassigned.ok,true,JSON.stringify(reassigned))
-assert.equal(sqlite.prepare('SELECT manager_id FROM orders WHERE id=?').get(editOrderId).manager_id,2)
+assert.equal(sqlite.prepare('SELECT manager_id FROM orders WHERE id=?').get(editOrderId).manager_id,900)
 assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
  .get(editOrderId),beforeTransferMoney)
 assert.equal(count('inventory_movements'),beforeTransferPhysical)
 const deniedManager=await parse(reassignClient3AdminOrderManager(db,manager,1,editOrderId,{
- ...transferManager,requestId:'watch-denied-reassign-20261103',expectedManagerId:2,managerId:1
+ ...transferManager,requestId:'watch-denied-reassign-20261103',expectedManagerId:900,managerId:1
 }))
 assert.equal(deniedManager.status,403)
 const foreignManager=await parse(reassignClient3AdminOrderManager(db,admin,2,editOrderId,{
- ...transferManager,requestId:'watch-foreign-reassign-20261103',expectedManagerId:2
+ ...transferManager,requestId:'watch-foreign-reassign-20261103',expectedManagerId:900
 }))
 assert.equal(foreignManager.status,404)
 const staleManager=await parse(reassignClient3AdminOrderManager(db,admin,1,editOrderId,{
@@ -585,7 +585,7 @@ const staleManager=await parse(reassignClient3AdminOrderManager(db,admin,1,editO
 assert.equal(staleManager.status,409)
 const managerRetry=await parse(reassignClient3AdminOrderManager(db,admin,1,editOrderId,{
  ...transferManager,requestId:'watch-repeat-reassign-20261103',
- expectedManagerId:2,managerId:2
+ expectedManagerId:900,managerId:900
 }))
 assert.equal(managerRetry.ok,true)
 const beforeDeletionMoney=count('payments')
