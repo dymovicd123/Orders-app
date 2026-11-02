@@ -235,3 +235,16 @@ Administrators may now **«Исправить ошибочную отправк�
 4. Resolver semantic coverage for deliberately configured synonyms/compound aliases and cross-flow end-to-end recovery. It now resolves unique case/whitespace/reference matches and existing SKU; do not claim every Main resolver scenario is identical.
 
 **Release scope:** third Worker only, no migration. Never copy historical Main/Branch2 data or expose Main APIs through Client3. UI/role browser acceptance remains pending.
+
+
+## 03.11.2026 — Stage 5 bulk warehouse operations and Main W12 semantic colors
+
+**Verified isolated acceptance:** https://github.com/dymovicd123/Orders-app/actions/runs/41528576152 — SUCCESS.
+
+- Reused Main's existing `applyInventoryMovement` and `applyInventoryTransfer` engines under one strict brand-scoped Client3 endpoint `POST /api/client3/watches/stock/bulk`. Handles one source, one brand, up to 30 different registered watch SKUs with canonical variant mapping. A single Main operation is used for the full batch (never looping over one-row write endpoints).
+- Arrival, write-off and Office↔Showcase transfer have separate stock and reserve guards, explicit original expected physical counts on outbound operations, obligatory write-off explanation and fingerprint-protected idempotent retry. Rejects foreign brands, inactive SKU, repeated variants and unauthorized manager writes. Real SQLite tests confirmed multiple stock adjustments for each mode, stale batch rejection, reserved-stock denial, replay without duplicate movements and preservation of order/money invariants.
+- The original Main CSS palette `src/styles/193-unified-inventory-operations.css` is restored with `data-unified-operation` and specific Client3 overrides for its old hard-coded blue styling: arrival green (`#15803d`), write-off red (`#b91c1c`), transfer amber (`#a16207`), correction/recount blue (`#1d4ed8`). Different modes retain distinguishable accents even when inactive. Buttons, headers, source and review controls follow the active accent.
+- Added a dedicated Main-component-based multi-SKU bulk UI on Client3 Operations, preserving single-SKU operations, selective recount, and SQL brand-scoped warehouse history. The user specifically declined carrying over the Problems/attention queue; none is added.
+- Release workflow `.github/workflows/client3-stage5-bulk-release-20261103.yml` accepts **only** the exact fully tested commit `fc4aa10e5cf986573905e4d3e92481dda6cd3866` and targets the third Worker with D1 count/fingerprint/foreign-key safeguards and without migrations. Its outcome must be checked in GitHub before claiming live deployment.
+
+**Remaining in Stage 5:** true full/session-based inventory revisions, authenticated desktop/mobile practical QA, deeper semantic resolver aliases and remaining Main inventory parity details. Main and Branch2 must remain unmodified.
