@@ -25,8 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
-          test "$(git rev-parse HEAD^)" = 'f926e62fcbe21136e3ea8605ac99cc5837361ac5'
-          test "$(git rev-parse HEAD~2)" = '68eb304be61483145345ba0a9259a05398b9aecb'
+          test "$(git rev-parse HEAD^)" = '26cb0a37eb6977de597e526932981d0e6108333a'
+          test "$(git rev-parse HEAD~3)" = '68eb304be61483145345ba0a9259a05398b9aecb'
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           bash scripts/prepare-main-stage345-port-20261102.sh
