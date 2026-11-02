@@ -3,6 +3,7 @@ import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
+import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from './client3-watch-admin-order.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
@@ -368,6 +369,24 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return receiveClient3WatchReturn(db,actor,scope.row!.id,Number(watchReceiveMatch[1]),input)
+  }
+  const adminDeleteMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/delete$/.exec(url.pathname)
+  if(adminDeleteMatch&&(request.method==='GET'||request.method==='POST')){
+    const input=request.method==='POST'?await readJson<Record<string,unknown>>(request):null
+    const scope=await scopedBrand(db,actor,input?.brand??url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return request.method==='GET'
+      ?previewClient3AdminOrderDelete(db,actor,scope.row!.id,Number(adminDeleteMatch[1]))
+      :deleteClient3AdminOrder(db,actor,scope.row!.id,Number(adminDeleteMatch[1]),
+        input as Parameters<typeof deleteClient3AdminOrder>[4])
+  }
+  const managerEditMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/manager$/.exec(url.pathname)
+  if(managerEditMatch&&request.method==='PATCH'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return reassignClient3AdminOrderManager(db,actor,scope.row!.id,Number(managerEditMatch[1]),
+      input as Parameters<typeof reassignClient3AdminOrderManager>[4])
   }
   const detailsMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/watch-details$/.exec(url.pathname)
   if(detailsMatch&&request.method==='PATCH'){
