@@ -1,0 +1,98 @@
+name: Client3 watch contract and third D1 READ-ONLY baseline
+on:
+  push:
+    branches: [client3/watch-brands-foundation-20261102]
+    paths:
+      - '.github/workflows/client3-watch-readonly-baseline-20261102.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Watch SKU, two brands, Office/Vitrine, address, urgency and payment contract
+        run: node --experimental-strip-types scripts/client3/test-watch-contract.mjs
+      - name: Main Stage3-5 inherited build compiles without watch runtime mutation
+        run: npm run build
+      - name: Prevent accidental watch deployment or production migration in this step
+        run: |
+          set -euo pipefail
+          grep -Fq 'orders_db_prod' wrangler.jsonc
+          test ! -f wrangler.client3.json
+          test ! -f client3/migrations/0120_client3_watch_brands.sql
+          echo 'CLIENT3_FOUNDATION_SOURCE_ONLY: MAIN_BRANCH_UNMODIFIED_NO_DEPLOY_NO_REMOTE_D1_WRITES'
+  client3-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify separate active Client3 Worker and D1 identity (GET only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/watch-brands-foundation-20261102
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$base/d1/database/0717f239-6d81-4837-8586-777d94e22c53" > /tmp/watch-client3-db.json
+          jq -e '.success==true and .result.name=="orders_db_client3_old_client"' /tmp/watch-client3-db.json
+          curl --fail-with-body -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "$base/workers/scripts" > /tmp/watch-client3-workers.json
+          jq -e '.success==true and any(.result[]?; .id=="orders-app-client3-old-client")' /tmp/watch-client3-workers.json
+          echo 'CLIENT3_D1_WORKER_EXACT_ISOLATION_GET_PASS'
+      - run: npm ci
+      - name: Create temporary third-only Wrangler SELECT config (not committed/deployed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .client3-watch-readonly.jsonc <<'JSON'
+          {"name":"orders-app-client3-old-client","main":"worker/index.ts","compatibility_date":"2026-07-06","d1_databases":[{"binding":"DB","database_name":"orders_db_client3_old_client","database_id":"0717f239-6d81-4837-8586-777d94e22c53"}]}
+          JSON
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|17e68a41-1d58-4a36-8a63-47c3e32443c4|0904a573-21ff-44d8-93b0-c9200f771702' .client3-watch-readonly.jsonc
+      - name: Remote third D1 SELECT only; aggregate totals, no personal data
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config .client3-watch-readonly.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('order_dispatches','order_dispatch_items','order_dispatch_corrections')) AS stage5_schema_tables,
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM managers) AS managers_count,
+            (SELECT COUNT(*) FROM app_users) AS users_count,
+            (SELECT COUNT(*) FROM catalog_products) AS products_count,
+            (SELECT COUNT(*) FROM catalog_variants) AS variants_count,
+            (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_units,
+            (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_units,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges_count" > /tmp/client3-watch-counts.json
+          jq -cSe '.[0].results[0] | select(.orders_count>=0 and .users_count>=0 and .stock_rows>=0)' /tmp/client3-watch-counts.json
+          echo 'CLIENT3_D1_CURRENT_STATE_CAPTURED_READ_ONLY_NO_SCHEMA_OR_BUSINESS_WRITES'
+      - name: Public GET health and authenticated-only API boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          code="$(curl --retry 2 --connect-timeout 12 -sS -o /tmp/client3-watch-health.json -w '%{http_code}' "$url/api/health")"
+          test "$code" = 200
+          jq -e '.ok==true' /tmp/client3-watch-health.json
+          for path in /api/orders /api/catalog /api/payments; do
+            code="$(curl --retry 2 --connect-timeout 12 -sS -o /dev/null -w '%{http_code}' "$url$path")"
+            test "$code" = 401 || { echo "Unsafe unauthorized GET: $path returned $code"; exit 3; }
+          done
+          echo 'CLIENT3_THIRD_WORKER_HEALTH_AND_ANONYMOUS_AUTH_PASS'
