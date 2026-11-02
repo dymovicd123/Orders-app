@@ -1,0 +1,47 @@
+name: Main Stage345 final scoped Return and release gate
+on:
+  push:
+    branches: [candidate/main-stage345-port-20261102]
+    paths:
+      - '.github/workflows/main345-final-qa-20261102.yml'
+permissions:
+  contents: read
+jobs:
+  final:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Exact expected Main-derived candidate, schema and no Main data writes
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/candidate/main-stage345-port-20261102
+          test "$(git rev-parse HEAD^)" = f3743e198eb7347087b5de5a5414530b53350424
+          git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
+          grep -Fq '"database_name": "orders_db_prod"' wrangler.jsonc
+      - run: npm ci
+      - name: Legacy status-only correction when earlier physical Return committed
+        run: node --experimental-strip-types scripts/test-work733-partial-return-shipping-undo-20261101.mjs
+      - name: Stage4 pending physical inbox remains visible on filters
+        run: node scripts/test-work733-smart-exchange-inbox-20261101.mjs
+      - name: Real Worker Return and both kinds of Exchange races
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs
+          node --experimental-strip-types scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs
+      - name: Stage5 partial, Workshop, replacements, network-loss and Undo
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/test-stage5-client-quantity-replay-20261102.mjs
+          node --experimental-strip-types scripts/test-stage5b-http-routes-20261101.mjs
+          node --experimental-strip-types scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs
+      - name: Existing Main business gate and production build
+        run: |
+          set -euo pipefail
+          npm run release:check
+          npm run build
+          npm audit --omit=dev --audit-level=high
+          echo 'FINAL_MAIN345_STAGE3_STAGE4_STAGE5_SOURCE_PASS'
