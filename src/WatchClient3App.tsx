@@ -53,6 +53,7 @@ export function WatchClient3App() {
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
+  const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [catalogBusy, setCatalogBusy] = useState(false)
 
@@ -121,6 +122,7 @@ export function WatchClient3App() {
         method:'POST',headers:jsonHeaders,body:JSON.stringify(draft),
       })
     setSuccess('Заказ '+(result.externalId||'#'+result.orderId)+' сохранён. Товар не отправлен.')
+    setLastOrderBrand(draft.brand)
     setWarning(result.pendingReservation?(result.warning||'Резерв часов требует проверки.'): '')
     setError('')
     setTab('orders')
@@ -223,7 +225,7 @@ export function WatchClient3App() {
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       {success && <p role="status" className="watch-shell-success">{success}</p>}
       {warning && <p role="alert" className="watch-shell-warning">{warning}</p>}
-      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'orders' ? (brands.length ? <WatchOrdersPanel allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
+      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'orders' ? (brands.length ? <WatchOrdersPanel initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}/> : <p className="watch-shell-loading">Загрузка доступных брендов…</p>) : tab === 'create'
         ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
           : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
               isAdmin={user.role==='admin'} managers={managerChoices}
