@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import '../../styles/client3-watch-order.css'
 import {
   WATCH_OPTIONS, WATCH_PAYMENTS, validateWatchOrderInput,
@@ -23,6 +23,10 @@ export type WatchOrderChoice = {
   catalogPriceSnapshot?: number | null
 }
 export type WatchOrderDraftPayload = ReturnType<typeof validateWatchOrderInput> & {
+  shippingDeadlineLocal: string
+  requestId: string
+  receivedAmount: number
+  managerId?: number
   watchVariantId: number
   catalogVariantId: number
   quantity: number
@@ -33,6 +37,8 @@ export type WatchOrderDraftPayload = ReturnType<typeof validateWatchOrderInput> 
 type Props = {
   allowedBrands: readonly WatchBrand[]
   catalog: readonly WatchOrderChoice[]
+  managers?: readonly {brand:WatchBrand;id:number;name:string}[]
+  isAdmin?: boolean
   deliveryMethods: readonly string[]
   onSave: (draft: WatchOrderDraftPayload) => Promise<void> | void
 }
@@ -52,12 +58,15 @@ function descriptor(row:WatchOrderChoice):string {
 }
 
 /** Tenant-specific draft. Caller must POST only through authorized Client3 API. */
-export function WatchOrderForm({allowedBrands,catalog,deliveryMethods,onSave}:Props) {
+export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,deliveryMethods,onSave}:Props) {
   const [brand,setBrand]=useState<WatchBrand>(allowedBrands[0]||'TAUWACH')
   const [source,setSource]=useState<WatchSource>('office')
   const [variantId,setVariantId]=useState(0)
   const [quantity,setQuantity]=useState(1)
   const [unitPrice,setUnitPrice]=useState('')
+  const [receivedAmount,setReceivedAmount]=useState('0')
+  const [managerId,setManagerId]=useState(0)
+  const requestRef=useRef<{fingerprint:string;requestId:string}|null>(null)
   const [engravingText,setEngravingText]=useState('')
   const [recipientName,setRecipientName]=useState('')
   const [recipientPhone,setRecipientPhone]=useState('')
@@ -71,13 +80,16 @@ export function WatchOrderForm({allowedBrands,catalog,deliveryMethods,onSave}:Pr
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const rows=useMemo(()=>catalog.filter(x=>x.brand===brand),[catalog,brand])
+  const staff=managers.filter(x=>x.brand===brand)
   const chosen=rows.find(x=>x.watchVariantId===variantId)
   const free=chosen?available(chosen,source):0
   const price=Number(unitPrice)
   const canSave=Boolean(
     allowedBrands.includes(brand)&&chosen&&chosen.catalogVariantId>0&&
     Number.isSafeInteger(quantity)&&quantity>0&&quantity<=free&&
-    Number.isSafeInteger(price)&&price>=0&&!busy
+    Number.isSafeInteger(price)&&price>=0&&Number.isSafeInteger(Number(receivedAmount))&&
+    Number(receivedAmount)>=0&&Number(receivedAmount)<=price*quantity&&
+    (!isAdmin||staff.some(x=>x.id===managerId))&&!busy
   )
   const submit=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
@@ -88,11 +100,17 @@ export function WatchOrderForm({allowedBrands,catalog,deliveryMethods,onSave}:Pr
         brand,source,recipientName,recipientPhone,address,postalCode,city,deliveryMethod,
         shippingDeadlineLocal,urgent,paymentMethod,
       })
+      const payload={...base,shippingDeadlineLocal,
+        watchVariantId:chosen.watchVariantId,catalogVariantId:chosen.catalogVariantId,
+        quantity,catalogPriceSnapshot:chosen.catalogPriceSnapshot??null,unitPrice:price,
+        receivedAmount:Number(receivedAmount),engravingText:engravingText.trim(),
+        ...(isAdmin?{managerId}:{})}
+      const fingerprint=JSON.stringify(payload)
+      if(requestRef.current?.fingerprint!==fingerprint)
+        requestRef.current={fingerprint,requestId:'watch-'+crypto.randomUUID()}
       setBusy(true)
       await onSave({
-        ...base,watchVariantId:chosen.watchVariantId,catalogVariantId:chosen.catalogVariantId,
-        quantity,catalogPriceSnapshot:chosen.catalogPriceSnapshot??null,unitPrice:price,
-        engravingText:engravingText.trim(),
+        ...payload,requestId:requestRef.current!.requestId,
       })
     }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить заказ.')}finally{setBusy(false)}
   }
@@ -105,7 +123,7 @@ export function WatchOrderForm({allowedBrands,catalog,deliveryMethods,onSave}:Pr
       <legend>Часы и наличие</legend>
       <div className="watch-order-form-grid">
         <label>Бренд
-          <select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setVariantId(0)}}>
+          <select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setVariantId(0);setManagerId(0)}}>
             {allowedBrands.map(b=><option key={b} value={b}>{b}</option>)}
           </select>
         </label>
@@ -133,6 +151,16 @@ export function WatchOrderForm({allowedBrands,catalog,deliveryMethods,onSave}:Pr
         <label>Цена продажи, ₸
           <input type="number" min={0} step={1} value={unitPrice} onChange={e=>setUnitPrice(e.target.value)} required/>
         </label>
+        <label>Получено от клиента, ₸
+          <input type="number" min={0} max={Math.max(0,price*quantity)} step={1} value={receivedAmount}
+            onChange={e=>setReceivedAmount(e.target.value)} required/>
+        </label>
+        {isAdmin?<label>Менеджер продажи
+          <select value={managerId} onChange={e=>setManagerId(Number(e.target.value))} required>
+            <option value={0}>Выберите менеджера бренда</option>
+            {staff.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>:null}
         <label>Способ оплаты
           <select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value as WatchPaymentMethod)}>
             {WATCH_PAYMENTS.map(p=><option key={p} value={p}>{p}</option>)}
