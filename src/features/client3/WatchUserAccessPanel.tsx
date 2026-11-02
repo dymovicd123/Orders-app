@@ -42,7 +42,7 @@ export function WatchUserAccessPanel(){
     finally{setBusy(false)}
   }
   return <section className="watch-users">
-    <h2>Учётные записи</h2>
+    <h2>Сотрудники и доступ</h2>
     <p>Новый администратор получает доступ к обоим брендам. Пароль укажите временный:
        после первого входа система обязательно потребует его сменить.</p>
     <form onSubmit={e=>void create(e)}>
