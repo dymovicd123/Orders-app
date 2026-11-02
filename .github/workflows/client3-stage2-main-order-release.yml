@@ -2,7 +2,7 @@ name: Client3 Step1 safe linked SKU edits release (third only)
 on:
   push:
     branches: [client3/step1-unused-linked-sku-edit-20261102]
-    paths: ['.github/workflows/client3-step1-catalog-edit-release.yml']
+    paths: ['.github/workflows/client3-stage2-main-order-release.yml']
 permissions: {contents: read}
 jobs:
   client3-only:
