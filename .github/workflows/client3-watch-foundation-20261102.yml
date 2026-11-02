@@ -57,6 +57,8 @@ jobs:
         run: node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
       - name: Real watch create + reserve + payment on fully migrated disposable D1
         run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Real Main one-unit same-brand watches exchange with exact SKU and engraving
+        run: node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
       - name: Full Main foundation build on isolated tenant code
         run: npm run build
       - name: Dependencies audit
