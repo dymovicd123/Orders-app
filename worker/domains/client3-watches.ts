@@ -2,6 +2,7 @@ import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
+import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
@@ -367,6 +368,14 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return receiveClient3WatchReturn(db,actor,scope.row!.id,Number(watchReceiveMatch[1]),input)
+  }
+  const detailsMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/watch-details$/.exec(url.pathname)
+  if(detailsMatch&&request.method==='PATCH'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return correctClient3AdminWatchDetails(db,actor,scope.row!.id,Number(detailsMatch[1]),
+      input as Parameters<typeof correctClient3AdminWatchDetails>[4])
   }
   const metaMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/metadata$/.exec(url.pathname)
   if(metaMatch&&request.method==='PATCH'){
