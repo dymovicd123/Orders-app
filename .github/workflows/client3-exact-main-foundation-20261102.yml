@@ -23,6 +23,10 @@ jobs:
         run: node scripts/client3/test-main-foundation-parity-20261102.mjs
       - name: Client3 auth / tenant / API isolation
         run: node scripts/client3/test-watch-shell-20261102.mjs
+      - name: Real watch form and logistics component regression
+        run: |
+          node scripts/client3/test-watch-form-20261102.mjs
+          node scripts/client3/test-watch-logistics-20261102.mjs
       - name: Actual disposable stock, purchase, return and exchange lifecycles
         run: |
           node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
