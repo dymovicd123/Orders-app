@@ -1,0 +1,29 @@
+name: Client3 order expanded ledger (NO DEPLOY)
+on:
+  push:
+    branches: [client3/order-ledger-main-parity-20261102]
+    paths: ['.github/workflows/client3-order-ledger-acceptance-20261102.yml']
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Keep Main and Branch2 out of scope
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/order-ledger-main-parity-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+      - run: npm ci
+      - name: Read real Main payment ledger and multi-line SKU details for each Client3 order
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node scripts/client3/test-main-workflow-parity-20261102.mjs
+          node scripts/client3/test-watch-form-20261102.mjs
+          npm run build
