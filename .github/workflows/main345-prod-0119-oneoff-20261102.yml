@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/candidate/main-stage345-port-20261102'
-          test "$(git rev-parse HEAD^)" = 'd02ff633a428ebf4896cec12ac071ae4b090d01b'
+          test "$(git rev-parse HEAD^)" = '42d51460fa09c84a55ab0c62f9d3aa4537495aad'
           git fetch -q origin +refs/heads/main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = '68eb304be61483145345ba0a9259a05398b9aecb'
           git merge-base --is-ancestor 68eb304be61483145345ba0a9259a05398b9aecb HEAD
@@ -78,7 +78,7 @@ jobs:
             (SELECT coalesce(sum(reserved_quantity),0) FROM inventory_stock) AS reserved_total,
             (SELECT count(*) FROM inventory_reservations) AS reservation_count;
           SQL
-          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --file /tmp/main345-fingerprint.sql | jq -cS '.[0].results[0]' > /tmp/main345-business-before.json
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command="$(cat /tmp/main345-fingerprint.sql)" | jq -cS '.[0].results[0]' > /tmp/main345-business-before.json
           test -s /tmp/main345-business-before.json
           echo 'PROD_BUSINESS_FINGERPRINT_BEFORE_CAPTURED'
       - name: Capture mandatory D1 Time Travel restore bookmark before any write
@@ -101,6 +101,6 @@ jobs:
           set -euo pipefail
           npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command="SELECT (SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('order_dispatches','order_dispatch_items','order_dispatch_corrections')) AS n, (SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_order_dispatches_order','idx_order_dispatch_items_item','idx_order_dispatch_items_reservation','idx_order_dispatch_corrections_item')) AS idx, (SELECT count(*) FROM order_dispatches) AS d, (SELECT count(*) FROM order_dispatch_items) AS di, (SELECT count(*) FROM order_dispatch_corrections) AS dc" > /tmp/main345-schema-after.json
           jq -e '.[0].results[0] | .n==3 and .idx==4 and .d==0 and .di==0 and .dc==0' /tmp/main345-schema-after.json
-          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --file /tmp/main345-fingerprint.sql | jq -cS '.[0].results[0]' > /tmp/main345-business-after.json
+          npx wrangler d1 execute orders_db_prod --remote --config wrangler.jsonc --json --command="$(cat /tmp/main345-fingerprint.sql)" | jq -cS '.[0].results[0]' > /tmp/main345-business-after.json
           diff -u /tmp/main345-business-before.json /tmp/main345-business-after.json
           echo 'MAIN345_PRODUCTION_SCHEMA_0119_MIGRATED_AND_BUSINESS_UNCHANGED'
