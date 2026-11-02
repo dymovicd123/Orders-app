@@ -1,0 +1,65 @@
+name: Client3 Watches read-only existing tenant preflight (NO DEPLOY)
+on:
+  push:
+    branches: [client3/watch-redesign-20261102]
+    paths:
+      - '.github/workflows/client3-watch-live-readonly-preflight-20261102.yml'
+permissions:
+  contents: read
+jobs:
+  remote-select-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Third DB identity and guaranteed read-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/client3/watch-redesign-20261102'
+          grep -Fq '"name": "orders-app-client3-old-client"' wrangler.jsonc
+          grep -Fq '"database_id": "0717f239-6d81-4837-8586-777d94e22c53"' wrangler.jsonc
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|17e68a41-1d58-4a36-8a63-47c3e32443c4|40065052-854e-44b8-bcd5-251bdd488301' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          echo CLIENT3_EXACT_REMOTE_READ_ONLY_TARGET_PASS
+      - run: npm ci
+      - name: Read only current customer3 business counts and schema metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --config wrangler.jsonc --remote --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM managers) AS managers_count,
+              (SELECT COUNT(*) FROM catalog_products) AS products_count,
+              (SELECT COUNT(*) FROM catalog_variants) AS variants_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM inventory_stock) AS stock_rows,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN
+                ('order_dispatches','order_dispatch_items','order_dispatch_corrections')) AS stage5_dispatch_tables,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN
+                ('watch_brands','watch_products','watch_order_details','watch_logistics_jobs')) AS watch_domain_tables" \
+            | jq -ce '.[0].results[0]' > /tmp/client3-readonly-snapshot.json
+          jq -e '.orders_count>=0 and .users_count>=0 and .stage5_dispatch_tables>=0 and .watch_domain_tables>=0' /tmp/client3-readonly-snapshot.json
+          echo "Client3 current non-personal counts and schema summary:"
+          cat /tmp/client3-readonly-snapshot.json
+      - name: Public third Worker auth readiness and unauthorized API guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          url=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          curl --fail-with-body --retry 3 -fsS "$url/api/auth/status" \
+            | jq -c '{ok,hasUsers,setupReady}' > /tmp/client3-setup-status.json
+          jq -e '.ok==true' /tmp/client3-setup-status.json
+          cat /tmp/client3-setup-status.json
+          status="$(curl -sS -o /dev/null -w '%{http_code}' "$url/api/orders")"
+          test "$status" = 401
+          echo CLIENT3_LIVE_READ_ONLY_PRECHECK_PASS_NO_REMOTE_WRITES
