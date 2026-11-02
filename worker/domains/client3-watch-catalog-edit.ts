@@ -1,6 +1,8 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {normalizeWatchVariant,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
+import {catalogVariantHasOperationalUsage,ensureCatalogExecutionV3,findCatalogCombinationV3} from './catalog.ts'
+import {materialFor,genderFor,dialFor,WATCH_LENGTH} from './client3-watch-provision.ts'
 
 const error=(message:string,status=400)=>json({ok:false,message},{status})
 const clean=(x:unknown)=>typeof x==='string'?x.trim().replace(/\s+/g,' '):''
@@ -37,9 +39,8 @@ const cols=[
 type EditInput=WatchVariantInput&{watchVariantId?:unknown;watchProductId?:unknown;
  expected?:WatchVariantInput}
 
-/** Main refuses identity corrections after an SKU participates in operations.
- * Keep the exact same rule: a linked position's identity is immutable, while
- * an unlinked draft can be corrected without creating a duplicate SKU.
+/** Exact Main rule: an SKU with operational history is immutable. Linked but
+ * never-used SKUs can be edited in place, preserving their canonical ID.
  */
 export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brandId:number,input:EditInput){
  if(actor.role!=='admin')return error('Редактирование позиций доступно только администратору.',403)
@@ -68,8 +69,6 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
    return error('Характеристики уже изменились. Обновите каталог и повторите исправление.',409)
  const after=[next.gender,next.movement,next.braceletMaterial,next.dialColor,next.braceletColor]
  if(JSON.stringify(prev)===JSON.stringify(after))return json({ok:true,unchanged:true,watchVariantId:variantId})
- if(row.catalog_variant_id)
-   return error('Эта позиция уже связана со складским SKU. Как в Main, нельзя переписывать идентичность используемой позиции. Создайте новую комплектацию и удалите старую после разбора остатков и резервов.',409)
  for(const [kind,key] of cols){
    if(kind==='leatherColors'&&next.braceletMaterial!=='leather')continue
    const table=kind==='leatherColors'?'watch_reference_values':'watch_reference_values_v5'
@@ -88,6 +87,81 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
    AND COALESCE(a.bracelet_color,v.bracelet_color)=? LIMIT 1`)
    .bind(productId,variantId,...after).first<{id:number}>()
  if(collision)return error('Такая комплектация уже существует. Выберите её вместо создания дубля.',409)
+ if(row.catalog_variant_id){
+   const canonicalId=row.catalog_variant_id
+   const owned=await db.prepare(`SELECT cv.id,cv.product_id,cv.stock_position_id,
+       cv.is_active,cp.is_active AS product_active,sp.is_active AS execution_active
+       FROM catalog_variants cv
+       JOIN catalog_products cp ON cp.id=cv.product_id
+       JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
+       JOIN watch_products wp ON wp.catalog_product_id=cv.product_id
+       WHERE cv.id=? AND wp.id=? AND wp.brand_id=?`)
+     .bind(canonicalId,productId,brandId).first<{
+       id:number;product_id:number;stock_position_id:number;is_active:number;
+       product_active:number;execution_active:number
+     }>()
+   if(!owned||owned.is_active!==1||owned.product_active!==1||owned.execution_active!==1)
+     return error('Складской SKU или исполнение уже удалены. Обновите каталог.',409)
+   if(await catalogVariantHasOperationalUsage(db,canonicalId))
+     return error('Эта позиция уже участвовала в заказах, приходе, пересчётах, резервах или других движениях. Как в Main, её идентичность менять нельзя. Создайте правильную комплектацию отдельно, затем удалите старую после разбора остатков.',409)
+   const material=materialFor({movement:next.movement,bracelet_material:next.braceletMaterial,
+     bracelet_color:next.braceletColor})
+   const gender=genderFor(next.gender),color=dialFor(next.dialColor)
+   const now=new Date().toISOString()
+   let execution:{id:number}
+   try{
+     execution=await ensureCatalogExecutionV3(db,owned.product_id,material,WATCH_LENGTH,now)
+     const same=await findCatalogCombinationV3(db,execution.id,'adult',gender,color,'',canonicalId)
+     if(same?.id)return error('В складском каталоге уже есть такая комбинация. Выберите её вместо создания дубля.',409)
+   }catch(e){return error(e instanceof Error?e.message:'Не удалось проверить исполнение часов.',409)}
+   const sentinel='__WATCH_V5__'+crypto.randomUUID().replaceAll('-','')
+   try{
+     const result=await db.batch([
+       // Guard the Main operational ledger again at commit time.
+       db.prepare(`UPDATE catalog_variants
+         SET stock_position_id=?,gender=?,color=?,material=?,length=?,updated_at=?
+         WHERE id=? AND product_id=? AND is_active=1 AND stock_position_id=?
+           AND NOT EXISTS(SELECT 1 FROM order_items oi WHERE oi.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_stock st WHERE st.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_movements im WHERE im.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_reservations ir WHERE ir.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_lifecycle_events le WHERE le.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_transfer_items ti WHERE ti.variant_id=catalog_variants.id)
+           AND NOT EXISTS(SELECT 1 FROM inventory_stocktake_items si WHERE si.variant_id=catalog_variants.id)`)
+         .bind(execution.id,gender,color,material,WATCH_LENGTH,now,canonicalId,owned.product_id,owned.stock_position_id),
+       db.prepare(`UPDATE watch_variants SET gender=?,movement='quartz',
+         bracelet_material='leather',dial_color='black',bracelet_color=?
+         WHERE id=? AND watch_product_id=? AND is_active=1 AND catalog_variant_id=?
+           AND EXISTS (SELECT 1 FROM catalog_variants cv
+             WHERE cv.id=? AND cv.stock_position_id=? AND cv.updated_at=? AND cv.is_active=1)`)
+         .bind(next.gender,sentinel,variantId,productId,canonicalId,canonicalId,execution.id,now),
+       db.prepare(`INSERT INTO watch_variant_attributes_v5(
+         watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
+       ) SELECT v.id,v.watch_product_id,v.gender,?,?,?,?
+         FROM watch_variants v
+         WHERE v.id=? AND v.catalog_variant_id=? AND v.bracelet_color=?
+         ON CONFLICT(watch_variant_id) DO UPDATE SET gender=excluded.gender,
+           movement=excluded.movement,bracelet_material=excluded.bracelet_material,
+           dial_color=excluded.dial_color,bracelet_color=excluded.bracelet_color`)
+         .bind(next.movement,next.braceletMaterial,next.dialColor,next.braceletColor,variantId,canonicalId,sentinel),
+       // Keep the catalogue sale/cost snapshot when a new execution has no price yet.
+       db.prepare(`INSERT OR IGNORE INTO catalog_execution_prices(
+         stock_position_id,category,cost_price,sale_price,created_at,updated_at)
+         SELECT ?,ep.category,ep.cost_price,ep.sale_price,?,?
+         FROM catalog_execution_prices ep
+         WHERE ep.stock_position_id=? AND ep.category='adult'
+           AND EXISTS(SELECT 1 FROM catalog_variants cv
+             WHERE cv.id=? AND cv.updated_at=? AND cv.stock_position_id=?)`)
+         .bind(execution.id,now,now,owned.stock_position_id,canonicalId,now,execution.id),
+     ])
+     if(result.slice(0,3).some(x=>Number(x.meta?.changes||0)!==1))
+       return error('Складской SKU изменился одновременно. Обновите каталог и проверьте результат перед повтором.',409)
+     return json({ok:true,watchVariantId:variantId,canonicalVariantId:canonicalId,
+       edited:true,historyPreserved:true,stockCreated:false})
+   }catch{
+     return error('Изменение SKU не удалось. Обновите каталог и проверьте связанные операции; историю не переписываем.',409)
+   }
+ }
  try{
    // Move the old constrained identity to an opaque unique sentinel. Otherwise
    // editing a draft leaves its previous LEGACY UNIQUE key occupied, preventing a
