@@ -4,7 +4,8 @@ import {DatabaseSync} from 'node:sqlite'
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
 import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker/domains/client3-watch-inventory.ts'
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
-import {countClient3WatchStock} from '../../worker/domains/client3-watch-stocktake.ts'
+import {countClient3WatchStock,countClient3WatchStockBatch} from '../../worker/domains/client3-watch-stocktake.ts'
+import {listClient3WatchStockHistory} from '../../worker/domains/client3-watch-history.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -94,9 +95,75 @@ assert.equal(stock('warehouse').quantity,3)
 const countConflict=await parse(countClient3WatchStock(db,admin,1,{...physicalCount,countedQuantity:5}))
 assert.equal(countConflict.status,409)
 assert.equal(stock('warehouse').quantity,3)
+const testNew=sqlite.prepare("INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'female','mechanical','steel','silver','')").run()
+const newWatchId=Number(testNew.lastInsertRowid)
+const second=await parse(provisionClient3WatchSku(db,admin,1,newWatchId))
+assert.equal(second.ok,true,JSON.stringify(second))
+const arrival2=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:newWatchId,quantity:4,requestId:'watch-stage5-second-arrival',
+}))
+assert.equal(arrival2.ok,true,JSON.stringify(arrival2))
+const physical2=()=>sqlite.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=? AND inventory_source='warehouse'")
+ .get(second.canonicalVariantId).quantity
+assert.equal(physical2(),4)
+const checkBatch={source:'office',confirmed:true,requestId:'watch-stage5-two-item-batch',items:[
+ {watchVariantId:1,expectedPhysical:3,countedQuantity:2},
+ {watchVariantId:newWatchId,expectedPhysical:4,countedQuantity:5},
+]}
+const beforeBatchMovements=count('inventory_movements')
+const changedBatch=await parse(countClient3WatchStockBatch(db,admin,1,checkBatch))
+assert.equal(changedBatch.status,200,JSON.stringify(changedBatch))
+assert.equal(changedBatch.watchItemCount,2)
+assert.equal(stock('warehouse').quantity,2)
+assert.equal(physical2(),5)
+const batchReplay=await parse(countClient3WatchStockBatch(db,admin,1,checkBatch))
+assert.equal(batchReplay.ok,true,JSON.stringify(batchReplay))
+assert.equal(stock('warehouse').quantity,2)
+assert.equal(physical2(),5)
+assert.equal(count('inventory_movements'),beforeBatchMovements+2,
+ 'Main atomic revision records a physical movement for each changed SKU')
+const changedReplay=await parse(countClient3WatchStockBatch(db,admin,1,{
+ ...checkBatch,items:[checkBatch.items[0],{...checkBatch.items[1],countedQuantity:6}],
+}))
+assert.equal(changedReplay.status,409,'A reused request ID with different quantity must conflict')
+const staleBatch=await parse(countClient3WatchStockBatch(db,admin,1,{
+ ...checkBatch,requestId:'watch-stage5-stale-batch',
+ items:[{...checkBatch.items[0],expectedPhysical:3},
+        {...checkBatch.items[1],expectedPhysical:4}],
+}))
+assert.equal(staleBatch.status,409,'Atomic batch rejects if ANY old physical quantity changed')
+assert.equal(stock('warehouse').quantity,2)
+assert.equal(physical2(),5)
+const duplicate=await parse(countClient3WatchStockBatch(db,admin,1,{
+ ...checkBatch,requestId:'watch-stage5-duplicate',
+ items:[checkBatch.items[0],checkBatch.items[0]],
+}))
+assert.equal(duplicate.status,409)
+const stranger=await parse(countClient3WatchStockBatch(db,admin,2,{
+ ...checkBatch,requestId:'watch-stage5-wrong-brand',
+}))
+assert.equal(stranger.status,409,'Brand ownership must be enforced before stock engine')
+const notAdmin=await parse(countClient3WatchStockBatch(db,{
+ id:2,role:'manager',managerId:2,employeeRole:'Менеджер',
+},1,{...checkBatch,requestId:'watch-stage5-denied'}))
+assert.equal(notAdmin.status,403)
+const readHistory=async(source,brandId=1,actor=admin,beforeId=0)=>
+ parse(listClient3WatchStockHistory(db,actor,brandId,new URL(
+  'https://example.test/?source='+source+(beforeId?'&beforeId='+beforeId:''))))
+const history=await readHistory('office')
+assert.equal(history.ok,true,JSON.stringify(history))
+assert(history.rows.some(row=>row.modelName==='REAL ENGINE TEST'&&row.source==='office'))
+assert(history.rows.every(row=>row.watchVariantId===1||row.watchVariantId===newWatchId))
+assert(history.rows.every(row=>row.source==='office'))
+assert.equal((await readHistory('office',2)).rows.length,0)
+assert.equal((await readHistory('office',1,{id:2,role:'manager',employeeRole:'Менеджер'})).status,403)
+const showcaseHistory=await readHistory('showcase')
+assert(showcaseHistory.rows.every(x=>x.source==='showcase'))
+const invalidHistory=await readHistory('bogus')
+assert.equal(invalidHistory.status,400)
 assert.equal(count('orders'),baseOrders,'Warehouse operations cannot create business orders')
 assert.equal(count('payments'),basePayments,'Warehouse operations cannot record money')
 assert(count('inventory_movements')>=initialMovement+3,'All warehouse operations must leave movement history')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
-console.log('CLIENT3_FULL_MAIN_STOCK_ENGINE_PASS: 115 migrations + watches, real arrival/transfer/writeoff, idempotence, FK and money/order isolation')
+console.log('CLIENT3_FULL_MAIN_STOCK_ENGINE_PASS: real Main arrival/transfer/writeoff, multi-SKU atomic stocktake, history/brand isolation, replay and money invariants')
