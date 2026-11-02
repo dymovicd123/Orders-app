@@ -117,8 +117,8 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
   }
   return <form className="watch-order-form" onSubmit={event=>void submit(event)}>
     <header className="watch-order-form-header">
-      <h2>Новый заказ часов</h2>
-      <p>Бренд → место хранения → часы → гравировка и доставка</p>
+      <h2>Данные заказа</h2>
+      <p>Сначала выберите наличие, затем укажите оплату, гравировку и доставку.</p>
     </header>
     <fieldset>
       <legend>Часы и наличие</legend>
