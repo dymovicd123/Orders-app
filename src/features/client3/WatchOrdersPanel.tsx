@@ -253,7 +253,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics,isA
 
                   {isAdmin&&<WatchAdminOrderActions
                     brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
-                    managerId={Number(order.managerId||0)}
+                    managerId={Number(order.managerId||0)} paymentLines={order.paymentLines}
                     onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
                   {editOrderId===order.orderId&&<WatchOrderCorrections
                     brand={brand} order={order} isAdmin={isAdmin}
