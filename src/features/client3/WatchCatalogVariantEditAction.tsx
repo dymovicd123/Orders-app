@@ -42,18 +42,6 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
  const save=async(event:FormEvent<HTMLFormElement>)=>{
    event.preventDefault()
    if(busy||!row.watchVariantId)return
-   if(linked){
-     const comparable=(v:WatchVariantInput)=>JSON.stringify([
-       v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletMaterial==='leather'?v.braceletColor||'':'',
-     ])
-     if(comparable(draft)===comparable(initial())){
-       setError('Измените хотя бы одну характеристику, чтобы создать исправленную позицию.')
-       return
-     }
-     onCreateReplacement({...draft,braceletColor:draft.braceletMaterial==='leather'?draft.braceletColor:''})
-     setOpen(false)
-     return
-   }
    setBusy(true);setError('')
    try{
      await request(brand,{
@@ -80,10 +68,10 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
          <p>Размер и длина не используются. Все характеристики берутся из общих справочников.</p>
        </div>
        {linked?<div className="catalog-retirement-explanation">
-         <strong>Позиция уже связана со складским учётом</strong>
-         <p>Изменение её идентичности может переписать историю движения и заказов.
-           Как и в Main, для такой позиции сначала создаётся правильная комплектация.
-           Старую затем удаляют через проверку остатков и резервов.</p>
+         <strong>Складской SKU связан</strong>
+         <p>Если позиция ещё не использовалась в заказах, приходах, движениях или резервах,
+           изменения сохранятся под прежним складским ID, как в Main.
+           Иначе сервер не позволит изменить её историю — можно создать новую комплектацию.</p>
        </div>:null}
        <form className="catalog-variant-form-grid client3-watch-edit-fields" onSubmit={event=>void save(event)}>
          <label>Пол
@@ -115,8 +103,19 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
            </select>
          </label>}
          {error&&<p className="catalog-retirement-modal-error" role="alert">{error}</p>}
+         {linked&&error&&<button className="secondary" type="button" onClick={()=>{
+           const comparable=(v:WatchVariantInput)=>JSON.stringify([
+             v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletMaterial==='leather'?v.braceletColor||'':'',
+           ])
+           if(comparable(draft)===comparable(initial())){
+             setError('Укажите хотя бы одну новую характеристику для замены.')
+             return
+           }
+           onCreateReplacement({...draft,braceletColor:draft.braceletMaterial==='leather'?draft.braceletColor:''})
+           setOpen(false)
+         }}>Создать новую комплектацию вместо изменения старой</button>}
          <div className="modal-actions">
-           <button type="submit" className="primary" disabled={busy}> {busy?'Сохранение…':linked?'Заполнить новую позицию':'Сохранить изменения'}</button>
+           <button type="submit" className="primary" disabled={busy}> {busy?'Сохранение…':'Сохранить изменения'}</button>
            <button type="button" className="secondary" disabled={busy} onClick={()=>setOpen(false)}>Отмена</button>
          </div>
        </form>
