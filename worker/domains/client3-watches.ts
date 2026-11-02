@@ -62,12 +62,15 @@ export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
       v.id AS watchVariantId,v.catalog_variant_id AS catalogVariantId,
       v.gender,v.movement,v.bracelet_material AS braceletMaterial,
       v.dial_color AS dialColor,v.bracelet_color AS braceletColor,
+      MAX(ep.sale_price) AS catalogPriceSnapshot,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.quantity ELSE 0 END),0) AS officePhysical,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.reserved_quantity ELSE 0 END),0) AS officeReserved,
       COALESCE(SUM(CASE WHEN s.inventory_source='boutique' THEN s.quantity ELSE 0 END),0) AS showcasePhysical,
       COALESCE(SUM(CASE WHEN s.inventory_source='boutique' THEN s.reserved_quantity ELSE 0 END),0) AS showcaseReserved
     FROM watch_products wp
     JOIN watch_variants v ON v.watch_product_id=wp.id AND v.is_active=1
+    JOIN catalog_variants cv ON cv.id=v.catalog_variant_id AND cv.is_active=1
+    LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult')
     LEFT JOIN inventory_stock s ON s.variant_id=v.catalog_variant_id
     WHERE wp.brand_id=? AND wp.is_active=1
       AND wp.catalog_product_id IS NOT NULL AND v.catalog_variant_id IS NOT NULL
