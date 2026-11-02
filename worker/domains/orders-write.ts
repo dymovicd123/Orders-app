@@ -974,9 +974,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
 
         const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
         const observedByVariant = new Map<string, number>();
-        for (const item of normalizedItems) {
+        for (const [itemIndex,item] of normalizedItems.entries()) {
           if (watchCommit) {
-            preResolvedCatalog.push({ productId: watchCommit.catalogProductId, variantId: watchCommit.catalogVariantId });
+            const watchLine=watchCommit.items?.[itemIndex] || (itemIndex===0?watchCommit:null);
+            if(!watchLine)throw new CriticalOperationConflictError('Не найдена комплектация часов для позиции '+(itemIndex+1)+'.');
+            preResolvedCatalog.push({ productId: watchLine.catalogProductId, variantId: watchLine.catalogVariantId });
             continue;
           }
           const allowRetiredRecreate = !item.isWorkshop && confirmedRetiredKeys.has(catalogOrderInputKey(item));
@@ -1119,11 +1121,18 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
     // Client3 order is not complete until its brand, exact SKU and engraving
     // are durably connected. A retry of the same critical request resumes here.
     if (watchCommit) {
-      const itemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'order_item', 'order_create:item:1');
-      if (!itemId || normalizedItems.length !== 1) {
-        throw new CriticalOperationConflictError('Не удалось подтвердить часовую позицию заказа. Повторите запрос.');
+      const watchLines=watchCommit.items?.length?watchCommit.items:[watchCommit];
+      if(normalizedItems.length!==watchLines.length)
+        throw new CriticalOperationConflictError('Не удалось подтвердить состав часов. Повторите тот же запрос.');
+      const ids:number[]=[];
+      for(let index=0;index<watchLines.length;index++){
+        const itemId=await criticalOperationEntityId(db,criticalOperation.requestId,
+          'order_item','order_create:item:'+(index+1));
+        if(!itemId)throw new CriticalOperationConflictError(
+          'Не удалось подтвердить позицию часов '+(index+1)+'. Повторите запрос.');
+        ids.push(itemId);
       }
-      await persistWatchOrderCommit(db, orderId, itemId, watchCommit);
+      await persistWatchOrderCommit(db,orderId,ids,watchCommit);
     }
 
     const stockResults = Array.isArray(insertedContent?.stockResults) ? insertedContent.stockResults : [];
