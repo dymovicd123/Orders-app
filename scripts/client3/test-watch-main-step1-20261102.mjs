@@ -80,8 +80,11 @@ const v=variant.watchVariantId
 const linked=await parse(provisionClient3WatchSku(db,admin,1,v))
 assert.equal(linked.status,200,JSON.stringify(linked))
 const before=sql.prepare('SELECT * FROM watch_variants WHERE id=?').get(v)
-assert.equal(before.custom_movement??before.movement,'Механизм с турбийоном')
-assert.equal(before.custom_dial_color??before.dial_color,'Тёмно синий')
+const effective=sql.prepare('SELECT * FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(v)
+assert(effective,'Custom SKU must keep a 1:1 extension without changing its historical row')
+assert.equal(effective.movement,'Механизм с турбийоном')
+assert.equal(effective.dial_color,'Тёмно синий')
+assert.equal(before.movement,'quartz','Original CHECK-backed legacy anchor is unchanged')
 // Main delete preflight must not silently write off physical watches.
 sql.prepare(`INSERT INTO inventory_stock(
  inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity
