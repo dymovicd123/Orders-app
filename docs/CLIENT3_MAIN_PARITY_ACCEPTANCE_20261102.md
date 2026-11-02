@@ -294,3 +294,23 @@ Client screenshot reproduced the actual critical gap: a valid active `watch_prod
 **Acceptance evidence:** Full ephemeral real Main migrations and transaction tests on model-only OTAN → register variant → canonical provision → 4-unit receiving → duplicate replay → correction → brand denial and FK integrity. Existing Main-backed four-mode stock/money/reserve/replay/return/exchange regression and `npm run build` passed. History route and style regression passed. No remote D1 mutations were used during test; release verified remote D1 order/item/payment/stock/reserve/movement counters and FK before/after deploy. Third Worker only, **Main and Branch2 not touched**.
 
 **Follow-ups:** Main full/session stocktake parity and practical browser/mobile acceptance; smarter resolver aliases. Do not add a second parallel mass-operation or revision UI; extend the one Main-derived operations workspace.
+
+
+## 03.11.2026 — Main UX regression corrected: selecting models MUST NOT start warehouse operation
+
+**Production Client3-only release SUCCESS:** https://github.com/dymovicd123/Orders-app/actions/runs/41534587374
+**Accepted source build/real Main SQL+D1 regression SUCCESS:** https://github.com/dymovicd123/Orders-app/actions/runs/41534443608
+
+User screenshots confirmed that, unlike Main, Client3 immediately jumped into the quantity editor after marking a model. A related missing piece was Main's selected-products list with removable chips and explicit **"Начать работу с выбранными товарами"** button. It was a functional Main workflow regression, not a mere CSS issue.
+
+**Applied to ALL four modes: arrival, writeoff, correction, transfer:**
+1. Model checkboxes only toggle a queue, never advance stages; selected products sort first and show the original Main-style `stocktake-selective-queue`, count/position totals and removable chips. "Очистить" clears queue and its unsaved quantities.
+2. Quantity work starts **only** after pressing "Начать работу с выбранными товарами", with that button disabled for an empty queue. A single explicit `beginSelected` function performs the stage transition.
+3. Inside the quantity editor, the operator can navigate between all chosen models; returning to the selection list keeps both chosen models and valid quantities. Removing a chosen model also discards only its hidden pending quantities (prevents silent stock mutation).
+4. Selections and pending quantities are maintained independently for Office and Showcase, so switching between points doesn't delete the other point's draft. Changing operation mode warns before clearing selections and quantities.
+5. A new watch model/variant created inline joins the current model queue but **does not auto-start** the quantity editor. Adding an inline variation while the quantity editor is already active keeps the model selected. The original model-only product `OTAN` remains selectable.
+6. Uses Main's original `StocktakeProductChoice`, stocktake panel classes and colors. No new parallel bulk-operations or separate correction panel, no Problems queue.
+
+**Automated proof:** UI workflow assertions require the queue, chips, checkboxes, explicit start, protected removal, one stage transition and exact Main color modes. Real Main-backed stock/order/return/exchange tests and TypeScript/Vite production build succeeded. Release guard checked exact accepted SHA, Client3 Worker identity, unauthorized API denial, unchanged historical D1 counts, stocks/reservations and FK. No migrations or remote D1 writes; **Main and Branch2 unchanged.**
+
+**Known remaining Stage 5 gaps:** Full persistent/session-based whole-location stocktake parity; authenticated human desktop/mobile walkthrough; advanced resolver alias edge cases. Do not claim complete Main functional parity until these have passed.
