@@ -6,6 +6,7 @@ on:
       - '.github/workflows/client3-watch-live-readonly-preflight-20261102.yml'
 permissions:
   contents: read
+  issues: write
 jobs:
   remote-select-only:
     runs-on: ubuntu-latest
@@ -104,6 +105,27 @@ jobs:
             | jq -ce '.[0].results | map(.name)' > /tmp/client3-required-tables.json
           echo "Client3 existing supporting table names (NO CLIENT DATA):"
           cat /tmp/client3-required-tables.json
+      - name: Post W1c schema-only finding to issue 774
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Client3 W1c · automatic READ-ONLY schema preflight"
+            echo ""
+            echo "GitHub Actions run: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}"
+            echo "Database: \`orders_db_client3_old_client\` (exact third installation only)."
+            echo ""
+            echo "Required schema gaps (table/column identifiers only; NO customer records):"
+            jq -r 'if length==0 then "None in the selected required-column set." else .[] | "- \`" + .table_name + "." + .column_name + "\`" end' /tmp/client3-schema-gaps.json
+            echo ""
+            echo "Present infrastructure tables (names only):"
+            jq -r 'if length==0 then "None of the selected tables." else .[] | "- \`"+.+"\`" end' /tmp/client3-required-tables.json
+            echo ""
+            echo "**No Client3 D1 writes, migrations or Worker deployments were executed.**"
+          } > /tmp/client3-w1c-issue-comment.txt
+          gh issue comment 774 --repo dymovicd123/Orders-app --body-file /tmp/client3-w1c-issue-comment.txt
       - name: Public third Worker auth readiness and unauthorized API guard
         shell: bash
         run: |
