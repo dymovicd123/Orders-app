@@ -6,6 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
+import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
 import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
@@ -801,6 +802,61 @@ assert.equal(stock('warehouse').reserved_quantity,reservedBeforePartial-3)
 assert.equal(count('payments'),paymentCountBeforePartial)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
  .get(partialCreated.orderId).n,2)
+// Stage 3.3: undo an erroneously recorded shipment for the remaining split
+// watch row, using Main's exact per-dispatch correction. This is NOT a return.
+const finalDispatchItem=sqlite.prepare(`SELECT di.id AS dispatchItemId FROM order_dispatch_items di
+ JOIN order_dispatches d ON d.id=di.dispatch_id
+ WHERE d.order_id=? AND di.order_item_id=? AND di.cancelled_quantity=0`)
+ .get(partialCreated.orderId,remainingPart.id)
+assert(finalDispatchItem.dispatchItemId>0)
+const correctedPayload={dispatchItemId:finalDispatchItem.dispatchItemId,
+ requestId:'watch-correct-split-20261103-01',
+ reason:'Отправку ошибочно отметили без физической передачи часов'}
+const forbiddenCorrection=await parse(correctClient3WatchDispatch(
+ db,manager,1,partialCreated.orderId,correctedPayload))
+assert.equal(forbiddenCorrection.status,403)
+const wrongBrandCorrection=await parse(correctClient3WatchDispatch(
+ db,admin,2,partialCreated.orderId,correctedPayload))
+assert.equal(wrongBrandCorrection.status,404)
+const beforeCorrectionMoney=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(partialCreated.orderId)
+const countPaymentsCorrection=count('payments')
+const beforeCorrectionStock=stock('warehouse')
+const correctedDispatch=await parse(correctClient3WatchDispatch(
+ db,admin,1,partialCreated.orderId,correctedPayload))
+assert.equal(correctedDispatch.status,200,JSON.stringify(correctedDispatch))
+assert.equal(correctedDispatch.physicalRestoredQuantity,2)
+assert.equal(stock('warehouse').quantity,beforeCorrectionStock.quantity+2)
+assert.equal(stock('warehouse').reserved_quantity,beforeCorrectionStock.reserved_quantity+2)
+assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?')
+ .get(remainingPart.id).status,'active')
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+ .get(remainingPart.id).stock_writeoff_status,'reserved')
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(partialCreated.orderId).shipping_status,'not_sent')
+assert.equal(sqlite.prepare('SELECT watch_variant_id FROM watch_order_item_details WHERE order_item_id=?')
+ .get(remainingPart.id).watch_variant_id,partialOriginal.watch_variant_id)
+assert.equal(count('payments'),countPaymentsCorrection)
+assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(partialCreated.orderId),beforeCorrectionMoney)
+const correctedRetry=await parse(correctClient3WatchDispatch(
+ db,admin,1,partialCreated.orderId,correctedPayload))
+assert.equal(correctedRetry.alreadyCorrected,true)
+assert.equal(stock('warehouse').quantity,beforeCorrectionStock.quantity+2)
+const correctionDifferent=await parse(correctClient3WatchDispatch(
+ db,admin,1,partialCreated.orderId,{
+ ...correctedPayload,requestId:'watch-correct-split-20261103-02',
+ }))
+assert.equal(correctionDifferent.status,409,'Cannot correct an already corrected dispatch twice')
+const resendAfterCorrection=await parse(dispatchClient3WatchOrder(
+ db,manager,1,partialCreated.orderId,{
+ requestId:'watch-resend-split-20261103-01',
+ items:[{orderItemId:remainingPart.id,quantity:2}],
+ }))
+assert.equal(resendAfterCorrection.status,200,JSON.stringify(resendAfterCorrection))
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?').get(partialCreated.orderId).shipping_status,'sent')
+assert.equal(stock('warehouse').quantity,beforeCorrectionStock.quantity)
+assert.equal(count('payments'),countPaymentsCorrection)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
