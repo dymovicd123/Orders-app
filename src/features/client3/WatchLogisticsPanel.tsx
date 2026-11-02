@@ -196,7 +196,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     {busy && <p role="status">Загрузка логистики…</p>}
     {!busy && !error && groups.length === 0 && <p>В выбранной очереди заказов нет.</p>}
     <LinkedTableScroll className="watch-main-logistics-scroll" ariaLabel="Очередь логистики">
-      <table className="watch-main-logistics-table">
+      <table className="data-table workshop-grid-table workshop-order-like-table watch-main-logistics-table">
         <thead><tr>
           <th>Заказ</th><th>Бренд / источник</th><th>Получатель</th>
           <th>Отправить до</th><th>Гравировка</th><th>Отправка</th><th>Поз.</th><th>Действие</th>
