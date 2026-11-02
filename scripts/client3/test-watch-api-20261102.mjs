@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
 import {
-  listWatchBrands,listWatchModels,listWatchLogistics,markWatchLogisticsReady,
+  listWatchBrands,listWatchModels,listWatchManagers,listWatchLogistics,markWatchLogisticsReady,
 } from '../../worker/domains/client3-watches.ts'
 
 // D1.prepare/batch compatible adapter. Every test uses a disposable in-memory DB;
@@ -10,18 +10,20 @@ import {
 const sql=new DatabaseSync(':memory:')
 sql.exec('PRAGMA foreign_keys=ON')
 sql.exec(`
- CREATE TABLE managers (id INTEGER PRIMARY KEY);
+ CREATE TABLE managers (id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER DEFAULT 1);
  CREATE TABLE app_users (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_products (id INTEGER PRIMARY KEY);
- CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY,product_id INTEGER REFERENCES catalog_products(id));
+ CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY,product_id INTEGER REFERENCES catalog_products(id),stock_position_id INTEGER,category TEXT DEFAULT 'adult',is_active INTEGER DEFAULT 1);
+ CREATE TABLE catalog_execution_prices (stock_position_id INTEGER,category TEXT,sale_price INTEGER,PRIMARY KEY(stock_position_id,category));
  CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,source_type TEXT DEFAULT 'warehouse',shipping_status TEXT DEFAULT 'not_sent');
  CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER);
  CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER);
- INSERT INTO managers VALUES (1),(2);
+ INSERT INTO managers(id,name) VALUES (1,'Alice'),(2,'Bob');
  INSERT INTO app_users VALUES (9);
  INSERT INTO catalog_products VALUES(10),(11);
- INSERT INTO catalog_variants VALUES(100,10),(101,11);
+ INSERT INTO catalog_variants(id,product_id,stock_position_id) VALUES(100,10,1000),(101,11,1001);
+ INSERT INTO catalog_execution_prices VALUES(1000,'adult',60000),(1001,'adult',45000);
  INSERT INTO orders(id,external_id,order_status,total_amount,received_amount,debt_amount) VALUES (1,'TEST-1','active',90000,90000,0),(2,'TEST-2','active',120000,60000,60000);
  INSERT INTO order_items VALUES(200,1,1),(201,2,1);
  INSERT INTO inventory_stock VALUES(1,'warehouse',100,4,1),(2,'boutique',100,2,0),(3,'warehouse',101,9,0);
@@ -74,6 +76,11 @@ x=await j(await listWatchBrands(db,logistics));assert.deepEqual(x.brands.map(x=>
 x=await j(await listWatchModels(db,alice,new URL('https://test.invalid/api/client3/watches/models?brand=TAUWACH')))
 assert.equal(x.models.length,1);assert.equal(x.models[0].modelName,'CLASSIC')
 assert.equal(x.models[0].officePhysical,4);assert.equal(x.models[0].showcasePhysical,2)
+assert.equal(x.models[0].catalogPriceSnapshot,60000)
+let managers=await j(await listWatchManagers(db,admin,new URL('https://test.invalid/api/client3/watches/managers?brand=TAUWACH')))
+assert.deepEqual(managers.managers.map(m=>m.name),['Alice'])
+managers=await j(await listWatchManagers(db,alice,new URL('https://test.invalid/api/client3/watches/managers?brand=WACHIZEN')))
+assert.equal(managers.status,403)
 x=await j(await listWatchModels(db,alice,new URL('https://test.invalid/api/client3/watches/models?brand=WACHIZEN')))
 assert.equal(x.status,403);assert.equal(x.models,undefined)
 x=await j(await listWatchModels(db,bob,new URL('https://test.invalid/api/client3/watches/models?brand=WACHIZEN')))
