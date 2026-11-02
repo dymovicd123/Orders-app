@@ -1,0 +1,114 @@
+import {json} from '../core/http.ts'
+import type {AuthUser} from '../core/types.ts'
+import {createReturn,receiveReturnedItem} from './returns-exchanges.ts'
+import type {WatchPaymentMethod} from '../../shared/client3/watch-domain.ts'
+
+const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
+type ReturnInput={
+  requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;
+  paymentMethod?:unknown;reason?:unknown
+}
+const methods=new Set<WatchPaymentMethod>(['KASPI GOLD','KASPI RED','Рассрочка'])
+const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
+const dateAlmaty=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
+
+/** Single-SKU Client3 returns, with physical receipt deliberately deferred. */
+export async function createClient3WatchReturn(
+ db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:ReturnInput,
+) {
+ if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
+   return fail('WATCH_RETURN_FORBIDDEN','Возвраты оформляет менеджер или администратор.',403)
+ if(!Number.isSafeInteger(orderId)||orderId<1||!keyValid(input.requestId))
+   return fail('WATCH_RETURN_INVALID','Нужен заказ и уникальный идентификатор возврата.',400)
+ if(!['money_only','items_only','both'].includes(String(input.kind)))
+   return fail('WATCH_RETURN_KIND_REQUIRED','Выберите возврат денег, товара или обоих.',400)
+ const kind=String(input.kind)
+ const itemSelected=kind!=='money_only'
+ const quantity=Number(input.quantity||0)
+ const amount=Number(input.amount||0)
+ const reason=typeof input.reason==='string'?input.reason.trim():''
+ if(!reason||reason.length>300)return fail('WATCH_RETURN_REASON_REQUIRED','Укажите причину возврата.',400)
+ if(!Number.isSafeInteger(amount)||amount<0||amount>1000000000 ||
+   (itemSelected&&(!Number.isSafeInteger(quantity)||quantity<1||quantity>1000)) ||
+   (!itemSelected&&quantity!==0) || (kind==='items_only'&&amount!==0) ||
+   (kind!=='items_only'&&amount<=0))
+   return fail('WATCH_RETURN_QUANTITY_INVALID','Исправьте количество и сумму возврата.',400)
+ if(amount>0 && !methods.has(input.paymentMethod as WatchPaymentMethod))
+   return fail('WATCH_RETURN_METHOD_INVALID','Выберите способ возврата денег.',400)
+ const row=await db.prepare(
+   `SELECT o.id,o.order_status,o.shipping_status,wd.brand_id
+    FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
+    WHERE o.id=? AND wd.brand_id=? LIMIT 1`,
+ ).bind(orderId,brandId).first<Record<string,unknown>>()
+ if(!row)return fail('WATCH_RETURN_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
+ const items=await db.prepare(
+   `SELECT oi.id,oi.quantity,oi.variant_id,oi.is_workshop,wi.watch_variant_id,
+       wp.brand_id AS sku_brand
+    FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
+    JOIN watch_products wp ON wp.id=wv.watch_product_id
+    WHERE oi.order_id=? LIMIT 2`,
+ ).bind(orderId).all<Record<string,unknown>>()
+ const item=(items.results||[])[0]
+ const count=await db.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?')
+   .bind(orderId).first<{n:number}>()
+ if(!item||items.results.length!==1||Number(count?.n)!==1||
+    Number(item.sku_brand)!==brandId||Number(item.is_workshop)!==0)
+   return fail('WATCH_RETURN_COMPLEX_ORDER','Для этого заказа требуется поштучная проверка возврата.')
+ if(itemSelected&&quantity>Number(item.quantity))
+   return fail('WATCH_RETURN_TOO_MANY','Количество возврата превышает количество в заказе.')
+ try {
+   const response=await createReturn(db,{
+     requestId:input.requestId as string,orderId,returnDate:dateAlmaty(),
+     amount,paymentMethod:amount>0?input.paymentMethod as string:undefined,
+     comment:reason,restockSource:'none',
+     items:itemSelected?[{
+       orderItemId:Number(item.id),quantity,amount,
+       restock:false,physicalState:'pending',
+     }]:[],
+   })
+   if(!response||typeof response!=='object'||!('ok' in response)||response.ok!==true)
+     return fail('WATCH_RETURN_NOT_APPLIED','Возврат не подтверждён финансовым ядром.')
+   return json({...response,brandId,orderId,
+     physicalReceiptPending:itemSelected,
+     ...(itemSelected?{notice:'Деньги и возврат зарегистрированы. Физическое принятие часов оформите отдельно.'}:{})})
+ }catch(cause){
+   return fail('WATCH_RETURN_FAILED',cause instanceof Error?cause.message:'Не удалось оформить возврат.')
+ }
+}
+
+/** Records physical intake only after explicit warehouse confirmation. */
+export async function receiveClient3WatchReturn(
+ db:D1Database,actor:AuthUser,brandId:number,orderId:number,
+ input:{requestId?:unknown;returnId?:unknown;returnItemId?:unknown;destination?:unknown},
+) {
+ if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
+   return fail('WATCH_RECEIPT_FORBIDDEN','Приём часов доступен менеджеру или администратору.',403)
+ const returnId=Number(input.returnId),returnItemId=Number(input.returnItemId)
+ if(!Number.isSafeInteger(orderId)||orderId<1||
+   !Number.isSafeInteger(returnId)||returnId<1||!Number.isSafeInteger(returnItemId)||returnItemId<1||
+   !keyValid(input.requestId))
+   return fail('WATCH_RECEIPT_INVALID','Выберите возврат и уникальный запрос.',400)
+ const destination=input.destination
+ if(!['warehouse','boutique','no_stock'].includes(String(destination)))
+   return fail('WATCH_RECEIPT_DEST_INVALID','Выберите офис, витрину или без возврата в остаток.',400)
+ const match=await db.prepare(
+   `SELECT ri.id FROM return_items ri JOIN returns r ON r.id=ri.return_id
+    JOIN watch_order_details wd ON wd.order_id=r.order_id
+    JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=wd.order_id
+    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    WHERE ri.id=? AND r.id=? AND r.order_id=? AND wd.brand_id=?
+      AND COALESCE(r.status,'completed')<>'cancelled' LIMIT 1`,
+ ).bind(returnItemId,returnId,orderId,brandId).first<{id:number}>()
+ if(!match)return fail('WATCH_RECEIPT_NOT_FOUND','Часы не принадлежат возврату этого бренда.',404)
+ try {
+   const result=await receiveReturnedItem(db,{
+     requestId:input.requestId as string,operationType:'return',
+     operationId:returnId,operationItemId:returnItemId,
+     destination:destination as 'warehouse'|'boutique'|'no_stock',
+   })
+   return json({...result,brandId,orderId})
+ }catch(cause){
+   return fail('WATCH_RECEIPT_FAILED',cause instanceof Error?cause.message:'Не удалось принять возвращённые часы.')
+ }
+}
