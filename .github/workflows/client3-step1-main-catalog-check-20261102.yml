@@ -1,5 +1,5 @@
 name: Client3 Step1 Main catalog and references — isolated acceptance
-# Repeat after adapting SSR assertion for the Main material label.
+# Validate additive V5 custom attributes and preserved historic order foreign keys.
 on:
   push:
     branches: [client3/step1-main-catalog-references-20261102]
