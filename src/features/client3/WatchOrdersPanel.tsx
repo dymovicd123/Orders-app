@@ -90,7 +90,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics}:{
       <p className="watch-orders-note">Суммы взяты из текущих записей заказов. Это не отчёт о движениях кассы или чистой прибыли.</p>
       {data.rows.length===0?<p>Заказов за выбранный период нет.</p>:
         <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
-          <table className="watch-main-orders-table">
+          <table className="data-table orders-table watch-main-orders-table">
             <thead><tr>
               <th>Заказ</th><th>Дата</th><th>Клиент</th><th>Товар</th><th>Источник</th>
               <th>Сумма</th><th>Оплачено</th><th>Состояние</th><th aria-label="Действия"/>
