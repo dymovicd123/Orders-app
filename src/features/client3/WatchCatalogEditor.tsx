@@ -41,7 +41,7 @@ function textFor(choices:readonly {value:string;label:string}[],code:string|null
 }
 
 /** An unmapped watch is a draft. It cannot be sold or counted as physical stock. */
-export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:WatchBrand;view?:'catalog'|'warehouse';onStockChanged?:()=>void}) {
+export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenReferences}:{brand:WatchBrand;view?:'catalog'|'warehouse';onStockChanged?:()=>void;onOpenReferences?:()=>void}) {
   const [rows,setRows]=useState<CatalogRow[]>([])
   const [operation,setOperation]=useState<'arrival'|'transfer'|'writeoff'|'count'>('arrival')
   const [modelName,setModelName]=useState('')
@@ -56,6 +56,7 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
   const [braceletMaterial,setBraceletMaterial]=useState<WatchVariantInput['braceletMaterial']>('steel')
   const [dialColor,setDialColor]=useState<WatchVariantInput['dialColor']>('black')
   const [braceletColor,setBraceletColor]=useState('')
+  const [strapColors,setStrapColors]=useState<string[]>([])
   const [busy,setBusy]=useState(false)
   const [loading,setLoading]=useState(false)
   const [error,setError]=useState('')
@@ -85,6 +86,19 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
   const [writeoffReason,setWriteoffReason]=useState('')
   const [writeoffConfirmed,setWriteoffConfirmed]=useState(false)
   const writeoffRequest=useRef<{fingerprint:string;requestId:string}|null>(null)
+  useEffect(()=>{
+    const controller=new AbortController()
+    void fetch('/api/client3/watches/references',{
+      credentials:'include',cache:'no-store',signal:controller.signal,
+    }).then(async response=>{
+      const data=await response.json() as {ok:boolean;rows?:Array<{kind:string;value:string}>;message?:string}
+      if(!response.ok||!data.ok)throw new Error(data.message||'Справочник недоступен')
+      if(!controller.signal.aborted)setStrapColors((data.rows||[])
+        .filter(row=>row.kind==='leatherColors').map(row=>row.value))
+    }).catch(cause=>{if(!controller.signal.aborted)setError(
+      cause instanceof Error?cause.message:'Не удалось загрузить цвета ремешков')})
+    return ()=>controller.abort()
+  },[])
   const linked=rows.filter(row=>row.watchVariantId && row.catalogProductId && row.catalogVariantId && row.productActive===1 && row.variantActive===1)
   const selectedCount=linked.find(row=>row.watchVariantId===countVariantId)
   const countExpected=Number(countSource==='office'?selectedCount?.officePhysical:selectedCount?.showcasePhysical)||0
@@ -401,8 +415,15 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
                   {WATCH_OPTIONS.dialColors.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
                 </select></label>
                 {braceletMaterial==='leather'&&<label>Цвет кожаного ремешка
-                  <input required maxLength={80} value={braceletColor}
-                    onChange={e=>setBraceletColor(e.target.value)}/></label>}
+                  <select required value={strapColors.includes(braceletColor)?braceletColor:''}
+                    onChange={e=>setBraceletColor(e.target.value)}>
+                    <option value="">Выберите цвет из справочника</option>
+                    {strapColors.map(value=><option value={value} key={value}>{value}</option>)}
+                  </select>
+                  <small>Новые цвета добавляются в общих справочниках, не в карточке товара.</small>
+                  {onOpenReferences&&<button type="button" className="secondary compact"
+                    onClick={onOpenReferences}>Открыть справочники</button>}
+                </label>}
                 <button className="primary" type="submit" disabled={busy||!modelId}>
                   {busy?'Сохраняю…':'Добавить позицию'}</button>
               </form>
