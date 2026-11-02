@@ -16,10 +16,10 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
       wp.catalog_product_id AS catalogProductId,wp.is_active AS productActive,
       wv.id AS watchVariantId,wv.catalog_variant_id AS catalogVariantId,
-      wv.gender,COALESCE(wv.custom_movement,wv.movement) AS movement,
-      COALESCE(wv.custom_bracelet_material,wv.bracelet_material) AS braceletMaterial,
-      COALESCE(wv.custom_dial_color,wv.dial_color) AS dialColor,
-      COALESCE(wv.custom_bracelet_color,wv.bracelet_color) AS braceletColor,
+      wv.gender,COALESCE(va.movement,wv.movement) AS movement,
+      COALESCE(va.bracelet_material,wv.bracelet_material) AS braceletMaterial,
+      COALESCE(va.dial_color,wv.dial_color) AS dialColor,
+      COALESCE(va.bracelet_color,wv.bracelet_color) AS braceletColor,
       wv.is_active AS variantActive,
       (SELECT ep.sale_price FROM catalog_variants cv JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE cv.id=wv.catalog_variant_id LIMIT 1) AS catalogPriceSnapshot,
       COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='warehouse'),0) AS officePhysical,
@@ -28,6 +28,7 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
       MAX(COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='boutique'),0), COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=wv.catalog_variant_id AND r.inventory_source='boutique' AND r.status='active'),0)) AS showcaseReserved
     FROM watch_products wp
     LEFT JOIN watch_variants wv ON wv.watch_product_id=wp.id
+    LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=wv.id
     WHERE wp.brand_id=?
     ORDER BY wp.model_name COLLATE NOCASE,wp.id,wv.id
     LIMIT 500
@@ -107,7 +108,13 @@ export async function registerWatchVariant(
   ).bind(productId,brandId).first<{id:number}>()
   if(!product)return error('WATCH_MODEL_FORBIDDEN','Модель не существует в выбранном бренде.',404)
   const values=[productId,v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]
-  const find='SELECT id,is_active,catalog_variant_id FROM watch_variants WHERE watch_product_id=? AND gender=? AND COALESCE(custom_movement,movement)=? AND COALESCE(custom_bracelet_material,bracelet_material)=? AND COALESCE(custom_dial_color,dial_color)=? AND COALESCE(custom_bracelet_color,bracelet_color)=? LIMIT 1'
+  const find=`SELECT v.id,v.is_active,v.catalog_variant_id FROM watch_variants v
+    LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
+    WHERE v.watch_product_id=? AND v.gender=? AND
+      COALESCE(va.movement,v.movement)=? AND
+      COALESCE(va.bracelet_material,v.bracelet_material)=? AND
+      COALESCE(va.dial_color,v.dial_color)=? AND
+      COALESCE(va.bracelet_color,v.bracelet_color)=? LIMIT 1`
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
   if(old){
     if(old.is_active===0) {
@@ -144,11 +151,17 @@ export async function registerWatchVariant(
     // sentinel guarantees the old UNIQUE key never merges separate SKU IDs.
     const anchor=legacy?[v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]:
       ['quartz','leather','black','__WATCH_V5__'+crypto.randomUUID().replaceAll('-','')]
-    const overrides=legacy?[null,null,null,null]:
-      [v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]
-    const result=await db.prepare(
-      'INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color,custom_movement,custom_bracelet_material,custom_dial_color,custom_bracelet_color) VALUES(?,?,?,?,?,?,?,?,?,?)',
-    ).bind(productId,v.gender,...anchor,...overrides).run()
+    const insert=db.prepare(
+      'INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(?,?,?,?,?,?)'
+    ).bind(productId,v.gender,...anchor)
+    const result=legacy?await insert.run():(await db.batch([
+      insert,
+      db.prepare(`INSERT INTO watch_variant_attributes_v5(
+        watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
+      ) SELECT id,watch_product_id,gender,?,?,?,? FROM watch_variants
+        WHERE watch_product_id=? AND gender=? AND bracelet_color=?`)
+        .bind(v.movement,v.braceletMaterial,v.dialColor,v.braceletColor,productId,v.gender,anchor[3]),
+    ]))[0]
     const id=Number(result.meta?.last_row_id||0)
     if(!Number.isSafeInteger(id)||id<=0)throw new Error('Не удалось подтвердить комплектацию часов.')
     return json({ok:true,watchVariantId:id,created:true,stockLinked:false},{status:201})
