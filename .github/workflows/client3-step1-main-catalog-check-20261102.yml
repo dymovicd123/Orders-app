@@ -24,6 +24,8 @@ jobs:
         run: |
           set -euo pipefail
           node --experimental-strip-types scripts/client3/test-watch-main-step1-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-shared-references-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-catalog-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
