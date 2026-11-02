@@ -1,0 +1,70 @@
+name: Client3 one unified Main-style inventory workspace (NO DEPLOY)
+on:
+  push:
+    branches: [client3/stage5-single-main-operations-20261103]
+    paths: ['.github/workflows/client3-stage5-single-ops-acceptance-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Isolated third Worker and single Main-style operation view
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/stage5-single-main-operations-20261103
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test ! -e src/features/client3/WatchBulkOperations.tsx
+          test ! -e src/styles/client3-watch-bulk.css
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs'
+          import assert from 'node:assert/strict'
+          const ui=readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8')
+          const history=readFileSync('src/features/client3/WatchWarehouseStage5.tsx','utf8')
+          const style=readFileSync('src/styles/client3-watch-main-warehouse.css','utf8')
+          assert.equal((ui.match(/<h3>Складские операции<\/h3>/g)||[]).length,1)
+          assert(!ui.includes('WatchBulkOperations'))
+          assert(!ui.includes('WatchSelectiveRecount'))
+          assert(!history.includes('WatchSelectiveRecount'))
+          for(const mode of ["arrival","writeoff","count","transfer"]){
+            assert(ui.includes("mode==='"+mode+"'")||ui.includes("'"+mode+"'"))
+          }
+          assert(ui.includes("endpoint=mode==='count'?'count-batch':'bulk'"))
+          assert(ui.includes("setStage('select')"))
+          assert(ui.includes("selected.map(row=>"))
+          assert(ui.includes("sourceSnapshot(v,source).free"))
+          assert(ui.includes("shortageConfirmed"))
+          for(const [mode,color] of Object.entries({
+            arrival:'#15803d',writeoff:'#b91c1c',transfer:'#a16207',manual_set:'#1d4ed8'
+          })){
+            assert(style.includes('data-unified-operation="'+mode+'"'))
+            assert(style.includes('--w12-accent:'+color))
+          }
+          console.log('CLIENT3_ONE_MAIN_STOCK_OPS_PASS')
+          NODE
+      - run: npm ci
+      - name: Full Main stock/resolver, watch order and exchange engines
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node scripts/client3/test-watch-main-free-text-ux-20261103.mjs
+          npm run build
+      - name: Record result in Client3 issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 one unified stock operations interface: $RESULT; SHA $GITHUB_SHA; run https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Removed two duplicate operation/revision sections, preserved single Main flow + atomic 30-line engines and W12 semantic palette. No deploy or remote D1 writes in acceptance."
