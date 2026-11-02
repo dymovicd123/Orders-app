@@ -13,6 +13,7 @@ import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
 import {countClient3WatchStock,countClient3WatchStockBatch} from './client3-watch-stocktake.ts'
+import {getClient3WatchRevision,startClient3WatchRevision,changeClient3WatchRevision} from './client3-watch-revision-session.ts'
 import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
 import {listClient3WatchStockHistory} from './client3-watch-history.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
@@ -280,6 +281,26 @@ export async function routeClient3Watches(
   const refDelete=/^\/api\/client3\/watches\/references\/(\d+)$/.exec(url.pathname)
   if(refDelete&&request.method==='DELETE')
     return deleteClient3WatchReference(db,actor,Number(refDelete[1]))
+  if(url.pathname==='/api/client3/watches/stock/revision'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return getClient3WatchRevision(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/stock/revision/start'&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;source?:unknown;full?:unknown;modelIds?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return startClient3WatchRevision(db,actor,scope.row!.id,input)
+  }
+  const watchRevisionAction=/^\/api\/client3\/watches\/stock\/revision\/(count|add|complete|cancel)$/.exec(url.pathname)
+  if(watchRevisionAction&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;sessionId?:unknown;itemId?:unknown;
+      countedQuantity?:unknown;watchVariantId?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return changeClient3WatchRevision(db,actor,scope.row!.id,
+      watchRevisionAction[1] as 'count'|'add'|'complete'|'cancel',input)
+  }
   if(url.pathname==='/api/client3/watches/stock/history'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
