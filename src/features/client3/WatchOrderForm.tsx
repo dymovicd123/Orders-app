@@ -21,7 +21,7 @@ type DraftLine={id:string;watchVariantId:number;source:WatchSource;quantity:numb
 export type WatchOrderDraftPayload=ReturnType<typeof validateWatchOrderInput>&{
  shippingDeadlineLocal:string;requestId:string;receivedAmount:number;
  payments:Array<{method:WatchPaymentMethod;amount:number}>;managerId?:number;
- items:Array<{watchVariantId:number;catalogVariantId:number;quantity:number;unitPrice:number;
+ items:Array<{watchVariantId:number;catalogVariantId?:number;quantity:number;unitPrice:number;
    source:WatchSource;engravingText:string;manual?:ManualFields}>
  // Backwards compatibility with early third-tenant Clients and Main tests.
  watchVariantId:number;catalogVariantId:number;quantity:number;unitPrice:number;engravingText:string;
