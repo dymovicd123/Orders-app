@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
 import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
+import {WatchWarehouseMain} from './features/client3/WatchWarehouseMain'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
@@ -356,9 +357,11 @@ export function WatchClient3App() {
             </div>
             {catalogBusy&&<p className="watch-shell-loading">Загружаем товары…</p>}
             {canAdmin&&brand?
-              <WatchCatalogEditor key={activeSection+'-'+brand} brand={brand}
-                view={activeSection==='warehouse'?'warehouse':'catalog'}
-                onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
+              activeSection==='warehouse'
+                ?<WatchWarehouseMain key={'warehouse-'+brand} brand={brand}
+                  onStockChanged={()=>setCatalogVersion(x=>x+1)}/>
+                :<WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
+                  onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
               <div className="watch-shell-model-list">
                 {models.map(model=><article key={model.watchVariantId}>
                   <strong>{model.modelName}</strong>
