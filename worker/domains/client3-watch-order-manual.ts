@@ -41,11 +41,15 @@ const WATCH_SYNONYMS:Record<Exclude<ResolverKind,'leatherColors'>,
    multicolor:['multicolor','комбинированный','многоцветный'],
  },
 }
-const standard=(raw:unknown,options:readonly {value:string;label:string}[])=>{
+const standard=(kind:Exclude<ResolverKind,'leatherColors'>,raw:unknown,
+ options:readonly {value:string;label:string}[])=>{
  const key=watchIdentityKey(raw)
  const matches=options.filter(x=>watchIdentityKey(x.value)===key||
    watchIdentityKey(x.label)===key)
- return matches.length===1?matches[0].value:clean(raw)
+ if(matches.length===1)return matches[0].value
+ const aliases=Object.entries(WATCH_SYNONYMS[kind]).filter(([,variants])=>
+   variants.some(alias=>watchIdentityKey(alias)===key))
+ return aliases.length===1?aliases[0][0]:clean(raw)
 }
 /** A known synonym only maps to a built-in canonical value; custom values
  * match via Main identity key. No synonym is inferred from an unrelated word. */
@@ -92,9 +96,9 @@ export async function ensureManualWatchOrderSku(
  if(!inputName||inputName.length>150)throw Error('Введите название модели (не более 150 символов).')
  const choice={
    gender:raw.gender,
-   movement:standard(raw.movement,WATCH_OPTIONS.movements),
-   braceletMaterial:standard(raw.braceletMaterial,WATCH_OPTIONS.braceletMaterials),
-   dialColor:standard(raw.dialColor,WATCH_OPTIONS.dialColors),
+   movement:standard('movements',raw.movement,WATCH_OPTIONS.movements),
+   braceletMaterial:standard('bracelets',raw.braceletMaterial,WATCH_OPTIONS.braceletMaterials),
+   dialColor:standard('dials',raw.dialColor,WATCH_OPTIONS.dialColors),
    braceletColor:raw.braceletColor,
  }
  const candidate=normalizeWatchVariant(choice)
