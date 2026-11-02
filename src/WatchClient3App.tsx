@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
 import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
 import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
+import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
@@ -48,7 +49,7 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff'>('logistics')
+  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff' | 'orders'>('orders')
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
@@ -122,7 +123,7 @@ export function WatchClient3App() {
     setSuccess('Заказ '+(result.externalId||'#'+result.orderId)+' сохранён. Товар не отправлен.')
     setWarning(result.pendingReservation?(result.warning||'Резерв часов требует проверки.'): '')
     setError('')
-    setTab('logistics')
+    setTab('orders')
   }
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
@@ -207,6 +208,8 @@ export function WatchClient3App() {
       </div>
     </header>
     <nav className="watch-shell-nav" aria-label="Разделы">
+      {brands.length>0&&user.employeeRole!=='Логист'&&<button type="button" aria-current={tab==='orders'?'page':undefined}
+        onClick={()=>setTab('orders')}>Заказы</button>}
       <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
         onClick={() => setTab('logistics')}>Логистика</button>
       {user.role==='admin'&&<button type="button" aria-current={tab==='staff'?'page':undefined}
@@ -220,7 +223,7 @@ export function WatchClient3App() {
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       {success && <p role="status" className="watch-shell-success">{success}</p>}
       {warning && <p role="alert" className="watch-shell-warning">{warning}</p>}
-      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'create'
+      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'orders' ? <WatchOrdersPanel allowedBrands={brands.map(x=>x.code)}/> : tab === 'create'
         ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
           : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
               isAdmin={user.role==='admin'} managers={managerChoices}
