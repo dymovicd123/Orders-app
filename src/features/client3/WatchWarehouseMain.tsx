@@ -68,7 +68,10 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const [search,setSearch]=useState('')
   const [showInlineAdd,setShowInlineAdd]=useState(false)
   const [selectedModel,setSelectedModel]=useState<number|null>(null)
-  const [draft,setDraft]=useState<Record<number,string>>({})
+  const [draftBySource,setDraftBySource]=useState<Record<Source,Record<number,string>>>({
+    office:{},showcase:{},
+  })
+  const draft=draftBySource[source]
   const [reason,setReason]=useState('')
   const [confirmed,setConfirmed]=useState(false)
   const [shortageConfirmed,setShortageConfirmed]=useState(false)
@@ -112,7 +115,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const rowPhysical=variants.reduce((s,v)=>s+number(v.officePhysical)+number(v.showcasePhysical),0)
   const rowReserved=variants.reduce((s,v)=>s+number(v.officeReserved)+number(v.showcaseReserved),0)
   const reset=()=>{
-    setStage('select');setSelectedModel(null);setDraft({});setSearch('')
+    setStage('select');setSelectedModel(null);
+    setDraftBySource({office:{},showcase:{}});setSearch('')
     setReason('');setConfirmed(false);setShortageConfirmed(false);setError('');setNotice('')
     setShowInlineAdd(false)
     requestRef.current=null
@@ -124,16 +128,19 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   }
   const selectSource=(next:Source)=>{
     if(saving||next===source)return
-    if(selected.length&&!window.confirm('Сменить точку и очистить введённые количества?'))return
-    reset();setSource(next)
+    // Same Main UX: numbers entered for the other point stay in its own draft.
+    // Backend transactions are still one source at a time, never mixed.
+    setSource(next);setStage('select');setSelectedModel(null)
+    setShowInlineAdd(false);setConfirmed(false);setShortageConfirmed(false)
+    setError('');setNotice('');requestRef.current=null
   }
   const setQuantity=(id:number,value:string)=>{
     if(value!==''&&!/^\d{0,7}$/.test(value))return
-    setDraft(prev=>{
-      const next={...prev}
+    setDraftBySource(prev=>{
+      const next={...prev[source]}
       if(value==='')delete next[id]
       else next[id]=value
-      return next
+      return {...prev,[source]:next}
     })
     setConfirmed(false);setShortageConfirmed(false)
     requestRef.current=null
@@ -170,7 +177,10 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
       if(!response.ok||!result.ok)
         throw new Error(result.message||'Складская операция не была подтверждена.')
       const total=selected.length
-      reset()
+      setDraftBySource(prev=>({...prev,[source]:{}}))
+      setStage('select');setSelectedModel(null);setSearch('');setReason('')
+      setConfirmed(false);setShortageConfirmed(false);setShowInlineAdd(false)
+      requestRef.current=null
       setNotice(result.attention||'Операция сохранена: '+total+' комплектаций.')
       refresh();onStockChanged?.()
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить операцию.')}
@@ -210,6 +220,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
             aria-selected={source===src} disabled={saving}
             className={source===src?'is-active':''} onClick={()=>selectSource(src)}>{location(src)}</button>)}
         </div>
+        {Object.keys(draftBySource[source==='office'?'showcase':'office']).length>0&&
+          <small>В другой точке сохранены несохранённые числа. Они не будут потеряны при переключении.</small>}
         {mode==='transfer'&&<div className="w7-transfer-target"><span aria-hidden="true">→</span>
           <strong>{location(source==='office'?'showcase':'office')}</strong></div>}
       </div>
