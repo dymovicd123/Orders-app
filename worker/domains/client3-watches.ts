@@ -44,6 +44,16 @@ export async function listWatchBrands(db:D1Database,actor:AuthUser) {
   return json({ok:true,brands:rows.results||[]})
 }
 
+export async function listWatchManagers(db:D1Database,actor:AuthUser,url:URL) {
+  const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+  if(scope.error)return scope.error
+  const rows=await db.prepare(
+    'SELECT m.id,m.name FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=? ORDER BY m.name COLLATE NOCASE,m.id',
+  ).bind(scope.row!.id).all<{id:number;name:string}>()
+  return json({ok:true,brand:scope.row!.code,managers:actor.role==='admin'?rows.results||[]:
+    (rows.results||[]).filter(x=>x.id===actor.managerId)})
+}
+
 export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
   const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
   if(scope.error)return scope.error
@@ -159,6 +169,8 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return createClient3WatchOrder(db,actor,scope.row!.id,raw)
   }
+  if(url.pathname==='/api/client3/watches/managers'&&request.method==='GET')
+    return listWatchManagers(db,actor,url)
   if(url.pathname==='/api/client3/watches/brands'&&request.method==='GET')
     return listWatchBrands(db,actor)
   if(url.pathname==='/api/client3/watches/models'&&request.method==='GET')
