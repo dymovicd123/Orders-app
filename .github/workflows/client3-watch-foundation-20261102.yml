@@ -35,6 +35,8 @@ jobs:
         run: node scripts/client3/test-watch-form-20261102.mjs
       - name: Logistics queue UI and strict engraving-only interaction
         run: node scripts/client3/test-watch-logistics-20261102.mjs
+      - name: Client3-only shell and auth-safe brand interfaces
+        run: node scripts/client3/test-watch-shell-20261102.mjs
       - name: Full Main foundation build on isolated tenant code
         run: npm run build
       - name: Dependencies audit
