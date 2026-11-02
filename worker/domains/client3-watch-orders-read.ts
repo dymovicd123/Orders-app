@@ -15,6 +15,7 @@ const validDate=(raw:string|null):string|null=>{
 export async function listClient3WatchOrders(
   db:D1Database,actor:AuthUser,brandId:number,url:URL,
 ) {
+  if(!actor?.id)return json({ok:false,code:'WATCH_AUTH_REQUIRED'},{status:403})
   try{
     const from=validDate(url.searchParams.get('from'))
     const through=validDate(url.searchParams.get('to'))
