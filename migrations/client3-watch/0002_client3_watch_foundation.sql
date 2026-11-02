@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS watch_logistics_jobs (
     CHECK (status IN ('pending','engraving','ready')),
   ready_at TEXT,
   ready_by_user_id INTEGER REFERENCES app_users(id),
+  ready_request_id TEXT UNIQUE,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK ((status='ready' AND ready_at IS NOT NULL) OR (status<>'ready' AND ready_at IS NULL))
 );
