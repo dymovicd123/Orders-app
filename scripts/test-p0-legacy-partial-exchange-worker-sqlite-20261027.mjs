@@ -284,7 +284,7 @@ try {
     oldItems:[{orderItemId:item.id,quantity:1,physicalState:'warehouse',
       expectedActiveQuantity:2,expectedUnitPrice:10000,expectedLineTotal:20000,expectedCatalogPriceSnapshot:null}],
     newItems:[{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:newColor,material:'СТАНДАРТ',
-      length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,unitPrice:10000,catalogPriceSnapshot:null}],
+      length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,unitPrice:10000,catalogPriceSnapshot:null,shipmentState:'sent'}],
     paymentAmount:0,paymentMethod:'',refundMethod:'',comment:'Тест равного обмена',
   }
   const switched=await api('/api/exchanges/set','POST',exchangeSetPayload,{expectedStatus:201,requestId:'stability-set-swap-once'})
