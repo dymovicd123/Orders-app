@@ -66,7 +66,7 @@ export async function correctClient3WatchMetadata(
      expected:raw.expected,next:raw.next,expectedState:raw.expectedState,
    }} as unknown as OrderInput
    const saved=await updateOrderCritical(db,orderId,payload,actor,actorLabel(actor))
-   if(!saved?.ok)throw new Error('Main не подтвердил исправление.')
+   if(!(saved as {ok?:boolean}|null)?.ok)throw new Error('Main не подтвердил исправление.')
    // No blind overwrite: old watch projection or already-applied next projection
    // is required. This is safe across retries after Main committed the correction.
    const next=raw.next
@@ -129,7 +129,7 @@ export async function correctClient3WatchItemPrices(
  try{
    const payload={requestId:raw.requestId,itemPriceCorrections:changes} as unknown as OrderInput
    const saved=await updateOrderCritical(db,orderId,payload,actor,actorLabel(actor))
-   if(!saved?.ok)throw new Error('Main не подтвердил исправление цены.')
+   if(!(saved as {ok?:boolean}|null)?.ok)throw new Error('Main не подтвердил исправление цены.')
    return json({ok:true,orderId,mainPriceCorrection:true,refreshRequired:true})
  }catch(cause){
    return fail('WATCH_PRICE_CONFLICT',cause instanceof Error?cause.message:'Цена или оплата изменились. Обновите заказ.')
