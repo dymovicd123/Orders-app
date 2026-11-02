@@ -80,7 +80,7 @@ export async function listClient3WatchOrders(
           'date',p.payment_date,'kind',p.payment_kind,'comment',COALESCE(p.comment,'')
         )),'[]') FROM payments p WHERE p.order_id=o.id) AS paymentLines,
         (SELECT COALESCE(json_group_array(json_object(
-          'id',oi.id,
+          'id',oi.id,'watchVariantId',wi2.watch_variant_id,
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
