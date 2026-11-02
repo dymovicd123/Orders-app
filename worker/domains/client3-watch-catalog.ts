@@ -52,7 +52,15 @@ export async function registerWatchModel(
   const existing=await db.prepare(
     'SELECT id,is_active FROM watch_products WHERE brand_id=? AND model_name=? COLLATE NOCASE LIMIT 1',
   ).bind(brandId,name).first<{id:number;is_active:number}>()
-  if(existing)return json({ok:true,watchProductId:existing.id,alreadyExists:true,active:existing.is_active===1})
+  if(existing){
+    if(existing.is_active===0){
+      // Main restores the historical product shell without creating stock.
+      await db.prepare('UPDATE watch_products SET is_active=1 WHERE id=? AND brand_id=? AND is_active=0')
+        .bind(existing.id,brandId).run()
+      return json({ok:true,watchProductId:existing.id,restored:true,active:true,stockCreated:false})
+    }
+    return json({ok:true,watchProductId:existing.id,alreadyExists:true,active:true})
+  }
   try {
     const inserted=await db.prepare(
       'INSERT INTO watch_products(brand_id,model_name) VALUES(?,?)',
@@ -101,9 +109,27 @@ export async function registerWatchVariant(
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
   if(old){
     if(old.is_active===0) {
-      // Existing identities remain historical; deliberate recreation reuses the
-      // exact same SKU id only when no canonical conflicting retirement exists.
-      return error('WATCH_VARIANT_RETIRED','Позиция ранее удалена. Создайте другую комплектацию либо обратитесь к администратору.',409)
+      // Main restoration: revive the exact historical identity, but never invent
+      // stock or repair any unrelated retired execution. No duplicate SKU is made.
+      if(old.catalog_variant_id){
+        const owner=await db.prepare(`SELECT cv.id,cp.is_active AS product_active,
+          sp.is_active AS execution_active
+          FROM catalog_variants cv JOIN catalog_products cp ON cp.id=cv.product_id
+          JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
+          WHERE cv.id=?`).bind(old.catalog_variant_id)
+          .first<{id:number;product_active:number;execution_active:number}>()
+        if(!owner||owner.product_active!==1||owner.execution_active!==1)
+          return error('WATCH_RESTORE_BLOCKED','Историческое исполнение удалено отдельно. Сначала проверьте его восстановление.',409)
+        await db.batch([
+          db.prepare('UPDATE catalog_variants SET is_active=1 WHERE id=? AND is_active=0').bind(old.catalog_variant_id),
+          db.prepare('UPDATE watch_variants SET is_active=1 WHERE id=? AND watch_product_id=? AND is_active=0').bind(old.id,productId),
+        ])
+      }else{
+        await db.prepare('UPDATE watch_variants SET is_active=1 WHERE id=? AND watch_product_id=? AND is_active=0')
+          .bind(old.id,productId).run()
+      }
+      return json({ok:true,watchVariantId:old.id,restored:true,active:true,
+        stockLinked:old.catalog_variant_id!=null,stockCreated:false})
     }
     return json({ok:true,watchVariantId:old.id,alreadyExists:true,active:true,stockLinked:old.catalog_variant_id!=null})
   }
