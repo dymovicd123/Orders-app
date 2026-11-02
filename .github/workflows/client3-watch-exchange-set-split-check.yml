@@ -1,5 +1,5 @@
 name: Client3 watch multi-line exchange and split settlement acceptance
-# Final test exact per-method refunds and cancellation after SQLite row-value assertion fix.
+# Final verify split money-only return cancellation reverses each payment method alongside exchange settlement.
 # Recheck two-row return after resolving an unrelated existing fixture identifier.
 # Real Main watch reservation rewrite passed. Verify final strict build after type cleanups.
 # Revalidate complete register fixture payment comment and current Main money model.
