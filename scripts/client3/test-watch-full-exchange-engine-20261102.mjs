@@ -6,7 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
-import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 import {exchangeClient3Watch} from '../../worker/domains/client3-watch-exchange.ts'
 
@@ -241,6 +241,41 @@ const foreignExchange=await parse(exchangeClient3Watch(db,manager,2,exchangeOrde
  engravingText:'WRONG',reason:'Wrong brand',
 }))
 assert.equal(foreignExchange.status,404)
+const queue=await parse(listPendingClient3WatchReturns(db,manager,1))
+assert.equal(queue.status,200)
+const pendingExchange=queue.rows.find(row=>row.operationType==='exchange'&&row.orderId===exchangeOrder.orderId)
+assert(pendingExchange,'Old watch after exchange must appear in physical intake queue')
+const oldStockBefore=stock('warehouse').quantity
+const intakeExchange=await parse(receiveClient3WatchReturn(db,manager,1,exchangeOrder.orderId,{
+  operationType:'exchange',returnId:pendingExchange.returnId,returnItemId:pendingExchange.returnItemId,
+  destination:'warehouse',requestId:'watch-exchange-intake-000001',
+}))
+assert.equal(intakeExchange.status,200,JSON.stringify(intakeExchange))
+assert.equal(intakeExchange.ok,true)
+assert.equal(stock('warehouse').quantity,oldStockBefore+1)
+const repeatedIntake=await parse(receiveClient3WatchReturn(db,manager,1,exchangeOrder.orderId,{
+  operationType:'exchange',returnId:pendingExchange.returnId,returnItemId:pendingExchange.returnItemId,
+  destination:'warehouse',requestId:'watch-exchange-intake-000001',
+}))
+assert.equal(repeatedIntake.ok,true)
+assert.equal(stock('warehouse').quantity,oldStockBefore+1)
+const beforeNewShip=sqlite.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=? AND inventory_source='warehouse'").get(newCatalogVariantId).quantity
+const blockedNewShip=await parse(dispatchClient3WatchOrder(db,manager,1,exchangeOrder.orderId,{
+ requestId:'watch-exchange-newship-000001',
+}))
+assert.equal(blockedNewShip.status,409,'Engraving after exchange must be completed separately')
+sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T14:00:00Z' WHERE order_id=?").run(exchangeOrder.orderId)
+const replacementSent=await parse(dispatchClient3WatchOrder(db,manager,1,exchangeOrder.orderId,{
+ requestId:'watch-exchange-newship-000001',
+}))
+assert.equal(replacementSent.status,200,JSON.stringify(replacementSent))
+assert.equal(replacementSent.ok,true)
+assert.equal(sqlite.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=? AND inventory_source='warehouse'").get(newCatalogVariantId).quantity,beforeNewShip-1)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?').get(exchangeOrder.orderId).n,2)
+const newShipReplay=await parse(dispatchClient3WatchOrder(db,manager,1,exchangeOrder.orderId,{
+ requestId:'watch-exchange-newship-000001',
+}))
+assert.equal(newShipReplay.alreadyCommitted,true)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_EXCHANGE_PASS: stock, order, payment, dispatch, return and exact watch brand exchange')
