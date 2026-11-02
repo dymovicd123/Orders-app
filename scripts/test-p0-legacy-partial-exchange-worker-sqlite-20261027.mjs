@@ -350,7 +350,7 @@ try {
     orderId:legacyId,exchangeDate:'2026-10-20',oldItemId:legacyOld.id,oldQuantity:1,
     oldPhysicalState:'warehouse',oldReturnSource:'warehouse',
     newItem:{productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:newColor,
-      material:'СТАНДАРТ',length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1},
+      material:'СТАНДАРТ',length:'СТАНДАРТ',size,sourceType:'warehouse',quantity:1,shipmentState:'sent'},
     financialAction:'none',financialAmount:0,paymentMethod:'',comment:'Тест совместимого обмена',
   }
   const legacySwap=await api('/api/exchanges','POST',legacyExchangePayload,{
