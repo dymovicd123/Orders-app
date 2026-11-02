@@ -533,9 +533,8 @@ export async function createReturn(
     // If two employees both read the same refundable amount, the losing batch
     // intentionally fails returns.amount NOT NULL before recording money,
     // stock obligations or the critical operation's target.
-    let insertReturn: D1Result<unknown>;
     try {
-      [insertReturn] = await db.batch(createStatements);
+      await db.batch(createStatements);
     } catch (error) {
       const raw = cleanText(error instanceof Error ? error.message : error);
       if (/not null constraint failed:\s*returns\.amount/i.test(raw)) {
@@ -545,7 +544,6 @@ export async function createReturn(
       }
       claimConflict(error);
     }
-    returnId = toInt(insertReturn.meta?.last_row_id, 0);
     await refreshCriticalOperation(db, criticalOperation);
     returnId = toInt(criticalOperation.row.target_id, 0) || returnId;
   }
@@ -553,7 +551,7 @@ export async function createReturn(
   const stockReturns: unknown[] = [];
   const pendingInventory: unknown[] = [];
   for (const validated of validatedSelectedItems) {
-    const { selected, orderItem, quantity, wantsRestock, isWorkshop, physicalTracking, physicalState, inventorySource } = validated;
+    const { selected, orderItem, quantity, wantsRestock, isWorkshop, inventorySource } = validated;
 
     // Previously committed claim remains mapped after uncertain HTTP responses.
     // Old interrupted requests are guarded by a fresh atomic claim, never replayed blindly.
