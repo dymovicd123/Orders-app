@@ -1,5 +1,6 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
+import { persistWatchOrderCommit, type WatchOrderCommit } from './client3-watch-order-commit.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
@@ -695,7 +696,7 @@ async function markCreateCustomerOrderCount(
 }
 
 
-export async function createOrder(db: D1Database, input: OrderInput, actor?: AuthUser | null) {
+export async function createOrder(db: D1Database, input: OrderInput, actor?: AuthUser | null, watchCommit?: WatchOrderCommit) {
   await ensureOrderItemWorkshopColumn(db);
   let criticalOperation: CriticalOperationHandle | null = null;
   try {
@@ -934,7 +935,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const retiredConfirmationItems = [];
         const retiredCandidateByInputIndex = new Map<number, Awaited<ReturnType<typeof inspectOrderRetiredCatalogIdentityV2>>>();
         for (const [index, item] of normalizedItems.entries()) {
-          if (item.isWorkshop) continue;
+          if (watchCommit || item.isWorkshop) continue;
           const retiredCandidate = await inspectOrderRetiredCatalogIdentityV2(db, item);
           if (!retiredCandidate) continue;
           const inputIndex = Math.max(0, toInt(item.inputIndex, index));
@@ -952,7 +953,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         // Catalog row is recreated. This keeps failed order attempts read-only.
         const retiredFreshShortages = [];
         for (const [index, item] of normalizedItems.entries()) {
-          if (item.isWorkshop || item.observedPhysicalQuantity !== null || item.shortageAcknowledged) continue;
+          if (watchCommit || item.isWorkshop || item.observedPhysicalQuantity !== null || item.shortageAcknowledged) continue;
           const inputIndex = Math.max(0, toInt(item.inputIndex, index));
           const retiredCandidate = retiredCandidateByInputIndex.get(inputIndex);
           if (!retiredCandidate || !confirmedRetiredKeys.has(retiredCandidate.confirmationKey)) continue;
@@ -974,6 +975,10 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const preResolvedCatalog: Array<{ productId: number | null; variantId: number | null }> = [];
         const observedByVariant = new Map<string, number>();
         for (const item of normalizedItems) {
+          if (watchCommit) {
+            preResolvedCatalog.push({ productId: watchCommit.catalogProductId, variantId: watchCommit.catalogVariantId });
+            continue;
+          }
           const allowRetiredRecreate = !item.isWorkshop && confirmedRetiredKeys.has(catalogOrderInputKey(item));
           const resolved = item.isWorkshop
             ? await resolveWorkshopCatalogProductOnly(db, item)
@@ -1109,6 +1114,16 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
 
     if (criticalOperation.row.step !== 'content_written') {
       throw new CriticalOperationConflictError('Безопасное создание заказа остановилось до записи содержимого. Нажмите «Сохранить заказ» ещё раз.');
+    }
+
+    // Client3 order is not complete until its brand, exact SKU and engraving
+    // are durably connected. A retry of the same critical request resumes here.
+    if (watchCommit) {
+      const itemId = await criticalOperationEntityId(db, criticalOperation.requestId, 'order_item', 'order_create:item:1');
+      if (!itemId || normalizedItems.length !== 1) {
+        throw new CriticalOperationConflictError('Не удалось подтвердить часовую позицию заказа. Повторите запрос.');
+      }
+      await persistWatchOrderCommit(db, orderId, itemId, watchCommit);
     }
 
     const stockResults = Array.isArray(insertedContent?.stockResults) ? insertedContent.stockResults : [];
