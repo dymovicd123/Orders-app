@@ -1,4 +1,5 @@
 name: Client3 unused linked SKU edit — Main safety checks
+# Final check: cost/sale continuity and extra Main operational guards.
 on:
   push:
     branches: [client3/step1-unused-linked-sku-edit-20261102]
