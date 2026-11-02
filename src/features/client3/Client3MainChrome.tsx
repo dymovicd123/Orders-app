@@ -33,7 +33,7 @@ import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
-export type WatchMainRoute='orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'
+export type WatchMainRoute='orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'orders',module:'orders',label:'Заказы'},
@@ -41,7 +41,7 @@ const nav=[
   {route:'warehouse',module:'inventory',label:'Склад'},
   {route:'finance',module:'finance',label:'Финансы'},
   {route:'staff',module:'team',label:'Команда'},
-  {route:'catalog',module:'directory',label:'Справочники'},
+  {route:'references',module:'directory',label:'Справочники'},
 ] as const
 const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   orders:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
@@ -56,6 +56,7 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   staff:{title:'Команда',subtitle:'Сотрудники и доступ к брендам'},
   accounts:{title:'Команда',subtitle:'Сотрудники и доступ к брендам'},
   legacy:{title:'Заказы',subtitle:'Исторические записи'},
+  references:{title:'Справочники',subtitle:'Бренды, характеристики часов, доставка и способы оплаты'},
 }
 export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,children,error,success,warning}:{
   user:User;section:WatchMainRoute;onNavigate:(v:WatchMainRoute)=>void;onLogout:()=>void;onRefresh:()=>void;
