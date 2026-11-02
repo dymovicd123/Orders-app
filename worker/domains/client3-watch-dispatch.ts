@@ -6,9 +6,10 @@ const fail=(code:string,message:string,status=409)=>json({ok:false,code,message}
 type WatchDispatchSelection={orderItemId:number;quantity:number}
 type DispatchInput={requestId?:unknown;items?:unknown}
 
-/** Main's selective shipment engine owns the actual physical movement and
- * reservation fulfilment. Client3 authenticates exact watch lines and brand.
- * A full line can be selected independently; never dispatch an unresolved hold.
+/** Main's selective shipment engine owns physical movement, split rows,
+ * reservation fulfilment and financial consistency. Client3 verifies brand,
+ * watch SKU and engraving for each requested quantity. A split must copy
+ * watch-specific SKU/engraving to the new held row in the SAME D1 transaction.
  */
 export async function dispatchClient3WatchOrder(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:DispatchInput,
@@ -65,9 +66,9 @@ export async function dispatchClient3WatchOrder(
    return fail('WATCH_DISPATCH_SELECTION_INVALID','Неверный состав отправки: повторяющиеся или пустые позиции.',400)
  const byId=new Map(rows.map(x=>[Number(x.id),x]))
  if(chosen.some(x=>!byId.has(x.orderItemId)||
-   Number(byId.get(x.orderItemId)!.quantity)!==x.quantity))
+   x.quantity>Number(byId.get(x.orderItemId)!.quantity)))
    return fail('WATCH_DISPATCH_QUANTITY_INVALID',
-     'Для этой отправки выберите полную товарную строку. Частичное количество внутри строки пока не поддерживается.',409)
+     'Количество отправки не может превышать остаток выбранной позиции.',409)
 
  // An ambiguous network retry after a successful dispatch must be handled by
  // Main's idempotent operation BEFORE checking the now-fulfilled reservation.
@@ -90,6 +91,7 @@ export async function dispatchClient3WatchOrder(
  try{
    const result=await dispatchSelectedCompleteOrderLines(db,orderId,{
      requestId,items:chosen,actor:'client3-watch:'+actor.id,dispatchDate:localDate,
+     watchSplitBrandId:brandId,
    })
    if(!result?.ok)return fail('WATCH_DISPATCH_FAILED','Склад не подтвердил отправку.')
    return json({...result,orderId,brandId,stockDispatched:true,
