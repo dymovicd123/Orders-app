@@ -1,0 +1,88 @@
+name: Client3 Stage5 Main resolver semantic acceptance (NO DEPLOY)
+on:
+  push:
+    branches: [client3/stage5-resolver-main-parity-20261103]
+    paths: ['.github/workflows/client3-stage5-resolver-main-acceptance.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Third Worker only, no parallel warehouse form
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/stage5-resolver-main-parity-20261103
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test ! -e src/features/client3/WatchBulkOperations.tsx
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const operations=readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8')
+          const component=readFileSync('src/features/client3/WatchPersistentRevision.tsx','utf8')
+          const handler=readFileSync('worker/domains/client3-watch-revision-session.ts','utf8')
+          const routes=readFileSync('worker/domains/client3-watches.ts','utf8')
+          assert.equal((operations.match(/<h3>Складские операции<\/h3>/g)||[]).length,1)
+          assert(operations.includes("mode==='count'&&persistentRevision"))
+          assert(operations.includes('Ревизия с сохранением прогресса'))
+          assert(operations.includes('Быстрая корректировка'))
+          assert(component.includes('Начать полную ревизию бренда'))
+          assert(component.includes('Начать ревизию выбранных'))
+          assert(component.includes('Сохранить введённые количества'))
+          assert(component.includes('Завершить и применить ревизию'))
+          assert(component.includes('stocktake-e-product-nav'))
+          assert(component.includes('<WatchOperationInlineCatalog'))
+          assert(component.includes("onBlur={()=>"))
+          for(const action of ['start','count','add','complete','cancel'])
+            assert(routes.includes("revision/"+action)||handler.includes("'"+action+"'"))
+          assert(handler.includes('completeInventoryStocktakeSession'))
+          assert(handler.includes('saveInventoryStocktakeCount'))
+          assert(handler.includes('inventoryStocktake_sessions')===false)
+          assert(handler.includes('watch_products'))
+          assert(component.includes('setShowOutcome(true)'))
+          assert(component.includes('onActiveChange(true)'))
+          assert(component.includes('onClick={()=>{hydrate(null);setShowOutcome(false);onActiveChange(false)}}'))
+          assert(!component.includes('const unsaved='))
+          assert(!handler.includes('const sourceLabel='))
+          assert(!/\/api\/inventory\/(problems|issues)/.test(component))
+          const resolver=readFileSync('worker/domains/client3-watch-order-manual.ts','utf8')
+          assert(resolver.includes('normalizeCatalogProductIdentityKey'))
+          assert(resolver.includes('watchReferenceIdentityKey'))
+          assert(resolver.includes('WATCH_SYNONYMS'))
+          assert(resolver.includes('matchReference('))
+          assert(resolver.includes('Характеристика «'))
+          assert(resolver.includes("known.length>1"))
+          assert(resolver.includes('matched.length>1'))
+          const regression=readFileSync('scripts/client3/test-watch-full-order-engine-20261102.mjs','utf8')
+          assert(regression.includes("modelName:'REAL—ENGINE TEST'"))
+          assert(regression.includes("modelName:'  коНЫР-сур  '"))
+          assert(regression.includes("assert.equal(count('inventory_stock'),0,'Synonym resolver"))
+          console.log('CLIENT3_MAIN_KAZAKH_SYNONYM_RESOLVER_GUARD_PASS')
+          console.log('CLIENT3_MAIN_SESSION_RECOUNT_UI_PASS')
+          NODE
+      - run: npm ci
+      - name: Real Main D1/SQLite domain acceptance, full orders and build
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-full-stock-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node scripts/client3/test-watch-main-free-text-ux-20261103.mjs
+          npm run build
+      - name: Record immutable acceptance result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Stage5 Client3 Main-grade watch resolver and exact SKU identity: $RESULT; SHA $GITHUB_SHA. Run https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. No deploy, no remote D1 writes. Source-local one-active-session lock inherited from Main; brand-scoped session ownership and item validation."
