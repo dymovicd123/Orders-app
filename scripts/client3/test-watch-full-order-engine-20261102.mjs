@@ -6,6 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
+import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -149,7 +150,34 @@ const foreignShip=await parse(dispatchClient3WatchOrder(db,manager,2,firstPurcha
   requestId:'watch-real-ship-000002',
 }))
 assert.equal(foreignShip.status,404)
+const returnedAmountBefore=count('financial_events')
+const returnInput={requestId:'watch-real-return-000001',kind:'both',quantity:1,
+ amount:5000,paymentMethod:'KASPI GOLD',reason:'Test customer return'}
+const physicalBeforeReturn=stock('warehouse').quantity
+const firstReturn=await parse(createClient3WatchReturn(db,manager,1,firstPurchase.orderId,returnInput))
+assert.equal(firstReturn.status,200,JSON.stringify(firstReturn))
+assert.equal(firstReturn.ok,true)
+assert.equal(firstReturn.physicalReceiptPending,true)
+assert.equal(stock('warehouse').quantity,physicalBeforeReturn,'Return registration cannot silently restock watches')
+assert.equal(count('returns'),1)
+assert(count('financial_events')>returnedAmountBefore,'Refund must enter money audit')
+const replayReturn=await parse(createClient3WatchReturn(db,manager,1,firstPurchase.orderId,returnInput))
+assert.equal(replayReturn.status,200,JSON.stringify(replayReturn))
+assert.equal(count('returns'),1)
+const foreignReturn=await parse(createClient3WatchReturn(db,manager,2,firstPurchase.orderId,{
+ ...returnInput,requestId:'watch-real-return-000002'
+}))
+assert.equal(foreignReturn.status,404)
+const returnedItem=sqlite.prepare('SELECT ri.id,ri.return_id FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=?').get(firstPurchase.orderId)
+const intake={requestId:'watch-real-intake-000001',returnId:returnedItem.return_id,
+ returnItemId:returnedItem.id,destination:'warehouse'}
+const intakeSaved=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
+assert.equal(intakeSaved.status,200,JSON.stringify(intakeSaved))
+assert.equal(stock('warehouse').quantity,physicalBeforeReturn+1)
+const intakeReplay=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
+assert.equal(intakeReplay.ok,true)
+assert.equal(stock('warehouse').quantity,physicalBeforeReturn+1)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
-console.log('CLIENT3_FULL_MAIN_STOCK_ORDER_DISPATCH_PASS: real stock, order, reserve, payment, engraving gate and Stage5 shipping')
+console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: stock, order, payment, engraving, dispatch, refund and physical return receipt')
