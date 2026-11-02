@@ -124,7 +124,8 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
       setModelId(result.watchProductId||0)
       setNotice(result.alreadyExists?'Модель уже существует.':'Модель добавлена. Теперь укажите комплектацию.')
       setReload(x=>x+1)
-    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить модель')}
+      return true
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить модель');return false}
     finally{setBusy(false)}
   }
   const provisionVariant=async(variantId:number)=>{
@@ -264,7 +265,8 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
       })
       setNotice(result.alreadyExists?'Такая комплектация уже существует.':'Комплектация зарегистрирована без изменения остатков.')
       setReload(x=>x+1)
-    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию')}
+      return true
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию');return false}
     finally{setBusy(false)}
   }
   if(view==='catalog'){
@@ -353,7 +355,7 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
                 onClick={()=>setShowNewModel(false)}>Отмена</button>
             </div>
             <form className="catalog-product-form catalog-product-form-v2 w6-new-product-form"
-              onSubmit={async e=>{await createModel(e);setShowNewModel(false)}}>
+              onSubmit={async e=>{if(await createModel(e))setShowNewModel(false)}}>
               <label className="wide-field"><span>Название модели</span>
                 <input required maxLength={150} value={modelName}
                   onChange={e=>setModelName(e.target.value)} placeholder="Название часов"/></label>
@@ -383,7 +385,7 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged}:{brand:
                   onClick={()=>setShowNewVariant(false)}>Закрыть</button>
               </div>
               <form className="subgrid inventory-subgrid catalog-variant-form-grid w6-variant-form-grid"
-                onSubmit={async e=>{await createVariant(e);setShowNewVariant(false)}}>
+                onSubmit={async e=>{if(await createVariant(e))setShowNewVariant(false)}}>
                 <label>Пол<select value={gender} onChange={e=>setGender(e.target.value as typeof gender)}>
                   {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
                 </select></label>
