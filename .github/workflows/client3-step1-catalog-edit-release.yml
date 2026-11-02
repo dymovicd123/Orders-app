@@ -1,7 +1,7 @@
-name: Client3 Step1 Main catalog EDIT release (third only)
+name: Client3 Step1 safe linked SKU edits release (third only)
 on:
   push:
-    branches: [client3/step1-catalog-edit-20261102]
+    branches: [client3/step1-unused-linked-sku-edit-20261102]
     paths: ['.github/workflows/client3-step1-catalog-edit-release.yml']
 permissions: {contents: read}
 jobs:
@@ -19,7 +19,7 @@ jobs:
       - name: Verify only third tenant is targeted
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/client3/step1-catalog-edit-20261102
+          test "$GITHUB_REF" = refs/heads/client3/step1-unused-linked-sku-edit-20261102
           test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
           test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
           test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
