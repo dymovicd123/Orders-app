@@ -27,7 +27,7 @@ const lines=(raw:string):Line[]=>{
  try{const x=JSON.parse(raw) as Line[];return Array.isArray(x)?x.filter(x=>x.id>0&&x.quantity>0):[]}catch{return []}
 }
 const num=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
-const path=(id:number,mode:'metadata'|'prices'|'watch')=>'/api/client3/watches/orders/'+id+'/'+
+const path=(id:number,mode:'metadata'|'prices'|'watch'|'composition')=>'/api/client3/watches/orders/'+id+'/'+
   (mode==='watch'?'watch-details':mode)
 type AdminWatch={deliveryAddress:string;postalCode:string;urgent:boolean;
  shippingDeadlineAt:string;items:Array<{orderItemId:number;engravingText:string}>}
