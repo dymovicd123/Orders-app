@@ -33,19 +33,24 @@ try {
     allowedBrands:['TAUWACH','WACHIZEN'],
     catalog,deliveryMethods:['Казпочта','Курьер'],onSave:async()=>{},
   }))
-  for(const label of ['Оформление заказа','Бренд','Откуда заберут часы',
+  for(const label of ['Клиент и условия заказа','Бренд','Источник',
     'Модель и комплектация','Цена по каталогу','Цена продажи','Получено от клиента','Комментарий логисту',
-    'Текст гравировки','Полный адрес доставки','Индекс','Город',
+    'текст гравировки','Полный адрес доставки','Индекс','Город',
     'Отправить до','Срочный заказ','Казпочта','KASPI RED','KASPI GOLD','Рассрочка',
     'ЧЁРНЫЙ','КОРИЧНЕВЫЙ']){
     assert(html.includes(label),'Missing customer watch form field/option: '+label)
   }
   assert(html.includes('type="datetime-local"'),'Shipping cutoff needs date AND time')
+  assert(html.includes('Выберите бренд'),'Require explicit brand before stock source')
+  assert(html.includes('disabled=""'),'Stock source must be disabled before brand choice')
   assert(html.includes('type="checkbox"'),'Urgency is separate')
   assert(html.includes('type="submit"')&&html.includes('disabled'),'Empty watch selection must not save order')
-  assert(html.indexOf('Бренд')<html.indexOf('Откуда заберут часы') &&
-    html.indexOf('Откуда заберут часы')<html.indexOf('Модель и комплектация'),
-    'Watch order must show brand and source before SKU')
+  assert(html.indexOf('Бренд')<html.indexOf('Источник') &&
+    html.indexOf('Источник')<html.indexOf('Товары в заказе'),
+    'Brand and source must precede the item selection step')
+  assert(!html.includes('Модель и комплектация'), 'Product/SKU must be hidden until brand and source are explicitly chosen')
+  for(const step of ['Клиент и условия заказа','Товары в заказе','Оплаты','Проверка заказа'])
+    assert(html.includes(step),'Missing Main create order step: '+step)
   assert(!html.includes('Жилет')&&!html.includes('Шапан'),'Do not seed third-party clothing catalog')
   console.log('CLIENT3_WATCH_ORDER_FORM_SSR_PASS: brand-source-SKU, leather dual colors, safe qty, engraving, Kazpost, exact deadline')
 } finally{await server.close()}
