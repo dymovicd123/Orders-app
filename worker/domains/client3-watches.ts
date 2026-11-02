@@ -366,7 +366,7 @@ export async function routeClient3Watches(
   }
   const watchReturnMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return$/.exec(url.pathname)
   if(watchReturnMatch&&request.method==='POST'){
-    const input=await readJson<{brand?:unknown;requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;paymentMethod?:unknown;reason?:unknown}>(request)
+    const input=await readJson<{brand?:unknown;requestId?:unknown;kind?:unknown;quantity?:unknown;items?:unknown;amount?:unknown;paymentMethod?:unknown;refundParts?:unknown;reason?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return createClient3WatchReturn(db,actor,scope.row!.id,Number(watchReturnMatch[1]),input)
