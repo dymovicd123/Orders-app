@@ -1,5 +1,6 @@
 // Step 190.6A: Worker composition root. Domain logic lives under worker/core and worker/domains.
 import { json, measuredJsonRead, measuredResponseRead, publicApiError, readJson } from './core/http.ts'
+import { routeClient3Watches } from './domains/client3-watches.ts'
 import { cleanText, normalizeDate, normalizeOrderStatus, normalizeShippingStatus, normalizeSourceType, toInt, upperText } from './core/text.ts'
 import type { AuthUser, Env, InventoryItemInput, OrderInput, ReferenceKind } from './core/types.ts'
 import { listActivityLog, listOrdersFinanceSummary, listReturnHistory, writeActivityLog } from './domains/activity.ts'
@@ -144,6 +145,24 @@ export default {
           const warehouseHeaders = new Headers(request.headers);
           warehouseHeaders.set('X-Access-Role', 'admin');
           request = new Request(request, { headers: warehouseHeaders }) as any;
+        }
+      }
+
+      // Client3 uses a single third-party D1 but two BRANDS. Old generic endpoints
+      // do not understand brand-scoped permissions; managers must never reach them
+      // until their watch-native replacements are implemented and accepted.
+      if (env.CLIENT3_WATCHES === '1') {
+        if (url.pathname.startsWith('/api/client3/watches/')) {
+          if (!authUser) return json({ok:false,message:'Войдите в систему.'},{status:401});
+          const response = await routeClient3Watches(env.DB, request, url, authUser);
+          if (response) return response;
+        }
+        if (authUser && authUser.role !== 'admin' &&
+            url.pathname.startsWith('/api/') &&
+            !url.pathname.startsWith('/api/auth/') &&
+            url.pathname !== '/api/health') {
+          return json({ok:false,code:'WATCH_NATIVE_ROUTE_REQUIRED',
+            message:'Брендовый доступ доступен только через новый интерфейс часов.'},{status:403});
         }
       }
 
