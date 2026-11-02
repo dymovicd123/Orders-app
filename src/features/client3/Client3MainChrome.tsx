@@ -34,7 +34,7 @@ import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
 export type WatchMainRoute='orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'
-type User={id:number;role:string;employeeRole?:string;displayName?:string}
+type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'orders',module:'orders',label:'Заказы'},
   {route:'logistics',module:'workshop',label:'Логистика'},
@@ -95,7 +95,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
           <div className="card-label">Аккаунт</div>
           <div className="access-role-control">
             <div className="auth-user-card"><strong>{display}</strong>
-              <span>@{user.id}</span>
+              <span>@{user.login||user.id}</span>
               <em>{isAdmin?'Администратор':user.employeeRole||'Менеджер'}</em></div>
             <div className="access-role-actions">
               {isAdmin&&<button className="secondary compact" type="button"
@@ -112,7 +112,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
               const route=item.route as WatchMainRoute
               return <a key={route} href={'#'+route}
                 className={`erp-primary-nav-button ${current===route?'is-current':''}`}
-                title={module.note}
+                title={item.label}
                 aria-current={current===route?'page':undefined}
                 onClick={e=>{e.preventDefault();onNavigate(route);setMobileNavOpen(false)}}>
                 <span className="erp-nav-icon">{module.icon}</span>
@@ -139,7 +139,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
           </button>
           <div className="erp-topbar-status">
             <span className="hint">Роль: <strong>{isAdmin?'Админ':user.employeeRole||'Менеджер'}</strong></span>
-            <span className="status-pill status-online">Готово</span>
+            <span className="status-pill status-online">Сессия активна</span>
           </div>
         </div>
       </header>
