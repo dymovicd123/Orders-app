@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
+import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
 import './styles/client3-watch-shell.css'
@@ -46,7 +47,7 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create'>('logistics')
+  const [tab, setTab] = useState<'logistics' | 'catalog' | 'create' | 'staff'>('logistics')
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [models, setModels] = useState<WatchOrderChoice[]>([])
@@ -205,6 +206,8 @@ export function WatchClient3App() {
     <nav className="watch-shell-nav" aria-label="Разделы">
       <button type="button" aria-current={tab === 'logistics' ? 'page' : undefined}
         onClick={() => setTab('logistics')}>Логистика</button>
+      {user.role==='admin'&&<button type="button" aria-current={tab==='staff'?'page':undefined}
+        onClick={()=>setTab('staff')}>Доступ к брендам</button>}
       {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'create' ? 'page' : undefined}
         onClick={() => { setTab('create');setError('');setSuccess('') }}>Новый заказ</button>}
       {brands.length > 0 && (user.role === 'admin' || user.employeeRole !== 'Логист') && <button type="button" aria-current={tab === 'catalog' ? 'page' : undefined}
@@ -213,7 +216,7 @@ export function WatchClient3App() {
     <main className="watch-shell-content">
       {error && <p role="alert" className="watch-shell-error">{error}</p>}
       {success && <p role="status" className="watch-shell-success">{success}</p>}
-      {tab === 'create'
+      {tab === 'staff' ? <WatchBrandAccessPanel/> : tab === 'create'
         ? catalogBusy ? <p className="watch-shell-loading">Загрузка доступных часов…</p>
           : <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
               isAdmin={user.role==='admin'} managers={managerChoices}
