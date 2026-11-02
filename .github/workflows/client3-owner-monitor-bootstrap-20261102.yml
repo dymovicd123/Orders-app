@@ -1,0 +1,116 @@
+name: Client3 secured monitoring administrator bootstrap (THIRD D1 ONLY)
+on:
+  push:
+    branches: [client3/owner-monitor-bootstrap-20261102]
+    paths: ['.github/workflows/client3-owner-monitor-bootstrap-20261102.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  create-owner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Verify exact third D1 binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/owner-monitor-bootstrap-20261102
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .vars.CLIENT3_INSTALLATION wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Check missing account and capture original business counts
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM app_users WHERE lower(login)='owner-monitor') AS existing_owner,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM watch_brands) AS brands_count" \
+            | jq -ce '.[0].results[0] | select(.users_count>=4 and .existing_owner==0 and .orders_count>=2 and .payments_count>=2 and .brands_count==2)' > /tmp/owner-before.json
+          echo "Preflight OK: owner-monitor missing, existing client data present."
+      - name: Generate random credential and RSA-encrypt delivery (runner only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > /tmp/owner-pub.pem <<'PUB'
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs3I1yLr8rxVgX3MK8vP9
+          llZQr+LGh951PirrbfSlSTINzg/vj39cPJM4Cy9WInvQPzMT/PhKEipZ90DShRA/
+          x4BMHbdKXuhLbbmooUAdBoIrlV4v/NoUwnVSXYmSpKbeJAGChkLOjatvinoqnrDM
+          EFDMm3pR+p10VGxZiKRoULSX6GpJYj2pcRegBjF+gqJuvRyQteIS6qbt3vCzQIKL
+          HgyM/2rckiIkqJQAd17DGPok8o1iAs2BJmCAIhMs7Azssw4SxUjv7FiU33UwNBgy
+          P5EYzAeNvoSgRewPKK2Rtqjc03ve9Y/AjhGiPOvhWtsvkq6X1wEh1X5Ex4RU1I/p
+          9QIDAQAB
+          -----END PUBLIC KEY-----
+          PUB
+          cat > /tmp/owner-generate.mjs <<'NODE'
+          import {randomBytes,pbkdf2Sync,publicEncrypt,constants} from 'node:crypto'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          const pwd=randomBytes(27).toString('base64url')
+          const salt=randomBytes(16)
+          const hash='pbkdf2$30000$'+salt.toString('base64url')+'$'+pbkdf2Sync(pwd,salt,30000,32,'sha256').toString('base64url')
+          const sql="INSERT INTO app_users(email,login,password_hash,role,manager_id,display_name,is_active,must_change_password,password_updated_at) VALUES('owner-monitor@orders.invalid','owner-monitor','"+hash+"','admin',NULL,'Администратор',1,1,datetime('now'));\n"+
+            "INSERT INTO auth_audit_log(event_type,target_user_id,target_login,details,created_at) SELECT 'auth_user_created',id,login,'owner_monitor_admin; password_change_required=1',datetime('now') FROM app_users WHERE login='owner-monitor';\n"
+          writeFileSync('/tmp/owner-insert.sql',sql,{mode:0o600})
+          const cipher=publicEncrypt({key:readFileSync('/tmp/owner-pub.pem'),padding:constants.RSA_PKCS1_OAEP_PADDING,oaepHash:'sha256'},Buffer.from(pwd)).toString('base64')
+          writeFileSync('/tmp/owner-sealed.txt',cipher+'\n',{mode:0o600})
+          NODE
+          node /tmp/owner-generate.mjs
+          echo "Strong one-time password generated and sealed, plaintext never logged."
+      - name: Create only owner-monitor in isolated third D1
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc \
+            --file /tmp/owner-insert.sql >/tmp/owner-write.log
+          rm -f /tmp/owner-insert.sql /tmp/owner-generate.mjs /tmp/owner-write.log
+          echo "One third-system administrator created."
+      - name: Verify admin rights, forced reset and unchanged historical records
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM app_users) AS users_count,
+              (SELECT COUNT(*) FROM app_users WHERE login='owner-monitor' AND role='admin' AND is_active=1 AND must_change_password=1 AND manager_id IS NULL) AS owner_count,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM watch_brands) AS brands_count" \
+            | jq -ce '.[0].results[0]' > /tmp/owner-after.json
+          jq -e --slurpfile before /tmp/owner-before.json '
+            .users_count==$before[0].users_count+1 and .owner_count==1 and
+            .orders_count==$before[0].orders_count and
+            .payments_count==$before[0].payments_count and
+            .brands_count==$before[0].brands_count
+          ' /tmp/owner-after.json
+          echo "Exactly one valid administrator added; original users/orders/payments unchanged."
+      - name: Deliver encrypted credential only (never publish plaintext)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Client3 owner-monitor account provisioned"
+            echo "Actions run: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}"
+            echo "Login: owner-monitor. Active admin; password change mandatory on first login."
+            echo "Encrypted one-time password for owner delivery (RSA-OAEP-SHA256; NOT plaintext):"
+            echo '~~~'
+            cat /tmp/owner-sealed.txt
+            echo '~~~'
+            echo "Third D1 only. No Main/Branch2 changes. Business records unchanged."
+          } > /tmp/owner-report.txt
+          gh issue comment 774 --repo dymovicd123/Orders-app --body-file /tmp/owner-report.txt
+          rm -f /tmp/owner-sealed.txt /tmp/owner-report.txt /tmp/owner-pub.pem
