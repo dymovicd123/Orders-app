@@ -405,7 +405,7 @@ try {
   const pair1={
     orderId:multiId,exchangeDate:'2026-10-20',
     oldItemId:multiOld[0].id,oldQuantity:1,oldPhysicalState:'warehouse',oldReturnSource:'warehouse',
-    newItem:{...legacyCreatePayload.items[0],color:newColor},
+    newItem:{...legacyCreatePayload.items[0],color:newColor,shipmentState:'sent'},
     financialAction:'none',financialAmount:0,paymentMethod:'',comment:'Первый из двух обменов',
   }
   const first=await api('/api/exchanges','POST',pair1,{
@@ -424,7 +424,7 @@ try {
   assert.equal(Number(stock().quantity),beforeMultiOld+1)
   assert.equal(Number(newStock().quantity),beforeMultiNew-1)
   const pair2={
-    ...pair1,oldItemId:multiOld[1].id,newItem:{...legacyCreatePayload.items[0]},
+    ...pair1,oldItemId:multiOld[1].id,newItem:{...legacyCreatePayload.items[0],shipmentState:'sent'},
     financialAction:'extra_payment',financialAmount:1000,paymentMethod:'НАЛИЧКА',
     comment:'Второй обмен — единственная доплата',
   }
@@ -559,7 +559,7 @@ try {
     orderId:unissuedId,exchangeDate:'2026-10-20',
     oldItemId:unissuedItem.id,oldQuantity:1,
     oldPhysicalState:'not_issued',oldReturnSource:'none',
-    newItem:{...legacyCreatePayload.items[0],color:newColor,quantity:1},
+    newItem:{...legacyCreatePayload.items[0],color:newColor,quantity:1,shipmentState:'sent'},
     financialAction:'none',financialAmount:0,paymentMethod:'',
     comment:'Частичный обмен невыданной вещи: 2 старые, одна заменяется',
   }
