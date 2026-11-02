@@ -996,10 +996,10 @@ const moneyRefundEvents=sqlite.prepare(`SELECT payment_method,amount_delta
  ORDER BY event_key`).all('exchanges:'+refundSet.exchangeId)
 assert.deepEqual(moneyRefundEvents.map(x=>[x.payment_method,x.amount_delta]),[
  ['KASPI GOLD',-15000],['KASPI RED',-25000]])
-const refundCancel=await parse(cancelExchangeSetV2(db,refundSet.exchangeId,{
+const refundCancel=await cancelExchangeSetV2(db,refundSet.exchangeId,{
  requestId:'watch-set-cancel-refund-20261103-01',
  comment:'Отмена обмена: клиент вернулся к первоначальным часам',
-}))
+})
 assert.equal(refundCancel.ok,true,JSON.stringify(refundCancel))
 assert.equal(sqlite.prepare('SELECT total_amount,return_amount FROM orders WHERE id=?')
  .get(stage4Refund.created.orderId).return_amount,0)
@@ -1008,10 +1008,10 @@ const reversalRefunds=sqlite.prepare(`SELECT payment_method,amount_delta
  AND source_ref=? ORDER BY event_key`).all('exchanges:'+refundSet.exchangeId)
 assert.deepEqual(reversalRefunds.map(x=>[x.payment_method,x.amount_delta]),[
  ['KASPI GOLD',15000],['KASPI RED',25000]])
-const extraCancel=await parse(cancelExchangeSetV2(db,extraResult.exchangeId,{
+const extraCancel=await cancelExchangeSetV2(db,extraResult.exchangeId,{
  requestId:'watch-set-cancel-extra-20261103-01',
  comment:'Отмена обмена с возвратом всей проведённой доплаты',
-}))
+})
 assert.equal(extraCancel.ok,true,JSON.stringify(extraCancel))
 const paymentsRestored=sqlite.prepare('SELECT received_amount,total_amount FROM orders WHERE id=?')
  .get(stage4Pay.created.orderId)
