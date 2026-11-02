@@ -80,7 +80,7 @@ export async function createClient3WatchReturn(
 /** Records physical intake only after explicit warehouse confirmation. */
 export async function receiveClient3WatchReturn(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,
- input:{requestId?:unknown;returnId?:unknown;returnItemId?:unknown;destination?:unknown},
+ input:{requestId?:unknown;returnId?:unknown;returnItemId?:unknown;destination?:unknown;operationType?:unknown},
 ) {
  if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
    return fail('WATCH_RECEIPT_FORBIDDEN','Приём часов доступен менеджеру или администратору.',403)
@@ -92,7 +92,14 @@ export async function receiveClient3WatchReturn(
  const destination=input.destination
  if(!['warehouse','boutique','no_stock'].includes(String(destination)))
    return fail('WATCH_RECEIPT_DEST_INVALID','Выберите офис, витрину или без возврата в остаток.',400)
+ const operationType=input.operationType==='exchange'?'exchange':'return'
  const match=await db.prepare(
+   operationType==='exchange'?`SELECT ei.id FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+    JOIN watch_order_details wd ON wd.order_id=e.order_id
+    JOIN order_items oi ON oi.id=ei.order_item_id AND oi.order_id=wd.order_id
+    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    WHERE ei.id=? AND e.id=? AND e.order_id=? AND wd.brand_id=?
+      AND ei.role='old' AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1`:
    `SELECT ri.id FROM return_items ri JOIN returns r ON r.id=ri.return_id
     JOIN watch_order_details wd ON wd.order_id=r.order_id
     JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=wd.order_id
@@ -103,7 +110,7 @@ export async function receiveClient3WatchReturn(
  if(!match)return fail('WATCH_RECEIPT_NOT_FOUND','Часы не принадлежат возврату этого бренда.',404)
  try {
    const result=await receiveReturnedItem(db,{
-     requestId:input.requestId as string,operationType:'return',
+     requestId:input.requestId as string,operationType,
      operationId:returnId,operationItemId:returnItemId,
      destination:destination as 'warehouse'|'boutique'|'no_stock',
    })
@@ -118,7 +125,7 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
  if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
    return fail('WATCH_RECEIPT_FORBIDDEN','Приём товара доступен менеджеру и администратору.',403)
  const data=await db.prepare(`
-   SELECT ri.id AS returnItemId,ri.return_id AS returnId,r.order_id AS orderId,
+   SELECT 'return' AS operationType,ri.id AS returnItemId,ri.return_id AS returnId,r.order_id AS orderId,
      o.external_id AS externalOrderId,ri.quantity,r.return_date AS returnDate,
      wp.model_name AS modelName,wv.gender,wv.bracelet_material AS braceletMaterial,
      wv.dial_color AS dialColor,wv.bracelet_color AS braceletColor
@@ -131,7 +138,21 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
    JOIN watch_products wp ON wp.id=wv.watch_product_id
    WHERE wd.brand_id=? AND COALESCE(r.status,'completed')<>'cancelled'
      AND ri.physical_tracking=1 AND ri.physical_received_at IS NULL
-   ORDER BY r.return_date DESC,ri.id DESC LIMIT 100
- `).bind(brandId).all<Record<string,unknown>>()
+   UNION ALL
+   SELECT 'exchange' AS operationType,ei.id AS returnItemId,ei.exchange_id AS returnId,e.order_id AS orderId,
+     o.external_id AS externalOrderId,ei.quantity,e.exchange_date AS returnDate,
+     wp.model_name AS modelName,wv.gender,wv.bracelet_material AS braceletMaterial,
+     wv.dial_color AS dialColor,wv.bracelet_color AS braceletColor
+   FROM exchange_items ei
+   JOIN exchanges e ON e.id=ei.exchange_id
+   JOIN orders o ON o.id=e.order_id
+   JOIN watch_order_details wd ON wd.order_id=e.order_id
+   JOIN watch_order_item_details wi ON wi.order_item_id=ei.order_item_id
+   JOIN watch_variants wv ON wv.id=wi.watch_variant_id
+   JOIN watch_products wp ON wp.id=wv.watch_product_id
+   WHERE wd.brand_id=? AND ei.role='old' AND COALESCE(e.status,'completed')<>'cancelled'
+     AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
+   ORDER BY returnDate DESC,returnItemId DESC LIMIT 100
+ `).bind(brandId,brandId).all<Record<string,unknown>>()
  return json({ok:true,brandId,rows:data.results||[]})
 }
