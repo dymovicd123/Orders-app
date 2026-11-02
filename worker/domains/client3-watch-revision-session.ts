@@ -15,7 +15,6 @@ const response=(out:Record<string,unknown>)=>json(out,{status:out.ok===false?409
 const administrator=(actor:AuthUser)=>actor.role==='admin'
 type StartInput={source?:unknown;full?:unknown;modelIds?:unknown}
 type ChangeInput={sessionId?:unknown;itemId?:unknown;countedQuantity?:unknown;watchVariantId?:unknown}
-const sourceLabel=(source:WatchSource)=>source==='office'?'офиса':'витрины'
 
 async function ownedSession(db:D1Database,brandId:number,id:unknown,includeClosed=false){
  if(typeof id!=='string'||!/^REV-[SB]-[PF]-\d{14}-[\dA-F]{8}$/i.test(id))
