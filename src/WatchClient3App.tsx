@@ -84,6 +84,10 @@ export function WatchClient3App() {
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [catalogBusy, setCatalogBusy] = useState(false)
   const [catalogVersion,setCatalogVersion]=useState(0)
+  const [watchRefOptions,setWatchRefOptions]=useState<{paymentMethods:string[];deliveryMethods:string[]}>({
+    paymentMethods:['KASPI GOLD','KASPI RED','Рассрочка'],
+    deliveryMethods:['Казпочта','Курьер','Самовывоз','Межгород'],
+  })
 
   const refreshAuth = useCallback(async () => {
     setChecking(true)
@@ -153,6 +157,21 @@ export function WatchClient3App() {
       .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Менеджеры недоступны')})
     return ()=>controller.abort()
   },[user?.id,user?.role,tab,brands])
+
+  useEffect(()=>{
+    if(!user||user.mustChangePassword||tab!=='create')return
+    const controller=new AbortController()
+    void api<{ok:boolean;rows:Array<{kind:string;value:string}>}>('/api/client3/watches/references',{
+      signal:controller.signal,
+    }).then(result=>{
+      if(controller.signal.aborted)return
+      const paymentMethods=result.rows.filter(row=>row.kind==='paymentMethods').map(row=>row.value)
+      const deliveryMethods=result.rows.filter(row=>row.kind==='deliveryMethods').map(row=>row.value)
+      if(paymentMethods.length&&deliveryMethods.length)setWatchRefOptions({paymentMethods,deliveryMethods})
+    }).catch(cause=>{if(!controller.signal.aborted)setError(
+      cause instanceof Error?cause.message:'Не удалось загрузить способы оплаты и доставки')})
+    return ()=>controller.abort()
+  },[user?.id,user?.mustChangePassword,tab])
 
   const saveWatchOrder=async(draft:WatchOrderDraftPayload)=>{
     const result=await api<{ok:boolean;orderId:number;externalId:string;message?:string;pendingReservation?:boolean;warning?:string}>(
@@ -309,7 +328,8 @@ export function WatchClient3App() {
             {catalogBusy?<article className="card wide">Загрузка доступных часов…</article>:
               <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
                 isAdmin={canAdmin} managers={managerChoices}
-                deliveryMethods={['Казпочта','Курьер','Самовывоз','Межгород']}
+                deliveryMethods={watchRefOptions.deliveryMethods}
+                paymentMethods={watchRefOptions.paymentMethods}
                 onSave={saveWatchOrder}/>}
           </section>:
         activeSection==='returns'?<>
@@ -383,7 +403,7 @@ export function WatchClient3App() {
       </>}
       {activeSection==='references'&&brand&&<WatchReferencesSection
         brand={brand} brands={brands.map(x=>x.code)}
-        onBrandChange={setBrand} onOpenCatalog={()=>goTo('catalog')}
+        onBrandChange={setBrand} canEdit={canAdmin} onOpenCatalog={()=>goTo('catalog')}
         onOpenStaff={canAdmin?()=>goTo('staff'):undefined}/>}
       {activeSection==='finance'&&brands.length>0&&
         <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}/>}
