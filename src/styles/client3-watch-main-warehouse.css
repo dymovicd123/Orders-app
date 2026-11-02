@@ -224,3 +224,41 @@
  .client3-main-stock-operation .stocktake-start-submit{align-items:stretch}
  .client3-main-stock-operation .stocktake-start-submit>button{width:100%;white-space:normal}
 }
+
+/* Main-derived durable stocktake lives inside the existing correction panel:
+   no second bulk/stocktake card and no Problems queue. */
+.client3-revision-mode{display:flex;align-items:center;flex-wrap:wrap;gap:11px;
+ margin:12px 0;padding:12px 14px;background:var(--w12-tint,#eff6ff);
+ border:1px solid var(--w12-border,#93c5fd);border-radius:10px}
+.client3-revision-mode>strong{font-size:.82rem}
+.client3-revision-mode>div{display:flex;flex-wrap:wrap;gap:5px}
+.client3-revision-mode button{font-size:.82rem;padding:9px 13px;background:#fff;
+ color:#334155;border:1px solid #cbd5e1;border-radius:9px;cursor:pointer}
+.client3-revision-mode button.is-active{color:var(--w12-accent,#1d4ed8);
+ border-color:var(--w12-accent,#1d4ed8);font-weight:700;
+ background:var(--w12-tint,#eff6ff)}
+.client3-watch-persistent-revision{width:min(100%,940px);margin:14px auto;
+ min-width:0}
+.client3-watch-persistent-revision .stocktake-start-submit{max-width:820px;
+ display:flex;gap:13px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.client3-revision-start-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.client3-revision-workspace{display:grid;gap:14px}
+.client3-revision-progress{height:9px;border-radius:999px;background:#e2e8f0;overflow:hidden}
+.client3-revision-progress>div{height:100%;background:#1d4ed8;
+ transition:width .2s}
+.client3-revision-save-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+ padding:12px 0;border-top:1px solid #e2e8f0}
+.client3-revision-save-actions small{color:#64748b}
+.client3-revision-add{display:grid;gap:9px}
+.client3-revision-add-form{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.client3-revision-add-form select{padding:10px;min-width:220px;max-width:100%;
+ background:#fff;border:1px solid #cbd5e1;border-radius:8px;flex:1}
+.client3-revision-workspace .client3-main-stock-sku.is-conflict{
+ border-color:#ef4444;background:#fff1f2}
+.client3-revision-workspace .stocktake-outcome-card{padding:16px;border-radius:12px;
+ background:#f0fdf4;border:1px solid #86efac}
+@media(max-width:680px){
+ .client3-revision-start-buttons{width:100%;flex-direction:column}
+ .client3-revision-start-buttons button{width:100%}
+ .client3-revision-workspace .client3-revision-add-form{flex-direction:column;align-items:stretch}
+}
