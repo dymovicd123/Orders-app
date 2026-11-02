@@ -16,9 +16,12 @@ export async function listClient3WatchOrders(
   db:D1Database,actor:AuthUser,brandId:number,url:URL,
 ) {
   if(!actor?.id)return json({ok:false,code:'WATCH_AUTH_REQUIRED'},{status:403})
+  let from:string|null,through:string|null
   try{
-    const from=validDate(url.searchParams.get('from'))
-    const through=validDate(url.searchParams.get('to'))
+    from=validDate(url.searchParams.get('from'))
+    through=validDate(url.searchParams.get('to'))
+  }catch(cause){return bad(cause instanceof Error?cause.message:'Некорректная дата.')}
+  {
     if(from&&through&&from>through)return bad('Начало периода позже окончания.')
     const q=(url.searchParams.get('q')||'').trim()
     if(q.length>100)return bad('Слишком длинный поисковый запрос.')
@@ -64,5 +67,5 @@ export async function listClient3WatchOrders(
     return json({ok:true,brandId,rows:rows.results||[],totals:totals||{
       orderCount:0,totalAmount:0,receivedAmount:0,debtAmount:0,returnAmount:0,
     },hasMore:rawOffset+rawLimit<Number(totals?.orderCount||0)})
-  }catch(cause){return bad(cause instanceof Error?cause.message:'Не удалось получить заказы.')}
+  }
 }
