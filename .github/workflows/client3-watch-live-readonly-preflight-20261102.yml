@@ -138,3 +138,11 @@ jobs:
           status="$(curl -sS -o /dev/null -w '%{http_code}' "$url/api/orders")"
           test "$status" = 401
           echo CLIENT3_LIVE_READ_ONLY_PRECHECK_PASS_NO_REMOTE_WRITES
+      - name: Report blocked W1c preflight (no customer data)
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "### Client3 W1c preflight blocked\n\nRead-only GitHub Actions run: https://github.com/dymovicd123/Orders-app/actions/runs/${GITHUB_RUN_ID}\n\nMigration and deployment remain blocked. Inspect the run for the failing stage; this task did not authorize any D1 write."
