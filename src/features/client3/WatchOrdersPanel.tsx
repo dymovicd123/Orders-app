@@ -5,10 +5,11 @@ import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
+import {WatchAdminOrderActions} from './WatchAdminOrderActions'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
-  orderId:number;externalId:string;orderDate:string;managerName:string|null
+  orderId:number;externalId:string;orderDate:string;managerName:string|null;managerId:number
   recipientName:string;recipientPhone:string;city:string;deliveryMethod:string;
   canonicalCustomerName:string;canonicalCustomerPhone:string;canonicalCity:string;
   canonicalDeliveryType:string;orderComment:string;orderStatus:string;
@@ -250,6 +251,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics,isA
                         Оформить возврат</button>}
                   </div>
 
+                  {isAdmin&&<WatchAdminOrderActions
+                    brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
+                    managerId={Number(order.managerId||0)}
+                    onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
                   {editOrderId===order.orderId&&<WatchOrderCorrections
                     brand={brand} order={order} isAdmin={isAdmin}
                     onCancel={()=>setEditOrderId(null)}
