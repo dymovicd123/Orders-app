@@ -22,6 +22,7 @@ import {countClient3WatchStock,countClient3WatchStockBatch} from './client3-watc
 import {getClient3WatchRevision,startClient3WatchRevision,changeClient3WatchRevision} from './client3-watch-revision-session.ts'
 import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
 import {listClient3WatchStockHistory} from './client3-watch-history.ts'
+import {listClient3WatchDemand} from './client3-watch-demand.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
@@ -356,6 +357,11 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return changeClient3WatchRevision(db,actor,scope.row!.id,
       watchRevisionAction[1] as 'count'|'count-fast'|'add'|'complete'|'cancel',input)
+  }
+  if(url.pathname==='/api/client3/watches/stock/demand'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
+    if(scope.error)return scope.error
+    return listClient3WatchDemand(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/stock/history'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
