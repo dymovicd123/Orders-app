@@ -268,7 +268,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       <button type="button" onClick={()=>{setExchangeOrderId(order.orderId);setReturnOrderId(null)}}>
                         Обменять часы</button>}
                     {(Math.max(0,order.receivedAmount-order.returnAmount)>0||
-                      parsedRows<ItemLine>(order.itemLines).some(line=>line.shipped>0&&line.returnableQuantity>0))&&
+                      parsedRows<ItemLine>(order.itemLines).some(line=>(line.shipped>0||line.stockWriteoffStatus==='fulfilled')&&line.returnableQuantity>0))&&
                       returnOrderId!==order.orderId&&
                       <button type="button" onClick={()=>{setReturnOrderId(order.orderId);setExchangeOrderId(null)}}>
                         Оформить возврат</button>}
