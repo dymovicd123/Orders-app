@@ -12,7 +12,7 @@ const error=(code:string,message:string,status=400)=>
  * These writes must never synthesize a physical arrival or a zero-count stock row.
  */
 export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandId:number) {
-  if(actor.role!=='admin')return error('WATCH_CATALOG_ADMIN_ONLY','Справочник часов изменяет администратор.',403)
+  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return error('WATCH_CATALOG_ADMIN_ONLY','Справочник часов изменяет администратор.',403)
   const records=await db.prepare(`
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
       wp.catalog_product_id AS catalogProductId,wp.is_active AS productActive,
@@ -45,7 +45,7 @@ const validName=(x:unknown):string=>{
 export async function registerWatchModel(
   db:D1Database,actor:AuthUser,brandId:number,input:{modelName?:unknown},options:{fromVerifiedOrder?:boolean}={},
 ) {
-  if(actor.role!=='admin'&&!options.fromVerifiedOrder)return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять модели может только администратор.',403)
+  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад')&&!options.fromVerifiedOrder)return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять модели может только администратор.',403)
   let name:string
   try{name=validName(input?.modelName)}catch(cause){
     return error('WATCH_MODEL_INVALID',cause instanceof Error?cause.message:'Некорректное название модели.')
@@ -87,7 +87,7 @@ export async function registerWatchVariant(
   input:WatchVariantInput & {watchProductId?:unknown},
   options:{fromVerifiedOrder?:boolean}={},
 ) {
-  if(actor.role!=='admin'&&!options.fromVerifiedOrder)return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять комплектации может только администратор.',403)
+  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад')&&!options.fromVerifiedOrder)return error('WATCH_CATALOG_ADMIN_ONLY','Добавлять комплектации может только администратор.',403)
   const productId=Number(input?.watchProductId)
   if(!Number.isSafeInteger(productId)||productId<=0)return error('WATCH_MODEL_INVALID','Выберите модель часов.')
   let v:ReturnType<typeof normalizeWatchVariant>
