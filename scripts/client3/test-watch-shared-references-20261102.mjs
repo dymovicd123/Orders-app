@@ -45,8 +45,8 @@ const addedDelivery=await parse(createClient3WatchReference(db,admin,{
 assert.equal(addedDelivery.status,201)
 const after=await parse(listClient3WatchReferences(db,manager))
 assert(after.rows.some(x=>x.kind==='leatherColors'&&x.value==='ТЁМНО-СИНИЙ'))
-assert(after.rows.some(x=>x.kind==='paymentMethods'&&x.value==='Наличные'))
-assert(after.rows.some(x=>x.kind==='deliveryMethods'&&x.value==='Доставка в офис'))
+assert(after.rows.some(x=>x.kind==='paymentMethods'&&x.value==='НАЛИЧНЫЕ'))
+assert(after.rows.some(x=>x.kind==='deliveryMethods'&&x.value==='ДОСТАВКА В ОФИС'))
 const unauthorized=await parse(createClient3WatchReference(db,manager,{
   kind:'paymentMethods',value:'Fake',
 }))
@@ -56,7 +56,7 @@ const custom=await parse(createClient3WatchReference(db,admin,{
 }))
 assert.equal(custom.status,201)
 assert((await parse(listClient3WatchReferences(db,manager))).rows.some(x=>
-  x.kind==='movements'&&x.value==='Механизм с турбийоном'))
+  x.kind==='movements'&&x.value==='МЕХАНИЗМ С ТУРБИЙОНОМ'))
 assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM watch_reference_values WHERE kind='leatherColors' AND value='ТЁМНО-СИНИЙ'").get().c,1)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
