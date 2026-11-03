@@ -32,12 +32,12 @@ function characteristics(row:WatchOrderChoice) {
  */
 export function WatchStockMainBrowse({brand,canCorrect,onCorrect}:{
   brand:WatchBrand;canCorrect:boolean;
-  onCorrect:(selection:{source:Source;watchProductId:number;watchVariantId:number})=>void
+  onCorrect:(selection:{source:Source;watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'})=>void
 }){
   const [rows,setRows]=useState<WatchOrderChoice[]>([])
   const [source,setSource]=useState<Source>('office')
   const [search,setSearch]=useState('')
-  const [availableOnly,setAvailableOnly]=useState(true)
+  const [availableOnly,setAvailableOnly]=useState(false)
   const [selectedKey,setSelectedKey]=useState('')
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
@@ -163,8 +163,14 @@ export function WatchStockMainBrowse({brand,canCorrect,onCorrect}:{
                 <div><span>На месте <b>{amount(s.physical)}</b></span>
                   <span>Резерв <b>{amount(s.reserved)}</b></span>
                   <span>Свободно <b>{amount(s.free)}</b></span></div>
-                {canCorrect&&<button type="button" className="secondary compact"
-                  onClick={()=>onCorrect({source,watchProductId:row.watchProductId,watchVariantId:row.watchVariantId})}>Исправить количество</button>}
+                {canCorrect&&<div className="client3-stock-variant-actions">
+                  <button type="button" className="primary compact"
+                    onClick={()=>onCorrect({source,watchProductId:row.watchProductId,
+                      watchVariantId:row.watchVariantId,operation:'arrival'})}>Оформить приход</button>
+                  <button type="button" className="secondary compact"
+                    onClick={()=>onCorrect({source,watchProductId:row.watchProductId,
+                      watchVariantId:row.watchVariantId,operation:'count'})}>Исправить количество</button>
+                </div>}
               </div>
             })}
           </div>
