@@ -22,7 +22,8 @@ import {listClient3WatchReferences,createClient3WatchReference,updateClient3Watc
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '../../worker/domains/client3-watch-report-details.ts'
-import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash} from '../../worker/domains/client3-watch-cash.ts'
+import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
+import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -1371,6 +1372,101 @@ assert.equal((await parse(getWatchBrandCash(db,admin,2))).initialized,false,
  'Two watches brands must have independent cash ledgers')
 const managerCash=await parse(getWatchBrandCash(db,manager,1))
 assert.equal(managerCash.status,403)
+// Stage 6: Main money plans, departmental targets and leads, never KPI.
+const planWindow=new URL('https://client3.test/api/client3/watches/plans?from=2026-01-01&to=2026-12-31')
+const emptyPlan=await parse(listClient3WatchPlans(db,admin,1,planWindow))
+assert.equal(emptyPlan.departmentPlans.length,0)
+assert.equal(emptyPlan.managerPlans.length,0)
+const depSave=await parse(saveClient3WatchPlan(db,admin,1,{kind:'department',
+ periodStart:'2026-01-01',periodEnd:'2026-12-31',plannedAmount:400000,comment:'План отдела часов'}))
+assert.equal(depSave.status,200,JSON.stringify(depSave))
+const managerPlanSave=await parse(saveClient3WatchPlan(db,admin,1,{kind:'manager',managerId:1,
+ periodStart:'2026-01-01',periodEnd:'2026-12-31',plannedAmount:260000,salaryBase:100000,
+ bonusHitPercent:5,bonusMissPercent:3,comment:'План менеджера часов'}))
+assert.equal(managerPlanSave.status,200,JSON.stringify(managerPlanSave))
+const planRead=await parse(listClient3WatchPlans(db,admin,1,planWindow))
+assert.equal(planRead.departmentPlans.length,1)
+assert.equal(planRead.managerPlans.length,1)
+assert.equal(planRead.departmentPlans[0].plannedAmount,400000)
+assert(Number.isFinite(planRead.departmentPlans[0].factAmount))
+assert.equal(planRead.managerPlans[0].managerId,1)
+assert.equal(planRead.managerPlans[0].plannedAmount,260000)
+const managerView=await parse(listClient3WatchPlans(db,manager,1,planWindow))
+assert.equal(managerView.managerPlans.length,1)
+const wrongPlanBrand=await parse(listClient3WatchPlans(db,admin,2,planWindow))
+assert.equal(wrongPlanBrand.departmentPlans.length,0)
+const nonAdminPlan=await parse(saveClient3WatchPlan(db,manager,1,{kind:'department',
+ periodStart:'2026-01-01',periodEnd:'2026-12-31',plannedAmount:999999}))
+assert.equal(nonAdminPlan.status,403)
+const badPlanManager=await parse(saveClient3WatchPlan(db,admin,2,{kind:'manager',
+ managerId:1,periodStart:'2026-01-01',periodEnd:'2026-12-31',plannedAmount:100}))
+assert.equal(badPlanManager.status,403)
+const leadWindow=new URL('https://client3.test/api/client3/watches/leads?kind=leads&from=2026-01-01&to=2026-12-31')
+const saveLead=await parse(saveClient3WatchLead(db,manager,1,{kind:'leads',managerId:1,
+ date:'2026-11-03',accepted_count:20,bad_count:4,comment:'Заявки из чатов'}))
+assert.equal(saveLead.status,200,JSON.stringify(saveLead))
+const leadRead=await parse(listClient3WatchLeads(db,admin,1,leadWindow))
+assert.equal(leadRead.rows.length,1)
+assert.equal(leadRead.rows[0].qualifiedCount,16)
+assert.equal(leadRead.totals.acceptedCount,20)
+const repeatLead=await parse(saveClient3WatchLead(db,manager,1,{kind:'leads',managerId:1,
+ date:'2026-11-03',accepted_count:21,bad_count:3,comment:'Повторная правка'}))
+assert.equal(repeatLead.status,200)
+assert.equal(count('watch_brand_lead_records'),1,'Main leads must upsert by day/manager')
+const callWindow=new URL('https://client3.test/api/client3/watches/leads?kind=callCentre&from=2026-01-01&to=2026-12-31')
+const saveCall=await parse(saveClient3WatchLead(db,admin,1,{kind:'callCentre',managerId:1,
+ date:'2026-11-03',accepted_leads:15,calls_made:20,calls_accepted:16,
+ fake_count:2,refusal_count:1,potential_count:9,comment:'Тестовые звонки'}))
+assert.equal(saveCall.status,200,JSON.stringify(saveCall))
+const callRead=await parse(listClient3WatchLeads(db,manager,1,callWindow))
+assert.equal(callRead.rows.length,1)
+assert.equal(callRead.rows[0].callsAccepted,16)
+assert.equal(callRead.rows[0].callAcceptanceRate,0.8)
+const forbiddenLead=await parse(saveClient3WatchLead(db,manager,2,{kind:'leads',managerId:1,
+ date:'2026-11-03',accepted_count:999,bad_count:0}))
+assert.equal(forbiddenLead.status,403)
+assert.equal((await parse(listClient3WatchLeads(db,admin,2,leadWindow))).rows.length,0)
+const deleteForbidden=await parse(deleteClient3WatchLead(db,manager,1,{kind:'leads',id:leadRead.rows[0].id}))
+assert.equal(deleteForbidden.status,403)
+const badCount=await parse(saveClient3WatchLead(db,manager,1,{kind:'leads',managerId:1,
+ date:'2026-11-04',accepted_count:3,bad_count:4}))
+assert.equal(badCount.status,400)
+// Main advanced brand cash: reversal is a compensating entry; cash ledger remains immutable.
+const manualId=sqlite.prepare(`SELECT id FROM watch_brand_cash_entries
+ WHERE brand_id=1 AND entry_type='manual_in' ORDER BY id ASC LIMIT 1`).get().id
+const cashReversal=await parse(reverseWatchBrandManualCash(db,admin,1,{
+ entryId:manualId,expectedBalance:10500}))
+assert.equal(cashReversal.status,200,JSON.stringify(cashReversal))
+assert.equal(cashReversal.currentBalance,8000)
+const reverseReplay=await parse(reverseWatchBrandManualCash(db,admin,1,{
+ entryId:manualId,expectedBalance:10500}))
+assert.equal(reverseReplay.currentBalance,8000)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM watch_brand_cash_entries WHERE reverses_entry_id=?')
+ .get(manualId).n,1,'Cash reversal must only be appended once')
+const paused=await parse(setWatchBrandCashAuto(db,admin,1,false))
+assert.equal(paused.autoTrackingEnabled,false)
+const resumed=await parse(setWatchBrandCashAuto(db,admin,1,true))
+assert.equal(resumed.autoTrackingEnabled,true)
+assert.equal(resumed.currentBalance,8000)
+const closed=await parse(resetWatchBrandCashCycle(db,admin,1,{
+ comment:'Новый месяц для контрольной кассы',requestId:'cash-reset-brand-one-20261103',
+ expectedBalance:8000}))
+assert.equal(closed.status,200,JSON.stringify(closed))
+assert.equal(closed.currentBalance,0)
+assert.equal(closed.autoTrackingEnabled,false)
+assert.equal(closed.cycles.length,1)
+assert.equal(closed.cycles[0].closingBalance,8000)
+assert.equal((await parse(getWatchBrandCash(db,admin,2))).initialized,false,
+ 'Other brand never inherits a cash reset')
+const replayCycle=await parse(resetWatchBrandCashCycle(db,admin,1,{
+ comment:'Новый месяц для контрольной кассы',requestId:'cash-reset-brand-one-20261103',
+ expectedBalance:8000}))
+assert.equal(replayCycle.cycles.length,1,'Cash reset must be idempotent')
+const secondCash=await parse(writeWatchBrandCash(db,admin,1,'manual',{
+ direction:'in',amount:400,expectedBalance:0,comment:'Новый цикл',
+ requestId:'cash-second-cycle-in-20261103'}))
+assert.equal(secondCash.currentBalance,400,'Old entries must not leak into new cycle')
+assert.equal(secondCash.cycles.length,1)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
