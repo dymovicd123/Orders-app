@@ -1,0 +1,121 @@
+name: Client3 Main Infopanel Reports Finance and Logistics guarded release
+on:
+  push:
+    branches: [client3/main-dashboard-reports-finance-20261103]
+    paths: ['.github/workflows/client3-main-workspaces-guarded-release-20261103.yml']
+permissions:
+  contents: read
+  actions: read
+  issues: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 3}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Exact accepted source and isolated Client3 identity
+        run: |
+          set -eEuo pipefail
+          trap 'echo "CLIENT3_WORKSPACES_RELEASE_GATE_FAILED line $LINENO"' ERR
+          test "$GITHUB_REF" = refs/heads/client3/main-dashboard-reports-finance-20261103
+          test "$(git rev-parse HEAD^)" = d6d468d8e195ebd94a9fa5dee8fe20a3cd1dd6e3
+          test "$(git diff --name-only d6d468d8e195ebd94a9fa5dee8fe20a3cd1dd6e3 HEAD)" = .github/workflows/client3-main-workspaces-guarded-release-20261103.yml
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41602478532 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41602478532 --jq .head_sha)" = d6d468d8e195ebd94a9fa5dee8fe20a3cd1dd6e3
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+      - run: npm ci
+      - name: Build accepted Client3
+        run: npm run build
+      - name: Pre-deploy business and inventory snapshot, FK check
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/watch-migrations
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/watch-migrations | sort -u || true)"
+          if test -n "$pending"; then test "$pending" = 1001_watch_brand_cash_register.sql; fi
+          echo "Pending Client3 migration: ${pending:-none}"
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json             --command="SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM order_items) order_items_count,
+              (SELECT COUNT(*) FROM payments) payments_count,
+              (SELECT COUNT(*) FROM financial_events) money_events,
+              (SELECT COUNT(*) FROM returns) returns_count,
+              (SELECT COUNT(*) FROM exchanges) exchanges_count,
+              (SELECT COUNT(*) FROM inventory_movements) stock_movements,
+              (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical_sum,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserve_sum,
+              (SELECT COUNT(*) FROM watch_products) products,
+              (SELECT COUNT(*) FROM watch_variants) variants,
+              (SELECT COUNT(*) FROM watch_city_values) cities,
+              (SELECT COUNT(*) FROM watch_model_aliases) aliases"             | jq -ce '.[0].results[0] | select(.orders_count>=0)' > /tmp/watch-before
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json             --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+      - name: Apply ONLY separate brand cash ledger tables
+        run: |
+          set -euo pipefail
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/watch-migrations | sort -u || true)"
+          if test -n "$pending"; then
+            test "$pending" = 1001_watch_brand_cash_register.sql
+            printf 'y\n' | npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+          fi
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json             --command="SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_cash_registers') register_ready,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_cash_entries') entries_ready,
+              (SELECT COUNT(*) FROM watch_brand_cash_registers) initialized_count,
+              (SELECT COUNT(*) FROM watch_brand_cash_entries) entry_count"             | jq -e '.[0].results[0] | select(.register_ready==1 and .entries_ready==1 and .initialized_count==0 and .entry_count==0)'
+      - name: Deploy third Worker only
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Live unauthorized API smoke and unchanged business data
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          test "$(curl -sSL -o /tmp/client3-index -w '%{http_code}' --max-time 30 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-index
+          for path in             '/api/client3/watches/analytics?brand=TAUWACH&from=2026-11-01&to=2026-11-03'             '/api/client3/watches/cash?brand=TAUWACH'             '/api/client3/watches/stock/history?brand=TAUWACH'; do
+            status=$(curl -sS -o /tmp/client3-unauth -w '%{http_code}' --max-time 30 "$base$path")
+            test "$status" = 401 -o "$status" = 403
+          done
+          status=$(curl -sS -o /tmp/client3-cash-unauth -w '%{http_code}' --max-time 30             -X POST -H 'Content-Type: application/json' --data '{"brand":"TAUWACH","action":"setup","openingAmount":100}'             "$base/api/client3/watches/cash")
+          test "$status" = 401 -o "$status" = 403
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json             --command="SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM order_items) order_items_count,
+              (SELECT COUNT(*) FROM payments) payments_count,
+              (SELECT COUNT(*) FROM financial_events) money_events,
+              (SELECT COUNT(*) FROM returns) returns_count,
+              (SELECT COUNT(*) FROM exchanges) exchanges_count,
+              (SELECT COUNT(*) FROM inventory_movements) stock_movements,
+              (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical_sum,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserve_sum,
+              (SELECT COUNT(*) FROM watch_products) products,
+              (SELECT COUNT(*) FROM watch_variants) variants,
+              (SELECT COUNT(*) FROM watch_city_values) cities,
+              (SELECT COUNT(*) FROM watch_model_aliases) aliases"             | jq -ce '.[0].results[0]' > /tmp/watch-after
+          diff -u /tmp/watch-before /tmp/watch-after
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json             --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+          echo CLIENT3_MAIN_DASHBOARD_REPORTS_FINANCE_LOGISTICS_RELEASE_SUCCESS
+      - name: Write release checkpoint to Client3 plan
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "CLIENT3 Main dashboard/reports/finance/logistics release SUCCESS: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Pre-release accepted source d6d468d8e195ebd94a9fa5dee8fe20a3cd1dd6e3, minimal real SQL acceptance https://github.com/dymovicd123/Orders-app/actions/runs/41602478532. Visible Ревизия tab, native city select, Info panel, seven categories of brand-scoped reports with exports, Main six finance tabs with per-brand independent cash ledger and protected manual/reconcile actions, Main-style logistics urgency/stage tabs. Only 1001 new isolated Client3 cash table migration; business/stock/reserve counts and FK unchanged. Main and Branch2 untouched. Full authenticated user/browser QA deliberately deferred by owner."
+      - name: Record any release gate failure
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "CLIENT3 Main workspaces release FAILED/BLOCKED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Accepted source d6d468d8e195ebd94a9fa5dee8fe20a3cd1dd6e3. Do not consider Info panel, Reports and Finance production-shipped unless subsequent release succeeds."
