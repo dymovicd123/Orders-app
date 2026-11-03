@@ -1,6 +1,7 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
 import { normalizeWatchVariant, type WatchVariantInput } from '../../shared/client3/watch-domain.ts'
+import {findWatchModelByIdentity} from './client3-watch-model-aliases.ts'
 
 const error=(code:string,message:string,status=400)=>
   json({ok:false,code,message},{status})
@@ -50,11 +51,12 @@ export async function registerWatchModel(
   try{name=validName(input?.modelName)}catch(cause){
     return error('WATCH_MODEL_INVALID',cause instanceof Error?cause.message:'Некорректное название модели.')
   }
-  // A unique (brand_id, model_name COLLATE NOCASE) constraint handles competing
-  // requests. Only a created or already-identical name may succeed.
-  const existing=await db.prepare(
-    'SELECT id,is_active FROM watch_products WHERE brand_id=? AND model_name=? COLLATE NOCASE LIMIT 1',
-  ).bind(brandId,name).first<{id:number;is_active:number}>()
+  // Main identity equality and explicit aliases must be checked *before*
+  // inserting. Case/Kazakh-equivalent names never create competing model IDs.
+  let existing: {id:number;is_active:number}|null
+  try{existing=await findWatchModelByIdentity(db,brandId,name)}
+  catch(cause){return error('WATCH_MODEL_AMBIGUOUS',
+    cause instanceof Error?cause.message:'Модель неоднозначна.',409)}
   if(existing){
     if(existing.is_active===0){
       if(options.fromVerifiedOrder)return error('WATCH_MODEL_RETIRED','Эта модель была удалена из каталога. Администратор должен отдельно решить вопрос восстановления.',409)
