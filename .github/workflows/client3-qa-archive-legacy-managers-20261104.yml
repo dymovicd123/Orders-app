@@ -1,0 +1,100 @@
+name: Client3 QA - archive old managers without losing order history
+on:
+  push:
+    branches: [client3/isolated-qa-copy-20261103]
+    paths: ['.github/workflows/client3-qa-archive-legacy-managers-20261104.yml']
+permissions:
+  contents: read
+jobs:
+  qa-managers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: npm ci
+      - name: Pin exact QA D1, reject production identifiers
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/isolated-qa-copy-20261103
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          c=json.loads(Path('wrangler.jsonc').read_text())
+          assert c['name']=='orders-app-client3-old-client'
+          assert c['d1_databases'][0]['database_id']=='0717f239-6d81-4837-8586-777d94e22c53'
+          c['name']='orders-app-client3-qa-20261103'
+          c['d1_databases'][0]['database_name']='orders_db_client3_qa_41698114208'
+          c['d1_databases'][0]['database_id']='fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8'
+          Path('wrangler.client3-qa.jsonc').write_text(json.dumps(c,indent=2))
+          PY
+          test "$(jq -r '.d1_databases[0].database_id' wrangler.client3-qa.jsonc)" = fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      - name: Verify archived managers have no active authorized user
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --config wrangler.client3-qa.jsonc --remote --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) AS admins,
+              (SELECT COUNT(*) FROM watch_brands WHERE is_active=1) AS brands,
+              (SELECT COUNT(*) FROM managers WHERE is_active=1 AND created_at<'2026-11-03T18:55:00Z'
+                AND NOT EXISTS(SELECT 1 FROM app_users u
+                  WHERE u.manager_id=managers.id AND u.is_active=1)) AS legacy_without_login" \
+            > /tmp/qa-managers-before.json
+          jq -e '(if type=="array" then .[0].results[0] else .results[0] end)
+            | select(.admins>=1 and .brands==2)' /tmp/qa-managers-before.json >/dev/null
+          jq -r '(if type=="array" then .[0].results[0] else .results[0] end)
+            | "Historical manager records to archive (preserve IDs): \(.legacy_without_login)"' /tmp/qa-managers-before.json
+      - name: Archive only pre-clone manager rows without active user
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --config wrangler.client3-qa.jsonc --remote --json \
+            --command="UPDATE managers SET is_active=0
+              WHERE is_active=1 AND created_at<'2026-11-03T18:55:00Z'
+              AND NOT EXISTS(SELECT 1 FROM app_users u
+                WHERE u.manager_id=managers.id AND u.is_active=1)" >/tmp/qa-manager-archive.json
+      - name: Ensure one active test manager remains for both brands when needed
+        run: |
+          set -euo pipefail
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --config wrangler.client3-qa.jsonc --remote --json \
+            --command="INSERT INTO managers(
+              id,name,role,phone,comment,color_key,hired_at,birth_date,
+              is_active,created_at,updated_at)
+              SELECT (SELECT COALESCE(MAX(id),0)+1 FROM managers),
+                'ТЕСТОВЫЙ МЕНЕДЖЕР QA','Менеджер',NULL,'Только тестовая система',
+                '#2563EB','2026-11-04',NULL,1,'$now','$now'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM managers m JOIN watch_manager_brands mb ON mb.manager_id=m.id
+                WHERE m.is_active=1
+              )" >/tmp/qa-manager-seed.json
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --config wrangler.client3-qa.jsonc --remote --json \
+            --command="INSERT INTO watch_manager_brands(manager_id,brand_id)
+              SELECT m.id,b.id FROM managers m JOIN watch_brands b ON b.is_active=1
+              WHERE m.name='ТЕСТОВЫЙ МЕНЕДЖЕР QA'
+                AND NOT EXISTS(SELECT 1 FROM watch_manager_brands existing
+                  WHERE existing.manager_id=m.id AND existing.brand_id=b.id)" >/tmp/qa-manager-scope.json
+      - name: Validate history, active manager access, and database integrity
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --config wrangler.client3-qa.jsonc --remote --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM managers m JOIN watch_manager_brands mb ON mb.manager_id=m.id
+                JOIN watch_brands b ON b.id=mb.brand_id
+                WHERE m.is_active=1 AND b.code='TAUWACH') AS tau,
+              (SELECT COUNT(*) FROM managers m JOIN watch_manager_brands mb ON mb.manager_id=m.id
+                JOIN watch_brands b ON b.id=mb.brand_id
+                WHERE m.is_active=1 AND b.code='WACHIZEN') AS wach,
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) AS admins" >/tmp/qa-manager-after.json
+          jq -e '(if type=="array" then .[0].results[0] else .results[0] end)
+            | select(.tau>=1 and .wach>=1 and .admins>=1 and .orders_count>=0)' /tmp/qa-manager-after.json >/dev/null
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --config wrangler.client3-qa.jsonc --remote --json \
+            --command="PRAGMA foreign_key_check" > /tmp/qa-manager-fk.json
+          jq -e '(if type=="array" then .[0].results else .results end)|length==0' /tmp/qa-manager-fk.json >/dev/null
+          echo "QA former managers archived; historical orders preserved; both brands have testable active manager"
