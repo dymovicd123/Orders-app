@@ -1,0 +1,28 @@
+name: Client3 fast stocktake input premerge QA
+on:
+  push:
+    branches: [client3/revision-fast-entry-20261103]
+    paths: ['.github/workflows/client3-fast-revision-premerge-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Compact row autosave and backwards compatibility after empty stock revision
+        run: node --experimental-strip-types scripts/client3/test-zero-stock-revision-20261103.mjs
+      - name: Historical handover and Russian labels
+        run: node --experimental-strip-types scripts/client3/test-watch-handover-after-revision-20261103.mjs
+      - name: Watch order/stock/returns and resolver
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Reloadable arrivals and multi-tab drafts
+        run: node --experimental-strip-types scripts/client3/test-watch-arrival-draft-20261103.mjs
+      - name: Team and unified cash
+        run: node --experimental-strip-types scripts/client3/test-watch-shared-cash-team-20261103.mjs
+      - name: TypeScript and production bundle
+        run: npm run build
