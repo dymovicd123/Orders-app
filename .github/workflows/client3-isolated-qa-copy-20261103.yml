@@ -178,30 +178,7 @@ jobs:
               --file=/tmp/qa-virtual-tables.sql > /tmp/qa-fts-schema-log 2>&1
           fi
           echo "Virtual FTS schemas created in QA, regular tables imported next."
-      - name: Import table contents into pre-created QA schema only
-        run: |
-          set -euo pipefail
-          test "$QA_DB" != "$SOURCE_DB"
-          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
-          if ! npx wrangler d1 execute "$QA_DB" --remote \
-            --config wrangler.client3-qa.jsonc --yes \
-            --file=/tmp/client3-qa-data.sql > /tmp/qa-import-log 2>&1; then
-            echo "::error::Isolated D1 import failed; no Worker deployed. Import log withheld because snapshot contains customer data."
-            for phrase in 'no such table' 'foreign key' 'unique constraint' 'syntax error' 'already exists' 'virtual' 'transaction' 'too long' 'unable to' 'error 10000'; do
-              if grep -Fqi "$phrase" /tmp/qa-import-log; then echo "Import diagnostic class: $phrase"; fi
-            done
-            exit 1
-          fi
-          rm -f /tmp/client3-qa-schema.sql /tmp/client3-qa-data.sql
-      - name: Rebuild content-backed search indexes after base import
-        run: |
-          set -euo pipefail
-          if test -s /tmp/qa-virtual-rebuild.sql; then
-            npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
-              --file=/tmp/qa-virtual-rebuild.sql > /tmp/qa-fts-rebuild-log 2>&1
-          fi
-          echo "Search indexes recreated after QA data import."
-      - name: Recreate SQL views in QA after core data and virtual schema
+      - name: Recreate SQL views before QA data import
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -216,6 +193,31 @@ jobs:
             npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
               --file=/tmp/qa-views.sql > /tmp/qa-view-log 2>&1
           fi
+      - name: Import table contents into pre-created QA schema only
+        run: |
+          set -euo pipefail
+          test "$QA_DB" != "$SOURCE_DB"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          if ! npx wrangler d1 execute "$QA_DB" --remote \
+            --config wrangler.client3-qa.jsonc --yes \
+            --file=/tmp/client3-qa-data.sql > /tmp/qa-import-log 2>&1; then
+            echo "::error::Isolated D1 import failed; no Worker deployed. Import log withheld because snapshot contains customer data."
+            missing=$(sed -nE 's/.*no such table: ([A-Za-z_][A-Za-z0-9_]*).*/\1/p' /tmp/qa-import-log | head -1)
+            echo "Missing table identifier: ${missing:-unknown}"
+            for phrase in 'no such table' 'foreign key' 'unique constraint' 'syntax error' 'already exists' 'virtual' 'transaction' 'too long' 'unable to' 'error 10000'; do
+              if grep -Fqi "$phrase" /tmp/qa-import-log; then echo "Import diagnostic class: $phrase"; fi
+            done
+            exit 1
+          fi
+          rm -f /tmp/client3-qa-schema.sql /tmp/client3-qa-data.sql
+      - name: Rebuild content-backed search indexes after base import
+        run: |
+          set -euo pipefail
+          if test -s /tmp/qa-virtual-rebuild.sql; then
+            npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
+              --file=/tmp/qa-virtual-rebuild.sql > /tmp/qa-fts-rebuild-log 2>&1
+          fi
+          echo "Search indexes recreated after QA data import."
       - name: Retain admin login and prevent other staff access to QA
         run: |
           set -euo pipefail
