@@ -62,7 +62,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
   const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
-  const [handoverOrderId,setHandoverOrderId]=useState<number|null>(null)
+  const [handoverOrderId,setHandoverOrderId]=useState<number|null>(
+    initialFocusedOrder?.orderDate&&initialFocusedOrder.orderDate<new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
+      ?initialFocusedOrder.orderId:null)
   const [expanded,setExpanded]=useState<number|null>(initialFocusedOrder?.orderId||null)
   useEffect(()=>{
     const controller=new AbortController()
