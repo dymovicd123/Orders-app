@@ -1,5 +1,5 @@
 name: Client3 Main parity batch QA (isolated, no deploy)
-# Regression pass 5: correct the seven SQL bind positions in atomic split.
+# Regression pass 6: per-item exchange readiness and logistician dispatch parity.
 on:
   push:
     branches: [client3/main-parity-hardening-20261103]
