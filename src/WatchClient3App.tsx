@@ -92,7 +92,7 @@ export function WatchClient3App() {
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [correctionPrefill,setCorrectionPrefill]=useState<{
-    brand:WatchBrand;source:'office'|'showcase';watchProductId:number;watchVariantId:number
+    brand:WatchBrand;source:'office'|'showcase';watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'
   }|null>(null)
   const [reportOrderFocus,setReportOrderFocus]=useState<{
     brand:WatchBrand;orderId:number;externalId:string;orderDate:string
