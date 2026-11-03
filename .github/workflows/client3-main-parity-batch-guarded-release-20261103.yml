@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
-          test "$(git rev-parse HEAD^)" = c871c62bd98c01fd3117243aaea3907c5bdb0f88
+          test "$(git rev-parse HEAD^)" = 980672c04a6ae0167ab60df71fa9483026a8807a
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-main-parity-batch-guarded-release-20261103.yml'
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41690788176 --jq .conclusion)" = success
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41690788176 --jq .head_sha)" = b05902a0fb12b609b6a5c35fd1098b14e98b1321
@@ -99,8 +99,11 @@ jobs:
           has_col="$(jq '(if type=="array" then .[0].results else .results end)|map(.name)|index("order_item_id")!=null' /tmp/events-cols.json)"
           if [ "$table_count" = 0 ] && [ "$has_col" = false ]; then
             npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
-              --file=migrations/client3-watch/1004_watch_item_engraving_readiness.sql > /tmp/migration-result.json
-            jq -e '(if type=="array" then . else [.] end) | all(.[]; .success==true)' /tmp/migration-result.json
+              --file=migrations/client3-watch/1004_watch_item_engraving_readiness.sql > /tmp/migration-result.txt
+            # Wrangler emits human-readable output for --file even with --json.
+            # Exit code is checked by set -e; confirm the actual live schema in
+            # the NEXT step rather than parsing this output as JSON.
+            test -s /tmp/migration-result.txt
             echo "Applied only Client3 1004 engraving readiness migration."
           elif [ "$table_count" = 1 ] && [ "$has_col" = true ]; then
             echo "Readiness migration already applied; no schema changes."
