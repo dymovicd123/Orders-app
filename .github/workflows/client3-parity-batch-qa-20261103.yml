@@ -28,7 +28,8 @@ jobs:
       - run: npm ci
       - name: Complete flow and regressions
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          failed=0
           for file in \
             scripts/client3/test-watch-full-order-engine-20261102.mjs \
             scripts/client3/test-watch-full-exchange-engine-20261102.mjs \
@@ -39,9 +40,10 @@ jobs:
             scripts/client3/test-watch-arrival-draft-20261103.mjs \
             scripts/client3/test-watch-shared-cash-team-20261103.mjs; do
             echo "::group::$file"
-            node --experimental-strip-types "$file"
+            node --experimental-strip-types "$file" || { echo "::error::FAILED $file"; failed=1; }
             echo "::endgroup::"
           done
+          exit "$failed"
   catalog-ui:
     name: Catalog, source, API, UI parity
     runs-on: ubuntu-latest
@@ -53,7 +55,8 @@ jobs:
       - run: npm ci
       - name: Remaining Client3 integration suite
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          failed=0
           for file in \
             scripts/client3/test-main-foundation-parity-20261102.mjs \
             scripts/client3/test-main-workflow-parity-20261102.mjs \
@@ -75,6 +78,7 @@ jobs:
             scripts/client3/test-watch-workspace-layout-20261102.mjs \
             scripts/client3/test-watch-writeoff-20261102.mjs; do
             echo "::group::$file"
-            node --experimental-strip-types "$file"
+            node --experimental-strip-types "$file" || { echo "::error::FAILED $file"; failed=1; }
             echo "::endgroup::"
           done
+          exit "$failed"
