@@ -384,23 +384,64 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
        </LinkedTableScroll>
      </details>
    </div>}
-   {mode==='debts'&&<section className="mini-panel">
-     <h3>Долги</h3>
-     <div className="summary-grid compact-summary">
-       <div className="summary-card danger-card"><span>Общий актуальный долг</span>
-         <strong>{watchMoney(outstanding)}</strong></div>
-       <div className="summary-card"><span>Заказов с долгом</span>
-         <strong>{data?.currentDebt.orderCount||0}</strong></div>
-       <div className="summary-card"><span>Долг заказов периода</span>
-         <strong>{watchMoney(data?.overview.periodDebt)}</strong></div>
-     </div>
-     <LinkedTableScroll ariaLabel="Долг по менеджерам"><table className="data-table strict-report-table">
-       <thead><tr><th>Менеджер</th><th>Заказов</th><th>Долг по заказам периода</th></tr></thead>
-       <tbody>{(data?.managers||[]).map(x=><tr key={String(x.manager)}>
-         <td>{String(x.manager)}</td><td>{String(x.orderCount)}</td>
-         <td>{watchMoney(x.debt)}</td></tr>)}</tbody>
-     </table></LinkedTableScroll>
-   </section>}
+
+   {mode==='debts'&&<div className="finance-truth-content">
+     <section className="mini-panel">
+       <div className="mini-panel-head"><div><h3>Долги</h3>
+         <p className="mini-panel-note">Актуальные долги показываются по всем заказам бренда, независимо от выбранного периода. Поступления при закрытии долга — по дате оплаты.</p>
+       </div></div>
+       <div className="summary-grid compact-summary">
+         <div className="summary-card danger-card"><span>Актуальный долг</span><strong>{watchMoney(outstanding)}</strong></div>
+         <div className="summary-card"><span>Заказов с долгом</span><strong>{data?.currentDebt.orderCount||0}</strong></div>
+         <div className="summary-card"><span>Долг заказов периода</span><strong>{watchMoney(data?.overview.periodDebt)}</strong></div>
+         <div className="summary-card"><span>Закрыто долгов за период</span><strong>{watchMoney(debtPayments)}</strong></div>
+       </div>
+     </section>
+     <section className="mini-panel debt-history-panel">
+       <div className="mini-panel-head"><div><h3>Кто должен</h3>
+         <p className="mini-panel-note">Каждая строка — конкретный заказ. Нажмите «К заказу», чтобы открыть его и принять доплату.</p></div>
+         <span className="soft-badge">{data?.currentDebt.orderCount||0} заказов</span>
+       </div>
+       <LinkedTableScroll ariaLabel="Заказы с долгом"><table className="data-table strict-report-table">
+         <thead><tr><th>Дата заказа</th><th>Заказ</th><th>Клиент</th><th>Менеджер</th>
+           <th className="num">Продажа</th><th className="num">Оплачено</th><th className="num">Остаток долга</th><th>Действие</th></tr></thead>
+         <tbody>{(data?.debtorOrders||[]).map(row=><tr key={String(row.id)}>
+           <td>{moneyDate(row.orderDate)}</td><td><strong>{String(row.externalId||'#'+row.id)}</strong></td>
+           <td>{String(row.customer||'—')}</td><td>{String(row.manager||'—')}</td>
+           <td className="num">{watchMoney(row.totalSales)}</td><td className="num">{watchMoney(row.received)}</td>
+           <td className="num"><strong>{watchMoney(row.debt)}</strong></td>
+           <td>{onOpenOrder&&<button type="button" className="secondary compact finance-order-link"
+             onClick={()=>openOrder(row)}>К заказу</button>}</td>
+         </tr>)}
+         {!data?.debtorOrders?.length&&<tr><td colSpan={8} className="empty-state">Актуальных долгов нет.</td></tr>}
+         </tbody></table></LinkedTableScroll>
+       {Number(data?.currentDebt.orderCount||0)>(data?.debtorOrders||[]).length&&
+         <p className="mini-panel-note">Показаны первые {(data?.debtorOrders||[]).length} заказов по размеру долга. Общий остаток рассчитан по всем.</p>}
+     </section>
+     <details className="mini-panel finance-secondary-details">
+       <summary>Долги по менеджерам — по заказам выбранного периода</summary>
+       <LinkedTableScroll ariaLabel="Долг по менеджерам"><table className="data-table strict-report-table">
+         <thead><tr><th>Менеджер</th><th>Заказов</th><th>Долг по заказам периода</th></tr></thead>
+         <tbody>{(data?.managers||[]).map(row=><tr key={String(row.manager)}>
+           <td>{String(row.manager)}</td><td>{String(row.orderCount)}</td>
+           <td>{watchMoney(row.debt)}</td></tr>)}</tbody></table></LinkedTableScroll>
+     </details>
+     <section className="mini-panel debt-history-panel">
+       <h3>История закрытия долгов в выбранном периоде</h3>
+       <p className="mini-panel-note">Это реальные оплаты, а не перенос остатков на дату первоначального заказа.</p>
+       <LinkedTableScroll ariaLabel="Оплаты долгов"><table className="data-table strict-report-table">
+         <thead><tr><th>Дата платежа</th><th>Заказ</th><th>Вид оплаты</th><th>Способ</th>
+           <th className="num">Сумма</th><th>Действие</th></tr></thead>
+         <tbody>{moneyRows.filter(row=>['debt_close','order_extra'].includes(String(row.eventType))).map(row=>
+           <tr key={String(row.id)}><td>{moneyDate(row.eventDate)}</td><td>{String(row.externalOrderId||'—')}</td>
+             <td>{operationLabel(row.eventType)}</td><td>{String(row.paymentMethod||'—')}</td>
+             <td className="num">{watchMoney(row.amountDelta)}</td>
+             <td>{onOpenOrder&&<button type="button" className="secondary compact finance-order-link"
+               onClick={()=>openOrder(row)}>К заказу</button>}</td>
+           </tr>)}</tbody></table></LinkedTableScroll>
+       {operationsTruncated&&<p className="mini-panel-note">Подробная история ограничена последними {moneyRows.length} событиями; сумма закрытия долгов учитывает все операции периода.</p>}
+     </section>
+   </div>}
    {mode==='returns'&&<section className="mini-panel">
      <h3>Возвраты и обмены</h3>
      <div className="summary-grid compact-summary">
