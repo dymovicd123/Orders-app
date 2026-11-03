@@ -118,7 +118,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [saving, setSaving] = useState<number | null>(null)
   const [dispatching,setDispatching]=useState<number|null>(null)
   const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
-  const [physicalConfirmed,setPhysicalConfirmed]=useState<Record<number,boolean>>({})
+
   const [dispatchSelection,setDispatchSelection]=useState<Record<number,number[]>>({})
   const [dispatchQuantities,setDispatchQuantities]=useState<Record<number,Record<number,number>>>({})
   const [correctionTarget,setCorrectionTarget]=useState<{orderId:number;dispatchItemId:number}|null>(null)
@@ -251,7 +251,6 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     finally{setCorrecting(null)}
   }
   const setSelected=(orderId:number,itemId:number,enabled:boolean)=>{
-    setPhysicalConfirmed(prev=>({...prev,[orderId]:false}))
     setDispatchConfirm(null)
     delete dispatchIds.current[orderId]
     setDispatchSelection(prev=>{
@@ -260,7 +259,6 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     })
   }
   const setQuantity=(orderId:number,itemId:number,value:number)=>{
-    setPhysicalConfirmed(prev=>({...prev,[orderId]:false}))
     setDispatchConfirm(null)
     delete dispatchIds.current[orderId]
     setDispatchQuantities(prev=>({...prev,[orderId]:{...prev[orderId],[itemId]:value}}))
@@ -277,19 +275,18 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         '/api/client3/watches/orders/'+order.orderId+'/send',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({brand:order.brand,requestId,
-            confirmPhysicalStock:Boolean(physicalConfirmed[order.orderId]),
+            confirmPhysicalStock:true,
             items:selected.map(row=>({orderItemId:row.orderItemId,quantity:row.quantity}))}),
         })
       delete dispatchIds.current[order.orderId]
       setDispatchConfirm(null)
-      setPhysicalConfirmed(prev=>({...prev,[order.orderId]:false}))
       setDispatchSelection(prev=>({...prev,[order.orderId]:[]}))
       setDispatchQuantities(prev=>({...prev,[order.orderId]:{}}))
       setFeedback('Отправлено выбранное количество. Оставшиеся часы и резервы сохранены.')
       setRefreshKey(value=>value+1)
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')}
     finally{setDispatching(null)}
-  },[canDispatch,dispatching,dispatchConfirm,physicalConfirmed])
+  },[canDispatch,dispatching,dispatchConfirm])
   return <section className="watch-logistics workshop-workspace">
     <div className="watch-logistics-heading">
       <div>
@@ -435,7 +432,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                         </label>}
                       <div><small>Состояние</small><strong>{Number(item.shippedQuantity||0)>0?'Отправлен':
                         item.stockWriteoffStatus==='fulfilled'?'Выдан до ревизии · подтверждено':
-                        item.reservationStatus!=='active'?'Нужно подтвердить физическое наличие':
+                        item.reservationStatus!=='active'?'Можно отправить по факту наличия':
                         item.engravingText?.trim()&&!item.engravingReady?'Ожидает гравировки':
                         'Готов к отправке'}</strong></div>
                       {canCorrectDispatch&&isSent&&item.dispatchItemId&&
@@ -479,16 +476,12 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                     <div className="client3-logistics-dispatch-confirm">
                       <strong>Подтвердить отправку {selected.length} поз. / {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.?</strong>
                       <span>Отправится указанное количество. Неотправленные часы останутся отдельной строкой. Оплаты не изменятся.</span>
-                      {needsPhysicalConfirm&&<label className="client3-physical-send-confirm">
-                        <input type="checkbox" checked={Boolean(physicalConfirmed[order.orderId])}
-                          disabled={dispatching!==null}
-                          onChange={e=>setPhysicalConfirmed(prev=>({...prev,[order.orderId]:e.target.checked}))}/>
-                        Подтверждаю, что выбранные часы физически находятся в выбранной точке.
-                        Система проверит свободный остаток и восстановит резерв только для этих позиций;
-                        чужой резерв не будет затронут.
-                      </label>}
-                      <button type="button" disabled={dispatching!==null||saving!==null||
-                        (needsPhysicalConfirm&&!physicalConfirmed[order.orderId])}
+                      <p className="client3-physical-send-confirm">
+                        {needsPhysicalConfirm
+                          ?'Нажимая «Подтвердить отправку», вы подтверждаете, что выбранные часы действительно передаются клиенту. Даже при нулевом остатке отправка будет записана, а расхождение отмечено отдельно. Резервы других заказов не меняются.'
+                          :'Подтвердите физическую передачу выбранных часов клиенту. Склад спишет только эту отправку.'}
+                      </p>
+                      <button type="button" disabled={dispatching!==null||saving!==null}
                         onClick={()=>void send(order,selected)}>
                         {dispatching===order.orderId?'Сохраняю…':'Подтвердить отправку'}</button>
                       <button type="button" className="secondary compact" disabled={dispatching!==null}
