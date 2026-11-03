@@ -6,7 +6,7 @@ import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {useWatchAnalytics,watchMoney,watchPeriod,type AnalyticsRow} from './useWatchAnalytics'
 
 type ReportType='payments'|'managers'|'products'|'cities'|'days'|'returns'|'debts'
-type RefundEvent={id:number;eventDate:string;externalOrderId:string;paymentMethod:string;eventType:string;amountDelta:number}
+type RefundEvent=AnalyticsRow&{id:number;eventDate:string;externalOrderId:string;paymentMethod:string;eventType:string;amountDelta:number}
 type RefundPage={ok:boolean;message?:string;rows?:RefundEvent[];hasMore?:boolean;totals?:{eventCount:number}}
 const choices:{value:ReportType;label:string;note:string}[]=[
  {value:'payments',label:'Оплаты',note:'Фактические денежные операции по способам оплаты'},
