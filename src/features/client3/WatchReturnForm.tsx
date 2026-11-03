@@ -4,7 +4,7 @@ import {WATCH_PAYMENTS,watchReferenceLabel} from '../../../shared/client3/watch-
 import '../../styles/client3-watch-return.css'
 
 type Line={
- id:number;productName:string;quantity:number;returnableQuantity:number;shipped:number;
+ id:number;productName:string;quantity:number;returnableQuantity:number;shipped:number;stockWriteoffStatus:string;
  source:string;gender:string;movement:string;braceletMaterial:string;
  dialColor:string;braceletColor:string;engravingText:string
 }
@@ -22,7 +22,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  brand:WatchBrand;order:ReturnOrder;onDone:()=>void;onCancel:()=>void
 }){
  const lines=rows(order.itemLines)
- const returnable=lines.filter(x=>Number(x.shipped)>0&&Number(x.returnableQuantity)>0)
+ const returnable=lines.filter(x=>(Number(x.shipped)>0||x.stockWriteoffStatus==='fulfilled')&&Number(x.returnableQuantity)>0)
  const maxRefund=Math.max(0,Number(order.receivedAmount)-Number(order.returnAmount))
  const [kind,setKind]=useState<ReturnKind>(returnable.length?(maxRefund?'both':'items_only'):'money_only')
  const [selected,setSelected]=useState<Record<number,number>>(
