@@ -14,8 +14,8 @@ type DispatchInput={requestId?:unknown;items?:unknown}
 export async function dispatchClient3WatchOrder(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:DispatchInput,
 ){
- if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
-   return fail('WATCH_SEND_FORBIDDEN','Отправку подтверждает менеджер или администратор.',403)
+ if(!actor||(actor.employeeRole==='Завсклад'&&actor.role!=='admin'))
+   return fail('WATCH_SEND_FORBIDDEN','Отправку подтверждает менеджер, логист или администратор.',403)
  if(!Number.isSafeInteger(brandId)||brandId<=0||!Number.isSafeInteger(orderId)||orderId<=0)
    return fail('WATCH_ORDER_INVALID','Выберите заказ и бренд.',400)
  const requestId=input?.requestId
