@@ -1,5 +1,5 @@
 name: Client3 Main parity batch QA (isolated, no deploy)
-# Regression pass 9: update brand-gated order form acceptance against actual Main parity.
+# Regression pass 10: configured payment references versus old enum-only fixture.
 on:
   push:
     branches: [client3/main-parity-hardening-20261103]
