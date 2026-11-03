@@ -450,7 +450,11 @@ export function WatchClient3App() {
         onOpenStaff={canAdmin?()=>goTo('staff'):undefined}/>}
       {activeSection==='finance'&&brands.length>0&&
         <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}
-          isAdmin={canAdmin} onOpenReferences={()=>goTo('references')}/>}
+          isAdmin={canAdmin} onOpenReferences={()=>goTo('references')}
+          onOpenOrder={order=>{
+            setReportOrderFocus(order);setLastOrderBrand(order.brand)
+            goTo('orders')
+          }}/>}
       {['staff','accounts'].includes(activeSection)&&canAdmin&&
         <WatchTeamMainPanel key={activeSection==='accounts'?'team-accounts':'team-staff'}
           initialMode={activeSection==='accounts'?'accounts':'employees'}/>}
