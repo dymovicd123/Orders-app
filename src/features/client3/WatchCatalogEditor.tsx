@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { WATCH_OPTIONS, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
+import { WATCH_OPTIONS, watchReferenceLabel, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
 import {WatchCatalogDeleteAction} from './WatchCatalogDeleteAction'
 import {WatchCatalogVariantEditAction} from './WatchCatalogVariantEditAction'
 import {WatchModelAliases} from './WatchModelAliases'
@@ -40,7 +40,8 @@ async function callApi(url:string,init?:RequestInit):Promise<Api> {
   return value
 }
 function textFor(choices:readonly {value:string;label:string}[],code:string|null) {
-  return choices.find(item=>item.value===code)?.label||code||'—'
+  const raw=choices.find(item=>item.value===code)?.label||code||'—'
+  return raw.toLocaleUpperCase('ru-RU')
 }
 
 /** An unmapped watch is a draft. It cannot be sold or counted as physical stock. */
@@ -63,7 +64,9 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
   const [braceletColor,setBraceletColor]=useState('')
   const [strapColors,setStrapColors]=useState<string[]>([])
   const [choices,setChoices]=useState<{movements:string[];bracelets:string[];dials:string[]}>({
-    movements:[],bracelets:[],dials:[],
+    movements:WATCH_OPTIONS.movements.map(x=>x.value),
+    bracelets:WATCH_OPTIONS.braceletMaterials.map(x=>x.value),
+    dials:WATCH_OPTIONS.dialColors.map(x=>x.value),
   })
   const [busy,setBusy]=useState(false)
   const [loading,setLoading]=useState(false)
@@ -104,7 +107,11 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
       if(!controller.signal.aborted){
         const by=(kind:string)=>(data.rows||[]).filter(row=>row.kind===kind).map(row=>row.value)
         setStrapColors(by('leatherColors'))
-        setChoices({movements:by('movements'),bracelets:by('bracelets'),dials:by('dials')})
+        setChoices({
+          movements:[...new Set([...WATCH_OPTIONS.movements.map(x=>x.value),...by('movements')])],
+          bracelets:[...new Set([...WATCH_OPTIONS.braceletMaterials.map(x=>x.value),...by('bracelets')])],
+          dials:[...new Set([...WATCH_OPTIONS.dialColors.map(x=>x.value),...by('dials')])],
+        })
       }
     }).catch(cause=>{if(!controller.signal.aborted)setError(
       cause instanceof Error?cause.message:'Не удалось загрузить цвета ремешков')})
@@ -458,21 +465,21 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
                   {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
                 </select></label>
                 <label>Механизм<select value={movement} onChange={e=>setMovement(e.target.value as typeof movement)}>
-                  {choices.movements.map(value=><option key={value} value={value}>{textFor(WATCH_OPTIONS.movements,value)}</option>)}
+                  {choices.movements.map(value=><option key={value} value={value}>{watchReferenceLabel('movements',value)}</option>)}
                 </select></label>
                 <label>Браслет<select value={braceletMaterial}
                   onChange={e=>setBraceletMaterial(e.target.value as typeof braceletMaterial)}>
-                  {choices.bracelets.map(value=><option key={value} value={value}>{textFor(WATCH_OPTIONS.braceletMaterials,value)}</option>)}
+                  {choices.bracelets.map(value=><option key={value} value={value}>{watchReferenceLabel('bracelets',value)}</option>)}
                 </select></label>
                 <label>Цвет циферблата<select value={dialColor}
                   onChange={e=>setDialColor(e.target.value as typeof dialColor)}>
-                  {choices.dials.map(value=><option key={value} value={value}>{textFor(WATCH_OPTIONS.dialColors,value)}</option>)}
+                  {choices.dials.map(value=><option key={value} value={value}>{watchReferenceLabel('dials',value)}</option>)}
                 </select></label>
                 {braceletMaterial==='leather'&&<label>Цвет кожаного ремешка
                   <select required value={strapColors.includes(braceletColor)?braceletColor:''}
                     onChange={e=>setBraceletColor(e.target.value)}>
                     <option value="">Выберите цвет из справочника</option>
-                    {strapColors.map(value=><option value={value} key={value}>{value}</option>)}
+                    {strapColors.map(value=><option value={value} key={value}>{watchReferenceLabel('leatherColors',value)}</option>)}
                   </select>
                   <small>Новые цвета добавляются в общих справочниках, не в карточке товара.</small>
                   {onOpenReferences&&<button type="button" className="secondary compact"
