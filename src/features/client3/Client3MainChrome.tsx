@@ -33,7 +33,7 @@ import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
-export type WatchMainRoute='dashboard'|'reports'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'dashboard',module:'dashboard',label:'Инфопанель'},
@@ -42,12 +42,16 @@ const nav=[
   {route:'warehouse',module:'inventory',label:'Склад'},
   {route:'finance',module:'finance',label:'Финансы'},
   {route:'reports',module:'reports',label:'Отчёты'},
+  {route:'plan',module:'plan',label:'План'},
+  {route:'leads',module:'leads',label:'Лиды'},
   {route:'staff',module:'team',label:'Команда'},
   {route:'references',module:'directory',label:'Справочники'},
 ] as const
 const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   dashboard:{title:'Инфопанель',subtitle:'Месячные показатели и сроки логистики'},
   reports:{title:'Отчёты',subtitle:'Оплаты, менеджеры, часы, города и долги'},
+  plan:{title:'План',subtitle:'Денежные планы отдела и менеджеров — без KPI'},
+  leads:{title:'Лиды',subtitle:'Журналы лидов и Call Centre'},
   orders:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   create:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   returns:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
