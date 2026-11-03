@@ -100,3 +100,21 @@
 .watch-dispatch-correction-confirm .watch-logistics-actions{margin:0}
 .watch-dispatch-correction-commit{background:#92400e!important;color:#fff!important}
 @media(max-width:680px){.watch-dispatch-correction-confirm{padding:11px}}
+
+/* Compact selectors and easier scanning for both brands. */
+.watch-logistics{max-width:none;padding:8px 0}
+.client3-logistics-brands,.client3-logistics-queues{display:flex!important;flex-wrap:wrap;gap:7px}
+.client3-logistics-brands .workshop-channel-tab,
+.client3-logistics-queues .workshop-channel-tab{
+  flex:0 1 auto!important;min-width:128px!important;width:auto!important;
+  padding:9px 12px!important;border-radius:9px!important;min-height:49px!important
+}
+.client3-logistics-brands .workshop-channel-tab span,
+.client3-logistics-queues .workshop-channel-tab span{font-size:.84rem!important}
+.client3-logistics-brands .workshop-channel-tab small,
+.client3-logistics-queues .workshop-channel-tab small{font-size:.7rem!important}
+.watch-logistics-heading{margin-bottom:10px}
+@media(max-width:700px){
+  .client3-logistics-brands .workshop-channel-tab,
+  .client3-logistics-queues .workshop-channel-tab{flex:1 1 145px!important}
+}
