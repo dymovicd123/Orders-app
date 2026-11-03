@@ -3,6 +3,7 @@ import type {AuthUser} from '../core/types.ts'
 import {normalizeWatchVariant,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
 import {catalogVariantHasOperationalUsage,ensureCatalogExecutionV3,findCatalogCombinationV3} from './catalog.ts'
 import {materialFor,genderFor,dialFor,WATCH_LENGTH} from './client3-watch-provision.ts'
+import {findWatchModelByIdentity} from './client3-watch-model-aliases.ts'
 
 const error=(message:string,status=400)=>json({ok:false,message},{status})
 const clean=(x:unknown)=>typeof x==='string'?x.trim().replace(/\s+/g,' '):''
@@ -22,6 +23,13 @@ export async function editClient3WatchModel(db:D1Database,actor:AuthUser,brandId
  const duplicate=await db.prepare('SELECT id FROM watch_products WHERE brand_id=? AND model_name=? COLLATE NOCASE AND id<>? LIMIT 1')
    .bind(brandId,name,productId).first<{id:number}>()
  if(duplicate)return error('В этом бренде уже есть модель с таким названием.',409)
+ try{
+   const identity=await findWatchModelByIdentity(db,brandId,name)
+   if(identity&&identity.id!==productId)
+     return error('Название совпадает с другой моделью или её псевдонимом. Сначала разберите конфликт.',409)
+ }catch(e){
+   return error(e instanceof Error?e.message:'Название модели неоднозначно.',409)
+ }
  try{
    const saved=await db.prepare('UPDATE watch_products SET model_name=? WHERE id=? AND brand_id=? AND is_active=1 AND model_name=?')
      .bind(name,productId,brandId,expected).run()
