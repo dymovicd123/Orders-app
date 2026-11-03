@@ -1,0 +1,31 @@
+name: Client3 Finance and Revision isolated verification
+on:
+  push:
+    branches:
+      - client3/main-finance-revision-parity-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Confirm isolated third application and D1 identity
+        run: |
+          test "$(node -p 'require("./wrangler.jsonc").name' 2>/dev/null || grep -o 'orders-app-client3-old-client' wrangler.jsonc | head -1)" = "orders-app-client3-old-client"
+          grep -q 'orders_db_client3_old_client' wrangler.jsonc
+      - run: npm ci
+      - name: TypeScript and production bundle
+        run: npm run build
+      - name: Core watch orders, warehouse, return and finance regression
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Shared cash and team regression
+        run: node --experimental-strip-types scripts/client3/test-watch-shared-cash-team-20261103.mjs
