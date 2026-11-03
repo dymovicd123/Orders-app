@@ -1,0 +1,84 @@
+name: Candidate main split settlement KPI and references safety
+on:
+  push:
+    branches: [candidate/main-20261103-kpi-split-references]
+    paths:
+      - '.github/workflows/candidate-main-20261103-split-kpi-release-check.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/App.tsx'
+      - 'src/app/types.ts'
+      - 'src/app/utils.ts'
+      - 'src/features/sections/ReferencesSection.tsx'
+      - 'src/features/sections/OrderReturnsSection.tsx'
+      - 'src/features/sections/OrderExchangeSmartSection.tsx'
+      - 'worker/domains/product-kpi.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/finance-reports.ts'
+      - 'scripts/test-main-*-20261103.mjs'
+      - '.github/workflows/candidate-main-20261103-split-kpi-release-check.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify exact isolation from main and reviewed file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor fe6bfd2b1da3c2ba78f3891957bd7145ea57f453 HEAD
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {execFileSync} from 'node:child_process'
+          import {readFileSync} from 'node:fs'
+          const changed=execFileSync('git',['diff','--name-only','fe6bfd2b1da3c2ba78f3891957bd7145ea57f453','HEAD'],{encoding:'utf8'}).trim().split('\n').sort()
+          const allowed=[
+            '.github/workflows/candidate-main-20261103-split-kpi-release-check.yml',
+            'scripts/test-finance-exchange-payment-lineage-20261021.mjs',
+            'scripts/test-main-kpi-unshipped-net-20261103.mjs',
+            'scripts/test-main-split-settlements-20261103.mjs',
+            'src/App.tsx',
+            'src/app/types.ts','src/app/utils.ts',
+            'src/features/sections/OrderExchangeSmartSection.tsx',
+            'src/features/sections/OrderReturnsSection.tsx',
+            'src/features/sections/ReferencesSection.tsx',
+            'worker/domains/finance-reports.ts',
+            'worker/domains/product-kpi.ts',
+            'worker/domains/returns-exchanges.ts',
+          ].sort()
+          assert.deepEqual(changed,allowed,'Candidate has unexpected file changes')
+          const wrangler=readFileSync('wrangler.jsonc','utf8')
+          assert(wrangler.includes('"name": "orders-app"'))
+          assert(wrangler.includes('"database_name": "orders_db_prod"'))
+          assert(wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'))
+          const worker=readFileSync('worker/domains/returns-exchanges.ts','utf8')
+          assert(worker.includes('The refund limit must be enforced atomically with Return creation.'))
+          assert(worker.includes('splitRefundReversalStatements'))
+          console.log('MAIN_CANDIDATE_SCOPED_AND_ATOMIC_REFUND_SAFE')
+          NODE
+      - run: npm ci
+      - name: Main split settlement invariant checks (isolated)
+        run: node --experimental-strip-types scripts/test-main-split-settlements-20261103.mjs
+      - name: Main KPI and net return truth (isolated SQLite)
+        run: node --experimental-strip-types scripts/test-main-kpi-unshipped-net-20261103.mjs
+      - name: Main finance split exchange payment provenance (isolated SQLite)
+        run: node --experimental-strip-types scripts/test-finance-exchange-payment-lineage-20261021.mjs
+      - name: Existing Main business and finance release gates
+        run: |
+          set -euo pipefail
+          npm run release:check
+          node scripts/test-main-finance-lineage-release-20261021.mjs
+      - name: Production TypeScript and UI Worker build
+        run: npm run build
+      - name: Production Worker package dry-run only
+        run: npx wrangler deploy --dry-run --outdir .candidate-main-split-kpi-dry-run
