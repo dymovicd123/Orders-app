@@ -102,7 +102,26 @@ jobs:
             data=p.read_text(encoding='utf-8')
             data=''.join(x for x in data.splitlines(keepends=True) if x.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;'))
             assert len(data)>100
-            if kind=='schema': assert 'CREATE TABLE' in data.upper()
+            if kind=='schema':
+              import re, sqlite3
+              assert 'CREATE TABLE' in data.upper()
+              buffer=''
+              statements=[]
+              for line in data.splitlines(keepends=True):
+                buffer+=line
+                if sqlite3.complete_statement(buffer):
+                  statements.append(buffer)
+                  buffer=''
+              if buffer.strip(): raise RuntimeError('Incomplete SQL schema statement')
+              triggers=[]
+              ordinary=[]
+              for statement in statements:
+                if re.search(r'(?i)\\bCREATE\\s+(?:TEMP\\s+|TEMPORARY\\s+)?TRIGGER\\b',statement):
+                  triggers.append(statement)
+                else: ordinary.append(statement)
+              data=''.join(ordinary)
+              Path('/tmp/qa-triggers.sql').write_text('\\n'.join(triggers),encoding='utf-8')
+              print('Deferred SQL triggers:',len(triggers))
             p.write_text(data,encoding='utf-8')
           print('Schema and data SQL snapshots stored only in ephemeral runner.')
           PY
@@ -207,9 +226,21 @@ jobs:
             for phrase in 'no such table' 'foreign key' 'unique constraint' 'syntax error' 'already exists' 'virtual' 'transaction' 'too long' 'unable to' 'error 10000'; do
               if grep -Fqi "$phrase" /tmp/qa-import-log; then echo "Import diagnostic class: $phrase"; fi
             done
+            echo "Detected error categories:"
+            for phrase in 'FOREIGN KEY' 'no such table' 'no such function' 'UNIQUE constraint' 'SQLITE_ERROR' 'SQLITE_CONSTRAINT' 'invalid' 'Error 1000' 'SQLITE_MISMATCH' 'failed' 'too large' 'too many' 'Cannot' 'not found' 'incomplete'; do
+              if grep -Fqi "$phrase" /tmp/qa-import-log; then echo " - $phrase"; fi
+            done
             exit 1
           fi
           rm -f /tmp/client3-qa-schema.sql /tmp/client3-qa-data.sql
+      - name: Restore deferred triggers after QA data import
+        run: |
+          set -euo pipefail
+          if test -s /tmp/qa-triggers.sql; then
+            npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
+              --file=/tmp/qa-triggers.sql > /tmp/qa-trigger-install-log 2>&1
+          fi
+          echo "QA data loaded; deferred triggers restored."
       - name: Rebuild content-backed search indexes after base import
         run: |
           set -euo pipefail
@@ -240,6 +271,7 @@ jobs:
           jq -e '(if type=="array" then .[0].results else .results end)|length==0' /tmp/qa-copy-fk.json >/dev/null
           echo "Real administrator login hashes preserved in QA D1. Non-admin login access disabled there only."
       - name: Deploy only independent QA Worker
+        id: qa_deploy
         run: |
           set -euo pipefail
           test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
@@ -264,6 +296,22 @@ jobs:
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
             "Client3 independent QA COPY READY: https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Source: most recent deployed Client3 after PR #786. Isolated Worker=$QA_WORKER, separate D1=$QA_DB (ID $QA_DB_ID). Exported live Client3 snapshot in ephemeral runner, retained active admin login/password hashes, disabled all non-admin logins IN QA ONLY, copied catalog, orders, finance and stock for safe practical testing. Source D1 never written; Main and Branch2 untouched. QA unauthenticated smoke/FK pass. Action: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Never use QA for live customer operations."
+      - name: Clean up failed copy's newly created D1
+        if: ${{ failure() && steps.qa_deploy.outcome != 'success' }}
+        run: |
+          set -euo pipefail
+          if test -n "${QA_DB_ID:-}" && test -n "${QA_DB:-}"; then
+            test "$QA_DB_ID" != "$SOURCE_DB_ID"
+            [[ "$QA_DB" == orders_db_client3_qa_* ]]
+            status=$(curl -sS -o /tmp/qa-delete-response -w '%{http_code}' \
+              -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$QA_DB_ID")
+            if test "$status" = 200 -o "$status" = 204; then
+              echo "Incomplete isolated QA database removed."
+            else
+              echo "::warning::Could not delete isolated QA database; manual cleanup needed."
+            fi
+          fi
       - name: Record failure without claiming test URL is ready
         if: failure()
         run: |
