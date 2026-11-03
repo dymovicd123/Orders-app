@@ -87,3 +87,22 @@ Do not claim all Main features are identical: reports now have Main's actual cit
 - **Логистическая накладная:** по-прежнему отложена; не реализовывать без отдельного требования. Не переносить «Очередь проблем».
 
 **Оставшийся план:** практический браузерный проход для менеджера/логиста/администратора на реальном компьютере клиента и мобильном телефоне, проверка видимости новых страниц и ограничений брендов, кассы/планов/лидов на контролируемых тестовых записях. Обязательные релизные технические проверки успешны; реальная пользовательская приёмка пока не заявлена как завершённая.
+
+
+## 03.11.2026 — Owner changed decision: ONE SHARED CASH + Main-level TEAM (deployed)
+
+**Deployed third Client3 Worker:** https://github.com/dymovicd123/Orders-app/actions/runs/41612094664 — SUCCESS (remote `1003_shared_cash_main_team.sql`, HTTP auth smoke, database and inventory before/after counters, foreign-key check). **SQLite + TS acceptance:** https://github.com/dymovicd123/Orders-app/actions/runs/41611777824 — SUCCESS. Main/Branch2 unchanged.
+
+**Shared cash decision supersedes all earlier "two brand cash registers" notes:**
+- There is **one physical cash account**, combining every new cash-paid or cash-refunded financial event from orders for **TAUWACH and WACHIZEN**; the relevant brand remains shown beside the order event. Kaspi and other non-cash forms are excluded.
+- Main-like shared manual in/out, balance correction, cancellation by compensating entry, auto-tracking pause/resume (no backdating), closed cycles and chronological audit. The Finance tab's brand filter continues to scope financial **reports** only, not cash.
+- Migration intentionally **does not delete or rewrite** historical `watch_brand_cash_registers`, `watch_brand_cash_entries`, `watch_brand_cash_cycles`. Where old registers existed, a snapshot of both active balances would have initialized the combined register once (covered by SQLite test).
+- **Crucial live observation:** On 03.11.2026 both legacy brand register counts were **zero** in the actual Client3 database (live release SQL returned `legacyRegisters=0,sharedRegisters=0,sharedOpening=0`). Thus the newly deployed unified cash is currently **not initialized**. The owner/admin must count the physical cash and enter the starting balance **once**. Earlier customer payments are not replayed a second time; later ones are counted after that opening point. Do not tell the user that historic cash was transferred in the live database.
+
+**Team now uses Main's established roster/tabs/styling rather than the old separate crude brand checkbox cards:**
+- Active/former employees, full editor (name, role, birth/hire dates, contact, color, comment), brand access controls, linked login management and system administrators.
+- Role `Логист` preserved (cannot be converted into `Менеджер` by Main's generic normalizer). Main employment guards on dismissal, retaining historic ownership and disabling logins.
+- Main's timesheet operations, watch-adapted actual money-plan completion, preliminary salary and order activity tabs.
+- Remaining manual sign-off: real browser on customer Windows, administrator and logistics/manager account visibility, physical cash count/opening, cash payment from each brand to same shared balance, verify dialogs/timesheet on desktop/mobile. These were not completed by automated HTTP/SQL tests.
+
+**KPI still EXCLUDED, logistics invoice still DEFERRED, problems queue remains removed.**
