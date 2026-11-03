@@ -724,8 +724,8 @@ export async function routeClient3Watches(
     return listWatchLogistics(db,actor,url)
   const match=/^\/api\/client3\/watches\/logistics\/(\d+)\/ready$/.exec(url.pathname)
   if(match&&request.method==='POST'){
-    const data=await readJson<{requestId?:unknown}>(request)
-    return markWatchLogisticsReady(db,actor,Number(match[1]),data.requestId)
+    const data=await readJson<{requestId?:unknown;orderItemId?:unknown}>(request)
+    return markWatchLogisticsReady(db,actor,Number(match[1]),Number(data.orderItemId),data.requestId)
   }
   if(url.pathname.startsWith('/api/client3/watches/'))
     return json({ok:false,code:'WATCH_ROUTE_NOT_FOUND'},{status:404})
