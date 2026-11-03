@@ -1,6 +1,6 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
-import {listTeamEmployees,setTeamEmployeeActive,listTeamTimesheet,saveTeamTimesheet,type TimesheetInput} from './team.ts'
+import {setTeamEmployeeActive,listTeamTimesheet,saveTeamTimesheet,type TimesheetInput} from './team.ts'
 import {normalizeManagerColor} from './activity.ts'
 
 type Input=Record<string,unknown>
@@ -12,12 +12,28 @@ const validDate=(v:unknown):v is string=>{
  const n=Date.parse(v+'T00:00:00Z')
  return Number.isFinite(n)&&new Date(n).toISOString().slice(0,10)===v
 }
-const roles=['Менеджер','Логист','Упаковщик','Завсклад','Админ'] as const
+const roles=['Менеджер','Логист','Завсклад','Админ'] as const
 const validRole=(v:unknown)=>typeof v==='string'&&roles.includes(v as typeof roles[number])
 export async function listClient3WatchTeam(db:D1Database,actor:AuthUser){
  if(actor.role!=='admin')return denied()
+ // Client3 has no need to JOIN Main's eight historic reference tables.
+ // The original shared query fails on installations where an unused Main table
+ // was not part of the lean watches baseline, making all real staff disappear.
  const [roster,brands,accounts]=await Promise.all([
-   listTeamEmployees(db,true),
+   db.prepare(`SELECT m.id,m.name,m.is_active,
+     COALESCE(m.role,'Менеджер') AS role,
+     COALESCE(m.phone,'') AS phone,COALESCE(m.comment,'') AS comment,
+     COALESCE(m.birth_date,'') AS birthDate,
+     COALESCE(m.color_key,'') AS colorKey,
+     COALESCE(orders.first_order_at,m.hired_at,substr(m.created_at,1,10),'') AS hiredAt,
+     COALESCE(m.dismissed_at,'') AS dismissedAt,
+     COALESCE(orders.reference_count,0) AS referenceCount
+     FROM managers m
+     LEFT JOIN (SELECT manager_id,MIN(order_date) AS first_order_at,
+       COUNT(*) AS reference_count FROM orders WHERE manager_id IS NOT NULL
+       GROUP BY manager_id) orders ON orders.manager_id=m.id
+     ORDER BY m.is_active DESC,hiredAt DESC,m.name COLLATE NOCASE,m.id DESC`)
+     .all<Record<string,unknown>>(),
    db.prepare(`SELECT mb.manager_id AS managerId,b.code AS brand
      FROM watch_manager_brands mb JOIN watch_brands b ON b.id=mb.brand_id
      ORDER BY mb.manager_id,b.code`).all<{managerId:number;brand:string}>(),
@@ -32,9 +48,26 @@ export async function listClient3WatchTeam(db:D1Database,actor:AuthUser){
  const accountsByManager=new Map<number,Record<string,unknown>>()
  for(const u of accounts.results||[])if(!accountsByManager.has(Number(u.managerId)))
   accountsByManager.set(Number(u.managerId),u)
- return json({ok:true,stats:roster.stats,
-  employees:roster.employees.map(r=>({...r,brands:memberships.get(r.id)||[],
-    access:accountsByManager.get(r.id)||null}))})
+ const employees=(roster.results||[]).map(row=>{
+   const id=Number(row.id||0)
+   const role=String(row.role||'Менеджер')
+   const isLogistics=role==='Логист'||role==='Упаковщик'
+   return {id,name:String(row.name||''),isActive:Number(row.is_active)===1,
+     role:isLogistics?'Логист':role,
+     phone:String(row.phone||''),comment:String(row.comment||''),
+     colorKey:normalizeManagerColor(row.colorKey,id-1),
+     hiredAt:String(row.hiredAt||''),birthDate:String(row.birthDate||''),
+     dismissedAt:String(row.dismissedAt||''),
+     referenceCount:Number(row.referenceCount||0),
+     brands:isLogistics?[]:memberships.get(id)||[],
+     allBrandsLogistics:isLogistics,
+     access:accountsByManager.get(id)||null}
+ })
+ return json({ok:true,stats:{
+   total:employees.length,
+   active:employees.filter(x=>x.isActive).length,
+   inactive:employees.filter(x=>!x.isActive).length,
+ },employees})
 }
 
 /** Main roster fields, with one extra genuine Client3 role (Логист).
@@ -58,11 +91,15 @@ export async function saveClient3WatchEmployee(db:D1Database,actor:AuthUser,inpu
  if(id){
   const existed=await db.prepare('SELECT id,is_active FROM managers WHERE id=?').bind(id).first()
   if(!existed)return bad('Сотрудник не найден.',404)
-  const res=await db.prepare(`UPDATE managers SET name=?,role=?,phone=?,comment=?,
+  const change=db.prepare(`UPDATE managers SET name=?,role=?,phone=?,comment=?,
     color_key=?,hired_at=COALESCE(NULLIF(?,''),hired_at),birth_date=?,updated_at=?
     WHERE id=?`).bind(name,role,phone||null,comment||null,color,hiredAt,
-      birthDate||null,now,id).run()
-  if(!res.meta?.changes)return bad('Не удалось обновить сотрудника.',409)
+      birthDate||null,now,id)
+  const results=role==='Логист'?
+    await db.batch([change,
+      db.prepare('DELETE FROM watch_manager_brands WHERE manager_id=?').bind(id)]):
+    [await change.run()]
+  if(!results[0]?.meta?.changes)return bad('Не удалось обновить сотрудника.',409)
   return json({ok:true,id,updated:true})
  }
  const res=await db.prepare(`INSERT INTO managers(name,role,phone,comment,color_key,
