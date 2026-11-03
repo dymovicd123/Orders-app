@@ -326,7 +326,7 @@ export async function dispatchSelectedCompleteOrderLines(
           WHERE r.order_item_id=? AND r.engraving_text=old.engraving_text
           AND NOT EXISTS (SELECT 1 FROM watch_engraving_item_readiness fresh
             WHERE fresh.order_item_id=${splitItemSql})`)
-          .bind(orderId,splitKey,item.orderItemId,orderId,splitKey),
+          .bind(orderId,splitKey,orderId,splitKey,item.orderItemId,orderId,splitKey),
         db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
           SELECT 'human_inventory_v2','__watch_split_link_conflict__',?
           WHERE NOT EXISTS(
