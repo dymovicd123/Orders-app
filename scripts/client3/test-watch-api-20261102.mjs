@@ -11,7 +11,7 @@ import {
 const sql=new DatabaseSync(':memory:')
 sql.exec('PRAGMA foreign_keys=ON')
 sql.exec(`
- CREATE TABLE managers (id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER DEFAULT 1);
+ CREATE TABLE managers (id INTEGER PRIMARY KEY,name TEXT,role TEXT DEFAULT 'Менеджер',is_active INTEGER DEFAULT 1);
  CREATE TABLE app_users (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_products (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY,product_id INTEGER REFERENCES catalog_products(id),stock_position_id INTEGER,category TEXT DEFAULT 'adult',is_active INTEGER DEFAULT 1);
