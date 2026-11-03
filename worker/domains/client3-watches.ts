@@ -185,6 +185,30 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
   if(code){const scope=await scopedBrand(db,actor,code,'logistics');if(scope.error)return scope.error;brandId=scope.row!.id}
   const status=url.searchParams.get('status')
   if(status&& !['pending','engraving','ready','all'].includes(status))return BAD('Некорректный статус логистики')
+  const limit=Number(url.searchParams.get('limit')||'80')
+  const offset=Number(url.searchParams.get('offset')||'0')
+  if(!Number.isSafeInteger(limit)||limit<1||limit>150||
+     !Number.isSafeInteger(offset)||offset<0||offset>100000)
+    return BAD('Некорректная страница логистики.')
+  // Page over ORDERS first, not joined item rows: an order must never be
+  // cut halfway through its watch lines by an arbitrary SQL LIMIT.
+  const orderPage=await db.prepare(`
+    SELECT o.id FROM watch_order_details wd
+    JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
+    JOIN watch_logistics_jobs lj ON lj.order_id=o.id
+    WHERE (?=0 OR wd.brand_id=?)
+      AND (? IS NULL OR ?='all' OR lj.status=?)
+      AND (?=1 OR EXISTS (
+        SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+        WHERE mb.manager_id=? AND mb.brand_id=wd.brand_id
+      ))
+    ORDER BY wd.urgent DESC,wd.shipping_deadline_at ASC,o.id ASC
+    LIMIT ? OFFSET ?
+  `).bind(brandId,brandId,status,status,status,
+    staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0,limit+1,offset)
+    .all<{id:number}>()
+  const pageIds=(orderPage.results||[]).slice(0,limit).map(x=>x.id)
+  if(!pageIds.length)return json({ok:true,rows:[],hasMore:false,nextOffset:null})
   const rows=await db.prepare(`
     SELECT o.id AS orderId,o.external_id AS externalId,wb.code AS brand,
       o.source_type AS legacySource,o.shipping_status AS shippingStatus,
@@ -221,17 +245,12 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
     LEFT JOIN watch_variants v ON v.id=wditem.watch_variant_id
     LEFT JOIN watch_products wp ON wp.id=v.watch_product_id
-    WHERE (?=0 OR wd.brand_id=?)
-      AND (? IS NULL OR ?='all' OR lj.status=?)
-      AND (?=1 OR EXISTS (
-        SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
-        WHERE mb.manager_id=? AND mb.brand_id=wd.brand_id
-      ))
+    WHERE o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
     ORDER BY wd.urgent DESC,wd.shipping_deadline_at ASC,o.id ASC,oi.id ASC
-    LIMIT 500
-  `).bind(brandId,brandId,status,status,status,
-    staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0).all()
-  return json({ok:true,rows:rows.results||[]})
+  `).bind(JSON.stringify(pageIds)).all()
+  return json({ok:true,rows:rows.results||[],
+    hasMore:(orderPage.results||[]).length>limit,
+    nextOffset:(orderPage.results||[]).length>limit?offset+limit:null})
 }
 
 /** Idempotent engraving completion. NEVER invokes shipping, reservations or money. */
