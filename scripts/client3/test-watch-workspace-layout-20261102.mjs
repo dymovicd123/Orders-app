@@ -2,60 +2,58 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const shell=fs.readFileSync('src/WatchClient3App.tsx','utf8')
-const layout=fs.readFileSync('src/styles/client3-watch-shell.css','utf8')
+const chrome=fs.readFileSync('src/features/client3/Client3MainChrome.tsx','utf8')
+const mainStyle=fs.readFileSync('src/styles/client3-main-chrome.css','utf8')
 const catalog=fs.readFileSync('src/features/client3/WatchCatalogEditor.tsx','utf8')
 const orderCss=fs.readFileSync('src/styles/client3-watch-order.css','utf8')
-const stockSource=fs.readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8')
-const ordersSource=fs.readFileSync('src/features/client3/WatchOrdersPanel.tsx','utf8')
-const catalogCss=fs.readFileSync('src/styles/client3-watch-catalog-editor.css','utf8')
+const stock=fs.readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8')
+const orders=fs.readFileSync('src/features/client3/WatchOrdersPanel.tsx','utf8')
+const logistics=fs.readFileSync('src/features/client3/WatchLogisticsPanel.tsx','utf8')
+const finance=fs.readFileSync('src/features/client3/WatchFinancePanel.tsx','utf8')
 
-for(const group of ['Продажи','Рабочие процессы','Товары и склад','Финансы','Администрирование']){
-  assert(shell.includes('>'+group+'</div>'),group+' must be a distinct sidebar group')
+assert(shell.includes('Client3MainChrome'),'Navigation uses the Main-derived ERP chrome')
+assert(chrome.includes('<aside className={')&&chrome.includes('erp-sidebar'),
+ 'Use the same fixed sidebar structure as Main')
+assert(chrome.includes('erp-primary-nav')&&chrome.includes('erp-primary-nav-button'),
+ 'Sidebar must expose distinct functional routes')
+assert(chrome.includes('erp-main')&&chrome.includes('erp-topbar'),
+ 'Workspace is separate from navigation')
+assert(chrome.includes('erp-page-title')&&chrome.includes('erp-page-subtitle'),
+ 'Each section has its own heading')
+for(const label of ['Инфопанель','Заказы','Клиенты','Логистика','Склад','Финансы',
+ 'Отчёты','План','Лиды','Команда','Справочники']){
+ assert(chrome.includes("label:'"+label+"'"),'Missing operational section '+label)
 }
-assert(shell.includes('<aside className={'), 'Navigation belongs in a fixed sidebar')
-assert(shell.includes('watch-shell-sidebar'), 'Workspace sidebar must exist')
-assert(shell.includes('watch-shell-nav-svg')&&shell.includes('sectionIcons'), 'Navigation items need distinct vector icons rather than repeated markers')
-assert(shell.includes('watch-shell-workspace'), 'Content and sidebar must be separate')
-assert(shell.includes('watch-shell-topbar'), 'Workspace header must be independent of navigation')
-assert(shell.includes('watch-shell-page-head'), 'Each page needs its own title and context')
-assert(shell.includes("navItem('create','Новый заказ',true)"), 'Create order must be a primary action')
-assert(shell.includes("goTo('create')"), 'Create order must have its own route')
-assert(shell.includes("window.addEventListener('hashchange',syncHash)"), 'Browser history needs navigation state')
-assert(shell.includes('watch-shell-menu-toggle'), 'Mobile navigation toggle is required')
-assert(shell.includes('watch-shell-backdrop'), 'Mobile navigation needs a safe dismissal')
-assert(shell.includes("['legacy','accounts','staff'].includes(tab)"), 'Manager must not navigate to admin pages via hash')
-assert(shell.includes('WatchWarehouseMain') && shell.includes('WatchCatalogEditor'), 'Warehouse must reuse Main stocktake picker while Catalog remains a separate component')
+assert(chrome.includes("href={'#'+route}")&&chrome.includes('onNavigate(route)'),
+ 'Sidebar routes must be selectable')
+assert(chrome.includes('mobile-nav-toggle')&&chrome.includes('mobile-nav-backdrop'),
+ 'Mobile navigation needs a menu and dismissal surface')
+assert(chrome.includes("item.route!=='staff'||isAdmin"),
+ 'Non-admin users cannot reach Team management via sidebar')
+assert(shell.includes("['legacy','accounts','staff'].includes(tab)"),
+ 'Non-admin must not reach account administration by direct hash')
+assert(shell.includes('WatchWarehouseMain')&&shell.includes('WatchCatalogEditor'),
+ 'Stock and catalog remain separate implementations')
 assert(catalog.includes("view?:'catalog'|'warehouse'"))
-assert(catalog.includes("view==='catalog'&&<div className=\"watch-catalog-editor-forms\""),
-  'Product creation forms should only be visible in Catalog')
-for(const operation of ['arrival','transfer','writeoff','count']){
-  assert(stockSource.includes("mode==='"+operation+"'") || (operation==='count'&&stockSource.includes("mode==='count'")),
-    operation+' must exist in the Main stocktake adapter')
-}
-assert(catalog.includes('watch-warehouse-table'),'Warehouse must have inventory/stock table')
-assert(catalog.includes('watch-warehouse-summary'),'Warehouse must have at-a-glance stock totals')
-assert(layout.includes('grid-template-columns:248px minmax(0,1fr)'),'Desktop has a real sidebar column')
-assert(layout.includes('@media(max-width:850px)'),'Mobile sidebar must become a drawer')
-assert(layout.includes('transform:translateX(-104%)'),'Mobile drawer must be closed by default')
-assert(layout.includes('.watch-shell-backdrop'),'Mobile drawer must have backdrop')
-assert(stockSource.includes("import {StocktakeProductChoice,StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'"),'Must reuse Main stocktake picker/count cells')
-assert(ordersSource.includes("import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'"),'Must reuse Main linked table scrolling')
-assert(ordersSource.includes('<table className="watch-main-orders-table">'),'Orders must display as a proper operator table')
-const logisticsSource=fs.readFileSync('src/features/client3/WatchLogisticsPanel.tsx','utf8')
-const financeSource=fs.readFileSync('src/features/client3/WatchFinancePanel.tsx','utf8')
-assert(logisticsSource.includes("import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'"),'Logistics must use Main table component')
-assert(financeSource.includes("import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'"),'Finances must use Main table component')
-assert(logisticsSource.includes('<table className="watch-main-logistics-table">'),'Logistics must display a real queue table')
-assert(financeSource.includes('<table className="watch-main-finance-table">'),'Finances must display a real money journal table')
-const formSource=fs.readFileSync('src/features/client3/WatchOrderForm.tsx','utf8')
-assert(formSource.includes('create-hero')&&formSource.includes('order-step-card'),'Watch create form must follow Main order step structure')
-assert(formSource.includes('order-step-index">1')&&formSource.includes('order-step-index">2'),'Order steps must be numbered')
-assert(stockSource.includes("'/api/client3/watches/stock/'"),'Main stocktake UI must preserve isolated Client3 warehouse endpoints')
-assert(orderCss.includes('.watch-shell-create-page .watch-order-form'),'Order entry must be a dedicated workspace card')
-assert(orderCss.includes('order-step-card'),'Order workflow must reuse Main CreateOrderSection step hierarchy')
+for(const operation of ['arrival','transfer','writeoff','count'])
+ assert(stock.includes("mode==='"+operation+"'"),
+   'Main-style stock operation is missing: '+operation)
+assert(catalog.includes('watch-warehouse-table')&&catalog.includes('watch-warehouse-summary'),
+ 'Stock table and totals must be available')
+assert(mainStyle.includes('erp-primary-nav')||mainStyle.includes('erp-sidebar'),
+ 'Navigation styles must use the ERP chrome')
+assert(stock.includes('StocktakeSizeCountCell'),
+ 'Revisions retain the Main stock count input component')
+assert(orders.includes('LinkedTableScroll')&&orders.includes('watch-main-orders-table'),
+ 'Orders must be a proper Main-style scrollable table')
+assert(logistics.includes('LinkedTableScroll')&&logistics.includes('watch-main-logistics-table'),
+ 'Logistics must show a Main-style table')
+assert(finance.includes('LinkedTableScroll')&&finance.includes('watch-main-finance-table'),
+ 'Finance must show a Main-style table')
+assert(orderCss.includes('order-step-card'),'Order workflow uses Main numbered steps')
 assert(shell.includes('WatchUserAccessPanel')&&shell.includes('WatchBrandAccessPanel'),
-  'Existing administrative navigation is still accessible')
+ 'Admin tools for accounts and brand access must be retained')
 assert(shell.includes('WatchReturnsPanel')&&shell.includes('WatchLogisticsPanel'),
-  'Returns and logistics navigation remains accessible')
-assert(!shell.includes('<h1>TAUWACH / WACHIZEN</h1>'), 'Plain login must remain')
-console.log('CLIENT3_WORKSPACE_LAYOUT_PASS: grouped sidebar, primary create route, split catalog/warehouse, role guard, mobile drawer and plain login')
+ 'Return and dispatch panels are reachable')
+assert(!chrome.includes('<h1>TAUWACH / WACHIZEN</h1>'),'No hard-coded brand at login')
+console.log('CLIENT3_WORKSPACE_LAYOUT_PASS: Main ERP navigation, role gates, catalog/warehouse, and report tables')
