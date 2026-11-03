@@ -1237,7 +1237,14 @@ assert.equal(twoOld.status,201,JSON.stringify(twoOld))
 const twoOldRows=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
  FROM order_items WHERE order_id=? AND quantity>0 ORDER BY id`).all(twoOld.orderId)
 assert.equal(twoOldRows.length,2)
-const twoOldShip=await parse(dispatchClient3WatchOrder(db,manager,1,twoOld.orderId,{
+const logisticActor={id:9,role:'manager',managerId:null,employeeRole:'Логист'}
+const warehouseActor={id:10,role:'manager',managerId:null,employeeRole:'Завсклад'}
+const deniedWarehouseDispatch=await parse(dispatchClient3WatchOrder(db,warehouseActor,1,twoOld.orderId,{
+ requestId:'watch-two-old-deny-warehouse-20261103',
+ items:twoOldRows.map(r=>({orderItemId:r.id,quantity:1})),
+}))
+assert.equal(deniedWarehouseDispatch.status,403,'Warehouse supervisor cannot dispatch sales')
+const twoOldShip=await parse(dispatchClient3WatchOrder(db,logisticActor,1,twoOld.orderId,{
  requestId:'watch-two-old-dispatch-20261103-01',
  items:twoOldRows.map(r=>({orderItemId:r.id,quantity:1})),
 }))
