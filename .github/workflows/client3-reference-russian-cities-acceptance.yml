@@ -122,6 +122,8 @@ jobs:
           assert(cat.includes("watchReferenceLabel('movements',value)"))
           assert(css.includes('.client3-watch-catalog-main .catalog-variant-form-grid :is(select,option)'))
           assert(css.includes('-webkit-text-fill-color:#0f172a!important'))
+          assert(regression.includes("watchReferenceLabel('leatherColors','ЧЁРНЫЙ')"))
+          assert(cityMigration.includes("NOT EXISTS ("))
           console.log('CLIENT3_RUSSIAN_REFERENCES_AND_46_MAIN_CITIES_PASS')
           console.log('CLIENT3_WATCH_BRAND_ALIASES_PASS')
           console.log('CLIENT3_MAIN_KAZAKH_SYNONYM_RESOLVER_GUARD_PASS')
