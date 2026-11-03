@@ -256,7 +256,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
        </div>
      </div>
      <div className="orders-filter-grid reports-main-filter-grid">
-       {mode!=='cash'&&<label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);request.current=null}}>
+       {mode!=='cash'&&mode!=='methods'&&<label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);request.current=null}}>
          {brands.map(x=><option value={x} key={x}>{x}</option>)}</select></label>}
        {mode!=='cash'&&mode!=='methods'&&<>
          <label>С<input type="date" value={period.from}
