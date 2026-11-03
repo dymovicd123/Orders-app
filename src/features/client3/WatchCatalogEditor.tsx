@@ -32,11 +32,16 @@ type CatalogRow={
   showcasePhysical:number
   showcaseReserved:number
 }
-type Api={ok:boolean;message?:string;attention?:string;rows?:CatalogRow[];watchProductId?:number;watchVariantId?:number;alreadyExists?:boolean}
+type Api={ok:boolean;message?:string;attention?:string;rows?:CatalogRow[];watchProductId?:number;watchVariantId?:number;
+  catalogVariantId?:number;stockLinked?:boolean;partial?:boolean;alreadyExists?:boolean}
+class WatchCatalogRequestError extends Error {
+  constructor(message:string,readonly partial:boolean){super(message)}
+}
 async function callApi(url:string,init?:RequestInit):Promise<Api> {
   const response=await fetch(url,{credentials:'include',cache:'no-store',...init})
   const value=await response.json() as Api
-  if(!response.ok||!value.ok)throw new Error(value.message||'Не удалось сохранить изменения')
+  if(!response.ok||!value.ok)
+    throw new WatchCatalogRequestError(value.message||'Не удалось сохранить изменения',Boolean(value.partial))
   return value
 }
 function textFor(choices:readonly {value:string;label:string}[],code:string|null) {
@@ -311,19 +316,27 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
         watchProductId:modelId,gender,movement,braceletMaterial,dialColor,
         braceletColor:braceletMaterial==='leather'?braceletColor:'',
       })
-      // Main's stock-ready catalog identity: no second manual SKU step.
-      // Provision does NOT add physical stock or movement; the arrival still does.
-      if(!result.watchVariantId)throw Error('Не удалось определить новую комплектацию.')
-      await post('/api/client3/watches/catalog/provision',{
-        watchVariantId:result.watchVariantId,
-      })
+      // Server creates/reuses watch variant and provisions its stock SKU in
+      // the SAME request. Never report success for an unlinked draft.
+      if(!result.watchVariantId||!result.stockLinked||!result.catalogVariantId)
+        throw Error('Комплектация не была привязана к складскому SKU. Повторите сохранение.')
       setNotice(result.alreadyExists?
-        'Комплектация уже существует. Складской SKU подготовлен.':
-        'Комплектация и складской SKU созданы без изменения остатков. Теперь можно оформить приход.')
+        'Комплектация уже существует и доступна на складе.':
+        'Комплектация добавлена в товары и склад. На месте пока 0 — количество добавляется приходом.')
+      setCatalogSearch('')
+      setCatalogGender('all')
       setReload(x=>x+1)
       onStockChanged?.()
       return true
-    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию');return false}
+    }catch(cause){
+      setError(cause instanceof Error?cause.message:'Не удалось добавить комплектацию')
+      if(cause instanceof WatchCatalogRequestError&&cause.partial){
+        // A retry uses the same variant identity rather than making a duplicate.
+        setReload(x=>x+1)
+        onStockChanged?.()
+      }
+      return false
+    }
     finally{setBusy(false)}
   }
   if(view==='catalog'){
