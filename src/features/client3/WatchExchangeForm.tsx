@@ -10,12 +10,12 @@ type Order={orderId:number;externalId:string;totalAmount:number;receivedAmount:n
  returnAmount:number;itemLines:string}
 type NewLine={key:string;modelName:string;gender:WatchGender;movement:string;
  braceletMaterial:string;dialColor:string;braceletColor:string;source:WatchSource;
- quantity:string;unitPrice:string;engravingText:string}
+ quantity:string;unitPrice:string;engravingText:string;shipmentState:''|'pending'|'sent';issuePossessionConfirmed:boolean}
 type Payment={key:string;method:string;amount:string}
-type OldChoice={quantity:string;physicalState:''|'not_issued'|'pending'}
+type OldChoice={quantity:string;physicalState:''|'not_issued'|'pending'|'warehouse'|'boutique'|'no_stock'}
 const blank=():NewLine=>({key:crypto.randomUUID(),modelName:'',gender:'male',
  movement:'quartz',braceletMaterial:'steel',dialColor:'black',braceletColor:'',
- source:'office',quantity:'1',unitPrice:'',engravingText:''})
+ source:'office',quantity:'1',unitPrice:'',engravingText:'',shipmentState:'',issuePossessionConfirmed:false})
 const opt=(a:readonly {value:string;label:string}[],v:string)=>
  a.find(x=>x.value===v)?.label||v
 const codeFor=(a:readonly {value:string;label:string}[],v:string)=>
@@ -101,13 +101,16 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
        braceletColor:x.braceletColor.trim()},
      quantity:Number(x.quantity),unitPrice:Number(x.unitPrice),
      source:x.source,engravingText:x.engravingText.trim(),
+     shipmentState:x.shipmentState,issuePossessionConfirmed:x.issuePossessionConfirmed,
    }))
    if(next.some(x=>!x.manual.modelName||!x.manual.movement||
       !x.manual.braceletMaterial||!x.manual.dialColor||
       (x.manual.braceletMaterial==='leather'&&!x.manual.braceletColor)||
       !Number.isSafeInteger(x.quantity)||x.quantity<1||x.quantity>1000||
-      !Number.isSafeInteger(x.unitPrice)||x.unitPrice<0)){
-     setError('Заполните характеристики, количество и цены новых часов.');return
+      !Number.isSafeInteger(x.unitPrice)||x.unitPrice<0||
+      !['pending','sent'].includes(x.shipmentState)||
+      (x.shipmentState==='sent'&&!x.issuePossessionConfirmed))){
+     setError('Заполните характеристики, количество, цену и факт отправки новых часов.');return
    }
    const pay=payments.map(x=>({method:x.method,amount:Number(x.amount)}))
    const back=refunds.map(x=>({method:x.method,amount:Number(x.amount)}))
@@ -172,7 +175,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  )
  return <form className="watch-exchange-form watch-exchange-set" onSubmit={e=>void save(e)}>
    <h4>Обмен · {order.externalId}</h4>
-   <p>Выберите старые часы, затем укажите новые. Доступно несколько позиций и способов доплаты или возврата. Новые часы сначала поступят в логистику, а старые — в очередь физической приёмки.</p>
+   <p>Оформление как в основной системе: отметьте конкретные старые часы и где они физически находятся, добавьте новые и для каждой позиции укажите, уже выдали её клиенту или нет. Доплату и возврат можно разделить по способам оплаты.</p>
    <div className="watch-exchange-lines">
      <strong>Какие часы меняет клиент</strong>
      {old.map(x=><div key={x.id} className="watch-exchange-old">
@@ -186,8 +189,11 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
          <select value={chosen[x.id]?.physicalState||''} required
            onChange={e=>choose(x.id,{physicalState:e.target.value as OldChoice['physicalState']})}>
            <option value="">Выберите</option>
-           <option value="pending">Уже отправили клиенту — ожидаем возврат</option>
-           <option value="not_issued">Ещё не отправляли клиенту</option>
+           <option value="pending">У клиента или в пути — ожидаем возврата</option>
+           <option value="warehouse">Уже получили в офис</option>
+           <option value="boutique">Уже получили на витрину</option>
+           <option value="no_stock">Получили, но не добавляем в остаток</option>
+           <option value="not_issued">Товар клиенту ещё не выдавали</option>
          </select></label>}
      </div>)}
    </div>
@@ -227,6 +233,24 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
            value={x.unitPrice} onChange={e=>update(x.key,{unitPrice:e.target.value})}/></label>
          <label className="watch-exchange-wide">Гравировка<textarea rows={2} maxLength={500}
            value={x.engravingText} onChange={e=>update(x.key,{engravingText:e.target.value})}/></label>
+         <label className="watch-exchange-wide watch-exchange-shipment-state">
+           <strong>Новые часы уже передали клиенту?</strong>
+           <select required value={x.shipmentState}
+             onChange={e=>update(x.key,{
+               shipmentState:e.target.value as NewLine['shipmentState'],
+               issuePossessionConfirmed:false,
+             })}>
+             <option value="">Укажите факт отправки</option>
+             <option value="pending">Нет, ещё не отправлены — передадим в логистику</option>
+             <option value="sent">Да, часы уже выданы клиенту</option>
+           </select>
+         </label>
+         {x.shipmentState==='sent'&&<label className="watch-exchange-wide watch-exchange-physical-verified">
+           <input type="checkbox" checked={x.issuePossessionConfirmed}
+             onChange={e=>update(x.key,{issuePossessionConfirmed:e.target.checked})}/>
+           Подтверждаю фактическую передачу именно этих часов. Main зафиксирует физическую выдачу;
+           если по учёту не хватает остатка, он не станет отрицательным.
+         </label>}
        </div>
      </div>)}
      <button type="button" className="secondary" disabled={newLines.length>=20}
