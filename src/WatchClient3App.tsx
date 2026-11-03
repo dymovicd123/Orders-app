@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand } from '../shared/client3/watch-domain'
-import { WatchBrandAccessPanel } from './features/client3/WatchBrandAccessPanel'
+import {WatchTeamMainPanel} from './features/client3/WatchTeamMainPanel'
 import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
 import {WatchWarehouseMain} from './features/client3/WatchWarehouseMain'
 import {WatchWarehouseHistory} from './features/client3/WatchWarehouseStage5'
@@ -13,7 +13,6 @@ import {WatchPlansPanel} from './features/client3/WatchPlansPanel'
 import {WatchLeadsPanel} from './features/client3/WatchLeadsPanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
 import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
-import {WatchUserAccessPanel} from './features/client3/WatchUserAccessPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import {WatchReferencesSection} from './features/client3/WatchReferencesSection'
 import { WatchOrderForm, type WatchOrderChoice, type WatchOrderDraftPayload } from './features/client3/WatchOrderForm'
@@ -52,7 +51,7 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   history:{title:'История склада',description:'Реальные движения товаров по брендам и точкам.',area:'Товары и склад'},
   returns:{title:'Приём возвратов',description:'Физическое поступление часов после возврата или обмена.',area:'Рабочие процессы'},
   finance:{title:'Финансы',description:'Движение денежных средств и итоги продаж по брендам.',area:'Финансы'},
-  staff:{title:'Доступ к брендам',description:'Назначение менеджеров на TAUWACH и WACHIZEN.',area:'Администрирование'},
+  staff:{title:'Команда',description:'Сотрудники, табель, доступ, планы и отчёты как в Main.',area:'Администрирование'},
   accounts:{title:'Учётные записи',description:'Доступ сотрудников и управление администраторами.',area:'Администрирование'},
   references:{title:'Справочники',description:'Бренды и параметры часов, доставка и оплата.',area:'Справочники'},
   legacy:{title:'Исторические заказы',description:'Заказы до перехода на новую систему, без изменения данных.',area:'Администрирование'},
@@ -315,7 +314,6 @@ export function WatchClient3App() {
       ? 'logistics':tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
-  const accountTab=activeSection==='accounts'?'accounts':'staff'
   const viewModels=(brand&&models)||[]
   return <Client3MainChrome
     user={user}
@@ -453,15 +451,10 @@ export function WatchClient3App() {
       {activeSection==='finance'&&brands.length>0&&
         <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}
           isAdmin={canAdmin} onOpenReferences={()=>goTo('references')}/>}
-      {['staff','accounts'].includes(activeSection)&&canAdmin&&<>
-        <article className="card wide client3-main-erp-account-tabs">
-          <button type="button" className={'secondary compact '+(accountTab==='staff'?'is-active':'')}
-            onClick={()=>goTo('staff')}>Менеджеры и бренды</button>
-          <button type="button" className={'secondary compact '+(accountTab==='accounts'?'is-active':'')}
-            onClick={()=>goTo('accounts')}>Учётные записи</button>
-        </article>
-        {activeSection==='staff'?<WatchBrandAccessPanel/>:<WatchUserAccessPanel/>}
-      </>}
+      {['staff','accounts'].includes(activeSection)&&canAdmin&&
+        <WatchTeamMainPanel key={activeSection==='accounts'?'team-accounts':'team-staff'}
+          initialMode={activeSection==='accounts'?'accounts':'employees'}/>}
+
     </div>
   </Client3MainChrome>
 }
