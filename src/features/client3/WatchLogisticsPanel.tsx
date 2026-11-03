@@ -63,6 +63,12 @@ export const logisticsOrderComplete=(group:LogisticsGroup)=>{
   const items=group.items.filter(i=>i.orderItemId!=null&&Number(i.quantity||0)>0)
   return items.length>0&&items.every(logisticsItemIssued)
 }
+/** Shared UI selection gate; the API repeats this check for every exact SKU. */
+export const logisticsItemEligible=(item:WatchLogisticsRow)=>Boolean(
+  item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
+  item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
+  (!item.engravingText?.trim()||Boolean(item.engravingReady)))
+
 export function groupWatchLogistics(rows: readonly WatchLogisticsRow[]): LogisticsGroup[] {
   const map = new Map<number, LogisticsGroup>()
   for (const row of rows) {
@@ -243,10 +249,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     delete dispatchIds.current[orderId]
     setDispatchQuantities(prev=>({...prev,[orderId]:{...prev[orderId],[itemId]:value}}))
   }
-  const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>Boolean(
-    item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
-    item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
-    (!item.engravingText?.trim()||Boolean(item.engravingReady)))
+  const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>logisticsItemEligible(item)
   const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
     if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
     setDispatching(order.orderId);setError('');setFeedback('')
