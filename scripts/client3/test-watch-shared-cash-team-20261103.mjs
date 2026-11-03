@@ -108,6 +108,120 @@ const read0=await parse(listClient3WatchTeam(db,admin))
 assert.equal(read0.status,200,JSON.stringify(read0))
 assert.equal(read0.employees.find(e=>e.id===1).brands.length,1)
 assert.equal((await parse(listClient3WatchTeam(db,manager))).status,403)
+
+// Main parity: one save must create the staff identity, login and brand access,
+// and failed duplicate access must roll back the new manager completely.
+const beforeOnboardingManagers=sqlite.prepare('SELECT COUNT(*) AS n FROM managers').get().n
+const onboarding=await parse(saveClient3WatchEmployee(db,admin,{
+ name:'АСЕЛЬ НОВАЯ',role:'Менеджер',brands:['TAUWACH'],
+ createAccount:true,login:'asel.client3',password:'Temp-Password-2026',
+ mustChangePassword:true,phone:'+7 777 123 45 67',
+}))
+assert.equal(onboarding.status,200,JSON.stringify(onboarding))
+assert.equal(onboarding.accessCreated,true)
+const entry=sqlite.prepare(
+ 'SELECT id,manager_id,role,is_active,must_change_password,password_hash FROM app_users WHERE login=?'
+).get('asel.client3')
+assert.equal(entry.manager_id,onboarding.id)
+assert.equal(entry.role,'manager')
+assert.equal(entry.must_change_password,1)
+assert(entry.password_hash.startsWith('pbkdf2
+const created=await parse(saveClient3WatchEmployee(db,admin,{
+ name:'НОВЫЙ ЛОГИСТ',role:'Логист',phone:'+7 777 111 22 33',
+ birthDate:'1999-05-06',hiredAt:'2026-11-03',colorKey:'#7C3AED',
+ comment:'Работает по двум брендам',
+}))
+assert.equal(created.status,200,JSON.stringify(created))
+const employeeId=created.id
+const read1=await parse(listClient3WatchTeam(db,admin))
+const logistic=read1.employees.find(e=>e.id===employeeId)
+assert.equal(logistic.role,'Логист','Original logistics permissions must survive Main team edits')
+assert.equal(logistic.birthDate,'1999-05-06')
+assert.deepEqual(logistic.brands,[],'A logist is independent of brand assignments')
+assert.equal(logistic.allBrandsLogistics,true,'Logistics employee sees both brand queues')
+assert.equal(logistic.phone,'+7 777 111 22 33')
+assert.equal((await parse(saveClient3WatchEmployee(db,manager,{name:'BAD',role:'Админ'}))).status,403)
+assert.equal((await parse(saveClient3WatchEmployee(db,admin,{name:'ПОСТОРОННИЙ',role:'Упаковщик'}))).status,400,
+ 'New packager role must not be offered or accepted')
+const logistActor={id:3,role:'manager',managerId:employeeId,employeeRole:'Логист'}
+const availableBrands=await parse(listWatchBrands(db,logistActor))
+assert.deepEqual(availableBrands.brands.map(x=>x.code),['TAUWACH','WACHIZEN'],
+ 'A logist must see both watch brands without a brand assignment')
+const globalLogistics=await parse(listWatchLogistics(db,logistActor,
+  new URL('https://client3.test/api/client3/watches/logistics?status=all')))
+assert.equal(globalLogistics.status,200,'Logist must reach a two-brand order queue')
+const salesDenied=await parse(listWatchModels(db,logistActor,
+  new URL('https://client3.test/api/client3/watches/models?brand=TAUWACH')))
+assert.equal(salesDenied.status,403,'Logist may not access sales catalog')
+const deniedLogistBrand=await parse(assignWatchManagerBrands(db,admin,employeeId,{
+ brands:['TAUWACH'],expectedBrands:[],requestId:'test-logist-nobrands-20261103',
+}))
+assert.equal(deniedLogistBrand.status,400,'Logists cannot be assigned brand memberships')
+const loginRequest=new Request('https://client3.test/api/auth/users',{
+ method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({login:'client3_logist',password:'TempPass345!',role:'manager',
+   managerId:employeeId,displayName:'НОВЫЙ ЛОГИСТ'}),
+})
+const createdAccount=await parse(createAuthUser(db,loginRequest,admin))
+assert.equal(createdAccount.status,201,JSON.stringify(createdAccount))
+assert.equal(sqlite.prepare('SELECT role,manager_id FROM app_users WHERE id=?')
+ .get(createdAccount.id).manager_id,employeeId)
+assert((await listAuthUsers(db)).items.some(u=>u.login==='client3_logist'&&u.managerId===employeeId))
+const duplicateAccount=await parse(createAuthUser(db,new Request('https://client3.test/api/auth/users',{
+ method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({login:'client3_other',password:'TempPass345!',role:'manager',managerId:employeeId}),
+}),admin))
+assert.equal(duplicateAccount.status,409,'Cannot create duplicate staff account')
+assert.equal((await parse(saveClient3WatchEmployee(db,admin,{
+ id:employeeId,name:'НОВЫЙ ЛОГИСТ',role:'Логист',hiredAt:'2026-11-03',
+ colorKey:'#2563EB',birthDate:'1999-05-06',
+}))).status,200)
+const timesheetURL=new URL('https://client3.test/api/client3/watches/team/timesheet?month=2026-11')
+const sheet=await parse(listClient3WatchTimesheet(db,admin,timesheetURL))
+assert.equal(sheet.status,200)
+assert(sheet.employees.some(x=>x.id===employeeId))
+const stored=await parse(saveClient3WatchTimesheet(db,admin,{
+ dates:['2026-11-02'],managerIds:[employeeId],workUntil:'18:00',comment:'Смена'}))
+assert.equal(stored.status,200)
+const reread=await parse(listClient3WatchTimesheet(db,admin,timesheetURL))
+assert(reread.entries.some(x=>x.managerId===employeeId&&x.date==='2026-11-02'))
+const reportUrl=new URL('https://client3.test/api/client3/watches/team/salary?from=2026-11-01&to=2026-11-30')
+const salary=await parse(listClient3WatchTeamSalary(db,admin,reportUrl))
+assert.equal(salary.status,200)
+assert(salary.rows.some(x=>x.managerId===employeeId))
+const activity=await parse(listClient3WatchTeamActivity(db,admin,reportUrl))
+assert.equal(activity.status,200)
+assert(activity.rows.some(x=>x.managerId===employeeId))
+const dismissed=await parse(setClient3WatchEmployeeActive(db,admin,employeeId,false))
+assert.equal(dismissed.status,200,JSON.stringify(dismissed))
+assert.equal((await parse(listClient3WatchTeam(db,admin))).employees.find(x=>x.id===employeeId).isActive,false)
+assert.equal((await parse(setClient3WatchEmployeeActive(db,admin,employeeId,true))).status,200)
+// A lightweight Client3 roster does not depend on Main-only history tables.
+sqlite.exec('DROP TABLE attendance_days')
+const afterMissingMainHistory=await parse(listClient3WatchTeam(db,admin))
+assert.equal(afterMissingMainHistory.status,200)
+assert(afterMissingMainHistory.employees.some(e=>e.id===1),
+ 'Existing managers must remain visible when old Main history tables are absent')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+sqlite.close()
+console.log('CLIENT3_SHARED_CASH_MAIN_TEAM_ACCEPTANCE_PASS: cash 2 brands merged once, archive, idempotency, reversal, pause, cycles and Main roster/logistics/timesheet/rights')
+),'Temporary passwords are hashed')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM watch_manager_brands WHERE manager_id=?').get(onboarding.id).n,1)
+const duplicateOnboarding=await parse(saveClient3WatchEmployee(db,admin,{
+ name:'ДВОЙНИК',role:'Менеджер',brands:['TAUWACH'],
+ createAccount:true,login:'asel.client3',password:'Temp-Password-2026',
+}))
+assert.equal(duplicateOnboarding.status,409)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM managers').get().n,beforeOnboardingManagers+1,
+ 'Duplicate login must not create an orphan employee')
+const logistOnboarding=await parse(saveClient3WatchEmployee(db,admin,{
+ name:'ЛОГИСТ ОДНОЙ КНОПКОЙ',role:'Логист',brands:[],
+ createAccount:true,login:'logist.single',password:'Temp-Password-2026',
+}))
+assert.equal(logistOnboarding.status,200,JSON.stringify(logistOnboarding))
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM watch_manager_brands WHERE manager_id=?').get(logistOnboarding.id).n,0)
+assert.equal(sqlite.prepare('SELECT manager_id FROM app_users WHERE login=?').get('logist.single').manager_id,logistOnboarding.id)
+
 const created=await parse(saveClient3WatchEmployee(db,admin,{
  name:'НОВЫЙ ЛОГИСТ',role:'Логист',phone:'+7 777 111 22 33',
  birthDate:'1999-05-06',hiredAt:'2026-11-03',colorKey:'#7C3AED',
