@@ -292,10 +292,16 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
           onStockChanged={()=>{refresh();onStockChanged?.()}}/>:
       loading?<div className="stocktake-inline-notice">Загружаем каталог и остатки…</div>:
       stage==='select'?<section className="stocktake-e-start stocktake-e-start-v5">
+        {mode==='count'&&persistentRevision&&
+          <WatchPersistentRevision key={brand+'-'+source+'-select'}
+            brand={brand} source={source} models={models} variants={variants}
+            selectedModelIds={selectedModelIds} onActiveChange={setRevisionActive}
+            onStockChanged={()=>{refresh();onStockChanged?.()}}/>}
         <div className="stocktake-start-intro">
           <span className="stocktake-step-kicker">Шаг 1 · Выбор товаров</span>
-          <h4>Какие часы хотите {mode==='arrival'?'принять':mode==='writeoff'?'списать':
-            mode==='transfer'?'переместить':'пересчитать'}?</h4>
+          <h4>{mode==='count'&&persistentRevision?'Выберите модели для выборочной ревизии':
+            'Какие часы хотите '+(mode==='arrival'?'принять':mode==='writeoff'?'списать':
+              mode==='transfer'?'переместить':'пересчитать')+'?'}</h4>
           <p>Можно выбрать несколько моделей и комплектаций. Все выбранные позиции сохраняются одной операцией.</p>
         </div>
         <div className="stocktake-selective-picker stocktake-selective-picker-v5">
@@ -368,11 +374,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
                 setShowInlineAdd(false);setError('');refresh()
               }}/>}
         </div>
-        {mode==='count'&&persistentRevision?
-          <WatchPersistentRevision key={brand+'-'+source+'-select'}
-            brand={brand} source={source} models={models} variants={variants}
-            selectedModelIds={selectedModelIds} onActiveChange={setRevisionActive}
-            onStockChanged={()=>{refresh();onStockChanged?.()}}/>:
+        {!(mode==='count'&&persistentRevision)&&
           <div className="stocktake-start-submit">
             <div>{selectedModels.length?
               'Выбрано: '+selectedModels.length+' товаров · '+selectedPositionCount+' комплектаций':
