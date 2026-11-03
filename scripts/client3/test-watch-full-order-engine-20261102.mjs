@@ -70,7 +70,7 @@ const fixtureEngravingReady=(orderId,when='2026-11-03T10:00:00Z')=>{
   sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at=? WHERE order_id=?").run(when,orderId)
   sqlite.prepare(`INSERT OR REPLACE INTO watch_engraving_item_readiness
     (order_item_id,engraving_text,ready_at,ready_by_user_id,request_id)
-    SELECT oi.id,wi.engraving_text,?,1,'test-ready-'||oi.id
+    SELECT oi.id,wi.engraving_text,?,NULL,'test-ready-'||oi.id
     FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
     WHERE oi.order_id=? AND TRIM(wi.engraving_text)<>''`).run(when,orderId)
 }
