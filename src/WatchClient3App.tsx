@@ -88,6 +88,9 @@ export function WatchClient3App() {
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
+  const [reportOrderFocus,setReportOrderFocus]=useState<{
+    brand:WatchBrand;orderId:number;externalId:string;orderDate:string
+  }|null>(null)
   const [models, setModels] = useState<WatchOrderChoice[]>([])
   const [,setCatalogBusy] = useState(false)
   const [catalogVersion,setCatalogVersion]=useState(0)
@@ -324,7 +327,11 @@ export function WatchClient3App() {
         <WatchDashboardPanel brands={brands.map(x=>x.code)}
           onNavigate={section=>goTo(section)}/>}
       {activeSection==='reports'&&brands.length>0&&
-        <WatchReportsPanel brands={brands.map(x=>x.code)}/>}
+        <WatchReportsPanel brands={brands.map(x=>x.code)}
+          onOpenOrder={order=>{
+            setReportOrderFocus(order);setLastOrderBrand(order.brand)
+            goTo('orders')
+          }}/>}
       {['orders','create','returns','exchange','legacy'].includes(activeSection)&&<>
         <OrdersHeaderSection ctx={{
           orderPanel:orderTab,
@@ -344,7 +351,9 @@ export function WatchClient3App() {
         }}/>
         {activeSection==='orders'?(brands.length?
           <WatchOrdersPanel key={'orders-'+catalogVersion}
-            initialBrand={lastOrderBrand||undefined} allowedBrands={brands.map(x=>x.code)}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            initialFocusedOrder={reportOrderFocus||undefined}
+            allowedBrands={brands.map(x=>x.code)}
             isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>:
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
         activeSection==='create'?
