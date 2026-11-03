@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
-          test "$(git rev-parse HEAD^)" = 7bd9750a3ce3a6892248a0873e3cbabba474842e
+          test "$(git rev-parse HEAD^)" = 27c26baed63bd160afac0fe3aaa43f16e3263eb0
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-clear-legacy-orders-accounts-guarded-20261103.yml'
           test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
           test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
