@@ -89,7 +89,7 @@ export async function listClient3WatchOrders(
            ),0)),
           'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
-          'source',oi.source_type,
+          'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
           'shipped',EXISTS(SELECT 1 FROM order_dispatch_items di2
             JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
             WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
