@@ -643,7 +643,7 @@ export async function routeClient3Watches(
   const sendMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/send$/.exec(url.pathname)
   if(sendMatch&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;requestId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'logistics')
     if(scope.error)return scope.error
     return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
