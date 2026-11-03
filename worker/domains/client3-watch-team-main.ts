@@ -2,6 +2,7 @@ import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {setTeamEmployeeActive,listTeamTimesheet,saveTeamTimesheet,type TimesheetInput} from './team.ts'
 import {normalizeManagerColor} from './activity.ts'
+import {hashPassword,authLoginError,normalizeAuthLogin,compatibilityEmailForLogin,writeAuthAuditLog} from './auth.ts'
 
 type Input=Record<string,unknown>
 const denied=()=>json({ok:false,message:'Настройки команды доступны администратору.'},{status:403})
@@ -102,11 +103,67 @@ export async function saveClient3WatchEmployee(db:D1Database,actor:AuthUser,inpu
   if(!results[0]?.meta?.changes)return bad('Не удалось обновить сотрудника.',409)
   return json({ok:true,id,updated:true})
  }
- const res=await db.prepare(`INSERT INTO managers(name,role,phone,comment,color_key,
-    hired_at,birth_date,is_active,created_at,updated_at)
-   VALUES(?,?,?,?,?,?,?,1,?,?)`).bind(name,role,phone||null,comment||null,color,
-     hiredAt||today,birthDate||null,now,now).run()
- return json({ok:true,id:Number(res.meta?.last_row_id||0),created:true})
+ // Single-step Main-style onboarding: the manager, all selected brand
+ // memberships and optional temporary login commit in ONE D1 transaction.
+ // No orphaned manager is left behind if the login is already in use.
+ const withAccess=input.createAccount===true
+ const rawBrands=Array.isArray(input.brands)?input.brands:[]
+ const brands=role==='Логист'?[]:[...new Set(rawBrands.filter((v):v is string=>typeof v==='string'))]
+ if(brands.length>2||brands.some(v=>v!=='TAUWACH'&&v!=='WACHIZEN'))
+   return bad('Выберите корректные бренды: TAUWACH или WACHIZEN.')
+ if(withAccess&&role==='Менеджер'&&!brands.length)
+   return bad('Для менеджера с доступом назначьте хотя бы один бренд.')
+ let login='',passwordHash=''
+ if(withAccess){
+   login=normalizeAuthLogin(input.login)
+   const wrongLogin=authLoginError(login)
+   if(wrongLogin)return bad(wrongLogin)
+   const password=typeof input.password==='string'?input.password:''
+   if(password.length<8)return bad('Временный пароль должен содержать минимум 8 символов.')
+   const already=await db.prepare('SELECT id FROM app_users WHERE lower(login)=? LIMIT 1')
+     .bind(login).first()
+   if(already)return bad('Этот логин уже занят. Укажите другой.',409)
+   passwordHash=await hashPassword(password)
+ }
+ const nextId=Number((await db.prepare(
+   'SELECT COALESCE(MAX(id),0)+1 AS nextId FROM managers').first<{nextId:number}>())?.nextId||0)
+ if(!Number.isSafeInteger(nextId)||nextId<1)
+   return bad('Не удалось выделить идентификатор сотрудника.',409)
+ const commands=[
+   db.prepare(`INSERT INTO managers(id,name,role,phone,comment,color_key,
+     hired_at,birth_date,is_active,created_at,updated_at)
+     VALUES(?,?,?,?,?,?,?,?,1,?,?)`).bind(nextId,name,role,phone||null,comment||null,color,
+       hiredAt||today,birthDate||null,now,now),
+   ...brands.map(brand=>db.prepare(
+     'INSERT INTO watch_manager_brands(manager_id,brand_id) SELECT ?,id FROM watch_brands WHERE code=? AND is_active=1'
+   ).bind(nextId,brand)),
+ ]
+ if(withAccess)commands.push(db.prepare(`INSERT INTO app_users(
+   email,login,password_hash,role,manager_id,display_name,is_active,
+   must_change_password,password_updated_at)
+   VALUES(?,?,?,?,?,?,1,?,?)`).bind(
+     compatibilityEmailForLogin(login),login,passwordHash,role==='Админ'?'admin':'manager',
+     nextId,name,input.mustChangePassword===false?0:1,now))
+ try{
+   const operations=await db.batch(commands)
+   if(!operations[0]?.meta?.changes||brands.some((_,i)=>!operations[i+1]?.meta?.changes))
+     return bad('Не удалось завершить создание сотрудника. Обновите список.',409)
+ }catch{
+   return bad('Не удалось создать сотрудника или логин уже занят. Проверьте данные и повторите.',409)
+ }
+ if(withAccess){
+   // The audit is deliberately best-effort: a logging failure must not
+   // transform committed onboarding into an apparent failed user operation.
+   const id=Number((await db.prepare('SELECT id FROM app_users WHERE manager_id=? LIMIT 1')
+     .bind(nextId).first<{id:number}>())?.id||0)
+   try{await writeAuthAuditLog(db,{eventType:'auth_user_created',
+     actorUserId:actor.id,targetUserId:id,actorLogin:actor.login||'admin',
+     targetLogin:login,details:'Client3 staff onboard; employee='+nextId+'; role='+role+'; tempPassword=yes'})
+   }catch{/* staff and access already committed */}
+ }
+ return json({ok:true,id:nextId,created:true,accessCreated:withAccess,
+   brands:brands as string[]})
+
 }
 export async function setClient3WatchEmployeeActive(
  db:D1Database,actor:AuthUser,id:number,isActive:unknown){
