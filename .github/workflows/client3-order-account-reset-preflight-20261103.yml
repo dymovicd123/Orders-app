@@ -39,13 +39,17 @@ jobs:
             --command="SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name" \
             | jq -cr '(if type=="array" then .[0].results else .results end) | map(.name)' | tee /tmp/client3-table-names.json 
           npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
-            --command="SELECT m.name AS child,f.\"table\" AS parent,f.\"from\" AS child_column,f.\"to\" AS parent_column,f.on_delete
-              FROM sqlite_master m JOIN pragma_foreign_key_list(m.name) f
-              WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%'
-                AND (f.\"table\"='orders' OR f.\"table\"='order_items' OR f.\"table\"='app_users'
-                  OR f.\"table\"='returns' OR f.\"table\"='exchanges'
-                  OR f.\"table\" LIKE 'watch_%' OR f.\"table\"='inventory_reservations')
-              ORDER BY parent,child" \
+            --command="SELECT name,substr(sql,1,2400) AS definition
+              FROM sqlite_master WHERE type='table' AND (
+                 sql LIKE '%REFERENCES orders%' OR sql LIKE '%REFERENCES order_items%'
+                 OR sql LIKE '%REFERENCES app_users%' OR sql LIKE '%REFERENCES returns%'
+                 OR sql LIKE '%REFERENCES exchanges%' OR
+                 name IN ('orders','order_items','inventory_reservations',
+                   'payments','financial_events','returns','exchanges',
+                   'watch_order_details','watch_order_item_details','app_users',
+                   'order_dispatches','order_dispatch_items',
+                   'watch_logistics_jobs','inventory_movements')
+              ) ORDER BY name" \
             | jq -cr '(if type=="array" then .[0].results else .results end)' | tee /tmp/client3-relations.json
           npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
             --command="SELECT name,tbl_name,substr(sql,1,500) AS definition FROM sqlite_master
