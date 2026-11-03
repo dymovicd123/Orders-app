@@ -3,6 +3,8 @@ import type {FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {useWatchAnalytics,watchMoney,watchPeriod} from './useWatchAnalytics'
+import '../../styles/140-finance-truth.css'
+import '../../styles/150-orders-finance-sync.css'
 import '../../styles/client3-watch-finance.css'
 
 type Mode='summary'|'payments'|'debts'|'returns'|'cash'|'methods'
@@ -13,6 +15,15 @@ type Cash={ok:boolean;initialized:boolean;message?:string;currentBalance:number|
  autoTrackingEnabled?:boolean;cycleStartedAt?:string;cycles?:Array<{id:number;startedAt:string;
  finishedAt:string;openingAmount:number;closingBalance:number;comment:string}>;
  entries:CashEntry[];legacyEntries?:CashEntry[]}
+const moneyDate=(value:unknown)=>{
+ const date=String(value||'').slice(0,10)
+ return /^\d{4}-\d{2}-\d{2}$/.test(date)?date.slice(8,10)+'.'+date.slice(5,7)+'.'+date.slice(0,4):date||'—'
+}
+const operationLabel=(kind:unknown)=>({
+ order_payment:'Оплата заказа',debt_close:'Закрытие долга',order_extra:'Доплата по заказу',
+ exchange_extra:'Доплата по обмену',order_refund:'Возврат клиенту',
+ exchange_refund:'Возврат при обмене',payment_correction:'Корректировка оплаты',
+} as Record<string,string>)[String(kind||'')]||String(kind||'Денежное событие')
 const formats:{id:Mode;label:string;hint:string}[]=[
  {id:'summary',label:'Сводка',hint:'Чёткие итоги'},
  {id:'payments',label:'Операции',hint:'По дате операции'},
@@ -21,8 +32,9 @@ const formats:{id:Mode;label:string;hint:string}[]=[
  {id:'cash',label:'Касса',hint:'Наличные сейчас'},
  {id:'methods',label:'Способы оплаты',hint:'Справочник оплат'},
 ]
-export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
- brands:readonly WatchBrand[];isAdmin?:boolean;onOpenReferences?:()=>void
+export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenOrder}:{
+ brands:readonly WatchBrand[];isAdmin?:boolean;onOpenReferences?:()=>void;
+ onOpenOrder?:(order:{brand:WatchBrand;orderId:number;externalId:string;orderDate:string})=>void
 }){
  const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
  const [period,setPeriod]=useState(watchPeriod('month'))
@@ -121,24 +133,62 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
  const refunds=moneyRows.filter(row=>Number(row.amountDelta||0)<0)
  const exchanges=moneyRows.filter(row=>/exchange/i.test(String(row.eventType||'')))
  const outstanding=data?.currentDebt.currentDebt||0
- const stats=[
-   ['Общая сумма продаж',data?.overview.totalSales],
-   ['Поступило',data?.income.incoming],
-   ['Возвращено / списано',data?.income.outgoing],
-   ['Чистое движение',data?.income.net],
-   ['Актуальные долги',outstanding],
- ]
+ const kinds=data?.kinds||[]
+ const typeMoney=(kind:string,flow:'incoming'|'outgoing')=>
+   kinds.filter(row=>String(row.eventType||'')===kind)
+     .reduce((total,row)=>total+Number(row[flow]||0),0)
+ const orderPayments=typeMoney('order_payment','incoming')
+ const debtPayments=typeMoney('debt_close','incoming')+typeMoney('order_extra','incoming')
+ const exchangePayments=typeMoney('exchange_extra','incoming')
+ const regularReturns=typeMoney('order_refund','outgoing')
+ const exchangeReturns=typeMoney('exchange_refund','outgoing')
+ const otherOutflow=Math.max(0,Number(data?.income.outgoing||0)-regularReturns-exchangeReturns)
+ const auditTotal=Number(data?.income.incoming||0)
+ const methodsTotal=(data?.methods||[]).reduce((n,row)=>n+Number(row.incoming||0),0)
+ const kindsTotal=kinds.reduce((n,row)=>n+Number(row.incoming||0),0)
+ const reconciled=Boolean(data)&&Math.abs(auditTotal-methodsTotal)<0.01&&
+   Math.abs(auditTotal-kindsTotal)<0.01
+ const dayMap=new Map<string,{date:string;received:number;returned:number;net:number;sales:number;orders:number}>()
+ const day=(key:string)=>{
+   let item=dayMap.get(key)
+   if(!item){item={date:key,received:0,returned:0,net:0,sales:0,orders:0};dayMap.set(key,item)}
+   return item
+ }
+ for(const row of data?.days||[]){
+   const item=day(String(row.date||''))
+   item.sales=Number(row.totalSales||0);item.orders=Number(row.orderCount||0)
+ }
+ for(const row of data?.eventDays||[]){
+   const item=day(String(row.date||''))
+   item.received=Number(row.incoming||0);item.returned=Number(row.outgoing||0)
+   item.net=Number(row.net||0)
+ }
+ const financeDays=[...dayMap.values()].sort((a,b)=>b.date.localeCompare(a.date))
+ const crossDateEvents=moneyRows.filter(row=>row.orderDate&&row.eventDate&&
+   String(row.orderDate)!==String(row.eventDate))
+ const earlyDatedEvents=moneyRows.filter(row=>row.orderDate&&row.eventDate&&
+   String(row.eventDate)<String(row.orderDate))
+ const operationsTruncated=Number(data?.moneyEventCount||0)>moneyRows.length
+ const openOrder=(row:Record<string,string|number|null>)=>{
+   const orderId=Number(row.orderId||row.id||0)
+   if(orderId>0&&onOpenOrder)onOpenOrder({
+     brand,orderId,externalId:String(row.externalOrderId||row.externalId||'#'+orderId),
+     orderDate:String(row.orderDate||''),
+   })
+ }
  return <article className="card wide sector-finance" id="finance">
    <div className="card-label">Финансы</div>
-   <div className="card-meta">Денежные события и касса по дате операции. Продажи и долги по дате заказа. Каждый бренд отдельно.</div>
+   <div className="card-meta">Деньги показаны по дате операции. Продажи — по дате заказа. Касса общая для TAUWACH и WACHIZEN, остальные показатели разделены по брендам.</div>
    <div className="orders-filter-panel finance-workspace-panel">
      <div className="reports-filter-header">
        <div><h3>{period.from===period.to?'День':'Период'}</h3>
-         <div className="muted-note">Все движения денег записаны с реальной датой события.</div>
+         <div className="muted-note">Все операции ниже относятся к выбранным датам. Поздний ввод и оплата заказа другой даты отмечаются отдельно.</div>
        </div>
        <div className="reports-period-buttons">
          {(['today','yesterday','month','year'] as const).map((p,i)=>
-           <button type="button" className="secondary compact" key={p} onClick={()=>setPeriod(watchPeriod(p))}>
+           <button type="button" className="secondary compact" key={p}
+             aria-pressed={period.from===watchPeriod(p).from&&period.to===watchPeriod(p).to}
+             onClick={()=>setPeriod(watchPeriod(p))}>
              {['Сегодня','Вчера','Месяц','Год'][i]}</button>)}
        </div>
      </div>
@@ -151,6 +201,8 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
          <label>По<input type="date" value={period.to}
            onChange={e=>setPeriod(p=>({...p,to:e.target.value}))}/></label>
        </>}
+       <div className="finance-auto-refresh"><span className={'status-pill '+(busy?'status-warning':'status-online')}>
+         {busy?'Обновляем…':'Данные актуальны'}</span></div>
        <button type="button" className="secondary compact" disabled={busy}
          onClick={()=>{refresh();setCashRefresh(x=>x+1)}}>Обновить</button>
      </div>
