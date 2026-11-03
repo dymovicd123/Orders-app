@@ -60,7 +60,7 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   references:{title:'Справочники',description:'Бренды и параметры часов, доставка и оплата.',area:'Справочники'},
   legacy:{title:'Исторические заказы',description:'Заказы до перехода на новую систему, без изменения данных.',area:'Администрирование'},
 }
-const sections=Object.keys(sectionMeta) as WatchSection[]
+const sections=(Object.keys(sectionMeta) as WatchSection[]).filter(section=>section!=='legacy')
 type LoginResponse = { ok: boolean; user?: User; message?: string }
 async function api<T extends { ok: boolean; message?: string }>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...init })
@@ -361,18 +361,17 @@ export function WatchClient3App() {
         <OrdersHeaderSection ctx={{
           orderPanel:orderTab,
           orderPanelOptions:orderPanelOptions.filter(panel=>
-            ['list','create','returns','exchange'].includes(panel.kind)||
-            (canAdmin&&panel.kind==='activity'))
+            ['list','create','returns','exchange'].includes(panel.kind))
             .map(panel=>panel.kind==='exchange'?{...panel,label:'Обмен'}:
               panel.kind==='returns'?{...panel,label:'Возвраты'}:
-              panel.kind==='activity'?{...panel,label:'Исторические заказы'}:panel),
+              panel),
           returnHistorySummary:{pendingPhysicalQuantity:0},
           exchangeHistorySummary:{pendingPhysicalQuantity:0},
           sectorStyle:()=>({}),
           setEditorOpen:()=>{},
           setOrderPanel:(panel:string)=>goTo(panel==='create'?'create':
             panel==='returns'?'returns':panel==='exchange'?'exchange':
-            panel==='activity'?'legacy':'orders'),
+            'orders'),
         }}/>
         {activeSection==='orders'?(brands.length?
           <WatchOrdersPanel key={'orders-'+catalogVersion}
