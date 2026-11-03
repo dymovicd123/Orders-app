@@ -16,7 +16,7 @@ import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
 import {addWatchModelAlias,listWatchModelAliases,deleteWatchModelAlias,findWatchModelByIdentity} from '../../worker/domains/client3-watch-model-aliases.ts'
-import {registerWatchModel} from '../../worker/domains/client3-watch-catalog.ts'
+import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
 import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-edit.ts'
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
@@ -1467,6 +1467,51 @@ const secondCash=await parse(writeWatchBrandCash(db,admin,1,'manual',{
  requestId:'cash-second-cycle-in-20261103'}))
 assert.equal(secondCash.currentBalance,400,'Old entries must not leak into new cycle')
 assert.equal(secondCash.cycles.length,1)
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+
+// Regression: creating an actual watch catalog position must result in one
+// stock-ready canonical SKU, even with ZERO physical quantity. Both ordinary
+// and reference-driven characteristics are tested on real SQLite migrations.
+const stockBeforeNewVariants=count('inventory_stock')
+const catalogModel=await parse(registerWatchModel(db,admin,1,{modelName:'КАТАЛОГ ТЕСТ НОВОЙ ПОЗИЦИИ'}))
+assert(catalogModel.watchProductId>0,JSON.stringify(catalogModel))
+const standardForm=await parse(registerWatchVariant(db,admin,1,{
+  watchProductId:catalogModel.watchProductId,gender:'male',movement:'quartz',
+  braceletMaterial:'steel',dialColor:'black',braceletColor:'',
+}))
+assert(standardForm.watchVariantId>0,JSON.stringify(standardForm))
+const standardSku=await parse(provisionClient3WatchSku(db,admin,1,standardForm.watchVariantId))
+assert.equal(standardSku.status,200,JSON.stringify(standardSku))
+assert(standardSku.canonicalVariantId>0)
+const standardRetry=await parse(registerWatchVariant(db,admin,1,{
+  watchProductId:catalogModel.watchProductId,gender:'male',movement:'quartz',
+  braceletMaterial:'steel',dialColor:'black',braceletColor:'',
+}))
+assert.equal(standardRetry.watchVariantId,standardForm.watchVariantId,'Retry cannot create duplicate stock SKU')
+const leatherForm=await parse(registerWatchVariant(db,admin,1,{
+  watchProductId:catalogModel.watchProductId,gender:'female',movement:'quartz',
+  braceletMaterial:'leather',dialColor:'white',braceletColor:'ЧЕРНЫЙ',
+}))
+assert(leatherForm.watchVariantId>0,JSON.stringify(leatherForm))
+const leatherSku=await parse(provisionClient3WatchSku(db,admin,1,leatherForm.watchVariantId))
+assert.equal(leatherSku.status,200,JSON.stringify(leatherSku))
+assert(leatherSku.canonicalVariantId>0)
+const manualMovement=await parse(registerWatchVariant(db,admin,1,{
+  watchProductId:catalogModel.watchProductId,gender:'male',movement:'РУЧНОЙ ПОДЗАВОД',
+  braceletMaterial:'steel',dialColor:'black',braceletColor:'',
+}))
+assert(manualMovement.watchVariantId>0,JSON.stringify(manualMovement))
+const manualSku=await parse(provisionClient3WatchSku(db,admin,1,manualMovement.watchVariantId))
+assert.equal(manualSku.status,200,JSON.stringify(manualSku))
+assert(manualSku.canonicalVariantId>0)
+const modelCatalog=await parse(listWatchCatalogDrafts(db,admin,1))
+const modelRows=modelCatalog.rows.filter(row=>row.watchProductId===catalogModel.watchProductId)
+assert.equal(modelRows.length,3,'Catalog must show all new variants')
+assert(modelRows.every(row=>row.catalogVariantId&&row.variantActive===1),
+  'New catalog variants must be fully linked and sellable')
+assert(modelRows.every(row=>Number(row.officePhysical||0)===0&&Number(row.showcasePhysical||0)===0),
+  'Provisioning a catalog SKU must not invent physical watches')
+assert.equal(count('inventory_stock'),stockBeforeNewVariants,'Catalog create and provision must not produce physical stock')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
