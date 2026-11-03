@@ -189,7 +189,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        WHERE p.payment_kind IN ('debt_close', 'extra')
          AND NOT EXISTS (
            SELECT 1 FROM exchanges e
-           WHERE e.payment_id = p.id
+           WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
              AND COALESCE(e.status, 'completed') <> 'cancelled'
              AND e.financial_action = 'extra_payment'
          )
@@ -285,14 +291,26 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
               COALESCE(o.city, '') AS city,
               (SELECT e.id FROM exchanges e
-               WHERE e.payment_id = p.id
+               WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                  AND COALESCE(e.status, 'completed') <> 'cancelled'
                  AND e.financial_action = 'extra_payment'
                ORDER BY e.id DESC LIMIT 1) AS active_exchange_id,
               CASE
                 WHEN EXISTS (
                   SELECT 1 FROM exchanges e
-                  WHERE e.payment_id = p.id
+                  WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                     AND COALESCE(e.status, 'completed') <> 'cancelled'
                     AND e.financial_action = 'extra_payment'
                 ) THEN 'exchange_extra'
@@ -335,7 +353,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               CASE
                 WHEN EXISTS (
                   SELECT 1 FROM exchanges e
-                  WHERE e.payment_id = p.id
+                  WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                     AND COALESCE(e.status, 'completed') <> 'cancelled'
                     AND e.financial_action = 'extra_payment'
                 ) THEN 'exchange_extra'
@@ -384,7 +408,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
                 WHEN p.payment_kind NOT IN ('debt_close', 'extra')
                   AND NOT EXISTS (
                     SELECT 1 FROM exchanges e
-                    WHERE e.payment_id = p.id
+                    WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                       AND COALESCE(e.status, 'completed') <> 'cancelled'
                       AND e.financial_action = 'extra_payment'
                   )
@@ -394,14 +424,26 @@ export async function listFinanceReports(db: D1Database, url: URL) {
                 WHEN p.payment_kind = 'extra'
                   AND NOT EXISTS (
                     SELECT 1 FROM exchanges e
-                    WHERE e.payment_id = p.id
+                    WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                       AND COALESCE(e.status, 'completed') <> 'cancelled'
                       AND e.financial_action = 'extra_payment'
                   )
                 THEN p.amount ELSE 0 END), 0) AS order_extra_received,
               COALESCE(SUM(CASE WHEN EXISTS (
                 SELECT 1 FROM exchanges e
-                WHERE e.payment_id = p.id
+                WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                   AND COALESCE(e.status, 'completed') <> 'cancelled'
                   AND e.financial_action = 'extra_payment'
               ) THEN p.amount ELSE 0 END), 0) AS extra_received
@@ -530,7 +572,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        WHERE p.payment_kind IN ('debt_close', 'extra')
          AND NOT EXISTS (
            SELECT 1 FROM exchanges e
-           WHERE e.payment_id = p.id
+           WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
              AND COALESCE(e.status, 'completed') <> 'cancelled'
              AND e.financial_action = 'extra_payment'
          )
