@@ -189,7 +189,10 @@ export async function changeClient3WatchRevision(
        return error('Укажите целое количество от 0 до 1000000.',400)
      const result=await saveInventoryStocktakeCount(db,id,itemId,
        {countedQuantity:input.countedQuantity})
-     return response({...result,session:await summary(db,brandId,id)})
+     // Count autosave returns only the saved line. Rebuilding the full watch
+     // catalogue/session on every blur made typing between SKUs unnecessarily slow.
+     // The GET/start/complete endpoints still return full authoritative state.
+     return response(result)
    }
    if(action==='add'){
      const watchId=Number(input.watchVariantId)
