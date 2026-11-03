@@ -7,7 +7,7 @@ type Register={id:number;opening_amount:number;financial_event_watermark:number;
  paused_event_id:number|null;paused_at:string|null;cash_entry_watermark:number;
  cycle_started_at:string}
 const error=(message:string,status=409)=>json({ok:false,message},{status})
-const validMoney=(n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=1_000_000_000
+const validMoney=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=1_000_000_000
 const idOk=(v:unknown)=>typeof v==='string'&&/^[A-Za-z0-9_-]{12,100}$/.test(v)
 const day=()=>new Date(Date.now()+5*3600_000).toISOString().slice(0,10)
 const cashMethod=`UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','CASH','CASH KZT')`
