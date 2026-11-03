@@ -429,7 +429,17 @@ export async function routeClient3Watches(
     if(!Number.isSafeInteger(variantId)||variantId<1)
       return json({ok:false,code:'WATCH_VARIANT_NOT_CONFIRMED',
         message:'Не удалось подтвердить новую комплектацию. Обновите каталог.'},{status:409})
-    const prepared=await provisionClient3WatchSku(db,actor,scope.row!.id,variantId)
+    let prepared:Response
+    try{
+      prepared=await provisionClient3WatchSku(db,actor,scope.row!.id,variantId)
+    }catch(cause){
+      // The watch identity is already written. Tell the UI to reload and
+      // offer retrying the same SKU; never claim the whole create was rolled back.
+      return json({ok:false,code:'WATCH_VARIANT_PROVISION_FAILED',
+        message:'Комплектация сохранена, но не удалось подготовить складскую позицию: '+
+          (cause instanceof Error?cause.message:'повторите подготовку SKU'),
+        partial:true,watchVariantId:variantId},{status:409})
+    }
     const result=await prepared.json() as {
       ok:boolean;code?:string;message?:string;canonicalVariantId?:number
     }
