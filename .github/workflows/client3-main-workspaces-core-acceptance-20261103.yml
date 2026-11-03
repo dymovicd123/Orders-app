@@ -1,0 +1,35 @@
+name: Client3 Main workspaces minimal real SQL acceptance (NO DEPLOY)
+on:
+  push:
+    branches: [client3/main-dashboard-reports-finance-20261103]
+    paths: ['.github/workflows/client3-main-workspaces-core-acceptance-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Isolated third Worker source only
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+          test -f migrations/client3-watch/1001_watch_brand_cash_register.sql
+      - run: npm ci
+      - name: Focused real Main SQL order/finance/cash adapter and no double writes
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Production typecheck and Vite build
+        run: npm run build
+      - name: Record result in Client3 plan
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Main dashboard/reports/finance/logistics fast release gate: $RESULT, source SHA $GITHUB_SHA, https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. This verifies new brand-scoped Main analytics, watch cash setup/manual/reconciliation, no overdraft/idempotency, old order lifecycle and TypeScript. No deploy or remote data operations. Browser role QA remains deferred by owner's instruction."
