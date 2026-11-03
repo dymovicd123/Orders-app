@@ -30,13 +30,18 @@ async function usedByActiveSku(db:D1Database,kind:string,value:string){
  const col=referenceColumns[kind]
  if(!col)return false
  // Fixed column names, bound user values; preserve Main's live-SKU reference guard.
- const row=await db.prepare(`SELECT COUNT(*) AS n FROM watch_variants v
+ // SQLite NOCASE cannot reliably fold Cyrillic characters. Watch variants
+ // created before reference normalization may store title case, while the
+ // shared reference is stored in upper case. Compare the canonical Russian
+ // identity in JS; otherwise an in-use characteristic can be deleted.
+ const rows=await db.prepare(`SELECT COALESCE(a.${col},v.${col}) AS value
+   FROM watch_variants v
    LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
    JOIN watch_products wp ON wp.id=v.watch_product_id
-   WHERE v.is_active=1 AND wp.is_active=1 AND
-     COALESCE(a.${col},v.${col})=?`)
-   .bind(value).first<{n:number}>()
- return Number(row?.n)>0
+   WHERE v.is_active=1 AND wp.is_active=1`)
+   .all<{value:string}>()
+ const key=identity(value)
+ return (rows.results||[]).some(row=>identity(row.value)===key)
 }
 export async function listClient3WatchReferences(db:D1Database,actor:AuthUser){
  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад')&&!actor.managerId)
