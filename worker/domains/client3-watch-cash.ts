@@ -12,7 +12,25 @@ const businessDate=()=>new Date(Date.now()+5*3600_000).toISOString().slice(0,10)
 const parseRequest=(raw:unknown)=>typeof raw==='string'&&/^[a-zA-Z0-9-]{12,100}$/.test(raw)?raw:null
 const methodExpr=`UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','CASH','CASH KZT')`
 type Register={brand_id:number;opening_amount:number;financial_event_watermark:number;
- initialized_at:string;initialized_by:number}
+ initialized_at:string;initialized_by:number;auto_tracking_enabled:number;
+ paused_event_id:number|null;cash_entry_watermark:number;cycle_started_at:string|null}
+const autoEventClause=`f.id>c.financial_event_watermark AND
+ (c.auto_tracking_enabled=1 OR f.id<=COALESCE(c.paused_event_id,0)) AND
+ NOT EXISTS (SELECT 1 FROM watch_brand_cash_skipped_events sk
+   WHERE sk.brand_id=c.brand_id AND f.id BETWEEN sk.first_event_id AND sk.last_event_id)`
+const cashBalanceExpr=`(SELECT c.opening_amount +
+  (SELECT COALESCE(SUM(e.amount_delta),0) FROM watch_brand_cash_entries e
+    WHERE e.brand_id=c.brand_id AND e.id>c.cash_entry_watermark) +
+  (SELECT COALESCE(SUM(f.amount_delta),0) FROM financial_events f
+    JOIN watch_order_details wd ON wd.order_id=f.order_id
+    WHERE wd.brand_id=c.brand_id AND ${autoEventClause} AND ${methodExpr})
+  FROM watch_brand_cash_registers c WHERE c.brand_id=?)`
+async function lastBrandEvent(db:D1Database,brandId:number){
+ const row=await db.prepare(`SELECT COALESCE(MAX(f.id),0) AS id FROM financial_events f
+   JOIN watch_order_details wd ON wd.order_id=f.order_id
+   WHERE wd.brand_id=?`).bind(brandId).first<{id:number}>()
+ return Number(row?.id||0)
+}
 
 /** Main cash ledger semantics, but NEVER aggregate a global Main cash_register
  * across Client3's two physically independent watch brands.
@@ -26,7 +44,7 @@ export async function getWatchBrandCash(db:D1Database,actor:AuthUser,brandId:num
  if(!setup)return json({ok:true,initialized:false,entries:[],currentBalance:null,
    message:'Установите фактический начальный остаток наличных для этого бренда.'})
  const date=businessDate()
- const [automatic,manual,events,entries]=await Promise.all([
+ const [automatic,manual,events,entries,cycles]=await Promise.all([
    db.prepare(`SELECT
      COALESCE(SUM(f.amount_delta),0) AS net,
      COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS incoming,
@@ -34,32 +52,39 @@ export async function getWatchBrandCash(db:D1Database,actor:AuthUser,brandId:num
      COALESCE(SUM(CASE WHEN f.event_date=? AND f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS todayIn,
      COALESCE(-SUM(CASE WHEN f.event_date=? AND f.amount_delta<0 THEN f.amount_delta ELSE 0 END),0) AS todayOut
      FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
-     WHERE wd.brand_id=? AND f.id>? AND ${methodExpr}`)
-     .bind(date,date,brandId,setup.financial_event_watermark).first<Record<string,number>>(),
+     JOIN watch_brand_cash_registers c ON c.brand_id=wd.brand_id
+     WHERE wd.brand_id=? AND ${autoEventClause} AND ${methodExpr}`)
+     .bind(date,date,brandId).first<Record<string,number>>(),
    db.prepare(`SELECT
       COALESCE(SUM(amount_delta),0) AS net,
       COALESCE(SUM(CASE WHEN amount_delta>0 THEN amount_delta ELSE 0 END),0) AS incoming,
       COALESCE(-SUM(CASE WHEN amount_delta<0 THEN amount_delta ELSE 0 END),0) AS outgoing,
       COALESCE(SUM(CASE WHEN business_date=? AND amount_delta>0 THEN amount_delta ELSE 0 END),0) AS todayIn,
       COALESCE(-SUM(CASE WHEN business_date=? AND amount_delta<0 THEN amount_delta ELSE 0 END),0) AS todayOut
-      FROM watch_brand_cash_entries WHERE brand_id=?`)
-      .bind(date,date,brandId).first<Record<string,number>>(),
+      FROM watch_brand_cash_entries WHERE brand_id=? AND id>?`)
+      .bind(date,date,brandId,setup.cash_entry_watermark).first<Record<string,number>>(),
    db.prepare(`SELECT f.id,f.event_date AS businessDate,f.amount_delta AS amountDelta,
        f.event_type AS type,f.external_order_id AS externalOrderId,
        f.payment_method AS method,f.comment
      FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
-     WHERE wd.brand_id=? AND f.id>? AND ${methodExpr}
+     JOIN watch_brand_cash_registers c ON c.brand_id=wd.brand_id
+     WHERE wd.brand_id=? AND ${autoEventClause} AND ${methodExpr}
      ORDER BY f.id DESC LIMIT 100`)
-      .bind(brandId,setup.financial_event_watermark).all<Record<string,unknown>>(),
-   db.prepare(`SELECT id,business_date AS businessDate,amount_delta AS amountDelta,
-       entry_type AS type,comment,created_at AS createdAt
-     FROM watch_brand_cash_entries WHERE brand_id=? ORDER BY id DESC LIMIT 100`)
       .bind(brandId).all<Record<string,unknown>>(),
+   db.prepare(`SELECT id,business_date AS businessDate,amount_delta AS amountDelta,
+       entry_type AS type,comment,created_at AS createdAt,reverses_entry_id AS reversesEntryId
+     FROM watch_brand_cash_entries WHERE brand_id=? AND id>? ORDER BY id DESC LIMIT 100`)
+      .bind(brandId,setup.cash_entry_watermark).all<Record<string,unknown>>(),
+   db.prepare(`SELECT id,started_at AS startedAt,finished_at AS finishedAt,
+       opening_amount AS openingAmount,closing_balance AS closingBalance,comment
+     FROM watch_brand_cash_cycles WHERE brand_id=?
+     ORDER BY id DESC LIMIT 30`).bind(brandId).all<Record<string,unknown>>(),,
  ])
  const automaticNet=Number(automatic?.net||0),manualNet=Number(manual?.net||0)
  const opening=Number(setup.opening_amount||0)
  return json({ok:true,initialized:true,initializedAt:setup.initialized_at,
-   openingAmount:opening,autoTrackingEnabled:true,
+   openingAmount:opening,autoTrackingEnabled:setup.auto_tracking_enabled===1,
+   cycles:cycles.results||[],cycleStartedAt:setup.cycle_started_at||setup.initialized_at,
    currentBalance:opening+automaticNet+manualNet,
    totalIn:opening+Number(automatic?.incoming||0)+Number(manual?.incoming||0),
    totalOut:Number(automatic?.outgoing||0)+Number(manual?.outgoing||0),
@@ -98,34 +123,14 @@ async function recorded(db:D1Database,brandId:number,requestId:string){
 
 async function insertMovement(db:D1Database,actor:AuthUser,brandId:number,
  requestId:string,delta:number,kind:string,comment:string,expected:number){
- // Atomic SQL predicate on the ledger + business financial events avoids
- // double-spend during concurrent manual cash-outs on D1.
- const result=await db.prepare(`
- INSERT OR IGNORE INTO watch_brand_cash_entries(
-   brand_id,request_id,entry_type,amount_delta,business_date,comment,actor_user_id,created_at)
- SELECT ?,?,?,?,?,?,?,?
- WHERE ?=(
-   SELECT c.opening_amount+
-     (SELECT COALESCE(SUM(e.amount_delta),0) FROM watch_brand_cash_entries e
-       WHERE e.brand_id=c.brand_id)+
-     (SELECT COALESCE(SUM(f.amount_delta),0)
-        FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
-        WHERE wd.brand_id=c.brand_id AND f.id>c.financial_event_watermark
-          AND ${methodExpr})
-   FROM watch_brand_cash_registers c WHERE c.brand_id=?
- ) AND (? >= 0 OR
-   ? <= (
-     SELECT c.opening_amount+
-       (SELECT COALESCE(SUM(e.amount_delta),0) FROM watch_brand_cash_entries e
-         WHERE e.brand_id=c.brand_id)+
-       (SELECT COALESCE(SUM(f.amount_delta),0)
-          FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
-          WHERE wd.brand_id=c.brand_id AND f.id>c.financial_event_watermark
-            AND ${methodExpr})
-     FROM watch_brand_cash_registers c WHERE c.brand_id=?
-   ))`
- ).bind(brandId,requestId,kind,delta,businessDate(),comment,actor.id,
-    new Date().toISOString(),expected,brandId,delta,Math.abs(delta),brandId).run()
+ // Single SQLite statement: serialized balance predicate avoids concurrent
+ // double-spends and considers skipped financial events and cycle boundaries.
+ const q=`INSERT OR IGNORE INTO watch_brand_cash_entries
+ (brand_id,request_id,entry_type,amount_delta,business_date,comment,actor_user_id,created_at)
+ SELECT ?,?,?,?,?,?,?,? WHERE ?=${cashBalanceExpr}
+ AND (? >= 0 OR ? <= ${cashBalanceExpr})`
+ const result=await db.prepare(q).bind(brandId,requestId,kind,delta,businessDate(),
+    comment,actor.id,new Date().toISOString(),expected,brandId,delta,Math.abs(delta),brandId).run()
  return Number(result.meta?.changes||0)===1
 }
 
