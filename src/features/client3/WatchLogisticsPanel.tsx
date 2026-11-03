@@ -45,7 +45,7 @@ type Props = {
   canCorrectDispatch?:boolean
 }
 
-type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; message?: string }
+type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; hasMore?:boolean; nextOffset?:number|null; message?: string }
 type LogisticsGroup = { order: WatchLogisticsRow; items: WatchLogisticsRow[] }
 
 async function readApi<T extends { ok: boolean; message?: string }>(
@@ -90,6 +90,9 @@ function statusText(status: WatchLogisticsRow['engravingStatus']) {
 export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false}:Props) {
   const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
+  const [nextOffset,setNextOffset]=useState<number|null>(null)
+  const [loadingMore,setLoadingMore]=useState(false)
+  const pageScope=useRef('')
   const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'|'urgent'|'overdue'>('unshipped')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
@@ -135,13 +138,18 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     const controller = new AbortController()
     setBusy(true)
     setRows([])
+    setNextOffset(null)
     setError('')
-    const params=new URLSearchParams({status:'all'})
+    pageScope.current=brandScope+':'+refreshKey
+    const params=new URLSearchParams({status:'all',limit:'80',offset:'0'})
     if(brandScope!=='all')params.set('brand',brandScope)
     void readApi<LogisticsResponse>('/api/client3/watches/logistics?' + params.toString(), {
       signal: controller.signal,
     }).then(data => {
-      if (!controller.signal.aborted) setRows(data.rows || [])
+      if (!controller.signal.aborted) {
+        setRows(data.rows || [])
+        setNextOffset(data.hasMore?Number(data.nextOffset):null)
+      }
     }).catch(reason => {
       if (!controller.signal.aborted) {
         setRows([])
@@ -151,6 +159,21 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     return () => controller.abort()
   }, [brandScope, refreshKey])
 
+  const loadMore=async()=>{
+    if(nextOffset===null||busy||loadingMore)return
+    const scope=pageScope.current
+    const params=new URLSearchParams({status:'all',limit:'80',offset:String(nextOffset)})
+    if(brandScope!=='all')params.set('brand',brandScope)
+    setLoadingMore(true);setError('')
+    try{
+      const data=await readApi<LogisticsResponse>('/api/client3/watches/logistics?'+params)
+      if(pageScope.current!==scope)return
+      setRows(old=>[...old,...(data.rows||[])])
+      setNextOffset(data.hasMore?Number(data.nextOffset):null)
+    }catch(cause){
+      if(pageScope.current===scope)setError(cause instanceof Error?cause.message:'Не удалось загрузить следующую страницу.')
+    }finally{if(pageScope.current===scope)setLoadingMore(false)}
+  }
   const complete = useCallback(async (orderId: number, orderItemId: number) => {
     if (!canCompleteEngraving || saving !== null) return
     setSaving(orderItemId)
@@ -289,6 +312,9 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       <div className="summary-card danger-card"><span>Срок прошёл</span><strong>{allGroups.filter(g=>!['sent','Отправлено'].includes(g.order.shippingStatus)&&Date.parse(g.order.shippingDeadlineAt)<Date.now()).length}</strong></div>
       <div className="summary-card"><span>Гравировка готова</span><strong>{allGroups.filter(g=>g.order.engravingStatus==='ready'&&!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
     </div>
+    {nextOffset!==null&&<p className="mini-panel-note" role="status">
+      Показаны первые {allGroups.length} заказов. Очередь продолжается — загрузите следующую страницу.
+      Итоги выше относятся только к загруженным заказам.</p>}
     {error && <p role="alert" className="watch-logistics-error">{error}</p>}
     {feedback && <p role="status" className="watch-logistics-feedback">{feedback}</p>}
     {busy && <p role="status">Загрузка логистики…</p>}
@@ -454,5 +480,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         })}</tbody>
       </table>
     </LinkedTableScroll>
+    {nextOffset!==null&&<button type="button" className="secondary" disabled={busy||loadingMore}
+      onClick={()=>void loadMore()}>{loadingMore?'Загружаю…':'Показать ещё заказы'}</button>}
   </section>
 }
