@@ -21,6 +21,7 @@ import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
+import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '../../worker/domains/client3-watch-report-details.ts'
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash} from '../../worker/domains/client3-watch-cash.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
@@ -1287,6 +1288,46 @@ assert.equal(report1.overview.orderCount,sqlite.prepare(`SELECT COUNT(*) AS n
  FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
  WHERE wd.brand_id=1 AND o.order_date BETWEEN '2026-01-01' AND '2026-12-31'
    AND o.order_status NOT IN ('deleted','archived')`).get().n)
+assert(Array.isArray(report1.reconciliation))
+assert.equal(report1.reconciliation.reduce((sum,r)=>sum+Number(r.netMovement||0),0),
+  Number(report1.income.net||0),'Method reconciliation must match financial ledger net')
+for(const row of report1.reconciliation){
+ assert.equal(Number(row.grossInflow||0)-Number(row.refunds||0)-Number(row.otherOutflow||0),
+   Number(row.netMovement||0),'Reconciliation parts must sum to exact net')
+}
+const reportCity=report1.cities.find(row=>Number(row.orderCount||0)>0)
+assert(reportCity,'Expected a watch city with at least one order')
+const cityQ=new URL('https://client3.test/api/client3/watches/analytics/city-orders')
+for(const [name,value] of Object.entries({
+  city:String(reportCity.city),startDate:'2026-01-01',endDate:'2026-12-31',limit:'25',offset:'0',
+}))cityQ.searchParams.set(name,value)
+const cityDetails=await parse(listClient3WatchReportCityOrders(db,manager,1,cityQ))
+assert.equal(cityDetails.status,200,JSON.stringify(cityDetails))
+assert.equal(cityDetails.orders.length,Number(reportCity.orderCount||0))
+assert(cityDetails.orders.every(row=>row.externalId))
+assert.equal(cityDetails.total,Number(reportCity.orderCount||0))
+const cityWrongBrand=await parse(listClient3WatchReportCityOrders(db,admin,2,cityQ))
+assert.equal(cityWrongBrand.total,sqlite.prepare(`SELECT COUNT(*) AS n
+ FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
+ WHERE wd.brand_id=2 AND COALESCE(NULLIF(TRIM(wd.city),''),'НЕ УКАЗАН')=?
+ AND o.order_date BETWEEN '2026-01-01' AND '2026-12-31'
+ AND o.order_status NOT IN ('deleted','archived')`).get(reportCity.city).n)
+const orderForDay=sqlite.prepare(`SELECT o.order_date AS date
+ FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
+ WHERE wd.brand_id=1 AND o.order_date BETWEEN '2026-01-01' AND '2026-12-31'
+ AND o.order_status NOT IN ('deleted','archived') LIMIT 1`).get()
+assert(orderForDay?.date,'Expected report day fixture')
+const detailQ=new URL('https://client3.test/api/client3/watches/analytics/day?date='+orderForDay.date)
+const detail=await parse(getClient3WatchReportDayDetails(db,manager,1,detailQ))
+assert.equal(detail.status,200,JSON.stringify(detail))
+assert(detail.summary.orderCount>0,'Day should show orders')
+assert(detail.managers.length>0&&detail.cities.length>0&&detail.products.length>0)
+const invalidDay=await parse(getClient3WatchReportDayDetails(db,manager,1,
+  new URL('https://client3.test/api/client3/watches/analytics/day?date=2026-02-30')))
+assert.equal(invalidDay.status,400)
+const invalidCity=await parse(listClient3WatchReportCityOrders(db,manager,1,
+  new URL('https://client3.test/api/client3/watches/analytics/city-orders?city=A&startDate=2026-99-01&endDate=2026-12-31')))
+assert.equal(invalidCity.status,400)
 const report2=await parse(getClient3WatchAnalytics(db,admin,2,reportUrl))
 assert.equal(report2.status,200)
 assert.equal(report2.overview.orderCount,sqlite.prepare(`SELECT COUNT(*) AS n
