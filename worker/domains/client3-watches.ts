@@ -204,6 +204,8 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
           AND di2.quantity>COALESCE(di2.cancelled_quantity,0)
         ORDER BY di2.id DESC LIMIT 1) AS dispatchItemId,
       wditem.engraving_text AS engravingText,
+      CASE WHEN TRIM(COALESCE(wditem.engraving_text,''))='' THEN 1
+        WHEN ready.engraving_text=wditem.engraving_text THEN 1 ELSE 0 END AS engravingReady,
       v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
       COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
       COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color) AS dialColor,
@@ -215,6 +217,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND oi.quantity>0
     LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
+    LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
     LEFT JOIN watch_variants v ON v.id=wditem.watch_variant_id
     LEFT JOIN watch_products wp ON wp.id=v.watch_product_id
     WHERE (?=0 OR wd.brand_id=?)
@@ -231,47 +234,70 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
 }
 
 /** Idempotent engraving completion. NEVER invokes shipping, reservations or money. */
+/** A prepared engraving is an exact order-item fact, never an order-wide authorization.
+ * A replacement or changed text must be marked ready separately. Existing ready
+ * items stay ready while other engraved items are pending.
+ */
 export async function markWatchLogisticsReady(
-  db:D1Database,actor:AuthUser,orderId:number,requestId:unknown,
+  db:D1Database,actor:AuthUser,orderId:number,orderItemId:number,requestId:unknown,
 ) {
   if(!staffCanSeeAllLogistics(actor))return FORBIDDEN()
-  if(!Number.isSafeInteger(orderId)||orderId<=0)return BAD('Некорректный заказ')
+  if(!Number.isSafeInteger(orderId)||orderId<=0||
+     !Number.isSafeInteger(orderItemId)||orderItemId<=0)return BAD('Выберите конкретные часы.')
   if(typeof requestId!=='string'||!/^[a-zA-Z0-9_-]{8,128}$/.test(requestId))
     return BAD('Требуется уникальный requestId')
-  const previous=await db.prepare('SELECT order_id FROM watch_logistics_events WHERE request_id=?')
-    .bind(requestId).first<{order_id:number}>()
-  if(previous){
-    if(previous.order_id!==orderId)return json({ok:false,code:'REQUEST_ID_CONFLICT'},{status:409})
-    return json({ok:true,alreadyCommitted:true,engravingStatus:'ready',shippingUnchanged:true})
-  }
   const row=await db.prepare(`
-    SELECT lj.status,wd.brand_id,o.order_status FROM watch_logistics_jobs lj
-    JOIN watch_order_details wd ON wd.order_id=lj.order_id
-    JOIN orders o ON o.id=wd.order_id
-    WHERE lj.order_id=? LIMIT 1
-  `).bind(orderId).first<{status:string,brand_id:number,order_status:string}>()
-  if(!row||['archived','deleted'].includes(row.order_status))
-    return json({ok:false,code:'ORDER_NOT_ACTIVE'},{status:409})
-  if(row.status==='ready')
-    return json({ok:true,alreadyReady:true,engravingStatus:'ready',shippingUnchanged:true})
+    SELECT o.order_status,wi.engraving_text AS engravingText,
+      ready.engraving_text AS confirmedText,ready.request_id AS previousRequest
+    FROM order_items oi
+    JOIN orders o ON o.id=oi.order_id
+    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    JOIN watch_order_details wd ON wd.order_id=o.id
+    LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
+    WHERE o.id=? AND oi.id=? AND oi.quantity>0 LIMIT 1
+  `).bind(orderId,orderItemId).first<Record<string,unknown>>()
+  if(!row||['archived','deleted'].includes(String(row.order_status)))
+    return json({ok:false,code:'ORDER_NOT_ACTIVE',message:'Эта позиция недоступна.'},{status:409})
+  const text=String(row.engravingText||'')
+  if(!text.trim())return BAD('Этим часам не требуется гравировка.')
+  if(row.confirmedText===text)return json({ok:true,alreadyReady:true,orderItemId,stockUnchanged:true,moneyUnchanged:true})
+  const prior=await db.prepare('SELECT order_item_id,engraving_text FROM watch_engraving_item_readiness WHERE request_id=?')
+    .bind(requestId).first<{order_item_id:number;engraving_text:string}>()
+  if(prior&&(prior.order_item_id!==orderItemId||prior.engraving_text!==text))
+    return json({ok:false,code:'REQUEST_ID_CONFLICT',message:'Идентификатор уже использован для других часов.'},{status:409})
   const timestamp=new Date().toISOString()
-  // Batch executes atomically in D1. The per-order CAS lets exactly one worker
-  // win. The audit SELECT is bound to the winning requestId, not the wall clock.
-  const results=await db.batch([
-    db.prepare(`
-      UPDATE watch_logistics_jobs
-      SET status='ready',ready_at=?,ready_by_user_id=?,ready_request_id=?,updated_at=?
-      WHERE order_id=? AND status=? AND ready_request_id IS NULL
-    `).bind(timestamp,actor.id,requestId,timestamp,orderId,row.status),
-    db.prepare(`
-      INSERT INTO watch_logistics_events(order_id,actor_user_id,previous_status,next_status,request_id,created_at)
-      SELECT order_id,?,?,'ready',?,?
-      FROM watch_logistics_jobs WHERE order_id=? AND ready_request_id=?
-    `).bind(actor.id,row.status,requestId,timestamp,orderId,requestId),
-  ])
-  if(Number(results[0]?.meta?.changes||0)!==1)
-    return json({ok:false,code:'LOGISTICS_STALE',message:'Статус изменился, обновите логистику.'},{status:409})
-  return json({ok:true,engravingStatus:'ready',shippingUnchanged:true,stockUnchanged:true,moneyUnchanged:true})
+  try{
+    await db.batch([
+      db.prepare(`INSERT INTO watch_engraving_item_readiness
+        (order_item_id,engraving_text,ready_at,ready_by_user_id,request_id)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(order_item_id) DO UPDATE SET
+        engraving_text=excluded.engraving_text,ready_at=excluded.ready_at,
+        ready_by_user_id=excluded.ready_by_user_id,request_id=excluded.request_id
+        WHERE watch_engraving_item_readiness.engraving_text<>excluded.engraving_text`)
+        .bind(orderItemId,text,timestamp,actor.id,requestId),
+      db.prepare(`UPDATE watch_logistics_jobs
+        SET status=CASE WHEN NOT EXISTS (
+          SELECT 1 FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+          LEFT JOIN watch_engraving_item_readiness r ON r.order_item_id=oi.id
+          WHERE oi.order_id=? AND oi.quantity>0 AND TRIM(wi.engraving_text)<>''
+            AND (r.order_item_id IS NULL OR r.engraving_text<>wi.engraving_text)
+        ) THEN 'ready' ELSE 'engraving' END,
+        ready_at=CASE WHEN NOT EXISTS (
+          SELECT 1 FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+          LEFT JOIN watch_engraving_item_readiness r ON r.order_item_id=oi.id
+          WHERE oi.order_id=? AND oi.quantity>0 AND TRIM(wi.engraving_text)<>''
+            AND (r.order_item_id IS NULL OR r.engraving_text<>wi.engraving_text)
+        ) THEN ? ELSE NULL END,
+        ready_by_user_id=?,ready_request_id=NULL,updated_at=?
+        WHERE order_id=?`)
+        .bind(orderId,orderId,timestamp,actor.id,timestamp,orderId),
+    ])
+    return json({ok:true,orderItemId,engravingReady:true,shippingUnchanged:true,stockUnchanged:true,moneyUnchanged:true})
+  }catch(cause){
+    return json({ok:false,code:'ENGRAVING_READY_CONFLICT',
+      message:cause instanceof Error?cause.message:'Не удалось подтвердить готовность часов.'},{status:409})
+  }
 }
 
 export async function routeClient3Watches(
