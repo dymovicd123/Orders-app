@@ -57,6 +57,12 @@ async function readApi<T extends { ok: boolean; message?: string }>(
   return data
 }
 
+export const logisticsItemIssued=(item:WatchLogisticsRow)=>
+  Number(item.shippedQuantity||0)>0||item.stockWriteoffStatus==='fulfilled'
+export const logisticsOrderComplete=(group:LogisticsGroup)=>{
+  const items=group.items.filter(i=>i.orderItemId!=null&&Number(i.quantity||0)>0)
+  return items.length>0&&items.every(logisticsItemIssued)
+}
 export function groupWatchLogistics(rows: readonly WatchLogisticsRow[]): LogisticsGroup[] {
   const map = new Map<number, LogisticsGroup>()
   for (const row of rows) {
@@ -114,8 +120,9 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   // Main workshop parity: all status queues reuse one fetched dataset and
   // switch instantly, with priority for urgent and overdue deadlines.
   const allGroups=useMemo(()=>groupWatchLogistics(rows),[rows])
-  const groups=useMemo(()=>allGroups.filter(({order})=>{
-    const sent=order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'
+  const groups=useMemo(()=>allGroups.filter(group=>{
+    const {order,items}=group
+    const sent=logisticsOrderComplete(group)
     const overdue=!sent&&Number.isFinite(Date.parse(order.shippingDeadlineAt))&&
       Date.parse(order.shippingDeadlineAt)<Date.now()
     if(filter==='unshipped')return !sent
@@ -123,11 +130,13 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     if(filter==='urgent')return !sent&&Boolean(order.urgent)
     if(filter==='overdue')return overdue
     if(filter==='all')return true
+    if(filter==='ready')return !sent&&items.some(i=>i.orderItemId&&
+      !logisticsItemIssued(i)&&(!i.engravingText?.trim()||Boolean(i.engravingReady)))
     return !sent&&order.engravingStatus===filter
   }).sort((a,b)=>{
-    const aOverdue=Number(!['sent','Отправлено'].includes(a.order.shippingStatus)&&
+    const aOverdue=Number(!logisticsOrderComplete(a)&&
       Date.parse(a.order.shippingDeadlineAt)<Date.now())
-    const bOverdue=Number(!['sent','Отправлено'].includes(b.order.shippingStatus)&&
+    const bOverdue=Number(!logisticsOrderComplete(b)&&
       Date.parse(b.order.shippingDeadlineAt)<Date.now())
     return bOverdue-aOverdue||Number(Boolean(b.order.urgent))-Number(Boolean(a.order.urgent))||
       Date.parse(a.order.shippingDeadlineAt)-Date.parse(b.order.shippingDeadlineAt)||
@@ -307,10 +316,10 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         </button>)}
     </div>
     <div className="summary-grid compact-summary client3-logistics-overview">
-      <div className="summary-card"><span>В работе</span><strong>{allGroups.filter(g=>!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
-      <div className="summary-card warning-card"><span>Срочные</span><strong>{allGroups.filter(g=>g.order.urgent&&!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
-      <div className="summary-card danger-card"><span>Срок прошёл</span><strong>{allGroups.filter(g=>!['sent','Отправлено'].includes(g.order.shippingStatus)&&Date.parse(g.order.shippingDeadlineAt)<Date.now()).length}</strong></div>
-      <div className="summary-card"><span>Гравировка готова</span><strong>{allGroups.filter(g=>g.order.engravingStatus==='ready'&&!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
+      <div className="summary-card"><span>В работе</span><strong>{allGroups.filter(g=>!logisticsOrderComplete(g)).length}</strong></div>
+      <div className="summary-card warning-card"><span>Срочные</span><strong>{allGroups.filter(g=>g.order.urgent&&!logisticsOrderComplete(g)).length}</strong></div>
+      <div className="summary-card danger-card"><span>Срок прошёл</span><strong>{allGroups.filter(g=>!logisticsOrderComplete(g)&&Date.parse(g.order.shippingDeadlineAt)<Date.now()).length}</strong></div>
+      <div className="summary-card"><span>Гравировка готова</span><strong>{allGroups.filter(g=>!logisticsOrderComplete(g)&&g.items.some(i=>!logisticsItemIssued(i)&&Boolean(i.engravingReady))).length}</strong></div>
     </div>
     {nextOffset!==null&&<p className="mini-panel-note" role="status">
       Показаны первые {allGroups.length} заказов. Очередь продолжается — загрузите следующую страницу.
@@ -326,9 +335,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
           <th>Отправить до</th><th>Гравировка</th><th>Отправка</th><th>Поз.</th><th>Действие</th>
         </tr></thead>
         <tbody>{groups.map(({order,items})=>{
-          const dispatched=items.filter(i=>Number(i.shippedQuantity||0)>0).length
-          const shipStatus=order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'
-            ?'Отправлен':dispatched>0?'Частично отправлен':'Не отправлен'
+          const completed=logisticsOrderComplete({order,items})
+          const dispatched=items.filter(logisticsItemIssued).length
+          const shipStatus=completed
+            ?(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Ранее выдан · подтверждено')
+            :dispatched>0?'Частично отправлен':'Не отправлен'
           const selectable=items.filter(item=>eligible(order,item))
           const selectedIds=dispatchSelection[order.orderId]||[]
           const selected=selectable.filter(item=>item.orderItemId&&(
@@ -338,8 +349,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
               dispatchQuantities[order.orderId]?.[item.orderItemId!]??Number(item.quantity)}))
             .filter(item=>Number.isSafeInteger(item.quantity)&&item.quantity>0&&
               item.quantity<=Number(selectable.find(x=>x.orderItemId===item.orderItemId)?.quantity))
-          const overdue=order.engravingStatus!=='ready'&&order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
-            Number.isFinite(Date.parse(order.shippingDeadlineAt))&&Date.parse(order.shippingDeadlineAt)<Date.now()
+          const overdue=!completed&&Number.isFinite(Date.parse(order.shippingDeadlineAt))&&
+            Date.parse(order.shippingDeadlineAt)<Date.now()
           return <Fragment key={order.orderId}>
             <tr className={'watch-main-logistics-row'+(expanded===order.orderId?' is-open':'')}>
               <td><strong>{order.externalId||'#'+order.orderId}</strong>
@@ -350,7 +361,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                 {overdue&&<small className="watch-logistics-urgent">Срок прошёл</small>}</td>
               <td><span className={'watch-logistics-status '+(order.engravingStatus==='ready'?'is-ready':'')}>
                 {statusText(order.engravingStatus)}</span></td>
-              <td><span className={'watch-main-logistics-send-status '+(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'is-sent':'is-awaiting')}>
+              <td><span className={'watch-main-logistics-send-status '+(completed?'is-sent':'is-awaiting')}>
                 {shipStatus}</span></td>
               <td>{items.length}</td>
               <td><button type="button" className="secondary compact" aria-expanded={expanded===order.orderId}
@@ -440,8 +451,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                 <div className="watch-logistics-actions">
                   <span>{order.engravingStatus==='ready'?'Все гравировки готовы':
                     'Гравировка подтверждается отдельно у каждой позиции выше'}</span>
-                  {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
-                    canDispatch&&selected.length>0&&
+                  {canDispatch&&selected.length>0&&
                     (dispatchConfirm===order.orderId?
                     <div className="client3-logistics-dispatch-confirm">
                       <strong>Подтвердить отправку {selected.length} поз. / {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.?</strong>
@@ -455,8 +465,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                     <button type="button" className="client3-logistics-dispatch-button"
                       disabled={saving!==null||dispatching!==null}
                       onClick={()=>setDispatchConfirm(order.orderId)}>Отправить выбранное</button>)}
-                  {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
-                    items.some(i=>i.engravingText?.trim()&&Number(i.shippedQuantity||0)===0)&&
+                  {!completed&&items.some(i=>i.engravingText?.trim()&&!logisticsItemIssued(i))&&
                     order.engravingStatus!=='ready'&&
                     <small>Часы с гравировкой отправляются после отметки «Готово». Остальные можно отправить отдельно.</small>}
                   {canDispatch&&items.length>1&&selectable.length>0&&
