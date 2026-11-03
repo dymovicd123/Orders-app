@@ -207,6 +207,10 @@ export function WatchClient3App() {
         method:'POST',headers:jsonHeaders,body:JSON.stringify(draft),
       })
     setSuccess('Заказ '+(result.externalId||'#'+result.orderId)+' сохранён. Товар не отправлен.')
+    // Open the exact saved order; backdated sales can clarify possession
+    // against the most recent completed inventory check before any shipment.
+    setReportOrderFocus({brand:draft.brand,orderId:result.orderId,
+      externalId:result.externalId||'#'+result.orderId,orderDate:draft.orderDate})
     setLastOrderBrand(draft.brand)
     setWarning(result.pendingReservation?(result.warning||'Резерв часов требует проверки.'): '')
     setError('')
