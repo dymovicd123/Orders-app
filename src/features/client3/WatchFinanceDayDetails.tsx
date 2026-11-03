@@ -13,6 +13,8 @@ const operation:Record<string,string>={
  order_payment:'Оплата заказа',debt_close:'Закрытие долга',order_extra:'Доплата',
  exchange_extra:'Доплата за обмен',order_refund:'Возврат денег',
  exchange_refund:'Возврат при обмене',payment_correction:'Исправление оплаты',
+ order_create:'Создание заказа',order_return:'Оформление возврата',
+ exchange_create:'Оформление обмена',
 }
 function recorded(value:string|null){
  if(!value)return 'Время не сохранено'
@@ -79,7 +81,7 @@ export function WatchFinanceDayDetails({brand,date,onClose,onOpenOrder}:{
    </div>}
    {methods.length>0&&<div className="finance-day-methods">
      {methods.map(x=><div key={x.method}><span>{x.method}</span>
-       <strong>+{watchMoney(x.incoming)} / −{watchMoney(x.outgoing)}</strong></div>)}
+       <strong><span className="client3-finance-in">+ {watchMoney(x.incoming)}</span> · <span className="client3-finance-out">− {watchMoney(x.outgoing)}</span></strong></div>)}
    </div>}
    <p className="mini-panel-note">Здесь учитываются только оплаты и возвраты по заказам бренда.
      Ручные движения наличных и общий остаток обеих марок проверяйте в разделе «Касса».</p>
@@ -93,7 +95,7 @@ export function WatchFinanceDayDetails({brand,date,onClose,onOpenOrder}:{
          <td><strong>{x.externalOrderId||'#'+x.orderId}</strong><small>{x.customer||'—'}</small></td>
          <td>{x.paymentMethod||'—'}</td>
          <td className="num"><strong>{x.amountDelta<0?'− ':'+ '}{watchMoney(Math.abs(x.amountDelta))}</strong></td>
-         <td>{x.comment||x.reason||'—'}</td>
+         <td>{operation[x.comment||'']||operation[x.reason||'']||x.comment||x.reason||'—'}</td>
          <td>{x.orderId>0&&onOpenOrder?<button className="secondary compact" type="button"
            onClick={()=>onOpenOrder({brand,orderId:x.orderId,externalId:x.externalOrderId,orderDate:x.orderDate})}>К заказу</button>:'—'}</td>
        </tr>)}
