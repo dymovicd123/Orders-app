@@ -24,3 +24,40 @@
 .watch-exchange-new .smart-picker-option:hover{background:#eff6ff}
 .watch-exchange-new .smart-picker-clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:0;border-radius:6px;background:#eff6ff}
 @media(max-width:650px){.watch-exchange-new-grid{grid-template-columns:1fr}.watch-exchange-old{grid-template-columns:1fr}.watch-exchange-lines{padding:10px}}
+
+
+/* Adapt Main's Exchange Set page, without inheriting unrelated clothes fields. */
+.watch-exchange-form.exchange-set-page{margin:0;padding:12px;gap:16px;border:0;background:#fff}
+.watch-exchange-form .exchange-set-hero{display:flex;flex-wrap:wrap;align-items:center;
+ padding:17px;border-radius:18px}
+.watch-exchange-form .exchange-set-hero h2{font-size:1.25rem;margin:4px 0 6px}
+.watch-exchange-form .exchange-order-context{display:flex;flex-wrap:wrap;gap:8px;padding:0;border:0;background:transparent}
+.watch-exchange-form .exchange-order-context>div{background:#fff;border:1px solid #dbeafe;
+ border-radius:11px;padding:9px 13px;min-width:135px}
+.watch-exchange-form .exchange-order-context small{color:#64748b}
+.watch-exchange-form .exchange-order-context strong{display:block;margin-top:4px}
+.watch-exchange-form .watch-exchange-lines.exchange-set-workspace{background:#fff;
+ border-radius:17px;border:1px solid #dbeafe;padding:15px;gap:12px}
+.watch-exchange-form .exchange-set-section-head{border-bottom:1px solid #e2e8f0;padding-bottom:12px}
+.watch-exchange-form .exchange-set-section-head h3{margin:4px 0 5px;font-size:1.02rem}
+.watch-exchange-form .exchange-set-section-head p{font-size:.82rem}
+.watch-exchange-form .watch-exchange-old{border-radius:12px;background:#f8fafc;
+ border-color:#e2e8f0;padding:13px}
+.watch-exchange-form .watch-exchange-new.exchange-new-card{border-radius:13px;border:1px solid #e2e8f0;
+ padding:15px;background:#f8fbff}
+.watch-exchange-form .watch-exchange-shipment-state{padding:12px;border:1px solid #bfdbfe;
+ background:#eff6ff;border-radius:10px}
+.watch-exchange-form .watch-exchange-shipment-state strong{font-size:.87rem}
+.watch-exchange-form .watch-exchange-physical-verified{display:flex;align-items:flex-start;
+ gap:9px;padding:12px;border:1px solid #fdba74;background:#fffbeb;color:#78350f;
+ line-height:1.45;border-radius:9px}
+.watch-exchange-form .watch-exchange-physical-verified input[type="checkbox"]{flex:0 0 19px;
+ width:19px!important;height:19px!important;margin:2px 0 0}
+.watch-exchange-form .watch-exchange-set-money{background:#fff;border:1px solid #c7d2fe;
+ border-radius:15px;gap:12px;padding:16px}
+.watch-exchange-form .watch-exchange-actions{padding-top:13px;border-top:1px solid #e2e8f0;
+ justify-content:flex-end}
+.watch-exchange-form .watch-exchange-actions button:first-child{background:#1d4ed8;border-color:#1d4ed8}
+@media(max-width:720px){.watch-exchange-form .watch-exchange-new-grid{grid-template-columns:1fr}
+ .watch-exchange-form .watch-exchange-old{grid-template-columns:1fr}
+ .watch-exchange-form .watch-exchange-old label:last-child{grid-column:auto}}
