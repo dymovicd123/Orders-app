@@ -407,7 +407,7 @@ export function WatchClient3App() {
       </>}
       {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand+'-'+isLogisticsRole}
         brand={isLogisticsRole?'all':brand||'all'} allowedBrands={brands.map(x=>x.code)}
-        canDispatch={canSales} canCorrectDispatch={canAdmin}
+        canDispatch={canSales||isLogisticsRole} canCorrectDispatch={canAdmin}
         canCompleteEngraving={canAdmin||isLogisticsRole}/>}
       {['warehouse','operations','revision','history','statistics','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
