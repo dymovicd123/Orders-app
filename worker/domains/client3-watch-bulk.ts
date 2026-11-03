@@ -33,8 +33,9 @@ export async function applyClient3WatchBulkOperation(
  const comment=typeof input.comment==='string'?input.comment.trim():''
  if(comment.length>300||(kind==='writeoff'&&!comment))
    return error('WATCH_BULK_REASON','Укажите причину списания или исправьте комментарий (до 300 символов).',400)
- if(!Array.isArray(input.items)||input.items.length<1||input.items.length>30)
-   return error('WATCH_BULK_LINES','Выберите от 1 до 30 разных комплектаций.',400)
+ const maxItems=kind==='arrival'?100:kind==='transfer'?60:30
+ if(!Array.isArray(input.items)||input.items.length<1||input.items.length>maxItems)
+   return error('WATCH_BULK_LINES','Выберите от 1 до '+maxItems+' разных комплектаций.',400)
  const lines=input.items.map(row=>({
    watchVariantId:Number(row?.watchVariantId),quantity:Number(row?.quantity),
    expectedPhysical:row?.expectedPhysical==null?NaN:Number(row?.expectedPhysical),
