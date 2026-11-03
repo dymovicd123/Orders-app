@@ -996,6 +996,10 @@ assert.equal(shippedPart.reserved_qty,1)
 assert.equal(remainingPart.reserved_qty,2)
 assert.equal(remainingPart.watch_variant_id,partialOriginal.watch_variant_id)
 assert.equal(remainingPart.engraving_text,partialOriginal.engraving_text)
+const inheritedReady=sqlite.prepare('SELECT engraving_text FROM watch_engraving_item_readiness WHERE order_item_id=?')
+ .get(remainingPart.id)
+assert.equal(inheritedReady?.engraving_text,remainingPart.engraving_text,
+ 'A split must atomically copy verified engraving readiness onto the remaining SKU row')
 assert.equal(shippedPart.line_total+remainingPart.line_total,partialOriginal.line_total,
  'Partial shipment must preserve total original line price')
 assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
