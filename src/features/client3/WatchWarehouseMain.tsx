@@ -277,9 +277,17 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
       refresh();onStockChanged?.()
     }catch(cause){
       const message=cause instanceof Error?cause.message:'Не удалось сохранить операцию.'
-      setError(/inventory_model_meta\.key|SQLITE_CONSTRAINT_PRIMARYKEY/i.test(message)
-        ?'Остаток или состояние ревизии изменились. Обновите склад и повторите операцию после завершения ревизии.'
+      const stale=/inventory_model_meta\.key|SQLITE_CONSTRAINT_PRIMARYKEY/i.test(message)
+      setError(stale
+        ?'Остаток изменился или ревизия была отменена после открытия формы. Количества сохранены: проверьте актуальные остатки и подтвердите операцию повторно.'
         :message.replace(/\bБутик\b/g,'Витрина').replace(/\bбутик\b/g,'витрина'))
+      if(stale){
+        // The review snapshot is stale. Do not retry the old CAS payload.
+        // Keep entered quantities, refresh both stock sources and re-review.
+        setStage('quantity');setConfirmed(false);setShortageConfirmed(false)
+        requestRef.current=null
+        refresh();onStockChanged?.()
+      }
     }
     finally{setSaving(false)}
   }
