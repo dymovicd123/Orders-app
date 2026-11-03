@@ -52,8 +52,8 @@ assert(logistics.includes("'/api/client3/watches/orders/'+order.orderId+'/send'"
   'Actual physical dispatch belongs in Logistics')
 assert(logistics.includes('dispatchConfirm===order.orderId'),
   'Physical shipment must require explicit confirmation')
-assert(logistics.includes('canDispatch')&&shell.includes('canDispatch={canSales}'),
-  'Only authorized sales users may dispatch')
+assert(logistics.includes('canDispatch')&&shell.includes('canDispatch={canSales||isLogisticsRole}'),
+  'Managers and two-brand logisticians may dispatch; warehouse staff must not')
 assert(logistics.includes('canCompleteEngraving'),
   'Engraving rights independent from dispatch')
 assert(logistics.includes("body:JSON.stringify({brand:order.brand,requestId,")&&
