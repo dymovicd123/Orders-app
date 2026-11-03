@@ -24,6 +24,7 @@ import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
 import {listClient3WatchStockHistory} from './client3-watch-history.ts'
 import {listClient3WatchDemand} from './client3-watch-demand.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
+import {listClient3WatchOperationHistory} from './client3-watch-operation-history.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
@@ -521,6 +522,11 @@ export async function routeClient3Watches(
     return json({...saved,stockLinked:true,stockCreated:false,
       watchVariantId:variantId,catalogVariantId:result.canonicalVariantId},
       {status:saved.created?201:200})
+  }
+  if(url.pathname==='/api/client3/watches/operations/history'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchOperationHistory(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/returns/pending'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
