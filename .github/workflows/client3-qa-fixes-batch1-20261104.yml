@@ -1,4 +1,4 @@
-name: Client3 QA batch 5 - Main physical shipment without free stock
+name: Client3 QA batch 5b - Main physical shipment compile corrected
 on:
   push:
     branches: [client3/isolated-qa-copy-20261103]
@@ -93,9 +93,9 @@ jobs:
         if: success()
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
-            "Client3 QA batch5 deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Adds Main-style bounded physical confirmation: shipments with zero free stock succeed without manufacturing quantity or changing other order reserves; full D1 test asserts shortage evidence, replay and correction."
+            "Client3 QA batch5b deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Adds Main-style bounded physical confirmation: shipments with zero free stock succeed without manufacturing quantity or changing other order reserves; full D1 test asserts shortage evidence, replay and correction."
       - name: Record blocked build or release accurately
         if: failure()
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
-            "Client3 QA batch5 failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
+            "Client3 QA batch5b failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
