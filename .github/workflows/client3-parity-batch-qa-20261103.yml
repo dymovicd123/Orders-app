@@ -1,5 +1,5 @@
 name: Client3 Main parity batch QA (isolated, no deploy)
-# Regression pass 6: per-item exchange readiness and logistician dispatch parity.
+# Regression pass 7: refresh catalog alias and v5 fixture for current resolver.
 on:
   push:
     branches: [client3/main-parity-hardening-20261103]
