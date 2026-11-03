@@ -1,6 +1,6 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
-import { normalizeWatchVariant, type WatchVariantInput } from '../../shared/client3/watch-domain.ts'
+import { WATCH_OPTIONS, normalizeWatchVariant, type WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import {findWatchModelByIdentity} from './client3-watch-model-aliases.ts'
 
 const error=(code:string,message:string,status=400)=>
@@ -94,12 +94,22 @@ export async function registerWatchVariant(
   try{v=normalizeWatchVariant(input)}catch(cause){
     return error('WATCH_VARIANT_INVALID',cause instanceof Error?cause.message:'Некорректные характеристики часов.')
   }
-  // Exactly Main's reference-driven characteristics, without brand partitioning.
-  // A server-side membership check is necessary: no hand-typed unlisted SKU.
+  // Built-in watch characteristics are stable legacy SKU identifiers and
+  // are always valid, even if an older/live Client3 D1 lacks their v5 seed rows.
+  // The form has always offered quartz/steel/black as built-in choices.
+  // Custom values STILL require an active entry in the shared references.
   for(const [kind,value] of [
     ['movements',v.movement],['bracelets',v.braceletMaterial],['dials',v.dialColor],
     ...(v.braceletMaterial==='leather'?[['leatherColors',v.braceletColor]]:[]),
   ]){
+    const builtIn=kind==='movements'
+      ?WATCH_OPTIONS.movements.some(choice=>choice.value===value)
+      :kind==='bracelets'
+        ?WATCH_OPTIONS.braceletMaterials.some(choice=>choice.value===value)
+        :kind==='dials'
+          ?WATCH_OPTIONS.dialColors.some(choice=>choice.value===value)
+          :false
+    if(builtIn)continue
     const name=['movements','bracelets','dials'].includes(kind)
       ?'watch_reference_values_v5':'watch_reference_values'
     const listed=await db.prepare(
