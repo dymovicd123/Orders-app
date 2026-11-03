@@ -309,8 +309,11 @@ export function WatchClient3App() {
   </main>
 
   const isLogisticsRole=['Логист','Упаковщик'].includes(user.employeeRole||'')
-  const canSales=brands.length>0&&(user.role==='admin'||!isLogisticsRole)
+  const isWarehouseRole=user.employeeRole==='Завсклад'
+  const canSales=brands.length>0&&(user.role==='admin'||(!isLogisticsRole&&!isWarehouseRole))
   const canAdmin=user.role==='admin'
+  const canWarehouse=canAdmin||isWarehouseRole
+  const canSeeWarehouse=canSales||canWarehouse
   const goTo=(next:WatchSection)=>{
     if(next!=='operations')setCorrectionPrefill(null)
     setTab(next);setError('')
@@ -319,15 +322,16 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['dashboard','reports','plan','leads','orders','create','warehouse','operations','revision','history','catalog','finance','returns','exchange','references'].includes(tab))
-      ? 'logistics':tab
+    (!canSales&&['dashboard','reports','plan','leads','orders','create','finance','returns','exchange'].includes(tab))||
+    (!canSeeWarehouse&&['warehouse','operations','revision','history','catalog','references'].includes(tab))
+      ? (isWarehouseRole?'warehouse':'logistics'):tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
   const viewModels=(brand&&models)||[]
   return <Client3MainChrome
     user={user}
     section={activeSection}
-    canSales={canSales}
+    canSales={canSales} canWarehouse={canWarehouse}
     busy={busy}
     onNavigate={goTo}
     onLogout={()=>void logout()}
@@ -405,7 +409,7 @@ export function WatchClient3App() {
             {([
               {section:'warehouse' as const,label:'Остатки',hint:'Товар на месте, резерв и доступность'},
               {section:'catalog' as const,label:'Товары',hint:'Модели и комплектации часов'},
-              ...(canAdmin?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'},{section:'revision' as const,label:'Ревизия',hint:'Полная и выборочная проверка с сохранением'},{section:'history' as const,label:'История',hint:'Складские движения по товарам'}]:[]),
+              ...(canWarehouse?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'},{section:'revision' as const,label:'Ревизия',hint:'Полная и выборочная проверка с сохранением'},{section:'history' as const,label:'История',hint:'Складские движения по товарам'}]:[]),
             ]).map(item=><button key={item.section} type="button"
               className={activeSection===item.section?'is-active':''} title={item.hint}
               aria-current={activeSection===item.section?'page':undefined}
@@ -429,7 +433,7 @@ export function WatchClient3App() {
               </button>)}
             </div>
           </section>
-          {canAdmin&&brand?(activeSection==='catalog'?
+          {canWarehouse&&brand?(activeSection==='catalog'?
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
               onStockChanged={()=>setCatalogVersion(x=>x+1)}
               onOpenReferences={()=>goTo('references')}/>:
@@ -441,7 +445,7 @@ export function WatchClient3App() {
                 prefill={correctionPrefill?.brand===brand&&activeSection==='operations'?correctionPrefill:undefined}
                 onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
               <WatchStockMainBrowse key={'stock-'+brand+'-'+catalogVersion}
-                brand={brand} canCorrect={canAdmin}
+                brand={brand} canCorrect={canWarehouse}
                 onCorrect={selection=>{setCorrectionPrefill({brand,...selection});goTo('operations')}}/>):
             <div className="watch-shell-model-list">
               {viewModels.map(model=><article key={model.watchVariantId}>
@@ -457,7 +461,7 @@ export function WatchClient3App() {
       </>}
       {activeSection==='references'&&brand&&<WatchReferencesSection
         brand={brand} brands={brands.map(x=>x.code)}
-        onBrandChange={setBrand} canEdit={canAdmin} onOpenCatalog={()=>goTo('catalog')}
+        onBrandChange={setBrand} canEdit={canWarehouse} onOpenCatalog={()=>goTo('catalog')}
         onOpenStaff={canAdmin?()=>goTo('staff'):undefined}/>}
       {activeSection==='finance'&&brands.length>0&&
         <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}
