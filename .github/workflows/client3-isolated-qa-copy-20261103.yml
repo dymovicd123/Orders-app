@@ -70,6 +70,10 @@ jobs:
             --config wrangler.jsonc --skip-confirmation \
             --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
             echo "::error::D1 source export failed. No production data was changed."
+            if grep -qi virtual /tmp/qa-export-log; then echo "Export diagnostic: virtual tables"; fi
+            if grep -qi unauthorized /tmp/qa-export-log; then echo "Export diagnostic: authorization"; fi
+            if grep -qi invalid /tmp/qa-export-log; then echo "Export diagnostic: invalid request"; fi
+            if grep -qi "not found" /tmp/qa-export-log; then echo "Export diagnostic: not found"; fi
             exit 1
           fi
           test -s /tmp/client3-qa-snapshot.sql
