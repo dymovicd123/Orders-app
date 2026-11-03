@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {applyClient3WatchBulkOperation} from '../../worker/domains/client3-watch-bulk.ts'
 import {
  readWarehouseOperationDraft,saveWarehouseOperationDraft,hasWarehouseDraftContent,
 } from '../../src/features/client3/watchWarehouseDraftStorage.ts'
@@ -35,3 +36,32 @@ assert.equal(readWarehouseOperationDraft('TAUWACH',tabA),null,
 assert.equal(readWarehouseOperationDraft('TAUWACH',tabB).draftBySource.showcase[201],'71',
  'Clearing one tab must not change another tab')
 console.log('Client3 arrival drafts: per-tab and brand isolation, reload, stages, quantity and idempotency PASS')
+
+const watchRows=Array.from({length:31},(_,i)=>({
+ watchId:i+1,variantId:1000+i,productId:500+i,productName:'Test '+i,
+ category:'adult',gender:'male',color:'black',material:'steel',length:'',size:'standard',
+}))
+const db={
+ prepare(sql){
+  return {
+   bind(){return this},
+   async first(){return sql.includes('inventory_model_meta')?{value:'active'}:null},
+   async all(){if(sql.includes('FROM watch_variants wv'))return {results:watchRows};
+     throw Error('Unexpected SQL '+sql.slice(0,60))},
+  }
+ },
+}
+let applied=0
+const deps={movement:async (_db,input)=>{applied=input.items.length;return {ok:true,applied}}}
+const admin={id:1,role:'admin'}
+const payload={kind:'arrival',source:'office',requestId:'arrival-many-sku-20261103',
+ items:watchRows.map(x=>({watchVariantId:x.watchId,quantity:2}))}
+const ok=await applyClient3WatchBulkOperation(db,admin,1,payload,deps)
+assert.equal(ok.status,200)
+assert.equal(applied,31,'Arrival beyond the previous silent 30-SKU cap must be processed')
+const oversized=await applyClient3WatchBulkOperation(db,admin,1,{
+ ...payload,items:Array.from({length:101},(_,i)=>({watchVariantId:i+1,quantity:1})),
+},deps)
+assert.equal(oversized.status,400,'Never silently truncate an oversized arrival')
+assert.match((await oversized.json()).message,/100/)
+console.log('Client3 31-variant atomic arrival and explicit 100-SKU boundary PASS')
