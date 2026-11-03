@@ -2098,6 +2098,16 @@ export async function correctExchangeFinancials(
       && upperText(input.expectedPaymentMethod) === oldMethod
       && cleanText(input.expectedComment) === oldComment;
 
+    // This editor rewrites one linked payment/return. A multi-channel operation
+    // must not be flattened into one method or partially corrected.
+    const splitPaymentIds = await exchangeSetPaymentIds(db, exchangeId);
+    const refundEvents = financialAction === 'refund'
+      ? await db.prepare("SELECT COUNT(*) AS count FROM financial_events WHERE source_type='exchange' AND source_id=? AND event_type='exchange_refund' AND event_key LIKE '1901:%:exchange-set-refund%'").bind(exchangeId).first<{count:number}>()
+      : null;
+    if (splitPaymentIds.length > 1 || toInt(refundEvents?.count, 0) > 1) {
+      throw new CriticalOperationConflictError('У обмена несколько способов расчёта. Изменение одной общей суммой не допускается: используйте отмену обмена и создайте его заново.');
+    }
+
     const linkedId = financialAction === 'extra_payment' ? toInt(row.linked_payment_id, 0) : toInt(row.linked_return_id, 0);
     const linkedDate = normalizeDate(financialAction === 'extra_payment' ? row.linked_payment_date : row.linked_return_date);
     const linkedAmount = Math.max(0, toInt(financialAction === 'extra_payment' ? row.linked_payment_amount : row.linked_return_amount, 0));
