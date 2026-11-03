@@ -11,6 +11,7 @@ import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
+import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash} from './client3-watch-cash.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
@@ -546,6 +547,16 @@ export async function routeClient3Watches(
     if(input.action==='manual'||input.action==='reconcile')
       return writeWatchBrandCash(db,actor,scope.row!.id,input.action,input)
     return BAD('Неизвестная операция кассы.')
+  }
+  if(url.pathname==='/api/client3/watches/analytics/city-orders'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchReportCityOrders(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/analytics/day'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return getClient3WatchReportDayDetails(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/analytics'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
