@@ -2,6 +2,7 @@
 -- Extend brand-separated cash without rewriting historic cash entries or payments.
 ALTER TABLE watch_brand_cash_registers ADD COLUMN auto_tracking_enabled INTEGER NOT NULL DEFAULT 1 CHECK(auto_tracking_enabled IN (0,1));
 ALTER TABLE watch_brand_cash_registers ADD COLUMN paused_event_id INTEGER;
+ALTER TABLE watch_brand_cash_registers ADD COLUMN paused_at TEXT;
 ALTER TABLE watch_brand_cash_registers ADD COLUMN cash_entry_watermark INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE watch_brand_cash_registers ADD COLUMN cycle_started_at TEXT;
 ALTER TABLE watch_brand_cash_entries ADD COLUMN reverses_entry_id INTEGER REFERENCES watch_brand_cash_entries(id);
