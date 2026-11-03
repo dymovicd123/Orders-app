@@ -96,7 +96,8 @@ export async function dispatchClient3WatchOrder(
      // Use Main's existing atomic recovery: it activates an unresolved
      // reservation ONLY if the exact canonical SKU has unreserved physical
      // quantity. This must never manufacture stock or borrow another reserve.
-     await recoverPendingOrderReservationsBeforeShipping(db,orderId,new Date().toISOString())
+     await recoverPendingOrderReservationsBeforeShipping(
+       db,orderId,new Date().toISOString(),chosen.map(x=>x.orderItemId))
      const recovered=await db.prepare(`SELECT oi.id,oi.stock_writeoff_status AS writeoff,
        r.status AS reservation_status,r.quantity AS reserved_qty
        FROM order_items oi
