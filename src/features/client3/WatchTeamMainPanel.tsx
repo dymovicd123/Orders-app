@@ -376,7 +376,7 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
            </div></td>
            <td><div className="row-actions compact-actions">
              <button className="secondary compact" type="button" onClick={()=>{
-               setDraft({id:person.id,name:person.name,role:person.role,phone:person.phone,
+               setDraft({...empty(),id:person.id,name:person.name,role:person.role,phone:person.phone,
                  comment:person.comment,colorKey:person.colorKey,hiredAt:person.hiredAt,
                  birthDate:person.birthDate||'',brands:[...person.brands]})
                window.requestAnimationFrame(()=>formRef.current?.scrollIntoView({behavior:'smooth',block:'start'}))
