@@ -28,6 +28,8 @@ export async function listClient3WatchClients(
  try{({limit,offset}=limits(url))}catch(e){return bad((e as Error).message)}
  const q=(url.searchParams.get('q')||'').trim()
  if(q.length>100)return bad('Слишком длинный поисковый запрос.')
+ const mode=url.searchParams.get('mode')||'all'
+ if(!['all','repeat','debt'].includes(mode))return bad('Некорректный фильтр клиентов.')
  const like='%'+q.replace(/[\\%_]/g,s=>'\\'+s)+'%'
  const base=`WITH scoped AS (
    SELECT ${phoneKey} AS phoneKey,o.id AS orderId,o.external_id AS externalId,
@@ -47,18 +49,26 @@ export async function listClient3WatchClients(
    FROM scoped GROUP BY phoneKey
  )`
  const where=`(?='' OR phoneKey LIKE ? ESCAPE '\\'
-   OR name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\')`
- const args=[brandId,q,like,like,like]
- const [rows,total]=await Promise.all([
+   OR name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\')`
+ const modeWhere=mode==='repeat'?' AND orderCount>=2':mode==='debt'?' AND debt>0':''
+ const args=[brandId,q,like,like,like,like]
+ const [rows,total,summary]=await Promise.all([
   db.prepare(`${base}
-    SELECT * FROM clients WHERE ${where}
+    SELECT * FROM clients WHERE ${where}${modeWhere}
     ORDER BY lastDate DESC,phoneKey LIMIT ? OFFSET ?`)
     .bind(...args,limit,offset).all<Record<string,unknown>>(),
   db.prepare(`${base}
-    SELECT COUNT(*) AS count FROM clients WHERE ${where}`)
+    SELECT COUNT(*) AS count FROM clients WHERE ${where}${modeWhere}`)
     .bind(...args).first<{count:number}>(),
+  db.prepare(`${base}
+    SELECT COUNT(*) AS totalClients,
+      COALESCE(SUM(CASE WHEN orderCount>=2 THEN 1 ELSE 0 END),0) AS repeatClients,
+      COALESCE(SUM(CASE WHEN debt>0 THEN 1 ELSE 0 END),0) AS debtClients,
+      COALESCE(SUM(debt),0) AS totalDebt
+    FROM clients`).bind(brandId).first<Record<string,number>>(),
  ])
  return json({ok:true,brandId,rows:rows.results||[],total:Number(total?.count||0),
+   summary:summary||{totalClients:0,repeatClients:0,debtClients:0,totalDebt:0},
    hasMore:offset+limit<Number(total?.count||0)})
 }
 export async function listClient3WatchCustomerOrders(
