@@ -62,18 +62,32 @@ jobs:
           npx wrangler d1 time-travel info "$SOURCE_DB" --config wrangler.jsonc --json > /tmp/qa-source-bookmark.json
           jq -e '.bookmark|type=="string" and length>15' /tmp/qa-source-bookmark.json >/dev/null
           echo "Client3 source is healthy; recovery bookmark captured. No source writes."
-      - name: Read-only export of third D1 into ephemeral runner
+      - name: Read-only selective export, omitting only FTS virtual/shadow tables
         run: |
           set -euo pipefail
           umask 077
+          npx wrangler d1 execute "$SOURCE_DB" --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_list" > /tmp/qa-tables.json
+          npx wrangler d1 execute "$SOURCE_DB" --remote --config wrangler.jsonc --json \
+            --command="SELECT name, sql FROM sqlite_master WHERE type='table'
+              AND lower(sql) LIKE 'create virtual table%'" > /tmp/qa-virtual-ddl.json
+          mapfile -t source_tables < <(jq -r '
+            (if type=="array" then .[0].results else .results end)
+            | .[] | select(.schema=="main" and .type=="table"
+              and (.name | startswith("sqlite_") | not)
+              and .name != "_cf_KV") | .name' /tmp/qa-tables.json)
+          test "${#source_tables[@]}" -ge 20
+          export_args=()
+          for table in "${source_tables[@]}"; do
+            export_args+=(--table "$table")
+          done
+          echo "Copying ${#source_tables[@]} ordinary D1 tables; virtual/shadow tables excluded for safe recreation."
           if ! npx wrangler d1 export "$SOURCE_DB" --remote \
-            --config wrangler.jsonc --skip-confirmation \
+            --config wrangler.jsonc --skip-confirmation "${export_args[@]}" \
             --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
-            echo "::error::D1 source export failed. No production data was changed."
+            echo "::error::D1 selective export failed. No production data was changed."
             if grep -qi virtual /tmp/qa-export-log; then echo "Export diagnostic: virtual tables"; fi
             if grep -qi unauthorized /tmp/qa-export-log; then echo "Export diagnostic: authorization"; fi
-            if grep -qi invalid /tmp/qa-export-log; then echo "Export diagnostic: invalid request"; fi
-            if grep -qi "not found" /tmp/qa-export-log; then echo "Export diagnostic: not found"; fi
             exit 1
           fi
           test -s /tmp/client3-qa-snapshot.sql
@@ -85,7 +99,7 @@ jobs:
           filtered=[s for s in lines if s.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;')]
           assert len(original)>1000 and ('CREATE TABLE' in original.upper())
           p.write_text(''.join(filtered),encoding='utf-8')
-          print('Ephemeral D1 SQL snapshot prepared (contents withheld).')
+          print('Ephemeral SQL snapshot prepared (contents withheld).')
           PY
       - name: Create a uniquely named D1 database (never reuse the source)
         run: |
@@ -133,6 +147,39 @@ jobs:
             exit 1
           fi
           rm -f /tmp/client3-qa-snapshot.sql
+      - name: Recreate virtual FTS tables and rebuild external-content search indexes in QA only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          raw=json.loads(Path('/tmp/qa-virtual-ddl.json').read_text(encoding='utf-8'))
+          rows=raw[0]['results'] if isinstance(raw,list) else raw['results']
+          schema=[]
+          rebuild=[]
+          for row in rows:
+            name=row['name']
+            ddl=row['sql']
+            if not re.fullmatch(r'[A-Za-z0-9_]+',name):
+              raise SystemExit('Unsafe virtual table name')
+            if not re.search(r'(?i)^\s*CREATE\s+VIRTUAL\s+TABLE',ddl):
+              raise SystemExit('Unexpected virtual table definition')
+            schema.append(ddl.rstrip(';')+';')
+            if re.search(r"""(?i)content\s*=\s*['"][^'"]+['"]""",ddl):
+              rebuild.append("INSERT INTO "+name+"("+name+") VALUES('rebuild');")
+          Path('/tmp/qa-virtual-tables.sql').write_text('\n'.join(schema)+'\n',encoding='utf-8')
+          Path('/tmp/qa-virtual-rebuild.sql').write_text('\n'.join(rebuild)+'\n',encoding='utf-8')
+          print('Virtual table definitions to restore:',len(schema),'external content indexes:',len(rebuild))
+          PY
+          if test -s /tmp/qa-virtual-tables.sql; then
+            npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
+              --file=/tmp/qa-virtual-tables.sql > /tmp/qa-fts-schema-log 2>&1
+          fi
+          if test -s /tmp/qa-virtual-rebuild.sql; then
+            npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
+              --file=/tmp/qa-virtual-rebuild.sql > /tmp/qa-fts-rebuild-log 2>&1
+          fi
+          echo "Virtual FTS tables recreated on QA D1 only."
       - name: Retain admin login and prevent other staff access to QA
         run: |
           set -euo pipefail
