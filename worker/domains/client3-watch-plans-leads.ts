@@ -83,7 +83,7 @@ export async function listClient3WatchPlans(db:D1Database,actor:AuthUser,brandId
  const departRows=(departments.results||[]).map(x=>map(x))
  return json({ok:true,from,to,departmentPlans:departRows,managerPlans:managerRows,
    // Dashboard never invents an unconfigured plan.
-   monthPlan:departRows.find(x=>String(x.periodStart)<=from&&String(x.periodEnd)>=to)||null})
+   monthPlan:departRows.find(x=>String(x['periodStart'])<=from&&String(x['periodEnd'])>=to)||null})
 }
 
 export async function saveClient3WatchPlan(db:D1Database,actor:AuthUser,brandId:number,input:RecordInput){
