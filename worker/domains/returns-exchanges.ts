@@ -3235,6 +3235,8 @@ export type ExchangeSetInput = {
   paymentAmount?: number
   paymentMethod?: string
   refundMethod?: string
+  paymentParts?: MoneyPartInput[]
+  refundParts?: MoneyPartInput[]
   comment?: string
 }
 
@@ -3300,8 +3302,10 @@ type ExchangeSetExecutionPlan = {
   dueBeforeSettlement: number
   paymentAmount: number
   paymentMethod: string
+  paymentParts?: MoneyPart[]
   refundAmount: number
   refundMethod: string
+  refundParts?: MoneyPart[]
   finalNetPaid: number
   financialAction: 'none' | 'extra_payment' | 'refund'
   financialAmount: number
@@ -3876,10 +3880,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         addedValue,
         paymentAmount,
       })
-      const paymentMethod = cleanText(input.paymentMethod)
-      const refundMethod = cleanText(input.refundMethod)
-      if (paymentAmount > 0 && !paymentMethod) throw new CriticalOperationConflictError('Выберите способ оплаты денег, полученных сейчас.')
-      if (settlement.refundAmount > 0 && !refundMethod) throw new CriticalOperationConflictError('Выберите способ возврата денег клиенту.')
+      const paymentParts = normalizeMoneyParts(input.paymentParts, paymentAmount, input.paymentMethod)
+      const refundParts = normalizeMoneyParts(input.refundParts, settlement.refundAmount, input.refundMethod)
+      const paymentMethod = moneyMethodsSummary(paymentParts)
+      const refundMethod = moneyMethodsSummary(refundParts)
 
       const financialAction: ExchangeSetExecutionPlan['financialAction'] = paymentAmount > 0
         ? 'extra_payment'
@@ -3902,8 +3906,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         dueBeforeSettlement: settlement.dueBeforeSettlement,
         paymentAmount,
         paymentMethod,
+        paymentParts,
         refundAmount: settlement.refundAmount,
         refundMethod,
+        refundParts,
         finalNetPaid: settlement.finalNetPaid,
         financialAction,
         financialAmount,
@@ -4218,35 +4224,39 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
       let paymentId: number | null = null
       let refundReturnId: number | null = null
       if (executionPlan.financialAction === 'extra_payment') {
-        const entityKey = 'exchange:set:payment'
-        paymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey)
-        if (!paymentId) {
-          const pair = buildPaymentAndMoneyEventStatements(db, {
-            orderId: executionPlan.orderId,
-            externalOrderId: executionPlan.externalOrderId,
-            paymentDate: executionPlan.exchangeDate,
-            method: executionPlan.paymentMethod,
-            amount: executionPlan.paymentAmount,
-            paymentKind: 'extra',
-            comment: executionPlan.comment || `Оплата при обмене #${exchangeId}`,
-            timestamp,
-            eventType: 'exchange_extra',
-            sourceType: 'exchange',
-            sourceId: exchangeId,
-            sourceRef: `exchanges:${exchangeId}`,
-            reason: 'exchange_set_created',
-            eventKey: `1901:${criticalOperation.requestId}:exchange-set-payment`,
-          })
-          const [insert] = await db.batch([
-            pair.payment,
-            db.prepare(
-              `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
-               VALUES (?, 'payment', ?, last_insert_rowid(), ?)
-               ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
-            ).bind(criticalOperation.requestId, entityKey, timestamp),
-            pair.event,
-          ])
-          paymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
+        const parts = executionPlan.paymentParts || normalizeMoneyParts(undefined, executionPlan.paymentAmount, executionPlan.paymentMethod)
+        for (const [index, part] of parts.entries()) {
+          const entityKey = index === 0 ? 'exchange:set:payment' : 'exchange:set:payment:' + (index + 1)
+          let currentPaymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey)
+          if (!currentPaymentId) {
+            const pair = buildPaymentAndMoneyEventStatements(db, {
+              orderId: executionPlan.orderId,
+              externalOrderId: executionPlan.externalOrderId,
+              paymentDate: executionPlan.exchangeDate,
+              method: part.method,
+              amount: part.amount,
+              paymentKind: 'extra',
+              comment: executionPlan.comment || `Оплата при обмене #${exchangeId}`,
+              timestamp,
+              eventType: 'exchange_extra',
+              sourceType: 'exchange',
+              sourceId: exchangeId,
+              sourceRef: `exchanges:${exchangeId}`,
+              reason: 'exchange_set_created',
+              eventKey: `1901:${criticalOperation.requestId}:exchange-set-payment` + (index ? ':part:' + (index + 1) : ''),
+            })
+            const [insert] = await db.batch([
+              pair.payment,
+              db.prepare(
+                `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
+                 VALUES (?, 'payment', ?, last_insert_rowid(), ?)
+                 ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
+              ).bind(criticalOperation.requestId, entityKey, timestamp),
+              pair.event,
+            ])
+            currentPaymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
+          }
+          if (index === 0) paymentId = currentPaymentId
         }
       } else if (executionPlan.financialAction === 'refund') {
         const entityKey = 'exchange:set:refund'
@@ -4270,20 +4280,21 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
                VALUES (?, 'return', ?, last_insert_rowid(), ?)
                ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
             ).bind(criticalOperation.requestId, entityKey, timestamp),
-            refundMoneyEventStatement(db, {
-              eventKey: `1901:${criticalOperation.requestId}:exchange-set-refund`,
-              orderId: executionPlan.orderId,
-              externalOrderId: executionPlan.externalOrderId,
-              returnDate: executionPlan.exchangeDate,
-              amount: executionPlan.refundAmount,
-              paymentMethod: executionPlan.refundMethod,
-              timestamp,
-              eventType: 'exchange_refund',
-              sourceId: exchangeId,
-              sourceRef: `exchanges:${exchangeId}`,
-              comment: executionPlan.comment || `Возврат переплаты по обмену #${exchangeId}`,
-              reason: 'exchange_set_created',
-            }),
+            ...(executionPlan.refundParts || normalizeMoneyParts(undefined, executionPlan.refundAmount, executionPlan.refundMethod))
+              .map((part, index) => refundMoneyEventStatement(db, {
+                eventKey: `1901:${criticalOperation.requestId}:exchange-set-refund` + (index ? ':part:' + (index + 1) : ''),
+                orderId: executionPlan.orderId,
+                externalOrderId: executionPlan.externalOrderId,
+                returnDate: executionPlan.exchangeDate,
+                amount: part.amount,
+                paymentMethod: part.method,
+                timestamp,
+                eventType: 'exchange_refund',
+                sourceId: exchangeId,
+                sourceRef: `exchanges:${exchangeId}`,
+                comment: executionPlan.comment || `Возврат переплаты по обмену #${exchangeId}`,
+                reason: 'exchange_set_created',
+              })),
           ])
           refundReturnId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
         }
