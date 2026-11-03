@@ -10,6 +10,8 @@ import {
  listClient3WatchTimesheet,saveClient3WatchTimesheet,listClient3WatchTeamSalary,
  listClient3WatchTeamActivity,
 } from '../../worker/domains/client3-watch-team-main.ts'
+import {createAuthUser,listAuthUsers} from '../../worker/domains/auth.ts'
+import {listWatchBrands,listWatchModels,listWatchLogistics,assignWatchManagerBrands} from '../../worker/domains/client3-watches.ts'
 
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
@@ -117,8 +119,41 @@ const read1=await parse(listClient3WatchTeam(db,admin))
 const logistic=read1.employees.find(e=>e.id===employeeId)
 assert.equal(logistic.role,'Логист','Original logistics permissions must survive Main team edits')
 assert.equal(logistic.birthDate,'1999-05-06')
+assert.deepEqual(logistic.brands,[],'A logist is independent of brand assignments')
+assert.equal(logistic.allBrandsLogistics,true,'Logistics employee sees both brand queues')
 assert.equal(logistic.phone,'+7 777 111 22 33')
 assert.equal((await parse(saveClient3WatchEmployee(db,manager,{name:'BAD',role:'Админ'}))).status,403)
+assert.equal((await parse(saveClient3WatchEmployee(db,admin,{name:'ПОСТОРОННИЙ',role:'Упаковщик'}))).status,400,
+ 'New packager role must not be offered or accepted')
+const logistActor={id:3,role:'manager',managerId:employeeId,employeeRole:'Логист'}
+const availableBrands=await parse(listWatchBrands(db,logistActor))
+assert.deepEqual(availableBrands.brands.map(x=>x.code),['TAUWACH','WACHIZEN'],
+ 'A logist must see both watch brands without a brand assignment')
+const globalLogistics=await parse(listWatchLogistics(db,logistActor,
+  new URL('https://client3.test/api/client3/watches/logistics?status=all')))
+assert.equal(globalLogistics.status,200,'Logist must reach a two-brand order queue')
+const salesDenied=await parse(listWatchModels(db,logistActor,
+  new URL('https://client3.test/api/client3/watches/models?brand=TAUWACH')))
+assert.equal(salesDenied.status,403,'Logist may not access sales catalog')
+const deniedLogistBrand=await parse(assignWatchManagerBrands(db,admin,employeeId,{
+ brands:['TAUWACH'],expectedBrands:[],requestId:'test-logist-nobrands-20261103',
+}))
+assert.equal(deniedLogistBrand.status,400,'Logists cannot be assigned brand memberships')
+const loginRequest=new Request('https://client3.test/api/auth/users',{
+ method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({login:'client3_logist',password:'TempPass345!',role:'manager',
+   managerId:employeeId,displayName:'НОВЫЙ ЛОГИСТ'}),
+})
+const createdAccount=await parse(createAuthUser(db,loginRequest,admin))
+assert.equal(createdAccount.status,201,JSON.stringify(createdAccount))
+assert.equal(sqlite.prepare('SELECT role,manager_id FROM app_users WHERE id=?')
+ .get(createdAccount.id).manager_id,employeeId)
+assert((await listAuthUsers(db)).items.some(u=>u.login==='client3_logist'&&u.managerId===employeeId))
+const duplicateAccount=await parse(createAuthUser(db,new Request('https://client3.test/api/auth/users',{
+ method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({login:'client3_other',password:'TempPass345!',role:'manager',managerId:employeeId}),
+}),admin))
+assert.equal(duplicateAccount.status,409,'Cannot create duplicate staff account')
 assert.equal((await parse(saveClient3WatchEmployee(db,admin,{
  id:employeeId,name:'НОВЫЙ ЛОГИСТ',role:'Логист',hiredAt:'2026-11-03',
  colorKey:'#2563EB',birthDate:'1999-05-06',
@@ -143,6 +178,12 @@ const dismissed=await parse(setClient3WatchEmployeeActive(db,admin,employeeId,fa
 assert.equal(dismissed.status,200,JSON.stringify(dismissed))
 assert.equal((await parse(listClient3WatchTeam(db,admin))).employees.find(x=>x.id===employeeId).isActive,false)
 assert.equal((await parse(setClient3WatchEmployeeActive(db,admin,employeeId,true))).status,200)
+// A lightweight Client3 roster does not depend on Main-only history tables.
+sqlite.exec('DROP TABLE attendance_days')
+const afterMissingMainHistory=await parse(listClient3WatchTeam(db,admin))
+assert.equal(afterMissingMainHistory.status,200)
+assert(afterMissingMainHistory.employees.some(e=>e.id===1),
+ 'Existing managers must remain visible when old Main history tables are absent')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_SHARED_CASH_MAIN_TEAM_ACCEPTANCE_PASS: cash 2 brands merged once, archive, idempotency, reversal, pause, cycles and Main roster/logistics/timesheet/rights')

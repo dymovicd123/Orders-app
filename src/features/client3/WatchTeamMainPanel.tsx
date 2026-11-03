@@ -9,7 +9,7 @@ import '../../styles/client3-main-team.css'
 type Account={id:number;login:string;role:string;isActive:number;mustChangePassword:number}
 type Employee={id:number;name:string;role:string;phone:string;comment:string;
  colorKey:string;hiredAt:string;birthDate?:string;dismissedAt?:string;
- isActive:boolean;brands:WatchBrand[];access:Account|null;referenceCount:number}
+ isActive:boolean;brands:WatchBrand[];allBrandsLogistics?:boolean;access:Account|null;referenceCount:number}
 type TeamData={ok:boolean;message?:string;employees:Employee[];stats:{active:number;inactive:number}}
 type Draft={id:number;name:string;role:string;phone:string;comment:string;
  colorKey:string;hiredAt:string;birthDate:string;brands:WatchBrand[]}
@@ -47,6 +47,7 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
  const [brandEditor,setBrandEditor]=useState<number|null>(null)
  const [brandDraft,setBrandDraft]=useState<WatchBrand[]>([])
  const [accountEditor,setAccountEditor]=useState<Employee|null>(null)
+ const [accountTargetId,setAccountTargetId]=useState(0)
  const [accountDraft,setAccountDraft]=useState({login:'',password:'',isActive:true,role:'manager'})
  const [saving,setSaving]=useState(false)
  const [period,setPeriod]=useState(month)
@@ -118,13 +119,17 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
      })
      const newId=res.id
      const before=employees.find(x=>x.id===newId)?.brands||[]
-     const after=draft.brands
-     if(JSON.stringify([...before].sort())!==JSON.stringify([...after].sort())){
+     const after=draft.role==='Логист'?[]:draft.brands
+     // The server removes stale brand assignments atomically when a person
+     // becomes a logist; do not send an obsolete second assignment request.
+     if(draft.role!=='Логист'&&JSON.stringify([...before].sort())!==JSON.stringify([...after].sort())){
        await api('/api/client3/watches/staff/'+newId+'/brands',{
          method:'POST',...json({brands:after,expectedBrands:before,requestId:'team-'+crypto.randomUUID()}),
        })
      }
-     setDraft(null);setNotice('Сотрудник и его бренды сохранены.');refresh()
+     setDraft(null);setNotice(draft.role==='Логист'?
+       'Логист сохранён. Он видит логистику обоих брендов без назначений. Для входа создайте аккаунт в «Учётных записях».':
+       'Сотрудник сохранён. Для входа создайте аккаунт в его строке или во вкладке «Учётные записи».');refresh()
    }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить сотрудника.');refresh()}
    finally{setSaving(false)}
  }
@@ -153,6 +158,7 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
  }
  const openAccount=(person:Employee)=>{
   setAccountEditor(person)
+  setAccountTargetId(person.id)
   setAccountDraft({login:person.access?.login||'',password:'',
    isActive:person.access?Boolean(person.access.isActive):true,
    role:person.access?.role|| (person.role==='Админ'?'admin':'manager')})
@@ -194,9 +200,9 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
    <div className="card-label">Команда</div>
    <div className="card-meta">Сотрудники и доступ как в Main: действующие, бывшие, табель, выполнение плана, зарплата и работа с заказами. Оба бренда — одна команда.</div>
    <div className="summary-grid compact-summary team-summary-clean">
-     <div className="summary-card"><span>Активных</span><strong>{active.length}</strong></div>
-     <div className="summary-card"><span>Бывших</span><strong>{former.length}</strong></div>
-     <div className="summary-card"><span>С доступом</span><strong>{employees.filter(e=>Boolean(e.access?.isActive)).length}</strong></div>
+     <div className="summary-card"><span>Активных</span><strong>{data?active.length:'—'}</strong></div>
+     <div className="summary-card"><span>Бывших</span><strong>{data?former.length:'—'}</strong></div>
+     <div className="summary-card"><span>С доступом</span><strong>{data?employees.filter(e=>Boolean(e.access?.isActive)).length:'—'}</strong></div>
    </div>
    <div className="order-panel-tabs team-mode-tabs" role="tablist" aria-label="Раздел команды">
      {([
@@ -206,18 +212,23 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
        className={'secondary compact '+(mode===key?'is-active':'')}
        onClick={()=>{setMode(key);setError('')}}>{label}</button>)}
    </div>
-   {error&&<div className="app-alert error" role="alert">{error}</div>}
+   {error&&<div className="app-alert error" role="alert">
+     <strong>Не удалось загрузить данные команды.</strong> {error}
+     <button type="button" className="secondary compact" disabled={loading}
+       onClick={refresh}>Повторить загрузку</button>
+     {!data&&<p>Пока база не ответила, количество сотрудников неизвестно. Данные не удалены.</p>}
+   </div>}
    {notice&&<div className="app-alert success" role="status">{notice}</div>}
    {loading&&<p role="status">Загружаю сотрудников…</p>}
    {mode==='employees'&&<>
      <div className="team-roster-toolbar">
        <div className="team-roster-tabs" role="tablist" aria-label="Состав команды">
          <button type="button" className={'secondary compact '+(rosterView==='active'?'is-active':'')}
-           onClick={()=>setRosterView('active')}>Активные ({active.length})</button>
+           onClick={()=>setRosterView('active')}>Активные ({data?active.length:'—'})</button>
          <button type="button" className={'secondary compact '+(rosterView==='former'?'is-active':'')}
-           onClick={()=>setRosterView('former')}>Бывшие ({former.length})</button>
+           onClick={()=>setRosterView('former')}>Бывшие ({data?former.length:'—'})</button>
        </div>
-       <button className="primary compact" type="button" onClick={()=>{
+       <button className="primary compact" type="button" disabled={!data||loading} onClick={()=>{
          setDraft({...empty(),colorKey:palette[employees.length%palette.length]})
          window.requestAnimationFrame(()=>formRef.current?.scrollIntoView({behavior:'smooth',block:'start'}))
        }}>+ Добавить сотрудника</button>
@@ -230,8 +241,9 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
          <div className="form-grid compact-form team-editor-grid">
            <label>Имя сотрудника<input required value={draft.name} maxLength={80}
              onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Например: АСЕЛЬ"/></label>
-           <label>Роль<select value={draft.role} onChange={e=>setDraft({...draft,role:e.target.value})}>
-             {['Менеджер','Логист','Упаковщик','Завсклад','Админ'].map(role=>
+           <label>Роль<select value={draft.role} onChange={e=>setDraft({...draft,role:e.target.value,
+             brands:e.target.value==='Логист'?[]:draft.brands})}>
+             {['Менеджер','Логист','Завсклад','Админ'].map(role=>
                <option value={role} key={role}>{role}</option>)}
            </select></label>
            <label>Дата начала<input type="date" value={draft.hiredAt}
@@ -250,13 +262,15 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
                  onChange={e=>setDraft({...draft,colorKey:e.target.value})}/>
              </span>
            </label>
-           <label className="span-2">Бренды
+           {draft.role==='Логист'?<p className="span-2 mini-panel-note">
+             Логист работает с заказами и отправками TAUWACH и WACHIZEN одновременно. Назначать бренды не нужно.
+           </p>:<label className="span-2">Бренды
              <span className="team-brand-choices">{WATCH_BRANDS.map(brand=><label key={brand}>
                <input type="checkbox" checked={draft.brands.includes(brand)}
                  onChange={e=>setDraft({...draft,brands:e.target.checked?
                    [...draft.brands,brand]:draft.brands.filter(v=>v!==brand)})}/>
                {brand}</label>)}</span>
-           </label>
+           </label>}
            <label className="span-2">Комментарий<input value={draft.comment} maxLength={500}
              onChange={e=>setDraft({...draft,comment:e.target.value})}/></label>
          </div>
@@ -279,7 +293,10 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
              {person.birthDate&&<small>Дата рождения: {fmt(person.birthDate)}</small>}</div></td>
            <td>{person.role}</td><td>{fmt(person.hiredAt)}</td>
            <td><span className="manager-color-dot" style={{backgroundColor:person.colorKey}}/></td>
-           <td>{brandEditor===person.id?
+           <td>{person.allBrandsLogistics||person.role==='Логист'?
+             <div className="team-brands-cell"><strong>Оба бренда</strong>
+               <small>Логистика · без привязки</small></div>:
+             brandEditor===person.id?
              <div className="team-brand-edit">
                {WATCH_BRANDS.map(b=><label key={b}><input type="checkbox"
                  checked={brandDraft.includes(b)} onChange={e=>setBrandDraft(v=>
@@ -312,7 +329,8 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
                {person.isActive?'Уволить':'Восстановить'}</button>
            </div></td>
          </tr>)}
-         {!listed.length&&<tr><td colSpan={7} className="empty-state">Сотрудников в этой группе нет.</td></tr>}
+         {data&&!listed.length&&<tr><td colSpan={7} className="empty-state">Сотрудников в этой группе нет.</td></tr>}
+         {!data&&<tr><td colSpan={7} className="empty-state">Список сотрудников не загрузился. Повторите запрос.</td></tr>}
          </tbody>
        </table>
      </LinkedTableScroll>
@@ -394,7 +412,28 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
          <td>{r.ordersCount}</td><td>{watchMoney(r.salesTotal)}</td><td>{r.sentOrders}</td></tr>)}</tbody>
      </table></LinkedTableScroll>
    </section>}
-   {mode==='accounts'&&<WatchUserAccessPanel/>}
+   {mode==='accounts'&&<>
+     <section className="mini-panel team-account-manager-creation">
+       <div className="mini-panel-head"><div><h3>Аккаунт менеджера или логиста</h3>
+         <p className="mini-panel-note">Сначала добавьте человека во вкладке «Сотрудники», затем создайте ему отдельный логин и временный пароль. Менеджеру назначаются бренды, логист видит оба без привязки.</p>
+       </div></div>
+       <div className="form-grid compact-form">
+         <label>Сотрудник без учётной записи
+           <select value={accountTargetId} onChange={e=>setAccountTargetId(Number(e.target.value))}>
+             <option value={0}>Выберите сотрудника</option>
+             {employees.filter(person=>person.isActive&&!person.access).map(person=>
+               <option key={person.id} value={person.id}>{person.name} · {person.role}</option>)}
+           </select></label>
+         <div className="actions"><button type="button" className="primary"
+           disabled={saving||!employees.some(p=>p.id===accountTargetId&&p.isActive&&!p.access)}
+           onClick={()=>{const person=employees.find(p=>p.id===accountTargetId);if(person)openAccount(person)}}>
+           Создать вход сотруднику</button></div>
+       </div>
+       {!employees.some(p=>p.isActive&&!p.access)&&data&&
+         <p className="mini-panel-note">Все действующие сотрудники уже имеют аккаунты или список команды пуст.</p>}
+     </section>
+     <WatchUserAccessPanel/>
+   </>}
    {accountEditor&&<div className="team-access-modal-backdrop" role="presentation" onMouseDown={e=>{
      if(e.target===e.currentTarget)setAccountEditor(null)}}>
      <form className="team-access-modal" role="dialog" aria-modal="true"

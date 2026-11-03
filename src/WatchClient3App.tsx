@@ -304,7 +304,8 @@ export function WatchClient3App() {
     </form>
   </main>
 
-  const canSales=brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')
+  const isLogisticsRole=['Логист','Упаковщик'].includes(user.employeeRole||'')
+  const canSales=brands.length>0&&(user.role==='admin'||!isLogisticsRole)
   const canAdmin=user.role==='admin'
   const goTo=(next:WatchSection)=>{
     if(next!=='operations')setCorrectionPrefill(null)
@@ -390,10 +391,10 @@ export function WatchClient3App() {
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}
-      {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand}
-        brand={brand||'all'} allowedBrands={brands.map(x=>x.code)}
+      {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand+'-'+isLogisticsRole}
+        brand={isLogisticsRole?'all':brand||'all'} allowedBrands={brands.map(x=>x.code)}
         canDispatch={canSales} canCorrectDispatch={canAdmin}
-        canCompleteEngraving={canAdmin||user.employeeRole==='Логист'}/>}
+        canCompleteEngraving={canAdmin||isLogisticsRole}/>}
       {['warehouse','operations','revision','history','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
           <div className="warehouse-w2-primary" aria-label="Разделы склада">
