@@ -1,0 +1,38 @@
+name: Client3 Main report drilldowns and reconciliations acceptance (NO DEPLOY)
+on:
+  push:
+    branches: [client3/main-reports-drilldown-logistics-print-20261103]
+    paths: ['.github/workflows/client3-watch-reports-drilldowns-acceptance-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Third Worker isolation and no invoice scope
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+          test -f worker/domains/client3-watch-report-details.ts
+          test -f src/features/client3/WatchReportDayDetails.tsx
+          grep -q 'CityOrdersExplorer' src/features/client3/WatchReportsPanel.tsx
+          grep -q 'reconciliation' worker/domains/client3-watch-analytics.ts
+      - run: npm ci
+      - name: Main-backed D1 order and report drilldown regression
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Production build and TypeScript
+        run: npm run build
+      - name: Save checkpoint to plan
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Main reports drilldown acceptance: $RESULT. https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID, SHA $GITHUB_SHA. Full actual watch order+return/exchange/cash SQLite regressions, city→orders, day→model/manager/city, brand isolation, payment/reconciliation and TypeScript build. User postponed logistics invoice; no invoice code was added. No deploy until acceptance passes."
