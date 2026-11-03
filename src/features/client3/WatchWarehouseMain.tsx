@@ -57,7 +57,7 @@ const validQuantity=(raw:string,mode:Operation)=>{
  */
 export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,prefill}:{
   brand:WatchBrand;onStockChanged?:()=>void;initialRevision?:boolean;
-  prefill?:{source:Source;watchProductId:number;watchVariantId:number}
+  prefill?:{source:Source;watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'}
 }){
   const [rows,setRows]=useState<Row[]>([])
   const [loading,setLoading]=useState(true)
@@ -65,7 +65,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
-  const [mode,setMode]=useState<Operation>(initialRevision||prefill?'count':'arrival')
+  const [mode,setMode]=useState<Operation>(initialRevision?'count':prefill?.operation|| (prefill?'count':'arrival'))
   const persistentRevision=initialRevision
   const [revisionScope,setRevisionScope]=useState<'selective'|'full'>('selective')
   const [revisionActive,setRevisionActive]=useState(false)
