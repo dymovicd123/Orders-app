@@ -189,7 +189,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        WHERE p.payment_kind IN ('debt_close', 'extra')
          AND NOT EXISTS (
            SELECT 1 FROM exchanges e
-           WHERE e.payment_id = p.id
+           WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
              AND COALESCE(e.status, 'completed') <> 'cancelled'
              AND e.financial_action = 'extra_payment'
          )
@@ -285,14 +291,26 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               COALESCE(c.display_name, c.phone_normalized, '—') AS customer,
               COALESCE(o.city, '') AS city,
               (SELECT e.id FROM exchanges e
-               WHERE e.payment_id = p.id
+               WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                  AND COALESCE(e.status, 'completed') <> 'cancelled'
                  AND e.financial_action = 'extra_payment'
                ORDER BY e.id DESC LIMIT 1) AS active_exchange_id,
               CASE
                 WHEN EXISTS (
                   SELECT 1 FROM exchanges e
-                  WHERE e.payment_id = p.id
+                  WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                     AND COALESCE(e.status, 'completed') <> 'cancelled'
                     AND e.financial_action = 'extra_payment'
                 ) THEN 'exchange_extra'
@@ -335,7 +353,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
               CASE
                 WHEN EXISTS (
                   SELECT 1 FROM exchanges e
-                  WHERE e.payment_id = p.id
+                  WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                     AND COALESCE(e.status, 'completed') <> 'cancelled'
                     AND e.financial_action = 'extra_payment'
                 ) THEN 'exchange_extra'
@@ -384,7 +408,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
                 WHEN p.payment_kind NOT IN ('debt_close', 'extra')
                   AND NOT EXISTS (
                     SELECT 1 FROM exchanges e
-                    WHERE e.payment_id = p.id
+                    WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                       AND COALESCE(e.status, 'completed') <> 'cancelled'
                       AND e.financial_action = 'extra_payment'
                   )
@@ -394,14 +424,26 @@ export async function listFinanceReports(db: D1Database, url: URL) {
                 WHEN p.payment_kind = 'extra'
                   AND NOT EXISTS (
                     SELECT 1 FROM exchanges e
-                    WHERE e.payment_id = p.id
+                    WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                       AND COALESCE(e.status, 'completed') <> 'cancelled'
                       AND e.financial_action = 'extra_payment'
                   )
                 THEN p.amount ELSE 0 END), 0) AS order_extra_received,
               COALESCE(SUM(CASE WHEN EXISTS (
                 SELECT 1 FROM exchanges e
-                WHERE e.payment_id = p.id
+                WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
                   AND COALESCE(e.status, 'completed') <> 'cancelled'
                   AND e.financial_action = 'extra_payment'
               ) THEN p.amount ELSE 0 END), 0) AS extra_received
@@ -530,7 +572,13 @@ export async function listFinanceReports(db: D1Database, url: URL) {
        WHERE p.payment_kind IN ('debt_close', 'extra')
          AND NOT EXISTS (
            SELECT 1 FROM exchanges e
-           WHERE e.payment_id = p.id
+           WHERE (e.payment_id = p.id OR EXISTS (
+                     SELECT 1 FROM critical_operation_entities ce
+                     JOIN critical_operations co ON co.request_id=ce.request_id
+                     WHERE co.operation_type='exchange_set_create'
+                       AND co.target_id=e.id AND ce.entity_type='payment'
+                       AND ce.entity_id=p.id AND ce.entity_key LIKE 'exchange:set:payment%'
+                   ))
              AND COALESCE(e.status, 'completed') <> 'cancelled'
              AND e.financial_action = 'extra_payment'
          )
@@ -856,6 +904,33 @@ export async function listFinanceReports(db: D1Database, url: URL) {
   ];
   const paymentDateAnomalies = [...paymentOperations.filter((row: any) => row.dateRelation === 'before_order'), ...beforeOrderOutsidePeriod];
   const completedReturns = returns.filter((row: any) => cleanText(row.status) !== 'cancelled');
+  // One logical return may have two actual refund methods. Retain the single
+  // return amount in business totals, but reconcile each channel independently.
+  const splitReturnRows = completedReturns.filter((row: any) => cleanText(row.payment_method).includes(' + '));
+  const refundPartsByReturnId = new Map<number, Array<{ method: string; amount: number }>>();
+  if (splitReturnRows.length) {
+    const returnIds = JSON.stringify(splitReturnRows.map((row: any) => toInt(row.id, 0)));
+    const splitResult = await db.prepare(`
+      SELECT co.target_id AS return_id, fe.payment_method, -fe.amount_delta AS amount
+      FROM financial_events fe
+      JOIN critical_operations co ON fe.source_ref='critical-operation:' || co.request_id
+      WHERE co.operation_type='return_create' AND fe.event_type='order_refund'
+        AND co.target_id IN (SELECT value FROM json_each(?))
+      UNION ALL
+      SELECT e.refund_return_id AS return_id, fe.payment_method, -fe.amount_delta AS amount
+      FROM financial_events fe
+      JOIN exchanges e ON e.id=fe.source_id
+      WHERE fe.source_type='exchange' AND fe.event_type='exchange_refund'
+        AND fe.event_key LIKE '1901:%:exchange-set-refund%'
+        AND e.refund_return_id IN (SELECT value FROM json_each(?))
+    `).bind(returnIds, returnIds).all<any>();
+    for (const part of mapSqlRows(splitResult) as any[]) {
+      const id = toInt(part.return_id, 0);
+      const parts = refundPartsByReturnId.get(id) || [];
+      parts.push({ method: canonicalPaymentMethodName(part.payment_method), amount: Number(part.amount || 0) });
+      refundPartsByReturnId.set(id, parts);
+    }
+  }
   const regularReturnsTotal = completedReturns.filter((row: any) => cleanText(row.return_type) !== 'exchange_refund').reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
   const exchangeRefundsTotal = completedReturns.filter((row: any) => cleanText(row.return_type) === 'exchange_refund').reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
   const returnsTotal = regularReturnsTotal + exchangeRefundsTotal;
@@ -907,13 +982,21 @@ export async function listFinanceReports(db: D1Database, url: URL) {
     paymentMethodReconciliationMap.set(method, current);
   }
   for (const row of completedReturns as any[]) {
-    const method = canonicalPaymentMethodName(row.payment_method);
-    const current = paymentMethodReconciliationMap.get(method) || emptyReconciliation(method);
-    const amount = Number(row.amount || 0);
-    current.refunds += amount;
-    const day = touchDay(cleanText(row.return_date));
-    day.refunds += amount;
-    paymentMethodReconciliationMap.set(method, current);
+    const originalAmount = Number(row.amount || 0);
+    const split = refundPartsByReturnId.get(toInt(row.id, 0)) || [];
+    const provenSplit = split.length > 1
+      && split.every(part => part.amount > 0 && part.method)
+      && split.reduce((sum, part) => sum + part.amount, 0) === originalAmount;
+    // Legacy one-method returns are unchanged; split rows use verified events.
+    const parts = provenSplit ? split : [{ method: canonicalPaymentMethodName(row.payment_method), amount: originalAmount }];
+    for (const part of parts) {
+      const method = canonicalPaymentMethodName(part.method);
+      const current = paymentMethodReconciliationMap.get(method) || emptyReconciliation(method);
+      current.refunds += part.amount;
+      const day = touchDay(cleanText(row.return_date));
+      day.refunds += part.amount;
+      paymentMethodReconciliationMap.set(method, current);
+    }
   }
   const paymentMethodReconciliation = Array.from(paymentMethodReconciliationMap.values())
     .map((row) => ({ ...row, netMovement: row.grossInflow - row.refunds }))
