@@ -12,7 +12,7 @@ import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
-import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from './client3-watch-cash.ts'
+import {getWatchSharedCash,setupWatchSharedCash,writeWatchSharedCash,setWatchSharedCashAuto,reverseWatchSharedCash,resetWatchSharedCashCycle} from './client3-watch-shared-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from './client3-watch-plans-leads.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
@@ -567,24 +567,20 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return deleteClient3WatchLead(db,actor,scope.row!.id,input)
   }
-  if(url.pathname==='/api/client3/watches/cash'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
-    if(scope.error)return scope.error
-    return getWatchBrandCash(db,actor,scope.row!.id)
-  }
+  // Physically unified cash: neither selected brand nor manager affiliation
+  // may change its balance. Authentication+admin authorization happen twice.
+  if(url.pathname==='/api/client3/watches/cash'&&request.method==='GET')
+    return getWatchSharedCash(db,actor)
   if(url.pathname==='/api/client3/watches/cash'&&request.method==='POST'){
-    const input=await readJson<{brand?:unknown;action?:unknown;openingAmount?:unknown;
-      direction?:unknown;amount?:unknown;comment?:unknown;requestId?:unknown;
-      expectedBalance?:unknown;entryId?:unknown;enabled?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
-    if(scope.error)return scope.error
-    if(input.action==='auto')return setWatchBrandCashAuto(db,actor,scope.row!.id,input.enabled)
-    if(input.action==='reverse')return reverseWatchBrandManualCash(db,actor,scope.row!.id,input)
-    if(input.action==='reset')return resetWatchBrandCashCycle(db,actor,scope.row!.id,input)
-    if(input.action==='setup')return setupWatchBrandCash(db,actor,scope.row!.id,input)
+    const input=await readJson<Record<string,unknown>>(request)
+    if(actor.role!=='admin')return FORBIDDEN()
+    if(input.action==='auto')return setWatchSharedCashAuto(db,actor,input.enabled)
+    if(input.action==='reverse')return reverseWatchSharedCash(db,actor,input)
+    if(input.action==='reset')return resetWatchSharedCashCycle(db,actor,input)
+    if(input.action==='setup')return setupWatchSharedCash(db,actor,input)
     if(input.action==='manual'||input.action==='reconcile')
-      return writeWatchBrandCash(db,actor,scope.row!.id,input.action,input)
-    return BAD('Неизвестная операция кассы.')
+      return writeWatchSharedCash(db,actor,input.action,input)
+    return BAD('Неизвестная операция общей кассы.')
   }
   if(url.pathname==='/api/client3/watches/analytics/city-orders'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
