@@ -99,6 +99,7 @@ export async function admitOrderReservationAtomically(db: D1Database, p: Reserva
 // Keep the same reservation/item identity. Never manufacture physical inventory.
 export async function recoverPendingOrderReservationsBeforeShipping(
   db: D1Database, orderId: number, timestamp: string,
+  selectedOrderItemIds?: readonly number[],
 ) {
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return { attempted: 0, activated: 0 };
   const pending = await db.prepare(
@@ -126,8 +127,10 @@ export async function recoverPendingOrderReservationsBeforeShipping(
     reservation_id: number; order_item_id: number; inventory_source: string;
     variant_id: number; product_id: number; quantity: number; stock_id: number;
   }>();
+  const onlySelected=selectedOrderItemIds===undefined?null:new Set(selectedOrderItemIds)
   let activated = 0;
   for (const row of pending.results || []) {
+    if(onlySelected&&!onlySelected.has(Number(row.order_item_id)))continue;
     const reservationId = Number(row.reservation_id);
     const itemId = Number(row.order_item_id);
     const stockId = Number(row.stock_id);
@@ -192,5 +195,6 @@ export async function recoverPendingOrderReservationsBeforeShipping(
     ).bind(reservationId, orderId, itemId).first<{status:string}>();
     if (persisted?.status === 'active') activated += 1;
   }
-  return { attempted: (pending.results || []).length, activated };
+  return { attempted: (pending.results || []).filter(row=>
+    !onlySelected||onlySelected.has(Number(row.order_item_id))).length, activated };
 }
