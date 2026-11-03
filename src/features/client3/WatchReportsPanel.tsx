@@ -1,4 +1,4 @@
-import {useMemo,useState} from 'react'
+import {useEffect,useMemo,useRef,useState} from 'react'
 import {CityOrdersExplorer} from '../renderers/CityOrdersExplorer'
 import {WatchReportDayDetails} from './WatchReportDayDetails'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
@@ -6,6 +6,8 @@ import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {useWatchAnalytics,watchMoney,watchPeriod,type AnalyticsRow} from './useWatchAnalytics'
 
 type ReportType='payments'|'managers'|'products'|'cities'|'days'|'returns'|'debts'
+type RefundEvent={id:number;eventDate:string;externalOrderId:string;paymentMethod:string;eventType:string;amountDelta:number}
+type RefundPage={ok:boolean;message?:string;rows?:RefundEvent[];hasMore?:boolean;totals?:{eventCount:number}}
 const choices:{value:ReportType;label:string;note:string}[]=[
  {value:'payments',label:'Оплаты',note:'Фактические денежные операции по способам оплаты'},
  {value:'managers',label:'Менеджеры',note:'Продажи и долги за период по менеджерам'},
@@ -40,6 +42,51 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
  const [period,setPeriod]=useState(watchPeriod('month'))
  const [type,setType]=useState<ReportType>('payments')
  const [selectedDate,setSelectedDate]=useState<string|null>(null)
+ const [refundRows,setRefundRows]=useState<RefundEvent[]>([])
+ const [refundHasMore,setRefundHasMore]=useState(false)
+ const [refundTotal,setRefundTotal]=useState(0)
+ const [refundBusy,setRefundBusy]=useState(false)
+ const [refundError,setRefundError]=useState('')
+ const [refundRevision,setRefundRevision]=useState(0)
+ const refundScope=useRef('')
+ const fetchRefundPage=async(offset:number,signal?:AbortSignal):Promise<RefundPage>=>{
+   const q=new URLSearchParams({brand,from:period.from,to:period.to,
+     flow:'refund',limit:'100',offset:String(offset)})
+   const response=await fetch('/api/client3/watches/finance?'+q,{
+     credentials:'include',cache:'no-store',signal})
+   const result=await response.json() as RefundPage
+   if(!response.ok||!result.ok)throw Error(result.message||'Список возвратов недоступен.')
+   return result
+ }
+ useEffect(()=>{
+   if(type!=='returns')return
+   const controller=new AbortController()
+   const key=[brand,period.from,period.to,refundRevision].join(':')
+   refundScope.current=key
+   setRefundRows([]);setRefundHasMore(false);setRefundTotal(0);setRefundBusy(true);setRefundError('')
+   void fetchRefundPage(0,controller.signal).then(value=>{
+     if(!controller.signal.aborted&&refundScope.current===key){
+       setRefundRows(value.rows||[]);setRefundHasMore(Boolean(value.hasMore))
+       setRefundTotal(Number(value.totals?.eventCount||0))
+     }
+   }).catch(cause=>{
+     if(!controller.signal.aborted)setRefundError(cause instanceof Error?cause.message:'Ошибка возвратов')
+   }).finally(()=>{if(!controller.signal.aborted)setRefundBusy(false)})
+   return ()=>controller.abort()
+ },[type,brand,period.from,period.to,refundRevision])
+ const moreRefunds=async()=>{
+   if(refundBusy||!refundHasMore)return
+   const key=refundScope.current
+   setRefundBusy(true);setRefundError('')
+   try{
+     const value=await fetchRefundPage(refundRows.length)
+     if(key!==refundScope.current)return
+     setRefundRows(current=>[...current,...(value.rows||[])])
+     setRefundHasMore(Boolean(value.hasMore))
+   }catch(cause){if(key===refundScope.current)setRefundError(cause instanceof Error?cause.message:'Ошибка продолжения')}
+   finally{if(key===refundScope.current)setRefundBusy(false)}
+ }
+
  const {data,busy,error,refresh}=useWatchAnalytics(brand,period.from,period.to)
  const current=choices.find(x=>x.value===type)!
  const report=useMemo(()=>{
@@ -83,7 +130,7 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
      }
      case 'returns':return {
        head:['Дата возврата','Заказ','Способ','Тип операции','Возвращено'],
-       rows:data.events.filter(x=>n(x,'amountDelta')<0).map(x=>[
+       rows:refundRows.map(x=>[
          s(x,'eventDate'),s(x,'externalOrderId'),s(x,'paymentMethod'),
          s(x,'eventType'),watchMoney(-n(x,'amountDelta'))]),
        total:'Денежные возвраты за период: '+watchMoney(data.income.outgoing),
@@ -96,7 +143,7 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
          ' · С долгом: '+data.currentDebt.orderCount,
      }
    }
- },[data,type])
+ },[data,type,refundRows])
  const name=brand+' '+current.label+' '+period.from+' — '+period.to
  const cityRows=(data?.cities||[]).map(row=>({
    city:s(row,'city'),order_count:n(row,'orderCount'),
@@ -137,7 +184,7 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
        <label>Конец периода<input type="date" value={period.to}
          onChange={e=>setPeriod(p=>({...p,to:e.target.value}))}/></label>
        <div className="actions orders-filter-actions">
-         <button className="primary" disabled={busy} onClick={refresh}>
+         <button className="primary" disabled={busy} onClick={()=>{refresh();setRefundRevision(v=>v+1)}}>
            {busy?'Считаю…':'Показать отчёт'}</button>
        </div>
      </div>
@@ -149,13 +196,19 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
      </div><span className="strict-report-period">{period.from} — {period.to}</span></div>
    </div>
    <div className="report-export-actions">
-     <button type="button" className="secondary compact" disabled={!data}
+     <button type="button" className="secondary compact" disabled={!data||(type==='returns'&&(refundBusy||refundHasMore||Boolean(refundError)))}
        onClick={()=>exportTable(name,report.head,report.rows,'word')}>Скачать Word</button>
-     <button type="button" className="secondary compact" disabled={!data}
+     <button type="button" className="secondary compact" disabled={!data||(type==='returns'&&(refundBusy||refundHasMore||Boolean(refundError)))}
        onClick={()=>window.print()}>PDF / печать</button>
-     <button type="button" className="secondary compact" disabled={!data}
+     <button type="button" className="secondary compact" disabled={!data||(type==='returns'&&(refundBusy||refundHasMore||Boolean(refundError)))}
        onClick={()=>exportTable(name,report.head,report.rows,'csv')}>Выгрузить таблицу</button>
    </div>
+   {type==='returns'&&<p className="strict-report-note" role="status">
+     {refundBusy?'Загружаю возвраты…':
+       refundHasMore?'Загружено '+refundRows.length+' из '+refundTotal+' возвратов. Для полного экспорта загрузите остальные записи.':
+       'Детализация возвратов загружена полностью: '+refundRows.length+' операций.'}
+     </p>}
+   {refundError&&type==='returns'&&<p role="alert" className="app-alert error">{refundError}</p>}
    <section className="report-stat-section">
      <h3>Общая статистика за период</h3>
      <div className="table-shell"><table className="data-table strict-report-table report-stat-table">
@@ -191,6 +244,8 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
            </tbody>
          </table>
        </LinkedTableScroll>
+       {type==='returns'&&refundHasMore&&<button type="button" className="secondary" disabled={refundBusy}
+         onClick={()=>void moreRefunds()}>{refundBusy?'Загружаю…':'Показать ещё возвраты'}</button>}
      </section>}
    {type==='days'&&selectedDate&&
      <WatchReportDayDetails key={brand+'-'+selectedDate} brand={brand}
