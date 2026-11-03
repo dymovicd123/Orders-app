@@ -39,16 +39,18 @@ const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
 }
-export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics,isAdmin=false}:{
-  allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;onOpenLogistics?:(brand:WatchBrand)=>void;
+export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,isAdmin=false}:{
+  allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;
+  initialFocusedOrder?:{orderId:number;externalId:string;orderDate:string};
+  onOpenLogistics?:(brand:WatchBrand)=>void;
   isAdmin?:boolean
 }) {
   const [brand,setBrand]=useState<WatchBrand>(initialBrand&&allowedBrands.includes(initialBrand)?initialBrand:allowedBrands[0]||'TAUWACH')
-  const [month,setMonth]=useState(initialMonth)
-  const [search,setSearch]=useState('')
+  const [month,setMonth]=useState(initialFocusedOrder?.orderDate.slice(0,7)||initialMonth)
+  const [search,setSearch]=useState(initialFocusedOrder?.externalId||'')
   const [shipping,setShipping]=useState<'all'|'sent'|'not_sent'>('all')
   const [payment,setPayment]=useState<'all'|'debt'|'paid'>('all')
-  const [query,setQuery]=useState('')
+  const [query,setQuery]=useState(initialFocusedOrder?.externalId||'')
   const [page,setPage]=useState(0)
   const [refresh,setRefresh]=useState(0)
   const [data,setData]=useState<OrdersResponse|null>(null)
@@ -58,7 +60,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,onOpenLogistics,isA
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
   const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
-  const [expanded,setExpanded]=useState<number|null>(null)
+  const [expanded,setExpanded]=useState<number|null>(initialFocusedOrder?.orderId||null)
   useEffect(()=>{
     const controller=new AbortController()
     setBusy(true);setError('');setData(null)
