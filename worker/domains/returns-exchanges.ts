@@ -4299,7 +4299,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
             ).bind(criticalOperation.requestId, entityKey, timestamp),
             ...(executionPlan.refundParts || normalizeMoneyParts(undefined, executionPlan.refundAmount, executionPlan.refundMethod))
               .map((part, index) => refundMoneyEventStatement(db, {
-                eventKey: `1901:${criticalOperation.requestId}:exchange-set-refund` + (index ? ':part:' + (index + 1) : ''),
+                eventKey: `1901:${criticalOperation!.requestId}:exchange-set-refund` + (index ? ':part:' + (index + 1) : ''),
                 orderId: executionPlan.orderId,
                 externalOrderId: executionPlan.externalOrderId,
                 returnDate: executionPlan.exchangeDate,
