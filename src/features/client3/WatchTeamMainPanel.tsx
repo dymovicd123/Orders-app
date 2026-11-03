@@ -266,7 +266,7 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
            <label>Имя сотрудника<input required value={draft.name} maxLength={80}
              onChange={e=>setDraft({...draft,name:e.target.value})}
              onBlur={()=>{if(!draft.id&&draft.createAccount&&!draft.login.trim())
-               setDraft(d=>({...d,login:suggestLogin(d.name,employees)}))}}
+               setDraft(d=>d?{...d,login:suggestLogin(d.name,employees)}:d)}}
              placeholder="Например: АСЕЛЬ"/></label>
            <label>Роль<select value={draft.role} onChange={e=>setDraft({...draft,role:e.target.value,
              brands:e.target.value==='Логист'?[]:draft.brands})}>
