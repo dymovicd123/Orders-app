@@ -29,7 +29,7 @@ const db={prepare:stmt,async batch(statements){
 }}
 const parse=async promise=>{const response=await promise;return {status:response.status,...await response.json()}}
 const admin={id:1,role:'admin',managerId:null,employeeRole:'Администратор'}
-sqlite.prepare("INSERT INTO managers(id,name) VALUES(1,'Revision tester')").run()
+sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'Revision tester')").run()
 sqlite.prepare("INSERT INTO watch_products(id,brand_id,model_name,is_active) VALUES(900,1,'NEW EMPTY WATCH',1)").run()
 sqlite.prepare("INSERT INTO watch_variants(id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color,is_active) VALUES(901,900,'male','quartz','steel','black','',1)").run()
 const linked=await parse(provisionClient3WatchSku(db,admin,1,901))
