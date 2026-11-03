@@ -29,6 +29,7 @@ export type WatchLogisticsRow = {
   itemSource: 'warehouse' | 'boutique' | null
   modelName: string | null
   engravingText: string | null
+  engravingReady: number | boolean
   gender: string | null
   movement: string | null
   braceletMaterial: string | null
@@ -150,21 +151,21 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     return () => controller.abort()
   }, [brandScope, refreshKey])
 
-  const complete = useCallback(async (orderId: number) => {
+  const complete = useCallback(async (orderId: number, orderItemId: number) => {
     if (!canCompleteEngraving || saving !== null) return
-    setSaving(orderId)
+    setSaving(orderItemId)
     setError('')
     setFeedback('')
-    const requestId = requestIds.current[orderId] ||= 'watch-' + crypto.randomUUID()
+    const requestId = requestIds.current[orderItemId] ||= 'watch-' + crypto.randomUUID()
     try {
       await readApi<{ok: boolean; message?: string}>(
         '/api/client3/watches/logistics/' + orderId + '/ready', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requestId }),
+          body: JSON.stringify({ requestId,orderItemId }),
         },
       )
-      delete requestIds.current[orderId]
-      setFeedback('Гравировка по заказу завершена. Отправка и склад не изменены.')
+      delete requestIds.current[orderItemId]
+      setFeedback('Гравировка выбранных часов готова. Остальные позиции не изменены.')
       setRefreshKey(value => value + 1)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Не удалось отметить готовность')
@@ -213,7 +214,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const eligible=(order:WatchLogisticsRow,item:WatchLogisticsRow)=>Boolean(
     item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
     item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
-    (!item.engravingText?.trim()||order.engravingStatus==='ready'))
+    (!item.engravingText?.trim()||Boolean(item.engravingReady)))
   const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
     if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
     setDispatching(order.orderId);setError('');setFeedback('')
@@ -239,7 +240,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     <div className="watch-logistics-heading">
       <div>
         <h2>Логистика</h2>
-        <p>Выберите готовые позиции заказа. «Готово» завершает гравировку, а отправка списывает только выбранные часы.</p>
+        <p>Подтверждайте гравировку отдельно для каждой позиции. Отправка списывает только выбранные готовые часы.</p>
       </div>
       <div className="watch-logistics-controls">
         <label>Статус
@@ -359,7 +360,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                               item.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',item.braceletColor):''].filter(Boolean).join(' · ')}</small>
                         </span>
                       </label>
-                      <div><small>Гравировка</small><strong>{item.engravingText||'Не требуется'}</strong></div>
+                      <div><small>Гравировка</small><strong>{item.engravingText||'Не требуется'}</strong>
+                        {item.engravingText?.trim()&&<small>{item.engravingReady?'Готово':'Ожидает готовности'}</small>}
+                        {canCompleteEngraving&&item.orderItemId&&item.engravingText?.trim()&&!item.engravingReady&&Number(item.shippedQuantity||0)===0&&
+                          <button type="button" disabled={saving!==null} onClick={()=>void complete(order.orderId,item.orderItemId!)}>
+                            {saving===item.orderItemId?'Сохраняю…':'Готово · эта позиция'}</button>}</div>
                       {enabled&&canDispatch&&item.orderItemId&&
                         <label className="watch-logistics-quantity">
                           <small>Отправить, шт. (из {item.quantity})</small>
@@ -371,7 +376,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                       <div><small>Состояние</small><strong>{Number(item.shippedQuantity||0)>0?'Отправлен':
                         item.stockWriteoffStatus==='fulfilled'?'Выдан до ревизии · подтверждено':
                         item.reservationStatus!=='active'?'Ожидает товар / резерв':
-                        item.engravingText?.trim()&&order.engravingStatus!=='ready'?'Ожидает гравировки':
+                        item.engravingText?.trim()&&!item.engravingReady?'Ожидает гравировки':
                         'Готов к отправке'}</strong></div>
                       {canCorrectDispatch&&isSent&&item.dispatchItemId&&
                         <button type="button" className="secondary compact watch-dispatch-correction-open"
@@ -407,11 +412,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                     </div>
                   </div>}
                 <div className="watch-logistics-actions">
-                  {order.engravingStatus==='ready'?<span>Гравировка завершена</span>:
-                    canCompleteEngraving?<button type="button" disabled={saving!==null}
-                      onClick={()=>void complete(order.orderId)}>
-                      {saving===order.orderId?'Сохраняю…':'Готово · гравировка'}
-                    </button>:<span>Завершить может логист или администратор.</span>}
+                  <span>{order.engravingStatus==='ready'?'Все гравировки готовы':
+                    'Гравировка подтверждается отдельно у каждой позиции выше'}</span>
                   {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
                     canDispatch&&selected.length>0&&
                     (dispatchConfirm===order.orderId?
