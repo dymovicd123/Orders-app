@@ -32,7 +32,7 @@ sql.exec(`
  INSERT INTO catalog_variants(id,product_id,stock_position_id) VALUES(100,10,1000),(101,11,1001);
  INSERT INTO catalog_execution_prices VALUES(1000,'adult',60000),(1001,'adult',45000);
  INSERT INTO orders(id,external_id,order_status,total_amount,received_amount,debt_amount) VALUES (1,'TEST-1','active',90000,90000,0),(2,'TEST-2','active',120000,60000,60000);
- INSERT INTO order_items VALUES(200,1,1),(201,2,1);
+ INSERT INTO order_items(id,order_id,quantity) VALUES(200,1,1),(201,2,1);
  INSERT INTO inventory_stock VALUES(1,'warehouse',100,4,1),(2,'boutique',100,2,0),(3,'warehouse',101,9,0);
  INSERT INTO payments VALUES(1,1,90000),(2,2,60000);
  INSERT INTO inventory_reservations VALUES(200,'active'),(201,'active');
