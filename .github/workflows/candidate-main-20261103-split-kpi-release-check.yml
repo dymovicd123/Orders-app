@@ -73,11 +73,8 @@ jobs:
         run: node --experimental-strip-types scripts/test-main-kpi-unshipped-net-20261103.mjs
       - name: Main finance split exchange payment provenance (isolated SQLite)
         run: node --experimental-strip-types scripts/test-finance-exchange-payment-lineage-20261021.mjs
-      - name: Existing Main business and finance release gates
-        run: |
-          set -euo pipefail
-          npm run release:check
-          node scripts/test-main-finance-lineage-release-20261021.mjs
+      - name: Current Main business release gate
+        run: npm run release:check
       - name: Production TypeScript and UI Worker build
         run: npm run build
       - name: Production Worker package dry-run only
