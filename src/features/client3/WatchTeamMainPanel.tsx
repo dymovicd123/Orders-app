@@ -12,7 +12,8 @@ type Employee={id:number;name:string;role:string;phone:string;comment:string;
  isActive:boolean;brands:WatchBrand[];allBrandsLogistics?:boolean;access:Account|null;referenceCount:number}
 type TeamData={ok:boolean;message?:string;employees:Employee[];stats:{active:number;inactive:number}}
 type Draft={id:number;name:string;role:string;phone:string;comment:string;
- colorKey:string;hiredAt:string;birthDate:string;brands:WatchBrand[]}
+ colorKey:string;hiredAt:string;birthDate:string;brands:WatchBrand[];
+ createAccount:boolean;login:string;password:string;mustChangePassword:boolean}
 type View='employees'|'timesheet'|'plan'|'salary'|'activity'|'accounts'
 type Timesheet={ok:boolean;message?:string;month:string;employees:Array<{id:number;name:string}>;
  entries:Array<{id:number;date:string;managerId:number;workUntil:string;comment:string}>}
@@ -25,7 +26,22 @@ type ActivityRow={managerId:number;manager:string;role:string;ordersCount:number
 const palette=['#2563EB','#7C3AED','#0F766E','#C2410C','#A21CAF','#0369A1','#4338CA','#B45309','#BE185D','#475569','#0891B2','#6D28D9']
 const month=()=>watchPeriod('month')
 const empty=():Draft=>({id:0,name:'',role:'Менеджер',phone:'',comment:'',
- colorKey:palette[0],hiredAt:watchPeriod('today').from,birthDate:'',brands:[]})
+ colorKey:palette[0],hiredAt:watchPeriod('today').from,birthDate:'',brands:[],
+ createAccount:true,login:'',password:'',mustChangePassword:true})
+const suggestLogin=(name:string,employees:Employee[])=>{
+ const chars:Record<string,string>={
+  А:'a',Б:'b',В:'v',Г:'g',Д:'d',Е:'e',Ё:'e',Ж:'zh',З:'z',И:'i',Й:'i',
+  К:'k',Л:'l',М:'m',Н:'n',О:'o',П:'p',Р:'r',С:'s',Т:'t',У:'u',Ф:'f',
+  Х:'h',Ц:'ts',Ч:'ch',Ш:'sh',Щ:'sh',Ы:'y',Э:'e',Ю:'yu',Я:'ya',
+  Ә:'a',Ғ:'g',Қ:'q',Ң:'n',Ө:'o',Ұ:'u',Ү:'u',Һ:'h',І:'i'}
+ const base=[...name.trim().toUpperCase()].map(ch=>/[A-Z0-9]/.test(ch)?ch.toLowerCase():
+  chars[ch]||(/[-_.\s]/.test(ch)?'.':'')).join('')
+  .replace(/\.+/g,'.').replace(/^\.|\.$/g,'').slice(0,24)||'manager'
+ const used=new Set(employees.map(x=>String(x.access?.login||'').toLowerCase()))
+ if(!used.has(base))return base
+ let suffix=2;while(used.has(base+suffix))suffix++
+ return base+suffix
+}
 const fmt=(s:string)=>s?s.slice(0,10).split('-').reverse().join('.'):'—'
 const percent=(value:number|null)=>value===null?'—':(value*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%'
 async function api<T extends {ok:boolean;message?:string}>(path:string,init?:RequestInit):Promise<T>{
@@ -114,22 +130,28 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
    e.preventDefault();if(!draft||saving)return
    setSaving(true);setError('');setNotice('')
    try{
-     const res=await api<{ok:boolean;id:number}>('/api/client3/watches/team/employees',{
+     const res=await api<{ok:boolean;id:number;accessCreated?:boolean}>('/api/client3/watches/team/employees',{
        method:'POST',...json(draft),
      })
      const newId=res.id
-     const before=employees.find(x=>x.id===newId)?.brands||[]
-     const after=draft.role==='Логист'?[]:draft.brands
-     // The server removes stale brand assignments atomically when a person
-     // becomes a logist; do not send an obsolete second assignment request.
-     if(draft.role!=='Логист'&&JSON.stringify([...before].sort())!==JSON.stringify([...after].sort())){
-       await api('/api/client3/watches/staff/'+newId+'/brands',{
-         method:'POST',...json({brands:after,expectedBrands:before,requestId:'team-'+crypto.randomUUID()}),
-       })
+     // For new people, both the brand memberships and temporary login were
+     // committed with the employee in one server transaction. Edits retain the
+     // existing guarded brand-change endpoint.
+     if(draft.id){
+       const before=employees.find(x=>x.id===newId)?.brands||[]
+       const after=draft.role==='Логист'?[]:draft.brands
+       if(draft.role!=='Логист'&&JSON.stringify([...before].sort())!==JSON.stringify([...after].sort())){
+         await api('/api/client3/watches/staff/'+newId+'/brands',{
+           method:'POST',...json({brands:after,expectedBrands:before,
+             requestId:'team-'+crypto.randomUUID()}),
+         })
+       }
      }
-     setDraft(null);setNotice(draft.role==='Логист'?
-       'Логист сохранён. Он видит логистику обоих брендов без назначений. Для входа создайте аккаунт в «Учётных записях».':
-       'Сотрудник сохранён. Для входа создайте аккаунт в его строке или во вкладке «Учётные записи».');refresh()
+     setDraft(null)
+     setNotice(draft.id?'Данные сотрудника сохранены.':
+       draft.createAccount?'Сотрудник, его бренды и вход созданы за одно сохранение. Передайте временный пароль лично.':
+       'Сотрудник и его бренды созданы. Вход можно добавить позже.')
+     refresh()
    }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить сотрудника.');refresh()}
    finally{setSaving(false)}
  }
@@ -235,12 +257,17 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
      </div>
      {draft&&<section className="mini-panel team-editor-panel" ref={formRef}>
        <div className="mini-panel-head"><div><h3>{draft.id?'Редактирование сотрудника':'Новый сотрудник'}</h3>
-         <p className="mini-panel-note">Данные сотрудника, роль и назначенные бренды. Учётная запись для входа настраивается в строке сотрудника.</p></div>
+         <p className="mini-panel-note">{draft.id?
+           'Измените сотрудника. Вход в систему можно изменить отдельно в его строке.':
+           'Создайте сотрудника, назначьте бренды и сразу задайте логин и временный пароль.'}</p></div>
          <button className="secondary compact" onClick={()=>setDraft(null)} type="button">Закрыть</button></div>
        <form onSubmit={e=>void saveEmployee(e)}>
          <div className="form-grid compact-form team-editor-grid">
            <label>Имя сотрудника<input required value={draft.name} maxLength={80}
-             onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="Например: АСЕЛЬ"/></label>
+             onChange={e=>setDraft({...draft,name:e.target.value})}
+             onBlur={()=>{if(!draft.id&&draft.createAccount&&!draft.login.trim())
+               setDraft(d=>({...d,login:suggestLogin(d.name,employees)}))}}
+             placeholder="Например: АСЕЛЬ"/></label>
            <label>Роль<select value={draft.role} onChange={e=>setDraft({...draft,role:e.target.value,
              brands:e.target.value==='Логист'?[]:draft.brands})}>
              {['Менеджер','Логист','Завсклад','Админ'].map(role=>
@@ -273,6 +300,36 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
            </label>}
            <label className="span-2">Комментарий<input value={draft.comment} maxLength={500}
              onChange={e=>setDraft({...draft,comment:e.target.value})}/></label>
+           {!draft.id&&<section className="span-2 team-access-onboarding client3-access-onboarding">
+             <div className="team-access-onboarding-head">
+               <div><strong>Вход в систему</strong>
+                 <span>Логин связывается с сотрудником: заказы и действия принадлежат именно ему.</span>
+               </div>
+               <label className="team-access-toggle"><input type="checkbox"
+                 checked={draft.createAccount}
+                 onChange={e=>setDraft({...draft,createAccount:e.target.checked})}/>
+                 <span>Создать доступ сразу</span>
+               </label>
+             </div>
+             {draft.createAccount?<div className="team-access-onboarding-fields">
+               <label>Логин<input autoComplete="off" minLength={3} maxLength={32}
+                 required value={draft.login}
+                 onChange={e=>setDraft({...draft,login:e.target.value.toLowerCase()})}
+                 placeholder={suggestLogin(draft.name,employees)}/><small>
+                   Латинские буквы и цифры. Предложенный логин: @{suggestLogin(draft.name,employees)}
+                 </small></label>
+               <label>Временный пароль<input autoComplete="new-password" type="password"
+                 required minLength={8} value={draft.password}
+                 onChange={e=>setDraft({...draft,password:e.target.value})}
+                 placeholder="Не менее 8 символов"/><small>
+                   Передайте пароль сотруднику лично.
+                 </small></label>
+               <label className="checkbox-row team-access-force-change"><input type="checkbox"
+                 checked={draft.mustChangePassword}
+                 onChange={e=>setDraft({...draft,mustChangePassword:e.target.checked})}/>
+                 Потребовать сменить пароль при первом входе</label>
+             </div>:<p className="mini-panel-note">Вход можно создать позднее из карточки сотрудника.</p>}
+           </section>}
          </div>
          <div className="button-row"><button type="submit" className="primary" disabled={saving}>
            {saving?'Сохраняю…':draft.id?'Сохранить изменения':'Создать сотрудника'}</button>
