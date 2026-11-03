@@ -36,6 +36,7 @@ export const WATCH_OPTIONS = {
 const RUSSIAN_WATCH_CHOICES:Record<string,Readonly<Record<string,string>>>={
  movements:{quartz:'КВАРЦЕВЫЕ',mechanical:'МЕХАНИЧЕСКИЕ'},
  bracelets:{steel:'СТАЛЬНОЙ',leather:'КОЖА',rubber:'КАУЧУК'},
+ leatherColors:{'чёрный':'ЧЕРНЫЙ','черный':'ЧЕРНЫЙ'},
  dials:{black:'ЧЕРНЫЙ',white:'БЕЛЫЙ',silver:'СЕРЕБРИСТЫЙ',
    gold:'ЗОЛОТИСТЫЙ',green:'ЗЕЛЕНЫЙ',orange:'ОРАНЖЕВЫЙ',
    brown:'КОРИЧНЕВЫЙ',multicolor:'КОМБИНИРОВАННЫЙ'},
