@@ -68,8 +68,14 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
  const [reviewOpen,setReviewOpen]=useState(false)
  const draftKey='client3-watch-revision-input:v1:'+brand+':'+source
  const keepDraft=(id:string,values:Record<number,string>)=>{
-   try{sessionStorage.setItem(draftKey,JSON.stringify({sessionId:id,values}))}
-   catch{/* Browser storage may be unavailable; the server count remains authoritative. */}
+   const pending:Record<number,string>={}
+   for(const [key,value] of Object.entries(values)){
+     if(value!==(savedRef.current[Number(key)]||''))pending[Number(key)]=value
+   }
+   try{
+     if(Object.keys(pending).length)sessionStorage.setItem(draftKey,JSON.stringify({sessionId:id,values:pending}))
+     else sessionStorage.removeItem(draftKey)
+   }catch{/* Browser storage may be unavailable; the server count remains authoritative. */}
  }
  const clearDraft=()=>{
    try{sessionStorage.removeItem(draftKey)}catch{/* ignore */}
@@ -143,7 +149,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
    const run=(async()=>{
      setSavingIds(old=>old.includes(id)?old:[...old,id])
      try{
-       const result=await post('count',{brand,sessionId,itemId:id,
+       const result=await post('count-fast',{brand,sessionId,itemId:id,
          countedQuantity:value===''?null:Number(value)})
        const stored=result.item
        if(!stored||stored.id!==id)throw Error('Сервер не подтвердил сохранение позиции.')
@@ -151,6 +157,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
        const savedNext={...savedRef.current,[id]:value}
        savedRef.current=savedNext
        setSaved(savedNext)
+       keepDraft(sessionId,draftRef.current)
        setSession(current=>{
          if(!current||current.id!==sessionId)return current
          const items=current.items.map(x=>x.id===id?{...x,...item}:x)
@@ -347,7 +354,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
        <div className="client3-revision-save-actions">
          <button type="button" className="secondary" disabled={busy||savingAll||invalid||(!dirty&&!savingIds.length)}
            onClick={()=>void saveDirty()}>{savingAll?'Сохраняем…':'Сохранить введённые количества'}</button>
-         <small>Ввод не блокируется сохранением других позиций. При перезагрузке этой вкладки несохранённые значения восстанавливаются из черновика; физический остаток изменится только при завершении ревизии.</small>
+         
        </div>
        {!reviewOpen?<div className="stocktake-e-review-actions">
          <button type="button" className="primary"
