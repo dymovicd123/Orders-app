@@ -51,3 +51,28 @@
   .watch-catalog-editor-warehouse form.watch-catalog-editor-arrival{max-width:none}
   .watch-catalog-editor-catalog .watch-catalog-editor-list{grid-template-columns:1fr}
 }
+
+/* Alternative spellings belong to the existing Main-style product detail.
+   Never add a parallel product editor or an extra catalog page. */
+.client3-watch-model-aliases{display:grid;gap:12px;margin:12px 0 20px;
+ padding:14px 16px;border:1px solid #dbe4ee;border-radius:12px;background:#f8fafc;
+ min-width:0}
+.client3-watch-alias-head>div{display:grid;gap:4px}
+.client3-watch-alias-head strong{font-weight:700;font-size:14px}
+.client3-watch-alias-head small{font-size:12px;color:#64748b;line-height:1.45}
+.client3-watch-alias-items{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.client3-watch-alias-items>small{color:#64748b}
+.client3-watch-alias-pill{display:inline-flex;align-items:center;gap:7px;
+ padding:4px 5px 4px 10px;border:1px solid #cbd5e1;border-radius:999px;
+ background:#fff;max-width:100%;font-size:12px;color:#334155}
+.client3-watch-alias-pill>span{overflow-wrap:anywhere}
+.client3-watch-alias-pill button{font-size:15px;min-width:25px;min-height:25px;
+ padding:2px 6px;border-radius:999px}
+.client3-watch-alias-form{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.client3-watch-alias-form label{display:grid;gap:5px;flex:1 1 250px;min-width:0;
+ font-size:12px;color:#334155;font-weight:600}
+.client3-watch-alias-form input{min-width:0;width:100%;padding:10px 12px;
+ border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+.client3-watch-alias-form button{min-height:39px;white-space:normal}
+@media(max-width:680px){.client3-watch-model-aliases{padding:12px}
+ .client3-watch-alias-form button{width:100%}}
