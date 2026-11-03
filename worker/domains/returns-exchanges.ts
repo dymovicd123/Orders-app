@@ -2727,7 +2727,14 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     ).bind(timestamp, comment, returnId),
   ];
   if (toInt(ret.amount, 0) > 0) {
-    cancelStatements.push(refundReversalMoneyEventStatement(db, {
+    const splitReversals = await splitRefundReversalStatements(db, {
+      orderId: toInt(ret.order_id, 0),
+      externalOrderId: cleanText(ret.external_id),
+      amount: toInt(ret.amount, 0),
+      methodSummary: cleanText(ret.payment_method),
+      timestamp, comment, reason: 'return_cancel', returnId,
+    });
+    cancelStatements.push(...(splitReversals || [refundReversalMoneyEventStatement(db, {
       eventKey: `189c:return:${returnId}:cancelled`,
       orderId: toInt(ret.order_id, 0),
       externalOrderId: cleanText(ret.external_id),
@@ -2739,7 +2746,7 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
       sourceRef: `returns:${returnId}`,
       reason: 'return_cancel',
       comment,
-    }));
+    })]));
   }
   await db.batch(cancelStatements);
 
@@ -4719,8 +4726,10 @@ export async function cancelExchangeSetV2(
     const financialAction = cleanText(exchange.financial_action)
     const financialAmount = Math.max(0, toInt(exchange.financial_amount, 0))
     if (financialAction === 'extra_payment' && financialAmount > 0) {
-      const paymentId = toInt(exchange.payment_id, 0)
-      if (paymentId) {
+      const mappedPaymentIds = await exchangeSetPaymentIds(db, exchangeId)
+      const firstPaymentId = toInt(exchange.payment_id, 0)
+      const paymentIds = mappedPaymentIds.length ? mappedPaymentIds : firstPaymentId ? [firstPaymentId] : []
+      for (const paymentId of new Set(paymentIds)) {
         await removeSinglePaymentWithMoneyEvent(db, {
           paymentId,
           orderId,
@@ -4734,13 +4743,18 @@ export async function cancelExchangeSetV2(
     } else if (financialAction === 'refund' && financialAmount > 0) {
       const refundReturnId = toInt(exchange.refund_return_id, 0)
       if (refundReturnId) {
+        const splitReversals = await splitRefundReversalStatements(db, {
+          orderId, externalOrderId: cleanText(exchange.external_id),
+          amount: financialAmount, methodSummary: cleanText(exchange.payment_method),
+          timestamp, comment, reason: 'exchange_cancel', exchangeId,
+        })
         await db.batch([
           db.prepare(
             `UPDATE returns
              SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
              WHERE id = ? AND order_id = ?`
           ).bind(timestamp, comment, refundReturnId, orderId),
-          refundReversalMoneyEventStatement(db, {
+          ...(splitReversals || [refundReversalMoneyEventStatement(db, {
             eventKey: `189c:exchange-set:${exchangeId}:refund-cancelled`,
             orderId,
             externalOrderId: cleanText(exchange.external_id),
@@ -4752,7 +4766,7 @@ export async function cancelExchangeSetV2(
             sourceRef: `exchanges:${exchangeId}`,
             reason: 'exchange_cancel',
             comment,
-          }),
+          })]),
         ])
       }
     }
