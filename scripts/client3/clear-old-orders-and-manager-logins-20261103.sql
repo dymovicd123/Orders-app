@@ -8,8 +8,7 @@ CREATE TABLE IF NOT EXISTS client3_legacy_reset_20261103_targets (
 );
 INSERT OR IGNORE INTO client3_legacy_reset_20261103_targets(order_id)
  SELECT id FROM orders
- WHERE NOT EXISTS (SELECT 1 FROM watch_order_details WHERE order_id=orders.id)
- AND NOT EXISTS (SELECT 1 FROM client3_legacy_reset_20261103_targets);
+ WHERE NOT EXISTS (SELECT 1 FROM watch_order_details WHERE order_id=orders.id);
 
 -- Non-cascading order references are removed before parent records.
 DELETE FROM exchange_order_item_price_corrections
