@@ -114,10 +114,13 @@ export async function ensureManualWatchOrderSku(
  // unique values; fail closed on ambiguity and explicitly retired values.
  const refs:Record<string,string>={}
  const missing:Array<{kind:string;value:string;table:string}>=[]
- for(const field of fields){
-   const existing=await db.prepare(`SELECT value,is_active FROM ${field.table} WHERE kind=?`)
-     .bind(field.kind).all<{value:string;is_active:number}>()
-   const existingValue=matchReference(field.kind as ResolverKind,field.value,existing.results||[])
+ // The four reference lookups are independent; read them concurrently.
+ // No identity rules or writes are changed, only the avoidable serial latency.
+ const existingByField=await Promise.all(fields.map(field=>
+   db.prepare(`SELECT value,is_active FROM ${field.table} WHERE kind=?`)
+     .bind(field.kind).all<{value:string;is_active:number}>()))
+ for(const [index,field] of fields.entries()){
+   const existingValue=matchReference(field.kind as ResolverKind,field.value,existingByField[index].results||[])
    if(existingValue!==null){
      refs[field.kind]=existingValue
    }else{
