@@ -1,0 +1,27 @@
+name: Client3 Main dashboard reports finance quick build (NO DEPLOY)
+on:
+  push:
+    branches: [client3/main-dashboard-reports-finance-20261103]
+    paths: ['.github/workflows/client3-main-workspaces-build-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Strict third Worker binding
+        run: |
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+          test -f migrations/client3-watch/1001_watch_brand_cash_register.sql
+          test -f src/features/client3/WatchDashboardPanel.tsx
+          test -f src/features/client3/WatchReportsPanel.tsx
+          test -f src/features/client3/WatchFinancePanel.tsx
+      - run: npm ci
+      - name: TypeScript plus production build (no remote DB calls)
+        run: npm run build
