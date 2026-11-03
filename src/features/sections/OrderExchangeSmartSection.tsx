@@ -147,7 +147,23 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               ? 'Выберите способ возврата денег.'
               : paymentNow > 0 && !String(exchangeDraft.paymentMethod || '').trim()
                 ? 'Выберите способ оплаты.'
-                : ''
+                : paymentNow > 0 && exchangeDraft.extraPaymentEnabled && (
+                    !Number.isSafeInteger(Number(exchangeDraft.extraPaymentAmount))
+                    || Number(exchangeDraft.extraPaymentAmount) <= 0
+                    || Number(exchangeDraft.extraPaymentAmount) >= paymentNow
+                    || !String(exchangeDraft.extraPaymentMethod || '').trim()
+                    || String(exchangeDraft.extraPaymentMethod).trim().toUpperCase() === String(exchangeDraft.paymentMethod).trim().toUpperCase()
+                  )
+                  ? 'Укажите другой второй способ доплаты и сумму меньше всей доплаты.'
+                  : refundAmount > 0 && exchangeDraft.extraRefundEnabled && (
+                      !Number.isSafeInteger(Number(exchangeDraft.extraRefundAmount))
+                      || Number(exchangeDraft.extraRefundAmount) <= 0
+                      || Number(exchangeDraft.extraRefundAmount) >= refundAmount
+                      || !String(exchangeDraft.extraRefundMethod || '').trim()
+                      || String(exchangeDraft.extraRefundMethod).trim().toUpperCase() === String(exchangeDraft.refundMethod).trim().toUpperCase()
+                    )
+                    ? 'Укажите другой второй способ возврата и сумму меньше всего возврата.'
+                    : ''
 
   const pendingGroups = useMemo(() => exchangePendingInbox.rows.map((entry: any) => {
     const items = entry.isSetExchange
@@ -517,12 +533,59 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
               <div className="exchange-settlement-card is-refund">
                 <div><span>Вернуть клиенту</span><strong>{formatMoney(refundAmount)}</strong><small>Новый итог меньше уже оплаченной суммы.</small></div>
                 <label><span>Способ возврата</span><SmartPickerInput value={exchangeDraft.refundMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, НАЛИЧКА" onChange={(value) => setExchangeDraft((current: any) => ({ ...current, refundMethod: value, paymentAmount: 0 }))} /></label>
+                {!exchangeDraft.extraRefundEnabled ? (
+                  <button className="secondary compact" type="button" disabled={exchangeBusy || refundAmount < 2}
+                    onClick={() => setExchangeDraft((current: any) => ({ ...current, extraRefundEnabled: true, extraRefundAmount: 0, extraRefundMethod: '' }))}>
+                    + Добавить ещё способ возврата
+                  </button>
+                ) : (
+                  <div className="mini-item">
+                    <div className="subgrid order-payment-grid">
+                      <label><span>Второй способ возврата</span><SmartPickerInput value={exchangeDraft.extraRefundMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, KASPI"
+                        onChange={(value) => setExchangeDraft((current: any) => ({ ...current, extraRefundMethod: value }))} /></label>
+                      <label><span>Сумма вторым способом</span><FriendlyNumberInput type="number" min="1" max={refundAmount - 1}
+                        value={exchangeDraft.extraRefundAmount || 0}
+                        onChange={(event) => setExchangeDraft((current: any) => ({ ...current, extraRefundAmount: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))} /></label>
+                    </div>
+                    <small className="field-hint">Первым способом: {formatMoney(Math.max(0, refundAmount - Number(exchangeDraft.extraRefundAmount || 0)))} ₸</small>
+                    <button className="secondary compact" type="button" disabled={exchangeBusy}
+                      onClick={() => setExchangeDraft((current: any) => ({ ...current, extraRefundEnabled: false, extraRefundAmount: 0, extraRefundMethod: '' }))}>
+                      Убрать второй способ
+                    </button>
+                  </div>
+                )}
               </div>
             ) : dueBeforeSettlement > 0 ? (
               <div className="exchange-settlement-card">
                 <div><span>Нужно доплатить</span><strong>{formatMoney(dueBeforeSettlement)}</strong><small>Можно принять всю сумму сейчас, часть или оставить долг.</small></div>
                 <label><span>Получаем сейчас</span><FriendlyNumberInput type="number" min="0" max={dueBeforeSettlement} value={exchangeDraft.paymentAmount || 0} onChange={(event) => setExchangeDraft((current: any) => ({ ...current, paymentAmount: Math.min(dueBeforeSettlement, Math.max(0, Math.trunc(Number(event.target.value) || 0))) }))} /></label>
-                {paymentNow > 0 ? <label><span>Способ оплаты</span><SmartPickerInput value={exchangeDraft.paymentMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, KASPI" onChange={(value) => setExchangeDraft((current: any) => ({ ...current, paymentMethod: value }))} /></label> : null}
+                {paymentNow > 0 ? (
+                  <>
+                    <label><span>Способ оплаты</span><SmartPickerInput value={exchangeDraft.paymentMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, KASPI"
+                      onChange={(value) => setExchangeDraft((current: any) => ({ ...current, paymentMethod: value }))} /></label>
+                    {!exchangeDraft.extraPaymentEnabled ? (
+                      <button type="button" className="secondary compact" disabled={exchangeBusy || paymentNow < 2}
+                        onClick={() => setExchangeDraft((current: any) => ({ ...current, extraPaymentEnabled: true, extraPaymentAmount: 0, extraPaymentMethod: '' }))}>
+                        + Добавить ещё способ оплаты
+                      </button>
+                    ) : (
+                      <div className="mini-item">
+                        <div className="subgrid order-payment-grid">
+                          <label><span>Второй способ оплаты</span><SmartPickerInput value={exchangeDraft.extraPaymentMethod || ''} options={suggestionValues.paymentMethods} placeholder="Например, НАЛИЧКА"
+                            onChange={(value) => setExchangeDraft((current: any) => ({ ...current, extraPaymentMethod: value }))} /></label>
+                          <label><span>Сумма вторым способом</span><FriendlyNumberInput type="number" min="1" max={paymentNow - 1}
+                            value={exchangeDraft.extraPaymentAmount || 0}
+                            onChange={(event) => setExchangeDraft((current: any) => ({ ...current, extraPaymentAmount: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))} /></label>
+                        </div>
+                        <small className="field-hint">Первым способом: {formatMoney(Math.max(0, paymentNow - Number(exchangeDraft.extraPaymentAmount || 0)))} ₸</small>
+                        <button type="button" className="secondary compact" disabled={exchangeBusy}
+                          onClick={() => setExchangeDraft((current: any) => ({ ...current, extraPaymentEnabled: false, extraPaymentAmount: 0, extraPaymentMethod: '' }))}>
+                          Убрать второй способ
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : null}
                 <div className="exchange-debt-after"><span>Останется долг</span><strong>{formatMoney(remainingDebt)}</strong></div>
               </div>
             ) : (
