@@ -12,7 +12,7 @@ const fail=(code:string,message:string,status=400)=>json({ok:false,code,message}
 export async function listClient3WatchStockHistory(
  db:D1Database,actor:AuthUser,brandId:number,url:URL,
 ){
- if(actor.role!=='admin')return fail('WATCH_HISTORY_ADMIN_ONLY',
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('WATCH_HISTORY_ADMIN_ONLY',
    'Историю складских операций просматривает администратор.',403)
  const rawSource=url.searchParams.get('source')||'all'
  if(!['all','office','showcase'].includes(rawSource))

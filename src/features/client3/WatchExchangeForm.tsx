@@ -177,7 +177,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
      <strong>Какие часы меняет клиент</strong>
      {old.map(x=><div key={x.id} className="watch-exchange-old">
        <div><strong>{x.productName}</strong><small>{x.gender==='male'?'Мужские':'Женские'} ·
-         {x.movement} · {x.braceletMaterial} · {x.dialColor}</small>
+         {opt(WATCH_OPTIONS.movements,x.movement)} · {opt(WATCH_OPTIONS.braceletMaterials,x.braceletMaterial)} · {opt(WATCH_OPTIONS.dialColors,x.dialColor)}</small>
          <small>В заказе {x.quantity} · доступно к обмену {x.returnableQuantity} шт. · {amount(x.unitPrice)}/шт.</small></div>
        <label>Количество<input type="number" min={0} max={x.returnableQuantity} step={1}
          value={chosen[x.id]?.quantity??'0'}

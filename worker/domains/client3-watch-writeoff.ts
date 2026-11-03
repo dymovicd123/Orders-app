@@ -13,7 +13,7 @@ export async function writeoffClient3WatchStock(
  db:D1Database,actor:AuthUser,brandId:number,input:Input,
  writer:typeof applyInventoryMovement=applyInventoryMovement,
 ) {
- if(actor.role!=='admin')return deny('WATCH_STOCK_ADMIN_ONLY','Списание часов доступно только администратору.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return deny('WATCH_STOCK_ADMIN_ONLY','Списание часов доступно только администратору.',403)
  const watchVariantId=Number(input.watchVariantId),quantity=Number(input.quantity),expected=Number(input.expectedPhysical)
  if(!Number.isSafeInteger(watchVariantId)||watchVariantId<=0||
     !Number.isSafeInteger(quantity)||quantity<1||quantity>1000||

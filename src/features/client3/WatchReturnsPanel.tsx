@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react'
-import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-returns.css'
 type Pending={operationType:'return'|'exchange';returnItemId:number;returnId:number;orderId:number;externalOrderId:string;quantity:number;returnDate:string;modelName:string;gender:string;braceletMaterial:string;dialColor:string;braceletColor:string}
 type Result={ok:boolean;rows:Pending[];message?:string}
@@ -65,8 +65,8 @@ export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
    {!busy&&rows.length===0&&<p>Ожидающих физической приёмки нет.</p>}
    <div className="watch-returns-list">{rows.map(row=><article key={row.operationType+':'+row.returnItemId}>
      <strong>{row.externalOrderId} · {row.quantity} шт. · {row.operationType==='exchange'?'После обмена':'Возврат'}</strong>
-     <p>{row.modelName} · {row.gender==='male'?'Мужские':'Женские'} · {row.braceletMaterial} · {row.dialColor}
-       {row.braceletColor?' · Ремешок '+row.braceletColor:''}</p>
+     <p>{row.modelName} · {row.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('bracelets',row.braceletMaterial)} · {watchReferenceLabel('dials',row.dialColor)}
+       {row.braceletColor?' · Ремешок '+watchReferenceLabel('leatherColors',row.braceletColor):''}</p>
      <small>Возврат оформлен: {row.returnDate}</small>
      {selected===row.operationType+':'+row.returnItemId?<>
        <label>Физическое состояние<select value={destination} onChange={e=>{setDestination(e.target.value as Destination);setConfirmed(false)}}>

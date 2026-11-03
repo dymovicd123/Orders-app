@@ -315,6 +315,18 @@ export async function dispatchSelectedCompleteOrderLines(
           WHERE wi.order_item_id=? AND oi.order_id=?
             AND wp.brand_id=? AND wv.catalog_variant_id=oi.variant_id`)
           .bind(orderId,splitKey,stamp,item.orderItemId,orderId,input.watchSplitBrandId),
+        // The remaining row retains exactly the same ready engraving as the
+        // shipped source. Copy in the same D1 transaction as the SKU split.
+        db.prepare(`INSERT INTO watch_engraving_item_readiness
+          (order_item_id,engraving_text,ready_at,ready_by_user_id,request_id)
+          SELECT ${splitItemSql},r.engraving_text,r.ready_at,r.ready_by_user_id,
+            'watch-engraving-split:'||${splitItemSql}
+          FROM watch_engraving_item_readiness r
+          JOIN watch_order_item_details old ON old.order_item_id=r.order_item_id
+          WHERE r.order_item_id=? AND r.engraving_text=old.engraving_text
+          AND NOT EXISTS (SELECT 1 FROM watch_engraving_item_readiness fresh
+            WHERE fresh.order_item_id=${splitItemSql})`)
+          .bind(orderId,splitKey,orderId,splitKey,item.orderItemId,orderId,splitKey),
         db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
           SELECT 'human_inventory_v2','__watch_split_link_conflict__',?
           WHERE NOT EXISTS(

@@ -23,9 +23,9 @@ const serverKind:Record<EditableKind,string>={movements:'movements',bracelets:'b
 const emptyLists=():Record<EditableKind,ReferenceEntry[]>=>({movements:[],bracelets:[],dials:[],leatherColors:[],payments:[],delivery:[],cities:[]})
 
 /** Reference values are shared across brands; SKU identity and stock are not. */
-export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit=false}:{
+export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit=false,canEditFinancialRefs=false}:{
   brand:WatchBrand;brands:readonly WatchBrand[];onBrandChange:(next:WatchBrand)=>void
-  onOpenCatalog:()=>void;onOpenStaff?:()=>void;canEdit?:boolean
+  onOpenCatalog:()=>void;onOpenStaff?:()=>void;canEdit?:boolean;canEditFinancialRefs?:boolean
 }){
   const [kind,setKind]=useState<Kind>('leatherColors')
   const [query,setQuery]=useState('')
@@ -58,12 +58,13 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
   },[])
   useEffect(()=>load(),[load,reload])
   const config=CONFIG[kind]
+  const canEditCurrent=canEdit&&(canEditFinancialRefs||!['payments','delivery'].includes(kind))
   const available=config.editable?lists[config.editable]:config.items.map((value,index)=>({id:-index-1,kind,value}))
   const items=available.filter(item=>
     item.value.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru')))
   const create=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
-    if(!config.editable||!canEdit||saving)return
+    if(!config.editable||!canEditCurrent||saving)return
     const value=draft.trim().replace(/\s+/g,' ').toLocaleUpperCase('ru-RU')
     if(!value||value.length>80){setError('Укажите значение от 1 до 80 символов.');return}
     setSaving(true);setError('');setNotice('')
@@ -81,7 +82,7 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
     finally{setSaving(false)}
   }
   const remove=async(item:ReferenceEntry)=>{
-    if(!canEdit||!config.editable||item.id<1||saving)return
+    if(!canEditCurrent||!config.editable||item.id<1||saving)return
     if(!window.confirm('Удалить «'+item.value+'» из справочника? Связанные исторические записи сохранятся.'))return
     setSaving(true);setError('');setNotice('')
     try{
@@ -144,7 +145,7 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
               <div className="reference-row-title"><strong>{watchReferenceLabel(serverKind[config.editable||'delivery']||kind,item.value)}</strong>
                 <span className="status-pill status-online">Доступно</span></div>
               <span>№ {index+1}</span>
-              {canEdit&&config.editable&&<div className="reference-row-actions">
+              {canEditCurrent&&config.editable&&<div className="reference-row-actions">
                 <button type="button" className="secondary compact" disabled={saving}
                   onClick={()=>{setEditId(item.id);setDraft(item.value.toLocaleUpperCase('ru-RU'));setError('')}}>Изменить</button>
                 <button type="button" className="danger compact" disabled={saving}
@@ -159,7 +160,7 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
       <section className="mini-panel reference-editor-panel">
         <div className="mini-panel-head"><div><h3>{config.editable?(editId?'Изменить значение':'Добавить значение'):'Фиксированные параметры'}</h3>
           <p className="mini-panel-note">{config.editable?'Одно значение действует для обоих брендов.':'Системные коды защищены складским учётом.'}</p></div></div>
-        {config.editable&&canEdit?<form className="reference-editor-preview" onSubmit={e=>void create(e)}>
+        {config.editable&&canEditCurrent?<form className="reference-editor-preview" onSubmit={e=>void create(e)}>
           <label>Новое значение для «{config.label}»
             <input required maxLength={80} value={draft} onChange={e=>setDraft(e.target.value.toLocaleUpperCase('ru-RU'))}
               placeholder={kind==='leatherColors'?'Например: ЧЕРНЫЙ':kind==='cities'?'Например: АЛМАТЫ':'НОВОЕ ЗНАЧЕНИЕ'}/>

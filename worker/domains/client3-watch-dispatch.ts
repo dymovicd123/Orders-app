@@ -14,8 +14,8 @@ type DispatchInput={requestId?:unknown;items?:unknown}
 export async function dispatchClient3WatchOrder(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:DispatchInput,
 ){
- if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
-   return fail('WATCH_SEND_FORBIDDEN','Отправку подтверждает менеджер или администратор.',403)
+ if(!actor||(actor.employeeRole==='Завсклад'&&actor.role!=='admin'))
+   return fail('WATCH_SEND_FORBIDDEN','Отправку подтверждает менеджер, логист или администратор.',403)
  if(!Number.isSafeInteger(brandId)||brandId<=0||!Number.isSafeInteger(orderId)||orderId<=0)
    return fail('WATCH_ORDER_INVALID','Выберите заказ и бренд.',400)
  const requestId=input?.requestId
@@ -31,12 +31,15 @@ export async function dispatchClient3WatchOrder(
    return fail('WATCH_ORDER_CLOSED','Заказ закрыт.',409)
  const all=await db.prepare(`SELECT oi.id,oi.quantity,oi.is_workshop,oi.source_type,
    oi.stock_writeoff_status,wi.engraving_text,wv.catalog_variant_id,
+   CASE WHEN TRIM(COALESCE(wi.engraving_text,''))='' THEN 1
+     WHEN ready.engraving_text=wi.engraving_text THEN 1 ELSE 0 END AS engraving_ready,
    wp.brand_id AS sku_brand,ir.status AS reservation_status,
    COALESCE((SELECT SUM(di.quantity-di.cancelled_quantity)
      FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
      WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id),0) AS shipped_quantity
    FROM order_items oi
    LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+   LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
    LEFT JOIN watch_variants wv ON wv.id=wi.watch_variant_id
      AND wv.catalog_variant_id=oi.variant_id
    LEFT JOIN watch_products wp ON wp.id=wv.watch_product_id
@@ -83,9 +86,9 @@ export async function dispatchClient3WatchOrder(
      x.stock_writeoff_status!=='reserved'||Number(x.shipped_quantity)>0))
      return fail('WATCH_RESERVATION_PENDING',
        'Одна из выбранных позиций уже отправлена или ждёт поступления/резерва. Снимите выбор и обновите логистику.',409)
-   if(selected.some(x=>String(x.engraving_text||'').trim())&&order.engraving_status!=='ready')
+   if(selected.some(x=>String(x.engraving_text||'').trim()&&Number(x.engraving_ready)!==1))
      return fail('WATCH_ENGRAVING_NOT_READY',
-       'Выбранным часам требуется гравировка. Сначала отметьте её готовность.',409)
+       'Одна из выбранных позиций ещё не готова после гравировки. Подтвердите готовность именно этих часов.',409)
  }
  const localDate=new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
  try{

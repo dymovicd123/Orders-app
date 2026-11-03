@@ -54,7 +54,9 @@ assert.equal(validateWatchOrderInput(order).legacySource,'warehouse')
 for(const field of ['recipientName','recipientPhone','address','postalCode','city','deliveryMethod']){
   assert.throws(()=>validateWatchOrderInput({...order,[field]:''}),/Заполните/)
 }
-assert.throws(()=>validateWatchOrderInput({...order,paymentMethod:'наличные'}),/способ оплаты/)
+assert.equal(validateWatchOrderInput({...order,paymentMethod:'НАЛИЧНЫЕ'}).paymentMethod,'НАЛИЧНЫЕ',
+ 'Client3 accepts shared custom payment references; final validation occurs in the server reference registry')
+assert.throws(()=>validateWatchOrderInput({...order,paymentMethod:''}),/способ оплаты/)
 
 // Run exactly the isolated ADDITIVE watch SQL on a synthetic Core schema.
 // No real D1 binding, customer data or previous client's account needed.

@@ -1,0 +1,84 @@
+name: Client3 Main parity batch QA (isolated, no deploy)
+# Regression pass 11: verified Main-aligned tests and actual Client3 schema.
+on:
+  push:
+    branches: [client3/main-parity-hardening-20261103]
+    paths: ['.github/workflows/client3-parity-batch-qa-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  typescript:
+    name: TypeScript and bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - run: npm run build
+  inventory-orders:
+    name: Inventory, dispatch, returns, roles
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Complete flow and regressions
+        run: |
+          set -uo pipefail
+          failed=0
+          for file in \
+            scripts/client3/test-watch-full-order-engine-20261102.mjs \
+            scripts/client3/test-watch-full-exchange-engine-20261102.mjs \
+            scripts/client3/test-watch-logistics-20261102.mjs \
+            scripts/client3/test-watch-handover-after-revision-20261103.mjs \
+            scripts/client3/test-watch-full-stock-engine-20261102.mjs \
+            scripts/client3/test-zero-stock-revision-20261103.mjs \
+            scripts/client3/test-watch-arrival-draft-20261103.mjs \
+            scripts/client3/test-watch-shared-cash-team-20261103.mjs; do
+            echo "::group::$file"
+            node --experimental-strip-types "$file" || { echo "::error::FAILED $file"; failed=1; }
+            echo "::endgroup::"
+          done
+          exit "$failed"
+  catalog-ui:
+    name: Catalog, source, API, UI parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Remaining Client3 integration suite
+        run: |
+          set -uo pipefail
+          failed=0
+          for file in \
+            scripts/client3/test-main-foundation-parity-20261102.mjs \
+            scripts/client3/test-main-workflow-parity-20261102.mjs \
+            scripts/client3/test-watch-api-20261102.mjs \
+            scripts/client3/test-watch-arrival-adapter-20261102.mjs \
+            scripts/client3/test-watch-arrival-guards-20261102.mjs \
+            scripts/client3/test-watch-catalog-20261102.mjs \
+            scripts/client3/test-watch-form-20261102.mjs \
+            scripts/client3/test-watch-foundation-20261102.mjs \
+            scripts/client3/test-watch-main-free-text-ux-20261103.mjs \
+            scripts/client3/test-watch-main-step1-20261102.mjs \
+            scripts/client3/test-watch-migration-chain-20261102.mjs \
+            scripts/client3/test-watch-order-commit-20261102.mjs \
+            scripts/client3/test-watch-orders-read-20261102.mjs \
+            scripts/client3/test-watch-provision-20261102.mjs \
+            scripts/client3/test-watch-shared-references-20261102.mjs \
+            scripts/client3/test-watch-shell-20261102.mjs \
+            scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
+            scripts/client3/test-watch-workspace-layout-20261102.mjs \
+            scripts/client3/test-watch-writeoff-20261102.mjs; do
+            echo "::group::$file"
+            node --experimental-strip-types "$file" || { echo "::error::FAILED $file"; failed=1; }
+            echo "::endgroup::"
+          done
+          exit "$failed"

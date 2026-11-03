@@ -18,7 +18,7 @@ const server = await createServer({
   server: { middlewareMode: true }, logLevel: 'error',
 })
 try {
-  const { WatchLogisticsPanel, groupWatchLogistics, formatWatchDeadline } =
+  const { WatchLogisticsPanel, groupWatchLogistics, formatWatchDeadline, logisticsItemEligible } =
     await server.ssrLoadModule('/src/features/client3/WatchLogisticsPanel.tsx')
   const row = {
     orderId: 42, externalId: 'WATCH-42', brand: 'TAUWACH',
@@ -34,6 +34,15 @@ try {
   }
   assert.match(formatWatchDeadline('2026-11-02T12:00:00.000Z'), /17:00/)
   assert.equal(groupWatchLogistics([row, { ...row, orderItemId: 13, engravingText: 'B + S' }]).length, 1)
+  const ready={...row,reservationStatus:'active',stockWriteoffStatus:'reserved',
+    shippedQuantity:0,engravingReady:1}
+  const pending={...ready,orderItemId:13,engravingText:'Другая гравировка',engravingReady:0}
+  assert.equal(logisticsItemEligible(ready),true,'Only exact confirmed engraving is selectable')
+  assert.equal(logisticsItemEligible(pending),false,'Other SKU remains unready in same order')
+  assert.equal(logisticsItemEligible({...pending,engravingText:''}),true,'No engraving needs no confirmation')
+  assert.equal(logisticsItemEligible({...ready,shippedQuantity:1}),false,'Cannot resend shipped item')
+  assert.equal(logisticsItemEligible({...ready,reservationStatus:'unresolved'}),false,
+    'Unreserved stock cannot be sent')
   const view = renderToStaticMarkup(React.createElement(WatchLogisticsPanel, {
     brand: 'TAUWACH', canCompleteEngraving: true,
   }))

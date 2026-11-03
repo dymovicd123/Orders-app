@@ -22,11 +22,13 @@ import {countClient3WatchStock,countClient3WatchStockBatch} from './client3-watc
 import {getClient3WatchRevision,startClient3WatchRevision,changeClient3WatchRevision} from './client3-watch-revision-session.ts'
 import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
 import {listClient3WatchStockHistory} from './client3-watch-history.ts'
+import {listClient3WatchDemand} from './client3-watch-demand.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
+import {listClient3WatchClients,listClient3WatchCustomerOrders} from './client3-watch-clients.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
 import {editClient3WatchModel,editClient3WatchVariant} from './client3-watch-catalog-edit.ts'
@@ -52,15 +54,16 @@ async function brandRow(db:D1Database,code:string) {
   return db.prepare('SELECT id, code FROM watch_brands WHERE code=? AND is_active=1')
     .bind(code).first<{id:number,code:WatchBrand}>()
 }
-async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'logistics'|'sales') {
-  if(actor.role==='admin'||(mode==='logistics'&&staffCanSeeAllLogistics(actor)))return true
-  if(mode==='sales'&&(actor.employeeRole==='Логист'||actor.employeeRole==='Упаковщик'))return false
+async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'logistics'|'sales'|'warehouse') {
+  if(actor.role==='admin'||(mode==='logistics'&&staffCanSeeAllLogistics(actor))||
+    (mode==='warehouse'&&actor.employeeRole==='Завсклад'))return true
+  if(mode==='sales'&&['Логист','Упаковщик','Завсклад'].includes(actor.employeeRole||''))return false
   if(!actor.managerId)return false
   const row=await db.prepare('SELECT 1 AS ok FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1')
     .bind(actor.managerId,brandId).first<{ok:number}>()
   return Boolean(row?.ok)
 }
-async function scopedBrand(db:D1Database,actor:AuthUser,input:unknown,mode:'sales'|'logistics') {
+async function scopedBrand(db:D1Database,actor:AuthUser,input:unknown,mode:'sales'|'logistics'|'warehouse') {
   let code:WatchBrand
   try{code=normalizeWatchBrand(input)}catch{return {error:BAD('Укажите бренд TAUWACH или WACHIZEN')} }
   const row=await brandRow(db,code)
@@ -74,7 +77,7 @@ export async function listWatchBrands(db:D1Database,actor:AuthUser) {
     WHERE b.is_active=1 AND (?=1 OR EXISTS (
       SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=b.id AND mb.manager_id=?
     )) ORDER BY b.code
-  `).bind(staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0)
+  `).bind(staffCanSeeAllLogistics(actor)||actor.employeeRole==='Завсклад'?1:0,actor.managerId||0)
     .all<{code:WatchBrand,name:string}>()
   return json({ok:true,brands:rows.results||[]})
 }
@@ -151,7 +154,7 @@ export async function assignWatchManagerBrands(
 }
 
 export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
-  const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+  const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
   if(scope.error)return scope.error
   const rows=await db.prepare(`
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
@@ -184,6 +187,30 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
   if(code){const scope=await scopedBrand(db,actor,code,'logistics');if(scope.error)return scope.error;brandId=scope.row!.id}
   const status=url.searchParams.get('status')
   if(status&& !['pending','engraving','ready','all'].includes(status))return BAD('Некорректный статус логистики')
+  const limit=Number(url.searchParams.get('limit')||'80')
+  const offset=Number(url.searchParams.get('offset')||'0')
+  if(!Number.isSafeInteger(limit)||limit<1||limit>150||
+     !Number.isSafeInteger(offset)||offset<0||offset>100000)
+    return BAD('Некорректная страница логистики.')
+  // Page over ORDERS first, not joined item rows: an order must never be
+  // cut halfway through its watch lines by an arbitrary SQL LIMIT.
+  const orderPage=await db.prepare(`
+    SELECT o.id FROM watch_order_details wd
+    JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
+    JOIN watch_logistics_jobs lj ON lj.order_id=o.id
+    WHERE (?=0 OR wd.brand_id=?)
+      AND (? IS NULL OR ?='all' OR lj.status=?)
+      AND (?=1 OR EXISTS (
+        SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+        WHERE mb.manager_id=? AND mb.brand_id=wd.brand_id
+      ))
+    ORDER BY wd.urgent DESC,wd.shipping_deadline_at ASC,o.id ASC
+    LIMIT ? OFFSET ?
+  `).bind(brandId,brandId,status,status,status,
+    staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0,limit+1,offset)
+    .all<{id:number}>()
+  const pageIds=(orderPage.results||[]).slice(0,limit).map(x=>x.id)
+  if(!pageIds.length)return json({ok:true,rows:[],hasMore:false,nextOffset:null})
   const rows=await db.prepare(`
     SELECT o.id AS orderId,o.external_id AS externalId,wb.code AS brand,
       o.source_type AS legacySource,o.shipping_status AS shippingStatus,
@@ -204,6 +231,8 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
           AND di2.quantity>COALESCE(di2.cancelled_quantity,0)
         ORDER BY di2.id DESC LIMIT 1) AS dispatchItemId,
       wditem.engraving_text AS engravingText,
+      CASE WHEN TRIM(COALESCE(wditem.engraving_text,''))='' THEN 1
+        WHEN ready.engraving_text=wditem.engraving_text THEN 1 ELSE 0 END AS engravingReady,
       v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
       COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
       COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color) AS dialColor,
@@ -215,63 +244,95 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND oi.quantity>0
     LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
+    LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
     LEFT JOIN watch_variants v ON v.id=wditem.watch_variant_id
     LEFT JOIN watch_products wp ON wp.id=v.watch_product_id
-    WHERE (?=0 OR wd.brand_id=?)
-      AND (? IS NULL OR ?='all' OR lj.status=?)
-      AND (?=1 OR EXISTS (
-        SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
-        WHERE mb.manager_id=? AND mb.brand_id=wd.brand_id
-      ))
+    WHERE o.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
     ORDER BY wd.urgent DESC,wd.shipping_deadline_at ASC,o.id ASC,oi.id ASC
-    LIMIT 500
-  `).bind(brandId,brandId,status,status,status,
-    staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0).all()
-  return json({ok:true,rows:rows.results||[]})
+  `).bind(JSON.stringify(pageIds)).all()
+  return json({ok:true,rows:rows.results||[],
+    hasMore:(orderPage.results||[]).length>limit,
+    nextOffset:(orderPage.results||[]).length>limit?offset+limit:null})
 }
 
 /** Idempotent engraving completion. NEVER invokes shipping, reservations or money. */
+/** A prepared engraving is an exact order-item fact, never an order-wide authorization.
+ * A replacement or changed text must be marked ready separately. Existing ready
+ * items stay ready while other engraved items are pending.
+ */
 export async function markWatchLogisticsReady(
-  db:D1Database,actor:AuthUser,orderId:number,requestId:unknown,
+  db:D1Database,actor:AuthUser,orderId:number,orderItemId:number,requestId:unknown,
 ) {
   if(!staffCanSeeAllLogistics(actor))return FORBIDDEN()
-  if(!Number.isSafeInteger(orderId)||orderId<=0)return BAD('Некорректный заказ')
+  if(!Number.isSafeInteger(orderId)||orderId<=0||
+     !Number.isSafeInteger(orderItemId)||orderItemId<=0)return BAD('Выберите конкретные часы.')
   if(typeof requestId!=='string'||!/^[a-zA-Z0-9_-]{8,128}$/.test(requestId))
     return BAD('Требуется уникальный requestId')
-  const previous=await db.prepare('SELECT order_id FROM watch_logistics_events WHERE request_id=?')
-    .bind(requestId).first<{order_id:number}>()
-  if(previous){
-    if(previous.order_id!==orderId)return json({ok:false,code:'REQUEST_ID_CONFLICT'},{status:409})
-    return json({ok:true,alreadyCommitted:true,engravingStatus:'ready',shippingUnchanged:true})
-  }
   const row=await db.prepare(`
-    SELECT lj.status,wd.brand_id,o.order_status FROM watch_logistics_jobs lj
-    JOIN watch_order_details wd ON wd.order_id=lj.order_id
-    JOIN orders o ON o.id=wd.order_id
-    WHERE lj.order_id=? LIMIT 1
-  `).bind(orderId).first<{status:string,brand_id:number,order_status:string}>()
-  if(!row||['archived','deleted'].includes(row.order_status))
-    return json({ok:false,code:'ORDER_NOT_ACTIVE'},{status:409})
-  if(row.status==='ready')
-    return json({ok:true,alreadyReady:true,engravingStatus:'ready',shippingUnchanged:true})
+    SELECT o.order_status,wi.engraving_text AS engravingText,
+      ready.engraving_text AS confirmedText,ready.request_id AS previousRequest
+    FROM order_items oi
+    JOIN orders o ON o.id=oi.order_id
+    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    JOIN watch_order_details wd ON wd.order_id=o.id
+    LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
+    WHERE o.id=? AND oi.id=? AND oi.quantity>0 LIMIT 1
+  `).bind(orderId,orderItemId).first<Record<string,unknown>>()
+  if(!row||['archived','deleted'].includes(String(row.order_status)))
+    return json({ok:false,code:'ORDER_NOT_ACTIVE',message:'Эта позиция недоступна.'},{status:409})
+  const text=String(row.engravingText||'')
+  if(!text.trim())return BAD('Этим часам не требуется гравировка.')
+  if(row.confirmedText===text)return json({ok:true,alreadyReady:true,orderItemId,stockUnchanged:true,moneyUnchanged:true})
+  const audit=await db.prepare('SELECT order_id,order_item_id FROM watch_logistics_events WHERE request_id=?')
+    .bind(requestId).first<{order_id:number;order_item_id:number|null}>()
+  if(audit&&(audit.order_id!==orderId||audit.order_item_id!==orderItemId))
+    return json({ok:false,code:'REQUEST_ID_CONFLICT',message:'Этот запрос уже применялся к другому товару.'},{status:409})
+  const prior=await db.prepare('SELECT order_item_id,engraving_text FROM watch_engraving_item_readiness WHERE request_id=?')
+    .bind(requestId).first<{order_item_id:number;engraving_text:string}>()
+  if(prior&&(prior.order_item_id!==orderItemId||prior.engraving_text!==text))
+    return json({ok:false,code:'REQUEST_ID_CONFLICT',message:'Идентификатор уже использован для других часов.'},{status:409})
+  if(audit)return json({ok:false,code:'REQUEST_ID_USED',message:'Повторная готовность с этим идентификатором недопустима после изменения гравировки.'},{status:409})
+  const current=await db.prepare('SELECT status FROM watch_logistics_jobs WHERE order_id=?').bind(orderId).first<{status:string}>()
+  if(!current)return json({ok:false,code:'LOGISTICS_NOT_FOUND',message:'Логистика заказа не найдена.'},{status:404})
   const timestamp=new Date().toISOString()
-  // Batch executes atomically in D1. The per-order CAS lets exactly one worker
-  // win. The audit SELECT is bound to the winning requestId, not the wall clock.
-  const results=await db.batch([
-    db.prepare(`
-      UPDATE watch_logistics_jobs
-      SET status='ready',ready_at=?,ready_by_user_id=?,ready_request_id=?,updated_at=?
-      WHERE order_id=? AND status=? AND ready_request_id IS NULL
-    `).bind(timestamp,actor.id,requestId,timestamp,orderId,row.status),
-    db.prepare(`
-      INSERT INTO watch_logistics_events(order_id,actor_user_id,previous_status,next_status,request_id,created_at)
-      SELECT order_id,?,?,'ready',?,?
-      FROM watch_logistics_jobs WHERE order_id=? AND ready_request_id=?
-    `).bind(actor.id,row.status,requestId,timestamp,orderId,requestId),
-  ])
-  if(Number(results[0]?.meta?.changes||0)!==1)
-    return json({ok:false,code:'LOGISTICS_STALE',message:'Статус изменился, обновите логистику.'},{status:409})
-  return json({ok:true,engravingStatus:'ready',shippingUnchanged:true,stockUnchanged:true,moneyUnchanged:true})
+  try{
+    await db.batch([
+      db.prepare(`INSERT INTO watch_engraving_item_readiness
+        (order_item_id,engraving_text,ready_at,ready_by_user_id,request_id)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(order_item_id) DO UPDATE SET
+        engraving_text=excluded.engraving_text,ready_at=excluded.ready_at,
+        ready_by_user_id=excluded.ready_by_user_id,request_id=excluded.request_id
+        WHERE watch_engraving_item_readiness.engraving_text<>excluded.engraving_text`)
+        .bind(orderItemId,text,timestamp,actor.id,requestId),
+      db.prepare(`UPDATE watch_logistics_jobs
+        SET status=CASE WHEN NOT EXISTS (
+          SELECT 1 FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+          LEFT JOIN watch_engraving_item_readiness r ON r.order_item_id=oi.id
+          WHERE oi.order_id=? AND oi.quantity>0 AND TRIM(wi.engraving_text)<>''
+            AND (r.order_item_id IS NULL OR r.engraving_text<>wi.engraving_text)
+        ) THEN 'ready' ELSE 'engraving' END,
+        ready_at=CASE WHEN NOT EXISTS (
+          SELECT 1 FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+          LEFT JOIN watch_engraving_item_readiness r ON r.order_item_id=oi.id
+          WHERE oi.order_id=? AND oi.quantity>0 AND TRIM(wi.engraving_text)<>''
+            AND (r.order_item_id IS NULL OR r.engraving_text<>wi.engraving_text)
+        ) THEN ? ELSE NULL END,
+        ready_by_user_id=?,ready_request_id=NULL,updated_at=?
+        WHERE order_id=?`)
+        .bind(orderId,orderId,timestamp,actor.id,timestamp,orderId),
+      db.prepare(`INSERT INTO watch_logistics_events
+        (order_id,actor_user_id,previous_status,next_status,note,request_id,created_at,order_item_id)
+        SELECT ?,?,?,lj.status,?,?,?,?
+        FROM watch_logistics_jobs lj WHERE lj.order_id=?`)
+        .bind(orderId,actor.id,current.status,
+          'Гравировка позиции '+orderItemId+' готова',requestId,timestamp,orderItemId,orderId),
+    ])
+    return json({ok:true,orderItemId,engravingReady:true,shippingUnchanged:true,stockUnchanged:true})
+  }catch(cause){
+    return json({ok:false,code:'ENGRAVING_READY_CONFLICT',
+      message:cause instanceof Error?cause.message:'Не удалось подтвердить готовность часов.'},{status:409})
+  }
 }
 
 export async function routeClient3Watches(
@@ -291,13 +352,13 @@ export async function routeClient3Watches(
   if(refDelete&&request.method==='DELETE')
     return deleteClient3WatchReference(db,actor,Number(refDelete[1]))
   if(url.pathname==='/api/client3/watches/stock/revision'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return getClient3WatchRevision(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/stock/revision/start'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;source?:unknown;full?:unknown;modelIds?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return startClient3WatchRevision(db,actor,scope.row!.id,input)
   }
@@ -305,20 +366,25 @@ export async function routeClient3Watches(
   if(watchRevisionAction&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;sessionId?:unknown;itemId?:unknown;
       countedQuantity?:unknown;watchVariantId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return changeClient3WatchRevision(db,actor,scope.row!.id,
       watchRevisionAction[1] as 'count'|'count-fast'|'add'|'complete'|'cancel',input)
   }
+  if(url.pathname==='/api/client3/watches/stock/demand'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
+    if(scope.error)return scope.error
+    return listClient3WatchDemand(db,actor,scope.row!.id,url)
+  }
   if(url.pathname==='/api/client3/watches/stock/history'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return listClient3WatchStockHistory(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/stock/bulk'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;source?:unknown;kind?:unknown;requestId?:unknown;
       comment?:unknown;items?:Array<{watchVariantId?:unknown;quantity?:unknown;expectedPhysical?:unknown}>}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return applyClient3WatchBulkOperation(db,actor,scope.row!.id,input)
   }
@@ -326,48 +392,48 @@ export async function routeClient3Watches(
     const input=await readJson<{brand?:unknown;source?:unknown;requestId?:unknown;
       confirmed?:unknown;allowShortage?:unknown;items?:Array<{watchVariantId?:unknown;
       expectedPhysical?:unknown;countedQuantity?:unknown}>}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return countClient3WatchStockBatch(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/count'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;source?:unknown;expectedPhysical?:unknown;countedQuantity?:unknown;requestId?:unknown;confirmed?:unknown;allowShortage?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return countClient3WatchStock(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/writeoff'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;expectedPhysical?:unknown;requestId?:unknown;comment?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return writeoffClient3WatchStock(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/transfer'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;expectedPhysical?:unknown;requestId?:unknown;comment?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return transferClient3WatchStock(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/arrival'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;requestId?:unknown;comment?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return receiveClient3WatchArrival(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/prices'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;salePrice?:unknown;expectedPrice?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return updateClient3WatchCatalogPrice(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/provision'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return provisionClient3WatchSku(db,actor,scope.row!.id,Number(input.watchVariantId))
   }
   if(url.pathname==='/api/client3/watches/catalog'&&request.method==='GET') {
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return listWatchCatalogDrafts(db,actor,scope.row!.id)
   }
@@ -375,51 +441,51 @@ export async function routeClient3Watches(
       url.pathname==='/api/client3/watches/catalog/delete')&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;kind?:unknown;watchProductId?:unknown;watchVariantId?:unknown;
       movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return url.pathname.endsWith('delete-preview')
       ? previewClient3WatchDelete(db,actor,scope.row!.id,input)
       : deleteClient3WatchCatalog(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return listWatchModelAliases(db,actor,scope.row!.id,
       Number(url.searchParams.get('watchProductId')))
   }
   if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;alias?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return addWatchModelAlias(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='DELETE'){
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;aliasId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return deleteWatchModelAlias(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='PATCH') {
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;expectedName?:unknown;modelName?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return editClient3WatchModel(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/variants'&&request.method==='PATCH') {
     const input=await readJson<WatchVariantInput&{brand?:unknown;watchProductId?:unknown;watchVariantId?:unknown;expected?:WatchVariantInput}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return editClient3WatchVariant(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;modelName?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return registerWatchModel(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/variants'&&request.method==='POST') {
     const input=await readJson<WatchVariantInput & {brand?:unknown;watchProductId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     // One user action creates and prepares exactly one SKU. A failed provision
     // may leave a catalog draft, but retries reuse the same watchVariantId.
@@ -577,7 +643,7 @@ export async function routeClient3Watches(
   const sendMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/send$/.exec(url.pathname)
   if(sendMatch&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;requestId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'logistics')
     if(scope.error)return scope.error
     return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
@@ -651,6 +717,16 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return getClient3WatchFinance(db,actor,scope.row!.id,url)
   }
+  if(url.pathname==='/api/client3/watches/clients'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchClients(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/clients/orders'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchCustomerOrders(db,actor,scope.row!.id,url)
+  }
   if(url.pathname==='/api/client3/watches/orders'&&request.method==='GET') {
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
@@ -698,8 +774,8 @@ export async function routeClient3Watches(
     return listWatchLogistics(db,actor,url)
   const match=/^\/api\/client3\/watches\/logistics\/(\d+)\/ready$/.exec(url.pathname)
   if(match&&request.method==='POST'){
-    const data=await readJson<{requestId?:unknown}>(request)
-    return markWatchLogisticsReady(db,actor,Number(match[1]),data.requestId)
+    const data=await readJson<{requestId?:unknown;orderItemId?:unknown}>(request)
+    return markWatchLogisticsReady(db,actor,Number(match[1]),Number(data.orderItemId),data.requestId)
   }
   if(url.pathname.startsWith('/api/client3/watches/'))
     return json({ok:false,code:'WATCH_ROUTE_NOT_FOUND'},{status:404})

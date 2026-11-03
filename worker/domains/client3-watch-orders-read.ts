@@ -37,10 +37,25 @@ export async function listClient3WatchOrders(
     const qLike='%'+q.replace(/[\\%_]/g, s=>'\\'+s)+'%'
     const args=[brandId,from,from,through,through,shipping,shipping,shipping,payment,payment,payment,q?1:0,
       qLike,qLike,qLike,qLike] as const
+    // Physical truth outranks an old order-wide shipping marker. A fully
+    // issued-before-stocktake order belongs with issued orders; a previously
+    // sent order with an unshipped exchange replacement belongs with active ones.
+    const noUnissuedItems=`NOT EXISTS (
+      SELECT 1 FROM order_items pending
+      WHERE pending.order_id=o.id AND pending.quantity>0
+        AND COALESCE(pending.stock_writeoff_status,'')<>'fulfilled'
+        AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di
+          WHERE di.order_item_id=pending.id
+            AND di.quantity>COALESCE(di.cancelled_quantity,0))
+    )`
+    const issuedOperationally=`(${noUnissuedItems} AND
+      (o.shipping_status='sent' OR EXISTS (
+        SELECT 1 FROM order_items issued WHERE issued.order_id=o.id AND issued.quantity>0
+      )))`
     const where=`wd.brand_id=? AND o.order_status NOT IN ('archived','deleted')
       AND (? IS NULL OR o.order_date>=?)
       AND (? IS NULL OR o.order_date<=?)
-      AND (?='all' OR (?='sent' AND o.shipping_status='sent') OR (?='not_sent' AND o.shipping_status<>'sent'))
+      AND (?='all' OR (?='sent' AND ${issuedOperationally}) OR (?='not_sent' AND NOT ${issuedOperationally}))
       AND (?='all' OR (?='debt' AND o.debt_amount>0) OR (?='paid' AND o.debt_amount<=0))
       AND (?=0 OR o.external_id LIKE ? ESCAPE '\\'
         OR wd.recipient_name LIKE ? ESCAPE '\\'

@@ -62,14 +62,14 @@ for(const [kind,value] of [
  assert.equal(result.status,201,JSON.stringify(result))
 }
 const refRows=(await parse(listClient3WatchReferences(db,manager))).rows
-assert(refRows.some(x=>x.value==='Механизм с автоподзаводом'))
-assert(refRows.some(x=>x.value==='Мягкая кожа'))
-assert(refRows.some(x=>x.value==='Тёмно синий'))
-const renamed=refRows.find(x=>x.kind==='movements'&&x.value==='Механизм с автоподзаводом')
+assert(refRows.some(x=>x.value==='МЕХАНИЗМ С АВТОПОДЗАВОДОМ'))
+assert(refRows.some(x=>x.value==='МЯГКАЯ КОЖА'))
+assert(refRows.some(x=>x.value==='ТЁМНО СИНИЙ'))
+const renamed=refRows.find(x=>x.kind==='movements'&&x.value==='МЕХАНИЗМ С АВТОПОДЗАВОДОМ')
 assert.equal((await parse(updateClient3WatchReference(db,admin,{
  id:renamed.id,kind:'movements',value:'Механизм  с  турбийоном',
 }))).status,200)
-assert((await parse(listClient3WatchReferences(db,manager))).rows.some(x=>x.value==='Механизм с турбийоном'))
+assert((await parse(listClient3WatchReferences(db,manager))).rows.some(x=>x.value==='МЕХАНИЗМ С ТУРБИЙОНОМ'))
 const model=await parse(registerWatchModel(db,admin,1,{modelName:'Тест Часы Два Слова'}))
 assert.equal(model.status,201)
 const p=model.watchProductId

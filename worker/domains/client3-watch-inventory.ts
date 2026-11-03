@@ -19,7 +19,7 @@ export async function receiveClient3WatchArrival(
   db:D1Database,actor:AuthUser,brandId:number,input:WatchArrivalInput,
   movementWriter:typeof applyInventoryMovement=applyInventoryMovement,
 ) {
-  if(actor.role!=='admin')
+  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))
     return fail('WATCH_STOCK_ADMIN_ONLY','Приход часов доступен администратору.',403)
   const watchVariantId=Number(input.watchVariantId)
   const quantity=Number(input.quantity)
@@ -80,7 +80,7 @@ export async function transferClient3WatchStock(
   db:D1Database,actor:AuthUser,brandId:number,input:WatchTransferInput,
   transferWriter:typeof applyInventoryTransfer=applyInventoryTransfer,
 ) {
-  if(actor.role!=='admin')
+  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))
     return fail('WATCH_STOCK_ADMIN_ONLY','Перемещать часы может только администратор.',403)
   const watchVariantId=Number(input.watchVariantId)
   const quantity=Number(input.quantity)

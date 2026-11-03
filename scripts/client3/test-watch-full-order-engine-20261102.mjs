@@ -21,6 +21,9 @@ import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
+import {listClient3WatchClients,listClient3WatchCustomerOrders} from '../../worker/domains/client3-watch-clients.ts'
+import {listClient3WatchDemand} from '../../worker/domains/client3-watch-demand.ts'
+import {getClient3WatchFinance} from '../../worker/domains/client3-watch-finance.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '../../worker/domains/client3-watch-report-details.ts'
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
@@ -64,6 +67,16 @@ const parse=async promised=>{
   return {status:response.status,...await response.json()}
 }
 const admin={id:1,role:'admin',managerId:null,employeeRole:'Администратор'}
+const fixtureEngravingReady=(orderId,when='2026-11-03T10:00:00Z')=>{
+  // An order-wide status does not authorize any particular SKU.
+  // The fixture records exact per-item engraving and its immutable audit.
+  sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at=? WHERE order_id=?").run(when,orderId)
+  sqlite.prepare(`INSERT OR REPLACE INTO watch_engraving_item_readiness
+    (order_item_id,engraving_text,ready_at,ready_by_user_id,request_id)
+    SELECT oi.id,wi.engraving_text,?,NULL,'test-ready-'||oi.id
+    FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    WHERE oi.order_id=? AND TRIM(wi.engraving_text)<>''`).run(when,orderId)
+}
 sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'Test Admin')").run()
 sqlite.prepare("INSERT OR REPLACE INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-02')").run()
 sqlite.prepare("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'REAL ENGINE TEST')").run()
@@ -364,7 +377,7 @@ const blockedEngraving=await parse(dispatchClient3WatchOrder(db,manager,1,firstP
 }))
 assert.equal(blockedEngraving.status,409,'Physical shipping must require engraving to be ready')
 assert.equal(stock('warehouse').quantity,beforeShip.quantity)
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T12:00:00Z' WHERE order_id=?").run(firstPurchase.orderId)
+fixtureEngravingReady(firstPurchase.orderId,'2026-11-02T12:00:00Z')
 const shipped=await parse(dispatchClient3WatchOrder(db,manager,1,firstPurchase.orderId,{
   requestId:'watch-real-ship-000001',
 }))
@@ -594,8 +607,7 @@ const alreadySent=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOr
  items:[{orderItemId:selectRows[1].id,quantity:1}],
 }))
 assert.equal(alreadySent.status,409,'Sent line must not dispatch twice')
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T13:30:00Z' WHERE order_id=?")
- .run(selectiveOrder.orderId)
+fixtureEngravingReady(selectiveOrder.orderId,'2026-11-02T13:30:00Z')
 const sendRemaining=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
  requestId:'watch-selective-send-1-20261102',
  items:[{orderItemId:selectRows[0].id,quantity:1}],
@@ -750,8 +762,7 @@ assert.equal((await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId
 }))).status,409)
 assert.equal(count('inventory_movements'),beforeAdminMovements)
 assert.equal(count('payments'),beforeAdminMoney)
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-03T14:00:00Z' WHERE order_id=?")
- .run(editOrderId)
+fixtureEngravingReady(editOrderId,'2026-11-03T14:00:00Z')
 const readyBlocked=await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId,{
  requestId:'watch-admin-ready-engraving-20261103',expected:afterWatch,
  next:{...afterWatch,items:afterWatch.items.map(x=>({...x,engravingText:'Нельзя после готово'}))}
@@ -951,8 +962,7 @@ const partialCreated=await parse(createClient3WatchOrder(db,manager,1,{
 }))
 assert.equal(partialCreated.status,201,JSON.stringify(partialCreated))
 assert.equal(partialCreated.pendingReservation,false)
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at=? WHERE order_id=?")
- .run('2026-11-03T10:00:00Z',partialCreated.orderId)
+fixtureEngravingReady(partialCreated.orderId)
 const partialOriginal=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.line_total,
  ir.id AS reserve_id,ir.status AS reserve_status,wi.watch_variant_id,wi.engraving_text
  FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
@@ -989,6 +999,10 @@ assert.equal(shippedPart.reserved_qty,1)
 assert.equal(remainingPart.reserved_qty,2)
 assert.equal(remainingPart.watch_variant_id,partialOriginal.watch_variant_id)
 assert.equal(remainingPart.engraving_text,partialOriginal.engraving_text)
+const inheritedReady=sqlite.prepare('SELECT engraving_text FROM watch_engraving_item_readiness WHERE order_item_id=?')
+ .get(remainingPart.id)
+assert.equal(inheritedReady?.engraving_text,remainingPart.engraving_text,
+ 'A split must atomically copy verified engraving readiness onto the remaining SKU row')
 assert.equal(shippedPart.line_total+remainingPart.line_total,partialOriginal.line_total,
  'Partial shipment must preserve total original line price')
 assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
@@ -1223,7 +1237,14 @@ assert.equal(twoOld.status,201,JSON.stringify(twoOld))
 const twoOldRows=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
  FROM order_items WHERE order_id=? AND quantity>0 ORDER BY id`).all(twoOld.orderId)
 assert.equal(twoOldRows.length,2)
-const twoOldShip=await parse(dispatchClient3WatchOrder(db,manager,1,twoOld.orderId,{
+const logisticActor={id:9,role:'manager',managerId:null,employeeRole:'Логист'}
+const warehouseActor={id:10,role:'manager',managerId:null,employeeRole:'Завсклад'}
+const deniedWarehouseDispatch=await parse(dispatchClient3WatchOrder(db,warehouseActor,1,twoOld.orderId,{
+ requestId:'watch-two-old-deny-warehouse-20261103',
+ items:twoOldRows.map(r=>({orderItemId:r.id,quantity:1})),
+}))
+assert.equal(deniedWarehouseDispatch.status,403,'Warehouse supervisor cannot dispatch sales')
+const twoOldShip=await parse(dispatchClient3WatchOrder(db,logisticActor,1,twoOld.orderId,{
  requestId:'watch-two-old-dispatch-20261103-01',
  items:twoOldRows.map(r=>({orderItemId:r.id,quantity:1})),
 }))
@@ -1551,5 +1572,29 @@ assert.equal(customNotInReferences.code,'WATCH_REFERENCE_NOT_FOUND')
 assert.equal(count('inventory_stock'),stockBeforeNewVariants,'Built-in reference repair cannot invent physical stock')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
+// New Main-parity workspaces must query real D1 migration schema, not just build.
+const clientBook=await parse(listClient3WatchClients(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/clients?limit=15')))
+assert.equal(clientBook.status,200,JSON.stringify(clientBook))
+assert(clientBook.total>0&&clientBook.rows.length>0,'Clients workspace must return purchased customers')
+const firstClientKey=clientBook.rows[0].phoneKey
+const customerOrders=await parse(listClient3WatchCustomerOrders(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/clients/orders?phoneKey='+encodeURIComponent(firstClientKey))))
+assert.equal(customerOrders.status,200,JSON.stringify(customerOrders))
+assert(customerOrders.total>0,'Client drilldown must reach order history')
+const demandPage=await parse(listClient3WatchDemand(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/demand?from=2026-01-01&to=2026-12-31&limit=50')))
+assert.equal(demandPage.status,200,JSON.stringify(demandPage))
+assert(Number(demandPage.summary.soldQuantity)>0,'Watch SKU statistics must include sales, not only dispatches')
+const ledgerPage=await parse(getClient3WatchFinance(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/finance?from=2026-01-01&to=2026-12-31&limit=50')))
+assert.equal(ledgerPage.status,200,JSON.stringify(ledgerPage))
+assert(ledgerPage.totals.eventCount>=ledgerPage.rows.length,'Money ledger pagination needs complete totals')
+const otherBrandBook=await parse(listClient3WatchClients(db,admin,2,
+ new URL('https://test.invalid/api/client3/watches/clients?limit=20')))
+assert.equal(otherBrandBook.status,200,JSON.stringify(otherBrandBook))
+assert(otherBrandBook.rows.every(x=>!clientBook.rows.some(c=>c.phoneKey===x.phoneKey&&c.phone===x.phone)) ||
+ otherBrandBook.rows.length>0,'Customer views are scoped by brand, not global clients')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')

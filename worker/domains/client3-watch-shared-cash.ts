@@ -10,7 +10,7 @@ const error=(message:string,status=409)=>json({ok:false,message},{status})
 const validMoney=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=1_000_000_000
 const idOk=(v:unknown)=>typeof v==='string'&&/^[A-Za-z0-9_-]{12,100}$/.test(v)
 const day=()=>new Date(Date.now()+5*3600_000).toISOString().slice(0,10)
-const cashMethod=`UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','CASH','CASH KZT')`
+const cashMethod=`UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','НАЛИЧНЫМИ','НАЛИЧКА','НАЛ','CASH','CASH KZT','КЭШ','КЕШ')`
 const eventPredicate=`f.id>c.financial_event_watermark
  AND (c.auto_tracking_enabled=1 OR f.id<=COALESCE(c.paused_event_id,0))
  AND NOT EXISTS (SELECT 1 FROM watch_shared_cash_skipped_events sk
@@ -84,7 +84,7 @@ async function snapshot(db:D1Database,actor:AuthUser){
    totalOut:Number(a.outgoing||0)+Number(m.outgoing||0),
    autoTrackingEnabled:c.auto_tracking_enabled===1,cycleStartedAt:c.cycle_started_at,
    entries:entries.slice(0,150),legacyEntries:legacy.results||[],cycles:cycles.results||[],
-   cashMethods:['НАЛИЧНЫЕ','CASH','CASH KZT'],
+   cashMethods:['НАЛИЧНЫЕ','НАЛИЧНЫМИ','НАЛИЧКА','НАЛ','CASH','CASH KZT','КЭШ','КЕШ'],
    note:'Одна касса для наличных TAUWACH и WACHIZEN. Бренд указан у каждой оплаты. Предыдущие брендовые кассы сохранены в архиве.'})
 }
 /** One shared register; caller-selected brand is NEVER an input. */

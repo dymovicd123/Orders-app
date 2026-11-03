@@ -21,7 +21,7 @@ export async function applyClient3WatchBulkOperation(
  db:D1Database,actor:AuthUser,brandId:number,input:WatchBulkInput,
  dependencies:{movement?:typeof applyInventoryMovement;transfer?:typeof applyInventoryTransfer}={},
 ){
- if(actor.role!=='admin')
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))
    return error('WATCH_BULK_ADMIN_ONLY','Массовые операции доступны только администратору.',403)
  if(input.kind!=='arrival'&&input.kind!=='writeoff'&&input.kind!=='transfer')
    return error('WATCH_BULK_KIND','Выберите приход, списание или перемещение.',400)

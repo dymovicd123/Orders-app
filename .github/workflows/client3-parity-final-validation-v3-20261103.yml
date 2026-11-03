@@ -1,0 +1,82 @@
+name: Client3 Main parity final full validation v3 - NO DEPLOY
+on:
+  push:
+    branches: [client3/main-parity-hardening-20261103]
+    paths: ['.github/workflows/client3-parity-final-validation-v3-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  catalogue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: All catalog, orders read and Main UI parity regression
+        run: |
+          set -uo pipefail
+          failed=0
+          for f in \
+            scripts/client3/test-watch-main-step1-20261102.mjs \
+            scripts/client3/test-watch-orders-read-20261102.mjs \
+            scripts/client3/test-watch-provision-20261102.mjs \
+            scripts/client3/test-watch-shared-references-20261102.mjs \
+            scripts/client3/test-watch-shell-20261102.mjs \
+            scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
+            scripts/client3/test-watch-workspace-layout-20261102.mjs \
+            scripts/client3/test-main-foundation-parity-20261102.mjs \
+            scripts/client3/test-main-workflow-parity-20261102.mjs \
+            scripts/client3/test-watch-api-20261102.mjs \
+            scripts/client3/test-watch-arrival-adapter-20261102.mjs \
+            scripts/client3/test-watch-arrival-guards-20261102.mjs \
+            scripts/client3/test-watch-catalog-20261102.mjs \
+            scripts/client3/test-watch-form-20261102.mjs \
+            scripts/client3/test-watch-foundation-20261102.mjs \
+            scripts/client3/test-watch-main-free-text-ux-20261103.mjs \
+            scripts/client3/test-watch-migration-chain-20261102.mjs \
+            scripts/client3/test-watch-order-commit-20261102.mjs \
+            scripts/client3/test-watch-shared-references-20261102.mjs \
+            scripts/client3/test-watch-writeoff-20261102.mjs; do
+            echo "::group::$f"
+            node --experimental-strip-types "$f" || { echo "::error::FAILED $f"; failed=1; }
+            echo "::endgroup::"
+          done
+          exit "$failed"
+  operations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Item readiness migration, live-shaped flow and money
+        run: |
+          set -uo pipefail
+          failed=0
+          for f in \
+            scripts/client3/test-watch-engraving-readiness-migration-20261103.mjs \
+            scripts/client3/test-watch-full-order-engine-20261102.mjs \
+            scripts/client3/test-watch-full-exchange-engine-20261102.mjs \
+            scripts/client3/test-watch-logistics-20261102.mjs \
+            scripts/client3/test-watch-handover-after-revision-20261103.mjs \
+            scripts/client3/test-watch-full-stock-engine-20261102.mjs \
+            scripts/client3/test-zero-stock-revision-20261103.mjs \
+            scripts/client3/test-watch-arrival-draft-20261103.mjs \
+            scripts/client3/test-watch-shared-cash-team-20261103.mjs; do
+            echo "::group::$f"
+            node --experimental-strip-types "$f" || { echo "::error::FAILED $f"; failed=1; }
+            echo "::endgroup::"
+          done
+          exit "$failed"
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - run: npm run build

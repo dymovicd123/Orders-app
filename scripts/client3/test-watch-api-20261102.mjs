@@ -11,29 +11,35 @@ import {
 const sql=new DatabaseSync(':memory:')
 sql.exec('PRAGMA foreign_keys=ON')
 sql.exec(`
- CREATE TABLE managers (id INTEGER PRIMARY KEY,name TEXT,is_active INTEGER DEFAULT 1);
+ CREATE TABLE managers (id INTEGER PRIMARY KEY,name TEXT,role TEXT DEFAULT 'Менеджер',is_active INTEGER DEFAULT 1);
  CREATE TABLE app_users (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_products (id INTEGER PRIMARY KEY);
  CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY,product_id INTEGER REFERENCES catalog_products(id),stock_position_id INTEGER,category TEXT DEFAULT 'adult',is_active INTEGER DEFAULT 1);
  CREATE TABLE catalog_execution_prices (stock_position_id INTEGER,category TEXT,sale_price INTEGER,PRIMARY KEY(stock_position_id,category));
  CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,source_type TEXT DEFAULT 'warehouse',shipping_status TEXT DEFAULT 'not_sent');
- CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER);
+ CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER,source_type TEXT DEFAULT 'warehouse',stock_writeoff_status TEXT DEFAULT 'reserved',variant_id INTEGER,is_workshop INTEGER DEFAULT 0);
  CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER);
  CREATE TABLE inventory_reservations(order_item_id INTEGER PRIMARY KEY,status TEXT);
+ CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id));
+ CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER REFERENCES order_dispatches(id),
+   order_item_id INTEGER REFERENCES order_items(id),quantity INTEGER, cancelled_quantity INTEGER DEFAULT 0);
+ CREATE TABLE watch_variant_attributes_v5(watch_variant_id INTEGER PRIMARY KEY,
+   movement TEXT,bracelet_material TEXT,dial_color TEXT,bracelet_color TEXT);
  INSERT INTO managers(id,name) VALUES (1,'Alice'),(2,'Bob');
  INSERT INTO app_users VALUES (9);
  INSERT INTO catalog_products VALUES(10),(11);
  INSERT INTO catalog_variants(id,product_id,stock_position_id) VALUES(100,10,1000),(101,11,1001);
  INSERT INTO catalog_execution_prices VALUES(1000,'adult',60000),(1001,'adult',45000);
  INSERT INTO orders(id,external_id,order_status,total_amount,received_amount,debt_amount) VALUES (1,'TEST-1','active',90000,90000,0),(2,'TEST-2','active',120000,60000,60000);
- INSERT INTO order_items VALUES(200,1,1),(201,2,1);
+ INSERT INTO order_items(id,order_id,quantity) VALUES(200,1,1),(201,2,1);
  INSERT INTO inventory_stock VALUES(1,'warehouse',100,4,1),(2,'boutique',100,2,0),(3,'warehouse',101,9,0);
  INSERT INTO payments VALUES(1,1,90000),(2,2,60000);
  INSERT INTO inventory_reservations VALUES(200,'active'),(201,'active');
 `)
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0003_watch_manager_brand_audit.sql','utf8'))
+sql.exec(fs.readFileSync('migrations/client3-watch/1004_watch_item_engraving_readiness.sql','utf8'))
 sql.exec(`
  INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1),(2,2);
  INSERT INTO watch_products(brand_id,model_name,catalog_product_id) VALUES(1,'CLASSIC',10),(2,'CLASSIC',11);
@@ -129,17 +135,19 @@ const unchanged=()=>({
   orders:sql.prepare('SELECT id,total_amount,received_amount,debt_amount FROM orders ORDER BY id').all(),
 })
 const before=unchanged()
-let r=await j(await markWatchLogisticsReady(db,alice,1,'watch-req-1'));assert.equal(r.status,403)
-r=await j(await markWatchLogisticsReady(db,logistics,1,'watch-req-1'))
-assert.equal(r.status,200);assert.equal(r.engravingStatus,'ready')
+let r=await j(await markWatchLogisticsReady(db,alice,1,200,'watch-req-1'));assert.equal(r.status,403)
+r=await j(await markWatchLogisticsReady(db,logistics,1,200,'watch-req-1'))
+assert.equal(r.status,200);assert.equal(r.engravingReady,true)
 assert.equal(r.shippingUnchanged,true)
 assert.deepEqual(unchanged(),before)
 assert.equal(sql.prepare("SELECT count(*) AS c FROM watch_logistics_events").get().c,1)
-r=await j(await markWatchLogisticsReady(db,logistics,1,'watch-req-1'))
-assert.equal(r.alreadyCommitted,true)
-r=await j(await markWatchLogisticsReady(db,logistics,2,'watch-req-1'))
+assert.equal(sql.prepare("SELECT order_item_id FROM watch_logistics_events LIMIT 1").get().order_item_id,200)
+assert.equal(sql.prepare("SELECT engraving_text FROM watch_engraving_item_readiness WHERE order_item_id=200").get().engraving_text,'A + M')
+r=await j(await markWatchLogisticsReady(db,logistics,1,200,'watch-req-1'))
+assert.equal(r.alreadyReady,true)
+r=await j(await markWatchLogisticsReady(db,logistics,2,201,'watch-req-1'))
 assert.equal(r.status,409,'Request IDs must not be reusable across orders')
-r=await j(await markWatchLogisticsReady(db,logistics,1,'watch-req-2'))
+r=await j(await markWatchLogisticsReady(db,logistics,1,200,'watch-req-2'))
 assert.equal(r.alreadyReady,true)
 assert.equal(sql.prepare("SELECT count(*) AS c FROM watch_logistics_events").get().c,1)
 assert.deepEqual(unchanged(),before)

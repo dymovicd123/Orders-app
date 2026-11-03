@@ -33,11 +33,12 @@ import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
-export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'dashboard',module:'dashboard',label:'Инфопанель'},
   {route:'orders',module:'orders',label:'Заказы'},
+  {route:'clients',module:'clients',label:'Клиенты'},
   {route:'logistics',module:'workshop',label:'Логистика'},
   {route:'warehouse',module:'inventory',label:'Склад'},
   {route:'finance',module:'finance',label:'Финансы'},
@@ -53,6 +54,7 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   plan:{title:'План',subtitle:'Денежные планы отдела и менеджеров — без KPI'},
   leads:{title:'Лиды',subtitle:'Журналы лидов и Call Centre'},
   orders:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
+  clients:{title:'Клиенты',subtitle:'Покупатели, история заказов и долги'},
   create:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   returns:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   logistics:{title:'Логистика',subtitle:'Гравировка, готовность и сроки отправки'},
@@ -60,6 +62,7 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   operations:{title:'Склад',subtitle:'Остатки, операции и товары'},
   revision:{title:'Склад',subtitle:'Ревизия: проверка количества и сохранение результатов'},
   history:{title:'Склад',subtitle:'История складских движений'},
+  statistics:{title:'Склад',subtitle:'Статистика продаж часов по комплектациям'},
   exchange:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   catalog:{title:'Склад',subtitle:'Остатки, операции и товары'},
   finance:{title:'Финансы',subtitle:'Движение денег по брендам'},
@@ -68,9 +71,9 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   legacy:{title:'Заказы',subtitle:'Исторические записи'},
   references:{title:'Справочники',subtitle:'Бренды, характеристики часов, доставка и способы оплаты'},
 }
-export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,children,error,success,warning}:{
+export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,canWarehouse=false,children,error,success,warning}:{
   user:User;section:WatchMainRoute;onNavigate:(v:WatchMainRoute)=>void;onLogout:()=>void;onRefresh:()=>void;
-  busy:boolean;canSales:boolean;children:ReactNode;error?:string;success?:string;warning?:string
+  busy:boolean;canSales:boolean;canWarehouse?:boolean;children:ReactNode;error?:string;success?:string;warning?:string
 }){
   const [mobileNavOpen,setMobileNavOpen]=useState(false)
   useEffect(()=>{
@@ -79,7 +82,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
   },[mobileNavOpen])
   const isAdmin=user.role==='admin'
   const current=section==='create'||section==='returns'||section==='exchange'||section==='legacy'?'orders':
-    section==='catalog'||section==='operations'||section==='revision'||section==='history'?'warehouse':section==='accounts'?'staff':section
+    section==='catalog'||section==='operations'||section==='revision'||section==='history'||section==='statistics'?'warehouse':section==='accounts'?'staff':section
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'
   return <main className="erp-shell client3-main-erp" data-sector={current}>
@@ -117,7 +120,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
         </div>
         <nav className="erp-primary-nav" id="primary-workspace-navigation" aria-label="Основные разделы">
           {nav.filter(item=>item.route!=='staff'||isAdmin)
-            .filter(item=>canSales||(item.route==='logistics'))
+            .filter(item=>canSales||(canWarehouse?['warehouse','references'].includes(item.route):item.route==='logistics'))
             .map(item=>{
               const module=workspaceModules.find(entry=>entry.id===item.module)!
               const route=item.route as WatchMainRoute

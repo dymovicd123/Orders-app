@@ -45,7 +45,7 @@ async function blockers(db:D1Database,items:Item[]){
 }
 /** Same preflight rules as Main's catalog variant deletion; no physical stock changes. */
 export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,brandId:number,input:Input){
- if(actor.role!=='admin')return fail('Удалять товары может только администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Удалять товары может только администратор.',403)
  let scope:Awaited<ReturnType<typeof target>>
  try{scope=await target(db,brandId,input)}catch(cause){
    return fail(cause instanceof Error?cause.message:'Не удалось определить товар.',404)
@@ -58,7 +58,7 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
    physicalAndReservationsPreserved:true,historyPreserved:true})
 }
 export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,brandId:number,input:Input){
- if(actor.role!=='admin')return fail('Удалять товары может только администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Удалять товары может только администратор.',403)
  let scope:Awaited<ReturnType<typeof target>>
  try{scope=await target(db,brandId,input)}catch(cause){
    return fail(cause instanceof Error?cause.message:'Не удалось определить товар.',404)

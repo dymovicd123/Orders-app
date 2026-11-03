@@ -14,7 +14,7 @@ export async function countClient3WatchStockBatch(
  db:D1Database,actor:AuthUser,brandId:number,input:BatchInput,
  writer:typeof quickInventoryStocktakeBatch=quickInventoryStocktakeBatch,
 ){
- if(actor.role!=='admin')
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))
    return bad('WATCH_STOCKTAKE_ADMIN_ONLY','Пересчёт часов доступен только администратору.',403)
  if(input.source!=='office'&&input.source!=='showcase')
    return bad('WATCH_STOCKTAKE_SOURCE_INVALID','Разрешены только офис и витрина.')

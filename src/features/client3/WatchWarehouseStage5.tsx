@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
-import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-stage5-warehouse.css'
 
 type Source='office'|'showcase'
@@ -13,7 +13,7 @@ type HistoryRow={
 const sourceLabel=(source:Source)=>source==='office'?'Офис':'Витрина'
 const description=(row:Pick<HistoryRow,'gender'|'movement'|'braceletMaterial'|'dialColor'|'braceletColor'>)=>
  [row.gender==='male'?'Мужские':row.gender==='female'?'Женские':'',
-  row.movement,row.braceletMaterial,row.dialColor,row.braceletColor?('Ремешок: '+row.braceletColor):'']
+  watchReferenceLabel('movements',row.movement),watchReferenceLabel('bracelets',row.braceletMaterial),watchReferenceLabel('dials',row.dialColor),row.braceletColor?('Ремешок: '+watchReferenceLabel('leatherColors',row.braceletColor)):'']
  .filter(Boolean).join(' · ')
 const moveLabels:Record<string,string>={
  arrival:'Приход',writeoff:'Списание',manual_set:'Корректировка',

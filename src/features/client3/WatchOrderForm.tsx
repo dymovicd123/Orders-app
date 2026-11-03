@@ -198,7 +198,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        <label>Дата заказа *
          <input required type="date" value={orderDate} max={businessToday()}
            onChange={e=>setOrderDate(e.target.value)}/>
-         <small>Для заказов за 1–2 октября укажите фактическую дату. После завершённой ревизии доступно «Уточнение выдачи».</small>
+         
        </label>
        <label>ФИО получателя *
          <input required maxLength={200} value={recipientName} autoComplete="name"

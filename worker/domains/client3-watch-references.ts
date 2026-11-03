@@ -6,6 +6,7 @@ const allKinds:readonly WatchReferenceKind[]=['movements','bracelets','dials','l
 const extraKinds:readonly string[]=['movements','bracelets','dials']
 const OFFSET=1000000000
 const CITY_OFFSET=2000000000
+const warehouseKind=(kind:unknown)=>typeof kind==='string'&&['movements','bracelets','dials','leatherColors','cities'].includes(kind)
 const validKind=(x:unknown):x is WatchReferenceKind=>typeof x==='string'&&allKinds.includes(x as WatchReferenceKind)
 const newTable=(kind:string)=>extraKinds.includes(kind)
 const table=(kind:string)=>kind==='cities'?'watch_city_values':newTable(kind)?'watch_reference_values_v5':'watch_reference_values'
@@ -29,16 +30,21 @@ async function usedByActiveSku(db:D1Database,kind:string,value:string){
  const col=referenceColumns[kind]
  if(!col)return false
  // Fixed column names, bound user values; preserve Main's live-SKU reference guard.
- const row=await db.prepare(`SELECT COUNT(*) AS n FROM watch_variants v
+ // SQLite NOCASE cannot reliably fold Cyrillic characters. Watch variants
+ // created before reference normalization may store title case, while the
+ // shared reference is stored in upper case. Compare the canonical Russian
+ // identity in JS; otherwise an in-use characteristic can be deleted.
+ const rows=await db.prepare(`SELECT COALESCE(a.${col},v.${col}) AS value
+   FROM watch_variants v
    LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
    JOIN watch_products wp ON wp.id=v.watch_product_id
-   WHERE v.is_active=1 AND wp.is_active=1 AND
-     COALESCE(a.${col},v.${col})=?`)
-   .bind(value).first<{n:number}>()
- return Number(row?.n)>0
+   WHERE v.is_active=1 AND wp.is_active=1`)
+   .all<{value:string}>()
+ const key=identity(value)
+ return (rows.results||[]).some(row=>identity(row.value)===key)
 }
 export async function listClient3WatchReferences(db:D1Database,actor:AuthUser){
- if(actor.role!=='admin'&&!actor.managerId)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад')&&!actor.managerId)
    return fail('Справочники доступны только сотрудникам.',403)
  const [legacy,extra,cities]=await Promise.all([
    db.prepare('SELECT id,kind,value FROM watch_reference_values WHERE is_active=1').all<{id:number;kind:WatchReferenceKind;value:string}>(),
@@ -51,8 +57,10 @@ export async function listClient3WatchReferences(db:D1Database,actor:AuthUser){
  return json({ok:true,rows,sharedAcrossBrands:true})
 }
 export async function createClient3WatchReference(db:D1Database,actor:AuthUser,raw:{kind?:unknown;value?:unknown}){
- if(actor.role!=='admin')return fail('Добавлять значения справочников может администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Добавлять значения справочников может администратор.',403)
  if(!validKind(raw?.kind))return fail('Недоступный справочник.')
+ if(actor.role!=='admin'&&!warehouseKind(raw.kind))
+   return fail('Настройки оплаты и доставки изменяет только администратор.',403)
  let value:string
  try{value=validValue(raw?.value)}catch(e){return fail(e instanceof Error?e.message:'Неверное значение.')}
  value=identity(value)
@@ -83,10 +91,12 @@ export async function createClient3WatchReference(db:D1Database,actor:AuthUser,r
 }
 export async function updateClient3WatchReference(db:D1Database,actor:AuthUser,
  raw:{id?:unknown;kind?:unknown;value?:unknown}){
- if(actor.role!=='admin')return fail('Редактировать справочники может администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Редактировать справочники может администратор.',403)
  const publicId=Number(raw.id)
  if(!Number.isSafeInteger(publicId)||publicId<1||!validKind(raw.kind))
    return fail('Выберите существующее значение и справочник.')
+ if(actor.role!=='admin'&&!warehouseKind(raw.kind))
+   return fail('Настройки оплаты и доставки изменяет только администратор.',403)
  let value:string
  try{value=validValue(raw.value)}catch(e){return fail(e instanceof Error?e.message:'Неверное значение.')}
  const key=decode(publicId),extra=newTable(raw.kind)
@@ -109,12 +119,14 @@ export async function updateClient3WatchReference(db:D1Database,actor:AuthUser,
  return json({ok:true,id:publicId,value,updated:true})
 }
 export async function deleteClient3WatchReference(db:D1Database,actor:AuthUser,publicId:number){
- if(actor.role!=='admin')return fail('Удалять значения может только администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Удалять значения может только администратор.',403)
  if(!Number.isSafeInteger(publicId)||publicId<1)return fail('Выберите значение.')
  const key=decode(publicId),name=key.city?'watch_city_values':key.extra?'watch_reference_values_v5':'watch_reference_values'
  const old=await db.prepare(`SELECT id,kind,value,is_active FROM ${name} WHERE id=?`)
    .bind(key.id).first<{id:number;kind:WatchReferenceKind;value:string;is_active:number}>()
  if(!old||!validKind(old.kind)||key.extra!==newTable(old.kind)||key.city!==(old.kind==='cities'))return fail('Значение не найдено.',404)
+ if(actor.role!=='admin'&&!warehouseKind(old.kind))
+   return fail('Настройки оплаты и доставки изменяет только администратор.',403)
  if(old.is_active!==1)return json({ok:true,alreadyDeleted:true})
  if(await usedByActiveSku(db,old.kind,old.value))
    return fail('Значение используется в рабочей позиции часов. Сначала удалите позицию; историю сохраняем.',409)

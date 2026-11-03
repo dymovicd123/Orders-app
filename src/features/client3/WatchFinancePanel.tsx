@@ -3,6 +3,7 @@ import type {FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {useWatchAnalytics,watchMoney,watchPeriod} from './useWatchAnalytics'
+import {WatchFinanceDayDetails} from './WatchFinanceDayDetails'
 import '../../styles/140-finance-truth.css'
 import '../../styles/150-orders-finance-sync.css'
 import '../../styles/client3-watch-finance.css'
@@ -40,6 +41,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
  const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
  const [period,setPeriod]=useState(watchPeriod('month'))
  const [mode,setMode]=useState<Mode>('summary')
+ const [dayDetails,setDayDetails]=useState<string|null>(null)
  const {data,busy,error,refresh}=useWatchAnalytics(brand,period.from,period.to)
  const [cash,setCash]=useState<Cash|null>(null)
  const [cashBusy,setCashBusy]=useState(false)
@@ -332,17 +334,22 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
          <thead><tr><th>Дата</th><th className="num">Поступило</th><th className="num">Возвращено / списано</th>
            <th className="num">Чистое движение</th><th className="num">Продажи</th><th>Состояние</th></tr></thead>
          <tbody>{financeDays.map(row=><tr key={row.date}>
-           <td><strong>{moneyDate(row.date)}</strong></td>
+           <td><button className="secondary compact" type="button"
+             aria-expanded={dayDetails===row.date}
+             onClick={()=>setDayDetails(dayDetails===row.date?null:row.date)}>
+             {moneyDate(row.date)} · Открыть</button></td>
            <td className="num"><strong>{watchMoney(row.received)}</strong></td>
            <td className="num">{watchMoney(row.returned)}</td>
            <td className="num"><strong>{watchMoney(row.net)}</strong></td>
            <td className="num">{watchMoney(row.sales)}</td>
            <td>{crossDateEvents.some(event=>event.eventDate===row.date)?
              <span className="soft-badge finance-info-badge">Есть оплаты заказов другой даты</span>:
-             <span className="soft-badge">Без замечаний</span>}</td>
+             <span className="soft-badge">{operationsTruncated?'Не проверены все события':'Без расхождений дат'}</span>}</td>
          </tr>)}
          {!financeDays.length&&<tr><td colSpan={6} className="empty-state">За выбранный период нет заказов и денежных операций.</td></tr>}
          </tbody></table></LinkedTableScroll>
+       {dayDetails&&<WatchFinanceDayDetails brand={brand} date={dayDetails}
+         onClose={()=>setDayDetails(null)} onOpenOrder={onOpenOrder}/>}
      </section>
      <section className={'finance-reconciliation finance-reconciliation-v2 '+(reconciled?'is-ok':'is-error')}>
        <div className="finance-reconciliation-head">
@@ -354,7 +361,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
              {reconciled?'Без расхождений':'Расхождение: '+watchMoney(Math.max(Math.abs(auditTotal-methodsTotal),Math.abs(auditTotal-kindsTotal)))}
            </span>
            <span className="soft-badge finance-info-badge">
-             {crossDateEvents.length?'Заказов другой даты: '+crossDateEvents.length:'Заказов другой даты нет'}
+             {crossDateEvents.length?'Заказов другой даты: '+crossDateEvents.length:operationsTruncated?'Не все события загружены':'Заказов другой даты нет'}
            </span>
            <span className={earlyDatedEvents.length?'soft-badge warning-soft':'soft-badge'}>
              {earlyDatedEvents.length?'Проверьте даты: '+earlyDatedEvents.length:'Ошибок дат не найдено среди загруженных операций'}

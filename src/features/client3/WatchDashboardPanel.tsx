@@ -1,11 +1,10 @@
 import {useEffect,useMemo,useState} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
-import {formatWatchDeadline,groupWatchLogistics,type WatchLogisticsRow} from './WatchLogisticsPanel'
+import {formatWatchDeadline,groupWatchLogistics,logisticsOrderComplete,type WatchLogisticsRow} from './WatchLogisticsPanel'
 import {useWatchAnalytics,watchMoney,watchNumber,watchPeriod} from './useWatchAnalytics'
 import '../../styles/dashboard-workshop-attention-r1.css'
 
 type Section='orders'|'create'|'logistics'|'operations'|'catalog'|'reports'|'finance'|'plan'|'leads'
-const isSent=(row:WatchLogisticsRow)=>row.shippingStatus==='sent'||row.shippingStatus==='Отправлено'
 const deadlineValue=(value:string)=>Date.parse(value||'')
 export function WatchDashboardPanel({brands,onNavigate}:{
  brands:readonly WatchBrand[];onNavigate:(section:Section)=>void
@@ -54,7 +53,7 @@ export function WatchDashboardPanel({brands,onNavigate}:{
    return ()=>abort.abort()
  },[brand,refreshKey])
  const pending=useMemo(()=>groupWatchLogistics(queue)
-   .filter(g=>!isSent(g.order)&&g.items.some(x=>Number(x.shippedQuantity||0)<Number(x.quantity||0)))
+   .filter(g=>!logisticsOrderComplete(g))
    .sort((a,b)=>{
      const urgent=Number(Boolean(b.order.urgent))-Number(Boolean(a.order.urgent))
      const da=deadlineValue(a.order.shippingDeadlineAt),db=deadlineValue(b.order.shippingDeadlineAt)
