@@ -41,7 +41,7 @@ export async function findWatchModelByIdentity(
 export async function listWatchModelAliases(
  db:D1Database,actor:AuthUser,brandId:number,watchProductId:number,
 ){
- if(actor.role!=='admin')return fail('Псевдонимы моделей настраивает администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Псевдонимы моделей настраивает администратор.',403)
  if(!Number.isSafeInteger(watchProductId)||watchProductId<1)
    return fail('Выберите модель часов.',400)
  const model=await db.prepare(
@@ -59,7 +59,7 @@ export async function addWatchModelAlias(
  db:D1Database,actor:AuthUser,brandId:number,
  input:{watchProductId?:unknown;alias?:unknown},
 ){
- if(actor.role!=='admin')return fail('Псевдонимы моделей настраивает администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Псевдонимы моделей настраивает администратор.',403)
  const id=Number(input.watchProductId),alias=clean(input.alias),key=watchModelAliasKey(alias)
  if(!Number.isSafeInteger(id)||id<1||!alias||alias.length>150||!key||key.length>160)
    return fail('Выберите модель и введите псевдоним длиной до 150 символов.',400)
@@ -105,7 +105,7 @@ export async function deleteWatchModelAlias(
  db:D1Database,actor:AuthUser,brandId:number,
  input:{watchProductId?:unknown;aliasId?:unknown},
 ){
- if(actor.role!=='admin')return fail('Псевдонимы моделей настраивает администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Псевдонимы моделей настраивает администратор.',403)
  const id=Number(input.watchProductId),aliasId=Number(input.aliasId)
  if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(aliasId)||aliasId<1)
    return fail('Выберите псевдоним.',400)
