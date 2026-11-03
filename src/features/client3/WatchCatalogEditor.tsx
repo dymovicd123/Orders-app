@@ -51,7 +51,7 @@ function textFor(choices:readonly {value:string;label:string}[],code:string|null
 }
 
 /** An unmapped watch is a draft. It cannot be sold or counted as physical stock. */
-export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenReferences}:{brand:WatchBrand;view?:'catalog'|'warehouse';onStockChanged?:()=>void;onOpenReferences?:()=>void}) {
+export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenReferences,canEditPrices=true}:{brand:WatchBrand;view?:'catalog'|'warehouse';onStockChanged?:()=>void;onOpenReferences?:()=>void;canEditPrices?:boolean}) {
   const [rows,setRows]=useState<CatalogRow[]>([])
   const [operation,setOperation]=useState<'arrival'|'transfer'|'writeoff'|'count'>('arrival')
   const [modelName,setModelName]=useState('')
@@ -540,9 +540,9 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
                         onClick={()=>setPriceVariantId(null)}>Отмена</button>
                     </div>:<div className="client3-main-catalog-price-editor">
                       <strong>{row.catalogPriceSnapshot==null?'Не задана':Number(row.catalogPriceSnapshot).toLocaleString('ru-RU')+' ₸'}</strong>
-                      <button type="button" className="secondary compact"
+                      {canEditPrices&&<button type="button" className="secondary compact"
                         onClick={()=>{setPriceVariantId(row.watchVariantId);setPriceDraft(row.catalogPriceSnapshot==null?'':String(row.catalogPriceSnapshot))}}>
-                        Изменить цену</button>
+                        Изменить цену</button>}
                     </div>}
                   </div>:<div className="client3-main-catalog-variant-price">
                     <span>Складская позиция ещё не подготовлена — продажа недоступна</span>
