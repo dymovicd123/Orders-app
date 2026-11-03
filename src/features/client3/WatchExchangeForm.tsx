@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react'
 import {SmartPickerInput} from '../../components/inputs/SmartPickerInput'
 import {WATCH_OPTIONS,WATCH_PAYMENTS,type WatchBrand,type WatchGender,type WatchSource} from '../../../shared/client3/watch-domain'
+import '../../styles/193-exchange-set-v2.css'
 import '../../styles/client3-watch-exchange.css'
 
 type OldLine={id:number;productName:string;quantity:number;returnableQuantity:number;
@@ -173,12 +174,22 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
        'Вся сумма возврата должна быть распределена по способам.'}</small>
    </div>
  )
- return <form className="watch-exchange-form watch-exchange-set" onSubmit={e=>void save(e)}>
-   <h4>Обмен · {order.externalId}</h4>
+ return <form className="watch-exchange-form watch-exchange-set exchange-set-page" onSubmit={e=>void save(e)}>
+   <header className="exchange-set-hero">
+      <div><span className="exchange-set-kicker">ОБМЕН · ЗАКАЗ</span>
+        <h2>{order.externalId}</h2>
+        <p>Старые часы → новые часы → расчёт → подтверждение.</p></div>
+      <div className="exchange-order-context">
+        <div><small>Сумма заказа</small><strong>{amount(order.totalAmount)}</strong></div>
+        <div><small>Оплачено</small><strong>{amount(netPaid)}</strong></div>
+      </div>
+   </header>
    <p>Оформление как в основной системе: отметьте конкретные старые часы и где они физически находятся, добавьте новые и для каждой позиции укажите, уже выдали её клиенту или нет. Доплату и возврат можно разделить по способам оплаты.</p>
-   <div className="watch-exchange-lines">
-     <strong>Какие часы меняет клиент</strong>
-     {old.map(x=><div key={x.id} className="watch-exchange-old">
+   <div className="watch-exchange-lines exchange-set-workspace">
+     <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">ШАГ 1</span>
+       <h3>Какие часы меняет клиент</h3>
+       <p>Выберите товары, количество и состояние каждой старой позиции.</p></div></div>
+     {old.map(x=><div key={x.id} className="watch-exchange-old exchange-old-card">
        <div><strong>{x.productName}</strong><small>{x.gender==='male'?'Мужские':'Женские'} ·
          {opt(WATCH_OPTIONS.movements,x.movement)} · {opt(WATCH_OPTIONS.braceletMaterials,x.braceletMaterial)} · {opt(WATCH_OPTIONS.dialColors,x.dialColor)}</small>
          <small>В заказе {x.quantity} · доступно к обмену {x.returnableQuantity} шт. · {amount(x.unitPrice)}/шт.</small></div>
@@ -197,9 +208,11 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
          </select></label>}
      </div>)}
    </div>
-   <div className="watch-exchange-lines">
-     <strong>Новые часы для клиента</strong>
-     {newLines.map((x,index)=><div key={x.key} className="watch-exchange-new">
+   <div className="watch-exchange-lines exchange-set-workspace">
+     <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">ШАГ 2</span>
+       <h3>Новые часы для клиента</h3>
+       <p>Можно выбрать несколько комплектаций, как в Main.</p></div></div>
+     {newLines.map((x,index)=><div key={x.key} className="watch-exchange-new exchange-new-card">
        <div className="watch-exchange-new-title"><strong>Позиция {index+1}</strong>
          <button className="secondary" type="button" disabled={newLines.length===1}
            onClick={()=>{setNewLines(v=>v.filter(r=>r.key!==x.key));setConfirmed(false)}}>Удалить</button>
@@ -256,7 +269,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
      <button type="button" className="secondary" disabled={newLines.length>=20}
        onClick={()=>{setNewLines(v=>[...v,blank()]);setConfirmed(false)}}>+ Добавить часы</button>
    </div>
-   <div className="watch-exchange-set-money">
+   <div className="watch-exchange-set-money exchange-settlement-card">
      <strong>Итог обмена: {amount(finalTotal)}</strong>
      <small>Уже оплачено за вычетом возвратов: {amount(netPaid)} ·
        {due>0?' к оплате '+amount(due):refundDue>0?' вернуть '+amount(refundDue):' рассчитано полностью'}</small>
