@@ -55,8 +55,8 @@ const validQuantity=(raw:string,mode:Operation)=>{
  * across different models, review them together and commit ONE atomic transaction.
  * No separate "bulk operations" screen or duplicate revision form.
  */
-export function WatchWarehouseMain({brand,onStockChanged}:{
-  brand:WatchBrand;onStockChanged?:()=>void
+export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:{
+  brand:WatchBrand;onStockChanged?:()=>void;initialRevision?:boolean
 }){
   const [rows,setRows]=useState<Row[]>([])
   const [loading,setLoading]=useState(true)
@@ -64,8 +64,8 @@ export function WatchWarehouseMain({brand,onStockChanged}:{
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
-  const [mode,setMode]=useState<Operation>('arrival')
-  const [persistentRevision,setPersistentRevision]=useState(false)
+  const [mode,setMode]=useState<Operation>(initialRevision?'count':'arrival')
+  const [persistentRevision,setPersistentRevision]=useState(initialRevision)
   const [revisionActive,setRevisionActive]=useState(false)
   const [source,setSource]=useState<Source>('office')
   const [stage,setStage]=useState<Stage>('select')
