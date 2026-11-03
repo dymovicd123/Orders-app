@@ -1,0 +1,166 @@
+name: Client3 Main parity batch - guarded migration and Worker release
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-main-parity-batch-guarded-release-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 3}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Guard accepted branch, CI, isolated Worker and D1
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
+          test "$(git rev-parse HEAD^)" = c871c62bd98c01fd3117243aaea3907c5bdb0f88
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-main-parity-batch-guarded-release-20261103.yml'
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41690788176 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41690788176 --jq .head_sha)" = b05902a0fb12b609b6a5c35fd1098b14e98b1321
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -f migrations/client3-watch/1004_watch_item_engraving_readiness.sql
+      - run: npm ci
+      - name: Conservative engraving migration and Main full-flow smoke on separate SQLite
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-engraving-readiness-migration-20261103.mjs
+          node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-handover-after-revision-20261103.mjs
+      - name: TypeScript, UI and isolated Client3 Worker bundle
+        run: npm run build
+      - name: Real Client3 schema and untouched-stock baseline (READ ONLY)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN
+              ('orders','order_items','watch_order_details','watch_order_item_details',
+               'watch_logistics_events','watch_logistics_jobs','watch_variants',
+               'inventory_stock','financial_events','app_users','watch_brands')" > /tmp/required.json
+          jq -e '
+            (if type=="array" then .[0].results else .results end | map(.name)) as $have
+            | (["orders","order_items","watch_order_details","watch_order_item_details",
+                "watch_logistics_events","watch_logistics_jobs","watch_variants",
+                "inventory_stock","financial_events","app_users","watch_brands"]-$have)
+              | length==0' /tmp/required.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(watch_logistics_jobs)" > /tmp/logistics-cols.json
+          jq -e '(if type=="array" then .[0].results else .results end | map(.name)) as $cols |
+            (["order_id","status","ready_at","ready_by_user_id","ready_request_id","updated_at"]-$cols) | length==0' /tmp/logistics-cols.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(watch_logistics_events)" > /tmp/events-cols.json
+          jq -e '(if type=="array" then .[0].results else .results end | map(.name)) as $cols |
+            (["order_id","request_id"]-$cols) | length==0' /tmp/events-cols.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved,
+              (SELECT COUNT(*) FROM financial_events) finance_events,
+              (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) active_admins,
+              (SELECT COUNT(*) FROM watch_variants) watch_variants" \
+            | jq -ce '(if type=="array" then .[0].results[0] else .results[0] end) |
+              select(.orders_count>=0 and .active_admins>=1)' > /tmp/client3-parity-before.json
+          cat /tmp/client3-parity-before.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" | jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+      - name: Record D1 Time Travel bookmark BEFORE any migration or deploy
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info orders_db_client3_old_client --json --config wrangler.jsonc > /tmp/client3-parity-bookmark.json
+          jq -e '.bookmark|type=="string" and length>15' /tmp/client3-parity-bookmark.json
+          bookmark="$(jq -r .bookmark /tmp/client3-parity-bookmark.json)"
+          echo "Recovery bookmark recorded before Client3 migration."
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 parity batch: D1 recovery bookmark BEFORE schema migration and Worker release: $bookmark. Source: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Database: orders_db_client3_old_client only. Do NOT restore whole live D1 without considering subsequent user writes."
+      - name: Apply ONLY engraving readiness migration 1004 if not yet applied
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name='watch_engraving_item_readiness'" > /tmp/readiness-exists.json
+          table_count="$(jq '(if type=="array" then .[0].results else .results end)|length' /tmp/readiness-exists.json)"
+          has_col="$(jq '(if type=="array" then .[0].results else .results end)|map(.name)|index("order_item_id")!=null' /tmp/events-cols.json)"
+          if [ "$table_count" = 0 ] && [ "$has_col" = false ]; then
+            npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+              --file=migrations/client3-watch/1004_watch_item_engraving_readiness.sql > /tmp/migration-result.json
+            jq -e '(if type=="array" then . else [.] end) | all(.[]; .success==true)' /tmp/migration-result.json
+            echo "Applied only Client3 1004 engraving readiness migration."
+          elif [ "$table_count" = 1 ] && [ "$has_col" = true ]; then
+            echo "Readiness migration already applied; no schema changes."
+          else
+            echo "::error::Partial engraving schema detected. No Worker deployment."
+            exit 1
+          fi
+      - name: Validate per-item readiness and real D1 integrity after migration
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(watch_logistics_events)" |
+            jq -e '(if type=="array" then .[0].results else .results end) |
+              map(.name) | index("order_item_id")!=null'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name='watch_engraving_item_readiness'" |
+            jq -e '(if type=="array" then .[0].results else .results end) | length==1'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT COUNT(*) AS unsafe FROM watch_engraving_item_readiness r
+              JOIN order_items oi ON oi.id=r.order_item_id
+              WHERE r.request_id LIKE 'watch-engraving-legacy:%'
+                AND (SELECT COUNT(*) FROM order_items other
+                  JOIN watch_order_item_details details ON details.order_item_id=other.id
+                  WHERE other.order_id=oi.order_id AND other.quantity>0
+                    AND LENGTH(TRIM(details.engraving_text))>0)>1" |
+            jq -e '(if type=="array" then .[0].results[0] else .results[0] end) | .unsafe==0'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" |
+            jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+      - name: Publish ONLY Client3 Worker and static assets, no other migrations
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Confirm live Client3 routes and preserve auth boundaries
+        run: |
+          set -euo pipefail
+          base='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          test "$(curl -sSL -o /tmp/client3-html -w '%{http_code}' --max-time 30 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-html
+          for route in '/api/client3/watches/logistics?status=all' \
+            '/api/client3/watches/orders?brand=TAUWACH' \
+            '/api/client3/watches/finance?brand=TAUWACH&month=2026-11' \
+            '/api/client3/watches/clients?brand=TAUWACH'; do
+            code="$(curl -sS -o /tmp/client3-get -w '%{http_code}' --max-time 30 "$base$route")"
+            test "$code" = 401 -o "$code" = 403
+          done
+          code="$(curl -sS -o /tmp/client3-write -w '%{http_code}' --max-time 30 \
+            -X POST -H 'Content-Type: application/json' \
+            --data '{"requestId":"unprivileged-test-20261103","orderItemId":1}' \
+            "$base/api/client3/watches/logistics/1/ready")"
+          test "$code" = 401 -o "$code" = 403
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" |
+            jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+          echo CLIENT3_MAIN_PARITY_BATCH_RELEASE_SUCCESS
+      - name: Record successful guarded Client3 release
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Main parity batch DEPLOYED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. PR #786; complete catalog+operations+build CI 41690788176 SUCCESS; migration 1004 conservatively preserves single-item engraving, requires multi-item reconfirmation, and does not modify stock/money. Real D1 FK/schema and unauthenticated HTTP checks passed. Only orders-app-client3-old-client deployed. Main and Branch2 untouched. Authenticated browser acceptance pending."
+      - name: Record blocked/partial publication accurately
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Main parity batch release FAILED/BLOCKED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Check exact failing step. D1 Time Travel bookmark was recorded if the run reached schema migration. Do NOT assume Worker deployed or roll back a live database without reviewing later customer writes."
