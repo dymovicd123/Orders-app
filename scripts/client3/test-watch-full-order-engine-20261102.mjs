@@ -28,6 +28,7 @@ import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {listClient3WatchOperationHistory} from '../../worker/domains/client3-watch-operation-history.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
 const sqlite=new DatabaseSync(':memory:')
@@ -1699,6 +1700,25 @@ const ledgerPage=await parse(getClient3WatchFinance(db,admin,1,
  new URL('https://test.invalid/api/client3/watches/finance?from=2026-01-01&to=2026-12-31&limit=50')))
 assert.equal(ledgerPage.status,200,JSON.stringify(ledgerPage))
 assert(ledgerPage.totals.eventCount>=ledgerPage.rows.length,'Money ledger pagination needs complete totals')
+// Main-like historical lists are always brand-scoped and include exact watches,
+// money, and physical intake; no cross-brand information leakage.
+const returnHistory=await parse(listClient3WatchOperationHistory(db,admin,1,
+  new URL('https://test.invalid/api/client3/watches/operations/history?kind=return&status=all')))
+assert.equal(returnHistory.status,200,JSON.stringify(returnHistory))
+assert(returnHistory.rows.length>0&&returnHistory.total>=returnHistory.rows.length)
+assert(returnHistory.rows.some(x=>JSON.parse(x.itemsJson||'[]').length>0))
+const exchangeHistory=await parse(listClient3WatchOperationHistory(db,admin,1,
+  new URL('https://test.invalid/api/client3/watches/operations/history?kind=exchange&status=all')))
+assert.equal(exchangeHistory.status,200,JSON.stringify(exchangeHistory))
+assert(exchangeHistory.rows.some(x=>JSON.parse(x.itemsJson||'[]').some(i=>i.role==='old')))
+assert(exchangeHistory.rows.some(x=>JSON.parse(x.itemsJson||'[]').some(i=>i.role==='new')))
+const crossHistory=await parse(listClient3WatchOperationHistory(db,admin,2,
+  new URL('https://test.invalid/api/client3/watches/operations/history?kind=return')))
+assert.equal(crossHistory.status,200)
+assert(crossHistory.rows.every(x=>!returnHistory.rows.some(v=>v.id===x.id)))
+const deniedHistory=await parse(listClient3WatchOperationHistory(db,logisticActor,1,
+  new URL('https://test.invalid/api/client3/watches/operations/history?kind=return')))
+assert.equal(deniedHistory.status,403)
 const otherBrandBook=await parse(listClient3WatchClients(db,admin,2,
  new URL('https://test.invalid/api/client3/watches/clients?limit=20')))
 assert.equal(otherBrandBook.status,200,JSON.stringify(otherBrandBook))
