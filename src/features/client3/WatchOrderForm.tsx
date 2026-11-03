@@ -318,8 +318,11 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
                    chosen.catalogPriceSnapshot.toLocaleString('ru-RU')+' ₸'}</output>
                </label>
                <label>Цена продажи, ₸ *
-                 <input type="number" min={0} max={1000000000} step={1} required
-                   value={line.unitPrice} onChange={e=>update(line.id,{unitPrice:e.target.value})}/>
+                 <input type="text" inputMode="numeric" pattern="[0-9]*" required
+                    aria-label="Цена продажи в тенге"
+                    value={line.unitPrice} onChange={e=>{
+                      if(/^\d{0,10}$/.test(e.target.value))update(line.id,{unitPrice:e.target.value})
+                    }}/>
                </label>
                <label className="main-watch-create-wide">Комментарий логисту / гравировка
                  <textarea rows={2} maxLength={500} value={line.engravingText}
