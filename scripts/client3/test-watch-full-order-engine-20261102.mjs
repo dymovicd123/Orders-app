@@ -20,6 +20,8 @@ import {registerWatchModel} from '../../worker/domains/client3-watch-catalog.ts'
 import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-edit.ts'
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
+import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
+import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash} from '../../worker/domains/client3-watch-cash.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -1272,6 +1274,62 @@ const forbiddenTwoSwap=await parse(exchangeClient3WatchSet(db,manager,2,twoOld.o
 }))
 assert.equal(forbiddenTwoSwap.status,404)
 
+// Critical pre-release smoke only for Main-style watch dashboard, reports
+// and brand-separated cash; full logged-in browser acceptance remains later.
+const reportUrl=new URL('https://client3.test/api/client3/watches/analytics?from=2026-01-01&to=2026-12-31')
+const report1=await parse(getClient3WatchAnalytics(db,admin,1,reportUrl))
+assert.equal(report1.status,200,JSON.stringify(report1))
+assert(report1.overview.orderCount>=1,'Watch analytics must count created watch orders')
+assert(report1.products.some(r=>r.quantity>0),'Products report must be populated')
+assert(report1.managers.length>0,'Main manager report must be populated')
+assert(report1.methods.length>0,'Brand payment reconciliation must be populated')
+assert.equal(report1.overview.orderCount,sqlite.prepare(`SELECT COUNT(*) AS n
+ FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
+ WHERE wd.brand_id=1 AND o.order_date BETWEEN '2026-01-01' AND '2026-12-31'
+   AND o.order_status NOT IN ('deleted','archived')`).get().n)
+const report2=await parse(getClient3WatchAnalytics(db,admin,2,reportUrl))
+assert.equal(report2.status,200)
+assert.equal(report2.overview.orderCount,sqlite.prepare(`SELECT COUNT(*) AS n
+ FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
+ WHERE wd.brand_id=2 AND o.order_date BETWEEN '2026-01-01' AND '2026-12-31'
+   AND o.order_status NOT IN ('deleted','archived')`).get().n,
+ 'Report of brand2 must not see brand1 order totals')
+const reportBad=await parse(getClient3WatchAnalytics(db,admin,1,
+ new URL('https://client3.test/api/client3/watches/analytics?from=invalid&to=2026-12-31')))
+assert.equal(reportBad.status,400)
+const emptyCash=await parse(getWatchBrandCash(db,admin,1))
+assert.equal(emptyCash.initialized,false)
+const setupCash=await parse(setupWatchBrandCash(db,admin,1,{openingAmount:9000}))
+assert.equal(setupCash.status,200,JSON.stringify(setupCash))
+assert.equal(setupCash.currentBalance,9000)
+const cashIn={direction:'in',amount:2500,expectedBalance:9000,
+ comment:'Тестовый ручной приход',requestId:'cash-local-manual-a-20261103'}
+const inCash=await parse(writeWatchBrandCash(db,admin,1,'manual',cashIn))
+assert.equal(inCash.status,200,JSON.stringify(inCash))
+assert.equal(inCash.currentBalance,11500)
+const inRepeat=await parse(writeWatchBrandCash(db,admin,1,'manual',cashIn))
+assert.equal(inRepeat.currentBalance,11500,'Idempotent cash movement must not duplicate money')
+const cashOut=await parse(writeWatchBrandCash(db,admin,1,'manual',{
+ direction:'out',amount:600,expectedBalance:11500,
+ comment:'Тестовая выдача наличных',requestId:'cash-local-manual-b-20261103'}))
+assert.equal(cashOut.currentBalance,10900)
+const staleCash=await parse(writeWatchBrandCash(db,admin,1,'manual',{
+ direction:'out',amount:100,expectedBalance:11500,
+ comment:'Старая сумма',requestId:'cash-local-manual-c-20261103'}))
+assert.equal(staleCash.status,409,'Cash concurrency stale balance must fail')
+const noOverdraft=await parse(writeWatchBrandCash(db,admin,1,'manual',{
+ direction:'out',amount:100000,expectedBalance:10900,
+ comment:'Не хватает наличных',requestId:'cash-local-manual-d-20261103'}))
+assert.equal(noOverdraft.status,409)
+const reconcile=await parse(writeWatchBrandCash(db,admin,1,'reconcile',{
+ amount:10500,expectedBalance:10900,
+ comment:'Физическая сверка кассы',requestId:'cash-local-reconcile-20261103'}))
+assert.equal(reconcile.status,200,JSON.stringify(reconcile))
+assert.equal(reconcile.currentBalance,10500)
+assert.equal((await parse(getWatchBrandCash(db,admin,2))).initialized,false,
+ 'Two watches brands must have independent cash ledgers')
+const managerCash=await parse(getWatchBrandCash(db,manager,1))
+assert.equal(managerCash.status,403)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
