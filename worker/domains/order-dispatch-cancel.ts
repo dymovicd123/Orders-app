@@ -102,7 +102,7 @@ export async function cancelExactOrderDispatchItem(
     const movement=await db.prepare(
       "SELECT quantity_delta,comment FROM inventory_movements WHERE id=? AND movement_type='sale'"
     ).bind(movementId).first<{quantity_delta:number;comment:string}>()
-    if(!movement)fail('Не удалось проверить фактическое складское списание.')
+    if(!movement)throw new CriticalOperationConflictError('Не удалось проверить фактическое складское списание.')
     restorablePhysical=Math.min(quantity,Math.max(0,-toInt(movement.quantity_delta,0)))
     wasPendingReservation=cleanText(movement.comment).includes('подтверждённая выдача без резерва')
     const recent=await db.prepare(
