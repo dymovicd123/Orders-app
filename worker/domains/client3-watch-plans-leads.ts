@@ -104,7 +104,6 @@ export async function saveClient3WatchPlan(db:D1Database,actor:AuthUser,brandId:
   if(!manager)return failure('Выберите действующего менеджера этого бренда.',403)
  }
  const now=new Date().toISOString()
- const table=kind==='manager'?'watch_brand_manager_plans':'watch_brand_department_plans'
  if(kind==='manager'){
   const base=input.salaryBase===undefined?0:Number(input.salaryBase)
   const hit=input.bonusHitPercent===undefined?5:Number(input.bonusHitPercent)
