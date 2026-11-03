@@ -22,6 +22,11 @@ jobs:
           test -f src/features/client3/WatchDashboardPanel.tsx
           test -f src/features/client3/WatchReportsPanel.tsx
           test -f src/features/client3/WatchFinancePanel.tsx
+          test -f worker/domains/client3-watch-analytics.ts
+          test -f worker/domains/client3-watch-cash.ts
+          grep -q 'ДРУГОЙ ГОРОД — ВВЕСТИ ВРУЧНУЮ' src/features/client3/WatchOrderForm.tsx
+          grep -q "initialRevision={activeSection==='revision'}" src/WatchClient3App.tsx
+          grep -q 'client3-logistics-queues' src/features/client3/WatchLogisticsPanel.tsx
       - run: npm ci
       - name: TypeScript plus production build (no remote DB calls)
         run: npm run build
