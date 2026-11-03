@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
-import {WATCH_PAYMENTS} from '../../../shared/client3/watch-domain'
+import {WATCH_PAYMENTS,watchReferenceLabel} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-return.css'
 
 type Line={
@@ -100,8 +100,8 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
      <strong>Возвращаемые часы · {chosenQty} шт.</strong>
      {returnable.map(line=><label key={line.id} className="watch-return-item-row">
        <span><strong>{line.productName}</strong>
-         <small>{line.gender==='male'?'Мужские':'Женские'} · {line.movement} ·
-           {line.braceletMaterial} · {line.dialColor}{line.braceletColor?' · '+line.braceletColor:''}</small>
+         <small>{line.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('movements',line.movement)} ·
+           {watchReferenceLabel('bracelets',line.braceletMaterial)} · {watchReferenceLabel('dials',line.dialColor)}{line.braceletColor?' · '+watchReferenceLabel('leatherColors',line.braceletColor):''}</small>
          {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
          <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
        </span>
