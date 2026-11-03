@@ -166,14 +166,14 @@ export async function startClient3WatchRevision(
 
 export async function changeClient3WatchRevision(
  db:D1Database,actor:AuthUser,brandId:number,
- action:'count'|'add'|'complete'|'cancel',input:ChangeInput,
+ action:'count'|'count-fast'|'add'|'complete'|'cancel',input:ChangeInput,
 ){
  if(!administrator(actor))return error('Ревизия доступна только администратору.',403)
  try{
    const row=await ownedSession(db,brandId,input.sessionId,
      action==='complete'||action==='cancel')
    const id=row.id
-   if(action==='count'){
+   if(action==='count'||action==='count-fast'){
      const itemId=Number(input.itemId)
      if(!Number.isSafeInteger(itemId)||itemId<1)return error('Выберите позицию.',400)
      const item=await db.prepare(`SELECT i.id FROM inventory_stocktake_items i
@@ -189,7 +189,10 @@ export async function changeClient3WatchRevision(
        return error('Укажите целое количество от 0 до 1000000.',400)
      const result=await saveInventoryStocktakeCount(db,id,itemId,
        {countedQuantity:input.countedQuantity})
-     return response({...result,session:await summary(db,brandId,id)})
+     // Fast clients receive only the updated row, while pre-existing browser tabs
+     // using /count continue receiving the former full-session response.
+     return response(action==='count-fast'?result:
+       {...result,session:await summary(db,brandId,id)})
    }
    if(action==='add'){
      const watchId=Number(input.watchVariantId)

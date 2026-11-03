@@ -64,10 +64,20 @@ assert.equal(selective.ok,true,JSON.stringify(selective))
 assert.equal(selective.session.totalItems,1,'Selective check must include zero baseline at other point')
 assert.equal(selective.session.items[0].baselineQuantity,0)
 assert.equal(selective.session.items[0].stockId,null)
-const countedZero=await parse(changeClient3WatchRevision(db,admin,1,'count',{
+const countedZero=await parse(changeClient3WatchRevision(db,admin,1,'count-fast',{
  sessionId:selective.session.id,itemId:selective.session.items[0].id,countedQuantity:0,
 }))
 assert.equal(countedZero.ok,true)
+assert.equal(countedZero.item.id,selective.session.items[0].id)
+assert.equal(countedZero.item.countedQuantity,0)
+assert.equal('session' in countedZero,false,
+ 'Fast count autosave must not serialize all inventory rows after every blur')
+const legacyRead=await parse(changeClient3WatchRevision(db,admin,1,'count',{
+ sessionId:selective.session.id,itemId:selective.session.items[0].id,countedQuantity:0,
+}))
+assert.equal(legacyRead.ok,true)
+assert.equal(legacyRead.session.items[0].countedQuantity,0,
+ 'An already open older browser tab continues receiving legacy full-session results')
 const finishZero=await parse(changeClient3WatchRevision(db,admin,1,'complete',{sessionId:selective.session.id}))
 assert.equal(finishZero.ok,true,JSON.stringify(finishZero))
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_stock WHERE variant_id=? AND inventory_source=?').get(cv,'boutique').n,0,

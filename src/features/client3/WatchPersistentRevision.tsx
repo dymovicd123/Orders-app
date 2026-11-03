@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useState} from 'react'
+import {useEffect,useMemo,useRef,useState} from 'react'
 import {StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'
 import {WatchOperationInlineCatalog} from './WatchOperationInlineCatalog'
 import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
@@ -17,7 +17,7 @@ type Session={
  totalItems:number;countedCount:number;recountCount:number;shortageCount:number;items:RevisionItem[]
 }
 type Result={ok:boolean;message?:string;code?:string;blocked?:boolean;session?:Session|null;
- changed?:number;resumed?:boolean;alreadyPresent?:boolean}
+ changed?:number;resumed?:boolean;alreadyPresent?:boolean;item?:Partial<RevisionItem>&{id:number}}
 async function post(action:string,data:Record<string,unknown>):Promise<Result>{
  const res=await fetch('/api/client3/watches/stock/revision/'+action,{
    method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
@@ -49,6 +49,11 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
 }){
  const [session,setSession]=useState<Session|null>(null)
  const [busy,setBusy]=useState(false)
+ const [savingIds,setSavingIds]=useState<number[]>([])
+ const [savingAll,setSavingAll]=useState(false)
+ const draftRef=useRef<Record<number,string>>({})
+ const savedRef=useRef<Record<number,string>>({})
+ const inFlight=useRef<Map<number,Promise<boolean>>>(new Map())
  const [loading,setLoading]=useState(true)
  const [blocked,setBlocked]=useState('')
  const [error,setError]=useState('')
@@ -61,12 +66,43 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
  const [newVariant,setNewVariant]=useState('')
  const [showOutcome,setShowOutcome]=useState(false)
  const [reviewOpen,setReviewOpen]=useState(false)
+ const draftKey='client3-watch-revision-input:v1:'+brand+':'+source
+ const keepDraft=(id:string,values:Record<number,string>)=>{
+   const pending:Record<number,string>={}
+   for(const [key,value] of Object.entries(values)){
+     if(value!==(savedRef.current[Number(key)]||''))pending[Number(key)]=value
+   }
+   try{
+     if(Object.keys(pending).length)sessionStorage.setItem(draftKey,JSON.stringify({sessionId:id,values:pending}))
+     else sessionStorage.removeItem(draftKey)
+   }catch{/* Browser storage may be unavailable; the server count remains authoritative. */}
+ }
+ const clearDraft=()=>{
+   try{sessionStorage.removeItem(draftKey)}catch{/* ignore */}
+ }
  const hydrate=(data:Session|null)=>{
+
    setSession(data)
    onActiveChange(Boolean(data&&data.status==='active'))
    const values:Record<number,string>={}
    for(const item of data?.items||[])values[item.id]=item.countedQuantity===null?'':String(item.countedQuantity)
-   setDraft(values);setSaved(values)
+   const merged={...values}
+   if(data?.status==='active'){
+     // The browser copy contains ONLY unsaved edits for this exact session.
+     // Never let a pending request or reload silently erase a typed count.
+     try{
+       const stored=JSON.parse(sessionStorage.getItem(draftKey)||'null') as
+         {sessionId?:string;values?:Record<number,string>}|null
+       if(stored?.sessionId===data.id&&stored.values){
+         for(const item of data.items){
+           const value=stored.values[item.id]
+           if(typeof value==='string'&&(value===''||validCount(value)))merged[item.id]=value
+         }
+       }
+     }catch{/* Invalid local draft: rely on server data. */}
+   }
+   draftRef.current=merged;savedRef.current=values
+   setDraft(merged);setSaved(values)
    setGroup(current=>data?.items.some(x=>x.productId===current)?current:
      data?.items[0]?.productId||null)
  }
@@ -89,51 +125,84 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
  const currentItems=(session?.items||[]).filter(x=>x.productId===group)
  const invalid=Object.keys(draft).some(id=>draft[Number(id)]!==''&&!validCount(draft[Number(id)]))
  const dirty=Object.keys(draft).some(id=>draft[Number(id)]!==(saved[Number(id)]||''))
- const saveOne=async(id:number,value:string)=>{
-   if(!session||session.status!=='active'||busy||!(!value||validCount(value)))return false
-   setBusy(true);setError('')
-   try{
-     const result=await post('count',{brand,sessionId:session.id,itemId:id,
-       countedQuantity:value===''?null:Number(value)})
-     if(result.session)hydrate(result.session)
-     setNotice('Количество сохранено. Проверку можно закрыть и продолжить позже.')
-     return true
-   }catch(e){
-     setError(e instanceof Error?e.message:'Не удалось сохранить результат.')
-     // Refresh after a movement conflict; Main retains previous counted result.
-     const q=new URLSearchParams({brand,source})
+ const updateDraft=(id:number,value:string)=>{
+   draftRef.current={...draftRef.current,[id]:value}
+   setDraft(draftRef.current)
+   if(session?.status==='active')keepDraft(session.id,draftRef.current)
+   setConfirmed(false);setReviewOpen(false)
+ }
+ const saveOne=async(id:number,value:string):Promise<boolean>=>{
+   if(!session||session.status!=='active'||busy||!(value===''||validCount(value)))return false
+   const previous=inFlight.current.get(id)
+   if(previous){
+     const okay=await previous
+     const current=draftRef.current[id]??''
+     if(okay&&current===savedRef.current[id])return true
+     // A newer value typed while the older request was saving must win.
+     if(value===savedRef.current[id])return okay
+     if(current!==value)return saveOne(id,current)
+     // If the older operation failed, keep the text for explicit retry.
+     if(!okay)return false
+   }
+   if(savedRef.current[id]===value)return true
+   const sessionId=session.id
+   const run=(async()=>{
+     setSavingIds(old=>old.includes(id)?old:[...old,id])
      try{
-       const result=await (await fetch('/api/client3/watches/stock/revision?'+q,{credentials:'include'})).json() as Result
-       if(result.ok&&result.session)hydrate(result.session)
-     }catch{/* Keep visible server error; no silent retry. */}
-     return false
-   }finally{setBusy(false)}
+       const result=await post('count-fast',{brand,sessionId,itemId:id,
+         countedQuantity:value===''?null:Number(value)})
+       const stored=result.item
+       if(!stored||stored.id!==id)throw Error('Сервер не подтвердил сохранение позиции.')
+       const item={...stored,countedQuantity:value===''?null:Number(value)}
+       const savedNext={...savedRef.current,[id]:value}
+       savedRef.current=savedNext
+       setSaved(savedNext)
+       keepDraft(sessionId,draftRef.current)
+       setSession(current=>{
+         if(!current||current.id!==sessionId)return current
+         const items=current.items.map(x=>x.id===id?{...x,...item}:x)
+         return {...current,items,
+           countedCount:items.filter(x=>x.countedQuantity!==null&&x.status!=='pending').length,
+           recountCount:items.filter(x=>x.status==='recount_required').length,
+           shortageCount:items.filter(x=>x.countedQuantity!==null&&
+             x.countedQuantity-x.reservedQuantity<0).length}
+       })
+       return true
+     }catch(e){
+       setError((e instanceof Error?e.message:'Не удалось сохранить результат.')+
+         ' Введённое число осталось в черновике. Нажмите «Сохранить введённые количества» для повтора.')
+       return false
+     }finally{
+       setSavingIds(old=>old.filter(x=>x!==id))
+     }
+   })()
+   inFlight.current.set(id,run)
+   const okay=await run
+   if(inFlight.current.get(id)===run)inFlight.current.delete(id)
+   // Do not overwrite user input: blur/change events may run during the request.
+   if(okay){
+     const current=draftRef.current[id]??''
+     if(current!==value&&current!==savedRef.current[id])return saveOne(id,current)
+   }
+   return okay
  }
  const saveDirty=async()=>{
-   if(!session||busy||invalid)return
-   // Saving single Main count writes is deliberate: each gets its own stale
-   // baseline and durable counted-at timestamp, identical to Main.
-   let pending=Object.entries(draft).filter(([id,v])=>v!==(saved[Number(id)]||''))
-   if(!pending.length)return
-   setBusy(true);setError('')
-   let latest:Session=session
+   if(!session||busy||savingAll||invalid)return
+   setSavingAll(true);setError('')
    try{
-     for(const [id,value] of pending){
-       const result=await post('count',{brand,sessionId:latest.id,itemId:Number(id),
-         countedQuantity:value===''?null:Number(value)})
-       if(result.session)latest=result.session
+     const pending=Object.entries(draftRef.current)
+       .filter(([id,v])=>v!==(savedRef.current[Number(id)]||''))
+     // Keep at most three independent per-SKU requests in flight. Main's
+     // stocktake CAS handles the actual verification in D1; the UI never locks
+     // the whole matrix during persistence.
+     let okay=true
+     for(let i=0;i<pending.length;i+=3){
+       const batch=await Promise.all(pending.slice(i,i+3)
+         .map(([id,v])=>saveOne(Number(id),v)))
+       if(batch.some(success=>!success))okay=false
      }
-     hydrate(latest);setNotice('Все введённые количества сохранены. Можно вернуться позже.')
-   }catch(e){
-     setError(e instanceof Error?e.message:'Сохранение не завершено.')
-     // Any successful prior item saves are persisted. Fetch their real state.
-     try{
-       const q=new URLSearchParams({brand,source})
-       const result=await (await fetch('/api/client3/watches/stock/revision?'+q,
-         {credentials:'include',cache:'no-store'})).json() as Result
-       if(result.ok&&result.session)hydrate(result.session)
-     }catch{/* preserve visible error */}
-   }finally{setBusy(false)}
+     if(okay)setNotice('Все введённые количества сохранены. Можно вернуться позже.')
+   }finally{setSavingAll(false)}
  }
  const start=async(full:boolean)=>{
    if(busy||loading||blocked||(!full&&!selectedModelIds.length))return
@@ -159,11 +228,12 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
    finally{setBusy(false)}
  }
  const finish=async()=>{
-   if(!session||busy||dirty||invalid||!confirmed||session.recountCount)return
+   if(!session||busy||savingAll||savingIds.length||dirty||invalid||!confirmed||session.recountCount)return
    setBusy(true);setError('')
    try{
      const result=await post('complete',{brand,sessionId:session.id})
      if(result.session)hydrate(result.session)
+     clearDraft()
      // Keep the completed result visible inside the same Main correction panel.
      // A completed session is no longer "active" on the server, but the parent
      // must not unmount this component before the user acknowledges the outcome.
@@ -179,7 +249,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
    setBusy(true);setError('')
    try{
      await post('cancel',{brand,sessionId:session.id})
-     hydrate(null);setNotice('Ревизия отменена без применения подсчётов.')
+     clearDraft();hydrate(null);setNotice('Ревизия отменена без применения подсчётов.')
    }catch(e){setError(e instanceof Error?e.message:'Не удалось отменить ревизию.')}
    finally{setBusy(false)}
  }
@@ -244,16 +314,22 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
            <span>По системе: {item.currentQuantity} · Резерв: {item.reservedQuantity}
              {item.status==='recount_required'?' · Пересчитать заново':''}</span>
            <StocktakeSizeCountCell cellId={item.id} size="Фактически"
+             stateClass={savingIds.includes(item.id)?'is-saving':''}
              currentQuantity={item.currentQuantity} value={draft[item.id]||''}
              ariaLabel={item.productName+' '+itemName(item)+' фактическое количество'}
              disabled={busy} onChange={v=>{
                if(v!==''&&!/^\d{0,7}$/.test(v))return
-               setDraft(old=>({...old,[item.id]:v}));setConfirmed(false);setReviewOpen(false)
-             }} onBlur={()=>{if(draft[item.id]!==saved[item.id])
-               void saveOne(item.id,draft[item.id]||'')}} onClear={()=>{
-               setDraft(old=>({...old,[item.id]:''}));setConfirmed(false);setReviewOpen(false)
+               updateDraft(item.id,v)
+             }} onBlur={()=>{
+               const value=draftRef.current[item.id]||''
+               if(value!==(savedRef.current[item.id]||''))void saveOne(item.id,value)
+             }} onClear={()=>{
+               updateDraft(item.id,'')
+               void saveOne(item.id,'')
              }}/>
-           {item.countedAt&&<small>Сохранено: {new Date(item.countedAt).toLocaleString('ru-RU')}</small>}
+           {savingIds.includes(item.id)?<small role="status">Сохраняем количество…</small>:
+             draft[item.id]!==(saved[item.id]||'')?<small>Не сохранено на сервере · черновик в браузере</small>:
+             item.countedAt?<small>Сохранено: {new Date(item.countedAt).toLocaleString('ru-RU')}</small>:null}
          </div>)}
        </div>
        <div className="client3-revision-add">
@@ -276,13 +352,13 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
          </>}
        </div>
        <div className="client3-revision-save-actions">
-         <button type="button" className="secondary" disabled={busy||invalid||!dirty}
-           onClick={()=>void saveDirty()}>{busy?'Сохраняем…':'Сохранить введённые количества'}</button>
-         <small>Можно закрыть страницу и вернуться позже. Сохранённые количества не изменяют остатки до завершения.</small>
+         <button type="button" className="secondary" disabled={busy||savingAll||invalid||(!dirty&&!savingIds.length)}
+           onClick={()=>void saveDirty()}>{savingAll?'Сохраняем…':'Сохранить введённые количества'}</button>
+         
        </div>
        {!reviewOpen?<div className="stocktake-e-review-actions">
          <button type="button" className="primary"
-           disabled={busy||dirty||invalid||session.recountCount>0||!session.countedCount}
+           disabled={busy||savingAll||savingIds.length>0||dirty||invalid||session.recountCount>0||!session.countedCount}
            onClick={()=>{setReviewOpen(true);setConfirmed(false)}}>
            Проверить результат ревизии
          </button>
@@ -304,13 +380,13 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
            </div>)}
          <p className="mini-panel-note">Проверено {session.countedCount} из {session.totalItems}. Без изменений останется {session.totalItems-session.countedCount} позиций.</p>
          <label className="client3-main-stock-confirm">
-           <input type="checkbox" checked={confirmed} disabled={busy||dirty}
+           <input type="checkbox" checked={confirmed} disabled={busy||savingAll||savingIds.length>0||dirty}
              onChange={e=>setConfirmed(e.target.checked)}/>
            Подтверждаю фактическое количество всех проверенных часов и применение результата к остаткам.
          </label>
          <div className="stocktake-e-review-actions">
            <button type="button" className="secondary" onClick={()=>{setReviewOpen(false);setConfirmed(false)}}>Исправить подсчёт</button>
-           <button type="button" className="primary" disabled={busy||dirty||invalid||
+           <button type="button" className="primary" disabled={busy||savingAll||savingIds.length>0||dirty||invalid||
              !confirmed||session.recountCount>0||!session.countedCount}
              onClick={()=>void finish()}>Завершить и применить ревизию</button>
          </div>

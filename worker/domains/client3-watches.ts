@@ -301,14 +301,14 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return startClient3WatchRevision(db,actor,scope.row!.id,input)
   }
-  const watchRevisionAction=/^\/api\/client3\/watches\/stock\/revision\/(count|add|complete|cancel)$/.exec(url.pathname)
+  const watchRevisionAction=/^\/api\/client3\/watches\/stock\/revision\/(count|count-fast|add|complete|cancel)$/.exec(url.pathname)
   if(watchRevisionAction&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;sessionId?:unknown;itemId?:unknown;
       countedQuantity?:unknown;watchVariantId?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return changeClient3WatchRevision(db,actor,scope.row!.id,
-      watchRevisionAction[1] as 'count'|'add'|'complete'|'cancel',input)
+      watchRevisionAction[1] as 'count'|'count-fast'|'add'|'complete'|'cancel',input)
   }
   if(url.pathname==='/api/client3/watches/stock/history'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
