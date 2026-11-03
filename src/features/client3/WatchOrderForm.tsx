@@ -67,6 +67,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  const [recipientName,setRecipientName]=useState('')
  const [recipientPhone,setRecipientPhone]=useState('')
  const [city,setCity]=useState('')
+ const [otherCity,setOtherCity]=useState(false)
  const [address,setAddress]=useState('')
  const [postalCode,setPostalCode]=useState('')
  const [deliveryMethod,setDeliveryMethod]=useState(deliveryMethods[0]||'')
@@ -124,7 +125,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  const reset=()=>{
    setBrand('');setLines([newLine()]);setManagerId(0)
    setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0'}])
-   setRecipientName('');setRecipientPhone('');setCity('');setAddress('');setPostalCode('')
+   setRecipientName('');setRecipientPhone('');setCity('');setOtherCity(false);setAddress('');setPostalCode('')
    setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false)
    setError('');requestRef.current=null
  }
@@ -201,12 +202,19 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
            onChange={e=>setRecipientPhone(e.target.value)} autoComplete="tel"/>
        </label>
        <label>Город *
-         <input required maxLength={100} list="client3-city-options" value={city}
-            autoComplete="address-level2"
-            onChange={e=>setCity(e.target.value.toLocaleUpperCase('ru-RU'))}/>
-          <datalist id="client3-city-options">
-            {(references?.cities||[]).map(name=><option key={name} value={name}/>)}
-          </datalist>
+         <select required value={otherCity?'__other__':city}
+           onChange={e=>{
+             const value=e.target.value
+             setOtherCity(value==='__other__')
+             setCity(value==='__other__'?'':value)
+           }}>
+           <option value="">Выберите город</option>
+           {(references?.cities||[]).map(name=><option key={name} value={name}>{name}</option>)}
+           <option value="__other__">ДРУГОЙ ГОРОД — ВВЕСТИ ВРУЧНУЮ</option>
+         </select>
+         {otherCity&&<input required maxLength={100} value={city}
+           autoComplete="address-level2" placeholder="Введите город"
+           onChange={e=>setCity(e.target.value.toLocaleUpperCase('ru-RU'))}/>}
        </label>
        <label>Доставка *
          <select required value={deliveryMethod}
