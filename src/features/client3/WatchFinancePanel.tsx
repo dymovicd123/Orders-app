@@ -7,9 +7,11 @@ import '../../styles/client3-watch-finance.css'
 
 type Mode='summary'|'payments'|'debts'|'returns'|'cash'|'methods'
 type CashEntry={id:number;type:string;businessDate:string;createdAt?:string;
- amountDelta:number;externalOrderId?:string;comment?:string}
+ amountDelta:number;externalOrderId?:string;comment?:string;reversesEntryId?:number|null}
 type Cash={ok:boolean;initialized:boolean;message?:string;currentBalance:number|null;
  openingAmount?:number;todayIn?:number;todayOut?:number;totalIn?:number;totalOut?:number;
+ autoTrackingEnabled?:boolean;cycleStartedAt?:string;cycles?:Array<{id:number;startedAt:string;
+ finishedAt:string;openingAmount:number;closingBalance:number;comment:string}>;
  entries:CashEntry[]}
 const formats:{id:Mode;label:string;hint:string}[]=[
  {id:'summary',label:'Сводка',hint:'Чёткие итоги'},
@@ -37,6 +39,8 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
  const [cashComment,setCashComment]=useState('')
  const [cashReconcile,setCashReconcile]=useState('')
  const [cashAction,setCashAction]=useState<'manual'|'reconcile'>('manual')
+ const [cashResetComment,setCashResetComment]=useState('')
+ const [cashCyclesOpen,setCashCyclesOpen]=useState(false)
  const request=useRef<{fingerprint:string;id:string}|null>(null)
  useEffect(()=>{
    if(mode!=='cash'||!isAdmin)return
@@ -81,6 +85,36 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
      request.current=null;setCashNotice('Операция сохранена в кассе выбранного бренда.')
      refresh()
    }catch(err){setCashError(err instanceof Error?err.message:'Ошибка операции кассы.')}
+   finally{setCashBusy(false)}
+ }
+ const cashExtra=async(action:'auto'|'reverse'|'reset',extra:Record<string,unknown>)=>{
+   if(cashBusy||!cash||!cash.initialized||!isAdmin)return
+   if(action==='auto'&&!window.confirm(cash.autoTrackingEnabled?
+     'Остановить автоматический учёт наличных? Новые оплаты за время паузы не будут добавлены задним числом.':
+     'Включить автоучёт с этого момента? Оплаты за время паузы не будут добавлены задним числом.'))return
+   if(action==='reverse'&&!window.confirm('Отменить ручную операцию отдельной записью? История останется.'))return
+   if(action==='reset'){
+     if(cashResetComment.trim().length<3){setCashError('Укажите причину нового цикла.');return}
+     if(!window.confirm('Начать НОВЫЙ цикл кассы '+brand+'? Старый журнал сохранится; новый остаток станет 0, автоучёт приостановится.'))return
+   }
+   const payload:Record<string,unknown>={brand,action,expectedBalance:cash.currentBalance,...extra}
+   const fingerprint=JSON.stringify(payload)
+   if(request.current?.fingerprint!==fingerprint)
+     request.current={fingerprint,id:'watch-cash-'+crypto.randomUUID()}
+   payload.requestId=request.current.id
+   setCashBusy(true);setCashError('');setCashNotice('')
+   try{
+     const response=await fetch('/api/client3/watches/cash',{
+       method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify(payload),
+     })
+     const value=await response.json() as Cash
+     if(!response.ok||!value.ok)throw Error(value.message||'Операция кассы не сохранена.')
+     setCash(value);request.current=null;setCashResetComment('')
+     setCashNotice(action==='auto'?'Режим автоучёта изменён.':
+       action==='reverse'?'Отмена записана отдельной операцией.':'Новый цикл открыт, старый сохранён.')
+     refresh()
+   }catch(e){setCashError(e instanceof Error?e.message:'Не удалось изменить кассу.')}
    finally{setCashBusy(false)}
  }
  const moneyRows=data?.events||[]
@@ -220,6 +254,17 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
        <div className="summary-card"><span>Всего выдано</span>
          <strong>{watchMoney(cash.totalOut)}</strong></div>
      </div>}
+     {cash?.initialized&&<section className="mini-panel cash-auto-status-panel">
+       <div className="mini-panel-head"><div><h3>Автоматический учёт наличных</h3>
+         <p className="mini-panel-note">Наличные оплаты и возвраты заказов; Kaspi и безналичные способы не входят в кассу. Платежи за время паузы не учитываются задним числом.</p></div></div>
+       <div className={'cash-auto-status '+(cash.autoTrackingEnabled?'is-enabled':'is-paused')}>
+         <strong>{cash.autoTrackingEnabled?'Автоучёт включён':'Автоучёт приостановлен'}</strong>
+         <button className={cash.autoTrackingEnabled?'secondary compact danger-outline':'primary compact'}
+           disabled={cashBusy} type="button" onClick={()=>void cashExtra('auto',{
+             enabled:!cash.autoTrackingEnabled,
+           })}>{cash.autoTrackingEnabled?'Остановить автоучёт':'Включить автоучёт'}</button>
+       </div>
+     </section>}
      {!cashBusy&&cash&&<form className="watch-cash-entry-form" onSubmit={cashSubmit}>
        {!cash.initialized?<><h4>Первоначальная настройка кассы</h4>
          <label>Фактический начальный остаток наличных<input type="number"
@@ -250,14 +295,43 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
      {cash?.initialized&&<LinkedTableScroll ariaLabel="История кассы бренда">
        <table className="data-table strict-report-table">
          <thead><tr><th>Дата</th><th>Тип</th><th>Заказ</th><th>Комментарий</th>
-           <th className="num">Сумма</th></tr></thead>
+           <th className="num">Сумма</th><th className="export-hide">Действия</th></tr></thead>
          <tbody>{cash.entries.map((x,i)=><tr key={String(x.type)+String(x.id)+i}>
-           <td>{x.businessDate}</td><td>{x.type}</td>
+           <td>{x.businessDate}</td><td>{x.reversesEntryId?'Отмена ручной операции':
+             ({manual_in:'Внесение',manual_out:'Выдача',reconcile_in:'Сверка +',
+               reconcile_out:'Сверка −'} as Record<string,string>)[x.type]||x.type}</td>
            <td>{x.externalOrderId||'—'}</td><td>{x.comment||'—'}</td>
            <td className="num">{watchMoney(x.amountDelta)}</td>
+           <td className="export-hide">{['manual_in','manual_out'].includes(x.type)&&!x.reversesEntryId&&
+             <button type="button" className="secondary compact"
+               disabled={cashBusy} onClick={()=>void cashExtra('reverse',{entryId:x.id})}>Отменить</button>}</td>
          </tr>)}</tbody>
        </table>
      </LinkedTableScroll>}
+     {cash?.initialized&&<section className="mini-panel cash-register-cycles-panel">
+       <div className="mini-panel-head"><div><h3>Прошлые циклы кассы</h3>
+         <p className="mini-panel-note">Закрытые циклы и фактический остаток перед завершением. Записи не удаляются.</p></div>
+         <button className="secondary compact" type="button"
+           onClick={()=>setCashCyclesOpen(v=>!v)}>{cashCyclesOpen?'Скрыть':'Показать историю'}</button>
+       </div>
+       {cashCyclesOpen&&<div className="cash-cycle-list">{(cash.cycles||[]).map(c=>
+         <article className="cash-cycle-card" key={c.id}>
+           <div><strong>{String(c.startedAt||'').slice(0,10)} — {String(c.finishedAt||'').slice(0,10)}</strong></div>
+           <div><span>Начальный остаток</span><strong>{watchMoney(c.openingAmount)}</strong></div>
+           <div><span>Остаток перед закрытием</span><strong>{watchMoney(c.closingBalance)}</strong></div>
+           <div className="cash-cycle-comment"><strong>{c.comment}</strong></div>
+         </article>)}
+         {!cash.cycles?.length&&<div className="empty-state">Закрытых циклов пока нет.</div>}
+       </div>}
+     </section>}
+     {cash?.initialized&&<details className="mini-panel cash-register-reset-panel">
+       <summary><strong>Новый цикл кассы</strong> · для начала нового периода учёта</summary>
+       <p>Текущий цикл завершится с сохранением истории. Новый остаток будет 0; чтобы начать отслеживание платежей, включите автоучёт после сверки.</p>
+       <label>Причина нового цикла<textarea rows={2} minLength={3} maxLength={500}
+         value={cashResetComment} onChange={e=>setCashResetComment(e.target.value)}/></label>
+       <button type="button" className="secondary danger-outline" disabled={cashBusy||cashResetComment.trim().length<3}
+         onClick={()=>void cashExtra('reset',{comment:cashResetComment.trim()})}>Закрыть цикл и начать новый</button>
+     </details>}
    </section>}
    {mode==='methods'&&<section className="mini-panel">
      <h3>Способы оплаты</h3>
