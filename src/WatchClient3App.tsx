@@ -6,6 +6,7 @@ import {WatchWarehouseMain} from './features/client3/WatchWarehouseMain'
 import {WatchWarehouseHistory} from './features/client3/WatchWarehouseStage5'
 import {WatchStockMainBrowse} from './features/client3/WatchStockMainBrowse'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
+import {WatchClientsPanel} from './features/client3/WatchClientsPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
 import {WatchDashboardPanel} from './features/client3/WatchDashboardPanel'
 import {WatchReportsPanel} from './features/client3/WatchReportsPanel'
@@ -34,13 +35,14 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
   dashboard:{title:'Инфопанель',description:'Продажи, деньги и внимание к срокам логистики.',area:'Обзор'},
   reports:{title:'Отчёты',description:'Брендовые отчёты Main по оплатам, товарам, городам и менеджерам.',area:'Финансы'},
   plan:{title:'План',description:'Денежные планы отдела и менеджеров, без KPI.',area:'Продажи'},
   leads:{title:'Лиды',description:'Лиды и Колл-центр по каждому бренду, как в Main.',area:'Продажи'},
   orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
+  clients:{title:'Клиенты',description:'Покупатели, повторные продажи и история заказов.',area:'Продажи'},
   create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
   logistics:{title:'Логистика',description:'Гравировка, сроки исполнения и подготовка к отправке.',area:'Рабочие процессы'},
   warehouse:{title:'Склад',description:'Реальные остатки, резервы и складские операции.',area:'Товары и склад'},
@@ -322,7 +324,7 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['dashboard','reports','plan','leads','orders','create','finance','returns','exchange'].includes(tab))||
+    (!canSales&&['dashboard','reports','plan','leads','clients','orders','create','finance','returns','exchange'].includes(tab))||
     (!canSeeWarehouse&&['warehouse','operations','revision','history','catalog','references'].includes(tab))
       ? (isWarehouseRole?'warehouse':'logistics'):tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
@@ -351,6 +353,8 @@ export function WatchClient3App() {
             setReportOrderFocus(order);setLastOrderBrand(order.brand)
             goTo('orders')
           }}/>}
+      {activeSection==='clients'&&brands.length>0&&<WatchClientsPanel brands={brands.map(x=>x.code)}
+        onOpenOrder={order=>{setReportOrderFocus(order);setLastOrderBrand(order.brand);goTo('orders')}}/>}
       {['orders','create','returns','exchange','legacy'].includes(activeSection)&&<>
         <OrdersHeaderSection ctx={{
           orderPanel:orderTab,
