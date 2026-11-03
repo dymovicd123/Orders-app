@@ -199,3 +199,10 @@
 .watch-main-flow-workspace .watch-exchange-form{
   border:0;box-shadow:none;background:#fff;padding:0;
 }
+
+/* Main-style actions remain visible in the order row, not hidden in a page-long expansion. */
+.watch-main-row-actions{display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-width:135px;max-width:210px}
+.watch-main-row-actions button{font-size:.7rem!important;line-height:1.2!important;
+  padding:5px 8px!important;min-height:28px!important;white-space:nowrap}
+.watch-main-orders-table .watch-main-order-row{vertical-align:top}
+.watch-main-orders-table td.watch-main-order-sku{min-width:190px;max-width:270px}
