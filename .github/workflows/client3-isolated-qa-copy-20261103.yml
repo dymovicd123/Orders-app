@@ -1,0 +1,182 @@
+name: Client3 isolated QA COPY (production read-only)
+on:
+  push:
+    branches: [client3/isolated-qa-copy-20261103]
+    paths: ['.github/workflows/client3-isolated-qa-copy-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: client3-isolated-qa-copy-20261103
+  cancel-in-progress: false
+jobs:
+  create-qa-copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CI: "true"
+      GH_TOKEN: ${ github.token }
+      CLOUDFLARE_API_TOKEN: ${ secrets.CLOUDFLARE_API_TOKEN }
+      CLOUDFLARE_ACCOUNT_ID: ${ secrets.CLOUDFLARE_ACCOUNT_ID }
+      SOURCE_DB: orders_db_client3_old_client
+      SOURCE_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      QA_WORKER: orders-app-client3-qa-20261103
+    steps:
+      - name: Checkout exact accepted Client3 source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with: {node-version: '24', cache: npm}
+      - name: Reject any production binding or unexpected branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/isolated-qa-copy-20261103
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = "$SOURCE_DB"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$SOURCE_DB_ID"
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = "1"
+          test "$QA_WORKER" != "$(jq -r .name wrangler.jsonc)"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-isolated-qa-copy-20261103.yml
+      - run: npm ci
+      - name: Check Client3 build BEFORE creating any cloud resources
+        run: npm run build
+      - name: Read-only source D1 integrity and snapshot bookmark
+        run: |
+          set -euo pipefail
+          umask 077
+          npx wrangler d1 execute "$SOURCE_DB" --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" > /tmp/qa-source-fk.json
+          jq -e '(if type=="array" then .[0].results else .results end)|length==0' /tmp/qa-source-fk.json >/dev/null
+          npx wrangler d1 execute "$SOURCE_DB" --remote --config wrangler.jsonc --json \
+            --command="SELECT (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) admins,
+              (SELECT COUNT(*) FROM watch_brands) brands,
+              (SELECT COUNT(*) FROM watch_variants) variants,
+              (SELECT COUNT(*) FROM inventory_stock) stock,
+              (SELECT COUNT(*) FROM orders) orders_count" > /tmp/qa-source-summary.json
+          jq -e '(if type=="array" then .[0].results[0] else .results[0] end)
+            | select(.admins >= 1 and .brands >= 2 and .variants >= 1)' /tmp/qa-source-summary.json >/dev/null
+          npx wrangler d1 time-travel info "$SOURCE_DB" --config wrangler.jsonc --json > /tmp/qa-source-bookmark.json
+          jq -e '.bookmark|type=="string" and length>15' /tmp/qa-source-bookmark.json >/dev/null
+          echo "Client3 source is healthy; recovery bookmark captured. No source writes."
+      - name: Create a uniquely named D1 database (never reuse the source)
+        run: |
+          set -euo pipefail
+          umask 077
+          export QA_DB="orders_db_client3_qa_${ GITHUB_RUN_ID }"
+          echo "QA_DB=$QA_DB" >> "$GITHUB_ENV"
+          test "$QA_DB" != "$SOURCE_DB"
+          status=$(curl -sS -o /tmp/qa-db-create.json -w '%{http_code}' \
+            --retry 2 --retry-delay 2 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"name\":\"$QA_DB\"}" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database")
+          test "$status" = 200 -o "$status" = 201
+          QA_DB_ID=$(jq -er 'select(.success==true)|.result.uuid' /tmp/qa-db-create.json)
+          test "$QA_DB_ID" != "$SOURCE_DB_ID"
+          test "$QA_DB_ID" != ""
+          export QA_DB_ID
+          echo "QA_DB_ID=$QA_DB_ID" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          src=json.loads(Path('wrangler.jsonc').read_text(encoding='utf-8'))
+          assert src['name']=='orders-app-client3-old-client'
+          assert src['d1_databases'][0]['database_id']=='0717f239-6d81-4837-8586-777d94e22c53'
+          src['name']=os.environ['QA_WORKER']
+          src['d1_databases'][0]['database_name']=os.environ['QA_DB']
+          src['d1_databases'][0]['database_id']=os.environ['QA_DB_ID']
+          src['vars']['CLIENT3_QA_COPY']='1'
+          Path('wrangler.client3-qa.jsonc').write_text(json.dumps(src,ensure_ascii=False,indent=2),encoding='utf-8')
+          PY
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          echo "A fresh isolated D1 was created; exact source D1 ID is not bound."
+      - name: Read-only export of third D1 into ephemeral runner
+        run: |
+          set -euo pipefail
+          umask 077
+          if ! npx wrangler d1 export "$SOURCE_DB" --remote \
+            --config wrangler.jsonc --skip-confirmation \
+            --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
+            echo "::error::D1 source export failed. No production data was changed."
+            exit 1
+          fi
+          test -s /tmp/client3-qa-snapshot.sql
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/client3-qa-snapshot.sql')
+          original=p.read_text(encoding='utf-8')
+          lines=original.splitlines(keepends=True)
+          filtered=[s for s in lines if s.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;')]
+          assert len(original)>1000 and ('CREATE TABLE' in original.upper())
+          p.write_text(''.join(filtered),encoding='utf-8')
+          print('Ephemeral D1 SQL snapshot prepared (contents withheld).')
+          PY
+      - name: Import snapshot into QA D1 only
+        run: |
+          set -euo pipefail
+          test "$QA_DB" != "$SOURCE_DB"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          if ! npx wrangler d1 execute "$QA_DB" --remote \
+            --config wrangler.client3-qa.jsonc --yes \
+            --file=/tmp/client3-qa-snapshot.sql > /tmp/qa-import-log 2>&1; then
+            echo "::error::Isolated D1 import failed; no Worker deployed. Import log withheld because snapshot contains customer data."
+            exit 1
+          fi
+          rm -f /tmp/client3-qa-snapshot.sql
+      - name: Retain admin login and prevent other staff access to QA
+        run: |
+          set -euo pipefail
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json \
+            --command="UPDATE app_users SET is_active=0 WHERE role<>'admin'" > /tmp/qa-disable-nonadmins.json
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) active_admins,
+              (SELECT COUNT(*) FROM app_users WHERE role<>'admin' AND is_active=1) active_other_users,
+              (SELECT COUNT(*) FROM watch_brands) brands,
+              (SELECT COUNT(*) FROM watch_variants) variants,
+              (SELECT COUNT(*) FROM inventory_stock) stock,
+              (SELECT COUNT(*) FROM orders) orders_count" > /tmp/qa-copy-summary.json
+          jq -e '(if type=="array" then .[0].results[0] else .results[0] end)
+            | select(.active_admins>=1 and .active_other_users==0 and .brands>=2 and .variants>=1)' \
+            /tmp/qa-copy-summary.json >/dev/null
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json \
+            --command="PRAGMA foreign_key_check" > /tmp/qa-copy-fk.json
+          jq -e '(if type=="array" then .[0].results else .results end)|length==0' /tmp/qa-copy-fk.json >/dev/null
+          echo "Real administrator login hashes preserved in QA D1. Non-admin login access disabled there only."
+      - name: Deploy only independent QA Worker
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          npx wrangler deploy --config wrangler.client3-qa.jsonc
+      - name: Verify QA site, isolation and authentication boundaries
+        run: |
+          set -euo pipefail
+          QA_URL="https://$QA_WORKER.orders-clothes.workers.dev"
+          test "$(curl -sSL -o /tmp/qa-home -w '%{http_code}' --max-time 30 "$QA_URL/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/qa-home
+          for path in '/api/client3/watches/logistics?status=all' \
+            '/api/client3/watches/orders?brand=TAUWACH' \
+            '/api/client3/watches/cash'; do
+            status=$(curl -sS -o /tmp/qa-unauth -w '%{http_code}' --max-time 30 "$QA_URL$path")
+            test "$status" = 401 -o "$status" = 403
+          done
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" != "$SOURCE_DB_ID"
+          echo "CLIENT3_QA_COPY_READY $QA_URL"
+      - name: Publish link after proven success
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body \
+            "Client3 independent QA COPY READY: https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Source: most recent deployed Client3 after PR #786. Isolated Worker=$QA_WORKER, separate D1=$QA_DB (ID $QA_DB_ID). Exported live Client3 snapshot in ephemeral runner, retained active admin login/password hashes, disabled all non-admin logins IN QA ONLY, copied catalog, orders, finance and stock for safe practical testing. Source D1 never written; Main and Branch2 untouched. QA unauthenticated smoke/FK pass. Action: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Never use QA for live customer operations."
+      - name: Record failure without claiming test URL is ready
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body \
+            "Client3 independent QA COPY attempt failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Only a new isolated D1 may have been created; source Client3 database and Main/Branch2 were not targeted for writes. Do not use QA URL until successful smoke."
