@@ -1,5 +1,6 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
+import {cancelReturn,cancelExchange,cancelExchangeSetV2,isExchangeSetV2} from './returns-exchanges.ts'
 
 /** Read-only, brand-scoped business history. The canonical Main returns/exchange
  * ledgers remain authoritative: no parallel records or watcher-specific truth.
@@ -96,4 +97,36 @@ export async function listClient3WatchOperationHistory(
  return json({ok:true,kind,brandId,rows:rows.slice(0,limit),
    total:Number(total?.total||0),cancelled:Number(total?.cancelled||0),
    money:Number(total?.money||0),hasMore:rows.length>limit})
+}
+
+/** Strictly brand-checked Main cancellation; no independent balance/stock edits.
+ * An exchange-linked refund is cancelled via its exchange, as in Main.
+ */
+export async function cancelClient3WatchOperation(
+ db:D1Database,actor:AuthUser,brandId:number,
+ input:{kind?:unknown;id?:unknown;requestId?:unknown;reason?:unknown},
+):Promise<Response>{
+ if(actor.role!=='admin')
+   return json({ok:false,message:'Отмену финансовой операции выполняет только администратор.'},{status:403})
+ const kind=input.kind,id=Number(input.id),requestId=input.requestId,reason=input.reason
+ if((kind!=='return'&&kind!=='exchange')||!Number.isSafeInteger(id)||id<1||
+   typeof requestId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(requestId)||
+   typeof reason!=='string'||reason.trim().length<8||reason.length>500)
+   return json({ok:false,message:'Укажите операцию и причину отмены (от 8 символов).'},{status:400})
+ const table=kind==='return'?'returns':'exchanges'
+ const exists=await db.prepare(`SELECT 1 AS found FROM ${table} operation
+   JOIN watch_order_details wd ON wd.order_id=operation.order_id AND wd.brand_id=?
+   WHERE operation.id=? LIMIT 1`).bind(brandId,id).first<{found:number}>()
+ if(!exists)return json({ok:false,message:'Операция не найдена в выбранном бренде.'},{status:404})
+ try{
+   const result=kind==='return'
+     ?await cancelReturn(db,id,{requestId,comment:reason.trim()})
+     :(await isExchangeSetV2(db,id)
+       ?await cancelExchangeSetV2(db,id,{requestId,comment:reason.trim()})
+       :await cancelExchange(db,id,{requestId,comment:reason.trim()}))
+   return json({...result,kind,id,brandId})
+ }catch(e){
+   return json({ok:false,message:e instanceof Error?e.message:
+     'Отмена не выполнена. Склад и деньги не изменены этим запросом.'},{status:409})
+ }
 }
