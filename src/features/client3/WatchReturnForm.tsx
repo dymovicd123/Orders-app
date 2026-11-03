@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {WATCH_PAYMENTS,watchReferenceLabel} from '../../../shared/client3/watch-domain'
+import '../../styles/194-return-smart-ux.css'
 import '../../styles/client3-watch-return.css'
 
 type Line={
@@ -122,14 +123,16 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
          }}>Снять выбор</button>
        </div>
      </div>
-     {returnable.map(line=><div key={line.id} className="watch-return-item-row">
-       <label className="watch-return-select">
+     <div className="return-smart-grid">
+     {returnable.map(line=><div key={line.id} className={'watch-return-item-row return-smart-card'+
+       (Number(selected[line.id]||0)>0?' is-selected':'')}>
+       <label className="watch-return-select return-smart-pick">
          <input type="checkbox" checked={Number(selected[line.id]||0)>0}
            onChange={e=>{
              setSelected(prev=>({...prev,[line.id]:e.target.checked?Number(line.returnableQuantity):0}))
              setConfirmed(false)
            }}/>
-         <span><strong>{line.productName}</strong>
+         <span className="return-smart-main"><strong>{line.productName}</strong>
            <small>{line.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('movements',line.movement)} ·
              {watchReferenceLabel('bracelets',line.braceletMaterial)} · {watchReferenceLabel('dials',line.dialColor)}
              {line.braceletColor?' · '+watchReferenceLabel('leatherColors',line.braceletColor):''}</small>
@@ -137,8 +140,8 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
            <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
          </span>
        </label>
-       <div className="watch-return-line-controls">
-         <label className="watch-return-quantity">
+       <div className="watch-return-line-controls return-smart-controls">
+         <label className="watch-return-quantity return-smart-quantity">
            <span>Вернуть, шт.</span>
            <input type="number" min={0} max={line.returnableQuantity} step={1}
              value={selected[line.id]??0} aria-label={'Количество возврата: '+line.productName}
@@ -147,7 +150,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
                setConfirmed(false)
              }}/>
          </label>
-         {Number(selected[line.id]||0)>0&&<label className="watch-return-physical-choice">
+         {Number(selected[line.id]||0)>0&&<label className="watch-return-physical-choice return-smart-physical">
            <span>Где эти часы сейчас?</span>
            <select value={physicalByItem[line.id]||'pending'}
              onChange={e=>{
@@ -162,6 +165,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
          </label>}
        </div>
      </div>)}
+     </div>
    </div>}
    {isMoney&&<>
      <label>Всего вернуть денег, ₸ (не более {money(maxRefund)})
