@@ -75,3 +75,37 @@ export function saveWarehouseOperationDraft(
     return true
   }catch{return false}
 }
+
+export type PrepatchArrivalEntry={model:string;label:string;quantity:string}
+export type PrepatchArrivalBackup={
+  version:1;brand:string;source:WarehouseDraftSource;mode:'arrival';
+  models:string[];entries:PrepatchArrivalEntry[];createdAt?:string
+}
+export const prepatchBackupKey='client3:watch-prepatch-arrival:v1'
+export function parsePrepatchArrivalBackup(text:string,brand:string):PrepatchArrivalBackup|null{
+  try{
+    const obj=record(JSON.parse(text))
+    if(obj.version!==1||obj.brand!==brand||obj.mode!=='arrival'||
+      !['office','showcase'].includes(String(obj.source))||!Array.isArray(obj.entries))return null
+    const entries=obj.entries.map(v=>{
+      const entry=record(v)
+      return {model:String(entry.model||'').slice(0,150),
+        label:String(entry.label||'').slice(0,500),
+        quantity:String(entry.quantity||'')}
+    }).filter(v=>v.model&&v.label&&/^\d{1,7}$/.test(v.quantity))
+    if(entries.length>3000)return null
+    return {version:1,brand,source:obj.source as WarehouseDraftSource,mode:'arrival',
+      models:Array.isArray(obj.models)?obj.models.filter((m):m is string=>typeof m==='string').slice(0,500):[],
+      entries,createdAt:typeof obj.createdAt==='string'?obj.createdAt:undefined}
+  }catch{return null}
+}
+export function readPrepatchArrivalBackup(brand:string,store:DraftStorage|null=storage()){
+  if(!store)return null
+  try{
+    const raw=store.getItem(prepatchBackupKey)
+    return raw?parsePrepatchArrivalBackup(raw,brand):null
+  }catch{return null}
+}
+export function clearPrepatchArrivalBackup(store:DraftStorage|null=storage()):void{
+  try{store?.removeItem(prepatchBackupKey)}catch{/* Browser data may be protected. */}
+}
