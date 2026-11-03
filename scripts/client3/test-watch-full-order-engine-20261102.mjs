@@ -1472,6 +1472,7 @@ assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 // Regression: creating an actual watch catalog position must result in one
 // stock-ready canonical SKU, even with ZERO physical quantity. Both ordinary
 // and reference-driven characteristics are tested on real SQLite migrations.
+const stockBeforeNewVariants=count('inventory_stock')
 const catalogModel=await parse(registerWatchModel(db,admin,1,{modelName:'КАТАЛОГ ТЕСТ НОВОЙ ПОЗИЦИИ'}))
 assert(catalogModel.watchProductId>0,JSON.stringify(catalogModel))
 const standardForm=await parse(registerWatchVariant(db,admin,1,{
@@ -1510,7 +1511,7 @@ assert(modelRows.every(row=>row.catalogVariantId&&row.variantActive===1),
   'New catalog variants must be fully linked and sellable')
 assert(modelRows.every(row=>Number(row.officePhysical||0)===0&&Number(row.showcasePhysical||0)===0),
   'Provisioning a catalog SKU must not invent physical watches')
-assert.equal(count('inventory_stock'),4,'Catalog create and provision must not produce physical stock')
+assert.equal(count('inventory_stock'),stockBeforeNewVariants,'Catalog create and provision must not produce physical stock')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
 sqlite.close()
