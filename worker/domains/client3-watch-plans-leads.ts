@@ -76,7 +76,7 @@ export async function listClient3WatchPlans(db:D1Database,actor:AuthUser,brandId
   const base=Number(row.salaryBase||0)
   const pct=target>0&&actual>=target?Number(row.bonusHitPercent||0):Number(row.bonusMissPercent||0)
   const bonus=Math.round(Math.max(0,actual)*pct/100)
-  return {...row,completionRate:rate,bonusAmount:bonus,
+  return {...row,periodStart:String(row['periodStart']||''),periodEnd:String(row['periodEnd']||''),completionRate:rate,bonusAmount:bonus,
     totalSalary:base+bonus}
  }
  const managerRows=(managers.results||[]).map(x=>map(x))
