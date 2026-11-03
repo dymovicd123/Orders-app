@@ -64,6 +64,16 @@ const parse=async promised=>{
   return {status:response.status,...await response.json()}
 }
 const admin={id:1,role:'admin',managerId:null,employeeRole:'Администратор'}
+const fixtureEngravingReady=(orderId,when='2026-11-03T10:00:00Z')=>{
+  // An order-wide status does not authorize any particular SKU.
+  // The fixture records exact per-item engraving and its immutable audit.
+  sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at=? WHERE order_id=?").run(when,orderId)
+  sqlite.prepare(`INSERT OR REPLACE INTO watch_engraving_item_readiness
+    (order_item_id,engraving_text,ready_at,ready_by_user_id,request_id)
+    SELECT oi.id,wi.engraving_text,?,1,'test-ready-'||oi.id
+    FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    WHERE oi.order_id=? AND TRIM(wi.engraving_text)<>''`).run(when,orderId)
+}
 sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'Test Admin')").run()
 sqlite.prepare("INSERT OR REPLACE INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-02')").run()
 sqlite.prepare("INSERT INTO watch_products(brand_id,model_name) VALUES(1,'REAL ENGINE TEST')").run()
@@ -364,7 +374,7 @@ const blockedEngraving=await parse(dispatchClient3WatchOrder(db,manager,1,firstP
 }))
 assert.equal(blockedEngraving.status,409,'Physical shipping must require engraving to be ready')
 assert.equal(stock('warehouse').quantity,beforeShip.quantity)
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T12:00:00Z' WHERE order_id=?").run(firstPurchase.orderId)
+fixtureEngravingReady(firstPurchase.orderId,'2026-11-02T12:00:00Z')
 const shipped=await parse(dispatchClient3WatchOrder(db,manager,1,firstPurchase.orderId,{
   requestId:'watch-real-ship-000001',
 }))
@@ -594,8 +604,7 @@ const alreadySent=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOr
  items:[{orderItemId:selectRows[1].id,quantity:1}],
 }))
 assert.equal(alreadySent.status,409,'Sent line must not dispatch twice')
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-02T13:30:00Z' WHERE order_id=?")
- .run(selectiveOrder.orderId)
+fixtureEngravingReady(selectiveOrder.orderId,'2026-11-02T13:30:00Z')
 const sendRemaining=await parse(dispatchClient3WatchOrder(db,manager,1,selectiveOrder.orderId,{
  requestId:'watch-selective-send-1-20261102',
  items:[{orderItemId:selectRows[0].id,quantity:1}],
@@ -750,8 +759,7 @@ assert.equal((await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId
 }))).status,409)
 assert.equal(count('inventory_movements'),beforeAdminMovements)
 assert.equal(count('payments'),beforeAdminMoney)
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at='2026-11-03T14:00:00Z' WHERE order_id=?")
- .run(editOrderId)
+fixtureEngravingReady(editOrderId,'2026-11-03T14:00:00Z')
 const readyBlocked=await parse(correctClient3AdminWatchDetails(db,admin,1,editOrderId,{
  requestId:'watch-admin-ready-engraving-20261103',expected:afterWatch,
  next:{...afterWatch,items:afterWatch.items.map(x=>({...x,engravingText:'Нельзя после готово'}))}
@@ -951,8 +959,7 @@ const partialCreated=await parse(createClient3WatchOrder(db,manager,1,{
 }))
 assert.equal(partialCreated.status,201,JSON.stringify(partialCreated))
 assert.equal(partialCreated.pendingReservation,false)
-sqlite.prepare("UPDATE watch_logistics_jobs SET status='ready',ready_at=? WHERE order_id=?")
- .run('2026-11-03T10:00:00Z',partialCreated.orderId)
+fixtureEngravingReady(partialCreated.orderId)
 const partialOriginal=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.line_total,
  ir.id AS reserve_id,ir.status AS reserve_status,wi.watch_variant_id,wi.engraving_text
  FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
