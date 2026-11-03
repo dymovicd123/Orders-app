@@ -1,73 +1,273 @@
-import {useEffect,useState} from 'react'
+import {useEffect,useRef,useState} from 'react'
+import type {FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
+import {useWatchAnalytics,watchMoney,watchPeriod} from './useWatchAnalytics'
 import '../../styles/client3-watch-finance.css'
-type Event={id:number;eventDate:string;eventType:string;amountDelta:number;paymentMethod:string|null;externalOrderId:string;comment:string|null}
-type Method={method:string;incoming:number;outgoing:number;net:number}
-type Result={ok:boolean;rows:Event[];methods:Method[];totals:{eventCount:number;incoming:number;outgoing:number;net:number};hasMore:boolean;message?:string}
-const amount=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
-const currentMonth=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,7)
-export function WatchFinancePanel({brands}:{brands:readonly WatchBrand[]}) {
-  const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
-  const [month,setMonth]=useState(currentMonth)
-  const [page,setPage]=useState(0)
-  const [refresh,setRefresh]=useState(0)
-  const [result,setResult]=useState<Result|null>(null)
-  const [busy,setBusy]=useState(false)
-  const [error,setError]=useState('')
-  useEffect(()=>{
-    const controller=new AbortController()
-    setBusy(true);setError('');setResult(null)
-    const params=new URLSearchParams({brand,month,limit:'50',offset:String(page*50)})
-    void fetch('/api/client3/watches/finance?'+params,{
-      credentials:'include',cache:'no-store',signal:controller.signal,
-    }).then(async response=>{
-      const data=await response.json() as Result
-      if(!response.ok||!data.ok)throw new Error(data.message||'Не удалось загрузить движения денег')
-      if(!controller.signal.aborted)setResult(data)
-    }).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Ошибка финансов')})
-      .finally(()=>{if(!controller.signal.aborted)setBusy(false)})
-    return ()=>controller.abort()
-  },[brand,month,page,refresh])
-  return <section className="watch-finance">
-    <header><div><h2>Движение денег</h2>
-      <p>События оплат и возвратов по выбранному бренду. Данные других брендов не смешиваются.</p>
-    </div><button type="button" onClick={()=>setRefresh(x=>x+1)} disabled={busy}>Обновить</button></header>
-    <div className="watch-finance-filters">
-      <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
-        {brands.map(code=><option key={code} value={code}>{code}</option>)}
-      </select></label>
-      <label>Месяц<input type="month" value={month} onChange={e=>{setMonth(e.target.value);setPage(0)}}/></label>
-    </div>
-    {error&&<p role="alert" className="watch-finance-error">{error}</p>}
-    {busy&&<p>Загрузка истории…</p>}
-    {result&&<>
-      <div className="watch-finance-summary">
-        <div><small>Получено</small><strong>{amount(result.totals.incoming)}</strong></div>
-        <div><small>Возвращено / списано</small><strong>{amount(result.totals.outgoing)}</strong></div>
-        <div><small>Чистое движение</small><strong>{amount(result.totals.net)}</strong></div>
-        <div><small>Событий</small><strong>{result.totals.eventCount}</strong></div>
-      </div>
-      <p className="watch-finance-note">Это история денежных событий, а не баланс банковских счетов или наличных. События без привязки к заказу бренда сюда не входят.</p>
-      {result.methods.length>0&&<div className="watch-finance-methods">
-        {result.methods.map(m=><div key={m.method}><strong>{m.method}</strong>
-          <span>Поступило: {amount(m.incoming)} · Возвраты: {amount(m.outgoing)} · Итог: {amount(m.net)}</span></div>)}
-      </div>}
-      {result.rows.length===0?<p>За этот месяц денежных событий нет.</p>:
-        <LinkedTableScroll className="watch-main-finance-scroll" ariaLabel="История денежных событий">
-          <table className="watch-main-finance-table">
-            <thead><tr><th>Дата</th><th>Заказ</th><th>Операция</th><th>Способ оплаты</th><th>Комментарий</th><th>Сумма</th></tr></thead>
-            <tbody>{result.rows.map(event=><tr key={event.id}>
-              <td>{event.eventDate}</td><td><strong>{event.externalOrderId||'—'}</strong></td>
-              <td>{event.eventType}</td><td>{event.paymentMethod||'Не указан'}</td>
-              <td>{event.comment||'—'}</td><td className={event.amountDelta<0?'watch-finance-out':'watch-finance-in'}>
-                {event.amountDelta>0?'+':''}{amount(event.amountDelta)}</td>
-            </tr>)}</tbody>
-          </table>
-        </LinkedTableScroll>}
-      <div className="watch-finance-pages"><button disabled={busy||page===0} onClick={()=>setPage(p=>p-1)}>Назад</button>
-        <span>Страница {page+1}</span>
-        <button disabled={busy||!result.hasMore} onClick={()=>setPage(p=>p+1)}>Дальше</button></div>
-    </>}
-  </section>
+
+type Mode='summary'|'payments'|'debts'|'returns'|'cash'|'methods'
+type CashEntry={id:number;type:string;businessDate:string;createdAt?:string;
+ amountDelta:number;externalOrderId?:string;comment?:string}
+type Cash={ok:boolean;initialized:boolean;message?:string;currentBalance:number|null;
+ openingAmount?:number;todayIn?:number;todayOut?:number;totalIn?:number;totalOut?:number;
+ entries:CashEntry[]}
+const formats:{id:Mode;label:string;hint:string}[]=[
+ {id:'summary',label:'Сводка',hint:'Чёткие итоги'},
+ {id:'payments',label:'Операции',hint:'По дате операции'},
+ {id:'debts',label:'Долги',hint:'Текущие и закрытые'},
+ {id:'returns',label:'Возвраты / обмены',hint:'По дате операции'},
+ {id:'cash',label:'Касса',hint:'Наличные сейчас'},
+ {id:'methods',label:'Способы оплаты',hint:'Справочник оплат'},
+]
+export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
+ brands:readonly WatchBrand[];isAdmin?:boolean;onOpenReferences?:()=>void
+}){
+ const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
+ const [period,setPeriod]=useState(watchPeriod('month'))
+ const [mode,setMode]=useState<Mode>('summary')
+ const {data,busy,error,refresh}=useWatchAnalytics(brand,period.from,period.to)
+ const [cash,setCash]=useState<Cash|null>(null)
+ const [cashBusy,setCashBusy]=useState(false)
+ const [cashError,setCashError]=useState('')
+ const [cashNotice,setCashNotice]=useState('')
+ const [cashRefresh,setCashRefresh]=useState(0)
+ const [cashOpening,setCashOpening]=useState('')
+ const [cashDirection,setCashDirection]=useState<'in'|'out'>('in')
+ const [cashAmount,setCashAmount]=useState('')
+ const [cashComment,setCashComment]=useState('')
+ const [cashReconcile,setCashReconcile]=useState('')
+ const [cashAction,setCashAction]=useState<'manual'|'reconcile'>('manual')
+ const request=useRef<{fingerprint:string;id:string}|null>(null)
+ useEffect(()=>{
+   if(mode!=='cash'||!isAdmin)return
+   const abort=new AbortController()
+   setCashBusy(true);setCash(null);setCashError('')
+   void fetch('/api/client3/watches/cash?'+new URLSearchParams({brand}),{
+     credentials:'include',cache:'no-store',signal:abort.signal,
+   }).then(async r=>{
+     const value=await r.json() as Cash
+     if(!r.ok||!value.ok)throw Error(value.message||'Касса недоступна.')
+     if(!abort.signal.aborted)setCash(value)
+   }).catch(e=>{if(!abort.signal.aborted)setCashError(e instanceof Error?e.message:'Ошибка кассы.')})
+     .finally(()=>{if(!abort.signal.aborted)setCashBusy(false)})
+   return ()=>abort.abort()
+ },[brand,mode,isAdmin,cashRefresh])
+ const cashSubmit=async(e:FormEvent<HTMLFormElement>)=>{
+   e.preventDefault()
+   if(cashBusy||!isAdmin)return
+   const payload:Record<string,unknown>={brand,action:cash?.initialized?cashAction:'setup'}
+   if(!cash?.initialized){
+     payload.openingAmount=Number(cashOpening)
+   }else if(cashAction==='manual'){
+     payload.direction=cashDirection;payload.amount=Number(cashAmount)
+     payload.comment=cashComment.trim();payload.expectedBalance=cash.currentBalance
+   }else{
+     payload.amount=Number(cashReconcile);payload.comment=cashComment.trim()
+     payload.expectedBalance=cash.currentBalance
+   }
+   const fingerprint=JSON.stringify(payload)
+   if(request.current?.fingerprint!==fingerprint)
+     request.current={fingerprint,id:'watch-cash-'+crypto.randomUUID()}
+   payload.requestId=request.current.id
+   setCashBusy(true);setCashError('');setCashNotice('')
+   try{
+     const response=await fetch('/api/client3/watches/cash',{
+       method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify(payload),
+     })
+     const value=await response.json() as Cash
+     if(!response.ok||!value.ok)throw Error(value.message||'Операция кассы не сохранена.')
+     setCash(value);setCashAmount('');setCashComment('');setCashReconcile('')
+     request.current=null;setCashNotice('Операция сохранена в кассе выбранного бренда.')
+     refresh()
+   }catch(err){setCashError(err instanceof Error?err.message:'Ошибка операции кассы.')}
+   finally{setCashBusy(false)}
+ }
+ const moneyRows=data?.events||[]
+ const refunds=moneyRows.filter(row=>Number(row.amountDelta||0)<0)
+ const exchanges=moneyRows.filter(row=>/exchange/i.test(String(row.eventType||'')))
+ const outstanding=data?.currentDebt.currentDebt||0
+ const stats=[
+   ['Общая сумма продаж',data?.overview.totalSales],
+   ['Поступило',data?.income.incoming],
+   ['Возвращено / списано',data?.income.outgoing],
+   ['Чистое движение',data?.income.net],
+   ['Актуальные долги',outstanding],
+ ]
+ return <article className="card wide sector-finance" id="finance">
+   <div className="card-label">Финансы</div>
+   <div className="card-meta">Денежные события и касса по дате операции. Продажи и долги по дате заказа. Каждый бренд отдельно.</div>
+   <div className="orders-filter-panel finance-workspace-panel">
+     <div className="reports-filter-header">
+       <div><h3>{period.from===period.to?'День':'Период'}</h3>
+         <div className="muted-note">Все движения денег записаны с реальной датой события.</div>
+       </div>
+       <div className="reports-period-buttons">
+         {(['today','yesterday','month','year'] as const).map((p,i)=>
+           <button type="button" className="secondary compact" key={p} onClick={()=>setPeriod(watchPeriod(p))}>
+             {['Сегодня','Вчера','Месяц','Год'][i]}</button>)}
+       </div>
+     </div>
+     <div className="orders-filter-grid reports-main-filter-grid">
+       <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);request.current=null}}>
+         {brands.map(x=><option value={x} key={x}>{x}</option>)}</select></label>
+       {mode!=='cash'&&mode!=='methods'&&<>
+         <label>С<input type="date" value={period.from}
+           onChange={e=>setPeriod(p=>({...p,from:e.target.value}))}/></label>
+         <label>По<input type="date" value={period.to}
+           onChange={e=>setPeriod(p=>({...p,to:e.target.value}))}/></label>
+       </>}
+       <button type="button" className="secondary compact" disabled={busy}
+         onClick={()=>{refresh();setCashRefresh(x=>x+1)}}>Обновить</button>
+     </div>
+   </div>
+   <div className="finance-tabs-shell finance-truth-shell">
+     <div className="order-panel-tabs finance-tabs" role="tablist" aria-label="Разделы финансов">
+       {formats.filter(x=>isAdmin||x.id!=='cash').map(x=>
+         <button type="button" className={'secondary compact '+(mode===x.id?'is-active':'')}
+           key={x.id} onClick={()=>setMode(x.id)}>
+           <strong>{x.label}</strong><span>{x.hint}</span>
+         </button>)}
+     </div>
+   </div>
+   {error&&<p role="alert" className="app-alert error">{error}</p>}
+   {busy&&<p>Загружаем финансы…</p>}
+   {mode==='summary'&&<section className="mini-panel">
+     <div className="mini-panel-head"><div><h3>Сводка</h3>
+       <p className="mini-panel-note">Без двойного счёта по способам оплаты.</p>
+     </div></div>
+     <div className="summary-grid compact-summary">{stats.map(([label,value],i)=>
+       <div className={'summary-card '+(i===2||i===4?'danger-card':'')} key={label}>
+         <span>{label}</span><strong>{watchMoney(value)}</strong>
+       </div>)}
+       <div className="summary-card"><span>Заказов за период</span>
+         <strong>{data?.overview.orderCount||0}</strong></div>
+       <div className="summary-card"><span>Должников всего</span>
+         <strong>{data?.currentDebt.orderCount||0}</strong></div>
+     </div>
+     <div className="watch-finance-methods">{(data?.methods||[]).map(row=>
+       <div key={String(row.method)}><strong>{String(row.method)}</strong>
+         <span>Поступило: {watchMoney(row.incoming)} · Возврат: {watchMoney(row.outgoing)} ·
+           Чистое: {watchMoney(row.net)}</span>
+       </div>)}</div>
+   </section>}
+   {mode==='payments'&&<section className="mini-panel">
+     <h3>Денежные операции</h3>
+     <p className="mini-panel-note">Первоначальные оплаты, закрытия долгов, обмены и возвраты — по фактической дате.</p>
+     <LinkedTableScroll ariaLabel="Финансовые операции">
+       <table className="data-table strict-report-table">
+         <thead><tr><th>Дата</th><th>Заказ</th><th>Операция</th><th>Способ</th>
+           <th>Комментарий</th><th className="num">Сумма</th></tr></thead>
+         <tbody>{moneyRows.map(row=><tr key={String(row.id)}>
+           <td>{String(row.eventDate)}</td><td>{String(row.externalOrderId||'—')}</td>
+           <td>{String(row.eventType||'Операция')}</td><td>{String(row.paymentMethod||'Не указан')}</td>
+           <td>{String(row.comment||'—')}</td><td className="num">{watchMoney(row.amountDelta)}</td>
+         </tr>)}</tbody>
+       </table>
+     </LinkedTableScroll>
+   </section>}
+   {mode==='debts'&&<section className="mini-panel">
+     <h3>Долги</h3>
+     <div className="summary-grid compact-summary">
+       <div className="summary-card danger-card"><span>Общий актуальный долг</span>
+         <strong>{watchMoney(outstanding)}</strong></div>
+       <div className="summary-card"><span>Заказов с долгом</span>
+         <strong>{data?.currentDebt.orderCount||0}</strong></div>
+       <div className="summary-card"><span>Долг заказов периода</span>
+         <strong>{watchMoney(data?.overview.periodDebt)}</strong></div>
+     </div>
+     <LinkedTableScroll ariaLabel="Долг по менеджерам"><table className="data-table strict-report-table">
+       <thead><tr><th>Менеджер</th><th>Заказов</th><th>Долг по заказам периода</th></tr></thead>
+       <tbody>{(data?.managers||[]).map(x=><tr key={String(x.manager)}>
+         <td>{String(x.manager)}</td><td>{String(x.orderCount)}</td>
+         <td>{watchMoney(x.debt)}</td></tr>)}</tbody>
+     </table></LinkedTableScroll>
+   </section>}
+   {mode==='returns'&&<section className="mini-panel">
+     <h3>Возвраты и обмены</h3>
+     <div className="summary-grid compact-summary">
+       <div className="summary-card danger-card"><span>Списания / возвраты</span>
+         <strong>{watchMoney(data?.income.outgoing)}</strong></div>
+       <div className="summary-card"><span>Событий возврата денег / коррекции</span>
+         <strong>{refunds.length}</strong></div>
+       <div className="summary-card"><span>Денежных событий обмена</span>
+         <strong>{exchanges.length}</strong></div>
+     </div>
+     <LinkedTableScroll ariaLabel="Возвраты и обмены"><table className="data-table strict-report-table">
+       <thead><tr><th>Дата</th><th>Заказ</th><th>Событие</th><th>Метод</th><th>Сумма</th></tr></thead>
+       <tbody>{[...refunds,...exchanges.filter(x=>Number(x.amountDelta)>=0)].map(row=>
+         <tr key={String(row.id)}><td>{String(row.eventDate)}</td>
+           <td>{String(row.externalOrderId||'—')}</td><td>{String(row.eventType)}</td>
+           <td>{String(row.paymentMethod||'—')}</td><td>{watchMoney(row.amountDelta)}</td>
+         </tr>)}</tbody>
+     </table></LinkedTableScroll>
+   </section>}
+   {mode==='cash'&&isAdmin&&<section className="mini-panel cash-register-main">
+     <div className="mini-panel-head"><div><h3>Касса бренда {brand}</h3>
+       <p className="mini-panel-note">Реальные наличные: начальный остаток, оплаты НАЛИЧНЫМИ и ручные движения. Kaspi не считается наличными.</p></div></div>
+     {cashError&&<p role="alert" className="app-alert error">{cashError}</p>}
+     {cashNotice&&<p role="status">{cashNotice}</p>}
+     {cashBusy&&<p>Обновляем кассу…</p>}
+     {cash?.initialized&&<div className="summary-grid cash-register-summary cash-register-summary-v2">
+       <div className="summary-card cash-balance-card"><span>Сейчас в кассе</span>
+         <strong>{watchMoney(cash.currentBalance)}</strong></div>
+       <div className="summary-card"><span>Сегодня пришло</span>
+         <strong>{watchMoney(cash.todayIn)}</strong></div>
+       <div className="summary-card"><span>Сегодня ушло</span>
+         <strong>{watchMoney(cash.todayOut)}</strong></div>
+       <div className="summary-card"><span>Всего поступило</span>
+         <strong>{watchMoney(cash.totalIn)}</strong></div>
+       <div className="summary-card"><span>Всего выдано</span>
+         <strong>{watchMoney(cash.totalOut)}</strong></div>
+     </div>}
+     {!cashBusy&&cash&&<form className="watch-cash-entry-form" onSubmit={cashSubmit}>
+       {!cash.initialized?<><h4>Первоначальная настройка кассы</h4>
+         <label>Фактический начальный остаток наличных<input type="number"
+           min={0} max={1000000000} step={1} required value={cashOpening}
+           onChange={e=>setCashOpening(e.target.value)}/></label>
+         <button className="primary" type="submit">Открыть кассу бренда</button>
+       </>:<>
+         <div className="order-panel-tabs">
+           <button type="button" className={'secondary compact '+(cashAction==='manual'?'is-active':'')}
+             onClick={()=>{setCashAction('manual');request.current=null}}>Внесение / выдача</button>
+           <button type="button" className={'secondary compact '+(cashAction==='reconcile'?'is-active':'')}
+             onClick={()=>{setCashAction('reconcile');request.current=null}}>Сверить остаток</button>
+         </div>
+         {cashAction==='manual'?<>
+           <label>Направление<select value={cashDirection} onChange={e=>setCashDirection(e.target.value as 'in'|'out')}>
+             <option value="in">Внести наличные</option><option value="out">Выдать наличные</option>
+           </select></label>
+           <label>Сумма<input type="number" required min={1} max={1000000000}
+             value={cashAmount} step={1} onChange={e=>setCashAmount(e.target.value)}/></label>
+         </>:<label>Пересчитанный фактический остаток<input type="number" required
+           min={0} max={1000000000} value={cashReconcile} step={1}
+           onChange={e=>setCashReconcile(e.target.value)}/></label>}
+         <label>Причина операции<textarea required minLength={3} maxLength={500}
+           value={cashComment} rows={2} onChange={e=>setCashComment(e.target.value)}/></label>
+         <button type="submit" className="primary" disabled={cashBusy}>Подтвердить операцию</button>
+       </>}
+     </form>}
+     {cash?.initialized&&<LinkedTableScroll ariaLabel="История кассы бренда">
+       <table className="data-table strict-report-table">
+         <thead><tr><th>Дата</th><th>Тип</th><th>Заказ</th><th>Комментарий</th>
+           <th className="num">Сумма</th></tr></thead>
+         <tbody>{cash.entries.map((x,i)=><tr key={String(x.type)+String(x.id)+i}>
+           <td>{x.businessDate}</td><td>{x.type}</td>
+           <td>{x.externalOrderId||'—'}</td><td>{x.comment||'—'}</td>
+           <td className="num">{watchMoney(x.amountDelta)}</td>
+         </tr>)}</tbody>
+       </table>
+     </LinkedTableScroll>}
+   </section>}
+   {mode==='methods'&&<section className="mini-panel">
+     <h3>Способы оплаты</h3>
+     <p>Справочник способов оплаты общий для системы, но денежные операции и кассы двух брендов разделены.</p>
+     <div className="watch-finance-methods">{(data?.methods||[]).map(m=>
+       <div key={String(m.method)}><strong>{String(m.method)}</strong>
+         <span>За период: {watchMoney(m.incoming)} поступило · {watchMoney(m.outgoing)} возвращено</span>
+       </div>)}</div>
+     {isAdmin&&onOpenReferences&&<button type="button" className="secondary"
+       onClick={onOpenReferences}>Открыть справочник способов оплаты</button>}
+   </section>}
+ </article>
 }
