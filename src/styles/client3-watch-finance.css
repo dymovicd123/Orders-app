@@ -8,3 +8,24 @@
 .watch-main-finance-table tr:hover td{background:#fafcff}
 .watch-main-finance-table td:last-child{font-variant-numeric:tabular-nums;text-align:right;font-weight:750;white-space:nowrap}
 .watch-main-finance-table td:nth-child(4){white-space:nowrap}
+
+/* Present money movement as a readable business journal rather than raw logs. */
+.client3-watch-day-ledger{background:#fff;border:1px solid #e0e7f0;border-radius:12px;padding:16px}
+.client3-watch-day-ledger .finance-day-heading{display:flex;align-items:start;
+  justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.client3-watch-day-ledger .finance-day-heading h3{margin:0 0 6px;line-height:1.3}
+.client3-watch-day-ledger .finance-day-totals{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));
+  gap:8px;margin-bottom:12px}
+.client3-watch-day-ledger .finance-day-totals article{display:grid;gap:5px;padding:10px 12px;
+  background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px}
+.client3-watch-day-ledger .finance-day-totals article strong{font-size:1.05rem}
+.client3-watch-day-ledger .finance-day-methods{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.client3-watch-day-ledger .finance-day-methods>div{display:flex;gap:10px;align-items:center;
+  flex-wrap:wrap;border:1px solid #e2e8f0;border-radius:9px;padding:8px 11px;background:#fff}
+.client3-watch-day-ledger .finance-day-methods strong{white-space:normal}
+.client3-finance-in{color:#166534}
+.client3-finance-out{color:#9f1239}
+.client3-watch-day-ledger .data-table td{vertical-align:top;line-height:1.45}
+@media(max-width:760px){
+ .client3-watch-day-ledger .finance-day-totals{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
