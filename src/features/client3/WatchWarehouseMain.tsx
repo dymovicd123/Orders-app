@@ -65,7 +65,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
   const [mode,setMode]=useState<Operation>(initialRevision?'count':'arrival')
-  const [persistentRevision,setPersistentRevision]=useState(initialRevision)
+  const persistentRevision=initialRevision
   const [revisionScope,setRevisionScope]=useState<'selective'|'full'>('selective')
   const [revisionActive,setRevisionActive]=useState(false)
   const [source,setSource]=useState<Source>('office')
@@ -275,19 +275,6 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
         {mode==='transfer'&&<div className="w7-transfer-target"><span aria-hidden="true">→</span>
           <strong>{location(source==='office'?'showcase':'office')}</strong></div>}
       </div>
-      {mode==='count'&&!initialRevision&&<div className="client3-revision-mode">
-        <strong>Способ проверки</strong>
-        <div role="group" aria-label="Тип проверки">
-          <button type="button" className={!persistentRevision?'is-active':''}
-            disabled={revisionActive} onClick={()=>{setPersistentRevision(false);setStage('select')}}>
-            Быстрая корректировка
-          </button>
-          <button type="button" className={persistentRevision?'is-active':''}
-            onClick={()=>{setPersistentRevision(true);setStage('select')}}>
-            Ревизия с сохранением прогресса
-          </button>
-        </div>
-      </div>}
       {error&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{error}</div>}
       {notice&&<div className="stocktake-inline-notice" role="status">{notice}</div>}
       {mode==='count'&&persistentRevision&&revisionActive?null:
