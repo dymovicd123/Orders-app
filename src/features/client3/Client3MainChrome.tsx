@@ -76,6 +76,21 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
   busy:boolean;canSales:boolean;canWarehouse?:boolean;children:ReactNode;error?:string;success?:string;warning?:string
 }){
   const [mobileNavOpen,setMobileNavOpen]=useState(false)
+  const [visibleSuccess,setVisibleSuccess]=useState('')
+  const [visibleWarning,setVisibleWarning]=useState('')
+  useEffect(()=>{
+    setVisibleSuccess(success||'')
+    if(!success)return
+    const timer=window.setTimeout(()=>setVisibleSuccess(''),4500)
+    return ()=>window.clearTimeout(timer)
+  },[success])
+  useEffect(()=>{
+    setVisibleWarning(warning||'')
+    if(!warning)return
+    const timer=window.setTimeout(()=>setVisibleWarning(''),7000)
+    return ()=>window.clearTimeout(timer)
+  },[warning])
+
   useEffect(()=>{
     document.body.classList.toggle('mobile-nav-open',mobileNavOpen)
     return ()=>document.body.classList.remove('mobile-nav-open')
@@ -88,8 +103,8 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
   return <main className="erp-shell client3-main-erp" data-sector={current}>
     <div className="global-alert-stack" aria-live="assertive" aria-atomic="true">
       {error&&<div className="error app-alert global-alert" role="alert"><span>{error}</span></div>}
-      {success&&<div className="success app-alert global-alert" role="status"><span>{success}</span></div>}
-      {warning&&<div className="app-alert global-alert" role="alert"><span>{warning}</span></div>}
+      {visibleSuccess&&<div className="success app-alert global-alert" role="status"><span>{visibleSuccess}</span></div>}
+      {visibleWarning&&<div className="app-alert global-alert" role="alert"><span>{visibleWarning}</span></div>}
     </div>
     <aside className={`erp-sidebar ${mobileNavOpen?'is-mobile-open':''}`.trim()}>
       <div className="erp-sidebar-scroll" tabIndex={0} aria-label="Навигация и режим доступа">
