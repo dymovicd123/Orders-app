@@ -290,12 +290,6 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
       </div>}
       {error&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{error}</div>}
       {notice&&<div className="stocktake-inline-notice" role="status">{notice}</div>}
-      {mode==='count'&&persistentRevision&&
-        <WatchPersistentRevision key={brand+'-'+source}
-          brand={brand} source={source} models={models} variants={variants}
-          selectedModelIds={selectedModelIds} preferredScope={initialRevision?revisionScope:undefined}
-          onActiveChange={setRevisionActive}
-          onStockChanged={()=>{refresh();onStockChanged?.()}}/>}
       {mode==='count'&&persistentRevision&&revisionActive?null:
       loading?<div className="stocktake-inline-notice">Загружаем каталог и остатки…</div>:
       stage==='select'?<section className="stocktake-e-start stocktake-e-start-v5">
@@ -549,6 +543,12 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
               'Подтвердить '+titles[mode].name.toLowerCase()}</button>
         </div>
       </section>}
+      {mode==='count'&&persistentRevision&&
+        <WatchPersistentRevision key={brand+'-'+source}
+          brand={brand} source={source} models={models} variants={variants}
+          selectedModelIds={selectedModelIds} preferredScope={initialRevision?revisionScope:undefined}
+          onActiveChange={setRevisionActive}
+          onStockChanged={()=>{refresh();onStockChanged?.()}}/>}
     </div>
   </div>
 }
