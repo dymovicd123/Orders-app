@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
 import {WatchCatalogDeleteAction} from './WatchCatalogDeleteAction'
 import {WatchCatalogVariantEditAction} from './WatchCatalogVariantEditAction'
+import {WatchModelAliases} from './WatchModelAliases'
 import '../../styles/w6-catalog-browse.css'
 import '../../styles/w6-2-catalog-master-detail.css'
 import '../../styles/w6-2-catalog-density.css'
@@ -441,6 +442,8 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
                   onDeleted={()=>{setModelId(0);setShowNewVariant(false);setReload(v=>v+1)}}/>
               </div>
             </header>
+            <WatchModelAliases key={brand+'-aliases-'+selected.id}
+              brand={brand} modelId={selected.id}/>
             {showNewVariant&&<section className="catalog-detail-editor catalog-variant-editor-v2 w6-variant-editor catalog-clean-editor">
               <div className="catalog-detail-editor-head">
                 <div><span className="catalog-detail-eyebrow">Новая позиция</span>
