@@ -1,0 +1,60 @@
+name: Client3 QA - remove only failed one-time copy databases
+on:
+  push:
+    branches: [client3/isolated-qa-copy-20261103]
+    paths: ['.github/workflows/client3-qa-cleanup-failed-copies-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_API_TOKEN: ${ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PRODUCTION_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      ACTIVE_QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+    steps:
+      - name: Delete only exact abandoned QA attempts after verifying IDs and names
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          for entry in \
+            orders_db_client3_qa_41694783147:472eff8b-edc6-40e7-bdae-b0911016c4f5 \
+            orders_db_client3_qa_41695818577:5d1fd44a-6179-4a9a-ba4e-992a4d24f077 \
+            orders_db_client3_qa_41696149198:6728f61f-2a2c-4a2f-8971-4576e3858559 \
+            orders_db_client3_qa_41696444004:5b850456-3565-4fb9-9a6e-3293e2915e68 \
+            orders_db_client3_qa_41696688603:380f3134-d23f-4cff-a354-cf884b962cb1; do
+            expected="${entry%%:*}"
+            dbid="${entry##*:}"
+            [[ "$expected" == orders_db_client3_qa_* ]]
+            test "$dbid" != "$PRODUCTION_DB_ID"
+            test "$dbid" != "$ACTIVE_QA_DB_ID"
+            url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$dbid"
+            code=$(curl -sS -o /tmp/qa-db-info -w '%{http_code}' --max-time 20 \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")
+            if test "$code" = 404; then
+              echo "$expected already absent"
+              continue
+            fi
+            test "$code" = 200
+            actual=$(jq -er '.result.name' /tmp/qa-db-info)
+            test "$actual" = "$expected"
+            test "$(jq -er '.result.uuid' /tmp/qa-db-info)" = "$dbid"
+            code=$(curl -sS -o /tmp/qa-delete-result -w '%{http_code}' --max-time 20 \
+              -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$url")
+            test "$code" = 200 -o "$code" = 204
+            echo "Deleted abandoned QA database $expected"
+          done
+      - name: Assert active QA database still exists
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/active-db -w '%{http_code}' --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$ACTIVE_QA_DB_ID")
+          test "$code" = 200
+          test "$(jq -r .result.name /tmp/active-db)" = orders_db_client3_qa_41698114208
+          url=https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
+          test "$(curl -sS -L -o /tmp/active-home -w '%{http_code}' --max-time 20 "$url/")" = 200
+          echo "Active Client3 QA Worker/D1 preserved and reachable"
