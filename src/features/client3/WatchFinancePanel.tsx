@@ -8,6 +8,7 @@ import '../../styles/150-orders-finance-sync.css'
 import '../../styles/client3-watch-finance.css'
 
 type Mode='summary'|'payments'|'debts'|'returns'|'cash'|'methods'
+type PaymentReference={id:number;kind:string;value:string}
 type CashEntry={id:number;type:string;businessDate:string;createdAt?:string;
  amountDelta:number;externalOrderId?:string;comment?:string;reversesEntryId?:number|null;brand?:string}
 type Cash={ok:boolean;initialized:boolean;message?:string;currentBalance:number|null;
@@ -53,7 +54,69 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
  const [cashAction,setCashAction]=useState<'manual'|'reconcile'>('manual')
  const [cashResetComment,setCashResetComment]=useState('')
  const [cashCyclesOpen,setCashCyclesOpen]=useState(false)
+ const [paymentReferences,setPaymentReferences]=useState<PaymentReference[]>([])
+ const [paymentDraft,setPaymentDraft]=useState('')
+ const [paymentEditId,setPaymentEditId]=useState<number|null>(null)
+ const [paymentBusy,setPaymentBusy]=useState(false)
+ const [paymentError,setPaymentError]=useState('')
+ const [paymentNotice,setPaymentNotice]=useState('')
+ const [paymentReload,setPaymentReload]=useState(0)
  const request=useRef<{fingerprint:string;id:string}|null>(null)
+
+ useEffect(()=>{
+   if(mode!=='methods')return
+   const controller=new AbortController()
+   setPaymentBusy(true);setPaymentError('')
+   void fetch('/api/client3/watches/references',{
+     credentials:'include',cache:'no-store',signal:controller.signal,
+   }).then(async response=>{
+     const result=await response.json() as {ok:boolean;rows?:PaymentReference[];message?:string}
+     if(!response.ok||!result.ok)throw Error(result.message||'Не удалось загрузить способы оплаты.')
+     if(!controller.signal.aborted)setPaymentReferences(
+       (result.rows||[]).filter(row=>row.kind==='paymentMethods'))
+   }).catch(error=>{
+     if(!controller.signal.aborted)setPaymentError(error instanceof Error?error.message:'Нет связи со справочником оплат.')
+   }).finally(()=>{if(!controller.signal.aborted)setPaymentBusy(false)})
+   return ()=>controller.abort()
+ },[mode,paymentReload])
+ const savePaymentReference=async(event:FormEvent<HTMLFormElement>)=>{
+   event.preventDefault()
+   if(paymentBusy||!isAdmin)return
+   const value=paymentDraft.trim().replace(/\s+/g,' ').toLocaleUpperCase('ru-RU')
+   if(!value||value.length>80){setPaymentError('Укажите название до 80 символов.');return}
+   setPaymentBusy(true);setPaymentError('');setPaymentNotice('')
+   try{
+     const response=await fetch('/api/client3/watches/references',{
+       method:paymentEditId?'PATCH':'POST',credentials:'include',cache:'no-store',
+       headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({kind:'paymentMethods',value,id:paymentEditId}),
+     })
+     const result=await response.json() as {ok:boolean;message?:string;alreadyExists?:boolean}
+     if(!response.ok||!result.ok)throw Error(result.message||'Не удалось сохранить способ оплаты.')
+     setPaymentDraft('');setPaymentEditId(null)
+     setPaymentNotice(result.alreadyExists?'Такой способ уже существует.':
+       paymentEditId?'Способ оплаты обновлён.':'Способ оплаты добавлен.')
+     setPaymentReload(n=>n+1)
+   }catch(error){setPaymentError(error instanceof Error?error.message:'Сохранение не выполнено.')}
+   finally{setPaymentBusy(false)}
+ }
+ const deletePaymentReference=async(item:PaymentReference)=>{
+   if(paymentBusy||!isAdmin||!window.confirm(
+     'Удалить «'+item.value+'» из активных способов оплаты? История платежей сохранится.'))return
+   setPaymentBusy(true);setPaymentError('');setPaymentNotice('')
+   try{
+     const response=await fetch('/api/client3/watches/references/'+item.id,{
+       method:'DELETE',credentials:'include',cache:'no-store',
+     })
+     const result=await response.json() as {ok:boolean;message?:string}
+     if(!response.ok||!result.ok)throw Error(result.message||'Не удалось удалить способ оплаты.')
+     if(paymentEditId===item.id){setPaymentEditId(null);setPaymentDraft('')}
+     setPaymentNotice('Способ оплаты убран из выбора. Исторические платежи сохранены.')
+     setPaymentReload(n=>n+1)
+   }catch(error){setPaymentError(error instanceof Error?error.message:'Удаление не выполнено.')}
+   finally{setPaymentBusy(false)}
+ }
+
  useEffect(()=>{
    if(mode!=='cash'||!isAdmin)return
    const abort=new AbortController()
@@ -614,15 +677,57 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
          onClick={()=>void cashExtra('reset',{comment:cashResetComment.trim()})}>Закрыть цикл и начать новый</button>
      </details>}
    </section>}
-   {mode==='methods'&&<section className="mini-panel">
-     <h3>Способы оплаты</h3>
-     <p>Справочник способов оплаты общий. Денежные операции распределены по брендам, а наличные обоих брендов учитываются в одной кассе.</p>
-     <div className="watch-finance-methods">{(data?.methods||[]).map(m=>
-       <div key={String(m.method)}><strong>{String(m.method)}</strong>
-         <span>За период: {watchMoney(m.incoming)} поступило · {watchMoney(m.outgoing)} возвращено</span>
-       </div>)}</div>
-     {isAdmin&&onOpenReferences&&<button type="button" className="secondary"
-       onClick={onOpenReferences}>Открыть справочник способов оплаты</button>}
+   {mode==='methods'&&<section className="mini-panel finance-methods-panel finance-tab-content">
+     <div className="mini-panel-head"><div><h3>Способы оплаты</h3>
+       <p className="mini-panel-note">Единый справочник для заказов, закрытия долгов и обменов двух брендов. Изменять может только администратор. Касса общая, но финансовые отчёты разделены.</p>
+     </div><button className="secondary compact" type="button" disabled={paymentBusy}
+       onClick={()=>setPaymentReload(n=>n+1)}>{paymentBusy?'Загружаем…':'Обновить'}</button></div>
+     {paymentError&&<p role="alert" className="app-alert error">{paymentError}</p>}
+     {paymentNotice&&<p role="status" className="stocktake-inline-notice">{paymentNotice}</p>}
+     {isAdmin&&<form onSubmit={savePaymentReference}>
+       <div className="subgrid reference-form-grid">
+         <label className="wide-field"><span>Способ оплаты</span>
+           <input value={paymentDraft} maxLength={80} onChange={e=>setPaymentDraft(e.target.value)}
+             placeholder="Например: KASPI PAY"/></label>
+       </div>
+       <div className="actions">
+         <button type="submit" className="primary" disabled={paymentBusy||!paymentDraft.trim()}>
+           {paymentEditId?'Сохранить':'Добавить'}</button>
+         <button type="button" className="secondary" onClick={()=>{
+           setPaymentDraft('');setPaymentEditId(null);setPaymentError('')
+         }}>Сбросить</button>
+       </div>
+     </form>}
+     <div className="reference-list finance-method-list">
+       {paymentReferences.map(item=><div className={'reference-row '+(paymentEditId===item.id?'is-selected':'')} key={item.id}>
+         <div className="reference-row-main">
+           <div className="reference-row-title"><strong>{item.value}</strong>
+             <span className="status-pill status-online">Доступно для заказов</span></div>
+         </div>
+         {isAdmin&&<div className="reference-row-actions">
+           <button type="button" className="secondary compact" disabled={paymentBusy}
+             onClick={()=>{setPaymentEditId(item.id);setPaymentDraft(item.value);setPaymentError('')}}>Править</button>
+           <button type="button" className="ghost danger compact" disabled={paymentBusy}
+             onClick={()=>void deletePaymentReference(item)}>Удалить</button>
+         </div>}
+       </div>)}
+       {!paymentBusy&&!paymentReferences.length&&<div className="empty-state">Способы оплаты ещё не добавлены.</div>}
+     </div>
+     <details className="mini-panel finance-secondary-details">
+       <summary>Движение по способам оплаты за выбранный период</summary>
+       <LinkedTableScroll ariaLabel="Движения денег по способам оплаты">
+         <table className="data-table strict-report-table">
+           <thead><tr><th>Способ оплаты</th><th className="num">Поступило</th>
+             <th className="num">Возвращено</th><th className="num">Чистое движение</th></tr></thead>
+           <tbody>{(data?.methods||[]).map(row=><tr key={String(row.method)}>
+             <td>{String(row.method)}</td><td className="num">{watchMoney(row.incoming)}</td>
+             <td className="num">{watchMoney(row.outgoing)}</td><td className="num">{watchMoney(row.net)}</td>
+           </tr>)}</tbody>
+         </table>
+       </LinkedTableScroll>
+     </details>
+     {isAdmin&&onOpenReferences&&<button type="button" className="secondary compact"
+       onClick={onOpenReferences}>Все справочники</button>}
    </section>}
  </article>
 }
