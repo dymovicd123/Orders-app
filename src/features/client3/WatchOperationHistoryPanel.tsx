@@ -1,4 +1,4 @@
-import {Fragment,useEffect,useState} from 'react'
+import {Fragment,useEffect,useRef,useState} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {watchReferenceLabel} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
@@ -41,9 +41,10 @@ const details=(item:Item)=>[
 ].filter(Boolean).join(' · ')
 
 export function WatchOperationHistoryPanel({
- kind,brands,initialBrand,onOpenOrder,
+ kind,brands,initialBrand,onOpenOrder,isAdmin=false,
 }:{
  kind:'return'|'exchange';brands:readonly WatchBrand[];initialBrand?:WatchBrand;
+ isAdmin?:boolean;
  onOpenOrder?:(row:{brand:WatchBrand;orderId:number;externalId:string;orderDate:string})=>void;
 }){
  const [brand,setBrand]=useState<WatchBrand>(initialBrand&&brands.includes(initialBrand)?initialBrand:brands[0]||'TAUWACH')
@@ -58,6 +59,31 @@ export function WatchOperationHistoryPanel({
  const [refresh,setRefresh]=useState(0)
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
+ const [cancelTarget,setCancelTarget]=useState<number|null>(null)
+ const [cancelReason,setCancelReason]=useState('')
+ const [cancelBusy,setCancelBusy]=useState(false)
+ const [cancelError,setCancelError]=useState('')
+ const cancelKey=useRef<{fingerprint:string;requestId:string}|null>(null)
+ const cancelOperation=async(id:number)=>{
+   const reason=cancelReason.trim()
+   if(!isAdmin||cancelBusy||cancelTarget!==id||reason.length<8)return
+   const fingerprint=JSON.stringify({brand,kind,id,reason})
+   if(cancelKey.current?.fingerprint!==fingerprint)
+     cancelKey.current={fingerprint,requestId:'watch-cancel-'+crypto.randomUUID()}
+   setCancelBusy(true);setCancelError('')
+   try{
+     const response=await fetch('/api/client3/watches/operations/cancel',{
+       method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({brand,kind,id,reason,requestId:cancelKey.current.requestId}),
+     })
+     const result=await response.json() as {ok?:boolean;message?:string}
+     if(!response.ok||result.ok!==true)
+       throw Error(result.message||'Операцию не удалось отменить.')
+     cancelKey.current=null;setCancelTarget(null);setCancelReason('')
+     setRows([]);setOffset(0);setOpen(null);setRefresh(x=>x+1)
+   }catch(e){setCancelError(e instanceof Error?e.message:'Не удалось отменить операцию.')}
+   finally{setCancelBusy(false)}
+ }
  useEffect(()=>{
    const abort=new AbortController()
    setBusy(true);setError('')
@@ -128,10 +154,34 @@ export function WatchOperationHistoryPanel({
                <div className="client3-history-detail-head">
                  <div><strong>{kind==='return'?'Возврат':'Обмен'} № {row.id}</strong>
                    <small>{row.comment||'Причина не указана'}</small></div>
-                 {onOpenOrder&&<button className="secondary compact" type="button"
-                   onClick={()=>onOpenOrder({brand,orderId:row.orderId,
-                     externalId:row.externalOrderId,orderDate:row.orderDate})}>К заказу</button>}
+                 <div className="client3-history-detail-actions">
+                   {onOpenOrder&&<button className="secondary compact" type="button"
+                     onClick={()=>onOpenOrder({brand,orderId:row.orderId,
+                       externalId:row.externalOrderId,orderDate:row.orderDate})}>К заказу</button>}
+                   {isAdmin&&row.status!=='cancelled'&&<button className="secondary compact" type="button"
+                     disabled={cancelBusy} onClick={()=>{
+                       setCancelTarget(v=>v===row.id?null:row.id);
+                       setCancelReason('');setCancelError('');cancelKey.current=null
+                     }}>Отменить операцию</button>}
+                 </div>
                </div>
+               {isAdmin&&row.status!=='cancelled'&&cancelTarget===row.id&&
+                 <div className="client3-history-cancel">
+                   <strong>Отменить {kind==='return'?'возврат':'обмен'} № {row.id}?</strong>
+                   <p>Это финансовая и складская операция. Используется механизм отмены Main:
+                     он проверит зависимые возвраты, отправки и изменения остатков. 
+                     При конфликте действие не выполняется.</p>
+                   <label>Причина отмены (минимум 8 символов)
+                     <textarea rows={2} maxLength={500} value={cancelReason}
+                       onChange={e=>{setCancelReason(e.target.value);cancelKey.current=null}}/>
+                   </label>
+                   {cancelError&&<p className="app-alert error" role="alert">{cancelError}</p>}
+                   <div><button type="button" disabled={cancelBusy||cancelReason.trim().length<8}
+                       onClick={()=>void cancelOperation(row.id)}>
+                       {cancelBusy?'Проверяю и отменяю…':'Подтвердить отмену'}</button>
+                     <button className="secondary compact" type="button" disabled={cancelBusy}
+                       onClick={()=>setCancelTarget(null)}>Назад</button></div>
+                 </div>}
                <div className="client3-history-items">
                  {items.map(item=><article key={item.id} className="client3-history-item">
                    <div><strong>{kind==='exchange'?(item.role==='old'?'Отдают: ':'Получают: '):''}
