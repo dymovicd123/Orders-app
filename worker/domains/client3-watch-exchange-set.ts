@@ -4,11 +4,11 @@ import {createExchangeSetV2} from './returns-exchanges.ts'
 import {ensureManualWatchOrderSku,type ManualWatchOrderItem} from './client3-watch-order-manual.ts'
 import type {WatchSource} from '../../shared/client3/watch-domain.ts'
 
-type Old={orderItemId:number;quantity:number;physicalState:'not_issued'|'pending';
+type Old={orderItemId:number;quantity:number;physicalState:'not_issued'|'pending'|'warehouse'|'boutique'|'no_stock';
  expectedActiveQuantity:number;expectedUnitPrice:number;
  expectedLineTotal:number;expectedCatalogPriceSnapshot:number|null}
 type New={manual:ManualWatchOrderItem;quantity:number;unitPrice:number;
- source:WatchSource;engravingText:string}
+ source:WatchSource;engravingText:string;shipmentState:'pending'|'sent';issuePossessionConfirmed?:boolean}
 type Part={method:string;amount:number}
 type Input={requestId?:unknown;expectedOrderTotal?:unknown;
  oldItems?:Old[];newItems?:New[];paymentParts?:Part[];refundParts?:Part[];
@@ -65,7 +65,7 @@ export async function exchangeClient3WatchSet(
    const snapshot=found.get(line.orderItemId)!
    const retry=prior?.status==='started'||prior?.status==='completed'
    if(!Number.isSafeInteger(line.quantity)||line.quantity<1||line.quantity>1000||
-     !['not_issued','pending'].includes(line.physicalState)||
+     !['not_issued','pending','warehouse','boutique','no_stock'].includes(line.physicalState)||
      line.expectedUnitPrice!==Number(snapshot.unit_price)||
      line.expectedLineTotal!==Number(snapshot.line_total)&&!retry||
      line.expectedActiveQuantity!==Number(snapshot.quantity)&&!retry||
@@ -77,7 +77,9 @@ export async function exchangeClient3WatchSet(
      !Number.isSafeInteger(line.quantity)||line.quantity<1||line.quantity>1000||
      !Number.isSafeInteger(line.unitPrice)||line.unitPrice<0||line.unitPrice>1_000_000_000||
      typeof line.engravingText!=='string'||line.engravingText.length>500||
-     !line.manual||!line.manual.modelName?.trim())
+     !line.manual||!line.manual.modelName?.trim()||
+     !['pending','sent'].includes(line.shipmentState)||
+     (line.shipmentState==='sent'&&line.issuePossessionConfirmed!==true))
      return fail('WATCH_EXCHANGE_NEW_INVALID','Заполните новые часы, источник, количество и цену.',400)
  }
  const paymentParts=raw.paymentParts||[],refundParts=raw.refundParts||[]
@@ -117,7 +119,9 @@ export async function exchangeClient3WatchSet(
        audienceType:'ВЗРОСЛЫЙ',gender:String(sku.gender||''),
        color:String(sku.color||''),material:String(sku.material||''),
        length:String(sku.length||''),size:String(sku.size||''),
-       shipmentState:'pending',shortageAcknowledged:true,
+       shipmentState:newLine.shipmentState,
+       issuePossessionConfirmed:newLine.shipmentState==='sent'&&newLine.issuePossessionConfirmed===true,
+       shortageAcknowledged:true,
      } as NonNullable<OrderInput['items']>[number])
      watchLines.push({watchVariantId:Number(sku.id),catalogProductId:Number(sku.productId),
        catalogVariantId:Number(sku.variantId),engravingText:newLine.engravingText.trim()})
@@ -135,8 +139,10 @@ export async function exchangeClient3WatchSet(
    },{watchCommit:{brandId,lines:watchLines}})
    if(!settled||typeof settled!=='object'||!('ok' in settled)||settled.ok!==true)
      return fail('WATCH_EXCHANGE_NOT_APPLIED','Main не подтвердил обмен.',409)
-   return json({...settled,orderId,brandId,physicalOldIntakePending:true,
-     newShippingStatus:'pending'})
+   return json({...settled,orderId,brandId,
+     physicalOldIntakePending:raw.oldItems.some(x=>x.physicalState==='pending'),
+     newShippingStatus:raw.newItems.every(x=>x.shipmentState==='sent')?'sent':
+       raw.newItems.every(x=>x.shipmentState==='pending')?'pending':'partial'})
  }catch(cause){
    return fail('WATCH_EXCHANGE_FAILED',
      cause instanceof Error?cause.message:'Обмен не завершён. Повторите исходный запрос.',409)
