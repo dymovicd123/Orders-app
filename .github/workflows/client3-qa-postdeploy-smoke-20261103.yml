@@ -1,0 +1,74 @@
+name: Client3 isolated QA copy - postdeploy smoke only
+on:
+  push:
+    branches: [client3/isolated-qa-copy-20261103]
+    paths: ['.github/workflows/client3-qa-postdeploy-smoke-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      SOURCE_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      QA_URL: https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
+    steps:
+      - name: Verify exact QA identity
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/isolated-qa-copy-20261103
+          test "$QA_DB_ID" != "$SOURCE_DB_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - name: Check new workers.dev route after DNS propagation
+        run: |
+          set -euo pipefail
+          status=000
+          for attempt in $(seq 1 15); do
+            status=$(curl -sS -L -o /tmp/qa-public-home -w '%{http_code}' --max-time 12 "$QA_URL/" || echo 000)
+            echo "QA root attempt $attempt: HTTP $status"
+            if test "$status" = 200; then break; fi
+            sleep 3
+          done
+          test "$status" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/qa-public-home
+      - name: Confirm unauthenticated requests remain protected
+        run: |
+          set -euo pipefail
+          for path in '/api/client3/watches/logistics?status=all' \
+            '/api/client3/watches/orders?brand=TAUWACH' \
+            '/api/client3/watches/cash'; do
+            status=$(curl -sS -o /tmp/qa-public-api -w '%{http_code}' --max-time 15 "$QA_URL$path")
+            echo "QA protected path HTTP $status"
+            test "$status" = 401 -o "$status" = 403
+          done
+      - name: Verify isolated QA D1 integrity without changing any records
+        run: |
+          set -euo pipefail
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$QA_DB_ID/query"
+          status=$(curl -sS -o /tmp/qa-fk -w '%{http_code}' --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data '{"sql":"PRAGMA foreign_key_check"}' "$url")
+          test "$status" = 200
+          jq -e '.success==true and (.result[0].results|length)==0' /tmp/qa-fk >/dev/null
+          status=$(curl -sS -o /tmp/qa-summary -w '%{http_code}' --max-time 20 \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data '{"sql":"SELECT (SELECT COUNT(*) FROM app_users WHERE role='\''admin'\'' AND is_active=1) admins,(SELECT COUNT(*) FROM app_users WHERE role!='\''admin'\'' AND is_active=1) staff,(SELECT COUNT(*) FROM watch_brands) brands,(SELECT COUNT(*) FROM watch_variants) variants,(SELECT COUNT(*) FROM inventory_stock) stocks,(SELECT COUNT(*) FROM orders) orders_count"}' "$url")
+          test "$status" = 200
+          jq -e '.success==true and (.result[0].results[0] | .admins>=1 and .staff==0 and .brands>=2 and .variants>=1)' /tmp/qa-summary >/dev/null
+          jq -r '.result[0].results[0] | "QA DB verified: admins=\(.admins), staff_active=\(.staff), brands=\(.brands), variants=\(.variants), stock_rows=\(.stocks), orders=\(.orders_count)"' /tmp/qa-summary
+      - name: Confirm QA is ready
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body \
+            "Client3 isolated QA COPY ready: $QA_URL . Independent Worker orders-app-client3-qa-20261103 and D1 orders_db_client3_qa_41698114208 ($QA_DB_ID). Preserved active admin accounts and credentials; non-admin access disabled ONLY in QA, copied existing stock/catalog/orders/financial records. Post-deploy HTTP root, protected API and QA D1 FK checks SUCCESS. Main/Branch2 and real Client3 source were not modified. Check: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID ."
+      - name: Record unresolved check accurately
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body \
+            "Client3 QA Worker/D1 were deployed by run 41698114208, but post-deploy verification is unresolved: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Do not treat the QA link as accepted until the reported failed step is resolved. Source data and Main/Branch2 have not been modified."
