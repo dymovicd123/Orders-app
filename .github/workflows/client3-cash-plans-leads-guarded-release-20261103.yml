@@ -26,7 +26,7 @@ jobs:
           set -eEuo pipefail
           trap 'echo "CLIENT3_WORKSPACES_RELEASE_GATE_FAILED line $LINENO"' ERR
           test "$GITHUB_REF" = refs/heads/client3/cash-plans-leads-no-kpi-20261103
-          test "$(git rev-parse HEAD^)" = 9a7345364838238459655e047d53c4cbf5fa7a56
+          test "$(git rev-parse HEAD^)" = 4bee4f75233bdff2733cd0c5a83404d329e9fa61
           test "$(git diff --name-only 9a7345364838238459655e047d53c4cbf5fa7a56 HEAD)" = .github/workflows/client3-cash-plans-leads-guarded-release-20261103.yml
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41608023820 --jq .conclusion)" = success
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41608023820 --jq .head_sha)" = 9a7345364838238459655e047d53c4cbf5fa7a56
@@ -67,19 +67,19 @@ jobs:
       - name: Apply ONLY isolated Client3 Main cash/Plans/Leads migration
         run: |
           set -euo pipefail
-          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\\.sql' /tmp/watch-migrations | sort -u || true)"
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/watch-migrations | sort -u || true)"
           if test -n "$pending"; then
             test "$pending" = 1002_cash_plans_leads_no_kpi.sql
-            printf 'y\\n' | npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+            printf 'y\n' | npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
           fi
-          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \\
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
             --command="SELECT
               (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_cash_cycles') cash_cycles,
               (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_lead_records') leads_ready,
               (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_call_centre_records') call_ready,
               (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_department_plans') plans_ready,
               (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_brand_manager_plans') manager_plans_ready,
-              (SELECT COUNT(*) FROM pragma_table_info('watch_brand_cash_registers') WHERE name='auto_tracking_enabled') auto_ready" \\
+              (SELECT COUNT(*) FROM pragma_table_info('watch_brand_cash_registers') WHERE name='auto_tracking_enabled') auto_ready" \
             | jq -e '.[0].results[0] | select(.cash_cycles==1 and .leads_ready==1 and .call_ready==1 and .plans_ready==1 and .manager_plans_ready==1 and .auto_ready==1)'
       - name: Deploy third Worker only
         run: |
