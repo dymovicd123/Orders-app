@@ -91,6 +91,9 @@ export function WatchClient3App() {
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
+  const [correctionPrefill,setCorrectionPrefill]=useState<{
+    brand:WatchBrand;source:'office'|'showcase';watchProductId:number;watchVariantId:number
+  }|null>(null)
   const [reportOrderFocus,setReportOrderFocus]=useState<{
     brand:WatchBrand;orderId:number;externalId:string;orderDate:string
   }|null>(null)
@@ -304,6 +307,7 @@ export function WatchClient3App() {
   const canSales=brands.length>0&&(user.role==='admin'||user.employeeRole!=='Логист')
   const canAdmin=user.role==='admin'
   const goTo=(next:WatchSection)=>{
+    if(next!=='operations')setCorrectionPrefill(null)
     setTab(next);setError('')
     if(next==='create'){setSuccess('');setWarning('')}
     if(window.location.hash!=='#'+next)window.location.hash=next
@@ -429,9 +433,11 @@ export function WatchClient3App() {
             activeSection==='operations'||activeSection==='revision'?
               <WatchWarehouseMain key={(activeSection==='revision'?'revision-':'operation-')+brand} brand={brand}
                 initialRevision={activeSection==='revision'}
+                prefill={correctionPrefill?.brand===brand&&activeSection==='operations'?correctionPrefill:undefined}
                 onStockChanged={()=>setCatalogVersion(x=>x+1)}/>:
               <WatchStockMainBrowse key={'stock-'+brand+'-'+catalogVersion}
-                brand={brand} canCorrect={canAdmin} onCorrect={()=>goTo('operations')}/>):
+                brand={brand} canCorrect={canAdmin}
+                onCorrect={selection=>{setCorrectionPrefill({brand,...selection});goTo('operations')}}/>):
             <div className="watch-shell-model-list">
               {viewModels.map(model=><article key={model.watchVariantId}>
                 <strong>{model.modelName}</strong>
