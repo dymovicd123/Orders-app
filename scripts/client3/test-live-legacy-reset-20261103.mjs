@@ -11,8 +11,8 @@ for(const path of fs.readdirSync('migrations/client3-watch').filter(x=>/^[0-9].*
 const before=()=>sqlite.prepare('PRAGMA foreign_key_check').all()
 assert.deepEqual(before(),[])
 
-sqlite.prepare("INSERT INTO managers(id,name,role,is_active) VALUES(101,'ИСТОРИЧЕСКИЙ','Менеджер',1)").run()
-sqlite.prepare("INSERT INTO app_users(id,email,login,password_hash,role,manager_id,is_active) VALUES(11,'legacy1@orders.invalid','legacy1','testhash','manager',101,1),(12,'legacy2@orders.invalid','legacy2','testhash','manager',101,1),(13,'admin@orders.invalid','admin','testhash','admin',NULL,1)").run()
+sqlite.prepare("INSERT INTO managers(id,name,role,is_active) VALUES(101,'ИСТОРИЧЕСКИЙ','Менеджер',1),(102,'ИСТОРИЧЕСКИЙ 2','Менеджер',1)").run()
+sqlite.prepare("INSERT INTO app_users(id,email,login,password_hash,role,manager_id,is_active) VALUES(11,'legacy1@orders.invalid','legacy1','testhash','manager',101,1),(12,'legacy2@orders.invalid','legacy2','testhash','manager',102,1),(13,'admin@orders.invalid','admin','testhash','admin',NULL,1)").run()
 sqlite.prepare("INSERT INTO orders(id,external_id,order_date,manager_id) VALUES(1,'HIST1','2026-10-01',101),(2,'HIST2','2026-10-02',101),(3,'NEW-WATCH','2026-11-03',101)").run()
 sqlite.prepare("INSERT INTO order_items(id,order_id,product_name_snapshot) VALUES(1,1,'СТАРЫЙ'),(2,2,'СТАРЫЙ'),(3,3,'ЧАСЫ')").run()
 sqlite.prepare("INSERT INTO payments(order_id,payment_date,method,amount) VALUES(1,'2026-10-01','KASPI',100),(2,'2026-10-02','KASPI',200),(3,'2026-11-03','KASPI',500)").run()
