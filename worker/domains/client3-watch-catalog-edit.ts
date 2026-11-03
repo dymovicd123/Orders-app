@@ -12,7 +12,7 @@ const id=(x:unknown)=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):0
 /** Main-style model rename: only the display name, never the canonical product ID. */
 export async function editClient3WatchModel(db:D1Database,actor:AuthUser,brandId:number,
  input:{watchProductId?:unknown;expectedName?:unknown;modelName?:unknown}){
- if(actor.role!=='admin')return error('Изменять товары может только администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return error('Изменять товары может только администратор.',403)
  const productId=id(input.watchProductId),name=clean(input.modelName),expected=clean(input.expectedName)
  if(!productId||!expected||!name||name.length>150)return error('Выберите модель и укажите корректное название (до 150 символов).')
  const current=await db.prepare('SELECT id,model_name,is_active FROM watch_products WHERE id=? AND brand_id=?')
@@ -51,7 +51,7 @@ type EditInput=WatchVariantInput&{watchVariantId?:unknown;watchProductId?:unknow
  * never-used SKUs can be edited in place, preserving their canonical ID.
  */
 export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brandId:number,input:EditInput){
- if(actor.role!=='admin')return error('Редактирование позиций доступно только администратору.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return error('Редактирование позиций доступно только администратору.',403)
  const variantId=id(input.watchVariantId),productId=id(input.watchProductId)
  if(!variantId||!productId||!input.expected)return error('Выберите позицию и обновите её карточку.',400)
  let next:ReturnType<typeof normalizeWatchVariant>,expected:ReturnType<typeof normalizeWatchVariant>
