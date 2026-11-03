@@ -11,6 +11,7 @@ const stock=fs.readFileSync('src/features/client3/WatchWarehouseMain.tsx','utf8'
 const orders=fs.readFileSync('src/features/client3/WatchOrdersPanel.tsx','utf8')
 const logistics=fs.readFileSync('src/features/client3/WatchLogisticsPanel.tsx','utf8')
 const finance=fs.readFileSync('src/features/client3/WatchFinancePanel.tsx','utf8')
+const team=fs.readFileSync('src/features/client3/WatchTeamMainPanel.tsx','utf8')
 
 assert(shell.includes('Client3MainChrome'),'Navigation uses the Main-derived ERP chrome')
 assert(chrome.includes('<aside className={')&&chrome.includes('erp-sidebar'),
@@ -53,8 +54,9 @@ assert(finance.includes('LinkedTableScroll')&&finance.includes('finance-days-tru
  finance.includes('finance-operation-ledger'),
  'Finance must include Main-style day reconciliation and operation journal tables')
 assert(orderCss.includes('order-step-card'),'Order workflow uses Main numbered steps')
-assert(shell.includes('WatchUserAccessPanel')&&shell.includes('WatchBrandAccessPanel'),
- 'Admin tools for accounts and brand access must be retained')
+assert(shell.includes('WatchTeamMainPanel')&&team.includes('WatchUserAccessPanel')&&
+ team.includes('team-brand-edit'),
+ 'Admin tools for employee accounts and brand assignments must be retained in Team')
 assert(shell.includes('WatchReturnsPanel')&&shell.includes('WatchLogisticsPanel'),
  'Return and dispatch panels are reachable')
 assert(!chrome.includes('<h1>TAUWACH / WACHIZEN</h1>'),'No hard-coded brand at login')
