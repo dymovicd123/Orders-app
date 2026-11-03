@@ -88,6 +88,7 @@ jobs:
           assert(regression.includes('independentAlias'))
           assert(regression.includes('renameConflict'))
           assert(regression.includes('aliasModelCreate'))
+          assert(regression.includes('const modelsBeforeSynonym=count('))
           console.log('CLIENT3_WATCH_BRAND_ALIASES_PASS')
           console.log('CLIENT3_MAIN_KAZAKH_SYNONYM_RESOLVER_GUARD_PASS')
           console.log('CLIENT3_MAIN_SESSION_RECOUNT_UI_PASS')
