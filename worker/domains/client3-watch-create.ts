@@ -39,7 +39,7 @@ export async function createClient3WatchOrder(
    const today=new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
    let orderDate=today
    if(raw.orderDate!==undefined){
-     if(typeof raw.orderDate!=='string'||!/^\\d{4}-\\d{2}-\\d{2}$/.test(raw.orderDate)||
+     if(typeof raw.orderDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(raw.orderDate)||
        raw.orderDate<'2020-01-01'||raw.orderDate>today||
        !Number.isFinite(Date.parse(raw.orderDate+'T00:00:00Z'))||
        new Date(raw.orderDate+'T00:00:00Z').toISOString().slice(0,10)!==raw.orderDate)
