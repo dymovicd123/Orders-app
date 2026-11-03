@@ -442,25 +442,44 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
        {operationsTruncated&&<p className="mini-panel-note">Подробная история ограничена последними {moneyRows.length} событиями; сумма закрытия долгов учитывает все операции периода.</p>}
      </section>
    </div>}
-   {mode==='returns'&&<section className="mini-panel">
-     <h3>Возвраты и обмены</h3>
-     <div className="summary-grid compact-summary">
-       <div className="summary-card danger-card"><span>Списания / возвраты</span>
-         <strong>{watchMoney(data?.income.outgoing)}</strong></div>
-       <div className="summary-card"><span>Событий возврата денег / коррекции</span>
-         <strong>{refunds.length}</strong></div>
-       <div className="summary-card"><span>Денежных событий обмена</span>
-         <strong>{exchanges.length}</strong></div>
-     </div>
-     <LinkedTableScroll ariaLabel="Возвраты и обмены"><table className="data-table strict-report-table">
-       <thead><tr><th>Дата</th><th>Заказ</th><th>Событие</th><th>Метод</th><th>Сумма</th></tr></thead>
-       <tbody>{[...refunds,...exchanges.filter(x=>Number(x.amountDelta)>=0)].map(row=>
-         <tr key={String(row.id)}><td>{String(row.eventDate)}</td>
-           <td>{String(row.externalOrderId||'—')}</td><td>{String(row.eventType)}</td>
-           <td>{String(row.paymentMethod||'—')}</td><td>{watchMoney(row.amountDelta)}</td>
-         </tr>)}</tbody>
-     </table></LinkedTableScroll>
-   </section>}
+
+   {mode==='returns'&&<div className="finance-truth-content">
+     <section className="mini-panel">
+       <div className="mini-panel-head"><div><h3>Возвраты и обмены</h3>
+         <p className="mini-panel-note">Деньги учитываются по дате возврата или доплаты. Физическое получение часов учитывается на складе отдельно.</p>
+       </div></div>
+       <div className="summary-grid compact-summary">
+         <div className="summary-card danger-card"><span>Обычные возвраты</span><strong>{watchMoney(regularReturns)}</strong></div>
+         <div className="summary-card danger-card"><span>Возвраты при обменах</span><strong>{watchMoney(exchangeReturns)}</strong></div>
+         <div className="summary-card"><span>Доплаты при обменах</span><strong>{watchMoney(exchangePayments)}</strong></div>
+         <div className="summary-card"><span>Другие списания</span><strong>{watchMoney(otherOutflow)}</strong></div>
+       </div>
+     </section>
+     <section className="mini-panel">
+       <div className="mini-panel-head"><div><h3>Денежная история возвратов и обменов</h3>
+         <p className="mini-panel-note">Операции с отрицательной суммой — деньги, вернувшиеся клиенту. Положительные доплаты при обменах показаны отдельно.</p></div>
+         <span className="soft-badge">{refunds.length+exchanges.filter(x=>Number(x.amountDelta)>=0).length} загруженных событий</span>
+       </div>
+       <LinkedTableScroll ariaLabel="Возвраты и обмены"><table className="data-table strict-report-table">
+         <thead><tr><th>Дата события</th><th>Заказ</th><th>Клиент / менеджер</th>
+           <th>Денежное событие</th><th>Способ</th><th>Комментарий</th>
+           <th className="num">Сумма</th><th>Действие</th></tr></thead>
+         <tbody>{moneyRows.filter(row=>Number(row.amountDelta||0)<0||
+             /exchange/i.test(String(row.eventType||''))).map(row=>
+           <tr key={String(row.id)}>
+             <td>{moneyDate(row.eventDate)}</td><td>{String(row.externalOrderId||'—')}</td>
+             <td>{String(row.customer||'—')}<small className="mini-panel-note">{String(row.manager||'—')}</small></td>
+             <td>{operationLabel(row.eventType)}</td><td>{String(row.paymentMethod||'—')}</td>
+             <td>{String(row.comment||'—')}</td>
+             <td className={'num '+(Number(row.amountDelta||0)<0?'watch-finance-out':'watch-finance-in')}>
+               <strong>{watchMoney(row.amountDelta)}</strong></td>
+             <td>{onOpenOrder&&<button type="button" className="secondary compact finance-order-link"
+               onClick={()=>openOrder(row)}>К заказу</button>}</td>
+           </tr>)}
+         </tbody></table></LinkedTableScroll>
+       {operationsTruncated&&<p className="mini-panel-note">Суммы карточек учитывают все события периода. Подробный список показывает последние {moneyRows.length} финансовых записей.</p>}
+     </section>
+   </div>}
    {mode==='cash'&&isAdmin&&<section className="mini-panel cash-register-main">
      <div className="mini-panel-head"><div><h3>Общая касса · TAUWACH + WACHIZEN</h3>
        <p className="mini-panel-note">Единый остаток и журнал наличных двух брендов. У каждого заказа в истории указан его бренд. Kaspi не считается наличными.</p></div></div>
@@ -495,7 +514,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
          <label>Фактический начальный остаток наличных<input type="number"
            min={0} max={1000000000} step={1} required value={cashOpening}
            onChange={e=>setCashOpening(e.target.value)}/></label>
-         <button className="primary" type="submit">Открыть кассу бренда</button>
+         <button className="primary" type="submit">Открыть общую кассу</button>
        </>:<>
          <div className="order-panel-tabs">
            <button type="button" className={'secondary compact '+(cashAction==='manual'?'is-active':'')}
@@ -574,7 +593,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
    </section>}
    {mode==='methods'&&<section className="mini-panel">
      <h3>Способы оплаты</h3>
-     <p>Справочник способов оплаты общий для системы, но денежные операции и кассы двух брендов разделены.</p>
+     <p>Справочник способов оплаты общий. Денежные операции распределены по брендам, а наличные обоих брендов учитываются в одной кассе.</p>
      <div className="watch-finance-methods">{(data?.methods||[]).map(m=>
        <div key={String(m.method)}><strong>{String(m.method)}</strong>
          <span>За период: {watchMoney(m.incoming)} поступило · {watchMoney(m.outgoing)} возвращено</span>
