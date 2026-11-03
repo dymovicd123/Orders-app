@@ -5,6 +5,13 @@ on:
     paths:
       - '.github/workflows/client3-shared-cash-main-team-acceptance-20261103.yml'
       - 'worker/domains/client3-watches.ts'
+      - 'worker/domains/client3-watch-catalog.ts'
+      - 'worker/domains/client3-watch-provision.ts'
+      - 'src/features/client3/WatchCatalogEditor.tsx'
+      - 'src/features/client3/WatchStockMainBrowse.tsx'
+      - 'src/features/client3/WatchWarehouseMain.tsx'
+      - 'src/WatchClient3App.tsx'
+      - 'scripts/client3/test-watch-full-order-engine-20261102.mjs'
       - 'worker/domains/client3-watch-shared-cash.ts'
       - 'worker/domains/client3-watch-team-main.ts'
       - 'src/features/client3/WatchTeamMainPanel.tsx'
