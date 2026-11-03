@@ -70,7 +70,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(
     initialFocusedOrder?.orderDate&&initialFocusedOrder.orderDate<new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
       ?initialFocusedOrder.orderId:null)
-  const [expanded,setExpanded]=useState<number|null>(initialFocusedOrder?.orderId||null)
+  // Keep Main's dense orders table collapsed by default; detail opens only on request.
+  const [expanded,setExpanded]=useState<number|null>(null)
   useEffect(()=>{
     const controller=new AbortController()
     setBusy(true);setError('');setData(null)
