@@ -135,6 +135,9 @@ export type ReturnDraft = {
   returnDate: string
   amount: number
   paymentMethod: string
+  extraRefundEnabled: boolean
+  extraRefundAmount: number
+  extraRefundMethod: string
   comment: string
   restockSource: 'none' | 'warehouse' | 'boutique'
   items: ReturnItemDraft[]
@@ -172,6 +175,12 @@ export type ExchangeDraft = {
   newItems: ExchangeSetNewDraft[]
   paymentAmount: number
   refundMethod: string
+  extraPaymentEnabled: boolean
+  extraPaymentAmount: number
+  extraPaymentMethod: string
+  extraRefundEnabled: boolean
+  extraRefundAmount: number
+  extraRefundMethod: string
   currentPairKey: string
   queuedPairs: ExchangePairDraft[]
   oldItemId: number

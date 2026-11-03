@@ -291,7 +291,7 @@ export function ReferencesSection({ ctx }: { ctx: SectionContext }) {
                       <span>Значение</span>
                       <input
                         value={referenceDraft.value}
-                        onChange={(event) => setReferenceDraft((current) => ({ ...current, value: normalizeSuggestion(event.target.value) }))}
+                        onChange={(event) => setReferenceDraft((current) => ({ ...current, value: event.target.value.toUpperCase() }))}
                         placeholder={selectedReferenceKindConfig.placeholder}
                       />
                     </label>
