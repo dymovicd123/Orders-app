@@ -59,9 +59,21 @@ INSERT OR IGNORE INTO watch_city_values(kind,value,is_active) VALUES
   ('cities','ХРОМТАУ',1),
   ('cities','ШАРДАРА',1);
 
--- Seed requested leather strap colors. Do not rewrite SKU/historical rows.
-INSERT OR IGNORE INTO watch_reference_values(kind,value,is_active) VALUES
-  ('leatherColors','ЧЕРНЫЙ',1),
-  ('leatherColors','КОРИЧНЕВЫЙ',1);
+-- Seed requested leather strap colors without duplicating historical
+-- 'ЧЁРНЫЙ' as a different stock identity from 'ЧЕРНЫЙ'.
+-- Exact existing SKU spellings remain intact (no changes to sold variants).
+INSERT OR IGNORE INTO watch_reference_values(kind,value,is_active)
+SELECT 'leatherColors','ЧЕРНЫЙ',1
+WHERE NOT EXISTS (
+  SELECT 1 FROM watch_reference_values
+  WHERE kind='leatherColors' AND REPLACE(value,'Ё','Е')='ЧЕРНЫЙ'
+);
+INSERT OR IGNORE INTO watch_reference_values(kind,value,is_active)
+SELECT 'leatherColors','КОРИЧНЕВЫЙ',1
+WHERE NOT EXISTS (
+  SELECT 1 FROM watch_reference_values
+  WHERE kind='leatherColors' AND value='КОРИЧНЕВЫЙ'
+);
 UPDATE watch_reference_values SET is_active=1
-WHERE kind='leatherColors' AND upper(trim(value)) IN ('ЧЕРНЫЙ','КОРИЧНЕВЫЙ');
+WHERE kind='leatherColors' AND
+  (REPLACE(value,'Ё','Е')='ЧЕРНЫЙ' OR value='КОРИЧНЕВЫЙ');
