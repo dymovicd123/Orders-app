@@ -221,6 +221,16 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
     requestRef.current=null
   }
   const review=()=>{
+    if(mode==='writeoff'&&!reason.trim()){
+      setError('Укажите причину списания. Количество уже введено и останется в черновике.');return
+    }
+    if(invalid){
+      const over=selected.filter(v=>(mode==='writeoff'||mode==='transfer')&&
+        Number(draft[v.watchVariantId!])>sourceSnapshot(v,source).free)
+      setError(over.length?'Недостаточно свободного остатка у '+over.length+
+        ' комплектаций. Уточните количество, резерв не затронут.':
+        'Проверьте количество: используйте целые неотрицательные значения в допустимом диапазоне.');return
+    }
     if(!ready){setError(selected.length>maxLines?
       'В операции '+selected.length+' позиций. Для '+titles[mode].name.toLowerCase()+
         ' можно сохранить не более '+maxLines+' одновременно. Черновик сохранён, разделите партию.':
@@ -265,7 +275,12 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
       requestRef.current=null
       setNotice(result.attention||'Операция сохранена: '+total+' комплектаций.')
       refresh();onStockChanged?.()
-    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось сохранить операцию.')}
+    }catch(cause){
+      const message=cause instanceof Error?cause.message:'Не удалось сохранить операцию.'
+      setError(/inventory_model_meta\.key|SQLITE_CONSTRAINT_PRIMARYKEY/i.test(message)
+        ?'Остаток или состояние ревизии изменились. Обновите склад и повторите операцию после завершения ревизии.'
+        :message.replace(/\bБутик\b/g,'Витрина').replace(/\bбутик\b/g,'витрина'))
+    }
     finally{setSaving(false)}
   }
   return <div className="client3-main-stock">
