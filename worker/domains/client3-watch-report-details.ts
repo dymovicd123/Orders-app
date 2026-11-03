@@ -2,8 +2,11 @@ import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
-const validDate=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&
-  new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value
+const validDate=(value:string)=>{
+ if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value))return false
+ const time=Date.parse(value+'T00:00:00Z')
+ return Number.isFinite(time)&&new Date(time).toISOString().slice(0,10)===value
+}
 const salesBase=`wd.brand_id=? AND o.order_status NOT IN ('deleted','archived')`
 const cityExpr="COALESCE(NULLIF(TRIM(wd.city),''),'НЕ УКАЗАН')"
 const modelExpr="COALESCE(NULLIF(TRIM(wp.model_name),''),NULLIF(TRIM(oi.product_name_snapshot),''),'НЕ УКАЗАН')"
