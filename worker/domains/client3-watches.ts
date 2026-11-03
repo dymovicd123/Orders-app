@@ -13,6 +13,7 @@ import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
 import {getWatchSharedCash,setupWatchSharedCash,writeWatchSharedCash,setWatchSharedCashAuto,reverseWatchSharedCash,resetWatchSharedCashCycle} from './client3-watch-shared-cash.ts'
+import {listClient3WatchTeam,saveClient3WatchEmployee,setClient3WatchEmployeeActive,listClient3WatchTimesheet,saveClient3WatchTimesheet,listClient3WatchTeamSalary,listClient3WatchTeamActivity} from './client3-watch-team-main.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from './client3-watch-plans-leads.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
@@ -613,6 +614,25 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return createClient3WatchOrder(db,actor,scope.row!.id,raw)
   }
+  // Main-style employees and workflows. Admin guard is enforced again in domain.
+  if(url.pathname==='/api/client3/watches/team'&&request.method==='GET')
+    return listClient3WatchTeam(db,actor)
+  if(url.pathname==='/api/client3/watches/team/employees'&&request.method==='POST')
+    return saveClient3WatchEmployee(db,actor,await readJson<Record<string,unknown>>(request))
+  const teamStatus=/^\\/api\\/client3\\/watches\\/team\\/employees\\/(\\d+)\\/status$/.exec(url.pathname)
+  if(teamStatus&&request.method==='PATCH'){
+    const input=await readJson<{isActive?:unknown}>(request)
+    return setClient3WatchEmployeeActive(db,actor,Number(teamStatus[1]),input.isActive)
+  }
+  if(url.pathname==='/api/client3/watches/team/timesheet'&&request.method==='GET')
+    return listClient3WatchTimesheet(db,actor,url)
+  if(url.pathname==='/api/client3/watches/team/timesheet'&&request.method==='POST')
+    return saveClient3WatchTimesheet(db,actor,await readJson<{dates?:unknown;managerIds?:unknown;
+      workUntil?:unknown;comment?:unknown;clear?:unknown}>(request))
+  if(url.pathname==='/api/client3/watches/team/salary'&&request.method==='GET')
+    return listClient3WatchTeamSalary(db,actor,url)
+  if(url.pathname==='/api/client3/watches/team/activity'&&request.method==='GET')
+    return listClient3WatchTeamActivity(db,actor,url)
   if(url.pathname==='/api/client3/watches/staff'&&request.method==='GET')
     return listWatchStaff(db,actor)
   const staffMatch=/^\/api\/client3\/watches\/staff\/(\d+)\/brands$/.exec(url.pathname)
