@@ -536,22 +536,45 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
          <button type="submit" className="primary" disabled={cashBusy}>Подтвердить операцию</button>
        </>}
      </form>}
-     {cash?.initialized&&<LinkedTableScroll ariaLabel="История общей кассы">
-       <table className="data-table strict-report-table">
-         <thead><tr><th>Дата</th><th>Бренд</th><th>Тип</th><th>Заказ</th><th>Комментарий</th>
-           <th className="num">Сумма</th><th className="export-hide">Действия</th></tr></thead>
-         <tbody>{cash.entries.map((x,i)=><tr key={String(x.type)+String(x.id)+i}>
-           <td>{x.businessDate}</td><td>{x.brand||'ОБЩАЯ'}</td><td>{x.reversesEntryId?'Отмена ручной операции':
-             ({manual_in:'Внесение',manual_out:'Выдача',reconcile_in:'Сверка +',
-               reconcile_out:'Сверка −'} as Record<string,string>)[x.type]||x.type}</td>
-           <td>{x.externalOrderId||'—'}</td><td>{x.comment||'—'}</td>
-           <td className="num">{watchMoney(x.amountDelta)}</td>
-           <td className="export-hide">{['manual_in','manual_out'].includes(x.type)&&!x.reversesEntryId&&
-             <button type="button" className="secondary compact"
-               disabled={cashBusy} onClick={()=>void cashExtra('reverse',{entryId:x.id})}>Отменить</button>}</td>
-         </tr>)}</tbody>
-       </table>
-     </LinkedTableScroll>}
+
+     {cash?.initialized&&<section className="mini-panel cash-register-ledger-panel">
+       <div className="mini-panel-head"><div><h3>Движение наличных по дням</h3>
+         <p className="mini-panel-note">Операции обоих брендов в одной кассе. Дата показывает, к какому дню относится движение; время внесения сохраняется в журнале.</p>
+       </div><button type="button" className="secondary compact" disabled={cashBusy}
+           onClick={()=>setCashRefresh(x=>x+1)}>Обновить</button></div>
+       {[...new Set(cash.entries.map(x=>String(x.businessDate||'Без даты')))].map(day=>{
+         const entries=cash.entries.filter(x=>String(x.businessDate||'Без даты')===day)
+         const totalIn=entries.reduce((n,x)=>n+Math.max(0,Number(x.amountDelta||0)),0)
+         const totalOut=entries.reduce((n,x)=>n+Math.max(0,-Number(x.amountDelta||0)),0)
+         return <section className="mini-panel" key={day}>
+           <div className="mini-panel-head"><div><h3>{day==='Без даты'?day:moneyDate(day)}</h3>
+             <p className="mini-panel-note">Пришло + {watchMoney(totalIn)} · Ушло − {watchMoney(totalOut)} · Изменение {watchMoney(totalIn-totalOut)}</p>
+           </div><span className="soft-badge">{entries.length} операций</span></div>
+           <LinkedTableScroll ariaLabel={'Касса '+day}>
+             <table className="data-table cash-business-day-table strict-report-table">
+               <thead><tr><th>Бренд</th><th>Операция</th><th>Заказ</th><th>Комментарий</th>
+                 <th>Внесено</th><th className="num">Сумма</th><th>Действие</th></tr></thead>
+               <tbody>{entries.map(x=><tr key={String(x.type)+String(x.id)}>
+                 <td>{x.brand||'ОБЩАЯ'}</td>
+                 <td>{x.reversesEntryId?'Отмена ручной операции':
+                   ({manual_in:'Внесение',manual_out:'Выдача',reconcile_in:'Сверка +',
+                     reconcile_out:'Сверка −'} as Record<string,string>)[x.type]||x.type}</td>
+                 <td>{x.externalOrderId||'—'}</td>
+                 <td>{x.comment||'—'}</td>
+                 <td>{x.createdAt?moneyDate(x.createdAt):'—'}</td>
+                 <td className={'num '+(x.amountDelta<0?'watch-finance-out':'watch-finance-in')}>
+                   <strong>{watchMoney(x.amountDelta)}</strong></td>
+                 <td>{['manual_in','manual_out'].includes(x.type)&&!x.reversesEntryId&&
+                   !cash.entries.some(reverse=>reverse.reversesEntryId===x.id)&&
+                   <button type="button" className="secondary compact"
+                     disabled={cashBusy} onClick={()=>void cashExtra('reverse',{entryId:x.id})}>Отменить</button>}</td>
+               </tr>)}</tbody>
+             </table>
+           </LinkedTableScroll>
+         </section>
+       })}
+       {!cash.entries.length&&<div className="empty-state">В текущем цикле ещё нет движений наличных.</div>}
+     </section>}
      {cash?.initialized&&Boolean(cash.legacyEntries?.length)&&
        <details className="mini-panel cash-register-archive">
          <summary><strong>Архив прежних отдельных касс</strong></summary>
