@@ -378,3 +378,20 @@ No Problems queue; no duplicate bulk-operations UI. Continue using Main patterns
 **Go-live rule:** Integration/security and isolated deployment are green. The product is technically available for a controlled pilot, but full operator/browser/mobile acceptance is not yet proven. Do not label fully production-accepted without it. Keep source-level session serialization for two brands, which is a known workflow limitation rather than a data integrity defect.
 
 **Next shortest path:** one focused role/browser walkthrough (admin, manager, logistic) for product→receipt→order→engraving/send→return/exchange→finance on Client3 only. Prioritize blockers observed there; do not introduce optional new features or copy the Problems queue.
+
+
+## 03.11.2026 — Urgent CLIENT3 reference/catalog legibility & real Main cities RELEASED
+
+**Isolated third Worker release successful:** https://github.com/dymovicd123/Orders-app/actions/runs/41598963136
+**Full Main-backed SQLite D1, orders/returns/exchanges and production build acceptance:** https://github.com/dymovicd123/Orders-app/actions/runs/41598802234
+**Live Main city READ-ONLY export:** 46 unique active city values. All 46 verified/seeded in the Client3 city table and order suggestions; no Main writes. Source SQL: Main `migrations/0002_reference_values.sql`. Live Main DB queried only via `SELECT value FROM reference_values WHERE kind='city' AND is_active=1`, not migrated or altered.
+
+The user supplied a Windows client photo where material and mechanism option text was invisible on the watch catalog variant-creation form. Explicit native dark-on-white `select` and `option` styling now covers main variant creation, inline stock variant creation, and the edit modal, with CSS `color` and WebKit text fill set for Chrome and OS themes. Critical choices have stable fallback arrays even when the reference request is slow or incomplete. Exact historical backend values remain as internal SKU keys.
+
+The watch shared references section now includes **Города** (Main-style suggestions, editable only by admin). New and edited reference values are normalized to uppercase; read-only labels of existing English technical IDs are **Russian uppercase**, such as `quartz` -> `КВАРЦЕВЫЕ`, `leather` -> `КОЖА`, `black` -> `ЧЕРНЫЙ`. **Existing canonical codes and sold-variant characteristic values are not rewritten**, to protect stock/SKU identity. This is intentional, rather than blindly uppercasing legacy DB rows. Watch order city input has Main-style `datalist` suggestions plus free-text input and uppercase entered city; previous order addresses remain unchanged.
+
+Leather strap references now include the requested black and brown colors. A historical `ЧЁРНЫЙ` value is **not duplicated as a separate SKU identity** by `ЧЕРНЫЙ`; the UI displays both semantic spellings as `ЧЕРНЫЙ` without changing the stored variant. `КОРИЧНЕВЫЙ` added when missing. Only additive Client3 migration `1000_russian_cities_leather_colors.sql` was executed; user and business data untouched. New city data is stored in isolated `watch_city_values`, since changing D1 legacy reference CHECK constraints would be unsafe.
+
+Live guarded release passed Worker deploy, anonymous endpoint denial, unchanged Client3 order/item/payment/stock/physical/reserve counts, FK check, and source-level exact tested SHA gate. No Main or Branch2 mutations. Tests reproduce all 46 seeded cities, city CRUD, uppercase new values and Russian display, original SKU code preservation, leather references and existing order lifecycle regressions.
+
+**Remaining sign-off:** actual customer's Windows/Chrome visual check with refreshed JS/CSS, and broad authenticated role/mobile walkthrough. No additional catalog or warehouse screens were introduced.
