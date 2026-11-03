@@ -469,7 +469,7 @@ export function WatchClient3App() {
       </>}
       {activeSection==='references'&&brand&&<WatchReferencesSection
         brand={brand} brands={brands.map(x=>x.code)}
-        onBrandChange={setBrand} canEdit={canWarehouse} onOpenCatalog={()=>goTo('catalog')}
+        onBrandChange={setBrand} canEdit={canWarehouse} canEditFinancialRefs={canAdmin} onOpenCatalog={()=>goTo('catalog')}
         onOpenStaff={canAdmin?()=>goTo('staff'):undefined}/>}
       {activeSection==='finance'&&brands.length>0&&
         <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}
