@@ -52,15 +52,16 @@ async function brandRow(db:D1Database,code:string) {
   return db.prepare('SELECT id, code FROM watch_brands WHERE code=? AND is_active=1')
     .bind(code).first<{id:number,code:WatchBrand}>()
 }
-async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'logistics'|'sales') {
-  if(actor.role==='admin'||(mode==='logistics'&&staffCanSeeAllLogistics(actor)))return true
-  if(mode==='sales'&&(actor.employeeRole==='Логист'||actor.employeeRole==='Упаковщик'))return false
+async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'logistics'|'sales'|'warehouse') {
+  if(actor.role==='admin'||(mode==='logistics'&&staffCanSeeAllLogistics(actor))||
+    (mode==='warehouse'&&actor.employeeRole==='Завсклад'))return true
+  if(mode==='sales'&&['Логист','Упаковщик','Завсклад'].includes(actor.employeeRole||''))return false
   if(!actor.managerId)return false
   const row=await db.prepare('SELECT 1 AS ok FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1')
     .bind(actor.managerId,brandId).first<{ok:number}>()
   return Boolean(row?.ok)
 }
-async function scopedBrand(db:D1Database,actor:AuthUser,input:unknown,mode:'sales'|'logistics') {
+async function scopedBrand(db:D1Database,actor:AuthUser,input:unknown,mode:'sales'|'logistics'|'warehouse') {
   let code:WatchBrand
   try{code=normalizeWatchBrand(input)}catch{return {error:BAD('Укажите бренд TAUWACH или WACHIZEN')} }
   const row=await brandRow(db,code)
@@ -74,7 +75,7 @@ export async function listWatchBrands(db:D1Database,actor:AuthUser) {
     WHERE b.is_active=1 AND (?=1 OR EXISTS (
       SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=b.id AND mb.manager_id=?
     )) ORDER BY b.code
-  `).bind(staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0)
+  `).bind(staffCanSeeAllLogistics(actor)||actor.employeeRole==='Завсклад'?1:0,actor.managerId||0)
     .all<{code:WatchBrand,name:string}>()
   return json({ok:true,brands:rows.results||[]})
 }
@@ -151,7 +152,7 @@ export async function assignWatchManagerBrands(
 }
 
 export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
-  const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+  const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
   if(scope.error)return scope.error
   const rows=await db.prepare(`
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
@@ -317,7 +318,7 @@ export async function routeClient3Watches(
   if(refDelete&&request.method==='DELETE')
     return deleteClient3WatchReference(db,actor,Number(refDelete[1]))
   if(url.pathname==='/api/client3/watches/stock/revision'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return getClient3WatchRevision(db,actor,scope.row!.id,url)
   }
@@ -337,7 +338,7 @@ export async function routeClient3Watches(
       watchRevisionAction[1] as 'count'|'count-fast'|'add'|'complete'|'cancel',input)
   }
   if(url.pathname==='/api/client3/watches/stock/history'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return listClient3WatchStockHistory(db,actor,scope.row!.id,url)
   }
@@ -393,7 +394,7 @@ export async function routeClient3Watches(
     return provisionClient3WatchSku(db,actor,scope.row!.id,Number(input.watchVariantId))
   }
   if(url.pathname==='/api/client3/watches/catalog'&&request.method==='GET') {
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return listWatchCatalogDrafts(db,actor,scope.row!.id)
   }
@@ -408,7 +409,7 @@ export async function routeClient3Watches(
       : deleteClient3WatchCatalog(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='GET'){
-    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
     if(scope.error)return scope.error
     return listWatchModelAliases(db,actor,scope.row!.id,
       Number(url.searchParams.get('watchProductId')))
