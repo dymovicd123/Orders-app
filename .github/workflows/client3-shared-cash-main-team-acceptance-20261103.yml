@@ -22,6 +22,7 @@ jobs:
           test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
           ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
           test -f migrations/client3-watch/1003_shared_cash_main_team.sql
+          grep -q 'INSERT OR IGNORE INTO managers' scripts/client3/test-watch-shared-cash-team-20261103.mjs
       - run: npm ci
       - name: Main order/stock/returns/finance/lead/plan regression
         run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
