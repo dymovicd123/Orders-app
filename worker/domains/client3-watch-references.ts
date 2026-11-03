@@ -6,6 +6,7 @@ const allKinds:readonly WatchReferenceKind[]=['movements','bracelets','dials','l
 const extraKinds:readonly string[]=['movements','bracelets','dials']
 const OFFSET=1000000000
 const CITY_OFFSET=2000000000
+const warehouseKind=(kind:unknown)=>typeof kind==='string'&&['movements','bracelets','dials','leatherColors','cities'].includes(kind)
 const validKind=(x:unknown):x is WatchReferenceKind=>typeof x==='string'&&allKinds.includes(x as WatchReferenceKind)
 const newTable=(kind:string)=>extraKinds.includes(kind)
 const table=(kind:string)=>kind==='cities'?'watch_city_values':newTable(kind)?'watch_reference_values_v5':'watch_reference_values'
@@ -53,6 +54,8 @@ export async function listClient3WatchReferences(db:D1Database,actor:AuthUser){
 export async function createClient3WatchReference(db:D1Database,actor:AuthUser,raw:{kind?:unknown;value?:unknown}){
  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Добавлять значения справочников может администратор.',403)
  if(!validKind(raw?.kind))return fail('Недоступный справочник.')
+ if(actor.role!=='admin'&&!warehouseKind(raw.kind))
+   return fail('Настройки оплаты и доставки изменяет только администратор.',403)
  let value:string
  try{value=validValue(raw?.value)}catch(e){return fail(e instanceof Error?e.message:'Неверное значение.')}
  value=identity(value)
@@ -87,6 +90,8 @@ export async function updateClient3WatchReference(db:D1Database,actor:AuthUser,
  const publicId=Number(raw.id)
  if(!Number.isSafeInteger(publicId)||publicId<1||!validKind(raw.kind))
    return fail('Выберите существующее значение и справочник.')
+ if(actor.role!=='admin'&&!warehouseKind(raw.kind))
+   return fail('Настройки оплаты и доставки изменяет только администратор.',403)
  let value:string
  try{value=validValue(raw.value)}catch(e){return fail(e instanceof Error?e.message:'Неверное значение.')}
  const key=decode(publicId),extra=newTable(raw.kind)
@@ -115,6 +120,8 @@ export async function deleteClient3WatchReference(db:D1Database,actor:AuthUser,p
  const old=await db.prepare(`SELECT id,kind,value,is_active FROM ${name} WHERE id=?`)
    .bind(key.id).first<{id:number;kind:WatchReferenceKind;value:string;is_active:number}>()
  if(!old||!validKind(old.kind)||key.extra!==newTable(old.kind)||key.city!==(old.kind==='cities'))return fail('Значение не найдено.',404)
+ if(actor.role!=='admin'&&!warehouseKind(old.kind))
+   return fail('Настройки оплаты и доставки изменяет только администратор.',403)
  if(old.is_active!==1)return json({ok:true,alreadyDeleted:true})
  if(await usedByActiveSku(db,old.kind,old.value))
    return fail('Значение используется в рабочей позиции часов. Сначала удалите позицию; историю сохраняем.',409)
