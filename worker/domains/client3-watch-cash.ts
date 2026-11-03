@@ -13,7 +13,7 @@ const parseRequest=(raw:unknown)=>typeof raw==='string'&&/^[a-zA-Z0-9-]{12,100}$
 const methodExpr=`UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','CASH','CASH KZT')`
 type Register={brand_id:number;opening_amount:number;financial_event_watermark:number;
  initialized_at:string;initialized_by:number;auto_tracking_enabled:number;
- paused_event_id:number|null;cash_entry_watermark:number;cycle_started_at:string|null}
+ paused_event_id:number|null;paused_at:string|null;cash_entry_watermark:number;cycle_started_at:string|null}
 const autoEventClause=`f.id>c.financial_event_watermark AND
  (c.auto_tracking_enabled=1 OR f.id<=COALESCE(c.paused_event_id,0)) AND
  NOT EXISTS (SELECT 1 FROM watch_brand_cash_skipped_events sk
@@ -170,5 +170,132 @@ export async function writeWatchBrandCash(db:D1Database,actor:AuthUser,brandId:n
    const replay=await recorded(db,brandId,requestId)
    if(!replay)return error('Касса была изменена другим сотрудником. Обновите и повторите.')
  }
+ return getWatchBrandCash(db,actor,brandId)
+}
+
+/** Main cash auto tracking with a deliberate no-catchup gap:
+ * order cash movements posted while paused will NEVER be imported on resume.
+ * Cash is brand-scoped and preserves the last already counted event.
+ */
+export async function setWatchBrandCashAuto(db:D1Database,actor:AuthUser,
+ brandId:number,enabled:unknown){
+ if(actor.role!=='admin')return error('Управлять автоучётом может только администратор.',403)
+ if(typeof enabled!=='boolean')return error('Укажите состояние автоучёта.',400)
+ const before=await db.prepare('SELECT * FROM watch_brand_cash_registers WHERE brand_id=?')
+   .bind(brandId).first<Register>()
+ if(!before)return error('Сначала откройте кассу.')
+ if(Boolean(before.auto_tracking_enabled)===enabled)return getWatchBrandCash(db,actor,brandId)
+ const now=new Date().toISOString()
+ if(!enabled){
+  const watermark=await lastBrandEvent(db,brandId)
+  await db.prepare(`UPDATE watch_brand_cash_registers
+     SET auto_tracking_enabled=0,paused_event_id=?,paused_at=?
+     WHERE brand_id=? AND auto_tracking_enabled=1`)
+   .bind(watermark,now,brandId).run()
+ }else{
+  const last=await lastBrandEvent(db,brandId)
+  const from=Number(before.paused_event_id||0)+1
+  const statements:D1PreparedStatement[]=[]
+  if(from<=last)statements.push(db.prepare(`INSERT INTO watch_brand_cash_skipped_events
+    (brand_id,first_event_id,last_event_id,started_at,ended_at)
+    SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM watch_brand_cash_registers
+      WHERE brand_id=? AND auto_tracking_enabled=0 AND paused_event_id=?)`)
+      .bind(brandId,from,last,before.paused_at||now,now,brandId,before.paused_event_id))
+  statements.push(db.prepare(`UPDATE watch_brand_cash_registers
+    SET auto_tracking_enabled=1,paused_event_id=NULL,paused_at=NULL
+    WHERE brand_id=? AND auto_tracking_enabled=0 AND paused_event_id=?`)
+    .bind(brandId,before.paused_event_id))
+  await db.batch(statements)
+ }
+ return getWatchBrandCash(db,actor,brandId)
+}
+export async function reverseWatchBrandManualCash(
+ db:D1Database,actor:AuthUser,brandId:number,input:{
+  entryId?:unknown;expectedBalance?:unknown
+ }){
+ if(actor.role!=='admin')return error('Отменять ручные операции может только администратор.',403)
+ const id=Number(input.entryId),expected=Number(input.expectedBalance)
+ if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(expected))
+  return error('Укажите операцию и обновлённый остаток.',400)
+ const initial=await db.prepare(`SELECT e.id,e.entry_type,e.amount_delta,e.comment,
+   e.reverses_entry_id FROM watch_brand_cash_entries e
+   JOIN watch_brand_cash_registers c ON c.brand_id=e.brand_id
+   WHERE e.id=? AND e.brand_id=? AND e.id>c.cash_entry_watermark`)
+   .bind(id,brandId).first<{id:number;entry_type:string;amount_delta:number;
+     comment:string;reverses_entry_id:number|null}>()
+ if(!initial||!['manual_in','manual_out'].includes(initial.entry_type)||
+    initial.reverses_entry_id!==null)
+  return error('Отменять можно только ручную операцию текущего цикла.',400)
+ const existing=await db.prepare(`SELECT id FROM watch_brand_cash_entries
+   WHERE brand_id=? AND reverses_entry_id=?`).bind(brandId,id).first()
+ if(existing)return getWatchBrandCash(db,actor,brandId)
+ const current=await (await getWatchBrandCash(db,actor,brandId)).json() as {
+   initialized:boolean;currentBalance:number
+ }
+ if(!current.initialized||current.currentBalance!==expected)
+  return error('Остаток изменился. Обновите кассу.',409)
+ const delta=-Number(initial.amount_delta)
+ if(delta<0&&expected<Math.abs(delta))return error('Отмена превышает наличный остаток.',409)
+ const kind=delta>0?'manual_in':'manual_out'
+ const query=`INSERT OR IGNORE INTO watch_brand_cash_entries
+  (brand_id,request_id,entry_type,amount_delta,business_date,comment,actor_user_id,
+   created_at,reverses_entry_id)
+  SELECT ?,?,?,?,?,?,?,?,? WHERE ?=${cashBalanceExpr}
+    AND (? >= 0 OR ? <= ${cashBalanceExpr})
+    AND NOT EXISTS(SELECT 1 FROM watch_brand_cash_entries
+      WHERE brand_id=? AND reverses_entry_id=?)`
+ const res=await db.prepare(query).bind(brandId,'cash-reverse-'+id,kind,delta,businessDate(),
+   'Отмена ручной операции #'+id+': '+initial.comment,actor.id,new Date().toISOString(),
+   id,expected,brandId,delta,Math.abs(delta),brandId,brandId,id).run()
+ if(!res.meta?.changes){
+  const duplicate=await db.prepare(`SELECT id FROM watch_brand_cash_entries
+    WHERE brand_id=? AND reverses_entry_id=?`).bind(brandId,id).first()
+  if(!duplicate)return error('Остаток изменился. Обновите кассу.',409)
+ }
+ return getWatchBrandCash(db,actor,brandId)
+}
+export async function resetWatchBrandCashCycle(
+ db:D1Database,actor:AuthUser,brandId:number,input:{
+ comment?:unknown;requestId?:unknown;expectedBalance?:unknown
+ }){
+ if(actor.role!=='admin')return error('Новый цикл кассы может начать только администратор.',403)
+ const requestId=parseRequest(input.requestId),comment=typeof input.comment==='string'?input.comment.trim():''
+ const expected=Number(input.expectedBalance)
+ if(!requestId||comment.length<3||comment.length>500||!Number.isSafeInteger(expected))
+  return error('Подтвердите остаток и укажите причину нового цикла.',400)
+ const exists=await db.prepare('SELECT id FROM watch_brand_cash_cycles WHERE brand_id=? AND request_id=?')
+   .bind(brandId,requestId).first()
+ if(exists)return getWatchBrandCash(db,actor,brandId)
+ const state=await (await getWatchBrandCash(db,actor,brandId)).json() as {
+  initialized:boolean;currentBalance:number
+ }
+ if(!state.initialized||state.currentBalance!==expected)
+  return error('Остаток изменился, обновите страницу.',409)
+ const current=await db.prepare('SELECT * FROM watch_brand_cash_registers WHERE brand_id=?')
+   .bind(brandId).first<Register>()
+ if(!current)return error('Сначала откройте кассу.')
+ const currentEvent=await lastBrandEvent(db,brandId)
+ const lastEntry=await db.prepare(`SELECT COALESCE(MAX(id),0) AS id FROM watch_brand_cash_entries
+   WHERE brand_id=?`).bind(brandId).first<{id:number}>()
+ const now=new Date().toISOString()
+ // Atomic archived cycle record + watermark reset; all historical entries,
+ // financial events and reversal links remain available for audit.
+ const batch=await db.batch([
+  db.prepare(`INSERT INTO watch_brand_cash_cycles
+    (brand_id,started_at,finished_at,opening_amount,financial_event_watermark,
+      cash_entry_watermark,closing_balance,recorded_by,comment,request_id)
+    SELECT c.brand_id,COALESCE(c.cycle_started_at,c.initialized_at),?,c.opening_amount,
+      c.financial_event_watermark,c.cash_entry_watermark,?,?,?,?
+    FROM watch_brand_cash_registers c WHERE c.brand_id=? AND ?=${cashBalanceExpr}`)
+      .bind(now,Number(lastEntry?.id||0),expected,actor.id,comment,requestId,
+        brandId,expected,brandId),
+  db.prepare(`UPDATE watch_brand_cash_registers SET opening_amount=0,
+    financial_event_watermark=?,cash_entry_watermark=?,cycle_started_at=?,
+    auto_tracking_enabled=0,paused_event_id=?,paused_at=?
+    WHERE brand_id=? AND EXISTS(SELECT 1 FROM watch_brand_cash_cycles
+      WHERE brand_id=? AND request_id=?)`).bind(currentEvent,Number(lastEntry?.id||0),
+      now,currentEvent,now,brandId,brandId,requestId),
+ ])
+ if(!batch[0]?.meta?.changes)return error('Касса изменилась. Повторите после обновления.',409)
  return getWatchBrandCash(db,actor,brandId)
 }
