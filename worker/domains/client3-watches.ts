@@ -42,7 +42,7 @@ import { normalizeWatchBrand, type WatchBrand } from '../../shared/client3/watch
  * All brand access comes from the authenticated session and DB memberships.
  */
 const staffCanSeeAllLogistics=(actor:AuthUser)=>
-  actor.role==='admin'||actor.employeeRole==='Логист'
+  actor.role==='admin'||actor.employeeRole==='Логист'||actor.employeeRole==='Упаковщик'
 const FORBIDDEN=()=>json({ok:false,code:'WATCH_BRAND_FORBIDDEN',
   message:'Нет доступа к запрошенному бренду.'},{status:403})
 const BAD=(message:string)=>json({ok:false,message},{status:400})
@@ -53,7 +53,7 @@ async function brandRow(db:D1Database,code:string) {
 }
 async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'logistics'|'sales') {
   if(actor.role==='admin'||(mode==='logistics'&&staffCanSeeAllLogistics(actor)))return true
-  if(mode==='sales'&&actor.employeeRole==='Логист')return false
+  if(mode==='sales'&&(actor.employeeRole==='Логист'||actor.employeeRole==='Упаковщик'))return false
   if(!actor.managerId)return false
   const row=await db.prepare('SELECT 1 AS ok FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1')
     .bind(actor.managerId,brandId).first<{ok:number}>()
@@ -123,9 +123,11 @@ export async function assignWatchManagerBrands(
     done.previous_brands===JSON.stringify(expected)&&done.next_brands===JSON.stringify(next)
       ?json({ok:true,alreadyCommitted:true,managerId,brands:next})
       :json({ok:false,code:'WATCH_ASSIGNMENT_REPLAY_CONFLICT'},{status:409})
-  const manager=await db.prepare('SELECT id FROM managers WHERE id=? AND is_active=1 LIMIT 1')
-    .bind(managerId).first<{id:number}>()
+  const manager=await db.prepare('SELECT id,role FROM managers WHERE id=? AND is_active=1 LIMIT 1')
+    .bind(managerId).first<{id:number;role:string}>()
   if(!manager)return json({ok:false,code:'WATCH_MANAGER_NOT_FOUND'},{status:404})
+  if(['Логист','Упаковщик'].includes(manager.role||'')&&next.length)
+    return BAD('Логист работает с обоими брендами без персональных назначений.')
   const rows=await db.prepare(
     'SELECT b.code FROM watch_manager_brands mb JOIN watch_brands b ON b.id=mb.brand_id WHERE mb.manager_id=? ORDER BY b.code',
   ).bind(managerId).all<{code:WatchBrand}>()
