@@ -442,7 +442,7 @@ export function WatchClient3App() {
           </section>
           {brand&&activeSection==='statistics'?<WatchDemandPanel key={'demand-'+brand} brand={brand}/>:
           canWarehouse&&brand?(activeSection==='catalog'?
-            <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog"
+            <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog" canEditPrices={canAdmin}
               onStockChanged={()=>setCatalogVersion(x=>x+1)}
               onOpenReferences={()=>goTo('references')}/>:
             activeSection==='history'?
