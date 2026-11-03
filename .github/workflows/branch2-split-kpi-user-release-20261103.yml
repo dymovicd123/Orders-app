@@ -1,0 +1,125 @@
+name: Guarded user-requested Branch2 split settlements and KPI release
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-split-kpi-user-release-20261103.yml'
+
+permissions:
+  contents: read
+concurrency:
+  group: branch2-user-request-money-kpi-worker-only
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(branch2-split-kpi):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      DATABASE: orders_db_branch2_mirror_20261027
+      CONFIG: .branch2-split-kpi-release.jsonc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Verify immutable approved parent and isolated branch2 target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/branch2'
+          test "$(git rev-parse HEAD^)" = 'ce26769b7e8b26516440e4a0853d79e76c95431a'
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync,writeFileSync} from 'node:fs'
+          import {execFileSync} from 'node:child_process'
+          const changed=execFileSync('git',['diff','--name-only','HEAD^','HEAD'],{encoding:'utf8'}).trim()
+          assert.equal(changed,'.github/workflows/branch2-split-kpi-user-release-20261103.yml',
+            'Only the reviewed release trigger file may be committed')
+          const cfg=readFileSync('wrangler.jsonc','utf8')
+          for(const expected of [
+            '"name": "orders-app-branch2"',
+            '"database_name": "orders_db_branch2_mirror_20261027"',
+            '"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"',
+          ]) assert(cfg.includes(expected),'Branch2 target drift: '+expected)
+          for(const forbidden of [
+            'orders_db_prod','17e68a41-1d58-4a36-8a63-47c3e32443c4',
+            '"name": "orders-app"','orders-app.orders-clothes.workers.dev',
+          ]) assert(!cfg.includes(forbidden),'Production/main target forbidden')
+          assert(cfg.includes('"assets": {'),'Missing static assets config')
+          writeFileSync('.branch2-split-kpi-release.jsonc',
+            cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'))
+          console.log('BRANCH2_SPLIT_KPI_RELEASE_TARGET_GUARD_PASSED')
+          NODE
+      - run: npm ci
+      - name: Verify exact actual split settlement logic
+        run: node --experimental-strip-types scripts/test-branch2-split-settlements-20261103.mjs
+      - name: Verify net sold KPI with returns, exchange, shipping and month
+        run: node --experimental-strip-types scripts/test-branch2-kpi-unshipped-net-20261103.mjs
+      - name: Verify exact exchange financial lineage
+        run: node --experimental-strip-types scripts/test-finance-exchange-payment-lineage-20261021.mjs
+      - name: Full semantic release checks
+        run: npm run release:check
+      - name: Build full Worker and frontend, dry-run Cloudflare package
+        run: |
+          set -euo pipefail
+          npm run build
+          npx wrangler deploy --dry-run --outdir .branch2-split-kpi-dry-run --config "$CONFIG"
+      - name: Verify remote Branch2 schema, take read-only business fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='financial_events') AS money_events,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='critical_operations') AS operations,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='critical_operation_entities') AS operation_entities,
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='product_kpis') AS kpis
+          " --json | jq -e '.[0].results[0] | .money_events==1 and .operations==1 and .operation_entities==1 and .kpis==1'
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS total_sales,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received_amount,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM financial_events) AS financial_events_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_quantity
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/branch2-money-kpi-before.json"
+      - name: Publish only Branch2 Worker and client assets (NO D1 writes)
+        run: npx wrangler deploy --config "$CONFIG"
+      - name: Confirm business data unchanged and anonymous safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT
+              (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS items_count,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS total_sales,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received_amount,
+              (SELECT COUNT(*) FROM returns) AS returns_count,
+              (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+              (SELECT COUNT(*) FROM payments) AS payments_count,
+              (SELECT COUNT(*) FROM financial_events) AS financial_events_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_quantity
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/branch2-money-kpi-after.json"
+          cmp "$RUNNER_TEMP/branch2-money-kpi-before.json" "$RUNNER_TEMP/branch2-money-kpi-after.json"
+          host='https://orders-app-branch2.orders-clothes.workers.dev'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$host/api/auth/status")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$host/api/orders")" = 401
+          echo 'BRANCH2_SPLIT_KPI_RELEASE_PASS: branch2-only, no D1 writes, main untouched'
