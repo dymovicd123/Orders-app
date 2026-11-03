@@ -88,7 +88,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  const chosenQty=returnable.reduce((n,x)=>n+Math.max(0,Number(selected[x.id]||0)),0)
  return <form className="watch-return-form" onSubmit={e=>void submit(e)}>
    <h4>Возврат по заказу {order.externalId}</h4>
-   <p>Выберите конкретные отправленные часы. Деньги и физическая приёмка оформляются отдельно: регистрация возврата не добавляет остаток на склад.</p>
+   <p>Выберите, какие часы и в каком количестве клиент возвращает. Частичный возврат допускается: можно указать часть позиций и отдельно сумму возврата денег. Физическое получение отмечается после оформления, складские остатки автоматически не увеличиваются.</p>
    <label>Вид возврата
      <select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
        {maxRefund>0&&<option value="money_only">Только деньги</option>}
@@ -97,21 +97,44 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
      </select>
    </label>
    {isItems&&<div className="watch-return-items">
-     <strong>Возвращаемые часы · {chosenQty} шт.</strong>
-     {returnable.map(line=><label key={line.id} className="watch-return-item-row">
-       <span><strong>{line.productName}</strong>
-         <small>{line.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('movements',line.movement)} ·
-           {watchReferenceLabel('bracelets',line.braceletMaterial)} · {watchReferenceLabel('dials',line.dialColor)}{line.braceletColor?' · '+watchReferenceLabel('leatherColors',line.braceletColor):''}</small>
-         {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-         <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
-       </span>
-       <input type="number" min={0} max={line.returnableQuantity} step={1}
-         value={selected[line.id]??0} aria-label={'Вернуть штук: '+line.productName}
-         onChange={e=>{
-           setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
+     <div className="watch-return-items-head">
+       <div><strong>Возвращаемые часы · {chosenQty} шт.</strong>
+         <p>Можно вернуть один товар, несколько позиций или только часть количества.</p></div>
+       <div className="watch-return-selection-actions">
+         <button type="button" className="secondary compact" onClick={()=>{
+           setSelected(Object.fromEntries(returnable.map(x=>[x.id,Number(x.returnableQuantity)])))
            setConfirmed(false)
-         }}/>
-     </label>)}
+         }}>Выбрать все</button>
+         <button type="button" className="secondary compact" onClick={()=>{
+           setSelected({});setConfirmed(false)
+         }}>Снять выбор</button>
+       </div>
+     </div>
+     {returnable.map(line=><div key={line.id} className="watch-return-item-row">
+       <label className="watch-return-select">
+         <input type="checkbox" checked={Number(selected[line.id]||0)>0}
+           onChange={e=>{
+             setSelected(prev=>({...prev,[line.id]:e.target.checked?Number(line.returnableQuantity):0}))
+             setConfirmed(false)
+           }}/>
+         <span><strong>{line.productName}</strong>
+           <small>{line.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('movements',line.movement)} ·
+             {watchReferenceLabel('bracelets',line.braceletMaterial)} · {watchReferenceLabel('dials',line.dialColor)}
+             {line.braceletColor?' · '+watchReferenceLabel('leatherColors',line.braceletColor):''}</small>
+           {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
+           <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
+         </span>
+       </label>
+       <label className="watch-return-quantity">
+         <span>Вернуть, шт.</span>
+         <input type="number" min={0} max={line.returnableQuantity} step={1}
+           value={selected[line.id]??0} aria-label={'Количество возврата: '+line.productName}
+           onChange={e=>{
+             setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
+             setConfirmed(false)
+           }}/>
+       </label>
+     </div>)}
    </div>}
    {isMoney&&<>
      <label>Всего вернуть денег, ₸ (не более {money(maxRefund)})
