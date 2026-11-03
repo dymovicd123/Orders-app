@@ -1241,7 +1241,7 @@ const extraInput={requestId:'watch-set-extra-pay-20261103-01',
  expectedOrderTotal:40000,
  oldItems:[oldSelection(stage4Pay.old)],
  newItems:[{manual:manualReplacement,source:'office',quantity:1,
-   unitPrice:60000,engravingText:'Новая гравировка'}],
+   unitPrice:60000,engravingText:'Новая гравировка',shipmentState:'pending'}],
  paymentParts:[{method:'KASPI GOLD',amount:12000},{method:'KASPI RED',amount:8000}],
  refundParts:[],reason:'Обмен с доплатой двумя способами'}
 const extraResult=await parse(exchangeClient3WatchSet(
@@ -1273,7 +1273,7 @@ const refundInput={requestId:'watch-set-refund-calc-20261103-01',
  expectedOrderTotal:70000,
  oldItems:[oldSelection(stage4Refund.old)],
  newItems:[{manual:manualReplacement,source:'office',quantity:1,
-   unitPrice:30000,engravingText:''}],
+   unitPrice:30000,engravingText:'',shipmentState:'pending'}],
  paymentParts:[],refundParts:[
   {method:'KASPI GOLD',amount:15000},{method:'KASPI RED',amount:25000}],
  reason:'Обмен с возвратом двумя способами'}
@@ -1329,9 +1329,9 @@ const twoSwapInput={requestId:'watch-two-to-two-exchange-20261103-01',
  expectedOrderTotal:50000,oldItems:oldChoices,
  newItems:[
   {manual:manualReplacement,source:'office',quantity:1,unitPrice:22000,
-   engravingText:'Левая гравировка'},
+   engravingText:'Левая гравировка',shipmentState:'pending'},
   {manual:manualReplacement,source:'showcase',quantity:1,unitPrice:28000,
-   engravingText:'Правая гравировка'},
+   engravingText:'Правая гравировка',shipmentState:'pending'},
  ],
  paymentParts:[],refundParts:[],reason:'Обмен двух часов на два других'}
 const twoSwap=await parse(exchangeClient3WatchSet(db,manager,1,twoOld.orderId,twoSwapInput))
