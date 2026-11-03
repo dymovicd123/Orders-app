@@ -83,9 +83,12 @@ assert.equal(aliceMonth.totals.orderCount,1)
 assert.equal(aliceMonth.totals.totalAmount,20000)
 assert.equal(aliceMonth.totals.receivedAmount,10000)
 assert.equal(aliceMonth.totals.debtAmount,10000)
-assert.equal((await query(alice,'brand=TAUWACH&shipping=not_sent&payment=debt')).rows.length,1)
-assert.equal((await query(alice,'brand=TAUWACH&shipping=sent')).rows.length,0,
-  'An old sent marker without individual dispatch or confirmed physical writeoff must not claim delivery')
+assert.equal((await query(alice,'brand=TAUWACH&shipping=not_sent&payment=debt')).rows.length,0,
+  'A physically dispatched item is sent even when the old order marker says not_sent')
+assert.equal((await query(alice,'brand=TAUWACH&shipping=sent')).rows.length,1,
+  'Only the operationally dispatched order is sent, regardless of old aggregate status')
+assert.equal((await query(alice,'brand=TAUWACH&shipping=not_sent')).rows.length,1,
+  'Old sent marker with no physical dispatch belongs to the unresolved queue')
 assert.equal((await query(alice,'brand=TAUWACH&payment=paid')).rows.length,1)
 assert.equal((await query(alice,'brand=TAUWACH&payment=invalid')).httpStatus,400)
 const split=JSON.parse(aliceMonth.rows[0].paymentLines)
