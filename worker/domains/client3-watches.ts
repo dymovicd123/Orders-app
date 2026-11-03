@@ -619,7 +619,7 @@ export async function routeClient3Watches(
     return listClient3WatchTeam(db,actor)
   if(url.pathname==='/api/client3/watches/team/employees'&&request.method==='POST')
     return saveClient3WatchEmployee(db,actor,await readJson<Record<string,unknown>>(request))
-  const teamStatus=/^\\/api\\/client3\\/watches\\/team\\/employees\\/(\\d+)\\/status$/.exec(url.pathname)
+  const teamStatus=new RegExp('^/api/client3/watches/team/employees/([0-9]+)/status$').exec(url.pathname)
   if(teamStatus&&request.method==='PATCH'){
     const input=await readJson<{isActive?:unknown}>(request)
     return setClient3WatchEmployeeActive(db,actor,Number(teamStatus[1]),input.isActive)
