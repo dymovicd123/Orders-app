@@ -324,7 +324,7 @@ export async function routeClient3Watches(
   }
   if(url.pathname==='/api/client3/watches/stock/revision/start'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;source?:unknown;full?:unknown;modelIds?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return startClient3WatchRevision(db,actor,scope.row!.id,input)
   }
@@ -332,7 +332,7 @@ export async function routeClient3Watches(
   if(watchRevisionAction&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;sessionId?:unknown;itemId?:unknown;
       countedQuantity?:unknown;watchVariantId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return changeClient3WatchRevision(db,actor,scope.row!.id,
       watchRevisionAction[1] as 'count'|'count-fast'|'add'|'complete'|'cancel',input)
@@ -345,7 +345,7 @@ export async function routeClient3Watches(
   if(url.pathname==='/api/client3/watches/stock/bulk'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;source?:unknown;kind?:unknown;requestId?:unknown;
       comment?:unknown;items?:Array<{watchVariantId?:unknown;quantity?:unknown;expectedPhysical?:unknown}>}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return applyClient3WatchBulkOperation(db,actor,scope.row!.id,input)
   }
@@ -353,43 +353,43 @@ export async function routeClient3Watches(
     const input=await readJson<{brand?:unknown;source?:unknown;requestId?:unknown;
       confirmed?:unknown;allowShortage?:unknown;items?:Array<{watchVariantId?:unknown;
       expectedPhysical?:unknown;countedQuantity?:unknown}>}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return countClient3WatchStockBatch(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/count'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;source?:unknown;expectedPhysical?:unknown;countedQuantity?:unknown;requestId?:unknown;confirmed?:unknown;allowShortage?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return countClient3WatchStock(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/writeoff'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;expectedPhysical?:unknown;requestId?:unknown;comment?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return writeoffClient3WatchStock(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/transfer'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;expectedPhysical?:unknown;requestId?:unknown;comment?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return transferClient3WatchStock(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/stock/arrival'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;quantity?:unknown;source?:unknown;requestId?:unknown;comment?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return receiveClient3WatchArrival(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/prices'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown;salePrice?:unknown;expectedPrice?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return updateClient3WatchCatalogPrice(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/provision'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;watchVariantId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return provisionClient3WatchSku(db,actor,scope.row!.id,Number(input.watchVariantId))
   }
@@ -402,7 +402,7 @@ export async function routeClient3Watches(
       url.pathname==='/api/client3/watches/catalog/delete')&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;kind?:unknown;watchProductId?:unknown;watchVariantId?:unknown;
       movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return url.pathname.endsWith('delete-preview')
       ? previewClient3WatchDelete(db,actor,scope.row!.id,input)
@@ -416,37 +416,37 @@ export async function routeClient3Watches(
   }
   if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;alias?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return addWatchModelAlias(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='DELETE'){
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;aliasId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return deleteWatchModelAlias(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='PATCH') {
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;expectedName?:unknown;modelName?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return editClient3WatchModel(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/variants'&&request.method==='PATCH') {
     const input=await readJson<WatchVariantInput&{brand?:unknown;watchProductId?:unknown;watchVariantId?:unknown;expected?:WatchVariantInput}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return editClient3WatchVariant(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='POST') {
     const input=await readJson<{brand?:unknown;modelName?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return registerWatchModel(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/variants'&&request.method==='POST') {
     const input=await readJson<WatchVariantInput & {brand?:unknown;watchProductId?:unknown}>(request)
-    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     // One user action creates and prepares exactly one SKU. A failed provision
     // may leave a catalog draft, but retries reuse the same watchVariantId.
