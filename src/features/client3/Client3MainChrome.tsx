@@ -107,7 +107,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
           <div className="access-role-control">
             <div className="auth-user-card"><strong>{display}</strong>
               <span>@{user.login||user.id}</span>
-              <em>{isAdmin?'Администратор':user.employeeRole||'Менеджер'}</em></div>
+              <em>{isAdmin?'Администратор':user.employeeRole==='Упаковщик'?'Логист':user.employeeRole||'Менеджер'}</em></div>
             <div className="access-role-actions">
               {isAdmin&&<button className="secondary compact" type="button"
                 onClick={()=>{onNavigate('accounts');setMobileNavOpen(false)}}>Аккаунты</button>}
