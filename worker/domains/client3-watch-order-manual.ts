@@ -2,6 +2,7 @@ import type {AuthUser} from '../core/types.ts'
 import {normalizeWatchVariant,WATCH_OPTIONS,type WatchVariantInput} from '../../shared/client3/watch-domain.ts'
 import {registerWatchModel,registerWatchVariant} from './client3-watch-catalog.ts'
 import {provisionClient3WatchSku} from './client3-watch-provision.ts'
+import {findWatchModelByIdentity} from './client3-watch-model-aliases.ts'
 import {normalizeCatalogProductIdentityKey} from './catalog.ts'
 
 export type ManualWatchOrderItem=WatchVariantInput&{modelName:string}
@@ -128,17 +129,15 @@ export async function ensureManualWatchOrderSku(
    ...candidate,movement:refs.movements,braceletMaterial:refs.bracelets,
    dialColor:refs.dials,braceletColor:refs.leatherColors||'',
  })
- const models=await db.prepare(`SELECT id,model_name,is_active FROM watch_products WHERE brand_id=?`)
-   .bind(brandId).all<{id:number;model_name:string;is_active:number}>()
- const known=(models.results||[]).filter(row=>
-   watchIdentityKey(row.model_name)===watchIdentityKey(inputName))
- if(known.length>1)throw Error('Название модели неоднозначно. Уточните карточки каталога.')
- if(known.length===1&&known[0].is_active!==1)
+ // Main canonical identity first; an explicitly learned alias is used only
+ // within this brand and may never silently revive a retired model.
+ const known=await findWatchModelByIdentity(db,brandId,inputName)
+ if(known&&known.is_active!==1)
    throw Error('Эта модель удалена из каталога. Для восстановления нужен администратор.')
- const modelName=known.length===1?known[0].model_name:inputName
+ const modelName=known?known.model_name:inputName
  // Resolve whole existing watch variant (including leather strap colour), even
  // if the original catalogue canonicalized its case differently.
- if(known.length===1){
+ if(known){
    const found=await db.prepare(`SELECT wv.id,wv.is_active,wv.catalog_variant_id,wv.gender,
        COALESCE(a.movement,wv.movement) AS movement,
        COALESCE(a.bracelet_material,wv.bracelet_material) AS bracelet_material,
@@ -146,7 +145,7 @@ export async function ensureManualWatchOrderSku(
        COALESCE(a.bracelet_color,wv.bracelet_color) AS bracelet_color
      FROM watch_variants wv LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=wv.id
      WHERE wv.watch_product_id=?`)
-     .bind(known[0].id).all<Record<string,unknown>>()
+     .bind(known.id).all<Record<string,unknown>>()
    const matched=(found.results||[]).filter(v=>
      v.gender===variant.gender &&
      watchReferenceIdentityKey('movements',v.movement)===watchReferenceIdentityKey('movements',variant.movement)&&
