@@ -39,9 +39,10 @@ const validCount=(raw:string)=>/^\d{1,7}$/.test(raw)&&Number(raw)<=1_000_000
  * active variants of just this watch brand at the selected point.
  */
 export function WatchPersistentRevision({brand,source,models,variants,selectedModelIds,
- onActiveChange,onStockChanged}:{
+ preferredScope,onActiveChange,onStockChanged}:{
  brand:WatchBrand;source:Source;models:readonly (readonly [number,string])[];
  variants:readonly WatchVariant[];selectedModelIds:readonly number[];
+ preferredScope?:'selective'|'full';
  onActiveChange:(active:boolean)=>void;onStockChanged:()=>void
 }){
  const [session,setSession]=useState<Session|null>(null)
@@ -57,6 +58,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
  const [adding,setAdding]=useState(false)
  const [newVariant,setNewVariant]=useState('')
  const [showOutcome,setShowOutcome]=useState(false)
+ const [reviewOpen,setReviewOpen]=useState(false)
  const hydrate=(data:Session|null)=>{
    setSession(data)
    onActiveChange(Boolean(data&&data.status==='active'))
@@ -68,7 +70,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
  }
  useEffect(()=>{
    const controller=new AbortController()
-   setError('');setNotice('');setBlocked('');setLoading(true);setShowOutcome(false)
+   setError('');setNotice('');setBlocked('');setLoading(true);setShowOutcome(false);setReviewOpen(false)
    hydrate(null)
    const q=new URLSearchParams({brand,source})
    void fetch('/api/client3/watches/stock/revision?'+q,{
@@ -137,6 +139,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
    try{
      const result=await post('start',{brand,source,full,modelIds:full?[]:selectedModelIds})
      hydrate(result.session||null)
+     setReviewOpen(false)
      setNotice(result.resumed?'Незавершённая ревизия открыта.':
        'Проверка начата. Вводите фактические количества — они сохраняются до завершения.')
    }catch(e){setError(e instanceof Error?e.message:'Не удалось начать проверку.')}
@@ -185,12 +188,19 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
    {error&&<p role="alert" className="stocktake-inline-notice w6-notice-error">{error}</p>}
    {notice&&<p role="status" className="stocktake-inline-notice">{notice}</p>}
    {!loading&&!blocked&&!session&&<div className="stocktake-start-submit">
-     <div>Можно проверить выбранные модели или полностью пересчитать часы бренда в этой точке.</div>
+     <div>{preferredScope==='full'
+       ?'Полная проверка · '+variants.length+' комплектаций бренда '+brand
+       :selectedModelIds.length
+         ?'Готово к проверке · '+selectedModelIds.length+' моделей'
+         :'Выберите хотя бы одну модель для выборочной проверки'}</div>
      <div className="client3-revision-start-buttons">
-       <button type="button" className="secondary" disabled={!selectedModelIds.length||busy}
-         onClick={()=>void start(false)}>Начать ревизию выбранных</button>
-       <button type="button" className="primary" disabled={busy}
-         onClick={()=>void start(true)}>Начать полную ревизию бренда</button>
+       {(preferredScope===undefined||preferredScope==='selective')&&
+         <button type="button" className={preferredScope==='selective'?'primary stocktake-e-start-button':'secondary'}
+           disabled={!selectedModelIds.length||busy}
+           onClick={()=>void start(false)}>{busy?'Подготавливаем…':'Начать проверку выбранных товаров'}</button>}
+       {(preferredScope===undefined||preferredScope==='full')&&
+         <button type="button" className="primary stocktake-e-start-button" disabled={busy||loading}
+           onClick={()=>void start(true)}>{busy?'Подготавливаем…':'Начать полную проверку'}</button>}
      </div>
    </div>}
    {session&&<div className="stocktake-session-workspace client3-revision-workspace">
@@ -236,10 +246,10 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
              ariaLabel={item.productName+' '+itemName(item)+' фактическое количество'}
              disabled={busy} onChange={v=>{
                if(v!==''&&!/^\d{0,7}$/.test(v))return
-               setDraft(old=>({...old,[item.id]:v}));setConfirmed(false)
+               setDraft(old=>({...old,[item.id]:v}));setConfirmed(false);setReviewOpen(false)
              }} onBlur={()=>{if(draft[item.id]!==saved[item.id])
                void saveOne(item.id,draft[item.id]||'')}} onClear={()=>{
-               setDraft(old=>({...old,[item.id]:''}));setConfirmed(false)
+               setDraft(old=>({...old,[item.id]:''}));setConfirmed(false);setReviewOpen(false)
              }}/>
            {item.countedAt&&<small>Сохранено: {new Date(item.countedAt).toLocaleString('ru-RU')}</small>}
          </div>)}
@@ -268,20 +278,51 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
            onClick={()=>void saveDirty()}>{busy?'Сохраняем…':'Сохранить введённые количества'}</button>
          <small>Можно закрыть страницу и вернуться позже. Сохранённые количества не изменяют остатки до завершения.</small>
        </div>
-       <label className="client3-main-stock-confirm">
-         <input type="checkbox" checked={confirmed} disabled={busy||dirty}
-           onChange={e=>setConfirmed(e.target.checked)}/>
-         Я проверил(а) введённые количества. Пустые позиции сохранят системный остаток.
-       </label>
-       <div className="stocktake-e-review-actions">
-         <button type="button" className="primary" disabled={busy||dirty||invalid||
-           !confirmed||session.recountCount>0||!session.countedCount}
-           onClick={()=>void finish()}>Завершить и применить ревизию</button>
-       </div>
+       {!reviewOpen?<div className="stocktake-e-review-actions">
+         <button type="button" className="primary"
+           disabled={busy||dirty||invalid||session.recountCount>0||!session.countedCount}
+           onClick={()=>{setReviewOpen(true);setConfirmed(false)}}>
+           Проверить результат ревизии
+         </button>
+       </div>:<div className="stocktake-e-review-list client3-revision-review">
+         <div className="stocktake-e-review-head">
+           <div><span className="stocktake-step-kicker">Шаг 3 · Проверка</span>
+             <h4>Перед завершением</h4>
+             <p>Незаполненные позиции не изменят системный остаток. Проверьте каждое введённое число.</p>
+           </div>
+           <button type="button" className="secondary compact" onClick={()=>{setReviewOpen(false);setConfirmed(false)}}>← Вернуться</button>
+         </div>
+         {session.items.filter(x=>x.countedQuantity!==null).map(item=>
+           <div className="stocktake-e-review-row" key={item.id}>
+             <div className="stocktake-e-review-name"><strong>{item.productName}</strong><span>{itemName(item)}</span></div>
+             <div className="stocktake-e-review-quantity"><span>По системе</span><strong>{item.currentQuantity}</strong></div>
+             <div className="stocktake-e-review-quantity"><span>Фактически</span><strong>{item.countedQuantity}</strong></div>
+             <div className="stocktake-e-review-quantity"><span>Изменение</span>
+               <strong>{Number(item.countedQuantity)-item.currentQuantity>0?'+':''}{Number(item.countedQuantity)-item.currentQuantity}</strong></div>
+           </div>)}
+         <p className="mini-panel-note">Проверено {session.countedCount} из {session.totalItems}. Без изменений останется {session.totalItems-session.countedCount} позиций.</p>
+         <label className="client3-main-stock-confirm">
+           <input type="checkbox" checked={confirmed} disabled={busy||dirty}
+             onChange={e=>setConfirmed(e.target.checked)}/>
+           Подтверждаю фактическое количество всех проверенных часов и применение результата к остаткам.
+         </label>
+         <div className="stocktake-e-review-actions">
+           <button type="button" className="secondary" onClick={()=>{setReviewOpen(false);setConfirmed(false)}}>Исправить подсчёт</button>
+           <button type="button" className="primary" disabled={busy||dirty||invalid||
+             !confirmed||session.recountCount>0||!session.countedCount}
+             onClick={()=>void finish()}>Завершить и применить ревизию</button>
+         </div>
+       </div>}
      </>}
      {session.status==='completed'&&showOutcome&&<div className="stocktake-outcome-card">
-       <strong>Ревизия завершена</strong>
+       <span className="stocktake-step-kicker">Проверка завершена</span>
+       <h4>{source==='office'?'Офис':'Витрина'} · проверено {session.countedCount} позиций</h4>
        <p>Фактические количества применены; резервы заказов не переписывались.</p>
+       <div className="stocktake-outcome-metrics">
+         <div><span>Изменено позиций</span><strong>{session.items.filter(x=>x.appliedQuantity!==null&&x.appliedQuantity!==x.baselineQuantity).length}</strong></div>
+         <div><span>Стало больше</span><strong>+{session.items.reduce((n,x)=>n+Math.max(0,Number(x.appliedQuantity??x.baselineQuantity)-x.baselineQuantity),0)}</strong></div>
+         <div><span>Стало меньше</span><strong>−{session.items.reduce((n,x)=>n+Math.max(0,x.baselineQuantity-Number(x.appliedQuantity??x.baselineQuantity)),0)}</strong></div>
+       </div>
        <button className="secondary compact" type="button"
          onClick={()=>{hydrate(null);setShowOutcome(false);onActiveChange(false)}}>
          Закрыть результат

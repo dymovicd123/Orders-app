@@ -97,7 +97,8 @@ export async function getClient3WatchAnalytics(
    ).bind(...base).all(),
    db.prepare(`SELECT f.id,f.event_date AS eventDate,f.event_type AS eventType,
      f.amount_delta AS amountDelta,f.payment_method AS paymentMethod,
-     f.external_order_id AS externalOrderId,o.manager_snapshot_name AS manager,
+     f.external_order_id AS externalOrderId,f.order_id AS orderId,o.manager_snapshot_name AS manager,
+     o.order_date AS orderDate,o.created_at AS orderCreatedAt,wd.recipient_name AS customer,
      wd.city,f.comment
      FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
      JOIN orders o ON o.id=wd.order_id
@@ -150,6 +151,22 @@ export async function getClient3WatchAnalytics(
      ORDER BY grossInflow DESC,method LIMIT 100`
    ).bind(...base).all(),
  ])
+ const kinds=await db.prepare(`SELECT f.event_type AS eventType,
+   COUNT(*) AS eventCount,
+   COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS incoming,
+   COALESCE(-SUM(CASE WHEN f.amount_delta<0 THEN f.amount_delta ELSE 0 END),0) AS outgoing
+   FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
+   WHERE ${eventFilter} GROUP BY f.event_type`
+ ).bind(...base).all()
+ const debtorOrders=await db.prepare(`SELECT o.id,o.external_id AS externalId,
+   o.order_date AS orderDate,wd.recipient_name AS customer,wd.city,
+   o.manager_snapshot_name AS manager,o.total_amount AS totalSales,
+   o.received_amount AS received,o.debt_amount AS debt
+   FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
+   WHERE wd.brand_id=? AND o.order_status NOT IN ('deleted','archived')
+     AND o.debt_amount>0
+   ORDER BY o.debt_amount DESC,o.order_date DESC LIMIT 300`
+ ).bind(brandId).all()
  const income=await db.prepare(`SELECT
    COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS incoming,
    COALESCE(-SUM(CASE WHEN f.amount_delta<0 THEN f.amount_delta ELSE 0 END),0) AS outgoing,
@@ -169,6 +186,8 @@ export async function getClient3WatchAnalytics(
    products:products.results||[],cities:cityReports,reconciliation:reconciliation.results||[],
    methods:methods.results||[],eventDays:eventDays.results||[],
    events:events.results||[],sources:sources.results||[],
+   debtorOrders:debtorOrders.results||[],kinds:kinds.results||[],
+   moneyEventCount:(eventDays.results||[]).reduce((n,row)=>n+Number(row.eventCount||0),0),
    accountingBasis:'Main order_date for sales, financial_events.event_date for money',
    cashBalanceIncluded:false})
 }

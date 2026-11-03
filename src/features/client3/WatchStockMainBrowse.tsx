@@ -30,7 +30,10 @@ function characteristics(row:WatchOrderChoice) {
  * Main CSS layers. Only variant detail labels map to watches (no fake sizes).
  * Read-only overview; mutations remain behind brand-scoped watch endpoints.
  */
-export function WatchStockMainBrowse({brand,canCorrect,onCorrect}:{brand:WatchBrand;canCorrect:boolean;onCorrect:()=>void}){
+export function WatchStockMainBrowse({brand,canCorrect,onCorrect}:{
+  brand:WatchBrand;canCorrect:boolean;
+  onCorrect:(selection:{source:Source;watchProductId:number;watchVariantId:number})=>void
+}){
   const [rows,setRows]=useState<WatchOrderChoice[]>([])
   const [source,setSource]=useState<Source>('office')
   const [search,setSearch]=useState('')
@@ -161,7 +164,7 @@ export function WatchStockMainBrowse({brand,canCorrect,onCorrect}:{brand:WatchBr
                   <span>Резерв <b>{amount(s.reserved)}</b></span>
                   <span>Свободно <b>{amount(s.free)}</b></span></div>
                 {canCorrect&&<button type="button" className="secondary compact"
-                  onClick={onCorrect}>Исправить количество</button>}
+                  onClick={()=>onCorrect({source,watchProductId:row.watchProductId,watchVariantId:row.watchVariantId})}>Исправить количество</button>}
               </div>
             })}
           </div>
