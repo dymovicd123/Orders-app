@@ -1,4 +1,4 @@
-import {useCallback,useEffect,useState} from 'react'
+import {useCallback,useEffect,useState,type InputHTMLAttributes} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {LeadsSection} from '../sections/LeadsSection'
 import {watchPeriod} from './useWatchAnalytics'
@@ -33,7 +33,7 @@ function ManagerPicker({valueId,options,onChange}:{
 function ManagerBadge({name}: {name:string;colorKey?:string;compact?:boolean}){
  return <span className="manager-badge">{name||'Не указан'}</span>
 }
-function FriendlyNumberInput(props:React.InputHTMLAttributes<HTMLInputElement>){
+function FriendlyNumberInput(props:InputHTMLAttributes<HTMLInputElement>){
  return <input {...props}/>
 }
 export function WatchLeadsPanel({brands,isAdmin}:{brands:readonly WatchBrand[];isAdmin:boolean}){
