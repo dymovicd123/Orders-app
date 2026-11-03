@@ -1,0 +1,101 @@
+name: Client3 QA batch 1 - guarded compile and isolated deploy
+on:
+  push:
+    branches: [client3/isolated-qa-copy-20261103]
+    paths: ['.github/workflows/client3-qa-fixes-batch1-20261104.yml']
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: client3-qa-fixes-batch1
+  cancel-in-progress: false
+jobs:
+  validate-and-deploy-qa-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      PROD_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      QA_WORKER: orders-app-client3-qa-20261103
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Strict production isolation and exact expected source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/isolated-qa-copy-20261103
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$QA_DB_ID" != "$PROD_DB_ID"
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$PROD_DB_ID"
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-fixes-batch1-20261104.yml
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          c=json.loads(Path('wrangler.jsonc').read_text())
+          c['name']=os.environ['QA_WORKER']
+          c['d1_databases'][0]['database_name']='orders_db_client3_qa_41698114208'
+          c['d1_databases'][0]['database_id']=os.environ['QA_DB_ID']
+          c['vars']['CLIENT3_QA_COPY']='1'
+          Path('wrangler.client3-qa.jsonc').write_text(json.dumps(c,indent=2),encoding='utf-8')
+          PY
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+      - run: npm ci
+      - name: Compile UI and Worker with TypeScript
+        run: npm run build
+      - name: Run stock and watch-order regression checks without live writes
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Verify isolated QA D1 is still available
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --remote \
+            --config wrangler.client3-qa.jsonc --json \
+            --command="PRAGMA foreign_key_check" > /tmp/qa-fk.json
+          jq -e '(if type=="array" then .[0].results else .results end)|length==0' /tmp/qa-fk.json
+          npx wrangler d1 execute orders_db_client3_qa_41698114208 --remote \
+            --config wrangler.client3-qa.jsonc --json \
+            --command="SELECT COUNT(*) active_admins FROM app_users WHERE role='admin' AND is_active=1" > /tmp/qa-admins.json
+          jq -e '(if type=="array" then .[0].results[0] else .results[0] end)|.active_admins>=1' /tmp/qa-admins.json
+      - name: Deploy only existing QA Worker with QA D1, no migration
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          npx wrangler deploy --config wrangler.client3-qa.jsonc
+      - name: Confirm website and protected endpoints after publishing
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
+          code=000
+          for i in $(seq 1 6); do
+            code=$(curl -sSL -o /tmp/qa-index -w '%{http_code}' --max-time 15 "$base/" || echo 000)
+            if test "$code" = 200; then break; fi
+            sleep 2
+          done
+          test "$code" = 200
+          for path in /api/client3/watches/logistics /api/client3/watches/cash; do
+            code=$(curl -sS -o /tmp/qa-anon -w '%{http_code}' --max-time 15 "$base$path")
+            test "$code" = 401 -o "$code" = 403
+          done
+          echo "CLIENT3_QA_BATCH1_DEPLOYED"
+      - name: Record delivery to QA only
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body \
+            "Client3 QA batch1 deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Improved warehouse reason/error handling, manager label fallback, compact order list, suppress historical-order tab, scroll-safe price input, smaller logistics selectors and expiring notifications. TypeScript/build, regression and QA FK all passed. Main, Branch2 and working Client3 unchanged. CI: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID"
+      - name: Record blocked build or release accurately
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body \
+            "Client3 QA batch1 failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
