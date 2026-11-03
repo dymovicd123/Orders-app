@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useState} from 'react'
 import {StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'
 import {WatchOperationInlineCatalog} from './WatchOperationInlineCatalog'
-import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 
 type Source='office'|'showcase'
 type WatchVariant={watchProductId:number;modelName:string;watchVariantId:number|null;catalogVariantId:number|null;gender:string|null;
@@ -29,8 +29,10 @@ async function post(action:string,data:Record<string,unknown>):Promise<Result>{
 }
 const itemName=(item:RevisionItem)=>[
  item.gender==='male'?'Мужские':item.gender==='female'?'Женские':'',
- item.movement,item.braceletMaterial,item.dialColor,
- item.braceletColor?'Ремешок: '+item.braceletColor:'',
+ watchReferenceLabel('movements',item.movement),
+ watchReferenceLabel('bracelets',item.braceletMaterial),
+ watchReferenceLabel('dials',item.dialColor),
+ item.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',item.braceletColor):'',
 ].filter(Boolean).join(' · ')
 const validCount=(raw:string)=>/^\d{1,7}$/.test(raw)&&Number(raw)<=1_000_000
 
@@ -262,7 +264,7 @@ export function WatchPersistentRevision({brand,source,models,variants,selectedMo
              <select value={newVariant} onChange={e=>setNewVariant(e.target.value)} disabled={busy}>
                <option value="">Выберите существующую комплектацию</option>
                {known.map(row=><option key={row.watchVariantId} value={String(row.watchVariantId)}>
-                 {row.modelName} · {row.movement} · {row.braceletMaterial} · {row.dialColor}
+                 {row.modelName} · {watchReferenceLabel('movements',row.movement||'')} · {watchReferenceLabel('bracelets',row.braceletMaterial||'')} · {watchReferenceLabel('dials',row.dialColor||'')}
                </option>)}
              </select>
              <button type="button" disabled={busy||!Number(newVariant)}
