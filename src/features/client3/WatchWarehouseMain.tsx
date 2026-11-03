@@ -2,6 +2,7 @@ import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
 import {StocktakeProductChoice,StocktakeSizeCountCell} from '../inventory/views/StocktakeSharedInputs'
 import {WatchOperationInlineCatalog} from './WatchOperationInlineCatalog'
 import {WatchPersistentRevision} from './WatchPersistentRevision'
+import {readWarehouseOperationDraft,saveWarehouseOperationDraft,type WarehouseOperationDraft} from './watchWarehouseDraftStorage'
 import {WATCH_OPTIONS,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/182-inventory-stocktake-human.css'
 import '../../styles/183-inventory-stocktake-workflow.css'
@@ -59,36 +60,57 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
   brand:WatchBrand;onStockChanged?:()=>void;initialRevision?:boolean;
   prefill?:{source:Source;watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'}
 }){
+  // Each browser tab has an independent draft. Reload or navigation restores it.
+  const previous=useMemo(()=>initialRevision?null:
+    readWarehouseOperationDraft(brand),[brand,initialRevision])
+  const [draftStored,setDraftStored]=useState(true)
   const [rows,setRows]=useState<Row[]>([])
   const [loading,setLoading]=useState(true)
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
-  const [mode,setMode]=useState<Operation>(initialRevision?'count':prefill?.operation|| (prefill?'count':'arrival'))
+  const [mode,setMode]=useState<Operation>(previous?.mode|| (initialRevision?'count':prefill?.operation||(prefill?'count':'arrival')))
   const persistentRevision=initialRevision
   const [revisionScope,setRevisionScope]=useState<'selective'|'full'>('selective')
   const [revisionActive,setRevisionActive]=useState(false)
-  const [source,setSource]=useState<Source>(prefill?.source||'office')
-  const [stage,setStage]=useState<Stage>(prefill?'quantities':'select')
+  const [source,setSource]=useState<Source>(previous?.source||prefill?.source||'office')
+  const [stage,setStage]=useState<Stage>(previous?.stage||(prefill?'quantities':'select'))
   const [search,setSearch]=useState('')
   const [showInlineAdd,setShowInlineAdd]=useState(false)
   // Main's selected-product queue is separate from the active product editor.
   // A checkbox NEVER opens the quantity step, for any operation mode.
-  const [selectedModelIdsBySource,setSelectedModelIdsBySource]=useState<Record<Source,number[]>>({
-    office:prefill?.source==='office'?[prefill.watchProductId]:[],
-    showcase:prefill?.source==='showcase'?[prefill.watchProductId]:[],
-  })
+  const [selectedModelIdsBySource,setSelectedModelIdsBySource]=useState<Record<Source,number[]>>(
+    previous?.selectedModelIdsBySource||{
+      office:prefill?.source==='office'?[prefill.watchProductId]:[],
+      showcase:prefill?.source==='showcase'?[prefill.watchProductId]:[],
+    })
   const selectedModelIds=selectedModelIdsBySource[source]
-  const [selectedModel,setSelectedModel]=useState<number|null>(prefill?.watchProductId||null)
-  const [draftBySource,setDraftBySource]=useState<Record<Source,Record<number,string>>>({
-    office:{},showcase:{},
-  })
+  const [selectedModel,setSelectedModel]=useState<number|null>(previous?.selectedModel||prefill?.watchProductId||null)
+  const [draftBySource,setDraftBySource]=useState<Record<Source,Record<number,string>>>(
+    previous?.draftBySource||{office:{},showcase:{}})
   const draft=draftBySource[source]
-  const [reason,setReason]=useState('')
+  const [reason,setReason]=useState(previous?.reason||'')
   const [confirmed,setConfirmed]=useState(false)
   const [shortageConfirmed,setShortageConfirmed]=useState(false)
-  const requestRef=useRef<{fingerprint:string;id:string}|null>(null)
+  const requestRef=useRef<{fingerprint:string;id:string}|null>(previous?.request||null)
+  const saveDraftNow=(request=requestRef.current)=>{
+    if(initialRevision)return true
+    const snapshot:WarehouseOperationDraft={
+      version:1,brand,mode,source,stage,selectedModel,
+      selectedModelIdsBySource,draftBySource,reason,request,
+    }
+    const stored=saveWarehouseOperationDraft(snapshot)
+    setDraftStored(stored)
+    return stored
+  }
+  useEffect(()=>{
+    if(initialRevision)return
+    setDraftStored(saveWarehouseOperationDraft({
+      version:1,brand,mode,source,stage,selectedModel,
+      selectedModelIdsBySource,draftBySource,reason,request:requestRef.current,
+    }))
+  },[initialRevision,brand,mode,source,stage,selectedModel,selectedModelIdsBySource,draftBySource,reason])
   const refresh=useCallback(()=>setReload(n=>n+1),[])
   useEffect(()=>{
     const controller=new AbortController()
@@ -160,7 +182,8 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
   })
   const shortages=mode==='count'?selected.filter(v=>
     Number(draft[v.watchVariantId!])<sourceSnapshot(v,source).reserved):[]
-  const ready=selected.length>0&&selected.length<=30&&!invalid&&
+  const maxLines=mode==='arrival'?100:mode==='transfer'?60:30
+  const ready=selected.length>0&&selected.length<=maxLines&&!invalid&&
     (mode!=='writeoff'||reason.trim().length>0)&&!loading&&!saving
   const rowPhysical=variants.reduce((s,v)=>s+number(v.officePhysical)+number(v.showcasePhysical),0)
   const rowReserved=variants.reduce((s,v)=>s+number(v.officeReserved)+number(v.showcaseReserved),0)
@@ -198,7 +221,10 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
     requestRef.current=null
   }
   const review=()=>{
-    if(!ready){setError('Проверьте выбранные комплектации, количество и свободный остаток.');return}
+    if(!ready){setError(selected.length>maxLines?
+      'В операции '+selected.length+' позиций. Для '+titles[mode].name.toLowerCase()+
+        ' можно сохранить не более '+maxLines+' одновременно. Черновик сохранён, разделите партию.':
+      'Укажите количество минимум для одной комплектации и проверьте все введённые значения.');return}
     setError('');setStage('review');setConfirmed(false)
   }
   const save=async()=>{
@@ -219,6 +245,9 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
     const fingerprint=JSON.stringify([endpoint,payload])
     if(requestRef.current?.fingerprint!==fingerprint)
       requestRef.current={fingerprint,id:'watch-main-operation-'+crypto.randomUUID()}
+    if(!saveDraftNow(requestRef.current)){
+      setError('Не удалось сохранить черновик в браузере. Проверьте свободное место и повторите операцию.');return
+    }
     setSaving(true);setError('')
     try{
       const response=await fetch('/api/client3/watches/stock/'+endpoint,{
@@ -278,6 +307,9 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
         {mode==='transfer'&&<div className="w7-transfer-target"><span aria-hidden="true">→</span>
           <strong>{location(source==='office'?'showcase':'office')}</strong></div>}
       </div>
+      {!initialRevision&&<div className="stocktake-inline-notice" role="status">{draftStored?
+        'Черновик сохраняется в этой вкладке браузера. После обновления страницы числа восстановятся. Склад меняется только после подтверждения прихода.':
+        'Браузер не разрешил сохранить черновик. Пока не обновляйте страницу и проверьте настройки хранилища.'}</div>}
       {error&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{error}</div>}
       {notice&&<div className="stocktake-inline-notice" role="status">{notice}</div>}
       {mode==='count'&&persistentRevision&&revisionActive?null:
@@ -473,7 +505,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
             onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
         </label>}
         <div className="stocktake-e-footer stocktake-e-footer-v4">
-          <span>{selected.length} из 30 позиций{invalid?' · Проверьте количество и свободный остаток':''}</span>
+          <span>{selected.length} из {maxLines} позиций{invalid?' · Проверьте количество и свободный остаток':''}</span>
           <button type="button" className="secondary compact" disabled={saving}
             onClick={()=>{setShowInlineAdd(false);setStage('select')}}>Изменить выбранные товары</button>
           {chosenIndex>=0&&chosenIndex<selectedModels.length-1&&
@@ -482,7 +514,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
               Следующий товар →
             </button>}
           <button type="button" className="primary compact stocktake-review-button"
-            disabled={!ready} onClick={review}>Проверить {selected.length} позиций</button>
+            disabled={saving||loading} onClick={review}>Проверить {selected.length} позиций</button>
         </div>
       </section>:<section className="client3-main-stock-step">
         <div className="stocktake-e-review-head">
