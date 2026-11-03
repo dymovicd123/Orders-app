@@ -22,6 +22,7 @@ import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
+import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
 import {editClient3WatchModel,editClient3WatchVariant} from './client3-watch-catalog-edit.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog} from './client3-watch-catalog-delete.ts'
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from './client3-watch-references.ts'
@@ -371,6 +372,24 @@ export async function routeClient3Watches(
     return url.pathname.endsWith('delete-preview')
       ? previewClient3WatchDelete(db,actor,scope.row!.id,input)
       : deleteClient3WatchCatalog(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listWatchModelAliases(db,actor,scope.row!.id,
+      Number(url.searchParams.get('watchProductId')))
+  }
+  if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;watchProductId?:unknown;alias?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return addWatchModelAlias(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/catalog/model-aliases'&&request.method==='DELETE'){
+    const input=await readJson<{brand?:unknown;watchProductId?:unknown;aliasId?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return deleteWatchModelAlias(db,actor,scope.row!.id,input)
   }
   if(url.pathname==='/api/client3/watches/catalog/models'&&request.method==='PATCH') {
     const input=await readJson<{brand?:unknown;watchProductId?:unknown;expectedName?:unknown;modelName?:unknown}>(request)
