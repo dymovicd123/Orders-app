@@ -66,6 +66,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
   const [reload,setReload]=useState(0)
   const [mode,setMode]=useState<Operation>(initialRevision?'count':'arrival')
   const [persistentRevision,setPersistentRevision]=useState(initialRevision)
+  const [revisionScope,setRevisionScope]=useState<'selective'|'full'>('selective')
   const [revisionActive,setRevisionActive]=useState(false)
   const [source,setSource]=useState<Source>('office')
   const [stage,setStage]=useState<Stage>('select')
@@ -116,6 +117,10 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
   const selectedModels=models.filter(([id])=>selectedModelIds.includes(id))
   const selectedPositionCount=selectedModels.reduce((sum,[id])=>
     sum+variants.filter(v=>v.watchProductId===id).length,0)
+  const recommendedModels=models.map(([id,name])=>({id,name,
+    positions:variants.filter(v=>v.watchProductId===id).length,
+    reserved:variants.filter(v=>v.watchProductId===id).reduce((total,row)=>total+sourceSnapshot(row,source).reserved,0),
+  })).filter(row=>row.reserved>0).sort((a,b)=>b.reserved-a.reserved).slice(0,6)
   const chosenIndex=selectedModels.findIndex(([id])=>id===selectedModel)
   const toggleModel=(modelId:number)=>{
     if(saving)return
@@ -233,21 +238,21 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
   }
   return <div className="client3-main-stock">
     <div className="inventory-calm-head">
-      <div><h3>Остатки</h3><p>Фактическое количество, резервы и свободные часы по обеим точкам.</p></div>
+      <div><h3>{initialRevision?'Ревизия':'Остатки'}</h3><p>{initialRevision?'Пересчитайте фактические часы в выбранной точке. Прогресс сохраняется и после выхода со страницы.':'Фактическое количество, резервы и свободные часы по обеим точкам.'}</p></div>
       <button type="button" className="secondary compact" disabled={loading||saving}
         onClick={refresh}>Обновить</button>
     </div>
-    <div className="inventory-calm-summary client3-main-stock-totals">
+    {!initialRevision&&<div className="inventory-calm-summary client3-main-stock-totals">
       <div><small>В офисе</small><strong>{variants.reduce((s,v)=>s+number(v.officePhysical),0)}</strong></div>
       <div><small>На витрине</small><strong>{variants.reduce((s,v)=>s+number(v.showcasePhysical),0)}</strong></div>
       <div><small>В резерве</small><strong>{rowReserved}</strong></div>
       <div><small>Свободно</small><strong>{Math.max(0,rowPhysical-rowReserved)}</strong></div>
-    </div>
+    </div>}
     <div className="inventory-stocktake-panel stocktake-human-panel stocktake-session-v188e stocktake-reused-operations client3-main-stock-operation"
       data-unified-operation={mode==='count'?'manual_set':mode}>
-      <div className="stocktake-e-head"><div><h3>Складские операции</h3>
-        <p>Выберите операцию, укажите количество для нужных часов и сохраните всё вместе.</p></div></div>
-      <div className="stocktake-e-start stocktake-e-start-v5 w6-operation-switch">
+      <div className="stocktake-e-head"><div><h3>{initialRevision?'Проверка остатков':'Складские операции'}</h3>
+        <p>{initialRevision?'Выберите офис или витрину и запустите выборочную или полную проверку — отдельно для каждого бренда.':'Выберите операцию, укажите количество для нужных часов и сохраните всё вместе.'}</p></div></div>
+      {!initialRevision&&<div className="stocktake-e-start stocktake-e-start-v5 w6-operation-switch">
         <div className="stocktake-start-modes stocktake-start-modes-v5">
           {(['arrival','writeoff','count','transfer'] as const).map(value=>
             <button key={value} type="button" disabled={saving}
@@ -255,9 +260,9 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
               className={'stocktake-start-mode '+(mode===value?'is-active':'')}
               onClick={()=>selectMode(value)}><strong>{titles[value].name}</strong><span>{titles[value].hint}</span></button>)}
         </div>
-      </div>
+      </div>}
       <div className="w7-operation-location">
-        <div><strong>{mode==='transfer'?'Перемещаем из':'Точка операции'}</strong>
+        <div><strong>{initialRevision?'Точка проверки':mode==='transfer'?'Перемещаем из':'Точка операции'}</strong>
           <small>Офис и витрина учитываются отдельно.</small></div>
         <div className="stocktake-source-switch stocktake-source-switch-v5" role="tablist"
           aria-label="Источник">
@@ -270,7 +275,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
         {mode==='transfer'&&<div className="w7-transfer-target"><span aria-hidden="true">→</span>
           <strong>{location(source==='office'?'showcase':'office')}</strong></div>}
       </div>
-      {mode==='count'&&<div className="client3-revision-mode">
+      {mode==='count'&&!initialRevision&&<div className="client3-revision-mode">
         <strong>Способ проверки</strong>
         <div role="group" aria-label="Тип проверки">
           <button type="button" className={!persistentRevision?'is-active':''}
@@ -285,26 +290,57 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
       </div>}
       {error&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{error}</div>}
       {notice&&<div className="stocktake-inline-notice" role="status">{notice}</div>}
-      {mode==='count'&&persistentRevision&&revisionActive?
-        <WatchPersistentRevision key={brand+'-'+source+'-active'}
+      {mode==='count'&&persistentRevision&&
+        <WatchPersistentRevision key={brand+'-'+source}
           brand={brand} source={source} models={models} variants={variants}
-          selectedModelIds={selectedModelIds} onActiveChange={setRevisionActive}
-          onStockChanged={()=>{refresh();onStockChanged?.()}}/>:
+          selectedModelIds={selectedModelIds} preferredScope={initialRevision?revisionScope:undefined}
+          onActiveChange={setRevisionActive}
+          onStockChanged={()=>{refresh();onStockChanged?.()}}/>}
+      {mode==='count'&&persistentRevision&&revisionActive?null:
       loading?<div className="stocktake-inline-notice">Загружаем каталог и остатки…</div>:
       stage==='select'?<section className="stocktake-e-start stocktake-e-start-v5">
-        {mode==='count'&&persistentRevision&&
-          <WatchPersistentRevision key={brand+'-'+source+'-select'}
-            brand={brand} source={source} models={models} variants={variants}
-            selectedModelIds={selectedModelIds} onActiveChange={setRevisionActive}
-            onStockChanged={()=>{refresh();onStockChanged?.()}}/>}
         <div className="stocktake-start-intro">
-          <span className="stocktake-step-kicker">Шаг 1 · Выбор товаров</span>
-          <h4>{mode==='count'&&persistentRevision?'Выберите модели для выборочной ревизии':
+          <span className="stocktake-step-kicker">{initialRevision?'Новая проверка':'Шаг 1 · Выбор товаров'}</span>
+          <h4>{initialRevision?'Что хотите проверить?':mode==='count'&&persistentRevision?'Выберите модели для выборочной ревизии':
             'Какие часы хотите '+(mode==='arrival'?'принять':mode==='writeoff'?'списать':
               mode==='transfer'?'переместить':'пересчитать')+'?'}</h4>
-          <p>Можно выбрать несколько моделей и комплектаций. Все выбранные позиции сохраняются одной операцией.</p>
+          <p>{initialRevision?'Выберите несколько моделей либо запустите полную ревизию часов этого бренда в выбранной точке.':'Можно выбрать несколько моделей и комплектаций. Все выбранные позиции сохраняются одной операцией.'}</p>
         </div>
-        <div className="stocktake-selective-picker stocktake-selective-picker-v5">
+        {initialRevision&&<div className="stocktake-start-modes stocktake-start-modes-v5">
+          <button type="button" className={'stocktake-start-mode '+(revisionScope==='selective'?'is-active':'')}
+            onClick={()=>setRevisionScope('selective')}>
+            <strong>Проверить несколько товаров</strong><span>Выберите только то, что хотите пересчитать сейчас</span>
+          </button>
+          <button type="button" className={'stocktake-start-mode '+(revisionScope==='full'?'is-active':'')}
+            onClick={()=>setRevisionScope('full')}>
+            <strong>Полная проверка точки</strong><span>{variants.length} комплектаций бренда</span>
+          </button>
+        </div>}
+        {initialRevision&&revisionScope==='selective'&&recommendedModels.length>0&&
+          <div className="stocktake-selective-recommendations has-items">
+            <div className="stocktake-selective-recommendations-head">
+              <div><span className="stocktake-step-kicker">Рекомендуем проверить</span>
+                <strong>{recommendedModels.length} моделей с активными резервами</strong>
+                <small>Подобраны по текущим резервам в этой точке. Исторические расхождения не учитываются.</small>
+              </div>
+              <button className="secondary compact" type="button"
+                onClick={()=>setSelectedModelIdsBySource(prev=>({...prev,[source]:Array.from(new Set([...prev[source],...recommendedModels.map(x=>x.id)]))}))}>Добавить все</button>
+            </div>
+            <div className="stocktake-recommended-products">{recommendedModels.map(item=>
+              <button type="button" key={item.id}
+                className={'stocktake-recommended-product '+(selectedModelIds.includes(item.id)?'is-selected':'')}
+                onClick={()=>toggleModel(item.id)}>
+                <span><strong>{item.name}</strong><small>{item.positions} поз. · резерв {item.reserved}</small></span>
+                <b>{selectedModelIds.includes(item.id)?'Выбрано':'Добавить'}</b>
+              </button>)}</div>
+          </div>}
+        {initialRevision&&revisionScope==='full'&&
+          <div className="stocktake-full-warning stocktake-full-warning-v5">
+            <strong>{location(source)} · {variants.length} комплектаций бренда {brand}</strong>
+            <span>В проверку войдут все действующие комплектации этого бренда, а не товары другого бренда.</span>
+          </div>}
+        <div className="stocktake-selective-picker stocktake-selective-picker-v5"
+          style={initialRevision&&revisionScope==='full'?{display:'none'}:undefined}>
           <div className="stocktake-selective-head">
             <label><span>Найдите модель</span><input placeholder="Название модели…"
               value={search} onChange={e=>setSearch(e.target.value)}/></label>
