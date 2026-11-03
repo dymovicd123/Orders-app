@@ -1,4 +1,5 @@
 name: Client3 Main parity batch QA (isolated, no deploy)
+# Regression pass 2: per-item engraving fixtures and audit assertions.
 on:
   push:
     branches: [client3/main-parity-hardening-20261103]
