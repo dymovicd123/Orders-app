@@ -55,8 +55,9 @@ const validQuantity=(raw:string,mode:Operation)=>{
  * across different models, review them together and commit ONE atomic transaction.
  * No separate "bulk operations" screen or duplicate revision form.
  */
-export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:{
-  brand:WatchBrand;onStockChanged?:()=>void;initialRevision?:boolean
+export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,prefill}:{
+  brand:WatchBrand;onStockChanged?:()=>void;initialRevision?:boolean;
+  prefill?:{source:Source;watchProductId:number;watchVariantId:number}
 }){
   const [rows,setRows]=useState<Row[]>([])
   const [loading,setLoading]=useState(true)
@@ -64,21 +65,22 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
   const [error,setError]=useState('')
   const [notice,setNotice]=useState('')
   const [reload,setReload]=useState(0)
-  const [mode,setMode]=useState<Operation>(initialRevision?'count':'arrival')
+  const [mode,setMode]=useState<Operation>(initialRevision||prefill?'count':'arrival')
   const persistentRevision=initialRevision
   const [revisionScope,setRevisionScope]=useState<'selective'|'full'>('selective')
   const [revisionActive,setRevisionActive]=useState(false)
-  const [source,setSource]=useState<Source>('office')
-  const [stage,setStage]=useState<Stage>('select')
+  const [source,setSource]=useState<Source>(prefill?.source||'office')
+  const [stage,setStage]=useState<Stage>(prefill?'quantities':'select')
   const [search,setSearch]=useState('')
   const [showInlineAdd,setShowInlineAdd]=useState(false)
   // Main's selected-product queue is separate from the active product editor.
   // A checkbox NEVER opens the quantity step, for any operation mode.
   const [selectedModelIdsBySource,setSelectedModelIdsBySource]=useState<Record<Source,number[]>>({
-    office:[],showcase:[],
+    office:prefill?.source==='office'?[prefill.watchProductId]:[],
+    showcase:prefill?.source==='showcase'?[prefill.watchProductId]:[],
   })
   const selectedModelIds=selectedModelIdsBySource[source]
-  const [selectedModel,setSelectedModel]=useState<number|null>(null)
+  const [selectedModel,setSelectedModel]=useState<number|null>(prefill?.watchProductId||null)
   const [draftBySource,setDraftBySource]=useState<Record<Source,Record<number,string>>>({
     office:{},showcase:{},
   })
@@ -112,6 +114,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false}:
     Array.from(new Map(rows.filter(r=>r.productActive===1)
       .map(r=>[r.watchProductId,r.modelName])).entries()),[rows])
   const current=variants.filter(v=>v.watchProductId===selectedModel)
+    .sort((a,b)=>Number(b.watchVariantId===prefill?.watchVariantId)-Number(a.watchVariantId===prefill?.watchVariantId))
   const selected=variants.filter(v=>selectedModelIds.includes(v.watchProductId)&&
     v.watchVariantId!==null&&draft[v.watchVariantId]!==undefined&&draft[v.watchVariantId]!=='')
   const selectedModels=models.filter(([id])=>selectedModelIds.includes(id))
