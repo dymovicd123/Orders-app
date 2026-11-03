@@ -378,7 +378,11 @@ export function WatchClient3App() {
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>:
+            isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}
+            onOpenWorkflow={(kind,order)=>{
+              setReportOrderFocus(order);setLastOrderBrand(order.brand);
+              goTo(kind==='returns'?'returns':'exchange')
+            }}/>:
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
         activeSection==='create'?
           <section className="watch-shell-create-page">
@@ -391,12 +395,16 @@ export function WatchClient3App() {
           </section>:
         activeSection==='returns'?<>
           {brands.length>0&&<WatchOrdersPanel workflow="returns" key={'return-order-flow-'+catalogVersion}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
           {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion}
             brands={brands.map(x=>x.code)}/>}
         </>:
         activeSection==='exchange'?<>
           {brands.length>0&&<WatchOrdersPanel workflow="exchange" key={'exchange-order-flow-'+catalogVersion}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
