@@ -119,6 +119,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
+  useEffect(()=>{
+    if(!feedback)return
+    const timer=window.setTimeout(()=>setFeedback(''),4500)
+    return ()=>window.clearTimeout(timer)
+  },[feedback])
   const [refreshKey, setRefreshKey] = useState(0)
   // Retain the same idempotency key across a failed/ambiguous network retry.
   const requestIds = useRef<Record<number, string>>({})
