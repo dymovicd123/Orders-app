@@ -9,6 +9,8 @@ import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
 import {WatchDashboardPanel} from './features/client3/WatchDashboardPanel'
 import {WatchReportsPanel} from './features/client3/WatchReportsPanel'
+import {WatchPlansPanel} from './features/client3/WatchPlansPanel'
+import {WatchLeadsPanel} from './features/client3/WatchLeadsPanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
 import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
 import {WatchUserAccessPanel} from './features/client3/WatchUserAccessPanel'
@@ -33,10 +35,12 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'dashboard'|'reports'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
   dashboard:{title:'Инфопанель',description:'Продажи, деньги и внимание к срокам логистики.',area:'Обзор'},
   reports:{title:'Отчёты',description:'Брендовые отчёты Main по оплатам, товарам, городам и менеджерам.',area:'Финансы'},
+  plan:{title:'План',description:'Денежные планы отдела и менеджеров, без KPI.',area:'Продажи'},
+  leads:{title:'Лиды',description:'Лиды и Колл-центр по каждому бренду, как в Main.',area:'Продажи'},
   orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
   create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
   logistics:{title:'Логистика',description:'Гравировка, сроки исполнения и подготовка к отправке.',area:'Рабочие процессы'},
@@ -307,7 +311,7 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['dashboard','reports','orders','create','warehouse','operations','revision','history','catalog','finance','returns','exchange','references'].includes(tab))
+    (!canSales&&['dashboard','reports','plan','leads','orders','create','warehouse','operations','revision','history','catalog','finance','returns','exchange','references'].includes(tab))
       ? 'logistics':tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
@@ -326,6 +330,10 @@ export function WatchClient3App() {
       {activeSection==='dashboard'&&brands.length>0&&
         <WatchDashboardPanel brands={brands.map(x=>x.code)}
           onNavigate={section=>goTo(section)}/>}
+      {activeSection==='plan'&&brands.length>0&&
+        <WatchPlansPanel brands={brands.map(b=>b.code)} isAdmin={canAdmin}/>}
+      {activeSection==='leads'&&brands.length>0&&
+        <WatchLeadsPanel brands={brands.map(b=>b.code)} isAdmin={canAdmin}/>}
       {activeSection==='reports'&&brands.length>0&&
         <WatchReportsPanel brands={brands.map(x=>x.code)}
           onOpenOrder={order=>{
