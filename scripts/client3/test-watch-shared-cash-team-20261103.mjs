@@ -21,8 +21,8 @@ const paths=fs.readdirSync('migrations/client3-watch').filter(x=>/^\d+.*\.sql$/.
 for(const path of paths.filter(x=>x<'1003_shared_cash_main_team.sql'))
  sqlite.exec(fs.readFileSync('migrations/client3-watch/'+path,'utf8'))
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM watch_brands').get().n,2)
-sqlite.prepare("INSERT INTO managers(id,name,role,created_at) VALUES(1,'ТЕСТОВЫЙ МЕНЕДЖЕР','Менеджер','2026-11-03')").run()
-sqlite.prepare("INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1)").run()
+sqlite.prepare("INSERT OR IGNORE INTO managers(id,name,role,created_at) VALUES(1,'ТЕСТОВЫЙ МЕНЕДЖЕР','Менеджер','2026-11-03')").run()
+sqlite.prepare("INSERT OR IGNORE INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1)").run()
 const now='2026-11-03T10:00:00Z'
 sqlite.prepare(`INSERT INTO watch_brand_cash_registers
  (brand_id,opening_amount,financial_event_watermark,initialized_at,initialized_by)
