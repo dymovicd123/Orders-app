@@ -1,10 +1,8 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react'
-import {WATCH_OPTIONS,type WatchBrand,type WatchVariantInput} from '../../../shared/client3/watch-domain'
+import {WATCH_OPTIONS,watchReferenceLabel,type WatchBrand,type WatchVariantInput} from '../../../shared/client3/watch-domain'
 
 type Reference={kind:string;value:string}
 type Result={ok?:boolean;message?:string;watchProductId?:number;watchVariantId?:number;canonicalVariantId?:number}
-const label=(choices:readonly {value:string;label:string}[],value:string)=>
-  choices.find(x=>x.value===value)?.label||value
 async function post(path:string,payload:Record<string,unknown>):Promise<Result>{
  const response=await fetch(path,{method:'POST',credentials:'include',
    headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
@@ -49,7 +47,10 @@ export function WatchOperationInlineCatalog({brand,models,selectedModelId,onCrea
    return ()=>controller.abort()
  },[brand])
  const values=(kind:string)=>referenceRows.filter(x=>x.kind===kind).map(x=>x.value)
- const movements=values('movements'),bracelets=values('bracelets'),dials=values('dials'),leatherColors=values('leatherColors')
+ const movements=[...new Set([...WATCH_OPTIONS.movements.map(x=>x.value),...values('movements')])]
+ const bracelets=[...new Set([...WATCH_OPTIONS.braceletMaterials.map(x=>x.value),...values('bracelets')])]
+ const dials=[...new Set([...WATCH_OPTIONS.dialColors.map(x=>x.value),...values('dials')])]
+ const leatherColors=values('leatherColors')
  const selectedMovement=movements.includes(movement)?movement:(movements[0]||'')
  const selectedBracelet=bracelets.includes(braceletMaterial)?braceletMaterial:(bracelets[0]||'')
  const selectedDial=dials.includes(dialColor)?dialColor:(dials[0]||'')
@@ -114,20 +115,20 @@ export function WatchOperationInlineCatalog({brand,models,selectedModelId,onCrea
      </select></label>
      <label>Механизм<select required value={selectedMovement} disabled={busy||loading}
        onChange={e=>setMovement(e.target.value)}>
-       {movements.map(x=><option value={x} key={x}>{label(WATCH_OPTIONS.movements,x)}</option>)}
+       {movements.map(x=><option value={x} key={x}>{watchReferenceLabel('movements',x)}</option>)}
      </select></label>
      <label>Браслет<select required value={selectedBracelet} disabled={busy||loading}
        onChange={e=>setBraceletMaterial(e.target.value)}>
-       {bracelets.map(x=><option value={x} key={x}>{label(WATCH_OPTIONS.braceletMaterials,x)}</option>)}
+       {bracelets.map(x=><option value={x} key={x}>{watchReferenceLabel('bracelets',x)}</option>)}
      </select></label>
      <label>Цвет циферблата<select required value={selectedDial} disabled={busy||loading}
        onChange={e=>setDialColor(e.target.value)}>
-       {dials.map(x=><option value={x} key={x}>{label(WATCH_OPTIONS.dialColors,x)}</option>)}
+       {dials.map(x=><option value={x} key={x}>{watchReferenceLabel('dials',x)}</option>)}
      </select></label>
      {selectedBracelet==='leather'&&<label>Цвет кожаного ремешка
        <select required value={selectedLeatherColor} disabled={busy||loading}
          onChange={e=>setBraceletColor(e.target.value)}>
-         {leatherColors.map(x=><option value={x} key={x}>{x}</option>)}
+         {leatherColors.map(x=><option value={x} key={x}>{watchReferenceLabel('leatherColors',x)}</option>)}
        </select>
        <small>Дополнительные цвета можно внести во вкладке «Справочники».</small>
      </label>}
