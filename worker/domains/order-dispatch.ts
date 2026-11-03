@@ -417,7 +417,9 @@ export async function dispatchSelectedCompleteOrderLines(
         ) VALUES(?,'sale',?,?,?,?,?,?,?,?,?,?,'order_dispatch',?,?,?)`
       ).bind(group.source,group.productId,group.variantId,group.productName,group.gender,group.color,
         group.material,group.length,group.size,-bounded.explainedQuantity,next,ref,
-        `Отправлен заказ ${order.external_id}`+(bounded.unexplainedQuantity?
+        `Отправлен заказ ${order.external_id}`+
+          (cleanText(r.status)==='unresolved'?'; подтверждённая выдача без резерва':'')+
+          (bounded.unexplainedQuantity?
           `; подтверждено физически ${bounded.unexplainedQuantity} шт. сверх учётного остатка`:''),stamp),
       db.prepare(`UPDATE inventory_reservations SET quantity=?,status='fulfilled',fulfilled_at=?,updated_at=?
          WHERE id=? AND status=? AND quantity=?`
