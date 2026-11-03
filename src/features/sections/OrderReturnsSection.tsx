@@ -356,6 +356,38 @@ export function OrderReturnsSection({ ctx }: { ctx: SectionContext }) {
                               placeholder="Например, НАЛИЧКА"
                             />
                           </label>
+                          {Number(returnDraft.amount || 0) > 1 ? (
+                            <div className="wide-field">
+                              {!returnDraft.extraRefundEnabled ? (
+                                <button type="button" className="secondary compact" disabled={returnBusy}
+                                  onClick={() => setReturnDraft((current) => ({ ...current, extraRefundEnabled: true, extraRefundAmount: 0, extraRefundMethod: '' }))}>
+                                  + Добавить ещё способ возврата денег
+                                </button>
+                              ) : (
+                                <div className="mini-item">
+                                  <div className="mini-item-head"><strong>Второй способ возврата</strong></div>
+                                  <div className="subgrid order-payment-grid">
+                                    <label><span>Способ</span><SmartPickerInput
+                                      value={returnDraft.extraRefundMethod}
+                                      options={suggestionValues.paymentMethods}
+                                      placeholder="Например, KASPI"
+                                      onChange={(value) => setReturnDraft((current) => ({ ...current, extraRefundMethod: value }))}
+                                    /></label>
+                                    <label><span>Сумма вторым способом</span><FriendlyNumberInput
+                                      type="number" min="1" max={Math.max(1, Number(returnDraft.amount || 0) - 1)}
+                                      value={returnDraft.extraRefundAmount}
+                                      onChange={(event) => setReturnDraft((current) => ({ ...current, extraRefundAmount: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))}
+                                    /></label>
+                                  </div>
+                                  <small className="field-hint">Первым способом: {formatMoney(Math.max(0, Number(returnDraft.amount || 0) - Number(returnDraft.extraRefundAmount || 0)))} ₸. Общая сумма возврата не меняется.</small>
+                                  <button type="button" className="secondary compact" disabled={returnBusy}
+                                    onClick={() => setReturnDraft((current) => ({ ...current, extraRefundEnabled: false, extraRefundAmount: 0, extraRefundMethod: '' }))}>
+                                    Убрать второй способ
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
                           <label className="wide-field">
                             <span>Причина / комментарий</span>
                             <SmartPickerInput
