@@ -170,7 +170,7 @@ export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
     WHERE wp.brand_id=? AND wp.is_active=1
       AND wp.catalog_product_id IS NOT NULL AND v.catalog_variant_id IS NOT NULL
     GROUP BY wp.id,v.id
-    ORDER BY wp.model_name COLLATE NOCASE,v.id LIMIT 500
+    ORDER BY wp.model_name COLLATE NOCASE,v.id
   `).bind(scope.row!.id).all()
   return json({ok:true,brand:scope.row!.code,models:rows.results||[]})
 }
