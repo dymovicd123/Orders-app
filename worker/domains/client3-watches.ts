@@ -82,7 +82,7 @@ export async function listWatchManagers(db:D1Database,actor:AuthUser,url:URL) {
   const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
   if(scope.error)return scope.error
   const rows=await db.prepare(
-    'SELECT m.id,m.name FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=? ORDER BY m.name COLLATE NOCASE,m.id',
+    'SELECT m.id,m.name FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=? AND COALESCE(m.role,\'Менеджер\') NOT IN (\'Логист\',\'Упаковщик\') ORDER BY m.name COLLATE NOCASE,m.id',
   ).bind(scope.row!.id).all<{id:number;name:string}>()
   return json({ok:true,brand:scope.row!.code,managers:actor.role==='admin'?rows.results||[]:
     (rows.results||[]).filter(x=>x.id===actor.managerId)})
@@ -91,12 +91,12 @@ export async function listWatchManagers(db:D1Database,actor:AuthUser,url:URL) {
 export async function listWatchStaff(db:D1Database,actor:AuthUser) {
   if(actor.role!=='admin')return FORBIDDEN()
   const rows=await db.prepare(
-    'SELECT m.id,m.name,m.is_active,b.code AS brand FROM managers m LEFT JOIN watch_manager_brands mb ON mb.manager_id=m.id LEFT JOIN watch_brands b ON b.id=mb.brand_id WHERE m.is_active=1 ORDER BY m.name COLLATE NOCASE,m.id,b.code',
-  ).all<{id:number;name:string;is_active:number;brand:WatchBrand|null}>()
+    'SELECT m.id,m.name,m.role,m.is_active,b.code AS brand FROM managers m LEFT JOIN watch_manager_brands mb ON mb.manager_id=m.id LEFT JOIN watch_brands b ON b.id=mb.brand_id WHERE m.is_active=1 ORDER BY m.name COLLATE NOCASE,m.id,b.code',
+  ).all<{id:number;name:string;role:string;is_active:number;brand:WatchBrand|null}>()
   const grouped=new Map<number,{id:number;name:string;brands:WatchBrand[]}>()
   for(const row of rows.results||[]) {
     if(!grouped.has(row.id))grouped.set(row.id,{id:row.id,name:row.name,brands:[]})
-    if(row.brand)grouped.get(row.id)!.brands.push(row.brand)
+    if(row.brand&&!['Логист','Упаковщик'].includes(row.role||''))grouped.get(row.id)!.brands.push(row.brand)
   }
   return json({ok:true,staff:Array.from(grouped.values())})
 }
