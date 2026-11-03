@@ -1,0 +1,33 @@
+name: Branch2 split payment and refund safety
+on:
+  push:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'scripts/test-branch2-split-settlements-20261103.mjs'
+      - '.github/workflows/branch2-split-settlement-20261103.yml'
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'worker/domains/returns-exchanges.ts'
+      - 'scripts/test-branch2-split-settlements-20261103.mjs'
+      - '.github/workflows/branch2-split-settlement-20261103.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Actual split money validator and exchange settlement
+        run: node --experimental-strip-types scripts/test-branch2-split-settlements-20261103.mjs
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
