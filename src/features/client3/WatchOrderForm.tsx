@@ -33,7 +33,7 @@ type Props={
  managers?:readonly {brand:WatchBrand;id:number;name:string}[];
  isAdmin?:boolean;deliveryMethods:readonly string[];paymentMethods?:readonly string[];
  references?:{movements:readonly string[];bracelets:readonly string[];
-   dials:readonly string[];leatherColors:readonly string[]};
+   dials:readonly string[];leatherColors:readonly string[];cities?:readonly string[]};
  onSave:(draft:WatchOrderDraftPayload)=>Promise<void>|void
 }
 const readable=(options:readonly {value:string;label:string}[],value:string)=>
@@ -201,12 +201,17 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
            onChange={e=>setRecipientPhone(e.target.value)} autoComplete="tel"/>
        </label>
        <label>Город *
-         <input required maxLength={100} value={city} onChange={e=>setCity(e.target.value)}/>
+         <input required maxLength={100} list="client3-city-options" value={city}
+            autoComplete="address-level2"
+            onChange={e=>setCity(e.target.value.toLocaleUpperCase('ru-RU'))}/>
+          <datalist id="client3-city-options">
+            {(references?.cities||[]).map(name=><option key={name} value={name}/>)}
+          </datalist>
        </label>
        <label>Доставка *
          <select required value={deliveryMethod}
            onChange={e=>setDeliveryMethod(e.target.value)}>
-           {deliveryMethods.map(x=><option key={x} value={x}>{x}</option>)}
+           {deliveryMethods.map(x=><option key={x} value={x}>{x.toLocaleUpperCase('ru-RU')}</option>)}
          </select>
        </label>
        <label>Индекс *
@@ -338,7 +343,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
          <label>Способ оплаты
            <select required value={row.method}
              onChange={e=>setPayments(all=>all.map((x,i)=>i===index?{...x,method:e.target.value}:x))}>
-             {paymentMethods.map(x=><option value={x} key={x}>{x}</option>)}
+             {paymentMethods.map(x=><option value={x} key={x}>{x.toLocaleUpperCase('ru-RU')}</option>)}
            </select>
          </label>
          <label>Получено, ₸ *
