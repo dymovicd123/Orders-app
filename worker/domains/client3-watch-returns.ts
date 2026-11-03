@@ -71,7 +71,8 @@ export async function createClient3WatchReturn(
    return fail('WATCH_RETURN_UNVERIFIED_SKU',
      'Не все активные позиции принадлежат часам выбранного бренда. Возврат остановлен.',409)
  const rawItems=Array.isArray(input.items)?input.items:null
- const selected:Array<{orderItemId:number;quantity:number;amount:number;restock:boolean;physicalState:'pending'}>=[]
+ const selected:Array<{orderItemId:number;quantity:number;amount:number;restock:boolean;
+   physicalState:'pending'|'warehouse'|'boutique'|'no_stock'}>=[]
  if(itemSelected){
    const supplied=rawItems||(byId.size===1?[{
      orderItemId:[...byId.keys()][0],quantity,
@@ -80,8 +81,12 @@ export async function createClient3WatchReturn(
      return fail('WATCH_RETURN_SELECTION_REQUIRED','Выберите конкретные часы и количество для возврата.',400)
    const seen=new Set<number>()
    for(const candidate of supplied){
-     const x=candidate as {orderItemId?:unknown;quantity?:unknown}
+     const x=candidate as {orderItemId?:unknown;quantity?:unknown;physicalState?:unknown}
      const id=Number(x?.orderItemId),qty=Number(x?.quantity)
+     const physicalState=String(x?.physicalState||'pending')
+     if(!['pending','warehouse','boutique','no_stock'].includes(physicalState))
+       return fail('WATCH_RETURN_PHYSICAL_INVALID',
+         'Выберите, где физически находятся возвращаемые часы.',400)
      const row=byId.get(id)
      if(!Number.isSafeInteger(id)||!row||seen.has(id)||
        !Number.isSafeInteger(qty)||qty<1||qty>Number(row.quantity))
@@ -89,7 +94,8 @@ export async function createClient3WatchReturn(
          'Выбранной позиции нет в заказе либо количество превышает доступное.',409)
      seen.add(id)
      selected.push({orderItemId:id,quantity:qty,amount:0,
-       restock:false,physicalState:'pending'})
+       restock:physicalState==='warehouse'||physicalState==='boutique',
+       physicalState:physicalState as 'pending'|'warehouse'|'boutique'|'no_stock'})
    }
  }else if(rawItems?.length){
    return fail('WATCH_RETURN_MONEY_ONLY','Для возврата только денег нельзя выбирать товары.',400)
@@ -104,9 +110,11 @@ export async function createClient3WatchReturn(
    })
    if(!response||typeof response!=='object'||!('ok' in response)||response.ok!==true)
      return fail('WATCH_RETURN_NOT_APPLIED','Возврат не подтверждён финансовым ядром.')
-   return json({...response,brandId,orderId,
-     physicalReceiptPending:itemSelected,
-     ...(itemSelected?{notice:'Деньги и возврат зарегистрированы. Физическое принятие часов оформите отдельно.'}:{})})
+   const physicalReceiptPending=selected.some(x=>x.physicalState==='pending')
+   return json({...response,brandId,orderId,physicalReceiptPending,
+     ...(itemSelected?{notice:physicalReceiptPending
+       ?'Возврат оформлен. Часы в пути появятся в очереди приёмки; уже полученные отмечены отдельно.'
+       :'Возврат и указанное фактическое получение часов оформлены.'}:{})})
  }catch(cause){
    return fail('WATCH_RETURN_FAILED',cause instanceof Error?cause.message:'Не удалось оформить возврат.')
  }
