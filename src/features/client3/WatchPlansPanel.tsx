@@ -1,5 +1,4 @@
 import {useCallback,useEffect,useState} from 'react'
-import type {FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {watchMoney,watchPeriod} from './useWatchAnalytics'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
