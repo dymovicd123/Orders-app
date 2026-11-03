@@ -38,7 +38,7 @@ async function usedByActiveSku(db:D1Database,kind:string,value:string){
  return Number(row?.n)>0
 }
 export async function listClient3WatchReferences(db:D1Database,actor:AuthUser){
- if(actor.role!=='admin'&&!actor.managerId)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад')&&!actor.managerId)
    return fail('Справочники доступны только сотрудникам.',403)
  const [legacy,extra,cities]=await Promise.all([
    db.prepare('SELECT id,kind,value FROM watch_reference_values WHERE is_active=1').all<{id:number;kind:WatchReferenceKind;value:string}>(),
@@ -51,7 +51,7 @@ export async function listClient3WatchReferences(db:D1Database,actor:AuthUser){
  return json({ok:true,rows,sharedAcrossBrands:true})
 }
 export async function createClient3WatchReference(db:D1Database,actor:AuthUser,raw:{kind?:unknown;value?:unknown}){
- if(actor.role!=='admin')return fail('Добавлять значения справочников может администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Добавлять значения справочников может администратор.',403)
  if(!validKind(raw?.kind))return fail('Недоступный справочник.')
  let value:string
  try{value=validValue(raw?.value)}catch(e){return fail(e instanceof Error?e.message:'Неверное значение.')}
@@ -83,7 +83,7 @@ export async function createClient3WatchReference(db:D1Database,actor:AuthUser,r
 }
 export async function updateClient3WatchReference(db:D1Database,actor:AuthUser,
  raw:{id?:unknown;kind?:unknown;value?:unknown}){
- if(actor.role!=='admin')return fail('Редактировать справочники может администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Редактировать справочники может администратор.',403)
  const publicId=Number(raw.id)
  if(!Number.isSafeInteger(publicId)||publicId<1||!validKind(raw.kind))
    return fail('Выберите существующее значение и справочник.')
@@ -109,7 +109,7 @@ export async function updateClient3WatchReference(db:D1Database,actor:AuthUser,
  return json({ok:true,id:publicId,value,updated:true})
 }
 export async function deleteClient3WatchReference(db:D1Database,actor:AuthUser,publicId:number){
- if(actor.role!=='admin')return fail('Удалять значения может только администратор.',403)
+ if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Удалять значения может только администратор.',403)
  if(!Number.isSafeInteger(publicId)||publicId<1)return fail('Выберите значение.')
  const key=decode(publicId),name=key.city?'watch_city_values':key.extra?'watch_reference_values_v5':'watch_reference_values'
  const old=await db.prepare(`SELECT id,kind,value,is_active FROM ${name} WHERE id=?`)
