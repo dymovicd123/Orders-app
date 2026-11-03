@@ -61,8 +61,8 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
   prefill?:{source:Source;watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'}
 }){
   // Each browser tab has an independent draft. Reload or navigation restores it.
-  const previous=useMemo(()=>initialRevision||prefill?null:
-    readWarehouseOperationDraft(brand),[brand,initialRevision,prefill])
+  const previous=useMemo(()=>initialRevision?null:
+    readWarehouseOperationDraft(brand),[brand,initialRevision])
   const [draftStored,setDraftStored]=useState(true)
   const [rows,setRows]=useState<Row[]>([])
   const [loading,setLoading]=useState(true)
