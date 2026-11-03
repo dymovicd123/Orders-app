@@ -114,23 +114,29 @@ export async function startClient3WatchRevision(
  const id=inventoryStocktakeSessionId(source,full?'full':'selective')
  const createdBy=owner(brandId)+'admin:'+actor.id
  const modelFilter=full?'':` AND wp.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`
+ // A stocktake counts real physical watches, including ones the system
+ // currently believes to have ZERO. A newly catalogued SKU may not yet have
+ // an inventory_stock row: keep it in the revision with baseline 0 and NULL
+ // stock_id. Main's save/completion code supports this and creates the stock
+ // row only when a confirmed count differs from the baseline.
  const stockQuery=`
-   SELECT s.id AS stock_id,s.quantity,s.reserved_quantity,
+   SELECT s.id AS stock_id,COALESCE(s.quantity,0) AS quantity,
+     COALESCE(s.reserved_quantity,0) AS reserved_quantity,
      wp.catalog_product_id AS product_id,wv.catalog_variant_id AS variant_id,
      wp.model_name,cv.category,cv.gender,cv.color,cv.material,cv.length,cv.size_label
-   FROM inventory_stock s
-   JOIN watch_variants wv ON wv.catalog_variant_id=s.variant_id AND wv.is_active=1
+   FROM watch_variants wv
    JOIN watch_products wp ON wp.id=wv.watch_product_id AND wp.is_active=1
    JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id AND cv.is_active=1
-   WHERE wp.brand_id=? AND s.inventory_source=?
-     AND (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0)
+   LEFT JOIN inventory_stock s ON s.variant_id=wv.catalog_variant_id
+     AND s.inventory_source=?
+   WHERE wp.brand_id=? AND wv.is_active=1
      ${modelFilter}
  `
- const arg=[brandId,source,...(full?[]:[JSON.stringify(ids)])]
+ const arg=[source,brandId,...(full?[]:[JSON.stringify(ids)])]
  const found=await db.prepare(`SELECT COUNT(*) AS qty FROM (${stockQuery})`)
    .bind(...arg).first<{qty:number}>()
  if(!Number(found?.qty||0))
-   return error('У выбранных часов нет остатков или резервов. Сначала оформите приход либо добавьте их в действующую ревизию.')
+   return error('У выбранных моделей пока нет активных комплектаций. Добавьте комплектацию в каталог, затем начните проверку.')
  // Main's D1 session/item schema and Main's completion/count functions remain
  // authoritative. Both inserts share one atomic D1 batch, exactly like Main.
  const batch=await db.batch([
