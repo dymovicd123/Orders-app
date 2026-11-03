@@ -28,3 +28,16 @@
  .client3-team-main .team-access-modal{width:min(96vw,590px)}
  .client3-team-main .team-summary-clean{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+/* Main-style employee onboarding: one form, one server commit for staff and login. */
+.client3-team-main .client3-access-onboarding{display:block;border:1px solid #cfe0ff;border-radius:16px;background:#f8fbff;padding:16px;margin:8px 0}
+.client3-team-main .client3-access-onboarding .team-access-onboarding-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.client3-team-main .client3-access-onboarding .team-access-onboarding-head>div{display:grid;gap:5px;flex:1;min-width:220px}
+.client3-team-main .client3-access-onboarding .team-access-onboarding-head>div>span{font-size:.85rem;color:#506581}
+.client3-team-main .client3-access-onboarding .team-access-toggle{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+.client3-team-main .client3-access-onboarding .team-access-toggle input{width:16px;height:16px}
+.client3-team-main .team-access-onboarding-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.client3-team-main .team-access-onboarding-fields>label{display:grid;gap:6px;min-width:0}
+.client3-team-main .team-access-onboarding-fields>label>small{color:#62748b;font-size:.75rem}
+.client3-team-main .team-access-onboarding-fields .team-access-force-change{grid-column:1/-1;display:flex;align-items:center;gap:9px}
+.client3-team-main .team-access-onboarding-fields .team-access-force-change input{width:16px;height:16px}
+@media(max-width:720px){.client3-team-main .team-access-onboarding-fields{grid-template-columns:minmax(0,1fr)}}
