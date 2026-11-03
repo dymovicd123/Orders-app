@@ -23,7 +23,7 @@ const choice=(values:readonly string[],current:string)=>{
 }
 const label=(value:string)=>[
  ...WATCH_OPTIONS.movements,...WATCH_OPTIONS.braceletMaterials,...WATCH_OPTIONS.dialColors
-].find(x=>x.value===value)?.label||value
+].find(x=>x.value===value)?.label.toLocaleUpperCase('ru-RU')||value.toLocaleUpperCase('ru-RU')
 
 /** Main's catalog variant editor, adapted for watch identity and shared reference values. */
 export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,disabled,onSaved,onCreateReplacement}:Props){
@@ -99,7 +99,7 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
            <select value={draft.braceletColor||''} required
              onChange={e=>setDraft({...draft,braceletColor:e.target.value})}>
              <option value="">Выберите цвет</option>
-             {choice(strapColors,draft.braceletColor||'').map(value=><option key={value} value={value}>{value}</option>)}
+             {choice(strapColors,draft.braceletColor||'').map(value=><option key={value} value={value}>{value.toLocaleUpperCase('ru-RU')}</option>)}
            </select>
          </label>}
          {error&&<p className="catalog-retirement-modal-error" role="alert">{error}</p>}
