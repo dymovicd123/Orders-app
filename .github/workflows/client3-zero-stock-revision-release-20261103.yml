@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
-          test "$(git rev-parse HEAD^)" = b61b484b4ea11a7489b0d23ce4f0f7452cc63ef5
+          test "$(git rev-parse HEAD^)" = 586b1474755b0d2f9d3ed1bb632c8350c5ed8bc4
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-zero-stock-revision-release-20261103.yml'
           test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
           test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
