@@ -390,17 +390,14 @@ export function WatchClient3App() {
                 onSave={saveWatchOrder}/>
           </section>:
         activeSection==='returns'?<>
-          <article className="card wide"><div className="card-label">Возвраты</div>
-            <div className="card-meta">Для оформления возврата выберите исходный заказ во вкладке «Все заказы». Ниже находится очередь физической приёмки возвратов и старых часов после обмена.</div>
-            <button type="button" className="secondary compact" onClick={()=>goTo('orders')}>Открыть заказы</button></article>
-          {brands.length&&<WatchReturnsPanel key={'returns-'+catalogVersion} brands={brands.map(x=>x.code)}/>}
+          {brands.length>0&&<WatchOrdersPanel workflow="returns" key={'return-order-flow-'+catalogVersion}
+            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
+          {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion}
+            brands={brands.map(x=>x.code)}/>}
         </>:
         activeSection==='exchange'?<>
-          <article className="card wide"><div className="card-label">Обмены</div>
-            <div className="card-meta">Откройте отправленный заказ и выберите «Обменять часы». Для сохранности остатков действуют проверки точного SKU, цены и отправки.</div></article>
-          {brands.length&&<WatchOrdersPanel key={'exchange-'+catalogVersion}
-            allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>}
+          {brands.length>0&&<WatchOrdersPanel workflow="exchange" key={'exchange-order-flow-'+catalogVersion}
+            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}
