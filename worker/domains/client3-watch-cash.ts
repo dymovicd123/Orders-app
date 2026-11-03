@@ -10,7 +10,6 @@ const error=(message:string,status=409)=>json({ok:false,message},{status})
 const exact=(raw:unknown)=>typeof raw==='number'&&Number.isSafeInteger(raw)&&raw>=0&&raw<=1_000_000_000
 const businessDate=()=>new Date(Date.now()+5*3600_000).toISOString().slice(0,10)
 const parseRequest=(raw:unknown)=>typeof raw==='string'&&/^[a-zA-Z0-9-]{12,100}$/.test(raw)?raw:null
-const cashMethod=(method:string)=>method==='НАЛИЧНЫЕ'||method==='CASH'||method==='CASH KZT'
 const methodExpr=`UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','CASH','CASH KZT')`
 type Register={brand_id:number;opening_amount:number;financial_event_watermark:number;
  initialized_at:string;initialized_by:number}
