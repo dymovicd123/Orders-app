@@ -1,5 +1,5 @@
 name: Client3 Main parity batch QA (isolated, no deploy)
-# Regression pass 8: Main shortage form parity and new client/demand/finance integration.
+# Regression pass 9: update brand-gated order form acceptance against actual Main parity.
 on:
   push:
     branches: [client3/main-parity-hardening-20261103]
