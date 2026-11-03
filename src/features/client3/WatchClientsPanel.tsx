@@ -7,7 +7,8 @@ type Client={phoneKey:string;name:string;phone:string;city:string;lastDate:strin
  orderCount:number;sales:number;received:number;returned:number;debt:number}
 type Order={orderId:number;externalId:string;orderDate:string;recipientName:string;city:string;
  totalAmount:number;receivedAmount:number;returnAmount:number;debtAmount:number;shippingStatus:string}
-type Response<T>={ok:boolean;message?:string;rows?:T[];total?:number;hasMore?:boolean}
+type ClientSummary={totalClients:number;repeatClients:number;debtClients:number;totalDebt:number}
+type Response<T>={ok:boolean;message?:string;rows?:T[];total?:number;hasMore?:boolean;summary?:ClientSummary}
 export function WatchClientsPanel({brands,onOpenOrder}:{
  brands:readonly WatchBrand[];
  onOpenOrder?:(order:{brand:WatchBrand;orderId:number;externalId:string;orderDate:string})=>void
@@ -15,6 +16,8 @@ export function WatchClientsPanel({brands,onOpenOrder}:{
  const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
  const [search,setSearch]=useState('')
  const [query,setQuery]=useState('')
+ const [mode,setMode]=useState<'all'|'repeat'|'debt'>('all')
+ const [summary,setSummary]=useState<ClientSummary>({totalClients:0,repeatClients:0,debtClients:0,totalDebt:0})
  const [page,setPage]=useState(0)
  const [revision,setRevision]=useState(0)
  const [rows,setRows]=useState<Client[]>([])
@@ -36,16 +39,17 @@ export function WatchClientsPanel({brands,onOpenOrder}:{
  useEffect(()=>{
    const controller=new AbortController()
    setSelected(null);setOrders([]);setBusy(true);setError('')
-   const p=new URLSearchParams({brand,q:query,limit:'50',offset:String(page*50)})
+   const p=new URLSearchParams({brand,q:query,mode,limit:'50',offset:String(page*50)})
    void read<Client>('/api/client3/watches/clients?'+p,controller.signal).then(value=>{
      if(!controller.signal.aborted){
        setRows(value.rows||[]);setTotal(Number(value.total||0))
+       if(value.summary)setSummary(value.summary)
        setHasMore(Boolean(value.hasMore))
      }
    }).catch(e=>{if(!controller.signal.aborted)setError(e instanceof Error?e.message:'Ошибка клиентов.')})
      .finally(()=>{if(!controller.signal.aborted)setBusy(false)})
    return ()=>controller.abort()
- },[brand,query,page,revision])
+ },[brand,query,mode,page,revision])
  const submit=(e:FormEvent)=>{e.preventDefault();setPage(0);setQuery(search.trim())}
  const open=async(client:Client)=>{
    if(selected?.phoneKey===client.phoneKey){setSelected(null);setOrders([]);return}
@@ -70,23 +74,38 @@ export function WatchClientsPanel({brands,onOpenOrder}:{
    finally{setOrderBusy(false)}
  }
  return <article className="card wide sector-clients client3-watch-clients" id="clients">
-   <div className="card-label">Клиенты</div>
-   <div className="card-meta">История покупок выбранного бренда. Клиенты объединяются по известному телефону,
-     а не по совпадению имени. Сведения других брендов без разрешения не показываются.</div>
+   <div className="clients-clean-head">
+     <div><div className="card-label">Клиенты</div><h2>История клиентов</h2>
+       <p>Найдите покупателя, откройте его заказы и проверьте долг. Данные двух брендов учитываются отдельно.</p></div>
+     <button className="secondary compact" type="button" disabled={busy}
+       onClick={()=>setRevision(x=>x+1)}>{busy?'Обновляю…':'Обновить'}</button>
+   </div>
+   <div className="summary-grid clients-summary-grid clients-summary-clean">
+     <div className="summary-card"><span>Всего клиентов</span><strong>{summary.totalClients}</strong></div>
+     <div className="summary-card"><span>Повторные</span><strong>{summary.repeatClients}</strong></div>
+     <div className="summary-card danger-card"><span>С долгом</span><strong>{summary.debtClients}</strong></div>
+     <div className="summary-card danger-card"><span>Общий долг</span><strong>{watchMoney(summary.totalDebt)}</strong></div>
+   </div>
+   <div className="client-mode-tabs client3-client-modes" role="group" aria-label="Фильтр клиентов">
+     {([['all','Все'],['repeat','Повторные'],['debt','С долгом']] as const).map(([value,label])=>
+       <button type="button" key={value} className={'secondary compact '+(mode===value?'is-active':'')}
+         aria-pressed={mode===value}
+         onClick={()=>{setMode(value);setPage(0)}}>{label}</button>)}
+   </div>
    <div className="orders-filter-panel">
      <div className="orders-filter-grid">
        <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
          {brands.map(x=><option key={x} value={x}>{x}</option>)}
        </select></label>
-       <form onSubmit={submit}><label>Поиск по имени или телефону
-         <input value={search} maxLength={100} placeholder="ФИО или номер" onChange={e=>setSearch(e.target.value)}/>
+       <form onSubmit={submit}><label>Поиск по имени, телефону или городу
+         <input value={search} maxLength={100} placeholder="Имя, телефон или город" onChange={e=>setSearch(e.target.value)}/>
        </label><button type="submit" className="primary">Найти</button></form>
-       <button type="button" className="secondary" disabled={busy} onClick={()=>setRevision(x=>x+1)}>Обновить</button>
+       {(search||query)&&<button type="button" className="secondary compact"
+         onClick={()=>{setSearch('');setQuery('');setPage(0)}}>Очистить</button> 
      </div>
    </div>
-   <div className="summary-grid compact-summary">
-     <div className="summary-card"><span>Клиентов по фильтру</span><strong>{total}</strong></div>
-     <div className="summary-card"><span>На странице</span><strong>{rows.length}</strong></div>
+   <div className="mini-panel-head client3-client-list-count">
+     <div><h3>Список клиентов</h3><p className="mini-panel-note">Показано {rows.length} из {total}. Нажмите «История», чтобы увидеть заказы.</p></div>
    </div>
    {busy&&<p role="status">Загружаю клиентов…</p>}
    {error&&<p role="alert" className="app-alert error">{error}</p>}
