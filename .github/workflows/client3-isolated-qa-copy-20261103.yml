@@ -15,9 +15,9 @@ jobs:
     timeout-minutes: 40
     env:
       CI: "true"
-      GH_TOKEN: ${ github.token }
-      CLOUDFLARE_API_TOKEN: ${ secrets.CLOUDFLARE_API_TOKEN }
-      CLOUDFLARE_ACCOUNT_ID: ${ secrets.CLOUDFLARE_ACCOUNT_ID }
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       SOURCE_DB: orders_db_client3_old_client
       SOURCE_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
       QA_WORKER: orders-app-client3-qa-20261103
@@ -66,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          export QA_DB="orders_db_client3_qa_${ GITHUB_RUN_ID }"
+          export QA_DB="orders_db_client3_qa_${GITHUB_RUN_ID}"
           echo "QA_DB=$QA_DB" >> "$GITHUB_ENV"
           test "$QA_DB" != "$SOURCE_DB"
           status=$(curl -sS -o /tmp/qa-db-create.json -w '%{http_code}' \
