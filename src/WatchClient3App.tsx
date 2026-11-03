@@ -88,11 +88,11 @@ export function WatchClient3App() {
   const [catalogVersion,setCatalogVersion]=useState(0)
   const [watchRefOptions,setWatchRefOptions]=useState<{
     paymentMethods:string[];deliveryMethods:string[];
-    movements:string[];bracelets:string[];dials:string[];leatherColors:string[]
+    movements:string[];bracelets:string[];dials:string[];leatherColors:string[];cities:string[]
   }>({
     paymentMethods:['KASPI GOLD','KASPI RED','Рассрочка'],
     deliveryMethods:['Казпочта','Курьер','Самовывоз','Межгород'],
-    movements:[],bracelets:[],dials:[],leatherColors:[],
+    movements:[],bracelets:[],dials:[],leatherColors:[],cities:[],
   })
 
   const refreshAuth = useCallback(async () => {
@@ -180,6 +180,7 @@ export function WatchClient3App() {
         bracelets:result.rows.filter(row=>row.kind==='bracelets').map(row=>row.value),
         dials:result.rows.filter(row=>row.kind==='dials').map(row=>row.value),
         leatherColors:result.rows.filter(row=>row.kind==='leatherColors').map(row=>row.value),
+        cities:result.rows.filter(row=>row.kind==='cities').map(row=>row.value),
       })
     }).catch(cause=>{if(!controller.signal.aborted)setError(
       cause instanceof Error?cause.message:'Не удалось загрузить способы оплаты и доставки')})
