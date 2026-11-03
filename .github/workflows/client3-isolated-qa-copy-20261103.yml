@@ -62,6 +62,38 @@ jobs:
           npx wrangler d1 time-travel info "$SOURCE_DB" --config wrangler.jsonc --json > /tmp/qa-source-bookmark.json
           jq -e '.bookmark|type=="string" and length>15' /tmp/qa-source-bookmark.json >/dev/null
           echo "Client3 source is healthy; recovery bookmark captured. No source writes."
+      - name: Read-only export of third D1 into ephemeral runner
+        run: |
+          set -euo pipefail
+          umask 077
+          if ! npx wrangler d1 export "$SOURCE_DB" --remote \
+            --config wrangler.jsonc --skip-confirmation \
+            --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
+            echo "::error::D1 source export failed. No production data was changed."
+            python3 - <<'PY'
+            from pathlib import Path
+            import re
+            log=Path('/tmp/qa-export-log').read_text(encoding='utf-8',errors='replace')
+            hints=('error','failed','export','virtual','unsupported','invalid','unknown','permission','authorization','database','authentication','confirmation','tables')
+            for line in log.splitlines():
+              if any(word in line.lower() for word in hints):
+                safe=re.sub(r"""'[^']*'|"[^"]*" """.strip(), '[redacted]', line)
+                safe=re.sub(r'[a-fA-F0-9]{24,}', '[redacted-identifier]', safe)
+                print('Export diagnostic:',safe[:250])
+            PY
+            exit 1
+          fi
+          test -s /tmp/client3-qa-snapshot.sql
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/client3-qa-snapshot.sql')
+          original=p.read_text(encoding='utf-8')
+          lines=original.splitlines(keepends=True)
+          filtered=[s for s in lines if s.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;')]
+          assert len(original)>1000 and ('CREATE TABLE' in original.upper())
+          p.write_text(''.join(filtered),encoding='utf-8')
+          print('Ephemeral D1 SQL snapshot prepared (contents withheld).')
+          PY
       - name: Create a uniquely named D1 database (never reuse the source)
         run: |
           set -euo pipefail
@@ -96,27 +128,6 @@ jobs:
           test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
           test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
           echo "A fresh isolated D1 was created; exact source D1 ID is not bound."
-      - name: Read-only export of third D1 into ephemeral runner
-        run: |
-          set -euo pipefail
-          umask 077
-          if ! npx wrangler d1 export "$SOURCE_DB" --remote \
-            --config wrangler.jsonc --skip-confirmation \
-            --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
-            echo "::error::D1 source export failed. No production data was changed."
-            exit 1
-          fi
-          test -s /tmp/client3-qa-snapshot.sql
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('/tmp/client3-qa-snapshot.sql')
-          original=p.read_text(encoding='utf-8')
-          lines=original.splitlines(keepends=True)
-          filtered=[s for s in lines if s.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;')]
-          assert len(original)>1000 and ('CREATE TABLE' in original.upper())
-          p.write_text(''.join(filtered),encoding='utf-8')
-          print('Ephemeral D1 SQL snapshot prepared (contents withheld).')
-          PY
       - name: Import snapshot into QA D1 only
         run: |
           set -euo pipefail
