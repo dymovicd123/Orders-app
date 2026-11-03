@@ -49,8 +49,9 @@ assert(orders.includes('LinkedTableScroll')&&orders.includes('watch-main-orders-
  'Orders must be a proper Main-style scrollable table')
 assert(logistics.includes('LinkedTableScroll')&&logistics.includes('watch-main-logistics-table'),
  'Logistics must show a Main-style table')
-assert(finance.includes('LinkedTableScroll')&&finance.includes('watch-main-finance-table'),
- 'Finance must show a Main-style table')
+assert(finance.includes('LinkedTableScroll')&&finance.includes('finance-days-truth-table')&&
+ finance.includes('finance-operation-ledger'),
+ 'Finance must include Main-style day reconciliation and operation journal tables')
 assert(orderCss.includes('order-step-card'),'Order workflow uses Main numbered steps')
 assert(shell.includes('WatchUserAccessPanel')&&shell.includes('WatchBrandAccessPanel'),
  'Admin tools for accounts and brand access must be retained')
