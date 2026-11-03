@@ -1,0 +1,38 @@
+name: Client3 Main cash money plans Leads acceptance (NO KPI NO DEPLOY)
+on:
+  push:
+    branches: [client3/cash-plans-leads-no-kpi-20261103]
+    paths: ['.github/workflows/client3-cash-plans-leads-acceptance-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Isolated third Worker and no KPI
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+          test -f migrations/client3-watch/1002_cash_plans_leads_no_kpi.sql
+          test -f src/features/client3/WatchLeadsPanel.tsx
+          test -f src/features/client3/WatchPlansPanel.tsx
+          ! grep -iq "ProductKpiSection" src/features/client3/WatchPlansPanel.tsx
+      - run: npm ci
+      - name: Full real SQLite Main stock/order/returns/payment regression with cash cycles and plans/leads
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Strict TS and production Vite build
+        run: npm run build
+      - name: Record CI checkpoint
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Main cash/plans/leads NO KPI source gate: $RESULT, https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID SHA $GITHUB_SHA. Full SQLite, cash pause/reversal/cycles, brand rights, monetary manager/department plans, Leads+Call Centre and TypeScript. No deployment or remote database operations. Logistics invoice intentionally deferred."
