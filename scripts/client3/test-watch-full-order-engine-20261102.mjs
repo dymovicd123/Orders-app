@@ -21,6 +21,9 @@ import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
+import {listClient3WatchClients,listClient3WatchCustomerOrders} from '../../worker/domains/client3-watch-clients.ts'
+import {listClient3WatchDemand} from '../../worker/domains/client3-watch-demand.ts'
+import {getClient3WatchFinance} from '../../worker/domains/client3-watch-finance.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '../../worker/domains/client3-watch-report-details.ts'
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
@@ -1562,5 +1565,29 @@ assert.equal(customNotInReferences.code,'WATCH_REFERENCE_NOT_FOUND')
 assert.equal(count('inventory_stock'),stockBeforeNewVariants,'Built-in reference repair cannot invent physical stock')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
+// New Main-parity workspaces must query real D1 migration schema, not just build.
+const clientBook=await parse(listClient3WatchClients(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/clients?limit=15')))
+assert.equal(clientBook.status,200,JSON.stringify(clientBook))
+assert(clientBook.total>0&&clientBook.rows.length>0,'Clients workspace must return purchased customers')
+const firstClientKey=clientBook.rows[0].phoneKey
+const customerOrders=await parse(listClient3WatchCustomerOrders(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/clients/orders?phoneKey='+encodeURIComponent(firstClientKey))))
+assert.equal(customerOrders.status,200,JSON.stringify(customerOrders))
+assert(customerOrders.total>0,'Client drilldown must reach order history')
+const demandPage=await parse(listClient3WatchDemand(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/demand?from=2026-01-01&to=2026-12-31&limit=50')))
+assert.equal(demandPage.status,200,JSON.stringify(demandPage))
+assert(Number(demandPage.summary.soldQuantity)>0,'Watch SKU statistics must include sales, not only dispatches')
+const ledgerPage=await parse(getClient3WatchFinance(db,admin,1,
+ new URL('https://test.invalid/api/client3/watches/finance?from=2026-01-01&to=2026-12-31&limit=50')))
+assert.equal(ledgerPage.status,200,JSON.stringify(ledgerPage))
+assert(ledgerPage.totals.eventCount>=ledgerPage.rows.length,'Money ledger pagination needs complete totals')
+const otherBrandBook=await parse(listClient3WatchClients(db,admin,2,
+ new URL('https://test.invalid/api/client3/watches/clients?limit=20')))
+assert.equal(otherBrandBook.status,200,JSON.stringify(otherBrandBook))
+assert(otherBrandBook.rows.every(x=>!clientBook.rows.some(c=>c.phoneKey===x.phoneKey&&c.phone===x.phone)) ||
+ otherBrandBook.rows.length>0,'Customer views are scoped by brand, not global clients')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
