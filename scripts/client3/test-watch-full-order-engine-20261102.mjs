@@ -1365,6 +1365,47 @@ const forbiddenTwoSwap=await parse(exchangeClient3WatchSet(db,manager,2,twoOld.o
 }))
 assert.equal(forbiddenTwoSwap.status,404)
 
+// Main exchange parity: explicit fact the NEW replacement has already shipped,
+// and Main's financial/order transaction must preserve the exact watch SKU.
+const alreadyIssuedOld=await createSetOld('watch-main-actual-sent-20261104',40000)
+const alreadySentExchange=await parse(exchangeClient3WatchSet(db,manager,1,alreadyIssuedOld.created.orderId,{
+ requestId:'watch-main-replacement-sent-20261104',
+ expectedOrderTotal:40000,oldItems:[oldSelection(alreadyIssuedOld.old)],
+ newItems:[{manual:manualReplacement,source:'office',quantity:1,
+  unitPrice:40000,engravingText:'',shipmentState:'sent',issuePossessionConfirmed:true}],
+ paymentParts:[],refundParts:[],reason:'Клиент уже получил новую модель взамен старой',
+}))
+assert.equal(alreadySentExchange.status,200,JSON.stringify(alreadySentExchange))
+assert.equal(alreadySentExchange.newShippingStatus,'sent')
+const sentNewWatch=sqlite.prepare(`SELECT oi.id,oi.stock_writeoff_status,wi.watch_variant_id
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1`)
+ .get(alreadyIssuedOld.created.orderId)
+assert(sentNewWatch.watch_variant_id>0,'Immediate shipped replacement retains exact brand watch link')
+assert.equal(sentNewWatch.stock_writeoff_status,'fulfilled',
+ 'Main should mark a physically given replacement as issued in the same exchange')
+
+// Main returns parity: received watches can be booked immediately in the right
+// physical source; an item still in transit must not be added to warehouse.
+const alreadyReceivedOld=await createSetOld('watch-main-return-arrived-20261104',40000)
+const beforeReceivedStock=stock('warehouse').quantity
+const arrivedReturn=await parse(createClient3WatchReturn(db,manager,1,alreadyReceivedOld.created.orderId,{
+ requestId:'watch-main-return-received-20261104',kind:'both',
+ quantity:1,items:[{orderItemId:alreadyReceivedOld.old.id,quantity:1,physicalState:'warehouse'}],
+ amount:1000,paymentMethod:'KASPI GOLD',
+ refundParts:[{method:'KASPI GOLD',amount:1000}],reason:'Клиент привёз часы в офис',
+}))
+assert.equal(arrivedReturn.status,200,JSON.stringify(arrivedReturn))
+assert.equal(arrivedReturn.physicalReceiptPending,false)
+const arrivedReceipt=sqlite.prepare(`SELECT ri.physical_tracking,ri.physical_received_at,ri.inventory_source
+ FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=?
+ ORDER BY ri.id DESC LIMIT 1`).get(alreadyReceivedOld.created.orderId)
+assert.equal(arrivedReceipt.physical_tracking,1)
+assert(arrivedReceipt.physical_received_at,'Received-in-office return must record physical receipt')
+assert.equal(arrivedReceipt.inventory_source,'warehouse')
+assert(stock('warehouse').quantity>=beforeReceivedStock,
+ 'Main must not deduct inventory during a registered physical return')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 // Critical pre-release smoke only for Main-style watch dashboard, reports
 // and brand-separated cash; full logged-in browser acceptance remains later.
 const reportUrl=new URL('https://client3.test/api/client3/watches/analytics?from=2026-01-01&to=2026-12-31')
