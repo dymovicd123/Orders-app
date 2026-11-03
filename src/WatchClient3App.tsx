@@ -7,6 +7,8 @@ import {WatchWarehouseHistory} from './features/client3/WatchWarehouseStage5'
 import {WatchStockMainBrowse} from './features/client3/WatchStockMainBrowse'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
+import {WatchDashboardPanel} from './features/client3/WatchDashboardPanel'
+import {WatchReportsPanel} from './features/client3/WatchReportsPanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
 import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
 import {WatchUserAccessPanel} from './features/client3/WatchUserAccessPanel'
@@ -31,8 +33,10 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+type WatchSection = 'dashboard'|'reports'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
+  dashboard:{title:'Инфопанель',description:'Продажи, деньги и внимание к срокам логистики.',area:'Обзор'},
+  reports:{title:'Отчёты',description:'Брендовые отчёты Main по оплатам, товарам, городам и менеджерам.',area:'Финансы'},
   orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
   create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
   logistics:{title:'Логистика',description:'Гравировка, сроки исполнения и подготовка к отправке.',area:'Рабочие процессы'},
@@ -79,7 +83,7 @@ export function WatchClient3App() {
   const [error, setError] = useState('')
   const [brands, setBrands] = useState<BrandResponse['brands']>([])
   const [brand, setBrand] = useState<WatchBrand | ''>('')
-  const [tab, setTab] = useState<WatchSection>('orders')
+  const [tab, setTab] = useState<WatchSection>('dashboard')
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
@@ -300,7 +304,7 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['orders','create','warehouse','operations','revision','history','catalog','finance','returns','exchange','references'].includes(tab))
+    (!canSales&&['dashboard','reports','orders','create','warehouse','operations','revision','history','catalog','finance','returns','exchange','references'].includes(tab))
       ? 'logistics':tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
@@ -316,6 +320,11 @@ export function WatchClient3App() {
     onRefresh={()=>{setCatalogVersion(x=>x+1)}}
     error={error} success={success} warning={warning}>
     <div className="client3-main-page">
+      {activeSection==='dashboard'&&brands.length>0&&
+        <WatchDashboardPanel brands={brands.map(x=>x.code)}
+          onNavigate={section=>goTo(section)}/>}
+      {activeSection==='reports'&&brands.length>0&&
+        <WatchReportsPanel brands={brands.map(x=>x.code)}/>}
       {['orders','create','returns','exchange','legacy'].includes(activeSection)&&<>
         <OrdersHeaderSection ctx={{
           orderPanel:orderTab,
@@ -425,7 +434,8 @@ export function WatchClient3App() {
         onBrandChange={setBrand} canEdit={canAdmin} onOpenCatalog={()=>goTo('catalog')}
         onOpenStaff={canAdmin?()=>goTo('staff'):undefined}/>}
       {activeSection==='finance'&&brands.length>0&&
-        <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}/>}
+        <WatchFinancePanel key={'fin-'+catalogVersion} brands={brands.map(x=>x.code)}
+          isAdmin={canAdmin} onOpenReferences={()=>goTo('references')}/>}
       {['staff','accounts'].includes(activeSection)&&canAdmin&&<>
         <article className="card wide client3-main-erp-account-tabs">
           <button type="button" className={'secondary compact '+(accountTab==='staff'?'is-active':'')}
