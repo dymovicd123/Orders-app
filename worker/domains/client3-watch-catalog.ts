@@ -32,7 +32,6 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
     LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=wv.id
     WHERE wp.brand_id=?
     ORDER BY wp.model_name COLLATE NOCASE,wp.id,wv.id
-    LIMIT 500
   `).bind(brandId).all<Record<string,unknown>>()
   return json({ok:true,rows:records.results||[]})
 }
