@@ -30,3 +30,23 @@
 - Старый issue #774 W1c–W5 содержит устаревшие незакрытые галочки; статус сверять с реальными релизами и этим листом.
 
 Не писать «полностью готово», пока не пройдена указанная браузерная приёмка и не решён W3.
+
+
+## Update 03.11.2026: Main daily workspaces released
+
+**New live release:** https://github.com/dymovicd123/Orders-app/actions/runs/41602666016
+**Isolated real SQL/TS acceptance:** https://github.com/dymovicd123/Orders-app/actions/runs/41602478532
+
+- Fixed native city dropdown vs prior `datalist` and exposed a separate warehouse `Ревизия` entry.
+- Dashboard (month/day real brand KPIs and urgency-ranked logistics queue), 7 standard watch report categories, financial Main six-tab UI and brand-specific real cash accounts, logistics urgency/stage tabs released. Main and Branch2 unchanged. Only additive D1 brand cash tables.
+- Replace old claim that **no** reports/cash were present. They are now present in a first watch-adapted version.
+- The user explicitly postponed full browser/UI tests until after functionality is finished. Keep minimal build/SQL/security tests in releases.
+
+**True functional follow-ups still needed, in this order:**
+1. Complete detailed Main report drilldowns and pivots, including city→orders, date→manager/model/city, reconciliation and full branded Word/PDF exports, avoiding inaccurate substitutions.
+2. Confirm which Main Workshop invoice/print/export controls belong in watch Logistics. Keep "Готово" = engraving only, and physical shipment independent.
+3. Bring advanced Main Cash functions (cycles, reversal, audit, automatic settings) per brand. Separate cash states must never be mixed.
+4. Add real per-brand monthly Plan/KPI targets to dashboard; until then show '—', not a fabricated 0% achievement.
+5. Browser acceptance with real roles, mobile UI and corrected customer Windows select; only then mark delivered.
+
+The old W3 / browser QA checkboxes in original GitHub #774 are not up to date; rely on these actual shipped commits, CI and explicit gaps.
