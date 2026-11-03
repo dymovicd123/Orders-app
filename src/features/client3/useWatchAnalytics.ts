@@ -12,7 +12,8 @@ export type WatchAnalytics={
   logistics:{total:number;ready:number;engraving:number;overdue:number;urgent:number};
   days:AnalyticsRow[];managers:AnalyticsRow[];products:AnalyticsRow[];
   cities:AnalyticsRow[];methods:AnalyticsRow[];reconciliation:AnalyticsRow[];eventDays:AnalyticsRow[];
-  events:AnalyticsRow[];sources:AnalyticsRow[];
+  events:AnalyticsRow[];sources:AnalyticsRow[];debtorOrders:AnalyticsRow[];
+  kinds:AnalyticsRow[];moneyEventCount:number;
 }
 export const watchMoney=(n:unknown)=>
   Number(n||0).toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₸'
