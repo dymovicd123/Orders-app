@@ -15,6 +15,9 @@ import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-wat
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
+import {addWatchModelAlias,listWatchModelAliases,deleteWatchModelAlias,findWatchModelByIdentity} from '../../worker/domains/client3-watch-model-aliases.ts'
+import {registerWatchModel} from '../../worker/domains/client3-watch-catalog.ts'
+import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-edit.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -92,6 +95,83 @@ assert.equal(resolvedWatch.catalogVariantId,vid)
 assert.equal(count('watch_variants'),skuCountBeforeResolve)
 assert.equal(count('watch_products'),modelCountBeforeResolve)
 assert.equal(count('inventory_stock'),0,'Resolver cannot invent stock')
+// Main catalog alias parity: explicitly bound to a real model and brand, then
+// reuse exactly its original watch_variant_id and canonical catalog variant.
+const addedAlias=await parse(addWatchModelAlias(db,admin,1,{
+ watchProductId:1,alias:'  ИНЖЕНЕРНАЯ СЕРИЯ  ',
+}))
+assert.equal(addedAlias.status,200,JSON.stringify(addedAlias))
+assert.equal(addedAlias.created,true)
+const storedAliases=await parse(listWatchModelAliases(db,admin,1,1))
+assert.equal(storedAliases.rows.length,1)
+assert.equal(storedAliases.rows[0].aliasText,'ИНЖЕНЕРНАЯ СЕРИЯ')
+const aliasCountBefore=count('watch_variants'),aliasModelsBefore=count('watch_products')
+const byAlias=await ensureManualWatchOrderSku(db,admin,1,{
+ modelName:'инженерная-серия',gender:'male',movement:'quartz',
+ braceletMaterial:'leather',dialColor:'black',braceletColor:'ЧЁРНЫЙ',
+})
+assert.equal(byAlias.watchVariantId,1)
+assert.equal(byAlias.catalogVariantId,vid)
+assert.equal(count('watch_variants'),aliasCountBefore)
+assert.equal(count('watch_products'),aliasModelsBefore)
+assert.equal(count('inventory_stock'),0,'Aliases must not add physical stock')
+const repeatedAlias=await parse(addWatchModelAlias(db,admin,1,{
+ watchProductId:1,alias:'инженерная–серия',
+}))
+assert.equal(repeatedAlias.alreadyExists,true)
+const aliasModelCreate=await parse(registerWatchModel(db,admin,1,{
+ modelName:'ИНЖЕНЕРНАЯ-СЕРИЯ',
+}))
+assert.equal(aliasModelCreate.watchProductId,1,'Alias must not create a new model')
+assert.equal(count('watch_products'),aliasModelsBefore)
+const canonicalAlias=await parse(addWatchModelAlias(db,admin,1,{
+ watchProductId:1,alias:'REAL—ENGINE TEST',
+}))
+assert.equal(canonicalAlias.status,400,'Canonical spelling cannot be added as an alias')
+const otherBrandView=await parse(listWatchModelAliases(db,admin,2,1))
+assert.equal(otherBrandView.status,404,'Another brand must not read this model aliases')
+assert.equal(await findWatchModelByIdentity(db,2,'инженерная серия'),null)
+const managerAliases=await parse(addWatchModelAlias(db,{
+ id:7,role:'manager',managerId:1,employeeRole:'Менеджер',
+},1,{watchProductId:1,alias:'спорное имя'}))
+assert.equal(managerAliases.status,403)
+const aliasOwner=await findWatchModelByIdentity(db,1,'инженерная серия')
+assert.equal(aliasOwner.id,1)
+const secondForAlias=sqlite.prepare(
+ "INSERT INTO watch_products(brand_id,model_name) VALUES(1,'ДРУГАЯ СЕРИЯ')").run()
+const secondAliasModelId=Number(secondForAlias.lastInsertRowid)
+const conflictingAlias=await parse(addWatchModelAlias(db,admin,1,{
+ watchProductId:secondAliasModelId,alias:'инженерная серия',
+}))
+assert.equal(conflictingAlias.status,409)
+const renameConflict=await parse(editClient3WatchModel(db,admin,1,{
+ watchProductId:secondAliasModelId,expectedName:'ДРУГАЯ СЕРИЯ',
+ modelName:'инженерная серия',
+}))
+assert.equal(renameConflict.status,409,'Rename cannot steal a model alias')
+const canonicalCollision=await parse(addWatchModelAlias(db,admin,1,{
+ watchProductId:secondAliasModelId,alias:'real—engine test',
+}))
+assert.equal(canonicalCollision.status,409)
+const brand2Shell=sqlite.prepare(
+ "INSERT INTO watch_products(brand_id,model_name) VALUES(2,'БРЕНД 2 — МОДЕЛЬ')").run()
+const brand2ModelId=Number(brand2Shell.lastInsertRowid)
+const independentAlias=await parse(addWatchModelAlias(db,admin,2,{
+ watchProductId:brand2ModelId,alias:'инженерная серия',
+}))
+assert.equal(independentAlias.status,200,'Two brands have independent alias namespaces')
+assert.equal((await findWatchModelByIdentity(db,2,'ИНЖЕНЕРНАЯ СЕРИЯ')).id,brand2ModelId)
+assert.equal((await findWatchModelByIdentity(db,1,'ИНЖЕНЕРНАЯ СЕРИЯ')).id,1)
+const removedAlias=await parse(deleteWatchModelAlias(db,admin,1,{
+ watchProductId:1,aliasId:addedAlias.id,
+}))
+assert.equal(removedAlias.status,200)
+assert.equal(await findWatchModelByIdentity(db,1,'инженерная серия'),null)
+assert.equal((await findWatchModelByIdentity(db,2,'инженерная серия')).id,brand2ModelId)
+assert.equal(count('watch_variants'),aliasCountBefore)
+assert.equal(count('inventory_stock'),0)
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+
 // Exact Main identity, no edit-distance guessing: safe Kazakh letters,
 // Unicode punctuation, standard Russian synonyms and alternative spacing
 // must resolve the existing SKU instead of creating a second watch.
