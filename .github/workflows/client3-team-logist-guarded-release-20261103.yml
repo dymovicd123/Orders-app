@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
-          test "$(git rev-parse HEAD^)" = b94c755175c6b7e6bbf88265ed0e00538faf327d
+          test "$(git rev-parse HEAD^)" = 552a010f494284b639be1b43bec55251299f2ddc
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-team-logist-guarded-release-20261103.yml'
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41623897335 --jq .conclusion)" = success
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41623897335 --jq .head_sha)" = 811aa214e379648af57377636df5c7e05e349db9
@@ -59,6 +59,7 @@ jobs:
             | ["id","name","is_active","role","phone","comment","birth_date","color_key","hired_at","dismissed_at","created_at"] as $needed
             | ($needed - $existing) as $missing
             | if ($missing|length)==0 then "CLIENT3_STAFF_SCHEMA_OK"
+              elif $missing==["birth_date"] then "CLIENT3_STAFF_SCHEMA_ADD_BIRTH_DATE_ONLY"
               else error("Missing Client3 managers columns: "+($missing|join(", "))) end
           ' /tmp/client3-staff-schema.json
           npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
@@ -85,7 +86,26 @@ jobs:
           jq -e --slurpfile roster /tmp/client3-roster.json '.managers_count == $roster[0].n' /tmp/client3-team-before.json
           npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
             --command="PRAGMA foreign_key_check" | jq -e '(if type=="array" then .[0].results else .results end) | length==0'
-      - name: Deploy ONLY existing Client3 watches Worker (no migrations)
+      - name: Add only missing birth_date column to isolated Client3 managers table
+        run: |
+          set -euo pipefail
+          # This precise schema gap was observed on live D1. One nullable column
+          # preserves all manager, account, stock and financial records.
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(managers)" > /tmp/client3-birthdate-before.json
+          if jq -e '
+            (if type=="array" then .[0].results else .results end)
+            | map(.name) | index("birth_date")==null
+          ' /tmp/client3-birthdate-before.json >/dev/null; then
+            npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+              --command="ALTER TABLE managers ADD COLUMN birth_date TEXT;" > /tmp/client3-birthdate-add.json
+            jq -e '(if type=="array" then .[0].success else .success end)==true' /tmp/client3-birthdate-add.json
+          fi
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(managers)" | jq -e '
+              (if type=="array" then .[0].results else .results end)
+              | map(.name) | index("birth_date")!=null'
+      - name: Deploy ONLY existing Client3 watches Worker after schema preflight
         run: |
           set -euo pipefail
           npx wrangler deploy --config wrangler.jsonc
@@ -129,7 +149,7 @@ jobs:
       - name: Post verified Client3-only release status
         if: success()
         run: |
-          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Team manager accounts and cross-brand Logist DEPLOYED AND VERIFIED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. PR #779 merged. Full SQLite team/accounts, brands/access, cash/order/stock regressions, TypeScript build, real D1 roster schema and counts, unauthorized auth API, pre/post financial/stock/team DB comparison, FK all passed. Only Client3 Worker deployed without migrations. Manual admin browser acceptance remains."
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Team manager accounts and cross-brand Logist DEPLOYED AND VERIFIED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. PR #779 merged. Full SQLite team/accounts, brands/access, cash/order/stock regressions, TypeScript build, real D1 roster schema and counts, unauthorized auth API, pre/post financial/stock/team DB comparison, FK all passed. Only Client3 Worker deployed; one missing nullable birth_date column was added to Client3 managers if absent, without changing any employee records. Manual admin browser acceptance remains."
       - name: Record failures without false success
         if: failure()
         run: |
