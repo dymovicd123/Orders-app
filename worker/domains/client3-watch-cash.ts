@@ -287,7 +287,7 @@ export async function resetWatchBrandCashCycle(
     SELECT c.brand_id,COALESCE(c.cycle_started_at,c.initialized_at),?,c.opening_amount,
       c.financial_event_watermark,c.cash_entry_watermark,?,?,?,?
     FROM watch_brand_cash_registers c WHERE c.brand_id=? AND ?=${cashBalanceExpr}`)
-      .bind(now,Number(lastEntry?.id||0),expected,actor.id,comment,requestId,
+      .bind(now,expected,actor.id,comment,requestId,
         brandId,expected,brandId),
   db.prepare(`UPDATE watch_brand_cash_registers SET opening_amount=0,
     financial_event_watermark=?,cash_entry_watermark=?,cycle_started_at=?,
