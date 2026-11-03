@@ -7513,6 +7513,25 @@ function removeDebtPayment(index: number) {
       return
     }
 
+    const extraReturnAmount = Number(returnDraft.extraRefundAmount || 0)
+    if (amount > 0 && returnDraft.extraRefundEnabled && (
+      !Number.isSafeInteger(extraReturnAmount)
+      || extraReturnAmount <= 0 || extraReturnAmount >= amount
+      || !returnDraft.extraRefundMethod.trim()
+      || returnDraft.extraRefundMethod.trim().toUpperCase() === returnDraft.paymentMethod.trim().toUpperCase()
+    )) {
+      setError('Для второго способа возврата выберите другой способ и сумму от 1 ₸ до суммы возврата без 1 ₸.')
+      return
+    }
+    const returnPaymentParts = amount > 0
+      ? returnDraft.extraRefundEnabled
+        ? [
+            { method: returnDraft.paymentMethod, amount: amount - extraReturnAmount },
+            { method: returnDraft.extraRefundMethod, amount: extraReturnAmount },
+          ]
+        : [{ method: returnDraft.paymentMethod, amount }]
+      : []
+
     setReturnBusy(true)
     setError(null)
     setMessage(null)
@@ -7523,6 +7542,7 @@ function removeDebtPayment(index: number) {
         returnDate: returnDraft.returnDate,
         amount,
         paymentMethod: returnDraft.paymentMethod,
+        paymentParts: returnPaymentParts,
         comment: returnDraft.comment,
         restockSource: returnDraft.restockSource,
         items: selectedReturnItems,
@@ -7683,6 +7703,41 @@ function removeDebtPayment(index: number) {
         return
       }
 
+      const extraPaymentAmount = Number(exchangeDraft.extraPaymentAmount || 0)
+      const extraRefundAmount = Number(exchangeDraft.extraRefundAmount || 0)
+      if (paymentAmount > 0 && exchangeDraft.extraPaymentEnabled && (
+        !Number.isSafeInteger(extraPaymentAmount) || extraPaymentAmount <= 0 || extraPaymentAmount >= paymentAmount
+        || !exchangeDraft.extraPaymentMethod.trim()
+        || exchangeDraft.extraPaymentMethod.trim().toUpperCase() === exchangeDraft.paymentMethod.trim().toUpperCase()
+      )) {
+        setError('Для второго способа доплаты укажите другой способ и сумму меньше получаемой доплаты.')
+        return
+      }
+      if (refundAmount > 0 && exchangeDraft.extraRefundEnabled && (
+        !Number.isSafeInteger(extraRefundAmount) || extraRefundAmount <= 0 || extraRefundAmount >= refundAmount
+        || !exchangeDraft.extraRefundMethod.trim()
+        || exchangeDraft.extraRefundMethod.trim().toUpperCase() === exchangeDraft.refundMethod.trim().toUpperCase()
+      )) {
+        setError('Для второго способа возврата укажите другой способ и сумму меньше возвращаемой.')
+        return
+      }
+      const paymentParts = paymentAmount > 0
+        ? exchangeDraft.extraPaymentEnabled
+          ? [
+              { method: exchangeDraft.paymentMethod, amount: paymentAmount - extraPaymentAmount },
+              { method: exchangeDraft.extraPaymentMethod, amount: extraPaymentAmount },
+            ]
+          : [{ method: exchangeDraft.paymentMethod, amount: paymentAmount }]
+        : []
+      const refundParts = refundAmount > 0
+        ? exchangeDraft.extraRefundEnabled
+          ? [
+              { method: exchangeDraft.refundMethod, amount: refundAmount - extraRefundAmount },
+              { method: exchangeDraft.extraRefundMethod, amount: extraRefundAmount },
+            ]
+          : [{ method: exchangeDraft.refundMethod, amount: refundAmount }]
+        : []
+
       setExchangeBusy(true)
       setError(null)
       setMessage(null)
@@ -7698,6 +7753,8 @@ function removeDebtPayment(index: number) {
           paymentAmount,
           paymentMethod: exchangeDraft.paymentMethod,
           refundMethod: exchangeDraft.refundMethod,
+          paymentParts,
+          refundParts,
           comment: exchangeDraft.comment,
         }
         const criticalKey = `exchange-set-create:${exchangeSelectedOrder.id}`
