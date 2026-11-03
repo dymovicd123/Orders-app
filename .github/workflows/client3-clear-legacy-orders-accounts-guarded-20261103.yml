@@ -1,0 +1,126 @@
+name: Client3 one-time old orders and manager logins reset
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-clear-legacy-orders-accounts-guarded-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 3}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Strict guard for approved Client3 D1, old orders only
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
+          test "$(git rev-parse HEAD^)" = 7bd9750a3ce3a6892248a0873e3cbabba474842e
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-clear-legacy-orders-accounts-guarded-20261103.yml'
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          grep -q 'client3_legacy_reset_20261103_targets' scripts/client3/clear-old-orders-and-manager-logins-20261103.sql
+          grep -q 'WHERE role=' scripts/client3/clear-old-orders-and-manager-logins-20261103.sql
+      - run: npm ci
+      - name: Prove cleanup script on fresh isolated SQLite with live-shaped tables
+        run: node --experimental-strip-types scripts/client3/test-live-legacy-reset-20261103.mjs
+      - name: Read-only exact cohort preflight, abort if changed or active cash may shift
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders o WHERE NOT EXISTS
+                (SELECT 1 FROM watch_order_details wd WHERE wd.order_id=o.id)) legacy_orders,
+              (SELECT COUNT(*) FROM watch_order_details) watch_orders,
+              (SELECT COUNT(*) FROM app_users WHERE role='manager' AND login IS NOT NULL) manager_logins,
+              (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) active_admins,
+              (SELECT COUNT(*) FROM managers) employees,
+              (SELECT COUNT(*) FROM watch_variants) watch_variants,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical_inventory,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved_inventory,
+              (SELECT COUNT(*) FROM admin_order_delete_saga_steps) pending_delete_saga_steps,
+              (SELECT COALESCE(SUM(f.amount_delta),0) FROM financial_events f
+                WHERE f.order_id IN (SELECT id FROM orders o WHERE NOT EXISTS
+                  (SELECT 1 FROM watch_order_details wd WHERE wd.order_id=o.id))
+                  AND UPPER(TRIM(f.payment_method)) IN ('НАЛИЧНЫЕ','CASH','CASH KZT')
+                  AND f.id>COALESCE((SELECT financial_event_watermark FROM watch_shared_cash_register WHERE id=1),999999999)) unpaid_cash_impact" \
+            | jq -ce '(if type=="array" then .[0].results[0] else .results[0] end)' >/tmp/client3-reset-before.json
+          cat /tmp/client3-reset-before.json
+          jq -e '.legacy_orders==2 and .manager_logins==3 and .active_admins>=1
+            and .unpaid_cash_impact==0 and .pending_delete_saga_steps==0' /tmp/client3-reset-before.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" |
+            jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+      - name: Record D1 Time Travel recovery bookmark BEFORE first deletion
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info orders_db_client3_old_client --json --config wrangler.jsonc >/tmp/client3-reset-bookmark.json
+          jq -e '.bookmark|type=="string" and length>15' /tmp/client3-reset-bookmark.json
+          bookmark="$(jq -r .bookmark /tmp/client3-reset-bookmark.json)"
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 isolated old-order/account reset BACKUP BOOKMARK recorded BEFORE writes: $bookmark. Source run https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. This is a D1 Time Travel recovery point; only two non-watch legacy orders and three manager login credentials are in scope. Main/Branch2 and all watch orders/catalog/admins excluded."
+      - name: One-time delete legacy orders and fully revoke old manager logins
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="$(cat scripts/client3/clear-old-orders-and-manager-logins-20261103.sql)" \
+            >/tmp/client3-reset-result.json
+          jq -e '(if type=="array" then . else [.] end) | all(.[]; .success==true)' /tmp/client3-reset-result.json
+      - name: Verify clean ledger and accounts while preserving watches/admins/stocks
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders o WHERE NOT EXISTS
+                (SELECT 1 FROM watch_order_details wd WHERE wd.order_id=o.id)) legacy_orders,
+              (SELECT COUNT(*) FROM watch_order_details) watch_orders,
+              (SELECT COUNT(*) FROM app_users WHERE role='manager' AND login IS NOT NULL) manager_logins,
+              (SELECT COUNT(*) FROM app_users WHERE role='manager' AND is_active=1) active_manager_accounts,
+              (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) active_admins,
+              (SELECT COUNT(*) FROM managers) employees,
+              (SELECT COUNT(*) FROM payments p WHERE NOT EXISTS
+                (SELECT 1 FROM watch_order_details wd WHERE wd.order_id=p.order_id)) legacy_payments,
+              (SELECT COUNT(*) FROM financial_events f WHERE f.order_id IN
+                (SELECT id FROM client3_legacy_reset_20261103_targets)) old_finance_events,
+              (SELECT COUNT(*) FROM returns r WHERE r.order_id IN
+                (SELECT order_id FROM client3_legacy_reset_20261103_targets)) legacy_returns,
+              (SELECT COUNT(*) FROM inventory_reservations ir WHERE ir.order_id IN
+                (SELECT order_id FROM client3_legacy_reset_20261103_targets)) legacy_reservations,
+              (SELECT COUNT(*) FROM watch_variants) watch_variants,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical_inventory,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved_inventory" \
+            | jq -ce '(if type=="array" then .[0].results[0] else .results[0] end)' >/tmp/client3-reset-after.json
+          cat /tmp/client3-reset-after.json
+          jq -e '.legacy_orders==0 and .manager_logins==0 and .active_manager_accounts==0
+            and .active_admins>=1 and .legacy_payments==0 and .old_finance_events==0
+            and .legacy_returns==0 and .legacy_reservations==0' /tmp/client3-reset-after.json
+          jq -e --slurpfile before /tmp/client3-reset-before.json '
+             .employees==$before[0].employees and
+             .physical_inventory==$before[0].physical_inventory and
+             .reserved_inventory==$before[0].reserved_inventory and
+             .watch_orders >= $before[0].watch_orders
+          ' /tmp/client3-reset-after.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" |
+            jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+          echo CLIENT3_OLD_ORDERS_AND_MANAGER_ACCESS_RESET_SUCCEEDED
+      - name: Record successful isolated Client3 cleanup
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 legacy orders and old manager logins RESET SUCCESS: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Two unbranded legacy orders and related payments, finance events, returns and reservations removed; three manager credentials revoked and hidden from UI. 2 administrator accounts, employee roster, watch orders, watch catalog and physical inventory retained. FK verified. A D1 Time Travel bookmark was recorded before writes. Main and Branch2 unchanged."
+      - name: Record failure / partially completed reset accurately
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 legacy cleanup BLOCKED or PARTIAL: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Check failing step; do not assume reset or DB transaction succeeded. If writes began, use the Time Travel bookmark posted before reset to assess recovery. Main and Branch2 were not targeted."
