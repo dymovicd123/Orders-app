@@ -204,7 +204,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
      <input required maxLength={300} value={reason}
        onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
    </label>
-   {isItems&&<p className="watch-return-physical-help">Товары в пути останутся в очереди приёмки. Для уже полученных часов Main зафиксирует выбранный физический статус сразу при оформлении возврата.</p>}}
+   {isItems&&<p className="watch-return-physical-help">Товары в пути останутся в очереди приёмки. Для уже полученных часов Main зафиксирует выбранный физический статус сразу при оформлении возврата.</p>}
    <label className="watch-return-confirm"><input type="checkbox" checked={confirmed}
      onChange={e=>setConfirmed(e.target.checked)}/>
      Подтверждаю возврат {isItems?chosenQty+' шт.':''}
