@@ -13,6 +13,7 @@ import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash} from './client3-watch-cash.ts'
+import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from './client3-watch-plans-leads.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
 import {countClient3WatchStock,countClient3WatchStockBatch} from './client3-watch-stocktake.ts'
@@ -532,6 +533,40 @@ export async function routeClient3Watches(
     return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
   if(url.pathname==='/api/client3/watches/legacy-orders'&&request.method==='GET')return listLegacyClient3Orders(db,actor)
+  if(url.pathname==='/api/client3/watches/plans'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchPlans(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/plans'&&request.method==='POST'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return saveClient3WatchPlan(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/plans'&&request.method==='DELETE'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return deleteClient3WatchPlan(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/leads'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchLeads(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/leads'&&request.method==='POST'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return saveClient3WatchLead(db,actor,scope.row!.id,input)
+  }
+  if(url.pathname==='/api/client3/watches/leads'&&request.method==='DELETE'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return deleteClient3WatchLead(db,actor,scope.row!.id,input)
+  }
   if(url.pathname==='/api/client3/watches/cash'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
