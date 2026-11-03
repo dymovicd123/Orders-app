@@ -12,7 +12,7 @@ const error=(message:string,status=409,code='WATCH_REVISION_ERROR')=>
 const owner=(brandId:number)=>'client3-watch-brand:'+brandId+':'
 const validSource=(v:unknown):v is WatchSource=>v==='office'||v==='showcase'
 const response=(out:Record<string,unknown>)=>json(out,{status:out.ok===false?409:200})
-const administrator=(actor:AuthUser)=>actor.role==='admin'
+const administrator=(actor:AuthUser)=>actor.role==='admin'||actor.employeeRole==='Завсклад'
 type StartInput={source?:unknown;full?:unknown;modelIds?:unknown}
 type ChangeInput={sessionId?:unknown;itemId?:unknown;countedQuantity?:unknown;watchVariantId?:unknown}
 
