@@ -31,6 +31,21 @@ export const WATCH_OPTIONS = {
   payments: WATCH_PAYMENTS,
 } as const
 
+/** Human labels only. Technical values (quartz/steel/black etc) are stable
+ * stock/SKU identities, so never rewrite stored values just to translate UI. */
+const RUSSIAN_WATCH_CHOICES:Record<string,Readonly<Record<string,string>>>={
+ movements:{quartz:'КВАРЦЕВЫЕ',mechanical:'МЕХАНИЧЕСКИЕ'},
+ bracelets:{steel:'СТАЛЬНОЙ',leather:'КОЖА',rubber:'КАУЧУК'},
+ dials:{black:'ЧЕРНЫЙ',white:'БЕЛЫЙ',silver:'СЕРЕБРИСТЫЙ',
+   gold:'ЗОЛОТИСТЫЙ',green:'ЗЕЛЕНЫЙ',orange:'ОРАНЖЕВЫЙ',
+   brown:'КОРИЧНЕВЫЙ',multicolor:'КОМБИНИРОВАННЫЙ'},
+}
+export function watchReferenceLabel(kind:string,raw:string):string{
+ const value=String(raw||'').trim()
+ return (RUSSIAN_WATCH_CHOICES[kind]?.[value.toLocaleLowerCase('ru-RU')]||value)
+   .toLocaleUpperCase('ru-RU')
+}
+
 export interface WatchVariantInput {
   gender: WatchGender
   movement: WatchMechanism
