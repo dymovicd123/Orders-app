@@ -68,6 +68,14 @@ export const logisticsItemEligible=(item:WatchLogisticsRow)=>Boolean(
   item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
   item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
   (!item.engravingText?.trim()||Boolean(item.engravingReady)))
+/** A missing reservation can be activated only by Main's guarded physical-stock
+ * recovery, after the operator explicitly verifies these exact watch SKU items. */
+const logisticsAwaitingPhysicalConfirmation=(item:WatchLogisticsRow)=>Boolean(
+  item.orderItemId&&Number(item.quantity)>0&&
+  item.reservationStatus==='unresolved'&&
+  item.stockWriteoffStatus==='pending_reservation'&&
+  Number(item.shippedQuantity||0)===0&&
+  (!item.engravingText?.trim()||Boolean(item.engravingReady)))
 
 export function groupWatchLogistics(rows: readonly WatchLogisticsRow[]): LogisticsGroup[] {
   const map = new Map<number, LogisticsGroup>()
@@ -110,6 +118,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [saving, setSaving] = useState<number | null>(null)
   const [dispatching,setDispatching]=useState<number|null>(null)
   const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
+  const [physicalConfirmed,setPhysicalConfirmed]=useState<Record<number,boolean>>({})
   const [dispatchSelection,setDispatchSelection]=useState<Record<number,number[]>>({})
   const [dispatchQuantities,setDispatchQuantities]=useState<Record<number,Record<number,number>>>({})
   const [correctionTarget,setCorrectionTarget]=useState<{orderId:number;dispatchItemId:number}|null>(null)
@@ -242,6 +251,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     finally{setCorrecting(null)}
   }
   const setSelected=(orderId:number,itemId:number,enabled:boolean)=>{
+    setPhysicalConfirmed(prev=>({...prev,[orderId]:false}))
     setDispatchConfirm(null)
     delete dispatchIds.current[orderId]
     setDispatchSelection(prev=>{
@@ -250,11 +260,13 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     })
   }
   const setQuantity=(orderId:number,itemId:number,value:number)=>{
+    setPhysicalConfirmed(prev=>({...prev,[orderId]:false}))
     setDispatchConfirm(null)
     delete dispatchIds.current[orderId]
     setDispatchQuantities(prev=>({...prev,[orderId]:{...prev[orderId],[itemId]:value}}))
   }
-  const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>logisticsItemEligible(item)
+  const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>
+    logisticsItemEligible(item)||logisticsAwaitingPhysicalConfirmation(item)
   const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
     if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
     setDispatching(order.orderId);setError('');setFeedback('')
@@ -265,17 +277,19 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         '/api/client3/watches/orders/'+order.orderId+'/send',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({brand:order.brand,requestId,
+            confirmPhysicalStock:Boolean(physicalConfirmed[order.orderId]),
             items:selected.map(row=>({orderItemId:row.orderItemId,quantity:row.quantity}))}),
         })
       delete dispatchIds.current[order.orderId]
       setDispatchConfirm(null)
+      setPhysicalConfirmed(prev=>({...prev,[order.orderId]:false}))
       setDispatchSelection(prev=>({...prev,[order.orderId]:[]}))
       setDispatchQuantities(prev=>({...prev,[order.orderId]:{}}))
       setFeedback('Отправлено выбранное количество. Оставшиеся часы и резервы сохранены.')
       setRefreshKey(value=>value+1)
     }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')}
     finally{setDispatching(null)}
-  },[canDispatch,dispatching,dispatchConfirm])
+  },[canDispatch,dispatching,dispatchConfirm,physicalConfirmed])
   return <section className="watch-logistics workshop-workspace">
     <div className="watch-logistics-heading">
       <div>
@@ -357,6 +371,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
               dispatchQuantities[order.orderId]?.[item.orderItemId!]??Number(item.quantity)}))
             .filter(item=>Number.isSafeInteger(item.quantity)&&item.quantity>0&&
               item.quantity<=Number(selectable.find(x=>x.orderItemId===item.orderItemId)?.quantity))
+          const needsPhysicalConfirm=selected.some(logisticsAwaitingPhysicalConfirmation)
           const overdue=!completed&&Number.isFinite(Date.parse(order.shippingDeadlineAt))&&
             Date.parse(order.shippingDeadlineAt)<Date.now()
           return <Fragment key={order.orderId}>
@@ -420,7 +435,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                         </label>}
                       <div><small>Состояние</small><strong>{Number(item.shippedQuantity||0)>0?'Отправлен':
                         item.stockWriteoffStatus==='fulfilled'?'Выдан до ревизии · подтверждено':
-                        item.reservationStatus!=='active'?'Ожидает товар / резерв':
+                        item.reservationStatus!=='active'?'Нужно подтвердить физическое наличие':
                         item.engravingText?.trim()&&!item.engravingReady?'Ожидает гравировки':
                         'Готов к отправке'}</strong></div>
                       {canCorrectDispatch&&isSent&&item.dispatchItemId&&
@@ -463,8 +478,17 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                     (dispatchConfirm===order.orderId?
                     <div className="client3-logistics-dispatch-confirm">
                       <strong>Подтвердить отправку {selected.length} поз. / {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.?</strong>
-                      <span>Отправится указанное количество. Неотправленные часы останутся отдельной строкой с прежней гравировкой и резервом. Оплаты не изменятся.</span>
-                      <button type="button" disabled={dispatching!==null||saving!==null}
+                      <span>Отправится указанное количество. Неотправленные часы останутся отдельной строкой. Оплаты не изменятся.</span>
+                      {needsPhysicalConfirm&&<label className="client3-physical-send-confirm">
+                        <input type="checkbox" checked={Boolean(physicalConfirmed[order.orderId])}
+                          disabled={dispatching!==null}
+                          onChange={e=>setPhysicalConfirmed(prev=>({...prev,[order.orderId]:e.target.checked}))}/>
+                        Подтверждаю, что выбранные часы физически находятся в выбранной точке.
+                        Система проверит свободный остаток и восстановит резерв только для этих позиций;
+                        чужой резерв не будет затронут.
+                      </label>}
+                      <button type="button" disabled={dispatching!==null||saving!==null||
+                        (needsPhysicalConfirm&&!physicalConfirmed[order.orderId])}
                         onClick={()=>void send(order,selected)}>
                         {dispatching===order.orderId?'Сохраняю…':'Подтвердить отправку'}</button>
                       <button type="button" className="secondary compact" disabled={dispatching!==null}
