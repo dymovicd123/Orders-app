@@ -1,0 +1,46 @@
+name: Client3 Team real D1 read-only diagnosis (NO DEPLOY)
+on:
+  push:
+    branches: [client3/fix-team-manager-logistics-20261103]
+    paths: ['.github/workflows/client3-team-readonly-diagnostic-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Strictly isolated DB and read-only SQL
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = "orders-app-client3-old-client"
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = "orders_db_client3_old_client"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "0717f239-6d81-4837-8586-777d94e22c53"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          npm ci --ignore-scripts
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('managers','orders','returns','exchanges','plans','lead_records','call_centre_records','team_timesheet','attendance_days','app_users','watch_manager_brands') ORDER BY name" \
+            | jq -cr '.[0].results | map(.name)'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(managers)" | jq -cr '.[0].results | map(.name)'
+          node -e 'const fs=require("fs");const s=fs.readFileSync("worker/domains/team.ts","utf8");const r=/export async function listTeamEmployees[\s\S]*?const result = await db.prepare\(\s*`([\s\S]*?)`\s*\)\.all<any>\(\);/.exec(s);if(!r)throw Error("Read-only team query not found");fs.writeFileSync("/tmp/client3-team-readonly.sql",r[1]+";")'
+          set +e
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --file=/tmp/client3-team-readonly.sql > /tmp/team-rows.json 2>/tmp/team-sql-error
+          status=$?
+          set -e
+          if test "$status" = 0; then
+            jq -cr '.[0].results | {rows:length}' /tmp/team-rows.json
+            echo TEAM_MAIN_QUERY_OK
+          else
+            echo TEAM_MAIN_QUERY_FAILED
+            cat /tmp/team-sql-error
+          fi
+          test "$status" = 0
