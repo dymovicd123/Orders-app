@@ -50,3 +50,26 @@
 5. Browser acceptance with real roles, mobile UI and corrected customer Windows select; only then mark delivered.
 
 The old W3 / browser QA checkboxes in original GitHub #774 are not up to date; rely on these actual shipped commits, CI and explicit gaps.
+
+
+## 03.11.2026 — Report drilldowns released; logistics invoice EXPLICITLY DEFERRED
+
+**Accepted actual Main-backed SQLite order + report regression and TypeScript:** https://github.com/dymovicd123/Orders-app/actions/runs/41604548953 (SUCCESS).
+**Client3 Worker and static assets deployed:** https://github.com/dymovicd123/Orders-app/actions/runs/41604726054 (Worker deployment succeeded, but post-deploy smoke initially failed because it passed Cyrillic city in a raw non-URL-encoded URL; this was a CI smoke defect, not an API/business error).
+**Live independently read-only verification:** https://github.com/dymovicd123/Orders-app/actions/runs/41605168367 (SUCCESS; corrected encoded request, anonymous authorization 401/403, actual Client3 D1 health and foreign keys PASS).
+**Main and Branch2 were never deployed or changed. No D1 schema migration or business write in this release.**
+
+Delivered:
+- Reuse the **exact Main CityOrdersExplorer component** in watch Reports rather than a newly invented table/dialog. City -> paginated actual brand-scoped orders -> focus the real order in Client3, preserving selected brand/month.
+- Clickable date -> brand-scoped breakdown of sold watch models, managers, cities with actual SQL, in Main's strict report card/table structure.
+- City received amounts now use *financial event date* rather than order receipt snapshots; real counts of clients/managers shown. Revenue remains tied to original order date.
+- Financial method reconciliation breaks out order payments, debt closure/extra payments, exchange extras, refunds, other outflows and net movements. The full test asserts that net movements and reported totals reconcile.
+- **Owner decision:** logistics invoice is probably unnecessary; **DEFER** Word/PDF/print invoice / workshop printing. Do not port or implement it without a new explicit request. Core physical logistics, engraving completion and dispatch remain separate and unchanged.
+
+**Revised functional order (before the final full browser QA, as requested):**
+1. Advanced Main cash parity (cash cycles/reversal/audit, within each watch brand, with no cross-brand mix).
+2. Real per-brand monthly Plans and KPI and correct Dashboard progress (still displays '—' until configured, no fabricated numbers).
+3. Verify any remaining business-critical finance/report edge cases; do not resurrect a logistics invoice or the old Problems queue.
+4. Final practical admin/manager/logistic desktop/mobile walkthrough and live-data sign-off.
+
+Do not claim all Main features are identical: reports now have Main's actual city explorer and daily pivots, but some less common Main report categories remain intentionally outside the watch-specific set.
