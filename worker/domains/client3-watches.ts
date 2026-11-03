@@ -10,6 +10,7 @@ import {rewriteClient3AdminWatchItems} from './client3-watch-admin-composition.t
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
+import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
 import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
 import {countClient3WatchStock,countClient3WatchStockBatch} from './client3-watch-stocktake.ts'
@@ -529,6 +530,11 @@ export async function routeClient3Watches(
     return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
   if(url.pathname==='/api/client3/watches/legacy-orders'&&request.method==='GET')return listLegacyClient3Orders(db,actor)
+  if(url.pathname==='/api/client3/watches/analytics'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return getClient3WatchAnalytics(db,actor,scope.row!.id,url)
+  }
   if(url.pathname==='/api/client3/watches/finance'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
