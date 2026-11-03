@@ -200,9 +200,9 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
    <div className="card-label">Команда</div>
    <div className="card-meta">Сотрудники и доступ как в Main: действующие, бывшие, табель, выполнение плана, зарплата и работа с заказами. Оба бренда — одна команда.</div>
    <div className="summary-grid compact-summary team-summary-clean">
-     <div className="summary-card"><span>Активных</span><strong>{active.length}</strong></div>
-     <div className="summary-card"><span>Бывших</span><strong>{former.length}</strong></div>
-     <div className="summary-card"><span>С доступом</span><strong>{employees.filter(e=>Boolean(e.access?.isActive)).length}</strong></div>
+     <div className="summary-card"><span>Активных</span><strong>{data?active.length:'—'}</strong></div>
+     <div className="summary-card"><span>Бывших</span><strong>{data?former.length:'—'}</strong></div>
+     <div className="summary-card"><span>С доступом</span><strong>{data?employees.filter(e=>Boolean(e.access?.isActive)).length:'—'}</strong></div>
    </div>
    <div className="order-panel-tabs team-mode-tabs" role="tablist" aria-label="Раздел команды">
      {([
@@ -212,18 +212,23 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
        className={'secondary compact '+(mode===key?'is-active':'')}
        onClick={()=>{setMode(key);setError('')}}>{label}</button>)}
    </div>
-   {error&&<div className="app-alert error" role="alert">{error}</div>}
+   {error&&<div className="app-alert error" role="alert">
+     <strong>Не удалось загрузить данные команды.</strong> {error}
+     <button type="button" className="secondary compact" disabled={loading}
+       onClick={refresh}>Повторить загрузку</button>
+     {!data&&<p>Пока база не ответила, количество сотрудников неизвестно. Данные не удалены.</p>}
+   </div>}
    {notice&&<div className="app-alert success" role="status">{notice}</div>}
    {loading&&<p role="status">Загружаю сотрудников…</p>}
    {mode==='employees'&&<>
      <div className="team-roster-toolbar">
        <div className="team-roster-tabs" role="tablist" aria-label="Состав команды">
          <button type="button" className={'secondary compact '+(rosterView==='active'?'is-active':'')}
-           onClick={()=>setRosterView('active')}>Активные ({active.length})</button>
+           onClick={()=>setRosterView('active')}>Активные ({data?active.length:'—'})</button>
          <button type="button" className={'secondary compact '+(rosterView==='former'?'is-active':'')}
-           onClick={()=>setRosterView('former')}>Бывшие ({former.length})</button>
+           onClick={()=>setRosterView('former')}>Бывшие ({data?former.length:'—'})</button>
        </div>
-       <button className="primary compact" type="button" onClick={()=>{
+       <button className="primary compact" type="button" disabled={!data||loading} onClick={()=>{
          setDraft({...empty(),colorKey:palette[employees.length%palette.length]})
          window.requestAnimationFrame(()=>formRef.current?.scrollIntoView({behavior:'smooth',block:'start'}))
        }}>+ Добавить сотрудника</button>
@@ -324,7 +329,8 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
                {person.isActive?'Уволить':'Восстановить'}</button>
            </div></td>
          </tr>)}
-         {!listed.length&&<tr><td colSpan={7} className="empty-state">Сотрудников в этой группе нет.</td></tr>}
+         {data&&!listed.length&&<tr><td colSpan={7} className="empty-state">Сотрудников в этой группе нет.</td></tr>}
+         {!data&&<tr><td colSpan={7} className="empty-state">Список сотрудников не загрузился. Повторите запрос.</td></tr>}
          </tbody>
        </table>
      </LinkedTableScroll>
