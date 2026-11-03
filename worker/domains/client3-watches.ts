@@ -418,7 +418,30 @@ export async function routeClient3Watches(
     const input=await readJson<WatchVariantInput & {brand?:unknown;watchProductId?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
-    return registerWatchVariant(db,actor,scope.row!.id,input)
+    // One user action creates and prepares exactly one SKU. A failed provision
+    // may leave a catalog draft, but retries reuse the same watchVariantId.
+    const created=await registerWatchVariant(db,actor,scope.row!.id,input)
+    if(!created.ok)return created
+    const saved=await created.json() as {
+      ok:boolean;watchVariantId?:number;created?:boolean;alreadyExists?:boolean;restored?:boolean
+    }
+    const variantId=Number(saved.watchVariantId||0)
+    if(!Number.isSafeInteger(variantId)||variantId<1)
+      return json({ok:false,code:'WATCH_VARIANT_NOT_CONFIRMED',
+        message:'Не удалось подтвердить новую комплектацию. Обновите каталог.'},{status:409})
+    const prepared=await provisionClient3WatchSku(db,actor,scope.row!.id,variantId)
+    const result=await prepared.json() as {
+      ok:boolean;code?:string;message?:string;canonicalVariantId?:number
+    }
+    if(!prepared.ok||!result.ok){
+      return json({ok:false,code:result.code||'WATCH_VARIANT_PROVISION_FAILED',
+        message:'Комплектация сохранена, но складская позиция не подготовлена: '+
+          (result.message||'Обновите каталог и повторите подготовку SKU.'),
+        partial:true,watchVariantId:variantId},{status:409})
+    }
+    return json({...saved,stockLinked:true,stockCreated:false,
+      watchVariantId:variantId,catalogVariantId:result.canonicalVariantId},
+      {status:saved.created?201:200})
   }
   if(url.pathname==='/api/client3/watches/returns/pending'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
