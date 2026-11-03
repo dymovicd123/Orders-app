@@ -17,7 +17,7 @@ sql.exec(`
  CREATE TABLE catalog_variants (id INTEGER PRIMARY KEY,product_id INTEGER REFERENCES catalog_products(id),stock_position_id INTEGER,category TEXT DEFAULT 'adult',is_active INTEGER DEFAULT 1);
  CREATE TABLE catalog_execution_prices (stock_position_id INTEGER,category TEXT,sale_price INTEGER,PRIMARY KEY(stock_position_id,category));
  CREATE TABLE orders(id INTEGER PRIMARY KEY,external_id TEXT,order_status TEXT,total_amount INTEGER,received_amount INTEGER,debt_amount INTEGER,source_type TEXT DEFAULT 'warehouse',shipping_status TEXT DEFAULT 'not_sent');
- CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER);
+ CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER REFERENCES orders(id),quantity INTEGER,source_type TEXT DEFAULT 'warehouse',stock_writeoff_status TEXT DEFAULT 'reserved',variant_id INTEGER,is_workshop INTEGER DEFAULT 0);
  CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,quantity INTEGER,reserved_quantity INTEGER);
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,amount INTEGER);
  CREATE TABLE inventory_reservations(order_item_id INTEGER PRIMARY KEY,status TEXT);
