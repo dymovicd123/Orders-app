@@ -7,12 +7,12 @@ import '../../styles/client3-watch-finance.css'
 
 type Mode='summary'|'payments'|'debts'|'returns'|'cash'|'methods'
 type CashEntry={id:number;type:string;businessDate:string;createdAt?:string;
- amountDelta:number;externalOrderId?:string;comment?:string;reversesEntryId?:number|null}
+ amountDelta:number;externalOrderId?:string;comment?:string;reversesEntryId?:number|null;brand?:string}
 type Cash={ok:boolean;initialized:boolean;message?:string;currentBalance:number|null;
  openingAmount?:number;todayIn?:number;todayOut?:number;totalIn?:number;totalOut?:number;
  autoTrackingEnabled?:boolean;cycleStartedAt?:string;cycles?:Array<{id:number;startedAt:string;
  finishedAt:string;openingAmount:number;closingBalance:number;comment:string}>;
- entries:CashEntry[]}
+ entries:CashEntry[];legacyEntries?:CashEntry[]}
 const formats:{id:Mode;label:string;hint:string}[]=[
  {id:'summary',label:'Сводка',hint:'Чёткие итоги'},
  {id:'payments',label:'Операции',hint:'По дате операции'},
@@ -46,7 +46,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
    if(mode!=='cash'||!isAdmin)return
    const abort=new AbortController()
    setCashBusy(true);setCash(null);setCashError('')
-   void fetch('/api/client3/watches/cash?'+new URLSearchParams({brand}),{
+   void fetch('/api/client3/watches/cash',{
      credentials:'include',cache:'no-store',signal:abort.signal,
    }).then(async r=>{
      const value=await r.json() as Cash
@@ -55,11 +55,11 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
    }).catch(e=>{if(!abort.signal.aborted)setCashError(e instanceof Error?e.message:'Ошибка кассы.')})
      .finally(()=>{if(!abort.signal.aborted)setCashBusy(false)})
    return ()=>abort.abort()
- },[brand,mode,isAdmin,cashRefresh])
+ },[mode,isAdmin,cashRefresh])
  const cashSubmit=async(e:FormEvent<HTMLFormElement>)=>{
    e.preventDefault()
    if(cashBusy||!isAdmin)return
-   const payload:Record<string,unknown>={brand,action:cash?.initialized?cashAction:'setup'}
+   const payload:Record<string,unknown>={action:cash?.initialized?cashAction:'setup'}
    if(!cash?.initialized){
      payload.openingAmount=Number(cashOpening)
    }else if(cashAction==='manual'){
@@ -82,7 +82,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
      const value=await response.json() as Cash
      if(!response.ok||!value.ok)throw Error(value.message||'Операция кассы не сохранена.')
      setCash(value);setCashAmount('');setCashComment('');setCashReconcile('')
-     request.current=null;setCashNotice('Операция сохранена в кассе выбранного бренда.')
+     request.current=null;setCashNotice('Операция сохранена в общей кассе двух брендов.')
      refresh()
    }catch(err){setCashError(err instanceof Error?err.message:'Ошибка операции кассы.')}
    finally{setCashBusy(false)}
@@ -95,9 +95,9 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
    if(action==='reverse'&&!window.confirm('Отменить ручную операцию отдельной записью? История останется.'))return
    if(action==='reset'){
      if(cashResetComment.trim().length<3){setCashError('Укажите причину нового цикла.');return}
-     if(!window.confirm('Начать НОВЫЙ цикл кассы '+brand+'? Старый журнал сохранится; новый остаток станет 0, автоучёт приостановится.'))return
+     if(!window.confirm('Начать НОВЫЙ цикл общей кассы? Старый журнал сохранится; новый остаток станет 0, автоучёт приостановится.'))return
    }
-   const payload:Record<string,unknown>={brand,action,expectedBalance:cash.currentBalance,...extra}
+   const payload:Record<string,unknown>={action,expectedBalance:cash.currentBalance,...extra}
    const fingerprint=JSON.stringify(payload)
    if(request.current?.fingerprint!==fingerprint)
      request.current={fingerprint,id:'watch-cash-'+crypto.randomUUID()}
@@ -143,8 +143,8 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
        </div>
      </div>
      <div className="orders-filter-grid reports-main-filter-grid">
-       <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);request.current=null}}>
-         {brands.map(x=><option value={x} key={x}>{x}</option>)}</select></label>
+       {mode!=='cash'&&<label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);request.current=null}}>
+         {brands.map(x=><option value={x} key={x}>{x}</option>)}</select></label>}
        {mode!=='cash'&&mode!=='methods'&&<>
          <label>С<input type="date" value={period.from}
            onChange={e=>setPeriod(p=>({...p,from:e.target.value}))}/></label>
@@ -237,8 +237,8 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
      </table></LinkedTableScroll>
    </section>}
    {mode==='cash'&&isAdmin&&<section className="mini-panel cash-register-main">
-     <div className="mini-panel-head"><div><h3>Касса бренда {brand}</h3>
-       <p className="mini-panel-note">Реальные наличные: начальный остаток, оплаты НАЛИЧНЫМИ и ручные движения. Kaspi не считается наличными.</p></div></div>
+     <div className="mini-panel-head"><div><h3>Общая касса · TAUWACH + WACHIZEN</h3>
+       <p className="mini-panel-note">Единый остаток и журнал наличных двух брендов. У каждого заказа в истории указан его бренд. Kaspi не считается наличными.</p></div></div>
      {cashError&&<p role="alert" className="app-alert error">{cashError}</p>}
      {cashNotice&&<p role="status">{cashNotice}</p>}
      {cashBusy&&<p>Обновляем кассу…</p>}
@@ -292,12 +292,12 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
          <button type="submit" className="primary" disabled={cashBusy}>Подтвердить операцию</button>
        </>}
      </form>}
-     {cash?.initialized&&<LinkedTableScroll ariaLabel="История кассы бренда">
+     {cash?.initialized&&<LinkedTableScroll ariaLabel="История общей кассы">
        <table className="data-table strict-report-table">
-         <thead><tr><th>Дата</th><th>Тип</th><th>Заказ</th><th>Комментарий</th>
+         <thead><tr><th>Дата</th><th>Бренд</th><th>Тип</th><th>Заказ</th><th>Комментарий</th>
            <th className="num">Сумма</th><th className="export-hide">Действия</th></tr></thead>
          <tbody>{cash.entries.map((x,i)=><tr key={String(x.type)+String(x.id)+i}>
-           <td>{x.businessDate}</td><td>{x.reversesEntryId?'Отмена ручной операции':
+           <td>{x.businessDate}</td><td>{x.brand||'ОБЩАЯ'}</td><td>{x.reversesEntryId?'Отмена ручной операции':
              ({manual_in:'Внесение',manual_out:'Выдача',reconcile_in:'Сверка +',
                reconcile_out:'Сверка −'} as Record<string,string>)[x.type]||x.type}</td>
            <td>{x.externalOrderId||'—'}</td><td>{x.comment||'—'}</td>
@@ -308,6 +308,20 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences}:{
          </tr>)}</tbody>
        </table>
      </LinkedTableScroll>}
+     {cash?.initialized&&Boolean(cash.legacyEntries?.length)&&
+       <details className="mini-panel cash-register-archive">
+         <summary><strong>Архив прежних отдельных касс</strong></summary>
+         <p className="mini-panel-note">Исторические записи сохранены без повторного зачисления. Начальный расчётный остаток общей кассы был сформирован из предыдущих действующих касс; физическую сумму можно сверить.</p>
+         <LinkedTableScroll ariaLabel="Архив прежних брендовых касс">
+           <table className="data-table strict-report-table">
+             <thead><tr><th>Дата</th><th>Бренд</th><th>Операция</th><th>Комментарий</th><th className="num">Сумма</th></tr></thead>
+             <tbody>{(cash.legacyEntries||[]).map((e,i)=><tr key={'legacy-'+e.id+'-'+i}>
+               <td>{e.businessDate}</td><td>{e.brand||'—'}</td><td>{e.type}</td>
+               <td>{e.comment||'—'}</td><td className="num">{watchMoney(e.amountDelta)}</td>
+             </tr>)}</tbody>
+           </table>
+         </LinkedTableScroll>
+       </details>}
      {cash?.initialized&&<section className="mini-panel cash-register-cycles-panel">
        <div className="mini-panel-head"><div><h3>Прошлые циклы кассы</h3>
          <p className="mini-panel-note">Закрытые циклы и фактический остаток перед завершением. Записи не удаляются.</p></div>
