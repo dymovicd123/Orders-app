@@ -182,6 +182,7 @@ assert.equal(watchReferenceIdentityKey('bracelets','Кожаный ремешо�
  watchReferenceIdentityKey('bracelets','leather'))
 assert.equal(watchReferenceIdentityKey('dials','ЧЁРНЫЙ'),
  watchReferenceIdentityKey('dials','black'))
+const modelsBeforeSynonym=count('watch_products')
 const synonym=await ensureManualWatchOrderSku(db,admin,1,{
  modelName:'REAL—ENGINE TEST',gender:'male',
  movement:'кварцевый механизм',braceletMaterial:'кожаный ремешок',
@@ -190,7 +191,7 @@ const synonym=await ensureManualWatchOrderSku(db,admin,1,{
 assert.equal(synonym.watchVariantId,1)
 assert.equal(synonym.catalogVariantId,vid)
 assert.equal(count('watch_variants'),skuCountBeforeResolve)
-assert.equal(count('watch_products'),modelCountBeforeResolve)
+assert.equal(count('watch_products'),modelsBeforeSynonym)
 assert.equal(count('inventory_stock'),0,'Synonym resolver cannot invent any physical stock')
 // Main's folded keys must not cross brand boundaries.
 const kzModel=sqlite.prepare(
