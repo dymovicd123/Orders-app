@@ -89,7 +89,7 @@ function statusText(status: WatchLogisticsRow['engravingStatus']) {
 export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false}:Props) {
   const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
-  const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'>('unshipped')
+  const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'|'urgent'|'overdue'>('unshipped')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
   const [dispatching,setDispatching]=useState<number|null>(null)
@@ -107,16 +107,35 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   // Retain the same idempotency key across a failed/ambiguous network retry.
   const requestIds = useRef<Record<number, string>>({})
   const dispatchIds=useRef<Record<number,string>>({})
-  const groups=useMemo(()=>groupWatchLogistics(rows).filter(({order})=>
-    filter==='unshipped'?order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено':
-    filter==='sent'?order.shippingStatus==='sent'||order.shippingStatus==='Отправлено':true),[rows,filter])
+  // Main workshop parity: all status queues reuse one fetched dataset and
+  // switch instantly, with priority for urgent and overdue deadlines.
+  const allGroups=useMemo(()=>groupWatchLogistics(rows),[rows])
+  const groups=useMemo(()=>allGroups.filter(({order})=>{
+    const sent=order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'
+    const overdue=!sent&&Number.isFinite(Date.parse(order.shippingDeadlineAt))&&
+      Date.parse(order.shippingDeadlineAt)<Date.now()
+    if(filter==='unshipped')return !sent
+    if(filter==='sent')return sent
+    if(filter==='urgent')return !sent&&Boolean(order.urgent)
+    if(filter==='overdue')return overdue
+    if(filter==='all')return true
+    return !sent&&order.engravingStatus===filter
+  }).sort((a,b)=>{
+    const aOverdue=Number(!['sent','Отправлено'].includes(a.order.shippingStatus)&&
+      Date.parse(a.order.shippingDeadlineAt)<Date.now())
+    const bOverdue=Number(!['sent','Отправлено'].includes(b.order.shippingStatus)&&
+      Date.parse(b.order.shippingDeadlineAt)<Date.now())
+    return bOverdue-aOverdue||Number(Boolean(b.order.urgent))-Number(Boolean(a.order.urgent))||
+      Date.parse(a.order.shippingDeadlineAt)-Date.parse(b.order.shippingDeadlineAt)||
+      a.order.orderId-b.order.orderId
+  }),[allGroups,filter])
 
   useEffect(() => {
     const controller = new AbortController()
     setBusy(true)
     setRows([])
     setError('')
-    const params=new URLSearchParams({status:filter==='sent'||filter==='unshipped'?'all':filter})
+    const params=new URLSearchParams({status:'all'})
     if(brandScope!=='all')params.set('brand',brandScope)
     void readApi<LogisticsResponse>('/api/client3/watches/logistics?' + params.toString(), {
       signal: controller.signal,
@@ -129,7 +148,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       }
     }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
     return () => controller.abort()
-  }, [brandScope, filter, refreshKey])
+  }, [brandScope, refreshKey])
 
   const complete = useCallback(async (orderId: number) => {
     if (!canCompleteEngraving || saving !== null) return
@@ -231,6 +250,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
             <option value="pending">Ожидает</option>
             <option value="engraving">В работе</option>
             <option value="ready">Готово</option>
+            <option value="urgent">Срочные</option>
+            <option value="overdue">Просроченные</option>
           </select>
         </label>
         <button type="button" disabled={busy} onClick={() => setRefreshKey(value => value + 1)}>Обновить</button>
@@ -246,6 +267,27 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         <small>{code==='all'?'Общая очередь':'Отдельные заказы бренда'}</small>
       </button>)}
     </div>}
+    <div className="workshop-channel-tabs client3-logistics-queues" role="tablist" aria-label="Очереди логистики">
+      {([
+        ['unshipped','Активные','Ожидают отправки'],
+        ['urgent','Срочные','Приоритет по срокам'],
+        ['overdue','Просроченные','Требуют внимания'],
+        ['ready','Гравировка готова','Можно отправлять'],
+        ['sent','Отправленные','Завершённые отгрузки'],
+        ['all','Все','Общая история'],
+      ] as const).map(([value,label,hint])=>
+        <button type="button" key={value}
+          className={'workshop-channel-tab '+(filter===value?'is-active':'')}
+          aria-pressed={filter===value} onClick={()=>{setFilter(value);setExpanded(null);setDispatchConfirm(null)}}>
+          <span>{label}</span><small>{hint}</small>
+        </button>)}
+    </div>
+    <div className="summary-grid compact-summary client3-logistics-overview">
+      <div className="summary-card"><span>В работе</span><strong>{allGroups.filter(g=>!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
+      <div className="summary-card warning-card"><span>Срочные</span><strong>{allGroups.filter(g=>g.order.urgent&&!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
+      <div className="summary-card danger-card"><span>Срок прошёл</span><strong>{allGroups.filter(g=>!['sent','Отправлено'].includes(g.order.shippingStatus)&&Date.parse(g.order.shippingDeadlineAt)<Date.now()).length}</strong></div>
+      <div className="summary-card"><span>Гравировка готова</span><strong>{allGroups.filter(g=>g.order.engravingStatus==='ready'&&!['sent','Отправлено'].includes(g.order.shippingStatus)).length}</strong></div>
+    </div>
     {error && <p role="alert" className="watch-logistics-error">{error}</p>}
     {feedback && <p role="status" className="watch-logistics-feedback">{feedback}</p>}
     {busy && <p role="status">Загрузка логистики…</p>}
