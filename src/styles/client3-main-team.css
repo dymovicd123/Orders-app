@@ -1,0 +1,30 @@
+/* Client3 Team uses Main's team-roster, editor, timesheet and modal classes.
+   This layer only adapts brand controls and the small-screen workspaces. */
+.client3-team-main .team-summary-clean{margin:16px 0 18px}
+.client3-team-main .team-roster-toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin:16px 0}
+.client3-team-main .team-roster-person{display:flex;align-items:center;gap:10px}
+.client3-team-main .team-roster-person .manager-color-dot{flex:none}
+.client3-team-main .team-brand-choices,.client3-team-main .team-brand-edit,.client3-team-main .team-brands-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.client3-team-main .team-brand-choices label,.client3-team-main .team-brand-edit label{display:inline-flex;gap:6px;align-items:center;font-size:.85rem}
+.client3-team-main .team-brand-choices input,.client3-team-main .team-brand-edit input{width:auto}
+.client3-team-main .team-brands-cell{max-width:260px}
+.client3-team-main .team-brands-cell button{white-space:nowrap}
+.client3-team-main .team-access-cell{min-width:145px}
+.client3-team-main .team-access-cell button{margin-top:6px}
+.client3-team-main .team-timesheet-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:16px 0;max-width:690px}
+.client3-team-main .team-timesheet-days button{min-width:0}
+.client3-team-main .team-timesheet-days .has-entry:not(.is-active){border-color:#16a34a}
+.client3-team-main .team-timesheet-people{display:flex;flex-wrap:wrap;gap:12px;margin:14px 0}
+.client3-team-main .team-editor-panel{margin:18px 0;scroll-margin-top:100px}
+.client3-team-main .team-access-modal{max-height:calc(100vh - 50px);overflow-y:auto}
+.client3-team-main .team-roster-table td{vertical-align:middle}
+.client3-team-main .team-mode-tabs{display:flex;flex-wrap:wrap;gap:6px}
+.client3-team-main .team-roster-table .row-actions{flex-wrap:wrap;min-width:170px}
+@media(max-width:760px){
+ .client3-team-main .team-roster-toolbar{align-items:stretch}
+ .client3-team-main .team-roster-toolbar>button{width:100%}
+ .client3-team-main .team-timesheet-days{grid-template-columns:repeat(7,minmax(0,1fr))}
+ .client3-team-main .team-roster-table{min-width:940px}
+ .client3-team-main .team-access-modal{width:min(96vw,590px)}
+ .client3-team-main .team-summary-clean{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
