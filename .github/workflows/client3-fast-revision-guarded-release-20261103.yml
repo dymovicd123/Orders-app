@@ -1,0 +1,99 @@
+name: Client3 fast revision count + clean helper release
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-fast-revision-guarded-release-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 3}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Guard exact reviewed Client3-only Worker and database
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
+          test "$(git rev-parse HEAD^)" = 3cd4778df11246e330867c206a37af6cdbab9c8f
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-fast-revision-guarded-release-20261103.yml'
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41638943009 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41638943009 --jq .head_sha)" = 2cb531eb5303111099ad93475daba3efcb998a04
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          grep -q 'count-fast' worker/domains/client3-watches.ts
+          grep -q 'count-fast' src/features/client3/WatchPersistentRevision.tsx
+          ! grep -q 'Ввод не блокируется сохранением других позиций' src/features/client3/WatchPersistentRevision.tsx
+      - run: npm ci
+      - name: Fast count response, old tabs, no-stock review
+        run: node --experimental-strip-types scripts/client3/test-zero-stock-revision-20261103.mjs
+      - name: Historical issuance and Main checkpoint regression
+        run: node --experimental-strip-types scripts/client3/test-watch-handover-after-revision-20261103.mjs
+      - name: Full watch order inventory returns finance resolver regression
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Arrival drafts, Team and shared cash
+        run: |
+          node --experimental-strip-types scripts/client3/test-watch-arrival-draft-20261103.mjs
+          node --experimental-strip-types scripts/client3/test-watch-shared-cash-team-20261103.mjs
+      - name: TypeScript and Vite production build
+        run: npm run build
+      - name: Real Client3 D1 read-only schema and integrity check
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status='active') active_revisions,
+              (SELECT COUNT(*) FROM inventory_stocktake_items) revision_items,
+              (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+              (SELECT COUNT(*) FROM watch_variants) watch_variants" \
+            | jq -e '(if type=="array" then .[0].results[0] else .results[0] end)
+                | .revision_items>=0 and .stock_rows>=0 and .watch_variants>=0'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" \
+            | jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+      - name: Deploy ONLY Client3 Worker, no D1 migrations or data writes
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Check Client3 live HTML and unauthenticated revision protection
+        run: |
+          set -euo pipefail
+          base='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          test "$(curl -sSL -o /tmp/client3-html -w '%{http_code}' --max-time 30 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-html
+          for endpoint in \
+            '/api/client3/watches/stock/revision?brand=TAUWACH&source=office' \
+            '/api/client3/watches/orders?brand=TAUWACH'; do
+            code="$(curl -sS -o /tmp/client3-protected -w '%{http_code}' --max-time 30 "$base$endpoint")"
+            test "$code" = 401 -o "$code" = 403
+          done
+          code="$(curl -sS -o /tmp/client3-post -w '%{http_code}' --max-time 30 \
+            -X POST -H 'Content-Type: application/json' \
+            --data '{"brand":"TAUWACH","sessionId":"REV-S-F-20261103000000-00000000","itemId":1,"countedQuantity":3}' \
+            "$base/api/client3/watches/stock/revision/count-fast")"
+          test "$code" = 401 -o "$code" = 403
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" \
+            | jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+          echo CLIENT3_REVISION_FAST_ENTRY_RELEASE_VERIFIED
+      - name: Record verified Client3 revision hotfix release
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 revision fast-entry and redundant helper text removal DEPLOYED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. PR #784; compact count-fast response with legacy endpoint fallback, per-SKU nonblocking editing and unsaved quantities protected on F5. SQLite stocktake/orders/finance/arrival/team/handovers tests, TypeScript/Vite, real D1 FK and auth smoke PASS. No data migrations, no inventory writes, Main/Branch2 untouched. Manual real-browser performance acceptance still pending."
+      - name: Record blocked release
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 fast revision release BLOCKED/FAILED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Confirm deploy step before claiming live. Main/Branch2 not targeted."
