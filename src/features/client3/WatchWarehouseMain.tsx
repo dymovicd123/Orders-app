@@ -284,7 +284,7 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
       if(stale){
         // The review snapshot is stale. Do not retry the old CAS payload.
         // Keep entered quantities, refresh both stock sources and re-review.
-        setStage('quantity');setConfirmed(false);setShortageConfirmed(false)
+        setStage('quantities');setConfirmed(false);setShortageConfirmed(false)
         requestRef.current=null
         refresh();onStockChanged?.()
       }
