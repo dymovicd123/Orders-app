@@ -11,7 +11,7 @@ type ReadOrder = {
 }
 type ReservedLine = {order_item_id: unknown; quantity: unknown; status: unknown; variant_id: unknown}
 
-export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedLine[]) {
+export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedLine[], options:{watchPhysicalConfirmed?:boolean}={}) {
   const closed = ['archived', 'deleted'].includes(cleanText(order.order_status).toLowerCase())
     || Boolean(cleanText(order.archived_at))
   // The old order-wide sent marker records an earlier issue; a NEW replacement
@@ -44,11 +44,14 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       || (recordedSent !== null && recordedSent >= quantity)
     const physicallyReady = isWorkshop
       ? ['done', 'ready'].includes(workshopState)
-      : stockState === 'reserved' && Boolean(current?.variantId)
+      : stockState === 'reserved' && Boolean(current?.variantId) ||
+        Boolean(options.watchPhysicalConfirmed) && stockState==='pending_reservation' &&
+        toInt(item.variantId,0)>0 && !isWorkshop
     const alreadyClosed = closed || (historicallySent && !pendingReplacement)
     const readyQuantity = alreadyClosed || alreadyIssued || !physicallyReady ? 0
       : isWorkshop ? quantity
-        : Math.min(quantity, current?.quantity || 0)
+        : options.watchPhysicalConfirmed && stockState==='pending_reservation'
+          ? quantity : Math.min(quantity, current?.quantity || 0)
     const reason = readyQuantity ? ''
       : alreadyClosed ? 'Эта позиция уже отправлена или заказ закрыт'
         : alreadyIssued ? 'Уже выдан'
@@ -61,9 +64,11 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       quantity, sourceType: isWorkshop ? 'workshop' : cleanText(item.sourceType),
       exchangeEventId: pendingReplacement ? toInt(item.pendingExchangeDispatchId, 0) : null,
       exchangeWorkshopId: isWorkshop ? pendingExchangeWorkshopId : null,
-      variantId: isWorkshop ? toInt(item.variantId, 0) : (current?.variantId || 0),
+      variantId: isWorkshop ? toInt(item.variantId, 0) :
+        (current?.variantId || (options.watchPhysicalConfirmed?toInt(item.variantId,0):0)),
       readyQuantity, selectedQuantity: readyQuantity,
       selectable: readyQuantity > 0,
+      requiresPhysicalConfirmation: stockState==='pending_reservation',
       reason,
     }
   })
