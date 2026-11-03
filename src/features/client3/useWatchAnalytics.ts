@@ -11,7 +11,7 @@ export type WatchAnalytics={
   customers:{customerCount:number};
   logistics:{total:number;ready:number;engraving:number;overdue:number;urgent:number};
   days:AnalyticsRow[];managers:AnalyticsRow[];products:AnalyticsRow[];
-  cities:AnalyticsRow[];methods:AnalyticsRow[];eventDays:AnalyticsRow[];
+  cities:AnalyticsRow[];methods:AnalyticsRow[];reconciliation:AnalyticsRow[];eventDays:AnalyticsRow[];
   events:AnalyticsRow[];sources:AnalyticsRow[];
 }
 export const watchMoney=(n:unknown)=>
