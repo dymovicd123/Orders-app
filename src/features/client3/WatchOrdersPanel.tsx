@@ -46,11 +46,12 @@ const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
 }
-export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,isAdmin=false}:{
+export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,isAdmin=false,workflow='orders'}:{
   allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;
   initialFocusedOrder?:{orderId:number;externalId:string;orderDate:string};
   onOpenLogistics?:(brand:WatchBrand)=>void;
   isAdmin?:boolean
+  workflow?:'orders'|'returns'|'exchange'
 }) {
   const [brand,setBrand]=useState<WatchBrand>(initialBrand&&allowedBrands.includes(initialBrand)?initialBrand:allowedBrands[0]||'TAUWACH')
   const [month,setMonth]=useState(initialFocusedOrder?.orderDate.slice(0,7)||initialMonth)
@@ -98,9 +99,26 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   },[brand,month,query,page,refresh,shipping,payment])
   return <section className="watch-orders">
     <header className="watch-orders-header">
-      <div><h2>Список заказов</h2><p>Поиск, статусы, оплата и действия по выбранному бренду.</p></div>
+      <div><h2>{workflow==='returns'?'Оформление возвратов':workflow==='exchange'?'Обмены часов':'Список заказов'}</h2>
+        <p>{workflow==='orders'?'Поиск, статусы, оплата и действия по выбранному бренду.':
+          'Выберите заказ в компактной таблице. Форма откроется отдельно от списка, как в Main.'}</p></div>
       <button type="button" disabled={busy} onClick={()=>setRefresh(x=>x+1)}>Обновить</button>
     </header>
+    {workflow!=='orders'&&data&&(
+      (workflow==='returns'&&returnOrderId!==null)||
+      (workflow==='exchange'&&exchangeOrderId!==null))&&
+      <section className="watch-main-flow-workspace" aria-label={workflow==='returns'?'Оформить возврат':'Оформить обмен'}>
+        <div className="watch-main-flow-head"><h3>{workflow==='returns'?'Возврат товара':'Обмен товара'}</h3>
+          <button className="secondary compact" type="button"
+            onClick={()=>{setReturnOrderId(null);setExchangeOrderId(null)}}>Закрыть форму</button></div>
+        {data.rows.filter(o=>o.orderId===(workflow==='returns'?returnOrderId:exchangeOrderId)).map(o=>
+          workflow==='returns'?<WatchReturnForm key={o.orderId} brand={brand} order={o}
+            onCancel={()=>setReturnOrderId(null)}
+            onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>:
+          <WatchExchangeForm key={o.orderId} brand={brand} order={o}
+            onCancel={()=>setExchangeOrderId(null)}
+            onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>)}
+      </section>}
     <div className="watch-orders-filters">
       <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
         {allowedBrands.map(code=><option key={code} value={code}>{code}</option>)}
@@ -185,12 +203,19 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     Требует поступления/резерва: {order.unresolvedReservations}</small>}
                 </td>
                 <td><button type="button" className="watch-main-detail-button"
-                  aria-expanded={expanded===order.orderId}
-                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)}}>
-                  {expanded===order.orderId?'Скрыть':'Открыть'}
+                  aria-expanded={workflow==='orders'&&expanded===order.orderId}
+                  onClick={()=>{
+                    if(workflow==='returns'){setReturnOrderId(order.orderId);setExchangeOrderId(null);return}
+                    if(workflow==='exchange'){setExchangeOrderId(order.orderId);setReturnOrderId(null);return}
+                    setExpanded(v=>v===order.orderId?null:order.orderId);
+                    setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);
+                    setEditOrderId(null);setHandoverOrderId(null)
+                  }}>
+                  {workflow==='returns'?'Возврат':workflow==='exchange'?'Обмен':
+                    expanded===order.orderId?'Скрыть':'Открыть'}
                 </button></td>
               </tr>
-              {expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={12}>
+              {workflow==='orders'&&expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={12}>
                 <section className="watch-main-order-detail" aria-label={'Детали заказа '+order.externalId}>
                   <div className="watch-main-order-detail-grid">
                     <div><small>Покупатель</small><strong>{order.recipientName}</strong>
