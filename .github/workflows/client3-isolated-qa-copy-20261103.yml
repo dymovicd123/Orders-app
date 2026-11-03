@@ -82,24 +82,29 @@ jobs:
             export_args+=(--table "$table")
           done
           echo "Copying ${#source_tables[@]} ordinary D1 tables; virtual/shadow tables excluded for safe recreation."
-          if ! npx wrangler d1 export "$SOURCE_DB" --remote \
-            --config wrangler.jsonc --skip-confirmation "${export_args[@]}" \
-            --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
-            echo "::error::D1 selective export failed. No production data was changed."
-            if grep -qi virtual /tmp/qa-export-log; then echo "Export diagnostic: virtual tables"; fi
-            if grep -qi unauthorized /tmp/qa-export-log; then echo "Export diagnostic: authorization"; fi
-            exit 1
-          fi
-          test -s /tmp/client3-qa-snapshot.sql
+          for kind in schema data; do
+            more_opts=()
+            if test "$kind" = schema; then more_opts+=(--no-data); else more_opts+=(--no-schema); fi
+            if ! npx wrangler d1 export "$SOURCE_DB" --remote \
+              --config wrangler.jsonc --skip-confirmation "${export_args[@]}" "${more_opts[@]}" \
+              --output="/tmp/client3-qa-$kind.sql" > "/tmp/qa-export-$kind-log" 2>&1; then
+              echo "::error::D1 $kind selective export failed. Production data was not modified."
+              exit 1
+            fi
+            test -s "/tmp/client3-qa-$kind.sql"
+          done
+          npx wrangler d1 execute "$SOURCE_DB" --remote --config wrangler.jsonc --json \
+            --command="SELECT name, sql FROM sqlite_master WHERE type='view'" > /tmp/qa-views.json
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('/tmp/client3-qa-snapshot.sql')
-          original=p.read_text(encoding='utf-8')
-          lines=original.splitlines(keepends=True)
-          filtered=[s for s in lines if s.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;')]
-          assert len(original)>1000 and ('CREATE TABLE' in original.upper())
-          p.write_text(''.join(filtered),encoding='utf-8')
-          print('Ephemeral SQL snapshot prepared (contents withheld).')
+          for kind in ('schema','data'):
+            p=Path('/tmp/client3-qa-'+kind+'.sql')
+            data=p.read_text(encoding='utf-8')
+            data=''.join(x for x in data.splitlines(keepends=True) if x.strip().upper() not in ('BEGIN TRANSACTION;','COMMIT;'))
+            assert len(data)>100
+            if kind=='schema': assert 'CREATE TABLE' in data.upper()
+            p.write_text(data,encoding='utf-8')
+          print('Schema and data SQL snapshots stored only in ephemeral runner.')
           PY
       - name: Create a uniquely named D1 database (never reuse the source)
         run: |
@@ -135,6 +140,15 @@ jobs:
           test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
           test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
           echo "A fresh isolated D1 was created; exact source D1 ID is not bound."
+      - name: Import normal table schemas into fresh QA D1
+        run: |
+          set -euo pipefail
+          if ! npx wrangler d1 execute "$QA_DB" --remote \
+            --config wrangler.client3-qa.jsonc --yes \
+            --file=/tmp/client3-qa-schema.sql > /tmp/qa-schema-import-log 2>&1; then
+            echo "::error::Normal schema-only import failed; QA Worker not deployed."
+            exit 1
+          fi
       - name: Recreate virtual FTS definitions before importing base data
         run: |
           set -euo pipefail
@@ -164,21 +178,21 @@ jobs:
               --file=/tmp/qa-virtual-tables.sql > /tmp/qa-fts-schema-log 2>&1
           fi
           echo "Virtual FTS schemas created in QA, regular tables imported next."
-      - name: Import snapshot into QA D1 only
+      - name: Import table contents into pre-created QA schema only
         run: |
           set -euo pipefail
           test "$QA_DB" != "$SOURCE_DB"
           test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
           if ! npx wrangler d1 execute "$QA_DB" --remote \
             --config wrangler.client3-qa.jsonc --yes \
-            --file=/tmp/client3-qa-snapshot.sql > /tmp/qa-import-log 2>&1; then
+            --file=/tmp/client3-qa-data.sql > /tmp/qa-import-log 2>&1; then
             echo "::error::Isolated D1 import failed; no Worker deployed. Import log withheld because snapshot contains customer data."
             for phrase in 'no such table' 'foreign key' 'unique constraint' 'syntax error' 'already exists' 'virtual' 'transaction' 'too long' 'unable to' 'error 10000'; do
               if grep -Fqi "$phrase" /tmp/qa-import-log; then echo "Import diagnostic class: $phrase"; fi
             done
             exit 1
           fi
-          rm -f /tmp/client3-qa-snapshot.sql
+          rm -f /tmp/client3-qa-schema.sql /tmp/client3-qa-data.sql
       - name: Rebuild content-backed search indexes after base import
         run: |
           set -euo pipefail
@@ -187,6 +201,21 @@ jobs:
               --file=/tmp/qa-virtual-rebuild.sql > /tmp/qa-fts-rebuild-log 2>&1
           fi
           echo "Search indexes recreated after QA data import."
+      - name: Recreate SQL views in QA after core data and virtual schema
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('/tmp/qa-views.json').read_text(encoding='utf-8'))
+          rows=v[0]['results'] if isinstance(v,list) else v['results']
+          Path('/tmp/qa-views.sql').write_text('\n'.join(row['sql'].rstrip(';')+';' for row in rows if row.get('sql'))+'\n',encoding='utf-8')
+          print('SQL view definitions:',len(rows))
+          PY
+          if test -s /tmp/qa-views.sql; then
+            npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --yes \
+              --file=/tmp/qa-views.sql > /tmp/qa-view-log 2>&1
+          fi
       - name: Retain admin login and prevent other staff access to QA
         run: |
           set -euo pipefail
