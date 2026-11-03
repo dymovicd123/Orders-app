@@ -67,7 +67,9 @@ export async function listClient3WatchOrders(
           WHERE oi2.order_id=o.id AND p3.model_name LIKE ? ESCAPE '\\'))`
     const rows=await db.prepare(`
       SELECT o.id AS orderId,o.external_id AS externalId,o.order_date AS orderDate,
-        o.manager_id AS managerId,o.manager_snapshot_name AS managerName,
+        o.manager_id AS managerId,
+        COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),
+          (SELECT m.name FROM managers m WHERE m.id=o.manager_id LIMIT 1)) AS managerName,
         o.source_type AS legacySource,o.shipping_status AS shippingStatus,
         o.order_status AS orderStatus,
         o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
