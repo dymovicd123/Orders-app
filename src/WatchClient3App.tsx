@@ -60,7 +60,7 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   references:{title:'Справочники',description:'Бренды и параметры часов, доставка и оплата.',area:'Справочники'},
   legacy:{title:'Исторические заказы',description:'Заказы до перехода на новую систему, без изменения данных.',area:'Администрирование'},
 }
-const sections=(Object.keys(sectionMeta) as WatchSection[]).filter(section=>section!=='legacy')
+const sections:WatchSection[]=(Object.keys(sectionMeta) as WatchSection[]).filter(section=>section!=='legacy')
 type LoginResponse = { ok: boolean; user?: User; message?: string }
 async function api<T extends { ok: boolean; message?: string }>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...init })
