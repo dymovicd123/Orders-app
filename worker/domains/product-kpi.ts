@@ -128,8 +128,10 @@ export async function listProductKpis(db:D1Database,monthParam:unknown,user:Auth
       'SELECT o.manager_id AS manager_id, SUM(MAX(0,oi.quantity-COALESCE(ret.returned,0))) AS quantity',
       'FROM orders o JOIN order_items oi ON oi.order_id=o.id',
       'LEFT JOIN returns_by_item ret ON ret.order_item_id=oi.id',
-      "WHERE o.shipping_status='sent' AND o.order_status<>'deleted'",
-      "AND DATE(COALESCE(NULLIF(o.shipping_date,''), o.order_date)) BETWEEN ? AND ? AND oi.product_id=? AND oi.quantity>0",
+      // Record sales in the order's month even before shipping. Shipping later must
+      // not move the same sold units between monthly KPI periods.
+      "WHERE o.order_status<>'deleted'",
+      "AND DATE(o.order_date) BETWEEN ? AND ? AND oi.product_id=? AND oi.quantity>0",
       where?'AND '+where:'',
       'GROUP BY o.manager_id',
     ].join(' ')
@@ -146,5 +148,5 @@ export async function listProductKpis(db:D1Database,monthParam:unknown,user:Auth
       }),
     })
   }
-  return {ok:true,month,records,countingRule:'shipped_net_current_v1'}
+  return {ok:true,month,records,countingRule:'ordered_net_current_v2'}
 }
