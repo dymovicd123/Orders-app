@@ -118,3 +118,12 @@
   .client3-logistics-brands .workshop-channel-tab,
   .client3-logistics-queues .workshop-channel-tab{flex:1 1 145px!important}
 }
+
+.client3-physical-send-confirm{
+  display:flex;align-items:flex-start;gap:10px;padding:10px 13px;
+  border-radius:9px;border:1px solid #fbbf24;background:#fffbeb;
+  color:#78350f;font-size:.83rem;line-height:1.5;max-width:760px;
+}
+.client3-physical-send-confirm input[type="checkbox"]{
+  flex:none;width:18px;height:18px;margin:2px 0 0;
+}
