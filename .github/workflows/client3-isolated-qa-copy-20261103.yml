@@ -70,17 +70,6 @@ jobs:
             --config wrangler.jsonc --skip-confirmation \
             --output=/tmp/client3-qa-snapshot.sql > /tmp/qa-export-log 2>&1; then
             echo "::error::D1 source export failed. No production data was changed."
-            python3 - <<'PY'
-            from pathlib import Path
-            import re
-            log=Path('/tmp/qa-export-log').read_text(encoding='utf-8',errors='replace')
-            hints=('error','failed','export','virtual','unsupported','invalid','unknown','permission','authorization','database','authentication','confirmation','tables')
-            for line in log.splitlines():
-              if any(word in line.lower() for word in hints):
-                safe=re.sub(r"""'[^']*'|"[^"]*" """.strip(), '[redacted]', line)
-                safe=re.sub(r'[a-fA-F0-9]{24,}', '[redacted-identifier]', safe)
-                print('Export diagnostic:',safe[:250])
-            PY
             exit 1
           fi
           test -s /tmp/client3-qa-snapshot.sql
