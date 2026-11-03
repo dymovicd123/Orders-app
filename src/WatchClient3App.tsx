@@ -402,6 +402,7 @@ export function WatchClient3App() {
           {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion}
             brands={brands.map(x=>x.code)}/>}
           {brands.length>0&&<WatchOperationHistoryPanel kind="return"
+            isAdmin={canAdmin}
             key={'return-history-'+catalogVersion}
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             brands={brands.map(x=>x.code)}
@@ -415,6 +416,7 @@ export function WatchClient3App() {
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
           {brands.length>0&&<WatchOperationHistoryPanel kind="exchange"
+            isAdmin={canAdmin}
             key={'exchange-history-'+catalogVersion}
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             brands={brands.map(x=>x.code)}
