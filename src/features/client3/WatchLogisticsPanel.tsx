@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { WatchBrand } from '../../../shared/client3/watch-domain'
+import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import '../../styles/client3-watch-logistics.css'
 
@@ -353,7 +353,10 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                           onChange={e=>{if(item.orderItemId)setSelected(order.orderId,item.orderItemId,e.target.checked)}}/>
                         <span>{item.modelName||'Модель не определена'} · {item.quantity||0} шт.
                           <small>{item.itemSource==='boutique'?'Витрина':'Офис'} ·
-                            {[item.movement,item.braceletMaterial,item.dialColor,item.braceletColor].filter(Boolean).join(' · ')}</small>
+                            {[watchReferenceLabel('movements',item.movement||''),
+                              watchReferenceLabel('bracelets',item.braceletMaterial||''),
+                              watchReferenceLabel('dials',item.dialColor||''),
+                              item.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',item.braceletColor):''].filter(Boolean).join(' · ')}</small>
                         </span>
                       </label>
                       <div><small>Гравировка</small><strong>{item.engravingText||'Не требуется'}</strong></div>
@@ -365,7 +368,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                             value={dispatchQuantities[order.orderId]?.[item.orderItemId]??Number(item.quantity)}
                             onChange={e=>setQuantity(order.orderId,item.orderItemId!,e.target.value===''?0:Number(e.target.value))}/>
                         </label>}
-                      <div><small>Состояние</small><strong>{isSent?'Отправлен':
+                      <div><small>Состояние</small><strong>{Number(item.shippedQuantity||0)>0?'Отправлен':
+                        item.stockWriteoffStatus==='fulfilled'?'Выдан до ревизии · подтверждено':
                         item.reservationStatus!=='active'?'Ожидает товар / резерв':
                         item.engravingText?.trim()&&order.engravingStatus!=='ready'?'Ожидает гравировки':
                         'Готов к отправке'}</strong></div>
