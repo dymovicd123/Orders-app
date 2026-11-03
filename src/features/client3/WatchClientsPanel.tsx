@@ -101,7 +101,7 @@ export function WatchClientsPanel({brands,onOpenOrder}:{
          <input value={search} maxLength={100} placeholder="Имя, телефон или город" onChange={e=>setSearch(e.target.value)}/>
        </label><button type="submit" className="primary">Найти</button></form>
        {(search||query)&&<button type="button" className="secondary compact"
-         onClick={()=>{setSearch('');setQuery('');setPage(0)}}>Очистить</button> 
+         onClick={()=>{setSearch('');setQuery('');setPage(0)}}>Очистить</button>}
      </div>
    </div>
    <div className="mini-panel-head client3-client-list-count">
