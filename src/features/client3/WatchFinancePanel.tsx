@@ -319,21 +319,71 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
        </details>}
      </section>
    </div>}
-   {mode==='payments'&&<section className="mini-panel">
-     <h3>Денежные операции</h3>
-     <p className="mini-panel-note">Первоначальные оплаты, закрытия долгов, обмены и возвраты — по фактической дате.</p>
-     <LinkedTableScroll ariaLabel="Финансовые операции">
-       <table className="data-table strict-report-table">
-         <thead><tr><th>Дата</th><th>Заказ</th><th>Операция</th><th>Способ</th>
-           <th>Комментарий</th><th className="num">Сумма</th></tr></thead>
-         <tbody>{moneyRows.map(row=><tr key={String(row.id)}>
-           <td>{String(row.eventDate)}</td><td>{String(row.externalOrderId||'—')}</td>
-           <td>{String(row.eventType||'Операция')}</td><td>{String(row.paymentMethod||'Не указан')}</td>
-           <td>{String(row.comment||'—')}</td><td className="num">{watchMoney(row.amountDelta)}</td>
-         </tr>)}</tbody>
-       </table>
-     </LinkedTableScroll>
-   </section>}
+
+   {mode==='payments'&&<div className="finance-payment-ledger finance-tab-content finance-truth-content">
+     <section className="mini-panel finance-human-operations-block">
+       <div className="mini-panel-head"><div><h3>Денежные операции</h3>
+         <p className="mini-panel-note">Оплаты заказов, закрытия долгов и доплаты показаны по дате операции, возвраты — отдельными строками с минусом.</p>
+       </div><span className="soft-badge">{data?.moneyEventCount||0} событий</span></div>
+       {operationsTruncated&&<p className="stocktake-inline-notice">Для подробной истории показаны последние {moneyRows.length} из {data?.moneyEventCount} событий. Общие суммы по дням и сводка включают все операции.</p>}
+       {[...new Set(moneyRows.map(row=>String(row.eventDate||'')))].map(date=>{
+         const dateRows=moneyRows.filter(row=>String(row.eventDate||'')===date)
+         const income=dateRows.reduce((n,row)=>n+Math.max(0,Number(row.amountDelta||0)),0)
+         const outgoing=dateRows.reduce((n,row)=>n+Math.max(0,-Number(row.amountDelta||0)),0)
+         return <section className="mini-panel finance-money-history-day" key={date}>
+           <div className="mini-panel-head"><div><h3>{moneyDate(date)}</h3>
+             <p className="mini-panel-note">Поступило {watchMoney(income)} · Возвращено / списано {watchMoney(outgoing)}</p></div>
+             <span className="soft-badge">{dateRows.length} событий</span>
+           </div>
+           <LinkedTableScroll ariaLabel={'Операции '+moneyDate(date)}>
+             <table className="data-table finance-operation-ledger strict-report-table">
+               <thead><tr><th>Заказ</th><th>Покупатель / менеджер</th><th>Вид операции</th>
+                 <th>Способ</th><th>Комментарий</th><th>Дата заказа</th><th className="num">Сумма</th><th>Действие</th></tr></thead>
+               <tbody>{dateRows.map(row=><tr key={String(row.id)}
+                 className={row.orderDate&&String(row.orderDate)!==date?'is-anomaly':''}>
+                 <td><strong>{String(row.externalOrderId||'—')}</strong></td>
+                 <td>{String(row.customer||'—')}<small className="mini-panel-note">{String(row.manager||'—')}</small></td>
+                 <td><span className={'finance-operation-type type-'+String(row.eventType||'')}>{operationLabel(row.eventType)}</span></td>
+                 <td>{String(row.paymentMethod||'Не указан')}</td>
+                 <td>{String(row.comment||'—')}</td>
+                 <td>{moneyDate(row.orderDate)}</td>
+                 <td className={'num '+(Number(row.amountDelta||0)<0?'watch-finance-out':'watch-finance-in')}>
+                   <strong>{Number(row.amountDelta||0)>0?'+ ':''}{watchMoney(row.amountDelta)}</strong>
+                 </td>
+                 <td>{onOpenOrder&&<button type="button" className="secondary compact finance-order-link"
+                   onClick={()=>openOrder(row)}>К заказу</button>}</td>
+               </tr>)}</tbody>
+             </table>
+           </LinkedTableScroll>
+         </section>
+       })}
+       {!moneyRows.length&&<p className="empty-state">За выбранный период нет денежных операций.</p>}
+     </section>
+     <details className="mini-panel finance-secondary-details">
+       <summary>Разбивка по способам оплаты</summary>
+       <LinkedTableScroll ariaLabel="Денежные операции по способам оплаты">
+         <table className="data-table strict-report-table">
+           <thead><tr><th>Способ оплаты</th><th className="num">Поступило</th>
+             <th className="num">Возвращено</th><th className="num">Чистое движение</th></tr></thead>
+           <tbody>{(data?.methods||[]).map(row=><tr key={String(row.method)}>
+             <td>{String(row.method)}</td><td className="num">{watchMoney(row.incoming)}</td>
+             <td className="num">{watchMoney(row.outgoing)}</td><td className="num">{watchMoney(row.net)}</td>
+           </tr>)}</tbody>
+         </table>
+       </LinkedTableScroll>
+     </details>
+     <details className="mini-panel finance-secondary-details">
+       <summary>Разбивка по видам операций</summary>
+       <LinkedTableScroll ariaLabel="Денежные операции по видам">
+         <table className="data-table strict-report-table">
+           <thead><tr><th>Вид</th><th className="num">Операций</th><th className="num">Поступило</th><th className="num">Списано</th></tr></thead>
+           <tbody>{kinds.map(row=><tr key={String(row.eventType)}>
+             <td>{operationLabel(row.eventType)}</td><td className="num">{row.eventCount}</td>
+             <td className="num">{watchMoney(row.incoming)}</td><td className="num">{watchMoney(row.outgoing)}</td>
+           </tr>)}</tbody></table>
+       </LinkedTableScroll>
+     </details>
+   </div>}
    {mode==='debts'&&<section className="mini-panel">
      <h3>Долги</h3>
      <div className="summary-grid compact-summary">
