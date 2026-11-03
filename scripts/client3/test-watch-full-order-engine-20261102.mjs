@@ -1514,5 +1514,42 @@ assert(modelRows.every(row=>Number(row.officePhysical||0)===0&&Number(row.showca
 assert.equal(count('inventory_stock'),stockBeforeNewVariants,'Catalog create and provision must not produce physical stock')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 
+// Actual live failure: the UI always offers "КВАРЦЕВЫЕ" (value "quartz"),
+// but older Client3 D1 copies may not have the matching v5 reference seeds.
+// These BUILT-IN values must remain registrable without migrations.
+const missingLegacyRefs=[
+  ['movements','quartz'],['movements','mechanical'],
+  ['bracelets','steel'],['bracelets','rubber'],
+  ['dials','black'],['dials','white'],
+]
+for(const [kind,value] of missingLegacyRefs)
+ sqlite.prepare('DELETE FROM watch_reference_values_v5 WHERE kind=? AND value=?').run(kind,value)
+for(const [kind,value] of missingLegacyRefs)
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM watch_reference_values_v5 WHERE kind=? AND value=?').get(kind,value).n,0)
+const missingSeedModel=await parse(registerWatchModel(db,admin,2,{modelName:'БЕЗ ПОСЕВНЫХ СПРАВОЧНИКОВ'}))
+assert(missingSeedModel.watchProductId>0,JSON.stringify(missingSeedModel))
+const screenshotVariant=await parse(registerWatchVariant(db,admin,2,{
+  watchProductId:missingSeedModel.watchProductId,
+  gender:'male',movement:'quartz',braceletMaterial:'steel',dialColor:'black',braceletColor:'',
+}))
+assert(screenshotVariant.watchVariantId>0,JSON.stringify(screenshotVariant))
+assert.equal(screenshotVariant.status,201,'quartz/steel/black builtin SKU must not require seed rows')
+const screenshotProvision=await parse(provisionClient3WatchSku(db,admin,2,screenshotVariant.watchVariantId))
+assert.equal(screenshotProvision.status,200,JSON.stringify(screenshotProvision))
+assert(screenshotProvision.canonicalVariantId>0)
+const repeatBuiltIn=await parse(registerWatchVariant(db,admin,2,{
+  watchProductId:missingSeedModel.watchProductId,
+  gender:'female',movement:'mechanical',braceletMaterial:'rubber',dialColor:'white',braceletColor:'',
+}))
+assert(repeatBuiltIn.watchVariantId>0,JSON.stringify(repeatBuiltIn))
+const customNotInReferences=await parse(registerWatchVariant(db,admin,2,{
+  watchProductId:missingSeedModel.watchProductId,
+  gender:'male',movement:'НЕСУЩЕСТВУЮЩИЙ МЕХАНИЗМ',braceletMaterial:'steel',dialColor:'black',braceletColor:'',
+}))
+assert.equal(customNotInReferences.status,409,'Unknown custom values are still blocked')
+assert.equal(customNotInReferences.code,'WATCH_REFERENCE_NOT_FOUND')
+assert.equal(count('inventory_stock'),stockBeforeNewVariants,'Built-in reference repair cannot invent physical stock')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
