@@ -1,0 +1,85 @@
+name: Client3 Team post-deploy read-only verification
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-team-post-deploy-readonly-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 3}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Guard isolated Client3 origin, zero writes/deploy
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/client3/shared-cash-main-team-20261103'
+          test "$(git rev-parse HEAD^)" = '15ab6b008ef482495274211bcc86f942bc0a5565'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-team-post-deploy-readonly-20261103.yml'
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+      - run: npm ci --ignore-scripts
+      - name: Live Team schema, employees and account linkage, read-only
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA table_info(managers)" > /tmp/team-schema.json
+          jq -e '(if type=="array" then .[0].results else .results end)
+            | map(.name) | index("birth_date")!=null' /tmp/team-schema.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT COUNT(*) AS n FROM (
+              SELECT m.id,m.name,m.is_active,COALESCE(m.role,'Менеджер') AS role,
+                COALESCE(m.phone,'') AS phone,COALESCE(m.comment,'') AS comment,
+                COALESCE(m.birth_date,'') AS birthDate,
+                COALESCE(m.color_key,'') AS colorKey,
+                COALESCE(orders.first_order_at,m.hired_at,substr(m.created_at,1,10),'') AS hiredAt,
+                COALESCE(m.dismissed_at,'') AS dismissedAt
+              FROM managers m LEFT JOIN (
+                SELECT manager_id,MIN(order_date) AS first_order_at,COUNT(*) AS reference_count
+                FROM orders WHERE manager_id IS NOT NULL GROUP BY manager_id
+              ) orders ON orders.manager_id=m.id
+            )" | jq -e '(if type=="array" then .[0].results[0] else .results[0] end) | .n>=0'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT (SELECT COUNT(*) FROM managers) employees,
+              (SELECT COUNT(*) FROM app_users) accounts,
+              (SELECT COUNT(*) FROM watch_manager_brands) brand_assignments,
+              (SELECT COUNT(*) FROM watch_brands WHERE is_active=1) active_brands,
+              (SELECT COUNT(*) FROM watch_variants) variants" |
+            jq -e '(if type=="array" then .[0].results[0] else .results[0] end)
+              | .employees>=0 and .accounts>=0 and .active_brands==2 and .variants>=0'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" |
+            jq -e '(if type=="array" then .[0].results else .results end) | length==0'
+      - name: Live Worker public HTML and unauthenticated access protection
+        run: |
+          set -euo pipefail
+          base='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          test "$(curl -sSL -o /tmp/client3-html -w '%{http_code}' --max-time 30 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-html
+          for path in '/api/client3/watches/team' '/api/auth/users' \
+              '/api/client3/watches/logistics?status=all' '/api/client3/watches/brands'; do
+            code="$(curl -sS -o /tmp/client3-protected -w '%{http_code}' --max-time 30 "$base$path")"
+            test "$code" = 401 -o "$code" = 403
+          done
+          echo CLIENT3_TEAM_POST_DEPLOY_VERIFIED_READ_ONLY
+      - name: Confirm completed release without modifying business data
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Team/Logist post-deploy verification SUCCEEDED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Worker was already deployed in run 41624751425 (successful deploy step); additive managers.birth_date installed only in third D1. Read-only post-deploy checks: complete Team roster SQL, existing employee/account counts, two active brands, FK integrity, live HTTP and unauthorized Team/users/logistics boundaries. No further deploy, database writes, or Main/Branch2 changes. Run 41624751425 was marked failed only because watch_variants changed 16 to 17 concurrently during strict pre/post diff. Authenticated visual QA remains pending."
+      - name: Record verification blocker
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 Team post-deploy read-only check FAILED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. It performed no deploy or write. Investigate before claiming complete acceptance."
