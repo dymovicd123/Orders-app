@@ -1,4 +1,4 @@
-name: Client3 QA batch 4 - compact order actions and human finance
+name: Client3 QA batch 4b - compile-corrected Main-aligned workflows
 on:
   push:
     branches: [client3/isolated-qa-copy-20261103]
@@ -93,9 +93,9 @@ jobs:
         if: success()
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
-            "Client3 QA batch4 deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Adds direct return/exchange actions in compact order rows, preselected dedicated forms, explicit partial return item quantities, human finance labels, stale-revision retry UX; preserves guarded stock-confirmation, QA-only former-manager archive, clients and all earlier fixes. TypeScript/build, regression and QA FK all passed. Main, Branch2 and working Client3 unchanged. CI: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID"
+            "Client3 QA batch4b deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Adds direct return/exchange actions in compact order rows, preselected dedicated forms, explicit partial return item quantities, human finance labels, stale-revision retry UX; preserves guarded stock-confirmation, QA-only former-manager archive, clients and all earlier fixes. TypeScript/build, regression and QA FK all passed. Main, Branch2 and working Client3 unchanged. CI: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID"
       - name: Record blocked build or release accurately
         if: failure()
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
-            "Client3 QA batch4 failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
+            "Client3 QA batch4b failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
