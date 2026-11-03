@@ -1,7 +1,6 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {dispatchSelectedCompleteOrderLines} from './order-dispatch.ts'
-import {recoverPendingOrderReservationsBeforeShipping} from './reservation-admission.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type WatchDispatchSelection={orderItemId:number;quantity:number}
@@ -90,37 +89,20 @@ export async function dispatchClient3WatchOrder(
        'Для отправки сначала подтвердите готовность гравировки выбранных часов.',409)
    const needsPhysicalCheck=selected.some(x=>x.reservation_status!=='active'||
      x.stock_writeoff_status!=='reserved')
-   if(needsPhysicalCheck){
-     if(input.confirmPhysicalStock!==true)return fail('WATCH_PHYSICAL_CONFIRM_REQUIRED',
-       'Подтвердите, что выбранные часы физически находятся в выбранной точке.',409)
-     // Use Main's existing atomic recovery: it activates an unresolved
-     // reservation ONLY if the exact canonical SKU has unreserved physical
-     // quantity. This must never manufacture stock or borrow another reserve.
-     await recoverPendingOrderReservationsBeforeShipping(
-       db,orderId,new Date().toISOString(),chosen.map(x=>x.orderItemId))
-     const recovered=await db.prepare(`SELECT oi.id,oi.stock_writeoff_status AS writeoff,
-       r.status AS reservation_status,r.quantity AS reserved_qty
-       FROM order_items oi
-       LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
-       WHERE oi.order_id=? AND oi.id IN
-         (SELECT CAST(value AS INTEGER) FROM json_each(?))`)
-       .bind(orderId,JSON.stringify(chosen.map(x=>x.orderItemId)))
-       .all<{id:number;writeoff:string;reservation_status:string;reserved_qty:number}>()
-     const readyById=new Map((recovered.results||[]).map(row=>[Number(row.id),row]))
-     if(chosen.some(line=>{
-       const row=readyById.get(line.orderItemId)
-       return !row||row.reservation_status!=='active'||
-         row.writeoff!=='reserved'||Number(row.reserved_qty)<line.quantity
-     }))return fail('WATCH_STOCK_NOT_FREE',
-       'Подтверждение принято, но свободного остатка нужной комплектации недостаточно по учёту. Уточните фактическое количество на складе; чужой резерв списывать нельзя.',409)
-   }
+   // The user explicitly confirms physical handover in the send review.
+   // Unlike the earlier Client3-only recovery gate, do NOT demand a free
+   // accounting reserve: Main supports a bounded shipment with verified fact.
+   // The shared dispatch engine records the shortage, never invents units.
+   if(needsPhysicalCheck&&input.confirmPhysicalStock!==true)
+     return fail('WATCH_PHYSICAL_CONFIRM_REQUIRED',
+       'Подтвердите, что выбранные часы физически передаются клиенту.',409)
  }
 
  const localDate=new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
  try{
    const result=await dispatchSelectedCompleteOrderLines(db,orderId,{
      requestId,items:chosen,actor:'client3-watch:'+actor.id,dispatchDate:localDate,
-     watchSplitBrandId:brandId,
+     watchSplitBrandId:brandId,watchPhysicalConfirmed:input.confirmPhysicalStock===true,
    })
    if(!result?.ok)return fail('WATCH_DISPATCH_FAILED','Склад не подтвердил отправку.')
    return json({...result,orderId,brandId,stockDispatched:true,
