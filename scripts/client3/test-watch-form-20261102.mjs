@@ -6,7 +6,8 @@ import { createServer } from 'vite'
 import reactPlugin from '@vitejs/plugin-react'
 const source=fs.readFileSync('src/features/client3/WatchOrderForm.tsx','utf8')
 assert(!/Размер|Длина|Обмен размера|Цех/.test(source),'Watch form must not show clothing fields')
-assert(source.includes("quantity<=free"),'Submission must not exceed selected source available quantity')
+assert(source.includes('line.quantity>available')&&source.includes('Заказ можно сохранить;'),
+  'Like Main, an order with shortage can be saved with a visible warning; stock must not be invented')
 assert(source.includes("deliveryMethods.map"),'Delivery choices must come from current Main configuration')
 assert(source.includes('receivedAmount'),'Received money must be explicitly captured')
 assert(source.includes('requestRef'),'Create retries need a stable idempotency key')
@@ -50,5 +51,5 @@ try {
   for(const step of ['Клиент и условия заказа','Товары в заказе','Оплаты','Проверка заказа'])
     assert(html.includes(step),'Missing Main create order step: '+step)
   assert(!html.includes('Жилет')&&!html.includes('Шапан'),'Do not seed third-party clothing catalog')
-  console.log('CLIENT3_WATCH_ORDER_FORM_SSR_PASS: brand-source-SKU, leather dual colors, safe qty, engraving, Kazpost, exact deadline')
+  console.log('CLIENT3_WATCH_ORDER_FORM_SSR_PASS: brand-source-SKU, leather dual colors, shortage-safe ordering, engraving, Kazpost, exact deadline')
 } finally{await server.close()}
