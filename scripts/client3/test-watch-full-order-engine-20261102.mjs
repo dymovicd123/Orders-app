@@ -28,7 +28,7 @@ import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
-import {listClient3WatchOperationHistory} from '../../worker/domains/client3-watch-operation-history.ts'
+import {listClient3WatchOperationHistory,cancelClient3WatchOperation} from '../../worker/domains/client3-watch-operation-history.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
 const sqlite=new DatabaseSync(':memory:')
@@ -1702,6 +1702,48 @@ assert.equal(ledgerPage.status,200,JSON.stringify(ledgerPage))
 assert(ledgerPage.totals.eventCount>=ledgerPage.rows.length,'Money ledger pagination needs complete totals')
 // Main-like historical lists are always brand-scoped and include exact watches,
 // money, and physical intake; no cross-brand information leakage.
+// Main returns cancellation must use the canonical finance/stock compensator.
+// It is never allowed to act across watch brands or from the logistic role.
+const cancelAuthDenied=await parse(cancelClient3WatchOperation(db,logisticActor,1,{
+ kind:'return',id:arrivedReturn.returnId,
+ requestId:'watch-return-denied-actor-20261104',
+ reason:'Тест прав отмены возврата в часовом бренде',
+}))
+assert.equal(cancelAuthDenied.status,403)
+const cancelCrossBrand=await parse(cancelClient3WatchOperation(db,admin,2,{
+ kind:'return',id:arrivedReturn.returnId,
+ requestId:'watch-return-denied-brand-20261104',
+ reason:'Тест проверки владения брендом для отмены',
+}))
+assert.equal(cancelCrossBrand.status,404)
+const cancellable=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-main-cancel-money-base-20261104',
+ items:[{watchVariantId:1,catalogVariantId:vid,source:'office',
+  quantity:1,unitPrice:13000,engravingText:''}],
+ receivedAmount:8000,payments:[{method:'KASPI GOLD',amount:8000}],
+}))
+assert.equal(cancellable.status,201,JSON.stringify(cancellable))
+const moneyOnlyReturn=await parse(createClient3WatchReturn(db,manager,1,cancellable.orderId,{
+ requestId:'watch-main-cancel-money-return-20261104',
+ kind:'money_only',quantity:0,items:[],amount:1000,
+ paymentMethod:'KASPI GOLD',refundParts:[{method:'KASPI GOLD',amount:1000}],
+ reason:'Частичная компенсация стоимости заказа',
+}))
+assert.equal(moneyOnlyReturn.status,200,JSON.stringify(moneyOnlyReturn))
+const cancelledRefund=await parse(cancelClient3WatchOperation(db,admin,1,{
+ kind:'return',id:moneyOnlyReturn.returnId,
+ requestId:'watch-main-cancel-money-admin-20261104',
+ reason:'Ошибка менеджера, согласован возврат средств',
+}))
+assert.equal(cancelledRefund.status,200,JSON.stringify(cancelledRefund))
+assert.equal(sqlite.prepare('SELECT status FROM returns WHERE id=?')
+ .get(moneyOnlyReturn.returnId).status,'cancelled')
+const replayCancelledRefund=await parse(cancelClient3WatchOperation(db,admin,1,{
+ kind:'return',id:moneyOnlyReturn.returnId,
+ requestId:'watch-main-cancel-money-admin-20261104',
+ reason:'Ошибка менеджера, согласован возврат средств',
+}))
+assert.equal(replayCancelledRefund.ok,true,'Main cancellation is idempotent')
 const returnHistory=await parse(listClient3WatchOperationHistory(db,admin,1,
   new URL('https://test.invalid/api/client3/watches/operations/history?kind=return&status=all')))
 assert.equal(returnHistory.status,200,JSON.stringify(returnHistory))
