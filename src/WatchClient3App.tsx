@@ -14,6 +14,7 @@ import {WatchReportsPanel} from './features/client3/WatchReportsPanel'
 import {WatchPlansPanel} from './features/client3/WatchPlansPanel'
 import {WatchLeadsPanel} from './features/client3/WatchLeadsPanel'
 import {WatchReturnsPanel} from './features/client3/WatchReturnsPanel'
+import {WatchOperationHistoryPanel} from './features/client3/WatchOperationHistoryPanel'
 import {WatchLegacyOrdersPanel} from './features/client3/WatchLegacyOrdersPanel'
 import { WatchLogisticsPanel } from './features/client3/WatchLogisticsPanel'
 import {WatchReferencesSection} from './features/client3/WatchReferencesSection'
@@ -400,12 +401,26 @@ export function WatchClient3App() {
             allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
           {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion}
             brands={brands.map(x=>x.code)}/>}
+          {brands.length>0&&<WatchOperationHistoryPanel kind="return"
+            key={'return-history-'+catalogVersion}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            brands={brands.map(x=>x.code)}
+            onOpenOrder={order=>{
+              setReportOrderFocus(order);setLastOrderBrand(order.brand);goTo('orders')
+            }}/>}
         </>:
         activeSection==='exchange'?<>
           {brands.length>0&&<WatchOrdersPanel workflow="exchange" key={'exchange-order-flow-'+catalogVersion}
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
+          {brands.length>0&&<WatchOperationHistoryPanel kind="exchange"
+            key={'exchange-history-'+catalogVersion}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            brands={brands.map(x=>x.code)}
+            onOpenOrder={order=>{
+              setReportOrderFocus(order);setLastOrderBrand(order.brand);goTo('orders')
+            }}/>}
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}
