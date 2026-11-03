@@ -124,6 +124,12 @@ export async function applyClient3WatchBulkOperation(
      return error('WATCH_BULK_NOT_APPLIED','Складское ядро не подтвердило операцию.',409)
    return json({...out,brandId,kind,source:input.source,itemCount:lines.length})
  }catch(cause){
-   return error('WATCH_BULK_FAILED',cause instanceof Error?cause.message:'Не удалось выполнить операцию.',409)
+   const raw=cause instanceof Error?cause.message:'Не удалось выполнить операцию.'
+   // Main intentionally uses an existing primary key as an atomic CAS guard.
+   // Never show the SQLite implementation detail to a watch-warehouse operator.
+   const message=/inventory_model_meta\.key|SQLITE_CONSTRAINT_PRIMARYKEY/i.test(raw)
+     ?'Остаток изменился или в точке идёт ревизия. Обновите склад и завершите проверку перед перемещением.'
+     :raw.replace(/\bБутик\b/g,'Витрина').replace(/\bбутик\b/g,'витрина')
+   return error('WATCH_BULK_FAILED',message,409)
  }
 }
