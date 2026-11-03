@@ -17,3 +17,6 @@ JOIN order_items oi ON oi.id=wi.order_item_id AND oi.quantity>0
 JOIN watch_logistics_jobs lj ON lj.order_id=oi.order_id
 WHERE lj.status='ready' AND lj.ready_at IS NOT NULL
   AND LENGTH(TRIM(wi.engraving_text))>0;
+
+-- Keep immutable item-level audit alongside current readiness state.
+ALTER TABLE watch_logistics_events ADD COLUMN order_item_id INTEGER REFERENCES order_items(id);
