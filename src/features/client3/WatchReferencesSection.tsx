@@ -1,9 +1,9 @@
 import {useCallback,useEffect,useState,type FormEvent} from 'react'
-import {WATCH_OPTIONS,WATCH_PAYMENTS,type WatchBrand} from '../../../shared/client3/watch-domain'
+import {WATCH_OPTIONS,WATCH_PAYMENTS,watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-references.css'
 
-type Kind='brands'|'sources'|'genders'|'movements'|'bracelets'|'dials'|'leatherColors'|'payments'|'delivery'
-type EditableKind='movements'|'bracelets'|'dials'|'leatherColors'|'payments'|'delivery'
+type Kind='brands'|'sources'|'genders'|'movements'|'bracelets'|'dials'|'leatherColors'|'payments'|'delivery'|'cities'
+type EditableKind='movements'|'bracelets'|'dials'|'leatherColors'|'payments'|'delivery'|'cities'
 type ReferenceEntry={id:number;kind:string;value:string}
 type ValuesResponse={ok:boolean;rows?:ReferenceEntry[];message?:string}
 const CONFIG:Record<Kind,{label:string;help:string;items:readonly string[];editable?:EditableKind}>={
@@ -16,10 +16,11 @@ const CONFIG:Record<Kind,{label:string;help:string;items:readonly string[];edita
   leatherColors:{label:'Цвет ремешка',help:'Общий список для кожаных ремешков обоих брендов.',items:[],editable:'leatherColors'},
   payments:{label:'Способы оплаты',help:'Общий список способов оплаты для новых продаж.',items:[...WATCH_PAYMENTS],editable:'payments'},
   delivery:{label:'Доставка',help:'Общие варианты доставки для новых заказов.',items:['Казпочта','Курьер','Самовывоз','Межгород'],editable:'delivery'},
+  cities:{label:'Города',help:'Города из Main для адресов доставки, без ограничения свободного ввода.',items:[],editable:'cities'},
 }
 const KINDS=Object.keys(CONFIG) as Kind[]
-const serverKind:Record<EditableKind,string>={movements:'movements',bracelets:'bracelets',dials:'dials',leatherColors:'leatherColors',payments:'paymentMethods',delivery:'deliveryMethods'}
-const emptyLists=():Record<EditableKind,ReferenceEntry[]>=>({movements:[],bracelets:[],dials:[],leatherColors:[],payments:[],delivery:[]})
+const serverKind:Record<EditableKind,string>={movements:'movements',bracelets:'bracelets',dials:'dials',leatherColors:'leatherColors',payments:'paymentMethods',delivery:'deliveryMethods',cities:'cities'}
+const emptyLists=():Record<EditableKind,ReferenceEntry[]>=>({movements:[],bracelets:[],dials:[],leatherColors:[],payments:[],delivery:[],cities:[]})
 
 /** Reference values are shared across brands; SKU identity and stock are not. */
 export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit=false}:{
@@ -63,7 +64,7 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
   const create=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
     if(!config.editable||!canEdit||saving)return
-    const value=draft.trim().replace(/\s+/g,' ')
+    const value=draft.trim().replace(/\s+/g,' ').toLocaleUpperCase('ru-RU')
     if(!value||value.length>80){setError('Укажите значение от 1 до 80 символов.');return}
     setSaving(true);setError('');setNotice('')
     try{
@@ -140,12 +141,12 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
         <div className="reference-list">
           {items.map((item,index)=><div key={item.id} className="reference-row">
             <div className="reference-row-main">
-              <div className="reference-row-title"><strong>{item.value}</strong>
+              <div className="reference-row-title"><strong>{watchReferenceLabel(serverKind[config.editable||'delivery']||kind,item.value)}</strong>
                 <span className="status-pill status-online">Доступно</span></div>
               <span>№ {index+1}</span>
               {canEdit&&config.editable&&<div className="reference-row-actions">
                 <button type="button" className="secondary compact" disabled={saving}
-                  onClick={()=>{setEditId(item.id);setDraft(item.value);setError('')}}>Изменить</button>
+                  onClick={()=>{setEditId(item.id);setDraft(item.value.toLocaleUpperCase('ru-RU'));setError('')}}>Изменить</button>
                 <button type="button" className="danger compact" disabled={saving}
                   onClick={()=>void remove(item)}>Удалить</button>
               </div>}
@@ -160,8 +161,8 @@ export function WatchReferencesSection({brands,onOpenCatalog,onOpenStaff,canEdit
           <p className="mini-panel-note">{config.editable?'Одно значение действует для обоих брендов.':'Системные коды защищены складским учётом.'}</p></div></div>
         {config.editable&&canEdit?<form className="reference-editor-preview" onSubmit={e=>void create(e)}>
           <label>Новое значение для «{config.label}»
-            <input required maxLength={80} value={draft} onChange={e=>setDraft(e.target.value)}
-              placeholder={kind==='leatherColors'?'Например: Тёмно-синий':'Название нового значения'}/>
+            <input required maxLength={80} value={draft} onChange={e=>setDraft(e.target.value.toLocaleUpperCase('ru-RU'))}
+              placeholder={kind==='leatherColors'?'Например: ЧЕРНЫЙ':kind==='cities'?'Например: АЛМАТЫ':'НОВОЕ ЗНАЧЕНИЕ'}/>
           </label>
           <button type="submit" className="primary" disabled={saving||!draft.trim()}>
             {saving?'Сохранение…':editId?'Сохранить изменения':'Добавить в справочник'}</button>
