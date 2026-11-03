@@ -109,6 +109,7 @@ jobs:
           assert(refs.includes("'watch_city_values'"))
           assert(refs.includes('CITY_OFFSET=2000000000'))
           assert(refs.includes("return value.toLocaleUpperCase('ru-RU')"))
+          assert(readFileSync('scripts/client3/sync-main-watch-cities-20261103.mjs','utf8').includes('CLIENT3_MAIN_CITIES_READONLY_EXPORT_OK'))
           assert(refUi.includes("cities:{label:'Города'"))
           assert(refUi.includes('watchReferenceLabel('))
           assert(client.includes("row.kind==='cities'"))
