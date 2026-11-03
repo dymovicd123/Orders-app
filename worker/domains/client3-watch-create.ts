@@ -19,7 +19,7 @@ export type WatchCreateInput=WatchOrderInput&{
  items?:WatchCreateItem[]
  watchVariantId?:number;catalogVariantId?:number;quantity?:number;unitPrice?:number;
  receivedAmount?:number;payments?:Array<{method:WatchPaymentMethod;amount:number}>
- engravingText?:string;requestId:string;managerId?:number
+ engravingText?:string;requestId:string;managerId?:number;orderDate?:string
 }
 const fail=(code:string,message:string,status=400)=>json({ok:false,code,message},{status})
 const amount=(v:unknown,label:string):number=>{
@@ -34,6 +34,18 @@ export async function createClient3WatchOrder(
    return fail('WATCH_CREATE_FORBIDDEN','Создание заказов доступно менеджеру или администратору.',403)
  try{
    const input=validateWatchOrderInput(raw)
+   // Main accepts a distinct order_date for later-entered historical sales.
+   // Validate it strictly here, rather than permitting arbitrary JS Date parsing.
+   const today=new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
+   let orderDate=today
+   if(raw.orderDate!==undefined){
+     if(typeof raw.orderDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(raw.orderDate)||
+       raw.orderDate<'2020-01-01'||raw.orderDate>today||
+       !Number.isFinite(Date.parse(raw.orderDate+'T00:00:00Z'))||
+       new Date(raw.orderDate+'T00:00:00Z').toISOString().slice(0,10)!==raw.orderDate)
+       return fail('WATCH_ORDER_DATE_INVALID','Укажите фактическую дату заказа не позже сегодняшнего дня.')
+     orderDate=raw.orderDate
+   }
    if(!await isHumanInventoryModelEnabled(db))
      return fail('WATCH_INVENTORY_NOT_READY','Складской учёт ещё не подготовлен.',503)
    if(!Number.isSafeInteger(brandId)||brandId<1)
@@ -153,7 +165,7 @@ export async function createClient3WatchOrder(
    }
    const sourceType=first.source==='office'?'warehouse':'boutique'
    const order:OrderInput={
-     requestId:raw.requestId,managerId,
+     requestId:raw.requestId,managerId,orderDate,
      customerName:input.recipientName,customerPhone:input.recipientPhone,
      city:input.city,deliveryType:input.deliveryMethod,sourceType,
      orderPaymentMethod:input.paymentMethod,orderStatus:'active',

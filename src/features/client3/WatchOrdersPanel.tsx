@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useState } from 'react'
-import type { WatchBrand } from '../../../shared/client3/watch-domain'
+import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {WatchReturnForm} from './WatchReturnForm'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
+import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
@@ -30,6 +31,7 @@ const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ож�
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
 type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;unitPrice:number;
   lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
+  stockWriteoffStatus:string;
   engravingText:string;gender:string;movement:string;braceletMaterial:string;
   dialColor:string;braceletColor:string}
 function parsedRows<T>(raw:string|undefined):T[]{
@@ -60,6 +62,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
   const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
+  const [handoverOrderId,setHandoverOrderId]=useState<number|null>(
+    initialFocusedOrder?.orderDate&&initialFocusedOrder.orderDate<new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
+      ?initialFocusedOrder.orderId:null)
   const [expanded,setExpanded]=useState<number|null>(initialFocusedOrder?.orderId||null)
   useEffect(()=>{
     const controller=new AbortController()
@@ -145,7 +150,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   {parsedRows<ItemLine>(order.itemLines).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
                     <strong>{line.productName}</strong><small>{line.quantity} шт. ·
                       {line.source==='warehouse'?' Офис':' Витрина'} ·
-                      {[line.movement,line.braceletMaterial,line.dialColor].filter(Boolean).join(' / ')}</small>
+                      {[watchReferenceLabel('movements',line.movement),watchReferenceLabel('bracelets',line.braceletMaterial),watchReferenceLabel('dials',line.dialColor)].filter(Boolean).join(' / ')}</small>
                   </div>)}
                   {order.lineCount>3&&<small>Ещё {order.lineCount-3} поз.</small>}
                 </td>
@@ -175,7 +180,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                 </td>
                 <td><button type="button" className="watch-main-detail-button"
                   aria-expanded={expanded===order.orderId}
-                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);setEditOrderId(null)}}>
+                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)}}>
                   {expanded===order.orderId?'Скрыть':'Открыть'}
                 </button></td>
               </tr>
@@ -201,10 +206,14 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                         <div><strong>{line.productName}</strong>
                           <small>{[
                             line.gender==='male'?'Мужские':line.gender==='female'?'Женские':'',
-                            line.movement,line.braceletMaterial,line.dialColor,line.braceletColor,
+                            watchReferenceLabel('movements',line.movement),
+                            watchReferenceLabel('bracelets',line.braceletMaterial),
+                            watchReferenceLabel('dials',line.dialColor),
+                            line.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',line.braceletColor):'',
                           ].filter(Boolean).join(' · ')}</small>
                           {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-                          <small>{line.source==='warehouse'?'Офис':'Витрина'} · {line.shipped?'Отправлен':'Не отправлен'}</small></div>
+                          <small>{line.source==='warehouse'?'Офис':'Витрина'} · {line.shipped?'Отправлен':
+                            line.stockWriteoffStatus==='fulfilled'?'Ранее выдан · подтверждено':'Не отправлен'}</small></div>
                         <strong>{line.quantity} × {sum(line.unitPrice)}</strong>
                       </div>)}
                       {parsedRows<ItemLine>(order.itemLines).length===0&&
@@ -238,6 +247,13 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                         Закрыть долг
                       </button>}
                     {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
+                      <button type="button" className="secondary compact"
+                        aria-expanded={handoverOrderId===order.orderId}
+                        onClick={()=>{setHandoverOrderId(v=>v===order.orderId?null:order.orderId);
+                          setEditOrderId(null);setDebtOrderId(null);setExchangeOrderId(null);setReturnOrderId(null)}}>
+                        Уточнить выдачу после ревизии
+                      </button>}
+                    {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
                       (onOpenLogistics?<button type="button"
                         onClick={()=>onOpenLogistics(brand)}>Подготовить / отправить в логистике</button>:
                         <small>Подготовка и отправка находятся в разделе «Логистика».</small>)}
@@ -252,6 +268,11 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                         Оформить возврат</button>}
                   </div>
 
+                  {handoverOrderId===order.orderId&&<WatchOrderHandoverPanel
+                    brand={brand} orderId={order.orderId}
+                    lines={parsedRows<ItemLine>(order.itemLines)}
+                    onDone={()=>setRefresh(v=>v+1)}
+                    onClose={()=>setHandoverOrderId(null)}/>}
                   {isAdmin&&<WatchAdminOrderActions
                     brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
                     managerId={Number(order.managerId||0)} paymentLines={order.paymentLines}

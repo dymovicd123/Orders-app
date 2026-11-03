@@ -1,0 +1,12 @@
+.client3-watch-handover{margin:14px 0;border:1px solid #bfd3ef;border-radius:14px;background:#f7faff;padding:16px;display:grid;gap:12px}
+.client3-watch-handover-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.client3-watch-handover-title h3{margin:0 0 7px;font-size:1rem}
+.client3-watch-handover-title p,.client3-watch-handover-item p{margin:4px 0 8px;color:#475569;line-height:1.45}
+.client3-watch-handover-item{padding:14px;border:1px solid #d2def0;border-radius:12px;background:white}
+.client3-watch-handover-item h4{margin:0 0 7px}
+.client3-watch-handover-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.client3-watch-handover-confirm{margin-top:12px;padding:13px;border:1px solid #c2d4f7;border-radius:10px;background:#f3f7ff;display:grid;gap:10px}
+.client3-watch-handover-confirm>label{display:flex;align-items:flex-start;gap:7px}
+.client3-watch-handover-confirm input[type=checkbox]{width:17px;height:17px;flex-shrink:0}
+.client3-watch-handover-empty{padding:12px;border-radius:10px;background:#eff5ff;color:#28456a}
+@media(max-width:680px){.client3-watch-handover-title{flex-direction:column}}

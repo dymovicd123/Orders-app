@@ -20,7 +20,7 @@ type ManualFields={modelName:string;gender:'male'|'female';movement:string;
 type DraftLine={id:string;watchVariantId:number;source:WatchSource;quantity:number;
  unitPrice:string;engravingText:string;manual:ManualFields}
 export type WatchOrderDraftPayload=ReturnType<typeof validateWatchOrderInput>&{
- shippingDeadlineLocal:string;requestId:string;receivedAmount:number;
+ orderDate:string;shippingDeadlineLocal:string;requestId:string;receivedAmount:number;
  payments:Array<{method:WatchPaymentMethod;amount:number}>;managerId?:number;
  items:Array<{watchVariantId:number;catalogVariantId?:number;quantity:number;unitPrice:number;
    source:WatchSource;engravingText:string;manual?:ManualFields}>
@@ -47,6 +47,7 @@ const canonical=(options:readonly {value:string;label:string}[],raw:string)=>{
 const comparable=(value:string)=>value.trim().replace(/\s+/g,' ').toLocaleLowerCase('ru-RU')
 const free=(x:WatchOrderChoice,source:WatchSource)=>Math.max(0,Number(source==='office'?
  x.officePhysical-x.officeReserved:x.showcasePhysical-x.showcaseReserved)||0)
+const businessToday=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 const newLine=():DraftLine=>({
  id:crypto.randomUUID(),watchVariantId:0,source:'office',quantity:1,unitPrice:'',engravingText:'',
  manual:{modelName:'',gender:'male',movement:'quartz',braceletMaterial:'steel',dialColor:'black',braceletColor:''},
@@ -72,6 +73,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  const [postalCode,setPostalCode]=useState('')
  const [deliveryMethod,setDeliveryMethod]=useState(deliveryMethods[0]||'')
  const [shippingDeadlineLocal,setShippingDeadlineLocal]=useState('')
+ const [orderDate,setOrderDate]=useState(businessToday)
  const [urgent,setUrgent]=useState(false)
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
@@ -121,12 +123,12 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    Number.isSafeInteger(total)&&Number.isSafeInteger(received)&&received<=total&&
    validPayments&&(!isAdmin||staff.some(x=>x.id===managerId))&&
    recipientName.trim()&&recipientPhone.trim()&&city.trim()&&address.trim()&&postalCode.trim()&&
-   deliveryMethod.trim()&&shippingDeadlineLocal&&!busy)
+   deliveryMethod.trim()&&shippingDeadlineLocal&&/^\d{4}-\d{2}-\d{2}$/.test(orderDate)&&orderDate<=businessToday()&&!busy)
  const reset=()=>{
    setBrand('');setLines([newLine()]);setManagerId(0)
    setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0'}])
    setRecipientName('');setRecipientPhone('');setCity('');setOtherCity(false);setAddress('');setPostalCode('')
-   setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false)
+   setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false);setOrderDate(businessToday())
    setError('');requestRef.current=null
  }
  const submit=async(event:FormEvent<HTMLFormElement>)=>{
@@ -152,7 +154,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        deliveryMethod,shippingDeadlineLocal,urgent,paymentMethod,
      })
      const payload={
-       ...base,shippingDeadlineLocal,items:selected,
+       ...base,orderDate,shippingDeadlineLocal,items:selected,
        watchVariantId:first.watchVariantId,catalogVariantId:0,
        quantity:first.quantity,unitPrice:first.unitPrice,engravingText:first.engravingText,
        catalogPriceSnapshot:matches[0]?.catalogPriceSnapshot??null,
@@ -192,6 +194,11 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
            <option value="">Выберите бренд</option>
            {allowedBrands.map(x=><option value={x} key={x}>{x}</option>)}
          </select>
+       </label>
+       <label>Дата заказа *
+         <input required type="date" value={orderDate} max={businessToday()}
+           onChange={e=>setOrderDate(e.target.value)}/>
+         <small>Для заказов за 1–2 октября укажите фактическую дату. После завершённой ревизии доступно «Уточнение выдачи».</small>
        </label>
        <label>ФИО получателя *
          <input required maxLength={200} value={recipientName} autoComplete="name"

@@ -1,6 +1,7 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {correctClient3WatchDispatch} from './client3-watch-dispatch-correction.ts'
+import {readClient3WatchHandover,clarifyClient3WatchHandover} from './client3-watch-handover.ts'
 import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
@@ -459,6 +460,18 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
     return listPendingClient3WatchReturns(db,actor,scope.row!.id)
+  }
+  const watchHandoverMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/stock-handover$/.exec(url.pathname)
+  if(watchHandoverMatch&&(request.method==='GET'||request.method==='POST')){
+    const input=request.method==='POST'?await readJson<{brand?:unknown;action?:unknown;
+      orderItemId?:unknown;checkpointId?:unknown;checkpointAt?:unknown}>(request):null
+    const scope=await scopedBrand(db,actor,
+      input?.brand??url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    const id=Number(watchHandoverMatch[1])
+    return request.method==='GET'
+      ?readClient3WatchHandover(db,actor,scope.row!.id,id)
+      :clarifyClient3WatchHandover(db,actor,scope.row!.id,id,input||{})
   }
   const exchangeSetMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchange-set$/.exec(url.pathname)
   if(exchangeSetMatch&&request.method==='POST'){

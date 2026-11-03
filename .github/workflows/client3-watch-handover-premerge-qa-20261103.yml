@@ -1,0 +1,28 @@
+name: Client3 Main issuance and watch-label premerge QA
+on:
+  push:
+    branches: [client3/revision-labels-handover-main-parity-20261103]
+    paths: ['.github/workflows/client3-watch-handover-premerge-qa-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: October 1–2 Main handover parity and brand/stock/duplicate checks
+        run: node --experimental-strip-types scripts/client3/test-watch-handover-after-revision-20261103.mjs
+      - name: Full watch order/stock/returns/finance and resolver
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Full and selective revision from zero stock
+        run: node --experimental-strip-types scripts/client3/test-zero-stock-revision-20261103.mjs
+      - name: Arrival draft and 100 SKU check
+        run: node --experimental-strip-types scripts/client3/test-watch-arrival-draft-20261103.mjs
+      - name: Team shared cash access regressions
+        run: node --experimental-strip-types scripts/client3/test-watch-shared-cash-team-20261103.mjs
+      - name: TypeScript and client build
+        run: npm run build
