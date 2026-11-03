@@ -22,6 +22,8 @@ sql.exec(`
  CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,
   amount INTEGER,payment_kind TEXT,comment TEXT,created_at TEXT);
  CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,payment_id INTEGER,status TEXT,financial_action TEXT);
+ CREATE TABLE critical_operations(request_id TEXT PRIMARY KEY,operation_type TEXT,target_id INTEGER);
+ CREATE TABLE critical_operation_entities(request_id TEXT,entity_type TEXT,entity_key TEXT,entity_id INTEGER);
  CREATE TABLE managers(id INTEGER PRIMARY KEY,name TEXT,color_key TEXT);
  CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT,phone_normalized TEXT);
  INSERT INTO orders VALUES(1,'TEST-FIN-1','2026-10-14','2026-10-14T10:00:00Z',NULL,NULL,'АЛМАТЫ',NULL,'active');
@@ -53,6 +55,16 @@ assert.equal(matchExchangePaymentLineage([{...event,amount_delta:600}],payment).
 assert.equal(matchExchangePaymentLineage([{...event,event_type:'order_payment'}],payment).length,0)
 assert.equal(matchExchangePaymentLineage([event,{...event,id:102}],payment).length,2,
   'Same amount/date method corrections are ambiguous; never silently pick a guessed event')
+// A second payment belonging to the same split Exchange must retain its exact
+// association instead of looking like a generic debt closure.
+sql.exec(`
+ INSERT INTO payments VALUES(10,1,'2026-10-21','НАЛИЧКА',300,'extra','Часть доплаты','2026-10-21T10:00:00Z');
+ INSERT INTO critical_operations VALUES('set-7','exchange_set_create',7);
+ INSERT INTO critical_operation_entities VALUES('set-7','payment','exchange:set:payment:2',10);
+`)
+const splitRow=sql.prepare(query).all('2026-10-21','2026-10-21').find(entry=>entry.id===10)
+assert.equal(splitRow.active_exchange_id,7)
+assert.equal(splitRow.operation_type,'exchange_extra')
 // A cancelled Exchange must never claim an event from the old link.
 sql.exec("UPDATE exchanges SET status='cancelled' WHERE id=7")
 row=queryRow()
