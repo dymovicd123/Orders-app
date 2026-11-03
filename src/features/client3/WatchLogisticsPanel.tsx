@@ -243,7 +243,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     delete dispatchIds.current[orderId]
     setDispatchQuantities(prev=>({...prev,[orderId]:{...prev[orderId],[itemId]:value}}))
   }
-  const eligible=(order:WatchLogisticsRow,item:WatchLogisticsRow)=>Boolean(
+  const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>Boolean(
     item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
     item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
     (!item.engravingText?.trim()||Boolean(item.engravingReady)))
