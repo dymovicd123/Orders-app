@@ -461,7 +461,7 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return listPendingClient3WatchReturns(db,actor,scope.row!.id)
   }
-  const watchHandoverMatch=/^\\/api\\/client3\\/watches\\/orders\\/(\\d+)\\/stock-handover$/.exec(url.pathname)
+  const watchHandoverMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/stock-handover$/.exec(url.pathname)
   if(watchHandoverMatch&&(request.method==='GET'||request.method==='POST')){
     const input=request.method==='POST'?await readJson<{brand?:unknown;action?:unknown;
       orderItemId?:unknown;checkpointId?:unknown;checkpointAt?:unknown}>(request):null
