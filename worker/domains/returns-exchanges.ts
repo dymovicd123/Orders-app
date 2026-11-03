@@ -259,7 +259,7 @@ type MoneyPart = { method: string; amount: number };
 
 // A settlement is one business operation but may have two actual payment channels.
 // Never create a combined-method cash event: cash reports must see each channel separately.
-function normalizeMoneyParts(input: unknown, expected: number, legacyMethod: unknown): MoneyPart[] {
+export function normalizeMoneyParts(input: unknown, expected: number, legacyMethod: unknown): MoneyPart[] {
   if (!Number.isSafeInteger(expected) || expected < 0) throw new Error('Некорректная сумма денежной операции.');
   const raw = Array.isArray(input) ? input : null;
   if (!expected) {
