@@ -116,11 +116,11 @@ jobs:
               triggers=[]
               ordinary=[]
               for statement in statements:
-                if re.search(r'(?i)\\bCREATE\\s+(?:TEMP\\s+|TEMPORARY\\s+)?TRIGGER\\b',statement):
+                if re.search(r'(?i)\bCREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TRIGGER\b',statement):
                   triggers.append(statement)
                 else: ordinary.append(statement)
               data=''.join(ordinary)
-              Path('/tmp/qa-triggers.sql').write_text('\\n'.join(triggers),encoding='utf-8')
+              Path('/tmp/qa-triggers.sql').write_text('\n'.join(triggers),encoding='utf-8')
               print('Deferred SQL triggers:',len(triggers))
             p.write_text(data,encoding='utf-8')
           print('Schema and data SQL snapshots stored only in ephemeral runner.')
