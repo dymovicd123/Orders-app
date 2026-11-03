@@ -53,10 +53,10 @@ const check=async(expectedSold)=>{
 assert.equal(await check(5),5)
 // Shipment alone cannot change a sale month or add a duplicate KPI sale.
 sql.exec("UPDATE orders SET shipping_status='sent',shipping_date='2026-12-10' WHERE id=1")
-assert.equal(await check(),5)
+assert.equal(await check(5),5)
 // Genuine return reduces the KPI; cancellation restores it.
 sql.exec("UPDATE returns SET status='completed' WHERE id=102")
 assert.equal(await check(4),4)
 sql.exec("UPDATE returns SET status='cancelled' WHERE id=101")
-assert.equal(await check(),5)
+assert.equal(await check(5),5)
 console.log('BRANCH2_KPI_UNSHIPPED_NET_SQLITE_PASSED')
