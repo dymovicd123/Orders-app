@@ -41,22 +41,22 @@ const db={
   }
 }
 const user={role:'admin',managerId:1}
-const check=async()=>{
+const check=async(expectedSold)=>{
   const report=await listProductKpis(db,'2026-11',user)
   assert.equal(report.countingRule,'ordered_net_current_v2')
   assert.equal(report.records.length,1)
   const participant=report.records[0].participants[0]
-  assert.equal(participant.sold,5,'3 unshipped - 1 returned + 2 shipped + 1 exchange-linked row')
-  assert.equal(participant.achieved,true)
+  assert.equal(participant.sold,expectedSold,'KPI counts net sold units in the order month')
+  assert.equal(participant.achieved,expectedSold>=4)
   return participant.sold
 }
-assert.equal(await check(),5)
+assert.equal(await check(5),5)
 // Shipment alone cannot change a sale month or add a duplicate KPI sale.
 sql.exec("UPDATE orders SET shipping_status='sent',shipping_date='2026-12-10' WHERE id=1")
 assert.equal(await check(),5)
 // Genuine return reduces the KPI; cancellation restores it.
 sql.exec("UPDATE returns SET status='completed' WHERE id=102")
-assert.equal(await check(),4)
+assert.equal(await check(4),4)
 sql.exec("UPDATE returns SET status='cancelled' WHERE id=101")
 assert.equal(await check(),5)
 console.log('BRANCH2_KPI_UNSHIPPED_NET_SQLITE_PASSED')
