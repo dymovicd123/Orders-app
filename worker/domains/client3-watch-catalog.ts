@@ -151,7 +151,11 @@ export async function registerWatchVariant(
   try{
     const legacy=['quartz','mechanical'].includes(v.movement) &&
       ['steel','leather','rubber'].includes(v.braceletMaterial) &&
-      ['black','white','silver','gold','green','orange','brown','multicolor'].includes(v.dialColor)
+      ['black','white','silver','gold','green','orange','brown','multicolor'].includes(v.dialColor) &&
+      // New reference colours must not be forced into the original constrained
+      // watch_variants columns. Store the actual custom value in v5 attributes.
+      (v.braceletMaterial!=='leather'||!v.braceletColor||
+        ['ЧЁРНЫЙ','КОРИЧНЕВЫЙ'].includes(v.braceletColor))
     // Old constrained columns remain as FK-safe compatibility anchors.
     // Custom values live in additive columns, while the randomized leather
     // sentinel guarantees the old UNIQUE key never merges separate SKU IDs.
