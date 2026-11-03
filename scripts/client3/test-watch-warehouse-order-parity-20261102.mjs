@@ -48,7 +48,7 @@ assert(!create.includes("rows.filter(x=>x.catalogVariantId&&available(x,source)>
  'Do not restrict order creation to existing physical stock: workshop/logistics shortages must remain possible')
 assert(create.includes('validateWatchOrderInput'),'Use shared server-domain input validation')
 assert(create.includes('requestRef'),'Idempotent create retry must be retained')
-assert(create.includes('paymentRows')&&create.includes('+ Добавить способ оплаты'),
+assert(create.includes('payments.map(')&&create.includes('+ Добавить оплату'),
  'Multiple payment rows are required')
 assert(!create.includes('размер')&&!create.includes('Длина'),
  'No clothing-only characteristics in watch form')
