@@ -18,6 +18,8 @@ import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} fr
 import {addWatchModelAlias,listWatchModelAliases,deleteWatchModelAlias,findWatchModelByIdentity} from '../../worker/domains/client3-watch-model-aliases.ts'
 import {registerWatchModel} from '../../worker/domains/client3-watch-catalog.ts'
 import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-edit.ts'
+import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
+import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
@@ -81,6 +83,47 @@ assert(vid>0)
 const stock=source=>sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?').get(source,vid)
 const count=table=>sqlite.prepare('SELECT COUNT(*) AS n FROM '+table).get().n
 const baseOrders=count('orders'),basePayments=count('payments')
+// Client3 urgent reference parity: original 46 Main cities and leather colors,
+// uppercase human names, historical code/stock/finance identity unchanged.
+const cityList=sqlite.prepare("SELECT value FROM watch_city_values WHERE kind='cities' AND is_active=1").all()
+assert.equal(cityList.length,46,'Original Main reference migration contains 46 cities')
+assert(cityList.some(x=>x.value==='АЛМАТЫ'))
+assert(cityList.some(x=>x.value==='ҚЫЗЫЛОРДА'))
+assert(cityList.every(x=>x.value===x.value.toLocaleUpperCase('ru-RU')))
+const leatherList=sqlite.prepare("SELECT value FROM watch_reference_values WHERE kind='leatherColors' AND is_active=1").all()
+assert(leatherList.some(x=>x.value==='ЧЕРНЫЙ'))
+assert(leatherList.some(x=>x.value==='КОРИЧНЕВЫЙ'))
+const refsBefore=await parse(listClient3WatchReferences(db,admin))
+assert.equal(refsBefore.ok,true)
+assert.equal(refsBefore.rows.filter(x=>x.kind==='cities').length,46)
+assert.equal(watchReferenceLabel('movements','quartz'),'КВАРЦЕВЫЕ')
+assert.equal(watchReferenceLabel('bracelets','leather'),'КОЖА')
+assert.equal(watchReferenceLabel('dials','black'),'ЧЕРНЫЙ')
+assert.equal(watchReferenceLabel('deliveryMethods','Курьер'),'КУРЬЕР')
+const addCity=await parse(createClient3WatchReference(db,admin,{kind:'cities',value:'новый город'}))
+assert.equal(addCity.status,201,JSON.stringify(addCity))
+assert.equal(addCity.value,'НОВЫЙ ГОРОД')
+assert(addCity.id>=2000000000)
+const existingCity=await parse(createClient3WatchReference(db,admin,{kind:'cities',value:'  новый город  '}))
+assert.equal(existingCity.alreadyExists,true)
+assert.equal(existingCity.id,addCity.id)
+const updateCity=await parse(updateClient3WatchReference(db,admin,{kind:'cities',id:addCity.id,value:'город для проверки'}))
+assert.equal(updateCity.status,200)
+assert.equal(updateCity.value,'ГОРОД ДЛЯ ПРОВЕРКИ')
+const deletedCity=await parse(deleteClient3WatchReference(db,admin,addCity.id))
+assert.equal(deletedCity.status,200)
+assert.equal((await parse(listClient3WatchReferences(db,admin))).rows.filter(x=>x.kind==='cities').length,46)
+const extraMovement=await parse(createClient3WatchReference(db,admin,{kind:'movements',value:'ручной подзавод'}))
+assert.equal(extraMovement.value,'РУЧНОЙ ПОДЗАВОД')
+const deniedCity=await parse(createClient3WatchReference(db,{
+  id:10,role:'manager',managerId:1,employeeRole:'Менеджер',
+}, {kind:'cities',value:'НЕ ДОЛЖЕН СОЗДАТЬСЯ'}))
+assert.equal(deniedCity.status,403)
+assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM watch_city_values WHERE kind='cities' AND is_active=1").get().n,46)
+assert.equal(sqlite.prepare("SELECT value FROM watch_reference_values_v5 WHERE kind='movements' AND value='quartz'").get().value,'quartz',
+  'Technical Main watch SKU code must not be uppercased and broken')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+
 // Stage 5 resolver: recognize unique existing brand SKU despite Unicode model
 // case and Russian labels, without creating a duplicate identity or stock.
 assert.equal(watchIdentityKey('  тест – часы  '),watchIdentityKey('ТЕСТ-ЧАСЫ'))
