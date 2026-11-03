@@ -395,3 +395,29 @@ Leather strap references now include the requested black and brown colors. A his
 Live guarded release passed Worker deploy, anonymous endpoint denial, unchanged Client3 order/item/payment/stock/physical/reserve counts, FK check, and source-level exact tested SHA gate. No Main or Branch2 mutations. Tests reproduce all 46 seeded cities, city CRUD, uppercase new values and Russian display, original SKU code preservation, leather references and existing order lifecycle regressions.
 
 **Remaining sign-off:** actual customer's Windows/Chrome visual check with refreshed JS/CSS, and broad authenticated role/mobile walkthrough. No additional catalog or warehouse screens were introduced.
+
+
+## 03.11.2026 — Main dashboard, reports, finance, logistics high-priority rollout
+
+**Third-system-only guarded release: SUCCESS**
+- Release action: https://github.com/dymovicd123/Orders-app/actions/runs/41602666016
+- Minimal actual SQL domain / order lifecycle / cash idempotence and production TypeScript build: https://github.com/dymovicd123/Orders-app/actions/runs/41602478532
+- Source accepted SHA: `d6d468d8e195ebd94a9fa5dee8fe20a3cd1dd6e3`
+- No Main or Branch2 deployment, read/write, or bindings. Before/after Client3 count, physical stock, reserves, payments and FK checks passed. The only migration was isolated `1001_watch_brand_cash_register.sql`.
+
+**Confirmed shipped in Client3**
+1. City choice on order form uses the same native `<select>` as delivery, not the browser `datalist` autocomplete; includes manual "other city". Existing 46 Main active cities remain in Client3.
+2. Separate warehouse **Ревизия** tab visible next to Operations/History. It reuses the existing Main stocktake (not a second engine), preselecting long-running session mode and showing full/selective start at top.
+3. **Инфопанель** in Main dashboard hero/summary/date/quick-actions/attention-card structure, with TAUWACH/WACHIZEN scope, month and day real orders, event-based incoming/outgoing, debts, urgency and overdue logistics orders. Reuses Main dashboard CSS. **Plan and completion purposely show "—" until real brand plans exist.**
+4. **Отчёты**, with Main report filter/table/card structure and actual brand-scoped SQL: payments, managers, watch models, cities, daily sales, returns/outgoing financial corrections, debts. Word/tabular export and print/PDF. Order-date sales and event-date cash are not conflated.
+5. **Финансы**, Main six-mode tabs Summary / Operations / Debts / Returns+Exchanges / Cash / Payment Methods. Brand isolated admin cash ledger opening, automatic true **cash method only** receipts, manual in/out/reconcile, idempotent request keys, guarded stale balance/overdraft. Real money remains in Main-backed `financial_events`. Two new Client3-only tables, no business-data rewrite. Financial journal remains distinct from bank balance.
+6. **Логистика**, extended Main Workshop-derived tabs and summaries: active, urgent, overdue, ready, sent, all; priority-sorted orders, brand filters, item-level physical dispatch and separate "Готово" engraving event retained. Never mix engraving completion with shipping/stock/cash.
+
+**Explicit remaining Main parity gaps** (do not claim 100% identical):
+- Admin-configurable brand monthly **План** and **KPI**, target/completion metrics; currently no live targets, so Dashboard displays "—".
+- Main report drill-down parity: city order explorer, date→manager/product/city pivots, deeper reconciliation/Word document styling, all report categories beyond seven basic watch-adapted views.
+- Main cash advanced cycle/reset/reversal/auto-tracking controls; current Client3 brand cash supports honest opening + normal manual/reconcile and the real order-payment cash movements, not the complete Main cash module.
+- Main Workshop additional invoice/printing and channel controls are specific to clothing production; watch Logistics now has priority/stage tabs but not all invoices/print variants. Identify business-relevant watch equivalents before porting, not cotton/size/payroll machinery.
+- Browser test under real admin/manager/logist on customer's Windows and phones deliberately deferred by owner. Automated release checks are green but do not establish customer UI acceptance.
+
+**Owner's priority now:** Info panel → all watch-adapted reports → Logistics parity with Main Workshop → Finance. Do not replace Main CSS/behaviour with parallel improvised forms; continue incrementally on the existing Main-derived adapters.
