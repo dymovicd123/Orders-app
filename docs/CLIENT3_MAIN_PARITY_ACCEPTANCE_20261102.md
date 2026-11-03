@@ -350,3 +350,31 @@ User screenshots confirmed that, unlike Main, Client3 immediately jumped into th
 3. Independent same-source brand revision sessions, currently serialized by Main's source-level stocktake lock. Must not break reserve/stocktake races to bypass it.
 
 No Problems queue; no duplicate bulk-operations UI. Continue using Main patterns rather than parallel forms.
+
+
+## 03.11.2026 — Client3 explicit model aliases RELEASED; go-live status
+
+**Accepted Main-backed SQLite/D1 and TypeScript/UI source gate:** https://github.com/dymovicd123/Orders-app/actions/runs/41596115718 (SUCCESS; accepted application SHA `248de0699788191b59aafff4dd917b54b5a4bb4d`).
+**Isolated Client3 Worker/D1 schema release:** https://github.com/dymovicd123/Orders-app/actions/runs/41596323376 (SUCCESS; business counters and FK unchanged).
+
+### What shipped
+- `watch_model_aliases`: **per-brand**, canonical/Main-normalized `(brand_id,alias_key)` uniqueness; the only new remote D1 schema object is an isolated table plus index. No revisions to stock, orders, reservations, payments or other Client3 data.
+- Exact Main `normalizeCatalogProductIdentityKey` matching for canonical names and aliases, always scoped to active/retired watch product identities of the selected brand. Existing or zero-stock variants reuse their original canonical SKU; unknown truly new models still follow explicit free entry.
+- Within the **existing** watch catalog product detail, the administrator can add and remove alternative model spellings; manager/logistic cannot manage them. No new duplicate warehouse/catalog screen.
+- Creating and renaming watch models checks both existing folded canonical names and aliases. Conflicting/retired/ambiguous identities are rejected rather than guessed. Identical aliases within different brands are independently permitted. Tests cover alias creation/delete/idempotency, no extra SKU/stock/money writes, brand isolation and rename collisions.
+- Full existing Main-based order, stock, exchange, return and build tests passed; the live release verified anonymous write denial, unchanged business counters, physical/reserved totals and foreign key integrity. Main and Branch2 were not modified.
+
+### Operational readiness and sign-off — avoid overstating it
+| Surface | Code/integration status | Human/browser acceptance |
+| --- | --- | --- |
+| Product catalog + alternate model names | Released and automated tests pass | **Pending:** admin add/remove alias in browser, verify reloading and usable error messages |
+| All four warehouse operations + selective/full revisions | Released, Main-backed transaction regressions pass | **Pending:** authenticated desktop/mobile, selected product queue and real source switches |
+| Order creation, editing, multi-method payments, debt | Main-based regression passes | **Pending:** manager data-entry walkthrough under both brands and multiple SKU |
+| Logistics, engraving, dispatch, returns/exchanges | Main-backed domain regression passes | **Pending:** operator physical send/receive walkthrough and payment splits |
+| Brand and role boundaries | API and synthetic-role checks pass | **Pending:** real admin, manager and logistics accounts across both brands |
+| Full stocktake for TAUWACH and WACHIZEN at the **same physical source** simultaneously | **Intentionally serialized** by Main session lock to prevent inconsistent stocktake writes | NOT concurrent; do not promise this until safe redesign |
+| Old Problems queue | Intentionally not ported | N/A |
+
+**Go-live rule:** Integration/security and isolated deployment are green. The product is technically available for a controlled pilot, but full operator/browser/mobile acceptance is not yet proven. Do not label fully production-accepted without it. Keep source-level session serialization for two brands, which is a known workflow limitation rather than a data integrity defect.
+
+**Next shortest path:** one focused role/browser walkthrough (admin, manager, logistic) for product→receipt→order→engraving/send→return/exchange→finance on Client3 only. Prioritize blockers observed there; do not introduce optional new features or copy the Problems queue.
