@@ -43,6 +43,7 @@ sql.exec(`CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT,phone_
  ALTER TABLE orders ADD COLUMN comment TEXT;
  ALTER TABLE order_items ADD COLUMN line_total INTEGER;
  ALTER TABLE order_items ADD COLUMN catalog_price_snapshot INTEGER;
+ ALTER TABLE order_items ADD COLUMN stock_writeoff_status TEXT;
  UPDATE order_items SET line_total=unit_price*quantity;`)
 sql.exec('ALTER TABLE payments ADD COLUMN comment TEXT')
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
@@ -83,7 +84,8 @@ assert.equal(aliceMonth.totals.totalAmount,20000)
 assert.equal(aliceMonth.totals.receivedAmount,10000)
 assert.equal(aliceMonth.totals.debtAmount,10000)
 assert.equal((await query(alice,'brand=TAUWACH&shipping=not_sent&payment=debt')).rows.length,1)
-assert.equal((await query(alice,'brand=TAUWACH&shipping=sent')).rows.length,1)
+assert.equal((await query(alice,'brand=TAUWACH&shipping=sent')).rows.length,0,
+  'An old sent marker without individual dispatch or confirmed physical writeoff must not claim delivery')
 assert.equal((await query(alice,'brand=TAUWACH&payment=paid')).rows.length,1)
 assert.equal((await query(alice,'brand=TAUWACH&payment=invalid')).httpStatus,400)
 const split=JSON.parse(aliceMonth.rows[0].paymentLines)
