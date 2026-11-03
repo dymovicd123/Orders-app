@@ -4,7 +4,7 @@ import {formatWatchDeadline,groupWatchLogistics,type WatchLogisticsRow} from './
 import {useWatchAnalytics,watchMoney,watchNumber,watchPeriod} from './useWatchAnalytics'
 import '../../styles/dashboard-workshop-attention-r1.css'
 
-type Section='orders'|'create'|'logistics'|'operations'|'catalog'|'reports'|'finance'
+type Section='orders'|'create'|'logistics'|'operations'|'catalog'|'reports'|'finance'|'plan'|'leads'
 const isSent=(row:WatchLogisticsRow)=>row.shippingStatus==='sent'||row.shippingStatus==='Отправлено'
 const deadlineValue=(value:string)=>Date.parse(value||'')
 export function WatchDashboardPanel({brands,onNavigate}:{
@@ -14,6 +14,26 @@ export function WatchDashboardPanel({brands,onNavigate}:{
  const [dailyPeriod,setDailyPeriod]=useState<'today'|'yesterday'>('today')
  const month=watchPeriod('month'),day=watchPeriod(dailyPeriod)
  const monthly=useWatchAnalytics(brand,month.from,month.to)
+ const [monthPlan,setMonthPlan]=useState<{plannedAmount:number;factAmount:number;completionRate:number}|null>(null)
+ const [planError,setPlanError]=useState('')
+ const [planRevision,setPlanRevision]=useState(0)
+ useEffect(()=>{
+   const abort=new AbortController()
+   const last=new Date(month.from+'T00:00:00Z')
+   last.setUTCMonth(last.getUTCMonth()+1);last.setUTCDate(0)
+   const fullEnd=last.toISOString().slice(0,10)
+   setMonthPlan(null);setPlanError('')
+   const query=new URLSearchParams({brand,from:month.from,to:fullEnd})
+   void fetch('/api/client3/watches/plans?'+query,{
+      credentials:'include',cache:'no-store',signal:abort.signal,
+   }).then(async r=>{
+      const result=await r.json() as {ok:boolean;monthPlan?:{
+        plannedAmount:number;factAmount:number;completionRate:number};message?:string}
+      if(!r.ok||!result.ok)throw Error(result.message||'Планы не загружены.')
+      if(!abort.signal.aborted)setMonthPlan(result.monthPlan||null)
+   }).catch(e=>{if(!abort.signal.aborted)setPlanError(e instanceof Error?e.message:'Ошибка плана.')})
+   return ()=>abort.abort()
+ },[brand,month.from,planRevision])
  const daily=useWatchAnalytics(brand,day.from,day.to)
  const [queue,setQueue]=useState<WatchLogisticsRow[]>([])
  const [queueError,setQueueError]=useState('')
@@ -44,7 +64,7 @@ export function WatchDashboardPanel({brands,onNavigate}:{
        (Number.isFinite(db)?db:Infinity)||a.order.orderId-b.order.orderId
    }),[queue])
  const d=monthly.data,dayData=daily.data
- const refresh=()=>{monthly.refresh();daily.refresh();setRefreshKey(v=>v+1)}
+ const refresh=()=>{monthly.refresh();daily.refresh();setRefreshKey(v=>v+1);setPlanRevision(v=>v+1)}
  return <section className="card wide sector-overview dashboard-home" id="dashboard">
    <div className="dashboard-hero">
      <div><div className="card-label">Инфопанель</div>
@@ -62,12 +82,17 @@ export function WatchDashboardPanel({brands,onNavigate}:{
      </div>
    </div>
    {monthly.error&&<div role="alert" className="app-alert error">{monthly.error}</div>}
+   {planError&&<div role="alert" className="app-alert error">{planError}</div>}
    {monthly.busy&&<div className="muted-note">Загрузка инфопанели…</div>}
    <div className="summary-grid dashboard-summary-grid">
-     <div className="summary-card"><span>План месяца</span><strong>—</strong>
-       <small>План ещё не настроен для бренда</small></div>
-     <div className="summary-card"><span>Выполнение</span><strong>—</strong>
-       <div className="mini-progress"><i style={{width:'0%'}}/></div></div>
+     <div className="summary-card"><span>План месяца</span>
+       <strong>{monthPlan?watchMoney(monthPlan.plannedAmount):'—'}</strong>
+       {!monthPlan&&<small>План отдела ещё не настроен для бренда</small>}</div>
+     <div className="summary-card"><span>Выполнение</span>
+       <strong>{monthPlan?Math.round(monthPlan.completionRate*100)+'%':'—'}</strong>
+       <div className="mini-progress"><i style={{
+         width:(monthPlan?Math.max(0,Math.min(100,monthPlan.completionRate*100)):0)+'%',
+       }}/></div></div>
      <div className="summary-card"><span>Кол-во продаж</span><strong>{watchNumber(d?.overview.orderCount)}</strong></div>
      <div className="summary-card"><span>Общая сумма продаж</span><strong>{watchMoney(d?.overview.totalSales)}</strong></div>
      <div className="summary-card"><span>Поступило</span><strong>{watchMoney(d?.income.incoming)}</strong></div>
@@ -119,6 +144,8 @@ export function WatchDashboardPanel({brands,onNavigate}:{
          <button onClick={()=>onNavigate('operations')}>Приход / склад</button>
          <button onClick={()=>onNavigate('catalog')}>Товары</button>
          <button onClick={()=>onNavigate('reports')}>Отчёты</button>
+         <button onClick={()=>onNavigate('plan')}>План</button>
+         <button onClick={()=>onNavigate('leads')}>Лиды</button>
          <button onClick={()=>onNavigate('finance')}>Финансы</button>
        </div>
      </section>
