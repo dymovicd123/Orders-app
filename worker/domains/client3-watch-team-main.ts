@@ -2,7 +2,6 @@ import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {listTeamEmployees,setTeamEmployeeActive,listTeamTimesheet,saveTeamTimesheet,type TimesheetInput} from './team.ts'
 import {normalizeManagerColor} from './activity.ts'
-import {normalizeEmployeeRole} from '../core/text.ts'
 
 type Input=Record<string,unknown>
 const denied=()=>json({ok:false,message:'Настройки команды доступны администратору.'},{status:403})
