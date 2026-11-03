@@ -233,11 +233,11 @@ export function WatchWarehouseMain({brand,onStockChanged,initialRevision=false,p
       const original=sourceSnapshot(v,source)
       return {
         watchVariantId:v.watchVariantId,
-        expectedPhysical:original.physical,
+        ...(mode==='arrival'?{}:{expectedPhysical:original.physical}),
         ...(mode==='count'?{countedQuantity:Number(draft[v.watchVariantId!])}:
           {quantity:Number(draft[v.watchVariantId!])}),
       }
-    })
+    }).sort((a,b)=>Number(a.watchVariantId)-Number(b.watchVariantId))
     const endpoint=mode==='count'?'count-batch':'bulk'
     const payload=mode==='count'?
       {brand,source,confirmed:true,allowShortage:shortageConfirmed,items}:
