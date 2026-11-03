@@ -1,4 +1,6 @@
 import {useMemo,useState} from 'react'
+import {CityOrdersExplorer} from '../renderers/CityOrdersExplorer'
+import {WatchReportDayDetails} from './WatchReportDayDetails'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {useWatchAnalytics,watchMoney,watchPeriod,type AnalyticsRow} from './useWatchAnalytics'
@@ -31,10 +33,13 @@ function exportTable(name:string,head:string[],rows:string[][],format:'word'|'cs
  document.body.appendChild(a);a.click();a.remove()
  window.setTimeout(()=>URL.revokeObjectURL(url),1000)
 }
-export function WatchReportsPanel({brands}:{brands:readonly WatchBrand[]}){
+export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBrand[];
+ onOpenOrder?:(order:{brand:WatchBrand;orderId:number;externalId:string;orderDate:string})=>void
+}){
  const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
  const [period,setPeriod]=useState(watchPeriod('month'))
  const [type,setType]=useState<ReportType>('payments')
+ const [selectedDate,setSelectedDate]=useState<string|null>(null)
  const {data,busy,error,refresh}=useWatchAnalytics(brand,period.from,period.to)
  const current=choices.find(x=>x.value===type)!
  const report=useMemo(()=>{
@@ -93,6 +98,19 @@ export function WatchReportsPanel({brands}:{brands:readonly WatchBrand[]}){
    }
  },[data,type])
  const name=brand+' '+current.label+' '+period.from+' — '+period.to
+ const cityRows=(data?.cities||[]).map(row=>({
+   city:s(row,'city'),order_count:n(row,'orderCount'),
+   total_sales:n(row,'totalSales'),total_received:n(row,'receivedFromOrders'),
+   total_debt:n(row,'debt'),clients:0,managers:0,
+ }))
+ // The Main CityOrdersExplorer is reused unchanged, including its dialog.
+ const cityApiFetch=(path:string)=>{
+   const requested=new URL(path,window.location.origin).searchParams
+   requested.set('brand',brand)
+   return fetch('/api/client3/watches/analytics/city-orders?'+requested,{
+     credentials:'include',cache:'no-store',
+   })
+ }
  return <article className="card wide sector-reports" id="reports">
    <div className="card-label">Отчёты</div>
    <div className="card-meta">Отчёты Main по часам выбранного бренда. Продажи — по дате заказа; оплаты и возвраты — по дате операции.</div>
@@ -108,10 +126,10 @@ export function WatchReportsPanel({brands}:{brands:readonly WatchBrand[]}){
        </div>
      </div>
      <div className="orders-filter-grid reports-main-filter-grid">
-       <label>Бренд<select value={brand} onChange={e=>setBrand(e.target.value as WatchBrand)}>
+       <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setSelectedDate(null)}}>
          {brands.map(x=><option key={x} value={x}>{x}</option>)}
        </select></label>
-       <label>Тип отчёта<select value={type} onChange={e=>setType(e.target.value as ReportType)}>
+       <label>Тип отчёта<select value={type} onChange={e=>{setType(e.target.value as ReportType);setSelectedDate(null)}}>
          {choices.map(x=><option value={x.value} key={x.value}>{x.label}</option>)}
        </select></label>
        <label>Начало периода<input type="date" value={period.from}
@@ -146,20 +164,37 @@ export function WatchReportsPanel({brands}:{brands:readonly WatchBrand[]}){
          <td>{report.total}</td></tr></tbody>
      </table></div>
    </section>
-   <section className="report-table-card">
-     <div className="strict-section-head"><h3>{current.label}</h3>
-       <span className="soft-badge">{data?report.rows.length:'—'} строк</span></div>
-     <LinkedTableScroll ariaLabel={'Отчёт '+current.label}>
-       <table className="data-table strict-report-table">
-         <thead><tr>{report.head.map(x=><th key={x}>{x}</th>)}</tr></thead>
-         <tbody>{report.rows.map((row,i)=><tr key={i}>{row.map((value,j)=>
-           <td className={j?'num':undefined} key={j}>{value}</td>)}</tr>)}
-           {data&&!report.rows.length&&<tr><td className="empty-state" colSpan={report.head.length||1}>
-             Нет данных за выбранный период.</td></tr>}
-         </tbody>
-       </table>
-     </LinkedTableScroll>
-   </section>
+   {type==='cities'&&data?
+     <CityOrdersExplorer key={brand+'-'+period.from+'-'+period.to}
+       rows={cityRows} apiFetch={cityApiFetch}
+       startDate={period.from} endDate={period.to}
+       formatDateShort={value=>value.split('-').reverse().join('.')}
+       formatMoney={watchMoney}
+       onOpenOrder={order=>onOpenOrder?.({...order,brand})}/>:
+     <section className="report-table-card">
+       <div className="strict-section-head"><h3>{current.label}</h3>
+         <span className="soft-badge">{data?report.rows.length:'—'} строк</span></div>
+       <LinkedTableScroll ariaLabel={'Отчёт '+current.label}>
+         <table className="data-table strict-report-table">
+           <thead><tr>{report.head.map(x=><th key={x}>{x}</th>)}</tr></thead>
+           <tbody>{report.rows.map((row,i)=><tr key={i}>{row.map((value,j)=>
+             <td className={j?'num':undefined} key={j}>
+               {type==='days'&&j===0?
+                 <button className="city-report-city-link" type="button"
+                   aria-expanded={selectedDate===value}
+                   onClick={()=>setSelectedDate(selectedDate===value?null:value)}>
+                   {value}
+                 </button>:value}
+             </td>)}</tr>)}
+             {data&&!report.rows.length&&<tr><td className="empty-state" colSpan={report.head.length||1}>
+               Нет данных за выбранный период.</td></tr>}
+           </tbody>
+         </table>
+       </LinkedTableScroll>
+     </section>}
+   {type==='days'&&selectedDate&&
+     <WatchReportDayDetails key={brand+'-'+selectedDate} brand={brand}
+       date={selectedDate} onClose={()=>setSelectedDate(null)}/>}
    {(type==='payments'||type==='returns')&&data&&
      <section className="strict-report-section">
        <div className="strict-section-head"><h3>Детализация денег по дням</h3>
