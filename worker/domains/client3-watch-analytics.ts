@@ -26,7 +26,7 @@ export async function getClient3WatchAnalytics(
  const base=[brandId,from,to]
  const [
    overview,daySales,managers,products,cities,methods,eventDays,events,
-   sources,debts,customers,logistics,
+   sources,debts,customers,logistics,cityMoney,reconciliation,
  ]=await Promise.all([
    db.prepare(`SELECT COUNT(*) AS orderCount,
      COALESCE(SUM(o.total_amount),0) AS totalSales,
@@ -71,7 +71,9 @@ export async function getClient3WatchAnalytics(
    db.prepare(`SELECT COALESCE(NULLIF(TRIM(wd.city),''),'НЕ УКАЗАН') AS city,
      COUNT(*) AS orderCount,COALESCE(SUM(o.total_amount),0) AS totalSales,
      COALESCE(SUM(o.received_amount),0) AS receivedFromOrders,
-     COALESCE(SUM(o.debt_amount),0) AS debt
+     COALESCE(SUM(o.debt_amount),0) AS debt,
+     COUNT(DISTINCT COALESCE(NULLIF(TRIM(wd.recipient_phone),''),NULLIF(TRIM(wd.recipient_name),''))) AS clients,
+     COUNT(DISTINCT o.manager_id) AS managers
      FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
      WHERE ${salesFilter}
      GROUP BY COALESCE(NULLIF(TRIM(wd.city),''),'НЕ УКАЗАН')
@@ -123,6 +125,30 @@ export async function getClient3WatchAnalytics(
      JOIN watch_logistics_jobs lj ON lj.order_id=o.id
      WHERE wd.brand_id=? AND o.order_status NOT IN ('deleted','archived')
      AND o.shipping_status<>'sent'`).bind(brandId).first<Record<string,number>>(),
+   db.prepare(`SELECT COALESCE(NULLIF(TRIM(wd.city),''),'НЕ УКАЗАН') AS city,
+     COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS incoming
+     FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
+     WHERE ${eventFilter}
+     GROUP BY COALESCE(NULLIF(TRIM(wd.city),''),'НЕ УКАЗАН')`
+   ).bind(...base).all(),
+   db.prepare(`SELECT COALESCE(NULLIF(TRIM(f.payment_method),''),'НЕ УКАЗАН') AS method,
+     COALESCE(SUM(CASE WHEN f.amount_delta>0 AND f.event_type='order_payment'
+       THEN f.amount_delta ELSE 0 END),0) AS orderPayments,
+     COALESCE(SUM(CASE WHEN f.amount_delta>0 AND f.event_type IN ('debt_close','order_extra')
+       THEN f.amount_delta ELSE 0 END),0) AS debtClosures,
+     COALESCE(SUM(CASE WHEN f.amount_delta>0 AND f.event_type='exchange_extra'
+       THEN f.amount_delta ELSE 0 END),0) AS exchangeExtras,
+     COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS grossInflow,
+     COALESCE(-SUM(CASE WHEN f.amount_delta<0 AND f.event_type IN ('order_refund','exchange_refund')
+       THEN f.amount_delta ELSE 0 END),0) AS refunds,
+     COALESCE(-SUM(CASE WHEN f.amount_delta<0 AND f.event_type NOT IN ('order_refund','exchange_refund')
+       THEN f.amount_delta ELSE 0 END),0) AS otherOutflow,
+     COALESCE(SUM(f.amount_delta),0) AS netMovement
+     FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
+     WHERE ${eventFilter}
+     GROUP BY COALESCE(NULLIF(TRIM(f.payment_method),''),'НЕ УКАЗАН')
+     ORDER BY grossInflow DESC,method LIMIT 100`
+   ).bind(...base).all(),
  ])
  const income=await db.prepare(`SELECT
    COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS incoming,
@@ -130,11 +156,17 @@ export async function getClient3WatchAnalytics(
    COALESCE(SUM(f.amount_delta),0) AS net
    FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
    WHERE ${eventFilter}`).bind(...base).first<Record<string,number>>()
+ const incomingByCity=new Map((cityMoney.results||[]).map(row=>[
+   String(row.city||'НЕ УКАЗАН'),Number(row.incoming||0),
+ ]))
+ const cityReports=(cities.results||[]).map(row=>({
+   ...row,eventReceived:incomingByCity.get(String(row.city||'НЕ УКАЗАН'))||0,
+ }))
  return json({ok:true,brandId,from,to,overview:overview||{},
    income:income||{},currentDebt:debts||{},customers:customers||{},
    logistics:logistics||{},
    days:daySales.results||[],managers:managers.results||[],
-   products:products.results||[],cities:cities.results||[],
+   products:products.results||[],cities:cityReports,reconciliation:reconciliation.results||[],
    methods:methods.results||[],eventDays:eventDays.results||[],
    events:events.results||[],sources:sources.results||[],
    accountingBasis:'Main order_date for sales, financial_events.event_date for money',
