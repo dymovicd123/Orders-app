@@ -161,3 +161,27 @@
 .watch-admin-composition .smart-picker-empty{padding:12px;color:#64748b;font-size:12px}
 .watch-admin-composition-bottom{margin-bottom:0}
 @media(max-width:690px){.watch-admin-composition-line{padding:11px}.watch-admin-composition-bottom>*{flex:1}}
+
+/* Client3 QA parity: compact Main-style order table; details open only on demand. */
+.watch-orders{max-width:none;width:100%;padding:8px 0}
+.watch-orders .linked-table-scroll{border-radius:9px}
+.watch-main-orders-table{font-size:.77rem;table-layout:auto}
+.watch-main-orders-table th{padding:8px 9px;font-size:.67rem}
+.watch-main-orders-table td{padding:7px 9px;line-height:1.32}
+.watch-main-orders-table td small{font-size:.68rem;margin-top:2px;line-height:1.25}
+.watch-main-orders-table .watch-main-order-sku{min-width:172px;max-width:235px}
+.watch-main-order-sku-row{display:flex;gap:5px;flex-wrap:wrap;padding:1px 0 3px;align-items:baseline}
+.watch-main-order-sku-row strong{font-size:.74rem}
+.watch-main-order-sku-row small{margin:0}
+.watch-main-order-delivery{min-width:120px;max-width:160px}
+.watch-main-order-payments{min-width:110px;max-width:160px}
+.watch-main-order-status{padding:4px 6px;font-size:.69rem}
+.watch-main-order-row .watch-main-detail-button{padding:5px 8px}
+.watch-main-order-expanded>td{padding:0!important}
+.watch-main-order-detail{padding:12px;max-height:57vh;overflow:auto;overscroll-behavior:contain}
+.watch-main-order-detail-grid{padding:10px;gap:10px}
+.watch-main-order-ledger-details{gap:8px;margin-top:8px}
+.watch-main-order-ledger-details>.mini-panel{padding:9px 11px}
+.watch-main-order-actions{gap:5px;margin-top:8px}
+.watch-main-order-actions>button{font-size:.75rem;padding:6px 9px}
+@media(max-width:700px){.watch-orders{padding:6px 0}.watch-main-order-detail{max-height:65vh}}
