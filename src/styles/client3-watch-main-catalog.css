@@ -55,3 +55,29 @@
 .client3-watch-catalog-main .client3-watch-model-rename label{flex:1 1 100%}
 .client3-watch-catalog-main .client3-watch-variant-delete>*{max-width:100%}
 }
+
+/* Explicit native form colors: Windows Chrome and non-default themes must
+   never inherit white/transparent text from Main's generic dark controls. */
+.client3-watch-catalog-main .catalog-variant-form-grid :is(select,option),
+.client3-stock-inline-add :is(select,option),
+.client3-watch-edit-modal .client3-watch-edit-fields :is(select,option){
+ color:#0f172a!important;
+ -webkit-text-fill-color:#0f172a!important;
+ background-color:#fff!important;
+ font-size:14px!important;
+ font-weight:600!important;
+ line-height:1.4!important;
+ opacity:1!important;
+ color-scheme:light;
+}
+.client3-watch-catalog-main .catalog-variant-form-grid select,
+.client3-stock-inline-add select,
+.client3-watch-edit-modal .client3-watch-edit-fields select{
+ display:block;min-height:42px;min-width:0;width:100%;box-sizing:border-box;
+ border:1px solid #94a3b8;border-radius:8px;padding:9px 32px 9px 11px;
+ appearance:auto;
+}
+.client3-watch-catalog-main .catalog-variant-form-grid label,
+.client3-stock-inline-add label{
+ color:#334155!important;
+}
