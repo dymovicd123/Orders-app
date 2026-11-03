@@ -125,6 +125,56 @@ jobs:
             p.write_text(data,encoding='utf-8')
           print('Schema and data SQL snapshots stored only in ephemeral runner.')
           PY
+      - name: Order QA data by foreign-key dependencies before remote import
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,sqlite3
+          schema=Path('/tmp/client3-qa-schema.sql').read_text(encoding='utf-8')
+          data=Path('/tmp/client3-qa-data.sql').read_text(encoding='utf-8')
+          con=sqlite3.connect(':memory:')
+          con.executescript(schema)
+          tables={r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+          deps={}
+          for table in tables:
+            safe=table.replace('"','""')
+            deps[table]={r[2] for r in con.execute('PRAGMA foreign_key_list("'+safe+'")') if r[2] in tables and r[2]!=table}
+          pending=set(tables)
+          ordered=[]
+          while pending:
+            ready=sorted(t for t in pending if not (deps[t] & pending))
+            if not ready: raise RuntimeError('Unsafe cyclic table dependencies')
+            ordered.extend(ready)
+            pending.difference_update(ready)
+          grouped={t:[] for t in ordered}
+          buffer=''
+          inserted=0
+          ignored=0
+          pattern=re.compile(r'(?is)\bINSERT\s+(?:OR\s+\w+\s+)?INTO\s+(?:"([^"]+)"|([A-Za-z0-9_.]+))')
+          for line in data.splitlines(keepends=True):
+            buffer+=line
+            if not sqlite3.complete_statement(buffer): continue
+            stmt=buffer.strip()
+            buffer=''
+            m=pattern.search(stmt)
+            if m:
+              name=(m.group(1) or m.group(2)).rsplit('.',1)[-1]
+              if name=='sqlite_sequence':
+                ignored+=1
+                continue
+              if name not in grouped: raise RuntimeError('Unexpected export target: '+name)
+              grouped[name].append(stmt)
+              inserted+=1
+            elif re.match(r'(?is)^\s*(PRAGMA|BEGIN|COMMIT|ROLLBACK|--)',stmt):
+              ignored+=1
+            else:
+              raise RuntimeError('Non-insert statement in data-only snapshot')
+          if buffer.strip(): raise RuntimeError('Incomplete SQL in data-only snapshot')
+          if inserted<1: raise RuntimeError('Source snapshot missing table rows')
+          Path('/tmp/client3-qa-data.sql').write_text('\n'.join(stmt for t in ordered for stmt in grouped[t])+'\n',encoding='utf-8')
+          print('Ready: ordered',inserted,'SQL insert statements across',len(tables),'tables; ignored wrappers:',ignored)
+          PY
       - name: Create a uniquely named D1 database (never reuse the source)
         run: |
           set -euo pipefail
