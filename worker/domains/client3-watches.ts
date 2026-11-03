@@ -283,10 +283,17 @@ export async function markWatchLogisticsReady(
   const text=String(row.engravingText||'')
   if(!text.trim())return BAD('Этим часам не требуется гравировка.')
   if(row.confirmedText===text)return json({ok:true,alreadyReady:true,orderItemId,stockUnchanged:true,moneyUnchanged:true})
+  const audit=await db.prepare('SELECT order_id,order_item_id FROM watch_logistics_events WHERE request_id=?')
+    .bind(requestId).first<{order_id:number;order_item_id:number|null}>()
+  if(audit&&(audit.order_id!==orderId||audit.order_item_id!==orderItemId))
+    return json({ok:false,code:'REQUEST_ID_CONFLICT',message:'Этот запрос уже применялся к другому товару.'},{status:409})
   const prior=await db.prepare('SELECT order_item_id,engraving_text FROM watch_engraving_item_readiness WHERE request_id=?')
     .bind(requestId).first<{order_item_id:number;engraving_text:string}>()
   if(prior&&(prior.order_item_id!==orderItemId||prior.engraving_text!==text))
     return json({ok:false,code:'REQUEST_ID_CONFLICT',message:'Идентификатор уже использован для других часов.'},{status:409})
+  if(audit)return json({ok:false,code:'REQUEST_ID_USED',message:'Повторная готовность с этим идентификатором недопустима после изменения гравировки.'},{status:409})
+  const current=await db.prepare('SELECT status FROM watch_logistics_jobs WHERE order_id=?').bind(orderId).first<{status:string}>()
+  if(!current)return json({ok:false,code:'LOGISTICS_NOT_FOUND',message:'Логистика заказа не найдена.'},{status:404})
   const timestamp=new Date().toISOString()
   try{
     await db.batch([
@@ -314,8 +321,14 @@ export async function markWatchLogisticsReady(
         ready_by_user_id=?,ready_request_id=NULL,updated_at=?
         WHERE order_id=?`)
         .bind(orderId,orderId,timestamp,actor.id,timestamp,orderId),
+      db.prepare(`INSERT INTO watch_logistics_events
+        (order_id,actor_user_id,previous_status,next_status,note,request_id,created_at,order_item_id)
+        SELECT ?,?,?,lj.status,?,?,?,?
+        FROM watch_logistics_jobs lj WHERE lj.order_id=?`)
+        .bind(orderId,actor.id,current.status,
+          'Гравировка позиции '+orderItemId+' готова',requestId,timestamp,orderItemId,orderId),
     ])
-    return json({ok:true,orderItemId,engravingReady:true,shippingUnchanged:true,stockUnchanged:true,moneyUnchanged:true})
+    return json({ok:true,orderItemId,engravingReady:true,shippingUnchanged:true,stockUnchanged:true})
   }catch(cause){
     return json({ok:false,code:'ENGRAVING_READY_CONFLICT',
       message:cause instanceof Error?cause.message:'Не удалось подтвердить готовность часов.'},{status:409})
