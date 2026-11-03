@@ -53,8 +53,10 @@ export async function listClient3WatchOperationHistory(
     'braceletColor',COALESCE(wa.bracelet_color,wv.bracelet_color,''),
     'source',COALESCE(ei.inventory_source,''),
     'physicalTracking',COALESCE(ei.physical_tracking,0),
-    'physicalReceivedAt',ei.physical_received_at))
+    'physicalReceivedAt',ei.physical_received_at,
+    'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,'')))
     FROM exchange_items ei
+    LEFT JOIN order_items oi ON oi.id=ei.order_item_id
     LEFT JOIN watch_order_item_details wi ON wi.order_item_id=ei.order_item_id
     LEFT JOIN watch_variants wv ON wv.id=wi.watch_variant_id
     LEFT JOIN watch_variant_attributes_v5 wa ON wa.watch_variant_id=wv.id
