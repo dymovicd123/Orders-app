@@ -68,9 +68,9 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   legacy:{title:'Заказы',subtitle:'Исторические записи'},
   references:{title:'Справочники',subtitle:'Бренды, характеристики часов, доставка и способы оплаты'},
 }
-export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,children,error,success,warning}:{
+export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,canWarehouse=false,children,error,success,warning}:{
   user:User;section:WatchMainRoute;onNavigate:(v:WatchMainRoute)=>void;onLogout:()=>void;onRefresh:()=>void;
-  busy:boolean;canSales:boolean;children:ReactNode;error?:string;success?:string;warning?:string
+  busy:boolean;canSales:boolean;canWarehouse?:boolean;children:ReactNode;error?:string;success?:string;warning?:string
 }){
   const [mobileNavOpen,setMobileNavOpen]=useState(false)
   useEffect(()=>{
@@ -117,7 +117,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
         </div>
         <nav className="erp-primary-nav" id="primary-workspace-navigation" aria-label="Основные разделы">
           {nav.filter(item=>item.route!=='staff'||isAdmin)
-            .filter(item=>canSales||(item.route==='logistics'))
+            .filter(item=>canSales||(canWarehouse?['warehouse','references'].includes(item.route):item.route==='logistics'))
             .map(item=>{
               const module=workspaceModules.find(entry=>entry.id===item.module)!
               const route=item.route as WatchMainRoute
