@@ -13,6 +13,7 @@ type ReturnOrder={
  receivedAmount:number;returnAmount:number;itemLines:string
 }
 type ReturnKind='money_only'|'items_only'|'both'
+type PhysicalState='pending'|'warehouse'|'boutique'|'no_stock'
 const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
 function rows(raw:string):Line[]{
  try{const x=JSON.parse(raw||'[]') as Line[];return Array.isArray(x)?x.filter(y=>y.id>0&&y.quantity>0):[]}
@@ -27,6 +28,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  const [kind,setKind]=useState<ReturnKind>(returnable.length?(maxRefund?'both':'items_only'):'money_only')
  const [selected,setSelected]=useState<Record<number,number>>(
    Object.fromEntries(returnable.map(x=>[x.id,Number(x.returnableQuantity)])))
+ const [physicalByItem,setPhysicalByItem]=useState<Record<number,PhysicalState>>({})
  const [amount,setAmount]=useState(String(maxRefund))
  const [methods,setMethods]=useState<string[]>([...WATCH_PAYMENTS])
  const [refunds,setRefunds]=useState<Array<{method:string;amount:string}>>([
@@ -56,7 +58,9 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  const submit=async(e:FormEvent)=>{
    e.preventDefault()
    const items=isItems?returnable.filter(x=>Number(selected[x.id]||0)>0)
-     .map(x=>({orderItemId:x.id,quantity:Number(selected[x.id])})):[]
+     .map(x=>({orderItemId:x.id,quantity:Number(selected[x.id]),
+       physicalState:physicalByItem[x.id]||'pending',
+       restock:physicalByItem[x.id]==='warehouse'||physicalByItem[x.id]==='boutique'})):[]
    const amountValue=isMoney?Number(amount):0
    const parts=isMoney?refunds.map(x=>({method:x.method,amount:Number(x.amount)})):[]
    if(busy||!confirmed||!reason.trim()||isItems&&!items.length||
@@ -87,8 +91,16 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  }
  const chosenQty=returnable.reduce((n,x)=>n+Math.max(0,Number(selected[x.id]||0)),0)
  return <form className="watch-return-form" onSubmit={e=>void submit(e)}>
-   <h4>Возврат по заказу {order.externalId}</h4>
-   <p>Выберите, какие часы и в каком количестве клиент возвращает. Частичный возврат допускается: можно указать часть позиций и отдельно сумму возврата денег. Физическое получение отмечается после оформления, складские остатки автоматически не увеличиваются.</p>
+   <header className="watch-return-main-header">
+     <div><span className="watch-return-eyebrow">ВОЗВРАТ · ЗАКАЗ</span>
+       <h3>{order.externalId}</h3>
+       <p>Укажите возвращаемые позиции, деньги и физическое состояние часов — как в Main.</p></div>
+     <div className="watch-return-main-balances">
+       <div><small>Оплачено</small><strong>{money(order.receivedAmount)}</strong></div>
+       <div><small>Уже возвращено</small><strong>{money(order.returnAmount)}</strong></div>
+       <div><small>Доступно к возврату</small><strong>{money(maxRefund)}</strong></div>
+     </div>
+   </header>
    <label>Вид возврата
      <select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
        {maxRefund>0&&<option value="money_only">Только деньги</option>}
@@ -125,15 +137,30 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
            <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
          </span>
        </label>
-       <label className="watch-return-quantity">
-         <span>Вернуть, шт.</span>
-         <input type="number" min={0} max={line.returnableQuantity} step={1}
-           value={selected[line.id]??0} aria-label={'Количество возврата: '+line.productName}
-           onChange={e=>{
-             setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
-             setConfirmed(false)
-           }}/>
-       </label>
+       <div className="watch-return-line-controls">
+         <label className="watch-return-quantity">
+           <span>Вернуть, шт.</span>
+           <input type="number" min={0} max={line.returnableQuantity} step={1}
+             value={selected[line.id]??0} aria-label={'Количество возврата: '+line.productName}
+             onChange={e=>{
+               setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
+               setConfirmed(false)
+             }}/>
+         </label>
+         {Number(selected[line.id]||0)>0&&<label className="watch-return-physical-choice">
+           <span>Где эти часы сейчас?</span>
+           <select value={physicalByItem[line.id]||'pending'}
+             onChange={e=>{
+               setPhysicalByItem(prev=>({...prev,[line.id]:e.target.value as PhysicalState}))
+               setConfirmed(false)
+             }}>
+             <option value="pending">У клиента / в пути — ещё не получили</option>
+             <option value="warehouse">Уже получили в офис</option>
+             <option value="boutique">Уже получили на витрину</option>
+             <option value="no_stock">Уже получили, без добавления в остаток</option>
+           </select>
+         </label>}
+       </div>
      </div>)}
    </div>}
    {isMoney&&<>
@@ -173,7 +200,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
      <input required maxLength={300} value={reason}
        onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
    </label>
-   {isItems&&<p>Физически полученные часы нужно отдельно подтвердить в разделе приёмки возвратов.</p>}
+   {isItems&&<p className="watch-return-physical-help">Товары в пути останутся в очереди приёмки. Для уже полученных часов Main зафиксирует выбранный физический статус сразу при оформлении возврата.</p>}}
    <label className="watch-return-confirm"><input type="checkbox" checked={confirmed}
      onChange={e=>setConfirmed(e.target.checked)}/>
      Подтверждаю возврат {isItems?chosenQty+' шт.':''}
