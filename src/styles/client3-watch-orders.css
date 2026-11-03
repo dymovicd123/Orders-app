@@ -185,3 +185,17 @@
 .watch-main-order-actions{gap:5px;margin-top:8px}
 .watch-main-order-actions>button{font-size:.75rem;padding:6px 9px}
 @media(max-width:700px){.watch-orders{padding:6px 0}.watch-main-order-detail{max-height:65vh}}
+
+/* Standalone Main-like return/exchange workflows: forms are no longer embedded
+   inside an expanded multi-column order row on the dedicated sections. */
+.watch-main-flow-workspace{
+  background:#fff;border:1px solid #bfdbfe;border-radius:12px;
+  padding:18px;margin:12px 0 20px;box-shadow:0 5px 16px #1e40af0a;
+}
+.watch-main-flow-head{display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:12px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #e2e8f0}
+.watch-main-flow-head h3{font-size:1.05rem;margin:0}
+.watch-main-flow-workspace .watch-return-form,
+.watch-main-flow-workspace .watch-exchange-form{
+  border:0;box-shadow:none;background:#fff;padding:0;
+}
