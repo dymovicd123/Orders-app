@@ -33,7 +33,7 @@ import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
-export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'dashboard',module:'dashboard',label:'Инфопанель'},
@@ -62,6 +62,7 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   operations:{title:'Склад',subtitle:'Остатки, операции и товары'},
   revision:{title:'Склад',subtitle:'Ревизия: проверка количества и сохранение результатов'},
   history:{title:'Склад',subtitle:'История складских движений'},
+  statistics:{title:'Склад',subtitle:'Статистика продаж часов по комплектациям'},
   exchange:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   catalog:{title:'Склад',subtitle:'Остатки, операции и товары'},
   finance:{title:'Финансы',subtitle:'Движение денег по брендам'},
@@ -81,7 +82,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
   },[mobileNavOpen])
   const isAdmin=user.role==='admin'
   const current=section==='create'||section==='returns'||section==='exchange'||section==='legacy'?'orders':
-    section==='catalog'||section==='operations'||section==='revision'||section==='history'?'warehouse':section==='accounts'?'staff':section
+    section==='catalog'||section==='operations'||section==='revision'||section==='history'||section==='statistics'?'warehouse':section==='accounts'?'staff':section
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'
   return <main className="erp-shell client3-main-erp" data-sector={current}>
