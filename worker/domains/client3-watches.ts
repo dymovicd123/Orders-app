@@ -27,6 +27,7 @@ import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
+import {listClient3WatchClients,listClient3WatchCustomerOrders} from './client3-watch-clients.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
 import {editClient3WatchModel,editClient3WatchVariant} from './client3-watch-catalog-edit.ts'
@@ -696,6 +697,16 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
     return getClient3WatchFinance(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/clients'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchClients(db,actor,scope.row!.id,url)
+  }
+  if(url.pathname==='/api/client3/watches/clients/orders'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchCustomerOrders(db,actor,scope.row!.id,url)
   }
   if(url.pathname==='/api/client3/watches/orders'&&request.method==='GET') {
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
