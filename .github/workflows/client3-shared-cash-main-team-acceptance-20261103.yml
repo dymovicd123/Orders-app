@@ -1,0 +1,38 @@
+name: Client3 one shared cash and Main Team regression (NO DEPLOY)
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-shared-cash-main-team-acceptance-20261103.yml']
+permissions:
+  contents: read
+  issues: write
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Scope guard — only isolated third Worker/D1
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.jsonc
+          test -f migrations/client3-watch/1003_shared_cash_main_team.sql
+      - run: npm ci
+      - name: Main order/stock/returns/finance/lead/plan regression
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Shared cash migration and Main Team real SQLite suite
+        run: node --experimental-strip-types scripts/client3/test-watch-shared-cash-team-20261103.mjs
+      - name: Full TypeScript and production build
+        run: npm run build
+      - name: Issue checkpoint
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 combined single cash + Main Team acceptance: $RESULT. https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID SHA $GITHUB_SHA. True SQLite merging of 2 legacy register balances preserving all entries/archives, cross-brand cash, idempotency/reversal/cycles, Main employee/timesheet/roles/salary activity and full order/finance/stock regression. NO DEPLOY until success. No KPI and no invoice."
