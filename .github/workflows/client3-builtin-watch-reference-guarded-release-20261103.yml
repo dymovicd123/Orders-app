@@ -1,0 +1,117 @@
+name: Client3 quartz-reference urgent fix - tests and guarded release
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-builtin-watch-reference-guarded-release-20261103.yml']
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 3}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Restrict release to reviewed Client3 quartz fix and isolated third D1
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
+          test "$(git rev-parse HEAD^)" = 9aa73b1636b5c35a89a74a4d33a3ce7cffd151e0
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/client3-builtin-watch-reference-guarded-release-20261103.yml'
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          grep -q 'if(builtIn)continue' worker/domains/client3-watch-catalog.ts
+          grep -q 'missingLegacyRefs' scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - run: npm ci
+      - name: Reproduce missing quartz v5 seeds and test full order/stock/finance flows
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Shared cash, team and auth regression
+        run: node --experimental-strip-types scripts/client3/test-watch-shared-cash-team-20261103.mjs
+      - name: TypeScript and production bundle
+        run: npm run build
+      - name: Snapshot real Client3 D1 without writing any records
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM order_items) order_items_count,
+              (SELECT COUNT(*) FROM payments) payments_count,
+              (SELECT COUNT(*) FROM financial_events) financial_event_count,
+              (SELECT COUNT(*) FROM inventory_movements) inventory_movements_count,
+              (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical_count,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved_count,
+              (SELECT COUNT(*) FROM watch_products) watch_product_count,
+              (SELECT COUNT(*) FROM watch_variants) watch_variant_count,
+              (SELECT COUNT(*) FROM catalog_variants) catalog_variant_count,
+              (SELECT COUNT(*) FROM watch_shared_cash_register) cash_register_count,
+              (SELECT COUNT(*) FROM watch_shared_cash_entries) cash_entry_count" \
+              | jq -ce '.[0].results[0] | select(.orders_count>=0)' > /tmp/client3-before.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+      - name: Deploy ONLY existing Client3 Worker; no D1 migrations, no stock arrivals
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Smoke auth boundaries and compare unchanged D1 state
+        run: |
+          set -euo pipefail
+          base='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          test "$(curl -sSL -o /tmp/client3-html -w '%{http_code}' --max-time 30 "$base/")" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/client3-html
+          for path in \
+            '/api/client3/watches/catalog?brand=TAUWACH' \
+            '/api/client3/watches/references' \
+            '/api/client3/watches/models?brand=TAUWACH'; do
+            status="$(curl -sS -o /tmp/client3-get -w '%{http_code}' --max-time 30 "$base$path")"
+            test "$status" = 401 -o "$status" = 403
+          done
+          status="$(curl -sS -o /tmp/client3-post -w '%{http_code}' --max-time 30 \
+            -X POST -H 'Content-Type: application/json' \
+            --data '{"brand":"TAUWACH","watchProductId":1,"gender":"male","movement":"quartz","braceletMaterial":"steel","dialColor":"black"}' \
+            "$base/api/client3/watches/catalog/variants")"
+          test "$status" = 401 -o "$status" = 403
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT
+              (SELECT COUNT(*) FROM orders) orders_count,
+              (SELECT COUNT(*) FROM order_items) order_items_count,
+              (SELECT COUNT(*) FROM payments) payments_count,
+              (SELECT COUNT(*) FROM financial_events) financial_event_count,
+              (SELECT COUNT(*) FROM inventory_movements) inventory_movements_count,
+              (SELECT COUNT(*) FROM inventory_stock) stock_rows,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) physical_count,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) reserved_count,
+              (SELECT COUNT(*) FROM watch_products) watch_product_count,
+              (SELECT COUNT(*) FROM watch_variants) watch_variant_count,
+              (SELECT COUNT(*) FROM catalog_variants) catalog_variant_count,
+              (SELECT COUNT(*) FROM watch_shared_cash_register) cash_register_count,
+              (SELECT COUNT(*) FROM watch_shared_cash_entries) cash_entry_count" \
+              | jq -ce '.[0].results[0]' > /tmp/client3-after.json
+          diff -u /tmp/client3-before.json /tmp/client3-after.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="PRAGMA foreign_key_check" | jq -e '.[0].results | length==0'
+          echo CLIENT3_QUARTZ_REFERENCE_HOTFIX_RELEASE_SUCCESS
+      - name: Record successful isolated deploy
+        if: success()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 missing quartz reference HOTFIX DEPLOYED, tests and safe D1 check passed: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. PR #778 merged. Real SQLite test deleted builtin quartz/steel/black v5 reference rows, then created valid SKU without seed; custom refs still guarded; cash/team and full TypeScript passed. Only Client3 Worker updated, no migrations; database snapshots and FK checks unchanged. Manual authenticated UI still pending."
+      - name: Record failure accurately
+        if: failure()
+        run: |
+          gh issue comment 774 --repo dymovicd123/Orders-app --body "Client3 missing quartz reference hotfix BLOCKED/FAILED: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID. Do not claim successful deployment; check failed step before retry. Main/Branch2 not targeted."
