@@ -493,6 +493,74 @@ const badMultiReplay=await parse(createClient3WatchOrder(db,manager,1,{
  ...multiPurchase,items:[{...multiPurchase.items[0],engravingText:'ИЗМЕНИЛОСЬ'},multiPurchase.items[1]],
 }))
 assert.equal(badMultiReplay.status,409,'Same requestId cannot change engraving')
+// Real UI report 04 Nov: shipment confirmed for an exact watch whose physical
+// stock is ZERO and reservation is unresolved. Main-style confirmation must
+// complete a bounded physical issue, never invent stock or seize other holds.
+fixtureEngravingReady(multi.orderId,'2026-11-04T09:00:00Z')
+const absentItem=multiItems[1],absentQty=sqlite.prepare(
+  'SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?'
+).get('boutique',secondSku.canonicalVariantId)
+assert.equal(absentQty.quantity,0,'Fixture must actually have no physical stock')
+assert.equal(absentQty.reserved_quantity,0)
+const withoutPhysicalFact=await parse(dispatchClient3WatchOrder(db,manager,1,multi.orderId,{
+  requestId:'watch-missing-physical-20261104-a',
+  items:[{orderItemId:absentItem.id,quantity:1}],
+  confirmPhysicalStock:false,
+}))
+assert.equal(withoutPhysicalFact.status,409)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+  .get(multi.orderId).n,0)
+const confirmedMissing=await parse(dispatchClient3WatchOrder(db,manager,1,multi.orderId,{
+  requestId:'watch-missing-physical-20261104-a',
+  items:[{orderItemId:absentItem.id,quantity:1}],
+  confirmPhysicalStock:true,
+}))
+assert.equal(confirmedMissing.status,200,JSON.stringify(confirmedMissing))
+assert.equal(confirmedMissing.ok,true)
+const boundedAfter=sqlite.prepare(
+  'SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?'
+).get('boutique',secondSku.canonicalVariantId)
+assert.equal(boundedAfter.quantity,0,'No fictional negative or added physical watches')
+assert.equal(boundedAfter.reserved_quantity,0,'Other reserves must remain intact')
+const missingReserve=sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?')
+  .get(absentItem.id)
+assert.equal(missingReserve.status,'fulfilled','Exact unresolved reservation is completed by shipment')
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+  .get(absentItem.id).stock_writeoff_status,'fulfilled')
+const shortageEvidence=sqlite.prepare(
+  "SELECT * FROM inventory_operation_evidence WHERE operation_reference=? AND operation_type='shipping'"
+).get('dispatch:watch-missing-physical-20261104-a')
+assert.equal(shortageEvidence.unexplained_quantity,1,'Main-style shortage evidence is durable')
+const missingDispatchItem=sqlite.prepare(`
+  SELECT di.id,di.quantity,m.quantity_delta FROM order_dispatch_items di
+  JOIN order_dispatches d ON d.id=di.dispatch_id
+  JOIN inventory_movements m ON m.id=di.movement_id
+  WHERE d.request_id=?`
+).get('watch-missing-physical-20261104-a')
+assert.equal(missingDispatchItem.quantity,1,'The customer receives the whole confirmed watch')
+assert.equal(missingDispatchItem.quantity_delta,0,'Tracked physical quantity cannot go below zero')
+const confirmedReplay=await parse(dispatchClient3WatchOrder(db,manager,1,multi.orderId,{
+  requestId:'watch-missing-physical-20261104-a',
+  items:[{orderItemId:absentItem.id,quantity:1}],
+  confirmPhysicalStock:true,
+}))
+assert.equal(confirmedReplay.alreadyCommitted,true,'Retry cannot duplicate evidence or shipment')
+const correctedMissing=await parse(correctClient3WatchDispatch(db,admin,1,multi.orderId,{
+  dispatchItemId:missingDispatchItem.id,
+  requestId:'watch-physical-false-dispatch-correction',
+  reason:'Подтверждённую выдачу внесли по ошибке, товар клиенту не передавали',
+}))
+assert.equal(correctedMissing.status,200,JSON.stringify(correctedMissing))
+const boundedCorrection=sqlite.prepare(
+  'SELECT quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?'
+).get('boutique',secondSku.canonicalVariantId)
+assert.equal(boundedCorrection.quantity,0,'Correction must not invent a watch that was not deducted')
+assert.equal(boundedCorrection.reserved_quantity,0,'Cancelled pending reservation must not take another hold')
+assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?')
+  .get(absentItem.id).status,'unresolved')
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+  .get(absentItem.id).stock_writeoff_status,'pending_reservation')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 // Main's free entry: an unknown model with multiword characteristics can be
 // ordered before warehouse intake or admin catalog preparation.
 const freeEntry={...purchase,requestId:'watch-manual-main-20261102',
