@@ -35,7 +35,8 @@ type CatalogRow={
 type Api={ok:boolean;message?:string;attention?:string;rows?:CatalogRow[];watchProductId?:number;watchVariantId?:number;
   catalogVariantId?:number;stockLinked?:boolean;partial?:boolean;alreadyExists?:boolean}
 class WatchCatalogRequestError extends Error {
-  constructor(message:string,readonly partial:boolean){super(message)}
+  readonly partial:boolean
+  constructor(message:string,partial:boolean){super(message);this.partial=partial}
 }
 async function callApi(url:string,init?:RequestInit):Promise<Api> {
   const response=await fetch(url,{credentials:'include',cache:'no-store',...init})
