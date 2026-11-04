@@ -8,6 +8,24 @@ import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create
 import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-demand-report.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
+const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
+const nav=app.match(/<div className="warehouse-w2-primary"[\\s\\S]*?\]\.map\(item/g)?.[0]||app
+assert(nav.indexOf("section:'statistics'")>nav.indexOf("section:'revision'")&&
+ nav.indexOf("section:'statistics'")<nav.indexOf("section:'history'"),
+ 'Statistics must immediately precede History in the warehouse navigation')
+const catalogUI=fs.readFileSync('src/features/client3/WatchCatalogEditor.tsx','utf8')
+assert(catalogUI.includes('<WatchCatalogRetiredHistory brand={brand}/>'),
+ 'Main-style archived watch catalog must be reachable from Products')
+const deleteUI=fs.readFileSync('src/features/client3/WatchCatalogDeleteAction.tsx','utf8')
+assert(deleteUI.includes('inventoryWillBeRemoved')&&
+ deleteUI.includes('reservationsWillBeReleased')&&
+ deleteUI.includes('historicalOrderItems'),
+ 'Deletion preview must disclose concrete Main stock, reservation and historical effects')
+const deleteDomain=fs.readFileSync('worker/domains/client3-watch-catalog-delete.ts','utf8')
+assert(deleteDomain.includes("retireCatalogEntity(db,'product'")&&
+ deleteDomain.includes('WITH checked AS MATERIALIZED')&&
+ !/DELETE FROM (watch_products|watch_variants|order_items|inventory_movements)/i.test(deleteDomain),
+ 'Catalog retirement must use Main audit, exact-SKU all-or-none guard and never destroy history')
 const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
 for(const name of fs.readdirSync('migrations').filter(x=>/^\d+.*\.sql$/.test(x)).sort())
