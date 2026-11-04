@@ -89,7 +89,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
    e.preventDefault();if(busy)return
    if(!choiceRows.length||!newLines.length||newLines.length>20||
      choiceRows.some(x=>{
-       const y=chosen[x.id];return !['pending','not_issued'].includes(y.physicalState)||
+       const y=chosen[x.id];return !['pending','not_issued','warehouse','boutique','no_stock'].includes(y.physicalState)||
          !Number.isSafeInteger(Number(y.quantity))||Number(y.quantity)>x.returnableQuantity
      })){
      setError('Выберите старые часы, количество и факт отправки каждой позиции.');return
