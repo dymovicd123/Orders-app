@@ -3675,8 +3675,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
   let criticalOperation: CriticalOperationHandle | null = null
   try {
     const startedAt = new Date().toISOString()
-    // The third Worker's trusted watch SKU map is part of the immutable
-    // operation fingerprint, but not accepted via Main's generic request API.
+    // Trusted watch SKU identity is included in the idempotent fingerprint.
     const watchCommit=options.watchCommit
     criticalOperation = await beginCriticalOperation(db, 'exchange_set_create',
       input.requestId,watchCommit?{...input,__client3WatchCommit:watchCommit}:input,
@@ -3946,30 +3945,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         addedValue,
         paymentAmount,
       })
-      // Client3 optionally submits separate money methods for real-world
-      // mixed cash/card payments. Exact totals are checked BEFORE any exchange
-      // item, stock or financial event is committed.
-      const validateParts=(parts:ExchangeSetInput['paymentParts'],total:number,label:string)=>{
-        if(parts===undefined||parts.length===0)return [] as Array<{method:string;amount:number}>
-        if(!Array.isArray(parts)||parts.length>3)
-          throw new CriticalOperationConflictError('Не более трёх способов '+label+'.')
-        const normalized=parts.map(p=>({method:cleanText(p?.method),amount:Number(p?.amount)}))
-        if(normalized.some(p=>!p.method||p.method.length>80||
-           !Number.isSafeInteger(p.amount)||p.amount<1)||
-           normalized.reduce((sum,p)=>sum+p.amount,0)!==total)
-          throw new CriticalOperationConflictError('Части '+label+' не совпадают с общей суммой.')
-        return normalized
-      }
-      const paymentParts=validateParts(input.paymentParts,paymentAmount,'доплаты')
-      const refundParts=validateParts(input.refundParts,settlement.refundAmount,'возврата')
-      const paymentMethod=paymentParts.length>1?'РАЗНЫЕ СПОСОБЫ':
-        paymentParts.length===1?paymentParts[0].method:cleanText(input.paymentMethod)
-      const refundMethod=refundParts.length>1?'РАЗНЫЕ СПОСОБЫ':
-        refundParts.length===1?refundParts[0].method:cleanText(input.refundMethod)
-      if(paymentAmount>0&&!paymentMethod)
-        throw new CriticalOperationConflictError('Выберите способ оплаты денег, полученных сейчас.')
-      if(settlement.refundAmount>0&&!refundMethod)
-        throw new CriticalOperationConflictError('Выберите способ возврата денег клиенту.')
+      const paymentParts = normalizeMoneyParts(input.paymentParts, paymentAmount, input.paymentMethod)
+      const refundParts = normalizeMoneyParts(input.refundParts, settlement.refundAmount, input.refundMethod)
+      const paymentMethod = moneyMethodsSummary(paymentParts)
+      const refundMethod = moneyMethodsSummary(refundParts)
 
       const financialAction: ExchangeSetExecutionPlan['financialAction'] = paymentAmount > 0
         ? 'extra_payment'
@@ -3992,10 +3971,10 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         dueBeforeSettlement: settlement.dueBeforeSettlement,
         paymentAmount,
         paymentMethod,
-        paymentParts:paymentParts.length?paymentParts:undefined,
+        paymentParts,
         refundAmount: settlement.refundAmount,
         refundMethod,
-        refundParts:refundParts.length?refundParts:undefined,
+        refundParts,
         finalNetPaid: settlement.finalNetPaid,
         financialAction,
         financialAmount,
@@ -4342,42 +4321,39 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
       let paymentId: number | null = null
       let refundReturnId: number | null = null
       if (executionPlan.financialAction === 'extra_payment') {
-        const portions=executionPlan.paymentParts?.length?executionPlan.paymentParts:
-          [{method:executionPlan.paymentMethod,amount:executionPlan.paymentAmount}]
-        for(const [index,part] of portions.entries()){
-          const entityKey=executionPlan.paymentParts?.length
-            ?'exchange:set:payment:part:'+(index+1):'exchange:set:payment'
-          let recorded=await criticalOperationEntityId(db,criticalOperation.requestId,'payment',entityKey)
-          if(!recorded){
-            const pair=buildPaymentAndMoneyEventStatements(db,{
-              orderId:executionPlan.orderId,
-              externalOrderId:executionPlan.externalOrderId,
-              paymentDate:executionPlan.exchangeDate,
-              method:part.method,amount:part.amount,
-              paymentKind:'extra',
-              comment:executionPlan.comment||`Доплата при обмене #${exchangeId}`,
-              timestamp,eventType:'exchange_extra',
-              sourceType:'exchange',sourceId:exchangeId,
-              sourceRef:`exchanges:${exchangeId}`,
-              reason:'exchange_set_created',
-              eventKey:executionPlan.paymentParts?.length
-                ?`1901:${criticalOperation.requestId}:exchange-set-payment:part:${index}`
-                :`1901:${criticalOperation.requestId}:exchange-set-payment`,
+        const parts = executionPlan.paymentParts || normalizeMoneyParts(undefined, executionPlan.paymentAmount, executionPlan.paymentMethod)
+        for (const [index, part] of parts.entries()) {
+          const entityKey = index === 0 ? 'exchange:set:payment' : 'exchange:set:payment:' + (index + 1)
+          let currentPaymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey)
+          if (!currentPaymentId) {
+            const pair = buildPaymentAndMoneyEventStatements(db, {
+              orderId: executionPlan.orderId,
+              externalOrderId: executionPlan.externalOrderId,
+              paymentDate: executionPlan.exchangeDate,
+              method: part.method,
+              amount: part.amount,
+              paymentKind: 'extra',
+              comment: executionPlan.comment || `Оплата при обмене #${exchangeId}`,
+              timestamp,
+              eventType: 'exchange_extra',
+              sourceType: 'exchange',
+              sourceId: exchangeId,
+              sourceRef: `exchanges:${exchangeId}`,
+              reason: 'exchange_set_created',
+              eventKey: `1901:${criticalOperation.requestId}:exchange-set-payment` + (index ? ':part:' + (index + 1) : ''),
             })
-            const [insert]=await db.batch([
+            const [insert] = await db.batch([
               pair.payment,
-              db.prepare(`INSERT INTO critical_operation_entities
-                (request_id,entity_type,entity_key,entity_id,created_at)
-                VALUES (?,'payment',?,last_insert_rowid(),?)
-                ON CONFLICT(request_id,entity_type,entity_key) DO NOTHING`)
-                .bind(criticalOperation.requestId,entityKey,timestamp),
+              db.prepare(
+                `INSERT INTO critical_operation_entities (request_id, entity_type, entity_key, entity_id, created_at)
+                 VALUES (?, 'payment', ?, last_insert_rowid(), ?)
+                 ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
+              ).bind(criticalOperation.requestId, entityKey, timestamp),
               pair.event,
             ])
-            recorded=await criticalOperationEntityId(db,criticalOperation.requestId,'payment',entityKey)
-              ||toInt(insert.meta?.last_row_id,0)
+            currentPaymentId = await criticalOperationEntityId(db, criticalOperation.requestId, 'payment', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
           }
-          if(!recorded)throw new CriticalOperationConflictError('Не подтверждена часть доплаты.')
-          if(!paymentId)paymentId=recorded
+          if (index === 0) paymentId = currentPaymentId
         }
       } else if (executionPlan.financialAction === 'refund') {
         const entityKey = 'exchange:set:refund'
@@ -4401,19 +4377,21 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
                VALUES (?, 'return', ?, last_insert_rowid(), ?)
                ON CONFLICT(request_id, entity_type, entity_key) DO NOTHING`
             ).bind(criticalOperation.requestId, entityKey, timestamp),
-            ...(executionPlan.refundParts?.length?executionPlan.refundParts:[
-              {method:executionPlan.refundMethod,amount:executionPlan.refundAmount}
-            ]).map((part,index)=>refundMoneyEventStatement(db,{
-              eventKey:executionPlan.refundParts?.length
-                ?`1901:${criticalOperation!.requestId}:exchange-set-refund:part:${index}`
-                :`1901:${criticalOperation!.requestId}:exchange-set-refund`,
-              orderId:executionPlan.orderId,externalOrderId:executionPlan.externalOrderId,
-              returnDate:executionPlan.exchangeDate,amount:part.amount,
-              paymentMethod:part.method,timestamp,eventType:'exchange_refund',
-              sourceId:exchangeId,sourceRef:`exchanges:${exchangeId}`,
-              comment:executionPlan.comment||`Возврат переплаты по обмену #${exchangeId}`,
-              reason:'exchange_set_created',
-            })),
+            ...(executionPlan.refundParts || normalizeMoneyParts(undefined, executionPlan.refundAmount, executionPlan.refundMethod))
+              .map((part, index) => refundMoneyEventStatement(db, {
+                eventKey: `1901:${criticalOperation!.requestId}:exchange-set-refund` + (index ? ':part:' + (index + 1) : ''),
+                orderId: executionPlan.orderId,
+                externalOrderId: executionPlan.externalOrderId,
+                returnDate: executionPlan.exchangeDate,
+                amount: part.amount,
+                paymentMethod: part.method,
+                timestamp,
+                eventType: 'exchange_refund',
+                sourceId: exchangeId,
+                sourceRef: `exchanges:${exchangeId}`,
+                comment: executionPlan.comment || `Возврат переплаты по обмену #${exchangeId}`,
+                reason: 'exchange_set_created',
+              })),
           ])
           refundReturnId = await criticalOperationEntityId(db, criticalOperation.requestId, 'return', entityKey) || toInt(insert.meta?.last_row_id, 0) || null
         }
@@ -4815,54 +4793,50 @@ export async function cancelExchangeSetV2(
       await restoreWorkshopSnapshot(db, planItem.workshopSnapshot, timestamp)
     }
 
-    const financialAction=cleanText(exchange.financial_action)
-    const financialAmount=Math.max(0,toInt(exchange.financial_amount,0))
-    if(financialAction==='extra_payment'&&financialAmount>0){
-      const splitIds=await db.prepare(`SELECT ce.entity_id
-        FROM critical_operation_entities ce JOIN critical_operations co
-          ON co.request_id=ce.request_id
-        WHERE co.operation_type='exchange_set_create' AND co.target_id=?
-          AND ce.entity_type='payment' AND ce.entity_key LIKE 'exchange:set:payment:part:%'
-        ORDER BY ce.entity_key`).bind(exchangeId).all<{entity_id:number}>()
-      const ids=(splitIds.results||[]).map(row=>Number(row.entity_id))
-      if(plan.paymentParts?.length){
-        if(ids.length!==plan.paymentParts.length)
-          throw new CriticalOperationConflictError('Не найдены все части доплаты. Отмена остановлена.')
-        const amounts=await db.prepare(`SELECT id,amount FROM payments
-          WHERE order_id=? AND id IN (${ids.map(()=>'?').join(',')})`)
-          .bind(orderId,...ids).all<{id:number;amount:number}>()
-        const actual=new Map((amounts.results||[]).map(row=>[Number(row.id),Number(row.amount)]))
-        if(ids.some((id,index)=>actual.get(id)!==plan.paymentParts![index].amount))
-          throw new CriticalOperationConflictError('Части доплаты изменились. Отмена остановлена.')
-      }
-      for(const paymentId of ids.length?ids:[toInt(exchange.payment_id,0)]){
-        if(!paymentId)continue
-        await removeSinglePaymentWithMoneyEvent(db,{
-          paymentId,orderId,externalOrderId:cleanText(exchange.external_id),
-          timestamp,relatedType:'exchange_extra',
-          reason:'exchange_cancel',comment,
+    const financialAction = cleanText(exchange.financial_action)
+    const financialAmount = Math.max(0, toInt(exchange.financial_amount, 0))
+    if (financialAction === 'extra_payment' && financialAmount > 0) {
+      const mappedPaymentIds = await exchangeSetPaymentIds(db, exchangeId)
+      const firstPaymentId = toInt(exchange.payment_id, 0)
+      const paymentIds = mappedPaymentIds.length ? mappedPaymentIds : firstPaymentId ? [firstPaymentId] : []
+      for (const paymentId of new Set(paymentIds)) {
+        await removeSinglePaymentWithMoneyEvent(db, {
+          paymentId,
+          orderId,
+          externalOrderId: cleanText(exchange.external_id),
+          timestamp,
+          relatedType: 'exchange_extra',
+          reason: 'exchange_cancel',
+          comment,
         })
       }
-    }else if(financialAction==='refund'&&financialAmount>0){
-      const refundReturnId=toInt(exchange.refund_return_id,0)
-      if(refundReturnId){
-        const parts=plan.refundParts?.length?plan.refundParts:[
-          {method:cleanText(exchange.payment_method),amount:financialAmount}]
-        if(parts.reduce((n,x)=>n+x.amount,0)!==financialAmount)
-          throw new CriticalOperationConflictError('Части возврата при обмене не сходятся.')
+    } else if (financialAction === 'refund' && financialAmount > 0) {
+      const refundReturnId = toInt(exchange.refund_return_id, 0)
+      if (refundReturnId) {
+        const splitReversals = await splitRefundReversalStatements(db, {
+          orderId, externalOrderId: cleanText(exchange.external_id),
+          amount: financialAmount, methodSummary: cleanText(exchange.payment_method),
+          timestamp, comment, reason: 'exchange_cancel', exchangeId,
+        })
         await db.batch([
-          db.prepare(`UPDATE returns SET status='cancelled',
-             cancelled_at=?,cancellation_comment=? WHERE id=? AND order_id=?`)
-            .bind(timestamp,comment,refundReturnId,orderId),
-          ...parts.map((part,index)=>refundReversalMoneyEventStatement(db,{
-            eventKey:plan.refundParts?.length
-              ?`189c:exchange-set:${exchangeId}:refund-cancelled:part:${index}`
-              :`189c:exchange-set:${exchangeId}:refund-cancelled`,
-            orderId,externalOrderId:cleanText(exchange.external_id),
-            amount:part.amount,paymentMethod:part.method,timestamp,
-            relatedType:'exchange_refund',sourceId:exchangeId,
-            sourceRef:`exchanges:${exchangeId}`,reason:'exchange_cancel',comment,
-          })),
+          db.prepare(
+            `UPDATE returns
+             SET status = 'cancelled', cancelled_at = ?, cancellation_comment = ?
+             WHERE id = ? AND order_id = ?`
+          ).bind(timestamp, comment, refundReturnId, orderId),
+          ...(splitReversals || [refundReversalMoneyEventStatement(db, {
+            eventKey: `189c:exchange-set:${exchangeId}:refund-cancelled`,
+            orderId,
+            externalOrderId: cleanText(exchange.external_id),
+            amount: financialAmount,
+            paymentMethod: cleanText(exchange.payment_method) || null,
+            timestamp,
+            relatedType: 'exchange_refund',
+            sourceId: exchangeId,
+            sourceRef: `exchanges:${exchangeId}`,
+            reason: 'exchange_cancel',
+            comment,
+          })]),
         ])
       }
     }
