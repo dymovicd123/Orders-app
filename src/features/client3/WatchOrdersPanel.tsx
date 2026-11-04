@@ -206,12 +206,47 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                 <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
                 <td>{order.city||'—'}</td>
                 <td className="watch-main-order-sku">
-                  {parsedRows<ItemLine>(order.itemLines).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
-                    <strong>{line.productName}</strong><small>{line.quantity} шт. ·
-                      {line.source==='warehouse'?' Офис':' Витрина'} ·
-                      {[watchReferenceLabel('movements',line.movement),watchReferenceLabel('bracelets',line.braceletMaterial),watchReferenceLabel('dials',line.dialColor)].filter(Boolean).join(' / ')}</small>
-                  </div>)}
-                  {order.lineCount>3&&<small>Ещё {order.lineCount-3} поз.</small>}
+                  <div className="order-items-inline">
+                    {lines.slice(0,visibleItems).map((line,index)=>
+                      <div className="order-item-chip order-item-card" key={line.id}>
+                        <div className="order-item-card-head">
+                          <strong>{line.productName}</strong>
+                          <span className="order-item-quantity-badge">× {line.quantity}</span>
+                        </div>
+                        <span className="order-item-card-details">{[
+                          line.gender==='male'?'Мужские':line.gender==='female'?'Женские':'',
+                          watchReferenceLabel('movements',line.movement),
+                          watchReferenceLabel('bracelets',line.braceletMaterial),
+                          watchReferenceLabel('dials',line.dialColor),
+                          line.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',line.braceletColor):'',
+                        ].filter(Boolean).join(' · ')}</span>
+                        <small className={'order-item-shipment-status is-'+(shipment.lines[index]?.state||'not_sent')}>
+                          {shipment.lines[index]?.label||'Отправка не уточнена'}
+                        </small>
+                        {Number(line.returnedQuantity||0)>0&&
+                          <span className="soft-badge watch-item-returned">
+                            Возвращено {line.returnedQuantity} шт.
+                          </span>}
+                        {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
+                        <div className="order-item-chip-meta">
+                          <span className={'order-item-source-badge source-'+
+                            (line.source==='boutique'?'boutique':'warehouse')}>
+                            {line.source==='boutique'?'Витрина':'Офис'}
+                          </span>
+                        </div>
+                      </div>)}
+                    {lines.length>visibleItems&&
+                      <button className="order-item-chip order-item-chip-more is-clickable" type="button"
+                        onClick={()=>setExpandedItemCounts(current=>({...current,
+                          [order.orderId]:Math.min(lines.length,visibleItems+5)}))}>
+                        + ещё {lines.length-visibleItems}
+                      </button>}
+                    {visibleItems>3&&lines.length>3&&
+                      <button className="order-item-chip order-item-chip-collapse is-clickable" type="button"
+                        onClick={()=>setExpandedItemCounts(current=>{
+                          const next={...current};delete next[order.orderId];return next
+                        })}>Скрыть</button>}
+                  </div>
                 </td>
                 <td className="watch-main-order-delivery">
                   <strong>{order.deliveryMethod||'—'}</strong>
@@ -221,21 +256,59 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     <small>Есть текст гравировки</small>}
                 </td>
                 <td className="watch-main-order-payments">
-                  {parsedRows<PaymentLine>(order.paymentLines).slice(0,2).map(x=>
-                    <span className="order-payment-chip" key={x.id}>{x.method}: {sum(x.amount)}</span>)}
-                  {parsedRows<PaymentLine>(order.paymentLines).length>2&&<small>
-                    + ещё {parsedRows<PaymentLine>(order.paymentLines).length-2}</small>}
-                  {parsedRows<PaymentLine>(order.paymentLines).length===0&&<small>Не оплачено</small>}
+                  <div className="order-payments-inline">
+                    {payments.slice(0,visiblePayments).map(line=>
+                      <div className="order-payment-chip" key={line.id}>
+                        <strong>{line.method} · {sum(line.amount)}</strong>
+                        <span>{line.date||'Дата не указана'}</span>
+                      </div>)}
+                    {payments.length>visiblePayments&&
+                      <button className="order-payment-chip order-payment-chip-more is-clickable"
+                        type="button" onClick={()=>setExpandedPaymentCounts(current=>({
+                          ...current,[order.orderId]:Math.min(payments.length,visiblePayments+5)
+                        }))}>+ ещё {payments.length-visiblePayments}</button>}
+                    {visiblePayments>2&&payments.length>2&&
+                      <button className="order-payment-chip order-payment-chip-more is-clickable"
+                        type="button" onClick={()=>setExpandedPaymentCounts(current=>{
+                          const next={...current};delete next[order.orderId];return next
+                        })}>Скрыть оплаты</button>}
+                    {!payments.length&&<small>Оплат нет</small>}
+                  </div>
                 </td>
                 <td className="watch-main-money">{sum(order.totalAmount)}</td>
-                <td className="watch-main-money">{sum(order.receivedAmount)}</td>
+                <td className="watch-main-money">
+                  <div className="order-cell-stack">
+                    <strong>{sum(order.receivedAmount)}</strong>
+                    {order.returnAmount>0&&<small className="watch-main-refund-line">
+                      Возвращено {sum(order.returnAmount)} · осталось {sum(Math.max(0,order.receivedAmount-order.returnAmount))}
+                    </small>}
+                  </div>
+                </td>
                 <td className={'watch-main-money '+(order.debtAmount>0?'is-debt':'is-paid')}>
                   {order.debtAmount>0?sum(order.debtAmount):'Оплачено'}</td>
-                <td><span className={'watch-main-order-status'+(order.pendingReplacement?' is-awaiting':order.shippingStatus==='sent'||physicallyIssued(order)?' is-sent':' is-awaiting')}>
-                  {shipLabel(order)}
-                  </span>
-                  {order.unresolvedReservations>0&&<small className="watch-main-stock-warning">
-                    Требует поступления/резерва: {order.unresolvedReservations}</small>}
+                <td>
+                  <div className="order-status-stack">
+                    <span className={'status-pill '+operational.paymentClass}>
+                      {operational.paymentLabel}
+                    </span>
+                    <span className={'status-pill '+(shipment.state==='sent'?'status-online':
+                      shipment.state==='partial'?'status-warning':'status-neutral')}>
+                      {shipment.label}
+                    </span>
+                    {operational.hasCommittedDownstreamOperation&&<span className="soft-badge">
+                      {operational.hasCommittedReturn&&operational.hasCommittedExchange
+                        ?'Есть проведённые возврат и обмен':
+                        operational.hasCommittedExchange?'Есть проведённый обмен':
+                        operational.hasCommittedPhysicalDownstreamOperation?'Есть проведённый возврат':
+                        'Есть возврат денег'}
+                    </span>}
+                    {operational.committedReturnCount>0&&
+                      <small>Возвратов: {operational.committedReturnCount}
+                        {order.latestReturnDate?' · '+order.latestReturnDate:''}</small>}
+                    {operational.committedExchangeCount>0&&
+                      <small>Обменов: {operational.committedExchangeCount}
+                        {order.latestExchangeDate?' · '+order.latestExchangeDate:''}</small>}
+                  </div>
                 </td>
                 <td>
                   <div className="watch-main-row-actions">
