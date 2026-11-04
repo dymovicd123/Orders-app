@@ -114,7 +114,7 @@ export async function cancelClient3WatchExchange(
      LIMIT 1
    `).bind(orderId,exchangeId).first<{id:number}>()
    if(sent)return error('WATCH_EXCHANGE_REPLACEMENT_ALREADY_SENT',
-     'Нельзя отменить обмен: новые часы уже фактически отправляли клиенту. Сначала оформите возврат и приёмку либо исправьте ошибочную отправку. Саму отправку отмена обмена не откатывает.',409)
+     'Нельзя отменить обмен: новые часы уже фактически отправляли клиенту. Если передача была настоящей, оформите возврат и приёмку как отдельные операции. Если отправку отметили по ошибке, исправьте её перед отменой обмена. Саму отправку отмена обмена не откатывает.',409)
  }
  try{
    const inputMain={requestId:input.requestId as string,comment:reason}
