@@ -1,4 +1,4 @@
-name: Client3 QA Main order lifecycle copy batch 9
+name: Client3 QA Main lifecycle regression batch 10
 on:
   push:
     branches: [client3/isolated-qa-copy-20261103]
@@ -56,6 +56,7 @@ jobs:
           set -euo pipefail
           node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
           node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-main-return-table-parity-20261104.mjs
       - name: Verify isolated QA D1 is still available
         run: |
           set -euo pipefail
@@ -93,9 +94,9 @@ jobs:
         if: success()
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
-            "Client3 QA batch9 deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Adds Main-style bounded physical confirmation: shipments with zero free stock succeed without manufacturing quantity or changing other order reserves; full D1 test asserts shortage evidence, replay and correction."
+            "Client3 QA batch10 deployed only to https://orders-app-client3-qa-20261103.orders-clothes.workers.dev . Adds Main-style bounded physical confirmation: shipments with zero free stock succeed without manufacturing quantity or changing other order reserves; full D1 test asserts shortage evidence, replay and correction."
       - name: Record blocked build or release accurately
         if: failure()
         run: |
           gh issue comment 774 --repo dymovicd123/Orders-app --body \
-            "Client3 QA batch9 failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
+            "Client3 QA batch10 failed or blocked: https://github.com/dymovicd123/Orders-app/actions/runs/$GITHUB_RUN_ID . Check exact failing step; do not claim QA published."
