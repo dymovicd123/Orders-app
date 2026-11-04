@@ -14,6 +14,7 @@ import {cancelClient3WatchReturn} from '../../worker/domains/client3-watch-retur
 import {cancelClient3WatchExchange} from '../../worker/domains/client3-watch-exchange-history.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
+import {retireCatalogEntity} from '../../worker/domains/catalog-retirement.ts'
 
 const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
 const nav=app.match(/<div className="warehouse-w2-primary"[\\s\\S]*?\]\.map\(item/g)?.[0]||app
@@ -165,6 +166,8 @@ const exactWithStock=await parse(previewClient3WatchDelete(db,admin,1,{
 assert.equal(exactWithStock.status,200,JSON.stringify(exactWithStock))
 assert.equal(exactWithStock.canDelete,false,
  'An exact SKU cannot be retired with physical quantity or reservation')
+assert.equal(exactWithStock.physicalQuantity,3,'P2-02: exact SKU preview must show actual stock')
+assert.equal(exactWithStock.activeReservations,3,'P2-02: exact SKU preview must show actual reservations')
 const blockedExact=await parse(deleteClient3WatchCatalog(db,admin,1,{
  kind:'variant',watchProductId:productId,watchVariantId:productVariant.id,
  expectedCount:1,
@@ -713,6 +716,218 @@ assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_
  .get(exchangedBeforeRetireVariant.canonical).quantity,0)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
  beforeBlockedExchange)
+
+// Work P1-02: create the same watch characteristics after exact retirement.
+// Historical watch/canonical IDs and recorded movements must never reactivate.
+const nextGeneration=await parse(registerWatchVariant(db,admin,1,{
+ watchProductId:itemModel,gender:'male',movement:'quartz',
+ braceletMaterial:'steel',dialColor:'black',braceletColor:''
+}))
+assert.equal(nextGeneration.status,201,JSON.stringify(nextGeneration))
+assert.notEqual(nextGeneration.watchVariantId,item.id)
+const nextCanonical=await parse(provisionClient3WatchSku(db,admin,1,nextGeneration.watchVariantId))
+assert.equal(nextCanonical.status,200,JSON.stringify(nextCanonical))
+assert.notEqual(nextCanonical.canonicalVariantId,item.canonical,
+ 'P1-02: new sales must never link to archived canonical SKU')
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?')
+ .get(item.id).is_active,0)
+assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?')
+ .get(item.canonical).is_active,0)
+const repeatedCreation=await parse(registerWatchVariant(db,admin,1,{
+ watchProductId:itemModel,gender:'male',movement:'quartz',
+ braceletMaterial:'steel',dialColor:'black',braceletColor:''
+}))
+assert.equal(repeatedCreation.watchVariantId,nextGeneration.watchVariantId,
+ 'Active newest generation must win a lookup over older retired rows')
+
+// Work P1-01: deterministically inject a real arrival AFTER the preview and
+// synchronous preflight, immediately BEFORE the guarded D1 batch.
+const raceModel=await model('WORK RACE EXACT SKU QA')
+const raceVariant=await variant(raceModel)
+const originalBatch=db.batch
+db.batch=async statements=>{
+ db.batch=originalBatch
+ const received=await parse(receiveClient3WatchArrival(db,admin,1,{
+  source:'office',watchVariantId:raceVariant.id,quantity:1,
+  comment:'Concurrent arrival during delete',
+  requestId:'work-race-exact-arrival-20261104-0001'
+ }))
+ assert.equal(received.status,200,JSON.stringify(received))
+ return originalBatch(statements)
+}
+const racingDelete=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'variant',watchProductId:raceModel,watchVariantId:raceVariant.id,expectedCount:1
+}))
+db.batch=originalBatch
+assert.equal(racingDelete.status,409,JSON.stringify(racingDelete))
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?')
+ .get(raceVariant.id).is_active,1)
+assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?')
+ .get(raceVariant.canonical).is_active,1)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(raceVariant.canonical).quantity,1)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_retirement_history_events WHERE variant_id=?')
+ .get(raceVariant.canonical).n,0)
+
+// Work P1-01 for execution groups: one concurrent arrival must prevent the
+// deletion of BOTH canonical SKUs, not just the newly stocked one.
+const groupModel=await model('WORK RACE EXECUTION QA')
+const groupOne=await variant(groupModel)
+const groupTwoResponse=await parse(registerWatchVariant(db,admin,1,{
+ watchProductId:groupModel,gender:'female',movement:'quartz',
+ braceletMaterial:'steel',dialColor:'black',braceletColor:''
+}))
+assert.equal(groupTwoResponse.status,201)
+const groupTwoCanonical=await parse(provisionClient3WatchSku(db,admin,1,groupTwoResponse.watchVariantId))
+assert.equal(groupTwoCanonical.status,200)
+const groupPreview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'execution',watchProductId:groupModel,movement:'quartz',braceletMaterial:'steel'
+}))
+assert.equal(groupPreview.count,2)
+db.batch=async statements=>{
+ db.batch=originalBatch
+ const received=await parse(receiveClient3WatchArrival(db,admin,1,{
+  source:'office',watchVariantId:groupOne.id,quantity:1,
+  comment:'Concurrent group arrival',
+  requestId:'work-race-group-arrival-20261104-0001'
+ }))
+ assert.equal(received.status,200,JSON.stringify(received))
+ return originalBatch(statements)
+}
+const groupRace=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'execution',watchProductId:groupModel,movement:'quartz',
+ braceletMaterial:'steel',expectedCount:groupPreview.count
+}))
+db.batch=originalBatch
+assert.equal(groupRace.status,409,JSON.stringify(groupRace))
+for(const [wid,cid] of [
+ [groupOne.id,groupOne.canonical],
+ [groupTwoResponse.watchVariantId,groupTwoCanonical.canonicalVariantId]
+]){
+ assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?').get(wid).is_active,1)
+ assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?').get(cid).is_active,1)
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM catalog_retirement_history_events WHERE variant_id=?')
+   .get(cid).n,0)
+}
+const groupStockPreview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'execution',watchProductId:groupModel,movement:'quartz',braceletMaterial:'steel'
+}))
+assert.equal(groupStockPreview.canDelete,false)
+assert.equal(groupStockPreview.physicalQuantity,1,'P2-02: execution stock not zero')
+assert.equal(groupStockPreview.activeReservations,0)
+
+// Work P2-01: pending watch physical return has no Main pending lifecycle.
+// All three scopes must block retirement and preserve IDs.
+const pendingModel=await model('WORK PENDING PHYSICAL RETURN QA')
+const pendingVariant=await variant(pendingModel)
+const pendingArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:pendingVariant.id,quantity:1,
+ comment:'Fixture for pending physical return',
+ requestId:'work-pending-return-arrival-20261104-0001'
+}))
+assert.equal(pendingArrival.status,200)
+const pendingOrder=await parse(createClient3WatchOrder(db,manager,1,{
+ brand:'TAUWACH',source:'office',watchVariantId:pendingVariant.id,
+ catalogVariantId:pendingVariant.canonical,quantity:1,unitPrice:12000,
+ receivedAmount:0,payments:[],engravingText:'',
+ requestId:'work-pending-return-order-20261104-0001',
+ recipientName:'Тест ожидаемой приёмки',recipientPhone:'+77015550177',
+ address:'Улица ожидаемой приёмки, 77',postalCode:'050077',city:'Алматы',
+ deliveryMethod:'Казпочта',shippingDeadlineLocal:'2026-11-15T14:00',
+ urgent:false,paymentMethod:'KASPI GOLD'
+}))
+assert.equal(pendingOrder.status,201,JSON.stringify(pendingOrder))
+const pendingLine=sqlite.prepare('SELECT id FROM order_items WHERE order_id=?')
+ .get(pendingOrder.orderId)
+const pendingShip=await parse(dispatchClient3WatchOrder(db,admin,1,pendingOrder.orderId,{
+ requestId:'work-pending-return-dispatch-20261104-0001',
+ items:[{orderItemId:pendingLine.id,quantity:1}]
+}))
+assert.equal(pendingShip.status,200,JSON.stringify(pendingShip))
+const pendingReturn=await parse(createClient3WatchReturn(db,manager,1,pendingOrder.orderId,{
+ requestId:'work-pending-physical-return-20261104-0001',
+ kind:'items_only',amount:0,quantity:1,reason:'Получение часов пока ожидается',
+ items:[{orderItemId:pendingLine.id,quantity:1,physicalState:'pending'}]
+}))
+assert.equal(pendingReturn.status,200,JSON.stringify(pendingReturn))
+assert.equal(sqlite.prepare(`SELECT COUNT(*) AS n FROM return_items ri JOIN returns r ON r.id=ri.return_id
+ WHERE r.order_id=? AND ri.physical_tracking=1 AND ri.physical_received_at IS NULL`)
+ .get(pendingOrder.orderId).n,1)
+for(const request of [
+ {kind:'variant',watchProductId:pendingModel,watchVariantId:pendingVariant.id},
+ {kind:'execution',watchProductId:pendingModel,movement:'quartz',braceletMaterial:'steel'},
+ {kind:'product',watchProductId:pendingModel}
+]){
+ const preview=await parse(previewClient3WatchDelete(db,admin,1,request))
+ assert.equal(preview.canDelete,false,JSON.stringify(preview))
+ assert(preview.blockers.some(x=>x.includes('физическ')))
+ const response=await parse(deleteClient3WatchCatalog(db,admin,1,{
+  ...request,expectedCount:preview.count,
+  ...(request.kind==='product'?{requestId:'watch-retire-pending-work-20261104-0001'}:{})
+ }))
+ assert.equal(response.status,409,JSON.stringify(response))
+ assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?')
+  .get(pendingVariant.canonical).is_active,1)
+ assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?')
+  .get(pendingVariant.id).is_active,1)
+}
+
+// Work P2-03: a SQL failure at the END of the canonical retirement batch
+// rolls back watch shell, Main SKU, removal movement, operation and reserves.
+const interruptedModel=await model('WORK ATOMIC PRODUCT RETIRE QA')
+const interruptedVariant=await variant(interruptedModel)
+const initStock=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:interruptedVariant.id,quantity:2,
+ comment:'Atomic product retirement fixture',
+ requestId:'work-atomic-product-arrival-20261104-0001'
+}))
+assert.equal(initStock.status,200)
+const movementsBeforeFailure=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+db.batch=async statements=>{
+ db.batch=originalBatch
+ return originalBatch([...statements,db.prepare('INSERT INTO watch_products(id) VALUES(?)').bind(interruptedModel)])
+}
+const interruptedRequest={kind:'product',watchProductId:interruptedModel,expectedCount:1,
+ requestId:'watch-retire-atomic-work-20261104-0001'}
+const interruptedResult=await parse(deleteClient3WatchCatalog(db,admin,1,interruptedRequest))
+db.batch=originalBatch
+assert.equal(interruptedResult.status,409,JSON.stringify(interruptedResult))
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_products WHERE id=?').get(interruptedModel).is_active,1)
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?').get(interruptedVariant.id).is_active,1)
+assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?').get(interruptedVariant.canonical).is_active,1)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?').get(interruptedVariant.canonical).quantity,2)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,movementsBeforeFailure)
+const interruptedRetry=await parse(deleteClient3WatchCatalog(db,admin,1,interruptedRequest))
+assert.equal(interruptedRetry.status,200,JSON.stringify(interruptedRetry))
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_products WHERE id=?').get(interruptedModel).is_active,0)
+assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?').get(interruptedVariant.canonical).is_active,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,movementsBeforeFailure+1)
+
+// Legacy interrupted operations are still resumable with Main's completed
+// journal proof and MUST NOT create a second deletion movement.
+const legacyModel=await model('WORK LEGACY INTERRUPTED RETIRE QA')
+const legacyVariant=await variant(legacyModel)
+const legacyArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:legacyVariant.id,quantity:2,
+ comment:'Old two-phase interruption fixture',
+ requestId:'work-legacy-product-arrival-20261104-0001'
+}))
+assert.equal(legacyArrival.status,200)
+const legacyCanonical=sqlite.prepare('SELECT catalog_product_id FROM watch_products WHERE id=?')
+ .get(legacyModel).catalog_product_id
+await retireCatalogEntity(db,'product',legacyCanonical,{
+ requestId:'watch-retire-legacy-work-20261104-0001'
+})
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_products WHERE id=?').get(legacyModel).is_active,1)
+const legacyMovementCount=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+const legacyRecovered=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'product',watchProductId:legacyModel,expectedCount:1,
+ requestId:'watch-retire-legacy-recovery-20261104-0001'
+}))
+assert.equal(legacyRecovered.status,200,JSON.stringify(legacyRecovered))
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_products WHERE id=?').get(legacyModel).is_active,0)
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?').get(legacyVariant.id).is_active,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,legacyMovementCount)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
