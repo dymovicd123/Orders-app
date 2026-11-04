@@ -23,3 +23,20 @@
 .watch-exchange-history-confirm>div{display:flex;gap:9px;flex-wrap:wrap}
 .watch-exchange-history-error{color:#b91c1c;font-weight:650}
 @media(max-width:700px){.watch-exchange-history-columns{grid-template-columns:1fr}.watch-exchange-history-head{flex-direction:column}}
+
+
+.watch-exchange-history-top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.watch-exchange-cancel-chain{display:grid;gap:12px;min-width:0;padding:14px;border:1px solid #bfdbfe;background:#f8fbff;border-radius:12px}
+.watch-exchange-chain-mode{display:flex;gap:8px;flex-wrap:wrap}
+.watch-exchange-chain-mode>button{min-height:38px;padding:8px 12px}
+.watch-orders .watch-exchange-chain-mode>button.primary,
+.watch-orders .watch-exchange-chain-confirm>button.primary{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
+.watch-exchange-chain-preview{display:grid;gap:10px}
+.watch-exchange-chain-preview>strong{color:#1e293b;line-height:1.5}
+.watch-exchange-chain-preview ol{display:grid;gap:5px;padding-left:23px;margin:0}
+.watch-exchange-chain-preview li{color:#334155;line-height:1.5}
+.watch-exchange-chain-confirm{display:grid;gap:11px;padding:12px;border:1px solid #dbe4ee;background:#fff;border-radius:10px}
+.watch-exchange-chain-confirm>label:first-child{display:grid;gap:6px;font-weight:650}
+.watch-exchange-chain-confirm textarea{min-height:70px;padding:9px;border:1px solid #cbd5e1;border-radius:8px;width:100%;box-sizing:border-box}
+.watch-exchange-chain-confirm>label:nth-child(2){display:flex;gap:8px;align-items:flex-start}
+.watch-exchange-chain-confirm>button{justify-self:start}
