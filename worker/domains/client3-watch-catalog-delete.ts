@@ -17,9 +17,10 @@ async function target(db:D1Database,brandId:number,input:Input){
    .bind(productId,brandId).first<{id:number;model_name:string;catalog_product_id:number|null;is_active:number}>()
  if(!model)throw new Error('Товар не найден в выбранном бренде.')
  if(model.is_active!==1)throw new Error('Этот товар уже удалён из рабочего каталога.')
- const rows=await db.prepare(`SELECT v.id,v.catalog_variant_id,COALESCE(va.movement,v.movement) AS movement,
-     COALESCE(va.bracelet_material,v.bracelet_material) AS bracelet_material FROM watch_variants v
+ const rows=await db.prepare(`SELECT v.id,v.catalog_variant_id,COALESCE(va6.movement,va.movement,v.movement) AS movement,
+     COALESCE(va6.bracelet_material,va.bracelet_material,v.bracelet_material) AS bracelet_material FROM watch_variants v
    LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=v.id
    WHERE v.watch_product_id=? AND v.is_active=1 ORDER BY v.id`).bind(productId).all<Item>()
  let items=rows.results||[]
  if(kind==='variant'){
@@ -331,10 +332,10 @@ export async function listClient3WatchRetiredCatalog(
        (cv.is_active=1 AND cp.is_active=1 AND sp.is_active=1))
      THEN 1 ELSE 0 END AS variantActive,
    v.catalog_variant_id AS catalogVariantId,
-   v.gender,COALESCE(va.movement,v.movement) AS movement,
-   COALESCE(va.bracelet_material,v.bracelet_material) AS braceletMaterial,
-   COALESCE(va.dial_color,v.dial_color) AS dialColor,
-   COALESCE(va.bracelet_color,v.bracelet_color) AS braceletColor,
+   v.gender,COALESCE(va6.movement,va.movement,v.movement) AS movement,
+   COALESCE(va6.bracelet_material,va.bracelet_material,v.bracelet_material) AS braceletMaterial,
+   COALESCE(va6.dial_color,va.dial_color,v.dial_color) AS dialColor,
+   COALESCE(va6.bracelet_color,va.bracelet_color,v.bracelet_color) AS braceletColor,
    COALESCE((
      SELECT MAX(e.created_at) FROM catalog_retirement_history_events e
      WHERE e.variant_id=v.catalog_variant_id
@@ -350,6 +351,7 @@ export async function listClient3WatchRetiredCatalog(
  FROM watch_products wp
  LEFT JOIN watch_variants v ON v.watch_product_id=wp.id
  LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=v.id
  LEFT JOIN catalog_products cp ON cp.id=wp.catalog_product_id
  LEFT JOIN catalog_variants cv ON cv.id=v.catalog_variant_id
  LEFT JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
