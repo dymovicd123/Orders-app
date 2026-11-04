@@ -43,6 +43,7 @@ type Props = {
   canCompleteEngraving: boolean
   canDispatch?: boolean
   canCorrectDispatch?:boolean
+  focusOrderId?:number|null
 }
 
 type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; hasMore?:boolean; nextOffset?:number|null; message?: string }
@@ -107,8 +108,10 @@ function statusText(status: WatchLogisticsRow['engravingStatus']) {
 
 /** Main's operational workflow: engraving readiness and actual dispatch remain
  * separate confirmed actions; both use isolated brand-scoped Client3 routes. */
-export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false}:Props) {
+export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false,focusOrderId=null}:Props) {
   const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
+  const [focusedOrderId,setFocusedOrderId]=useState<number|null>(focusOrderId)
+  const [focusExpanded,setFocusExpanded]=useState(false)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
   const [nextOffset,setNextOffset]=useState<number|null>(null)
   const [loadingMore,setLoadingMore]=useState(false)
@@ -169,15 +172,29 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     setRows([])
     setNextOffset(null)
     setError('')
-    pageScope.current=brandScope+':'+refreshKey
+    pageScope.current=brandScope+':'+refreshKey+':'+(focusedOrderId||0)
     const params=new URLSearchParams({status:'all',limit:'80',offset:'0'})
     if(brandScope!=='all')params.set('brand',brandScope)
+    if(focusedOrderId)params.set('orderId',String(focusedOrderId))
     void readApi<LogisticsResponse>('/api/client3/watches/logistics?' + params.toString(), {
       signal: controller.signal,
     }).then(data => {
       if (!controller.signal.aborted) {
         setRows(data.rows || [])
         setNextOffset(data.hasMore?Number(data.nextOffset):null)
+        if(focusedOrderId&&data.rows?.some(row=>row.orderId===focusedOrderId)){
+          setExpanded(focusedOrderId)
+          setFilter('all')
+          // Show exact selected order immediately, retaining operator freedom
+          // to deselect items before physically confirming the shipment.
+          if(!focusExpanded){
+            const ready=data.rows.filter(row=>row.orderId===focusedOrderId&&
+              (logisticsItemEligible(row)||logisticsAwaitingPhysicalConfirmation(row)))
+              .map(row=>row.orderItemId).filter((id):id is number=>id!==null)
+            setDispatchSelection(previous=>({...previous,[focusedOrderId]:ready}))
+            setFocusExpanded(true)
+          }
+        }
       }
     }).catch(reason => {
       if (!controller.signal.aborted) {
@@ -186,13 +203,14 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       }
     }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
     return () => controller.abort()
-  }, [brandScope, refreshKey])
+  }, [brandScope, refreshKey,focusedOrderId])
 
   const loadMore=async()=>{
     if(nextOffset===null||busy||loadingMore)return
     const scope=pageScope.current
     const params=new URLSearchParams({status:'all',limit:'80',offset:String(nextOffset)})
     if(brandScope!=='all')params.set('brand',brandScope)
+    if(focusedOrderId)params.set('orderId',String(focusedOrderId))
     setLoadingMore(true);setError('')
     try{
       const data=await readApi<LogisticsResponse>('/api/client3/watches/logistics?'+params)
@@ -294,6 +312,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         <p>Подтверждайте гравировку отдельно для каждой позиции. Отправка списывает только выбранные готовые часы.</p>
       </div>
       <div className="watch-logistics-controls">
+        {focusedOrderId&&<button type="button" className="secondary compact"
+          onClick={()=>{setFocusedOrderId(null);setFocusExpanded(false);
+            setExpanded(null);setDispatchConfirm(null);setDispatchSelection({});setFilter('unshipped')}}>
+          Все заказы логистики
+        </button>}
         <label>Статус
           <select value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>
             <option value="all">Все заказы</option>
