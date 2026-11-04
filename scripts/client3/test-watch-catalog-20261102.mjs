@@ -8,8 +8,9 @@ sqlite.exec('PRAGMA foreign_keys=ON')
 sqlite.exec([
 'CREATE TABLE managers(id INTEGER PRIMARY KEY);',
 'CREATE TABLE app_users(id INTEGER PRIMARY KEY);',
-'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);',
-'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,stock_position_id INTEGER,category TEXT DEFAULT \'adult\');',
+'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,is_active INTEGER DEFAULT 1);',
+'CREATE TABLE catalog_stock_positions(id INTEGER PRIMARY KEY,is_active INTEGER DEFAULT 1);',
+'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,stock_position_id INTEGER,category TEXT DEFAULT \'adult\',is_active INTEGER DEFAULT 1);',
 'CREATE TABLE catalog_execution_prices(stock_position_id INTEGER,category TEXT,sale_price INTEGER,PRIMARY KEY(stock_position_id,category));',
 'CREATE TABLE orders(id INTEGER PRIMARY KEY);',
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY);',
