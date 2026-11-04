@@ -23,6 +23,13 @@ assert(nav.indexOf("section:'statistics'")>nav.indexOf("section:'revision'")&&
 const catalogUI=fs.readFileSync('src/features/client3/WatchCatalogEditor.tsx','utf8')
 assert(catalogUI.includes('<WatchCatalogRetiredHistory brand={brand}/>'),
  'Main-style archived watch catalog must be reachable from Products')
+const returnHistoryUI=fs.readFileSync('src/features/client3/WatchReturnHistoryPanel.tsx','utf8')
+const exchangeHistoryUI=fs.readFileSync('src/features/client3/WatchExchangeHistoryPanel.tsx','utf8')
+for(const ui of [returnHistoryUI,exchangeHistoryUI]){
+ assert(ui.includes('archivedAppliedCount')&&ui.includes('physicalLocation')&&
+   ui.includes('Пока неизвестно')&&ui.includes('У клиента'),
+   'Archived Return/Exchange cancellation must offer custody clarification without forcing a guessed location')
+}
 const deleteUI=fs.readFileSync('src/features/client3/WatchCatalogDeleteAction.tsx','utf8')
 assert(deleteUI.includes('inventoryWillBeRemoved')&&
  deleteUI.includes('reservationsWillBeReleased')&&
@@ -590,7 +597,7 @@ sqlite.prepare('UPDATE inventory_stock SET quantity=0 WHERE variant_id=?')
 const cancelPhysicalOldReturn=await parse(cancelClient3WatchReturn(db,manager,1,
  returnedOldOrder.orderId,returnBeforeDelete.id,{
  requestId:'watch-return-cancel-after-delete-20261104-0001',
- reason:'Отмена движения возврата в архивном SKU недопустима'
+ reason:'Отмена старого возврата без восстановления остатка',physicalLocation:'customer'
 }))
 assert.equal(cancelPhysicalOldReturn.status,200,JSON.stringify(cancelPhysicalOldReturn))
 assert.equal(cancelPhysicalOldReturn.archivedStockPreserved,true)
@@ -599,6 +606,9 @@ assert(cancelPhysicalOldReturn.stockReversals.some(x=>
  'Main must cancel return commercially without reversing retired stock')
 assert.equal(sqlite.prepare('SELECT status FROM returns WHERE id=?')
  .get(returnBeforeDelete.id).status,'cancelled')
+assert(sqlite.prepare('SELECT cancellation_comment FROM returns WHERE id=?')
+ .get(returnBeforeDelete.id).cancellation_comment.includes('часы у клиента'),
+ 'Explicit customer custody must be recorded in return cancellation audit')
 const afterRefundCancellation=sqlite.prepare('SELECT received_amount,return_amount,debt_amount FROM orders WHERE id=?')
  .get(returnedOldOrder.orderId)
 assert.equal(afterRefundCancellation.received_amount,11000)
@@ -675,7 +685,7 @@ const beforeBlockedExchange=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_
 const approvedArchiveExchangeCancel=await parse(cancelClient3WatchExchange(db,manager,1,
  oldExchangeOrder.orderId,exchangeBeforeDelete.id,{
  requestId:'watch-cancel-old-exchange-after-delete-20261104-0001',
- reason:'Нельзя обращать складское движение уже удалённого товара'
+ reason:'Отмена старого обмена с сохранением архивного склада',physicalLocation:'office'
 }))
 assert.equal(approvedArchiveExchangeCancel.status,200,JSON.stringify(approvedArchiveExchangeCancel))
 assert.equal(approvedArchiveExchangeCancel.archivedStockPreserved,true)
@@ -684,6 +694,9 @@ assert(approvedArchiveExchangeCancel.stockReversals.some(x=>
  'Main must cancel Exchange commercially without resurrecting retired stock')
 assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
  .get(exchangeBeforeDelete.id).status,'cancelled')
+assert(sqlite.prepare('SELECT cancellation_comment FROM exchanges WHERE id=?')
+ .get(exchangeBeforeDelete.id).cancellation_comment.includes('часы у продавца'),
+ 'Explicit seller custody must be retained by exchange cancellation')
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
  .get(exchangedBeforeRetireVariant.canonical).quantity,0)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
