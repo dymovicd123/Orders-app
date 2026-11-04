@@ -11,7 +11,7 @@ type RetiredLine={
  retirement_count:number;open_returns:number;open_old_exchanges:number;shipped:number;
  replacement_id:number|null;replacement_event_id:number|null;replacement_quantity:number|null
 }
-const statusSql=`UPDATE orders SET
+export const retiredWatchShippingProjectionSql=`UPDATE orders SET
  shipping_status=CASE WHEN NOT EXISTS(
    SELECT 1 FROM order_items oi WHERE oi.order_id=orders.id AND oi.quantity>0
      AND (COALESCE(oi.stock_writeoff_status,'') NOT IN
@@ -251,7 +251,7 @@ export async function dispatchRetiredClient3WatchLines(
          line.replacement_event_id,orderId,line.id,item.quantity))
    }
  }
- statements.push(db.prepare(statusSql).bind(date,stamp,orderId))
+ statements.push(db.prepare(retiredWatchShippingProjectionSql).bind(date,stamp,orderId))
  try{
    await db.batch(statements)
  }catch(error){
