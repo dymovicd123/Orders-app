@@ -330,7 +330,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       <button type="button" className="secondary compact"
                         onClick={()=>openFlow('exchange')}>Обмен</button>}
                     {workflow==='orders'&&<button type="button" className="secondary compact"
-                      onClick={()=>showDetailAction('edit')}>{isAdmin?'Полное редактирование':'Доп. действия'}</button>}
+                      onClick={()=>showDetailAction('edit')}>{isAdmin?'Полное редактирование':'Исправить · доп. действия'}</button>}
                     {workflow==='orders'&&order.debtAmount>0&&onOpenDebt&&
                       <button type="button" className="secondary compact debt-action-button"
                         onClick={()=>onOpenDebt(brand,order.orderId,order.externalId)}>
