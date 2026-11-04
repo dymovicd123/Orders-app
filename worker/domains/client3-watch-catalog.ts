@@ -146,33 +146,16 @@ export async function registerWatchVariant(
       COALESCE(va.movement,v.movement)=? AND
       COALESCE(va.bracelet_material,v.bracelet_material)=? AND
       COALESCE(va.dial_color,v.dial_color)=? AND
-      COALESCE(va.bracelet_color,v.bracelet_color)=? LIMIT 1`
+      COALESCE(va.bracelet_color,v.bracelet_color)=?
+    ORDER BY v.is_active DESC,v.id DESC LIMIT 1`
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
-  if(old){
-    if(old.is_active===0) {
-      if(options.fromVerifiedOrder)return error('WATCH_VARIANT_RETIRED','Комплектация удалена. Не восстанавливайте её автоматически через создание заказа.',409)
-      // Main restoration: revive the exact historical identity, but never invent
-      // stock or repair any unrelated retired execution. No duplicate SKU is made.
-      if(old.catalog_variant_id){
-        const owner=await db.prepare(`SELECT cv.id,cp.is_active AS product_active,
-          sp.is_active AS execution_active
-          FROM catalog_variants cv JOIN catalog_products cp ON cp.id=cv.product_id
-          JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
-          WHERE cv.id=?`).bind(old.catalog_variant_id)
-          .first<{id:number;product_active:number;execution_active:number}>()
-        if(!owner||owner.product_active!==1||owner.execution_active!==1)
-          return error('WATCH_RESTORE_BLOCKED','Историческое исполнение удалено отдельно. Сначала проверьте его восстановление.',409)
-        await db.batch([
-          db.prepare('UPDATE catalog_variants SET is_active=1 WHERE id=? AND is_active=0').bind(old.catalog_variant_id),
-          db.prepare('UPDATE watch_variants SET is_active=1 WHERE id=? AND watch_product_id=? AND is_active=0').bind(old.id,productId),
-        ])
-      }else{
-        await db.prepare('UPDATE watch_variants SET is_active=1 WHERE id=? AND watch_product_id=? AND is_active=0')
-          .bind(old.id,productId).run()
-      }
-      return json({ok:true,watchVariantId:old.id,restored:true,active:true,
-        stockLinked:old.catalog_variant_id!=null,stockCreated:false})
-    }
+  if(old?.is_active===0&&options.fromVerifiedOrder)
+    return error('WATCH_VARIANT_RETIRED',
+      'Историческая комплектация удалена. Создание заказа не может восстановить её.',409)
+  // A manually recreated combination is a NEW generation. Never reactivate
+  // an archived watch SKU or canonical SKU: old orders must keep their IDs.
+  const previousRetired=Boolean(old&&old.is_active===0)
+  if(old&&!previousRetired){
     if(old.catalog_variant_id){
       const status=await db.prepare(`SELECT cv.is_active AS variant_active,
         cp.is_active AS product_active,sp.is_active AS execution_active
@@ -188,7 +171,7 @@ export async function registerWatchVariant(
     return json({ok:true,watchVariantId:old.id,alreadyExists:true,active:true,stockLinked:old.catalog_variant_id!=null})
   }
   try{
-    const legacy=['quartz','mechanical'].includes(v.movement) &&
+    const legacy=!previousRetired&&['quartz','mechanical'].includes(v.movement) &&
       ['steel','leather','rubber'].includes(v.braceletMaterial) &&
       ['black','white','silver','gold','green','orange','brown','multicolor'].includes(v.dialColor) &&
       // New reference colours must not be forced into the original constrained
@@ -216,7 +199,9 @@ export async function registerWatchVariant(
     return json({ok:true,watchVariantId:id,created:true,stockLinked:false},{status:201})
   }catch(cause){
     const other=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
-    if(other)return json({ok:true,watchVariantId:other.id,alreadyExists:true,active:other.is_active===1,stockLinked:other.catalog_variant_id!=null})
+    if(other?.is_active===1)return json({ok:true,watchVariantId:other.id,alreadyExists:true,active:true,stockLinked:other.catalog_variant_id!=null})
+    if(other?.is_active===0)return error('WATCH_VARIANT_NEW_GENERATION_FAILED',
+      'Новая комплектация не создана. Историческая позиция остаётся в архиве; обновите каталог.',409)
     throw cause
   }
 }
