@@ -50,6 +50,9 @@ sql.exec('ALTER TABLE payments ADD COLUMN comment TEXT')
 sql.exec('ALTER TABLE returns ADD COLUMN return_date TEXT')
 sql.exec('ALTER TABLE exchanges ADD COLUMN exchange_date TEXT')
 sql.exec('ALTER TABLE financial_events ADD COLUMN created_at TEXT')
+sql.exec(`CREATE TABLE IF NOT EXISTS watch_engraving_item_readiness (
+ order_item_id INTEGER PRIMARY KEY,engraving_text TEXT NOT NULL
+)`)
 // Main's read-only stocktake flag SQL uses reservation/checkpoint lineage.
 // Keep this intentionally small fixture schema complete enough to execute
 // the real compact Main query, rather than mocking away its review gate.
