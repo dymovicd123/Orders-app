@@ -32,12 +32,15 @@ export const readyForSend=(item:WatchLogisticsRow)=>
    !watchItemFullyIssued(item)&&Number(item.shippedQuantity||0)===0&&
    (!item.engravingText?.trim()||Boolean(item.engravingReady)))
 export const requiresEngraving=(item:WatchLogisticsRow)=>
- Boolean(item.orderItemId&&item.engravingText?.trim()&&!item.engravingReady&&!watchItemFullyIssued(item))
+ Boolean(item.orderItemId&&Number(item.quantity)>0&&
+  item.engravingText?.trim()&&!item.engravingReady&&!watchItemFullyIssued(item))
 export const visibleLogisticsTasks=(groups:Group[],filter:string)=>groups.flatMap(group=>
  group.items.filter(item=>{
    if(!item.orderItemId)return false
-   if(filter==='sent')return watchItemFullyIssued(item)
-   if(filter==='unshipped'||filter==='pending')return !watchItemFullyIssued(item)
+   const active=Number(item.quantity)>0
+   if(filter==='sent')return watchItemFullyIssued(item)||
+     (!active&&Number(item.returnedQuantity||0)>0)
+   if(filter==='unshipped'||filter==='pending')return active&&!watchItemFullyIssued(item)
    if(filter==='ready')return readyForSend(item)
    if(filter==='engraving')return requiresEngraving(item)
    return true
@@ -70,6 +73,7 @@ export function WatchLogisticsTaskTable({
          {tasks.map(({order,item})=>{
            const id=Number(item.orderItemId)
            const issued=watchItemFullyIssued(item)
+           const historical=Number(item.quantity)<=0
            const engravingNeeded=requiresEngraving(item)
            const prepared=readyForSend(item)
            const waitingReceipt=watchItemAwaitingReceipt(item)
@@ -121,7 +125,8 @@ export function WatchLogisticsTaskTable({
                  до {fmtDeadline(order.shippingDeadlineAt)}</span>
                <span className={'status-pill '+(issued?'status-online':
                  engravingNeeded?'status-warning':'status-info')}>
-                 {issued?'Отправлен':engravingNeeded?'Гравировка не готова':'Готово к отправке'}</span>
+                 {historical?'История позиции':issued?'Отправлен':
+                   engravingNeeded?'Гравировка не готова':'Готово к отправке'}</span>
                {waitingReceipt>0&&<span className="watch-task-intake">
                  Ожидаем приёмку: {waitingReceipt} шт.</span>}
              </div></td>
@@ -149,9 +154,9 @@ export function WatchLogisticsTaskTable({
                  </small>}
                </div>}
                {issued&&<span className="status-pill status-online">Отправлено</span>}
-               {!issued&&!prepared&&!engravingNeeded&&<small className="watch-task-stock-hint">
+               {!historical&&!issued&&!prepared&&!engravingNeeded&&<small className="watch-task-stock-hint">
                  Проверьте статус товара и складскую привязку.</small>}
-               {!issued&&shortage&&onOpenStock&&<button type="button" className="secondary compact"
+               {!historical&&!issued&&shortage&&onOpenStock&&<button type="button" className="secondary compact"
                  onClick={()=>onOpenStock(order.brand)}>Проверить остаток</button>}
                {waitingReceipt>0&&onOpenReturns&&<button type="button" className="secondary compact"
                  onClick={()=>onOpenReturns(order.brand)}>Приёмка возврата</button>}
@@ -171,7 +176,8 @@ export function WatchLogisticsTaskTable({
                    <div className="watch-task-correction-buttons">
                      <button type="button" className="primary compact"
                        disabled={locked||correction.reason.trim().length<8}
-                       onClick={()=>void onCorrect(order,correction.dispatchId,correction.reason).then(()=>setCorrection(null))}>
+                       onClick={()=>void onCorrect(order,correction.dispatchId,correction.reason)
+                         .then(()=>setCorrection(null)).catch(()=>{})}>
                        Сохранить исправление
                      </button>
                      <button type="button" className="secondary compact" disabled={locked}
