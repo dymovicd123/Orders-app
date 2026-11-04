@@ -403,8 +403,8 @@ export function WatchClient3App() {
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}
             onOpenOrders={()=>goTo('orders')}/>}
-          {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion}
-            brands={brands.map(x=>x.code)}/>}
+          {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion+'-'+(reportOrderFocus?.brand||brand)}
+            brands={brands.map(x=>x.code)} initialBrand={reportOrderFocus?.brand||brand||undefined}/>}
           {brands.length>0&&<WatchOperationHistoryPanel kind="return"
             isAdmin={canAdmin}
             key={'return-history-'+catalogVersion}
@@ -436,7 +436,10 @@ export function WatchClient3App() {
         focusOrderId={logisticsFocusOrderId}
         brand={isLogisticsRole?'all':brand||'all'} allowedBrands={brands.map(x=>x.code)}
         canDispatch={canSales||isLogisticsRole} canCorrectDispatch={canAdmin}
-        canCompleteEngraving={canAdmin||isLogisticsRole}/>}
+        canCompleteEngraving={canAdmin||isLogisticsRole}
+        onOpenReturns={canSales?selected=>{
+          setBrand(selected);setLastOrderBrand(selected);setReportOrderFocus(null);goTo('returns')
+        }:undefined}/>}
       {['warehouse','operations','revision','history','statistics','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
           <div className="warehouse-w2-primary" aria-label="Разделы склада">
