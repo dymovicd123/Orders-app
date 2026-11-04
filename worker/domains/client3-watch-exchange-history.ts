@@ -1,7 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {listExchanges,cancelExchange,cancelExchangeSetV2,isExchangeSetV2} from './returns-exchanges.ts'
-import {retiredAppliedMovementBlocker} from './client3-watch-retired-reversal-guard.ts'
+import {inspectRetiredAppliedMovements} from './client3-watch-retired-reversal-guard.ts'
 import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} from './client3-watch-item-projection.ts'
 
 const error=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
@@ -105,10 +105,13 @@ export async function cancelClient3WatchExchange(
  // never be treated as available stock merely because its exchange was voided.
  // The only safe paths are a genuine return/receipt or a separately reviewed
  // mistaken-shipment correction, followed by cancellation if still eligible.
+ let archiveReversedCount=0
  if(owned.status!=='cancelled'){
-   const affected=await retiredAppliedMovementBlocker(db,'exchange',exchangeId)
-   if(affected)return error('WATCH_EXCHANGE_CANCEL_RETIRED_STOCK',
-     'Обмен уже изменял складскую позицию, которая позднее была удалена из каталога. Простая отмена изменила бы закрытый остаток. Данные оставлены без изменений; требуется отдельная сверка связанных физических движений.',409)
+   const inspection=await inspectRetiredAppliedMovements(db,'exchange',exchangeId)
+   archiveReversedCount=inspection.retiredCount
+   if(inspection.blocked)return error('WATCH_EXCHANGE_CANCEL_RETIRED_STOCK',
+     'Отмена остановлена: '+inspection.blocked.reason+
+     ' Ни склад, ни деньги не изменены. Сверьте журнал удаления.',409)
    const sent=await db.prepare(`
      SELECT di.id FROM exchange_items ei
      JOIN order_dispatch_items di ON di.order_item_id=ei.order_item_id
@@ -126,7 +129,9 @@ export async function cancelClient3WatchExchange(
    const result=setExchange
      ?await cancelExchangeSetV2(db,exchangeId,inputMain)
      :await cancelExchange(db,exchangeId,inputMain)
-   return json({...result,brandId,orderId,exchangeId,setExchange})
+   return json({...result,brandId,orderId,exchangeId,setExchange,
+     archivedPhysicalMovementCount:archiveReversedCount,
+     archivedStockPreserved:archiveReversedCount>0})
  }catch(cause){
    return error('WATCH_EXCHANGE_CANCEL_BLOCKED',cause instanceof Error
      ?cause.message:'Отмена заблокирована зависимыми операциями.')
