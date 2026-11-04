@@ -112,7 +112,7 @@ assert.equal(partialShipment.rows.length,2,
   'A line with one of two units issued must remain in the unshipped queue')
 assert.equal(JSON.parse(partialShipment.rows.find(x=>x.orderId===1).itemLines)[0].shippedQuantity,1)
 sql.exec("UPDATE order_items SET quantity=1 WHERE id=101")
-sql.exec("INSERT INTO returns VALUES(1,1,'completed')")
+sql.exec("INSERT INTO returns(id,order_id,status) VALUES(1,1,'completed')")
 sql.exec("INSERT INTO return_items(id,return_id,order_item_id,quantity,physical_tracking) VALUES(1,1,101,1,1)")
 const afterReturn=await query(alice,'brand=TAUWACH&from=2026-11-01')
 const returnedLine=JSON.parse(afterReturn.rows[0].itemLines)[0]
