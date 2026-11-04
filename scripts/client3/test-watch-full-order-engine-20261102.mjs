@@ -6,6 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
+import {retryClient3WatchReservations} from '../../worker/domains/client3-watch-reservation-recovery.ts'
 import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
 import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
@@ -1685,6 +1686,32 @@ assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
 // One replacement can depart while the other still waits in logistics, even
 // though both old units have not yet physically returned from the customer.
 fixtureEngravingReady(twoOld.orderId)
+// No stock for the newly resolved replacement SKU: the Main reserve admission
+// correctly left both obligations unresolved. A retry before physical arrival
+// must not manufacture inventory or convert them into active reservations.
+const withoutStock=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
+assert.equal(withoutStock.status,200,JSON.stringify(withoutStock))
+assert.equal(withoutStock.activated,0,'No actual stock means no reservation activation')
+const foreignReserveRetry=await parse(retryClient3WatchReservations(db,manager,2,twoOld.orderId))
+assert.equal(foreignReserveRetry.status,404,'Cannot recover a different brand reservation')
+const incomingWatchVariant=activeSwap[0].watch_variant_id
+const arrivalForReplacementOffice=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:incomingWatchVariant,quantity:2,
+ requestId:'watch-swap-arrival-office-20261104',
+ comment:'Физически приняли новую комплектацию для обмена',
+}))
+assert.equal(arrivalForReplacementOffice.status,200,JSON.stringify(arrivalForReplacementOffice))
+const arrivalForReplacementShowcase=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'showcase',watchVariantId:incomingWatchVariant,quantity:1,
+ requestId:'watch-swap-arrival-showcase-20261104',
+ comment:'Физически приняли замену для витрины',
+}))
+assert.equal(arrivalForReplacementShowcase.status,200,JSON.stringify(arrivalForReplacementShowcase))
+const recovered=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
+assert.equal(recovered.status,200,JSON.stringify(recovered))
+assert.equal(recovered.activated,2,'Real arrivals let Main atomically activate the two pending reservations')
+const noDuplicateRecovery=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
+assert.equal(noDuplicateRecovery.activated,0,'Repeat recovery must not reserve the same stock twice')
 const firstReplacementSent=await parse(dispatchClient3WatchOrder(db,logisticActor,1,twoOld.orderId,{
  requestId:'watch-swap-followup-send-20261104-01',
  items:[{orderItemId:activeSwap[0].id,quantity:1}],
