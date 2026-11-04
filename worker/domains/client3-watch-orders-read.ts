@@ -141,6 +141,10 @@ export async function listClient3WatchOrders(
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
           'shipped',CASE WHEN ${WATCH_ITEM_SHIPPED_SQL}>0 THEN 1 ELSE 0 END,
           'engravingText',COALESCE(wi2.engraving_text,''),
+          'engravingReady',CASE WHEN TRIM(COALESCE(wi2.engraving_text,''))='' THEN 1
+            WHEN EXISTS(SELECT 1 FROM watch_engraving_item_readiness ready
+              WHERE ready.order_item_id=oi.id AND ready.engraving_text=wi2.engraving_text)
+            THEN 1 ELSE 0 END,
           'gender',COALESCE(wv2.gender,''),'movement',COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.movement,''),
           'braceletMaterial',COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.bracelet_material,''),
           'dialColor',COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.dial_color,''),
