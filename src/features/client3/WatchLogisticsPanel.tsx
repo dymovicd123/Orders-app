@@ -64,7 +64,9 @@ async function readApi<T extends { ok: boolean; message?: string }>(
 export const logisticsItemIssued=(item:WatchLogisticsRow)=>watchItemFullyIssued(item)
 export const logisticsOrderComplete=(group:LogisticsGroup)=>{
   const items=group.items.filter(i=>i.orderItemId!=null&&Number(i.quantity||0)>0)
-  return items.length>0&&items.every(logisticsItemIssued)
+  // A fully returned or exchanged order with no active merchandise is not
+  // another shipment task. Its remaining physical intake stays in Returns.
+  return group.items.length>0&&(items.length===0||items.every(logisticsItemIssued))
 }
 /** Shared UI selection gate; the API repeats this check for every exact SKU. */
 export const logisticsItemEligible=(item:WatchLogisticsRow)=>Boolean(
@@ -351,9 +353,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
           const returnedCount=items.reduce((n,i)=>n+Number(i.returnedQuantity||0),0)
           const intakePending=items.reduce((n,i)=>n+watchItemAwaitingReceipt(i),0)
           const hasActive=items.some(i=>Number(i.quantity||0)>0)
-          const shipStatus=completed
-            ?(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Ранее выдан · подтверждено')
-            :!hasActive?'Нет активных позиций':dispatched>0?'Частично отправлен':'Не отправлен'
+          const shipStatus=!hasActive
+            ?(intakePending>0?'Возврат ожидает приёмки':'Нет активных позиций')
+            :completed
+              ?(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Ранее выдан · подтверждено')
+              :dispatched>0?'Частично отправлен':'Не отправлен'
           const selectable=items.filter(item=>eligible(order,item))
           const selectedIds=dispatchSelection[order.orderId]||[]
           const selected=selectable.filter(item=>item.orderItemId&&(
