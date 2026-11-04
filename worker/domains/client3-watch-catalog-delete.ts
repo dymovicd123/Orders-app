@@ -192,70 +192,86 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
  }
  const issues=await blockers(db,scope.items)
  if(issues.length)return fail('Удаление заблокировано: '+issues.join('; '),409)
- // Granular Main-style retirement: exact SKU or watch execution group only.
- // No physical stock write-off here, and historical identities are retained.
- // Historical FK rows are never deleted or changed.
  const ids=scope.items.map(row=>row.id)
+ if(!ids.length)return fail('Нет действующих позиций.',409)
  const canonical=scope.items.map(row=>row.catalog_variant_id).filter((id):id is number=>!!id)
- const statements:D1PreparedStatement[]=[]
- if(!ids.length)return fail('В выбранной группе нет действующих позиций.',409)
- const placeholders=ids.map(()=>'?').join(',')
- // Exactly as in Main's granular group removal: a single conditional UPDATE
- // applies to the *whole* selected set, not one SKU at a time. MATERIALIZED
- // preflight is evaluated before mutation, so a stale concurrent reservation,
- // open order, stocktake or lifecycle blocks every SKU in the group.
- statements.push(db.prepare(`
-   WITH checked AS MATERIALIZED (
-     SELECT COUNT(*) AS total,
-       COALESCE(SUM(CASE WHEN
-         EXISTS(SELECT 1 FROM inventory_stock st
-           WHERE st.variant_id=v.catalog_variant_id
-             AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0))
-         OR EXISTS(SELECT 1 FROM inventory_reservations r
-           WHERE r.variant_id=v.catalog_variant_id AND r.status='active')
-         OR EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
-           WHERE oi.variant_id=v.catalog_variant_id
-             AND COALESCE(o.order_status,'active')='active'
-             AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0)
-         OR EXISTS(SELECT 1 FROM inventory_stocktake_items i
-           JOIN inventory_stocktake_sessions ss ON ss.id=i.session_id
-           WHERE i.variant_id=v.catalog_variant_id AND ss.status='active')
-         OR EXISTS(SELECT 1 FROM inventory_lifecycle_events e
-           WHERE e.variant_id=v.catalog_variant_id AND e.status='pending')
-         OR EXISTS(SELECT 1 FROM workshop_tasks t
-           WHERE t.variant_id=v.catalog_variant_id AND t.status='active')
-       THEN 1 ELSE 0 END),0) AS unsafe
-     FROM watch_variants v WHERE v.id IN (${placeholders})
-       AND v.watch_product_id=? AND v.is_active=1
+ const ph=ids.map(()=>'?').join(',')
+ const now=new Date().toISOString()
+ const statements:D1PreparedStatement[]=[
+  db.prepare(`WITH checked AS MATERIALIZED (
+    SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN
+      EXISTS(SELECT 1 FROM inventory_stock st WHERE st.variant_id=v.catalog_variant_id
+        AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0))
+      OR EXISTS(SELECT 1 FROM inventory_reservations r
+        WHERE r.variant_id=v.catalog_variant_id AND r.status IN ('active','unresolved'))
+      OR EXISTS(SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
+        WHERE oi.variant_id=v.catalog_variant_id
+          AND COALESCE(o.order_status,'active')='active'
+          AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0)
+      OR EXISTS(SELECT 1 FROM inventory_stocktake_items i
+        JOIN inventory_stocktake_sessions ss ON ss.id=i.session_id
+        WHERE i.variant_id=v.catalog_variant_id AND ss.status='active')
+      OR EXISTS(SELECT 1 FROM inventory_lifecycle_events e
+        WHERE e.variant_id=v.catalog_variant_id AND e.status='pending')
+      OR EXISTS(SELECT 1 FROM workshop_tasks t
+        WHERE t.variant_id=v.catalog_variant_id AND t.status='active')
+      OR EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+        JOIN order_items oi ON oi.id=ri.order_item_id
+        WHERE oi.variant_id=v.catalog_variant_id AND ri.physical_tracking=1
+          AND ri.physical_received_at IS NULL AND COALESCE(r.status,'completed')<>'cancelled')
+      OR EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
+        JOIN order_items oi ON oi.id=ei.order_item_id
+        WHERE oi.variant_id=v.catalog_variant_id AND ei.role='old'
+          AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
+          AND COALESCE(ex.status,'completed')<>'cancelled')
+      OR (v.catalog_variant_id IS NOT NULL AND NOT EXISTS(
+        SELECT 1 FROM catalog_variants cv
+        JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
+        JOIN catalog_products cp ON cp.id=cv.product_id
+        WHERE cv.id=v.catalog_variant_id AND cv.is_active=1
+          AND sp.is_active=1 AND cp.is_active=1))
+    THEN 1 ELSE 0 END),0) unsafe
+    FROM watch_variants v WHERE v.id IN (${ph})
+      AND v.watch_product_id=? AND v.is_active=1
    )
    UPDATE watch_variants SET is_active=0
-   WHERE id IN (${placeholders}) AND watch_product_id=? AND is_active=1
-     AND (SELECT total=? AND unsafe=0 FROM checked)`
- ).bind(...ids,scope.model.id,...ids,scope.model.id,ids.length))
- // Same Main retirement history table used by CatalogVariant PATCH.
- const now=new Date().toISOString()
+   WHERE id IN (${ph}) AND watch_product_id=? AND is_active=1
+     AND (SELECT total=? AND unsafe=0 FROM checked)`)
+    .bind(...ids,scope.model.id,...ids,scope.model.id,ids.length),
+  // A zero-row conditional update would NOT fail the transaction by itself.
+  // An attempted duplicate primary key forces the entire D1.batch to rollback.
+  db.prepare(`INSERT INTO watch_products(id) SELECT id FROM watch_products
+    WHERE id=? AND changes()<>?`).bind(scope.model.id,ids.length),
+ ]
  for(const id of canonical){
-   statements.push(db.prepare(
-     'UPDATE catalog_variants SET is_active=0,updated_at=? WHERE id=? AND is_active=1',
-   ).bind(now,id))
-   statements.push(db.prepare(`INSERT INTO catalog_retirement_history_events (
-     event_type,product_id,product_name,stock_position_id,variant_id,
-     material,length,category,gender,color,size_label,variant_count,created_at
-   ) SELECT 'variant',cv.product_id,p.name,cv.stock_position_id,cv.id,
-      cv.material,cv.length,cv.category,cv.gender,cv.color,cv.size_label,1,?
+  statements.push(
+   db.prepare(`UPDATE catalog_variants SET is_active=0,updated_at=?
+    WHERE id=? AND is_active=1 AND EXISTS(
+      SELECT 1 FROM watch_variants w
+      WHERE w.catalog_variant_id=? AND w.watch_product_id=? AND w.is_active=0)`)
+     .bind(now,id,id,scope.model.id),
+   db.prepare(`INSERT INTO catalog_variants(id)
+    SELECT id FROM catalog_variants WHERE id=? AND changes()<>1`).bind(id),
+   db.prepare(`INSERT INTO catalog_retirement_history_events (
+      event_type,product_id,product_name,stock_position_id,variant_id,
+      material,length,category,gender,color,size_label,variant_count,created_at
+    ) SELECT 'variant',cv.product_id,p.name,cv.stock_position_id,cv.id,
+       cv.material,cv.length,cv.category,cv.gender,cv.color,cv.size_label,1,?
       FROM catalog_variants cv JOIN catalog_products p ON p.id=cv.product_id
-      WHERE cv.id=? AND cv.is_active=0 AND cv.updated_at=?`).bind(now,id,now))
+      WHERE cv.id=? AND cv.is_active=0 AND cv.updated_at=?`)
+      .bind(now,id,now),
+  )
  }
- if(!statements.length){
-   return json({ok:true,alreadyDeleted:true,deletedCount:0})
+ let results:D1Result[]
+ try{results=await db.batch(statements)}
+ catch{
+  return fail('Состав или остаток изменился во время удаления. Ничего не удалено — обновите каталог.',409)
  }
- // No forced warehouse writeoffs, no reservation release, no orphaning historical sales.
- const results=await db.batch(statements)
  const changed=Number(results[0]?.meta?.changes||0)
- if(changed!==ids.length)
-   return fail('Состав товара изменился во время удаления. Обновите каталог и проверьте остатки.',409)
+ if(changed!==ids.length)return fail('Не все позиции прошли проверку удаления. Обновите каталог.',409)
  return json({ok:true,deletedCount:changed,kind:scope.kind,
    productDeleted:false,historyPreserved:true})
+
 }
 
 
