@@ -928,6 +928,114 @@ assert.equal(legacyRecovered.status,200,JSON.stringify(legacyRecovered))
 assert.equal(sqlite.prepare('SELECT is_active FROM watch_products WHERE id=?').get(legacyModel).is_active,0)
 assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?').get(legacyVariant.id).is_active,0)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,legacyMovementCount)
+// Work retest P1-02: the exact reported failures, across arbitrary
+// generations and BOTH real Client3 watch brands. v5 historical attributes
+// must never be updated/deleted; v6 carries new truth without a global UNIQUE.
+sqlite.prepare(`INSERT OR IGNORE INTO watch_reference_values(kind,value)
+ VALUES('leatherColors','ЧЕРНЫЙ')`).run()
+const generationCases=[
+ {brandId:1,brand:'TAUWACH',model:'WORK GEN 5 STEEL BLACK QA',
+   attrs:{gender:'male',movement:'quartz',braceletMaterial:'steel',
+     dialColor:'black',braceletColor:''}},
+ {brandId:2,brand:'WACHIZEN',model:'WORK GEN 5 RUBBER WHITE QA',
+   attrs:{gender:'female',movement:'quartz',braceletMaterial:'rubber',
+     dialColor:'white',braceletColor:''}},
+ {brandId:2,brand:'WACHIZEN',model:'WORK GEN 5 LEATHER WHITE QA',
+   attrs:{gender:'female',movement:'quartz',braceletMaterial:'leather',
+     dialColor:'white',braceletColor:'ЧЕРНЫЙ'}},
+]
+for(const scenario of generationCases){
+ const entry=await parse(registerWatchModel(db,admin,scenario.brandId,{
+   modelName:scenario.model
+ }))
+ assert.equal(entry.status,201,JSON.stringify(entry))
+ const productId=entry.watchProductId
+ const watchIds=[],canonicalIds=[]
+ for(let generation=1;generation<=5;generation++){
+   const added=await parse(registerWatchVariant(db,admin,scenario.brandId,{
+     watchProductId:productId,...scenario.attrs
+   }))
+   assert.equal(added.status,201,
+     'P1-02 '+scenario.model+' generation '+generation+': '+JSON.stringify(added))
+   assert(!watchIds.includes(added.watchVariantId),'Watch ID must be new generation')
+   const linked=await parse(provisionClient3WatchSku(db,admin,
+     scenario.brandId,added.watchVariantId))
+   assert.equal(linked.status,200,JSON.stringify(linked))
+   assert(!canonicalIds.includes(linked.canonicalVariantId),
+     'Archived canonical SKU may never be resurrected')
+   watchIds.push(added.watchVariantId)
+   canonicalIds.push(linked.canonicalVariantId)
+   const repeat=await parse(registerWatchVariant(db,admin,scenario.brandId,{
+     watchProductId:productId,...scenario.attrs
+   }))
+   assert.equal(repeat.status,200,JSON.stringify(repeat))
+   assert.equal(repeat.watchVariantId,added.watchVariantId)
+   assert.equal(repeat.alreadyExists,true)
+   const listed=await parse(listWatchCatalogDrafts(db,admin,scenario.brandId))
+   const history=listed.rows.filter(x=>x.watchProductId===productId)
+   assert.equal(history.length,generation)
+   const expectedActive=history.filter(x=>x.variantActive===1)
+   assert.equal(expectedActive.length,1)
+   assert.equal(expectedActive[0].watchVariantId,added.watchVariantId)
+   for(const row of history){
+     assert.equal(row.movement,scenario.attrs.movement)
+     assert.equal(row.braceletMaterial,scenario.attrs.braceletMaterial)
+     assert.equal(row.dialColor,scenario.attrs.dialColor)
+     assert.equal(row.braceletColor,scenario.attrs.braceletColor,
+       'Every historical watch generation keeps the actual strap color')
+   }
+   if(generation<5){
+     const preview=await parse(previewClient3WatchDelete(db,admin,scenario.brandId,{
+       kind:'variant',watchProductId:productId,watchVariantId:added.watchVariantId
+     }))
+     assert.equal(preview.status,200,JSON.stringify(preview))
+     assert.equal(preview.canDelete,true,JSON.stringify(preview))
+     const retired=await parse(deleteClient3WatchCatalog(db,admin,scenario.brandId,{
+       kind:'variant',watchProductId:productId,
+       watchVariantId:added.watchVariantId,expectedCount:preview.count,
+     }))
+     assert.equal(retired.status,200,JSON.stringify(retired))
+     assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?')
+       .get(added.watchVariantId).is_active,0)
+     assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?')
+       .get(linked.canonicalVariantId).is_active,0)
+   }
+ }
+ assert.equal(new Set(watchIds).size,5)
+ assert.equal(new Set(canonicalIds).size,5)
+ const all=sqlite.prepare(`SELECT v.id,v.is_active,v.catalog_variant_id
+   FROM watch_variants v WHERE v.watch_product_id=? ORDER BY v.id`).all(productId)
+ assert.deepEqual(all.map(x=>x.is_active),[0,0,0,0,1])
+ const finalId=watchIds[4],finalCanonical=canonicalIds[4]
+ const arrival=await parse(receiveClient3WatchArrival(db,admin,scenario.brandId,{
+   source:'office',watchVariantId:finalId,quantity:2,
+   comment:'Fifth-generation physical arrival',
+   requestId:'work-v6-arrival-'+scenario.brandId+'-'+productId+'-20261104',
+ }))
+ assert.equal(arrival.status,200,JSON.stringify(arrival))
+ const order=await parse(createClient3WatchOrder(db,admin,scenario.brandId,{
+   brand:scenario.brand,source:'office',
+   watchVariantId:finalId,catalogVariantId:finalCanonical,
+   quantity:1,unitPrice:14000,receivedAmount:0,payments:[],
+   engravingText:'',
+   requestId:'work-v6-order-'+scenario.brandId+'-'+productId+'-20261104',
+   recipientName:'Проверка пятого поколения',recipientPhone:'+77015550188',
+   address:'Улица испытания поколений, 88',postalCode:'050088',
+   city:'Алматы',deliveryMethod:'Казпочта',
+   shippingDeadlineLocal:'2026-11-15T14:00',urgent:false,paymentMethod:'KASPI GOLD'
+ }))
+ assert.equal(order.status,201,JSON.stringify(order))
+ const orderRow=sqlite.prepare('SELECT variant_id FROM order_items WHERE order_id=?')
+   .get(order.orderId)
+ assert.equal(orderRow.variant_id,finalCanonical)
+ assert(!canonicalIds.slice(0,4).includes(orderRow.variant_id))
+ assert.equal(sqlite.prepare(`SELECT COUNT(*) AS n FROM inventory_movements
+   WHERE variant_id IN (${canonicalIds.slice(0,4).map(()=>'?').join(',')})`)
+   .get(...canonicalIds.slice(0,4)).n,0,
+   'Old generation must not gain new movements')
+ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=?')
+   .get(finalCanonical).n,1,'Fifth generation has exactly one arrival')
+}
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
