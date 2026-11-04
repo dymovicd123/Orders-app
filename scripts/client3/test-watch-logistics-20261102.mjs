@@ -64,6 +64,12 @@ try {
   assert(view.includes('Логистика') && view.includes('Гравировка'))
   assert(view.includes('Ожидает') && view.includes('Готово'))
   assert(!view.includes('Зарплата цеха'))
+assert(source.includes('Отметить готовым эти часы') &&
+  source.includes('Подтверждайте готовность каждой позиции') &&
+  source.includes('complete(order.orderId,item.orderItemId!)'),
+  'Each engraved watch must have its own readiness confirmation, not only an all-ready action')
+assert(source.includes("selectedIds.includes(item.orderItemId)"),
+  'Only selected ready watches are shipped')
   assert(!view.includes('Готово · гравировка'), 'No action without loaded order')
   console.log('CLIENT3_WATCH_LOGISTICS_SSR_PASS: grouping, Almaty exact deadline, brand/API isolation, no shipping or money mutation')
 } finally {
