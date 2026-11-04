@@ -7,7 +7,7 @@ import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writ
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
-import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
+import {addClient3WatchDebtPayment,listClient3WatchDebtHistory} from '../../worker/domains/client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from '../../worker/domains/client3-watch-admin-order.ts'
@@ -736,6 +736,18 @@ assert.deepEqual(sqlite.prepare('SELECT method,amount,payment_kind FROM payments
  .all(mixed.orderId).slice(-2).map(x=>[x.method,x.amount,x.payment_kind]),[
   ['KASPI GOLD',6000,'debt_close'],['KASPI RED',7000,'debt_close'],
  ])
+const debtHistory=await parse(listClient3WatchDebtHistory(db,manager,1,mixed.orderId))
+assert.equal(debtHistory.status,200,JSON.stringify(debtHistory))
+assert.deepEqual(debtHistory.rows.map(p=>[p.method,p.amount]).sort((a,b)=>a[1]-b[1]),[
+  ['KASPI GOLD',6000],['KASPI RED',7000],
+], 'Historical debt payments must preserve each method and exact actual amount')
+const foreignHistory=await parse(listClient3WatchDebtHistory(db,manager,2,mixed.orderId))
+assert.equal(foreignHistory.status,403,'Manager must not read another brand payment history')
+const brandHistory=await parse(listClient3WatchDebtHistory(db,admin,1))
+assert.equal(brandHistory.status,200)
+assert(brandHistory.rows.some(p=>Number(p.orderId)===mixed.orderId),
+  'Brand-wide debt history shows fully paid orders after they disappear from debt list')
+
 // Main manager edit scopes reused verbatim by the third tenant: no stock/money
 // rewrite for metadata; recorded price changes only the selected order item.
 const editOrderId=manualSaved.orderId
