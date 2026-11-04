@@ -439,6 +439,9 @@ export function WatchClient3App() {
         canCompleteEngraving={canAdmin||isLogisticsRole}
         onOpenReturns={canSales?selected=>{
           setBrand(selected);setLastOrderBrand(selected);setReportOrderFocus(null);goTo('returns')
+        }:undefined}
+        onOpenStock={canWarehouse?selected=>{
+          setBrand(selected);setLastOrderBrand(selected);goTo('warehouse')
         }:undefined}/>}
       {['warehouse','operations','revision','history','statistics','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
