@@ -121,6 +121,13 @@ sql.exec("UPDATE return_items SET physical_received_at='2026-11-03T12:00:00Z' WH
 const afterIntake=await query(alice,'brand=TAUWACH&from=2026-11-01')
 assert.equal(JSON.parse(afterIntake.rows[0].itemLines)[0].pendingReturnQuantity,0,
   'Only confirmed physical receipt clears the intake queue')
+sql.exec("UPDATE order_items SET quantity=0 WHERE id=101")
+const historicalOrder=await query(alice,'brand=TAUWACH&from=2026-11-01')
+assert.equal(historicalOrder.rows.length,1,'A returned historical line does not erase the order')
+const historicalLine=JSON.parse(historicalOrder.rows[0].itemLines)[0]
+assert.equal(historicalLine.quantity,0,'Historical watch line remains available after its active quantity becomes zero')
+assert.equal(historicalLine.returnedQuantity,1,'Exact returned quantity remains visible')
+sql.exec("UPDATE order_items SET quantity=1 WHERE id=101")
 const pct=await query(alice,'brand=TAUWACH&q=%25')
 assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
 const underscore=await query(alice,'brand=TAUWACH&q=_')
