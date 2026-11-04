@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = ffb3f2b7e5ee58a54456a8b2933c601efa09252f
+          test "$(git rev-parse HEAD^)" = ca63cc8baf40070430fde14f2fdfe16c0d01945b
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
