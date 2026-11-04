@@ -28,6 +28,7 @@ type WatchOrder={
   latestReturnDate:string|null;latestExchangeDate:string|null
   lineCount:number;shippedLineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
+  stockHandoverReviewNeeded:boolean
   activeWatchVariantId:number|null;pendingReplacement:number
   paymentLines:string;itemLines:string
 }
@@ -90,9 +91,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [returnHistoryOrderId,setReturnHistoryOrderId]=useState<number|null>(null)
   const [exchangeHistoryOrderId,setExchangeHistoryOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
-  const [handoverOrderId,setHandoverOrderId]=useState<number|null>(
-    initialFocusedOrder?.orderDate&&initialFocusedOrder.orderDate<new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
-      ?initialFocusedOrder.orderId:null)
+  const [handoverOrderId,setHandoverOrderId]=useState<number|null>(null)
   // Keep Main's dense orders table collapsed by default; detail opens only on request.
   const [expanded,setExpanded]=useState<number|null>(null)
   const [extraActionsOrderId,setExtraActionsOrderId]=useState<number|null>(null)
@@ -196,9 +195,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
           <table className="data-table orders-table watch-main-orders-table">
             <thead><tr>
-              <th>Дата / заказ</th><th>Менеджер</th><th>Клиент</th><th>Город</th>
-              <th>Товары</th><th>Доставка / комментарий</th><th>Оплаты</th>
-              <th>Сумма</th><th>Получено</th><th>Долг</th><th>Статус</th><th>Действия</th>
+              <th>Заказ</th><th>Клиент</th><th>Товары</th>
+              <th>Доставка</th><th>Оплата</th><th>Действия</th>
             </tr></thead>
             <tbody>{data.rows.map(order=>{
               const {operational,shipment}=projectWatchOrderLikeMain(order,isAdmin)
@@ -206,6 +204,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
               const payments=parsedRows<PaymentLine>(order.paymentLines)
               const visibleItems=Math.max(3,expandedItemCounts[order.orderId]||3)
               const visiblePayments=Math.max(2,expandedPaymentCounts[order.orderId]||2)
+              const rowActionOpen=editOrderId===order.orderId||
+                debtOrderId===order.orderId||handoverOrderId===order.orderId||
+                returnHistoryOrderId===order.orderId||exchangeHistoryOrderId===order.orderId||
+                returnOrderId===order.orderId||exchangeOrderId===order.orderId
               const openFlow=(type:'returns'|'exchange')=>{
                 if(onOpenWorkflow){onOpenWorkflow(type,{
                   brand,orderId:order.orderId,externalId:order.externalId,orderDate:order.orderDate
@@ -222,16 +224,19 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
               }
               return <Fragment key={order.orderId}>
               <tr data-order-id={order.orderId} className={'watch-main-order-row'+
-                (expanded===order.orderId?' is-open':'')+
+                (rowActionOpen?' is-open':'')+
                 (operational.hasCommittedDownstreamOperation?' row-returned':'')}>
-                <td><div className="order-cell-stack">
+                <td className="watch-main-ref-col"><div className="order-cell-stack">
                   <strong>{order.orderDate}</strong>
                   <span>{order.externalId||'#'+order.orderId}</span>
-                  </div>
-                  {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}</td>
-                <td>{order.managerName||'—'}</td>
-                <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
-                <td>{order.city||'—'}</td>
+                  <small>Менеджер: {order.managerName||'—'}</small>
+                  {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}
+                </div></td>
+                <td className="watch-main-client-col"><div className="order-cell-stack">
+                  <strong>{order.recipientName||'—'}</strong>
+                  <small>{order.recipientPhone}</small>
+                  <small>{order.city||'—'}</small>
+                </div></td>
                 <td className="watch-main-order-sku">
                   <div className="order-items-inline">
                     {lines.slice(0,visibleItems).map((line,index)=>
@@ -278,227 +283,83 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                 <td className="watch-main-order-delivery">
                   <strong>{order.deliveryMethod||'—'}</strong>
                   <small>{order.shippingDeadlineAt?'До '+new Date(order.shippingDeadlineAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty'}):'Без срока'}</small>
+                  <span className={'status-pill '+(shipment.state==='sent'?'status-online':shipment.state==='partial'?'status-warning':'status-neutral')}>
+                    {shipLabel(order)}
+                  </span>
                   {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}
                   {parsedRows<ItemLine>(order.itemLines).some(x=>x.engravingText)&&
                     <small>Есть текст гравировки</small>}
                 </td>
-                <td className="watch-main-order-payments">
-                  <div className="order-payments-inline">
+                <td className="watch-main-finance-col">
+                  <div className="watch-main-finance-head">
+                    <strong>{sum(order.netSaleAmount)}</strong>
+                    <span className={'watch-main-finance-balance'+(order.debtAmount>0?' is-debt':'')}>
+                      {order.debtAmount>0?'Долг '+sum(order.debtAmount):
+                        order.overpaymentAmount>0?'Переплата '+sum(order.overpaymentAmount):'Оплачено'}
+                    </span>
+                  </div>
+                  <small>Получено {sum(order.receivedAmount)}</small>
+                  {order.returnAmount>0&&<small>Возвращено денег {sum(order.returnAmount)}</small>}
+                  {order.commercialReturnedValue>0&&<small>Зачёт товаров {sum(order.commercialReturnedValue)}</small>}
+                  <div className="watch-main-finance-methods">
                     {payments.slice(0,visiblePayments).map(line=>
-                      <div className="order-payment-chip" key={line.id}>
-                        <strong>{line.method} · {sum(line.amount)}</strong>
-                        <span>{line.date||'Дата не указана'}</span>
-                      </div>)}
-                    {payments.length>visiblePayments&&
-                      <button className="order-payment-chip order-payment-chip-more is-clickable"
-                        type="button" onClick={()=>setExpandedPaymentCounts(current=>({
-                          ...current,[order.orderId]:Math.min(payments.length,visiblePayments+5)
-                        }))}>+ ещё {payments.length-visiblePayments}</button>}
-                    {visiblePayments>2&&payments.length>2&&
-                      <button className="order-payment-chip order-payment-chip-more is-clickable"
-                        type="button" onClick={()=>setExpandedPaymentCounts(current=>{
-                          const next={...current};delete next[order.orderId];return next
-                        })}>Скрыть оплаты</button>}
-                    {!payments.length&&<small>Оплат нет</small>}
+                      <span className="watch-main-method-chip" key={line.id}>
+                        {line.method}: {sum(line.amount)}</span>)}
+                    {payments.length>visiblePayments&&<button type="button" className="secondary compact"
+                      onClick={()=>setExpandedPaymentCounts(v=>({...v,[order.orderId]:payments.length}))}>
+                      + ещё {payments.length-visiblePayments} оплат</button>}
                   </div>
                 </td>
-                <td className="watch-main-money">{sum(order.netSaleAmount)}
-                  {order.commercialReturnedValue>0&&<small>Исходно: {sum(order.totalAmount)} · зачёт возврата товаров: {sum(order.commercialReturnedValue)}</small>}</td>
-                <td className="watch-main-money">
-                  <div className="order-cell-stack">
-                    <strong>{sum(order.receivedAmount)}</strong>
-                    {order.returnAmount>0&&<small className="watch-main-refund-line">
-                      Возвращено {sum(order.returnAmount)} · осталось деньгами {sum(order.netPaidAmount)}
-                    </small>}
-                  </div>
-                </td>
-                <td className={'watch-main-money '+(order.debtAmount>0?'is-debt':'is-paid')}>
-                  {order.debtAmount>0?sum(order.debtAmount):order.overpaymentAmount>0?'Переплата '+sum(order.overpaymentAmount):'Оплачено'}</td>
-                <td>
-                  <div className="order-status-stack">
-                    <span className={'status-pill '+operational.paymentClass}>
-                      {operational.paymentLabel}
-                    </span>
-                    <span className={'status-pill '+(shipment.state==='sent'?'status-online':
-                      shipment.state==='partial'?'status-warning':'status-neutral')}>
-                      {shipment.label}
-                    </span>
-                    {operational.hasCommittedDownstreamOperation&&<span className="soft-badge">
-                      {operational.hasCommittedReturn&&operational.hasCommittedExchange
-                        ?'Есть проведённые возврат и обмен':
-                        operational.hasCommittedExchange?'Есть проведённый обмен':
-                        operational.hasCommittedPhysicalDownstreamOperation?'Есть проведённый возврат':
-                        'Есть возврат денег'}
-                    </span>}
-                    {operational.committedReturnCount>0&&
-                      <small>Возвратов: {operational.committedReturnCount}
-                        {order.latestReturnDate?' · '+order.latestReturnDate:''}</small>}
-                    {operational.committedExchangeCount>0&&
-                      <small>Обменов: {operational.committedExchangeCount}
-                        {order.latestExchangeDate?' · '+order.latestExchangeDate:''}</small>}
-                  </div>
-                </td>
-                <td>
+                <td className="watch-main-actions-col">
                   <div className="order-table-actions watch-main-row-actions">
                     {workflow==='orders'&&onOpenLogistics&&
-                      <button type="button" className="secondary compact"
+                      <button type="button" className="primary compact"
                         onClick={()=>onOpenLogistics(brand,order.orderId)}>
-                        {shipment.state==='sent'?'Отправки':'Отправить товары'}
+                        {shipLabel(order)==='Отправлено'?'Отправки':'Отправить'}
                       </button>}
-                    {order.debtAmount>0&&workflow==='orders'&&
-                      <button type="button" className="secondary compact debt-action-button"
-                        onClick={()=>showDetailAction('debt')}>Закрыть долг</button>}
                     {(workflow==='orders'||workflow==='returns')&&operational.canOpenReturn&&
                       <button type="button" className="secondary compact"
                         onClick={()=>openFlow('returns')}>Возврат</button>}
                     {(workflow==='orders'||workflow==='exchange')&&operational.canOpenExchange&&
                       <button type="button" className="secondary compact"
                         onClick={()=>openFlow('exchange')}>Обмен</button>}
-                    {workflow==='orders'&&
-                      <button type="button" className={isAdmin?'primary compact':'secondary compact'}
-                        onClick={()=>showDetailAction('edit')}>
-                        {isAdmin&&operational.canEdit?'Редактировать':
-                          isAdmin?'Исправить заказ':'Исправить реквизиты'}
-                      </button>}
-                    {workflow==='orders'&&
-                      <div className="order-extra-actions watch-order-extra-actions">
-                        <button type="button" className="secondary compact"
-                          aria-expanded={extraActionsOrderId===order.orderId}
-                          onClick={()=>setExtraActionsOrderId(old=>old===order.orderId?null:order.orderId)}>
-                          Доп. действия
-                        </button>
-                        {extraActionsOrderId===order.orderId&&<>
-                          {order.committedReturnCount>0&&
-                            <button type="button" className="secondary compact"
-                              onClick={()=>{
-                                setExpanded(order.orderId)
-                                setReturnHistoryOrderId(order.orderId)
-                                setExchangeHistoryOrderId(null);setExtraActionsOrderId(null)
-                              }}>История / отмена возврата</button>}
-                          {order.committedExchangeCount>0&&
-                            <button type="button" className="secondary compact"
-                              onClick={()=>{
-                                setExpanded(order.orderId)
-                                setExchangeHistoryOrderId(order.orderId)
-                                setReturnHistoryOrderId(null);setExtraActionsOrderId(null)
-                              }}>История / отмена обмена</button>}
-                          {shipment.state!=='sent'&&
-                            <button type="button" className="secondary compact"
-                              onClick={()=>showDetailAction('handover')}>Уточнить выдачу</button>}
-                          {isAdmin&&
-                            <button type="button" className="secondary compact"
-                              onClick={()=>showDetailAction('edit')}>Цены, состав, удалить заказ</button>}
-                        </>}
-                      </div>}
-                    <button type="button" className="secondary compact watch-main-detail-button"
-                      aria-expanded={expanded===order.orderId}
-                      onClick={()=>{
-                        setExpanded(value=>value===order.orderId?null:order.orderId)
-                        setReturnOrderId(null);setExchangeOrderId(null)
-                        setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)
-                      }}>
-                      {expanded===order.orderId?'Скрыть':'Подробнее'}
-                    </button>
+                    {workflow==='orders'&&<button type="button" className="secondary compact"
+                      onClick={()=>showDetailAction('edit')}>Исправить</button>}
+                    {workflow==='orders'&&order.debtAmount>0&&
+                      <button type="button" className="secondary compact debt-action-button"
+                        onClick={()=>showDetailAction('debt')}>Закрыть долг</button>}
+                    {workflow==='orders'&&Boolean(order.stockHandoverReviewNeeded)&&
+                      <button type="button" className="secondary compact order-stock-handover-trigger"
+                        onClick={()=>showDetailAction('handover')}>Проверить выдачу</button>}
+                    {workflow==='orders'&&order.committedReturnCount>0&&
+                      <button type="button" className="secondary compact" onClick={()=>{
+                        setExpanded(order.orderId);setReturnHistoryOrderId(order.orderId)
+                        setExchangeHistoryOrderId(null)
+                      }}>История возвратов</button>}
+                    {workflow==='orders'&&order.committedExchangeCount>0&&
+                      <button type="button" className="secondary compact" onClick={()=>{
+                        setExpanded(order.orderId);setExchangeHistoryOrderId(order.orderId)
+                        setReturnHistoryOrderId(null)
+                      }}>История обменов</button>}
                   </div>
                 </td>
               </tr>
-              {workflow==='orders'&&expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={12}>
-                <section className="watch-main-order-detail" aria-label={'Детали заказа '+order.externalId}>
-                  <div className="watch-main-order-detail-grid">
-                    <div><small>Покупатель</small><strong>{order.recipientName}</strong>
-                      <span>{order.recipientPhone} · {order.city}</span>
-                      <span>{order.deliveryMethod} · {order.postalCode||''}</span>
-                      {order.deliveryAddress&&<span>{order.deliveryAddress}</span>}</div>
-                    <div><small>Менеджер</small><strong>{order.managerName||'Не указан'}</strong>
-                      <span>{order.lineCount} позиций</span></div>
-                    <div><small>Оплата</small><strong>{sum(order.netPaidAmount)} из {sum(order.netSaleAmount)}</strong>
-                      {order.commercialReturnedValue>0&&<small>Возвращено товара: {sum(order.commercialReturnedValue)} · первоначально: {sum(order.totalAmount)}</small>}
-                      <span>Долг: {sum(order.debtAmount)} · Деньги возвращены: {sum(order.returnAmount)}</span></div>
-                    <div><small>Доставка и гравировка</small>
-                      <strong>{shipLabel(order)}</strong>
-                      <span>Гравировка: {order.engravingStatus==='ready'?'Готово':order.engravingStatus==='engraving'?'В работе':'Ожидает'}</span></div>
-                  </div>
-                  <div className="watch-main-order-ledger-details">
-                    <section className="mini-panel">
-                      <h3>Товары заказа</h3>
-                      {parsedRows<ItemLine>(order.itemLines).map(line=><div className="watch-main-ledger-line" key={line.id}>
-                        <div><strong>{line.productName}</strong>
-                          <small>{[
-                            line.gender==='male'?'Мужские':line.gender==='female'?'Женские':'',
-                            watchReferenceLabel('movements',line.movement),
-                            watchReferenceLabel('bracelets',line.braceletMaterial),
-                            watchReferenceLabel('dials',line.dialColor),
-                            line.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',line.braceletColor):'',
-                          ].filter(Boolean).join(' · ')}</small>
-                          {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-                          <small>{Number(line.quantity)===0?'Историческая позиция · обменяна или возвращена':
-                            (line.source==='warehouse'?'Офис':'Витрина')+' · '+
-                            (watchItemFullyIssued(line)?'Отправлен':
-                            watchIssuedQuantity(line)>0?'Частично отправлен '+watchIssuedQuantity(line)+' из '+line.quantity:
-                            'Не отправлен')}</small>
-                          {watchItemReturnSummary(line)&&<small className="watch-main-return-state">{watchItemReturnSummary(line)}</small>}
-                        </div>
-                        <strong>{line.quantity>0?line.quantity+' × '+sum(line.unitPrice):'История позиции'}</strong>
-                      </div>)}
-                      {parsedRows<ItemLine>(order.itemLines).length===0&&
-                        <p>Состав заказа пока недоступен.</p>}
-                    </section>
-                    <section className="mini-panel">
-                      <h3>Оплаты по заказу</h3>
-                      {parsedRows<PaymentLine>(order.paymentLines).map(line=>
-                        <div className="watch-main-ledger-line" key={line.id}>
-                          <div><strong>{line.method}</strong>
-                            <small>{line.date} · {line.kind==='debt_close'?'Закрытие долга':
-                              line.kind==='extra'?'Дополнительная оплата':'Основная оплата'}</small>
-                          </div><strong>{sum(line.amount)}</strong>
-                        </div>)}
-                      {parsedRows<PaymentLine>(order.paymentLines).length===0&&
-                        <p>Зафиксированных оплат пока нет.</p>}
-                      <div className="watch-main-ledger-total">
-                        <span>Получено: <strong>{sum(order.receivedAmount)}</strong></span>
-                        <span>Долг: <strong>{sum(order.debtAmount)}</strong></span>
-                      </div>
-                    </section>
-                  </div>
-                  <div className="watch-main-order-actions">
-                    {editOrderId!==order.orderId&&<button type="button" className="secondary compact"
-                      onClick={()=>{setEditOrderId(order.orderId);setDebtOrderId(null);setReturnOrderId(null);setExchangeOrderId(null)}}>
-                      {isAdmin?'Редактировать / исправить':'Доп. действия · исправить'}
-                    </button>}
-                    {order.debtAmount>0&&debtOrderId!==order.orderId&&
-                      <button type="button" className="secondary compact"
-                        onClick={()=>{setDebtOrderId(order.orderId);setReturnOrderId(null);setExchangeOrderId(null)}}>
-                        Закрыть долг
-                      </button>}
-                    {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&!physicallyIssued(order)&&
-                      <button type="button" className="secondary compact"
-                        aria-expanded={handoverOrderId===order.orderId}
-                        onClick={()=>{setHandoverOrderId(v=>v===order.orderId?null:order.orderId);
-                          setEditOrderId(null);setDebtOrderId(null);setExchangeOrderId(null);setReturnOrderId(null)}}>
-                        Уточнить выдачу после ревизии
-                      </button>}
-                    {(order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&!physicallyIssued(order)||
-                      Boolean(order.pendingReplacement))&&
-                      (onOpenLogistics?<button type="button"
-                        onClick={()=>onOpenLogistics(brand,order.orderId)}>Подготовить / отправить в логистике</button>:
-                        <small>Подготовка и отправка находятся в разделе «Логистика».</small>)}
-                    {parsedRows<ItemLine>(order.itemLines).some(line=>line.exchangeableQuantity>0)&&
-                      exchangeOrderId!==order.orderId&&
-                      <button type="button" onClick={()=>{setExchangeOrderId(order.orderId);setReturnOrderId(null)}}>
-                        Обменять часы</button>}
-                    {(Math.max(0,order.receivedAmount-order.returnAmount)>0||
-                      parsedRows<ItemLine>(order.itemLines).some(line=>(line.shipped>0||line.stockWriteoffStatus==='fulfilled')&&line.returnableQuantity>0))&&
-                      returnOrderId!==order.orderId&&
-                      <button type="button" onClick={()=>{setReturnOrderId(order.orderId);setExchangeOrderId(null)}}>
-                        Оформить возврат</button>}
-                  </div>
-
-                  {handoverOrderId===order.orderId&&<WatchOrderHandoverPanel
+              {workflow==='orders'&&rowActionOpen&&<tr className="watch-main-order-expanded"><td colSpan={6}>
+                <section className="watch-main-order-detail" aria-label={'Действия по заказу '+order.externalId}>
+                  <header className="watch-order-action-head">
+                    <strong>Заказ {order.externalId}</strong>
+                    <button type="button" className="secondary compact" onClick={()=>{
+                      setEditOrderId(null);setDebtOrderId(null);setHandoverOrderId(null);
+                      setReturnHistoryOrderId(null);setExchangeHistoryOrderId(null);
+                      setReturnOrderId(null);setExchangeOrderId(null);setExpanded(null)
+                    }}>Закрыть действие</button>
+                  </header>
+                  {Boolean(order.stockHandoverReviewNeeded)&&handoverOrderId===order.orderId&&<WatchOrderHandoverPanel
                     brand={brand} orderId={order.orderId}
                     lines={parsedRows<ItemLine>(order.itemLines)}
                     onDone={()=>setRefresh(v=>v+1)}
                     onClose={()=>setHandoverOrderId(null)}/>}
-                  {isAdmin&&<WatchAdminOrderActions
+                  {isAdmin&&editOrderId===order.orderId&&<WatchAdminOrderActions
                     brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
                     managerId={Number(order.managerId||0)} paymentLines={order.paymentLines}
                     onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
