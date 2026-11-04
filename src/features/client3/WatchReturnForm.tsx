@@ -67,16 +67,16 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
    const items=returnable.filter(x=>Number(selected[x.id]||0)>0)
      .map(x=>({orderItemId:x.id,quantity:Number(selected[x.id]),
        physicalState:physicalByItem[x.id]||'pending',
-       restock:physicalByItem[x.id]==='warehouse'||physicalByItem[x.id]==='boutique'})):[]
+       restock:physicalByItem[x.id]==='warehouse'||physicalByItem[x.id]==='boutique'}))
    const amountValue=Number(amount)
    const parts=amountValue>0?refunds.map(x=>({method:x.method,amount:Number(x.amount)})):[]
    if(busy||!confirmed||!reason.trim()||(!items.length&&amountValue<=0)||
       items.some(x=>!Number.isSafeInteger(x.quantity)||x.quantity<1||
         x.quantity>Number(returnable.find(v=>v.id===x.orderItemId)?.returnableQuantity))||
       (!Number.isSafeInteger(amountValue)||amountValue<0||amountValue>maxRefund||
-        (amountValue>0&&
-        parts.some(x=>!methods.includes(x.method)||!Number.isSafeInteger(x.amount)||x.amount<1)||
-        parts.reduce((t,x)=>t+x.amount,0)!==amountValue))){
+        (amountValue>0&&(
+          parts.some(x=>!methods.includes(x.method)||!Number.isSafeInteger(x.amount)||x.amount<1)||
+          parts.reduce((t,x)=>t+x.amount,0)!==amountValue)))){
      setError('Проверьте позиции, количество, суммы по способам возврата и подтверждение.');return
    }
    const body={brand,kind,returnDate,quantity:items.reduce((t,x)=>t+x.quantity,0),items,
