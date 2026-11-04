@@ -136,13 +136,18 @@ export async function listClient3WatchOrders(
                 AND COALESCE(e.status,'completed')<>'cancelled')
           )) AS itemLines,
         EXISTS (
-          SELECT 1 FROM exchanges e JOIN order_items repl ON repl.id=e.new_order_item_id
-          WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
-            AND repl.quantity>0 AND NOT EXISTS (
-              SELECT 1 FROM order_dispatch_items di
-              JOIN order_dispatches d ON d.id=di.dispatch_id
-              WHERE di.order_item_id=repl.id AND di.quantity>di.cancelled_quantity
-            )
+          SELECT 1 FROM exchange_items ei
+          JOIN exchanges e ON e.id=ei.exchange_id AND e.order_id=o.id
+          JOIN order_items repl ON repl.id=ei.order_item_id
+          WHERE ei.role='new' AND COALESCE(e.status,'completed')<>'cancelled'
+            AND repl.quantity>0 AND
+            COALESCE(repl.stock_writeoff_status,'')<>'fulfilled'
+            AND COALESCE((
+              SELECT SUM(MAX(0,di.quantity-COALESCE(di.cancelled_quantity,0)))
+              FROM order_dispatch_items di
+              JOIN order_dispatches d ON d.id=di.dispatch_id AND d.order_id=o.id
+              WHERE di.order_item_id=repl.id
+            ),0)<repl.quantity
         ) AS pendingReplacement,
         (SELECT oi.id FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS firstItemId,
         (SELECT wi.watch_variant_id FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS activeWatchVariantId,
