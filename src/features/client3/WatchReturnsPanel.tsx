@@ -4,8 +4,9 @@ import '../../styles/client3-watch-returns.css'
 type Pending={operationType:'return'|'exchange';returnItemId:number;returnId:number;orderId:number;externalOrderId:string;quantity:number;returnDate:string;modelName:string;gender:string;movement:string;braceletMaterial:string;dialColor:string;braceletColor:string}
 type Result={ok:boolean;rows:Pending[];message?:string}
 type Destination='warehouse'|'boutique'|'no_stock'
-export function WatchReturnsPanel({brands}:{brands:readonly WatchBrand[]}){
- const [brand,setBrand]=useState<WatchBrand>(brands[0]||'TAUWACH')
+export function WatchReturnsPanel({brands,initialBrand}:{brands:readonly WatchBrand[];initialBrand?:WatchBrand}){
+ const [brand,setBrand]=useState<WatchBrand>(
+   initialBrand&&brands.includes(initialBrand)?initialBrand:brands[0]||'TAUWACH')
  const [rows,setRows]=useState<Pending[]>([])
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
