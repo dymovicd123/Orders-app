@@ -335,7 +335,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     {workflow==='orders'&&order.debtAmount>0&&onOpenDebt&&
                       <button type="button" className="secondary compact debt-action-button"
                         onClick={()=>onOpenDebt(brand,order.orderId,order.externalId)}>
-                        Перейти к закрытию долга
+                        Закрыть долг — перейти во вкладку
                       </button>}
                     {workflow==='orders'&&Boolean(order.stockHandoverReviewNeeded)&&
                       <button type="button" className="secondary compact order-stock-handover-trigger"
