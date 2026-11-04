@@ -10,6 +10,7 @@ import {correctClient3AdminPaymentMethod} from './client3-watch-admin-payment-me
 import {rewriteClient3AdminWatchItems} from './client3-watch-admin-composition.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
+import {listClient3WatchExchangeHistory,cancelClient3WatchExchange} from './client3-watch-exchange-history.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
@@ -549,6 +550,20 @@ export async function routeClient3Watches(
     return request.method==='GET'
       ?readClient3WatchHandover(db,actor,scope.row!.id,id)
       :clarifyClient3WatchHandover(db,actor,scope.row!.id,id,input||{})
+  }
+  const watchExchangeHistoryMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchanges\/history$/.exec(url.pathname)
+  if(watchExchangeHistoryMatch&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchExchangeHistory(db,actor,scope.row!.id,Number(watchExchangeHistoryMatch[1]))
+  }
+  const watchExchangeCancelMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchanges\/(\d+)\/cancel$/.exec(url.pathname)
+  if(watchExchangeCancelMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return cancelClient3WatchExchange(db,actor,scope.row!.id,
+      Number(watchExchangeCancelMatch[1]),Number(watchExchangeCancelMatch[2]),input)
   }
   const exchangeSetMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchange-set$/.exec(url.pathname)
   if(exchangeSetMatch&&request.method==='POST'){
