@@ -75,6 +75,7 @@ sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'QA Admin')").r
 sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(2,'QA Manager')").run()
 sqlite.prepare("INSERT OR IGNORE INTO app_users(id,email,password_hash,role,manager_id,display_name,is_active) VALUES(1,'retirement-qa@example.test','fixture-only','admin',1,'QA Admin',1)").run()
 sqlite.prepare("INSERT OR IGNORE INTO watch_manager_brands(manager_id,brand_id) VALUES(2,1)").run()
+sqlite.prepare("INSERT OR IGNORE INTO watch_manager_brands(manager_id,brand_id) VALUES(2,2)").run()
 sqlite.prepare("INSERT OR REPLACE INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-04')").run()
 const model=async name=>{
  const r=await parse(registerWatchModel(db,admin,1,{modelName:name}))
@@ -1013,7 +1014,7 @@ for(const scenario of generationCases){
    requestId:'work-v6-arrival-'+scenario.brandId+'-'+productId+'-20261104',
  }))
  assert.equal(arrival.status,200,JSON.stringify(arrival))
- const order=await parse(createClient3WatchOrder(db,admin,scenario.brandId,{
+ const order=await parse(createClient3WatchOrder(db,manager,scenario.brandId,{
    brand:scenario.brand,source:'office',
    watchVariantId:finalId,catalogVariantId:finalCanonical,
    quantity:1,unitPrice:14000,receivedAmount:0,payments:[],
