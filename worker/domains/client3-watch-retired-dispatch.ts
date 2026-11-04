@@ -251,6 +251,36 @@ export async function dispatchRetiredClient3WatchLines(
          line.replacement_event_id,orderId,line.id,item.quantity))
    }
  }
+ // Assert every concrete dispatched line AND remaining split record before
+ // committing the atomic D1 batch. Zero-row INSERT...SELECT is not success.
+ for(const picked of prepared){
+   const remaining=picked.line.quantity-picked.quantity
+   const splitKey='retired-dispatch-rem:'+requestId+':'+picked.line.id
+   statements.push(db.prepare(`
+     INSERT INTO inventory_model_meta(key,value,updated_at)
+     SELECT 'human_inventory_v2','__retired_postcondition_conflict__',?
+     WHERE NOT EXISTS(
+       SELECT 1 FROM order_dispatch_items di
+       JOIN order_dispatches d ON d.id=di.dispatch_id
+       JOIN order_items oi ON oi.id=di.order_item_id
+       JOIN retired_order_item_issues j ON j.order_item_id=oi.id
+       WHERE d.request_id=? AND d.order_id=? AND oi.id=?
+         AND di.quantity=? AND oi.quantity=?
+         AND oi.stock_writeoff_status='retired_physically_issued'
+         AND di.movement_id IS NULL AND di.reservation_id IS NULL
+         AND j.quantity=di.quantity AND j.retired_variant_id=oi.variant_id
+     ) OR (? > 0 AND NOT EXISTS(
+       SELECT 1 FROM order_items oi
+       JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+       JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+       WHERE oi.order_id=? AND oi.inventory_obligation_key=?
+         AND oi.quantity=? AND oi.line_total=oi.unit_price*oi.quantity
+         AND oi.stock_writeoff_status='catalog_retired'
+         AND wi.watch_variant_id=? AND ir.status='released' AND ir.quantity=?
+     ))
+   `).bind(stamp,requestId,orderId,picked.line.id,picked.quantity,picked.quantity,
+     remaining,orderId,splitKey,remaining,picked.line.watch_variant_id,remaining))
+ }
  statements.push(db.prepare(retiredWatchShippingProjectionSql).bind(date,stamp,orderId))
  try{
    await db.batch(statements)
