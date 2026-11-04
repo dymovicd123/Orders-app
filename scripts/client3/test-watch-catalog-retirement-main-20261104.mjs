@@ -108,6 +108,18 @@ assert.equal(orderLine.variant_id,productVariant.canonical)
 const activeReserve=sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='active'")
  .get(historyOrder.orderId).n
 assert(activeReserve>=1,'Stocked watch must reserve exact SKU for order')
+const exactWithStock=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'variant',watchProductId:productId,watchVariantId:productVariant.id
+}))
+assert.equal(exactWithStock.status,200,JSON.stringify(exactWithStock))
+assert.equal(exactWithStock.canDelete,false,
+ 'An exact SKU cannot be retired with physical quantity or reservation')
+const blockedExact=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'variant',watchProductId:productId,watchVariantId:productVariant.id,
+ expectedCount:1,
+}))
+assert.equal(blockedExact.status,409,'Exact SKU must not silently write off stock')
+assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?').get(productVariant.id).is_active,1)
 const productPreview=await parse(previewClient3WatchDelete(db,admin,1,{
  kind:'product',watchProductId:productId
 }))
