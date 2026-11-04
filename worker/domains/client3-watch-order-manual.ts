@@ -142,11 +142,12 @@ export async function ensureManualWatchOrderSku(
  // if the original catalogue canonicalized its case differently.
  if(known){
    const found=await db.prepare(`SELECT wv.id,wv.is_active,wv.catalog_variant_id,wv.gender,
-       COALESCE(a.movement,wv.movement) AS movement,
-       COALESCE(a.bracelet_material,wv.bracelet_material) AS bracelet_material,
-       COALESCE(a.dial_color,wv.dial_color) AS dial_color,
-       COALESCE(a.bracelet_color,wv.bracelet_color) AS bracelet_color
+       COALESCE(a6.movement,a.movement,wv.movement) AS movement,
+       COALESCE(a6.bracelet_material,a.bracelet_material,wv.bracelet_material) AS bracelet_material,
+       COALESCE(a6.dial_color,a.dial_color,wv.dial_color) AS dial_color,
+       COALESCE(a6.bracelet_color,a.bracelet_color,wv.bracelet_color) AS bracelet_color
      FROM watch_variants wv LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 a6 ON a6.watch_variant_id=wv.id
      WHERE wv.watch_product_id=?`)
      .bind(known.id).all<Record<string,unknown>>()
    const matched=(found.results||[]).filter(v=>
