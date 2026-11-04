@@ -5,7 +5,8 @@ import '../../styles/194-return-smart-ux.css'
 import '../../styles/client3-watch-return.css'
 
 type Line={
- id:number;productName:string;quantity:number;returnableQuantity:number;shipped:number;stockWriteoffStatus:string;
+ id:number;productName:string;quantity:number;returnableQuantity:number;returnedQuantity?:number;
+ shipped:number;stockWriteoffStatus:string;
  source:string;gender:string;movement:string;braceletMaterial:string;
  dialColor:string;braceletColor:string;engravingText:string
 }
@@ -13,7 +14,6 @@ type ReturnOrder={
  orderId:number;externalId:string;shippingStatus:string;lineCount:number;
  receivedAmount:number;returnAmount:number;itemLines:string
 }
-type ReturnKind='money_only'|'items_only'|'both'
 type PhysicalState='pending'|'warehouse'|'boutique'|'no_stock'
 const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
 function rows(raw:string):Line[]{
@@ -24,22 +24,28 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  brand:WatchBrand;order:ReturnOrder;onDone:()=>void;onCancel:()=>void
 }){
  const lines=rows(order.itemLines)
- const returnable=lines.filter(x=>(Number(x.shipped)>0||x.stockWriteoffStatus==='fulfilled')&&Number(x.returnableQuantity)>0)
+ const issued=(line:Line)=>Boolean(Number(line.shipped))||
+   ['fulfilled','written_off','negative','retired_physically_issued'].includes(line.stockWriteoffStatus)
+ const returnable=lines.filter(x=>issued(x)&&Number(x.returnableQuantity)>0)
  const maxRefund=Math.max(0,Number(order.receivedAmount)-Number(order.returnAmount))
- const [kind,setKind]=useState<ReturnKind>(returnable.length?(maxRefund?'both':'items_only'):'money_only')
  const [selected,setSelected]=useState<Record<number,number>>(
    Object.fromEntries(returnable.map(x=>[x.id,Number(x.returnableQuantity)])))
  const [physicalByItem,setPhysicalByItem]=useState<Record<number,PhysicalState>>({})
- const [amount,setAmount]=useState(String(maxRefund))
+ const [amount,setAmount]=useState('0')
+ const [returnDate,setReturnDate]=useState(()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10))
  const [methods,setMethods]=useState<string[]>([...WATCH_PAYMENTS])
  const [refunds,setRefunds]=useState<Array<{method:string;amount:string}>>([
-   {method:'KASPI GOLD',amount:String(maxRefund)}])
+   {method:'KASPI GOLD',amount:'0'}])
  const [reason,setReason]=useState('')
  const [confirmed,setConfirmed]=useState(false)
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const key=useRef<{fingerprint:string;requestId:string}|null>(null)
- const isItems=kind!=='money_only',isMoney=kind!=='items_only'
+ // Main infers the operation type from independent item and money decisions.
+ // Never let an empty dropdown become an invalid "return type".
+ const isItems=Object.values(selected).some(v=>Number(v)>0)
+ const isMoney=Number(amount)>0
+ const kind=isItems?(isMoney?'both':'items_only'):'money_only'
  useEffect(()=>{
    const ctrl=new AbortController()
    void fetch('/api/client3/watches/references',{credentials:'include',signal:ctrl.signal,cache:'no-store'})
@@ -58,21 +64,22 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  }
  const submit=async(e:FormEvent)=>{
    e.preventDefault()
-   const items=isItems?returnable.filter(x=>Number(selected[x.id]||0)>0)
+   const items=returnable.filter(x=>Number(selected[x.id]||0)>0)
      .map(x=>({orderItemId:x.id,quantity:Number(selected[x.id]),
        physicalState:physicalByItem[x.id]||'pending',
        restock:physicalByItem[x.id]==='warehouse'||physicalByItem[x.id]==='boutique'})):[]
-   const amountValue=isMoney?Number(amount):0
-   const parts=isMoney?refunds.map(x=>({method:x.method,amount:Number(x.amount)})):[]
-   if(busy||!confirmed||!reason.trim()||isItems&&!items.length||
+   const amountValue=Number(amount)
+   const parts=amountValue>0?refunds.map(x=>({method:x.method,amount:Number(x.amount)})):[]
+   if(busy||!confirmed||!reason.trim()||(!items.length&&amountValue<=0)||
       items.some(x=>!Number.isSafeInteger(x.quantity)||x.quantity<1||
         x.quantity>Number(returnable.find(v=>v.id===x.orderItemId)?.returnableQuantity))||
-      isMoney&&(!Number.isSafeInteger(amountValue)||amountValue<1||amountValue>maxRefund||
+      (!Number.isSafeInteger(amountValue)||amountValue<0||amountValue>maxRefund||
+        (amountValue>0&&
         parts.some(x=>!methods.includes(x.method)||!Number.isSafeInteger(x.amount)||x.amount<1)||
-        parts.reduce((t,x)=>t+x.amount,0)!==amountValue)){
+        parts.reduce((t,x)=>t+x.amount,0)!==amountValue))){
      setError('Проверьте позиции, количество, суммы по способам возврата и подтверждение.');return
    }
-   const body={brand,kind,quantity:items.reduce((t,x)=>t+x.quantity,0),items,
+   const body={brand,kind,returnDate,quantity:items.reduce((t,x)=>t+x.quantity,0),items,
      amount:amountValue,paymentMethod:parts[0]?.method||'',refundParts:parts,
      reason:reason.trim()}
    const fingerprint=JSON.stringify([order.orderId,body])
@@ -91,6 +98,26 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
    finally{setBusy(false)}
  }
  const chosenQty=returnable.reduce((n,x)=>n+Math.max(0,Number(selected[x.id]||0)),0)
+ if(!returnable.length&&maxRefund===0)return <section className="watch-return-form watch-return-exhausted">
+   <div className="watch-return-main-header">
+     <h3>{order.externalId} · возврат</h3>
+     <p>Новых товаров для физического возврата и доступных денег больше нет.
+       Проведённые операции остаются в истории возвратов, а заказ — в «Все заказы».
+       Повторный возврат не будет создан.</p>
+   </div>
+   <div className="watch-return-items">
+     {lines.map(line=><div className="return-smart-card is-unissued" key={line.id}>
+       <div className="return-smart-pick">
+         <span className="return-smart-main"><strong>{line.productName}</strong>
+           <small>{Number(line.returnedQuantity||0)>0
+             ?'Ранее возвращено: '+line.returnedQuantity+' шт.'
+             :issued(line)?'Позиция уже полностью возвращена':'Клиенту не выдавали'}</small>
+         </span>
+       </div>
+     </div>)}
+   </div>
+   <button className="secondary" type="button" onClick={onCancel}>К заказу</button>
+ </section>
  return <form className="watch-return-form" onSubmit={e=>void submit(e)}>
    <header className="watch-return-main-header">
      <div><span className="watch-return-eyebrow">ВОЗВРАТ · ЗАКАЗ</span>
