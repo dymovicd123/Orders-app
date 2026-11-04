@@ -501,6 +501,72 @@ assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatch_items WHER
  .get(earlyLine.id).n,2)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=? AND movement_type=\'sale\'')
  .get(normalVariant.canonical).n,1)
+// A physical Return happened WHILE the SKU was active, then Main retired
+// its complete product. Cancelling that Return after retirement must never
+// reverse the old receipt into a permanently zeroed archived inventory row.
+const returnedBeforeRetireProduct=await model('ARCHIVED AFTER PHYSICAL RETURN QA')
+const returnedBeforeRetireVariant=await variant(returnedBeforeRetireProduct)
+const beforeReturnArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:returnedBeforeRetireVariant.id,quantity:2,
+ comment:'Return before catalog retirement',
+ requestId:'watch-return-before-retire-arrival-20261104-0001'
+}))
+assert.equal(beforeReturnArrival.status,200,JSON.stringify(beforeReturnArrival))
+const returnedOldOrder=await parse(createClient3WatchOrder(db,manager,1,{
+ brand:'TAUWACH',source:'office',watchVariantId:returnedBeforeRetireVariant.id,
+ catalogVariantId:returnedBeforeRetireVariant.canonical,quantity:1,unitPrice:11000,
+ receivedAmount:0,payments:[],engravingText:'',
+ requestId:'watch-return-before-retire-order-20261104-0001',
+ recipientName:'Тест возврата до архива',recipientPhone:'+77015550104',
+ address:'Улица возвратов, 4',postalCode:'050004',city:'Алматы',
+ deliveryMethod:'Казпочта',shippingDeadlineLocal:'2026-11-15T14:00',
+ urgent:false,paymentMethod:'KASPI GOLD'
+}))
+assert.equal(returnedOldOrder.status,201,JSON.stringify(returnedOldOrder))
+const returnedOldItem=sqlite.prepare('SELECT id FROM order_items WHERE order_id=?')
+ .get(returnedOldOrder.orderId)
+const sentBeforeReturn=await parse(dispatchClient3WatchOrder(db,admin,1,returnedOldOrder.orderId,{
+ requestId:'watch-return-before-retire-shipment-20261104-0001',
+ items:[{orderItemId:returnedOldItem.id,quantity:1}]
+}))
+assert.equal(sentBeforeReturn.status,200,JSON.stringify(sentBeforeReturn))
+const physicalReceived=await parse(createClient3WatchReturn(db,manager,1,returnedOldOrder.orderId,{
+ requestId:'watch-return-before-retire-20261104-0001',
+ kind:'items_only',amount:0,quantity:1,
+ reason:'Физический возврат часов до удаления товара',
+ items:[{orderItemId:returnedOldItem.id,quantity:1,physicalState:'warehouse'}]
+}))
+assert.equal(physicalReceived.status,200,JSON.stringify(physicalReceived))
+const returnBeforeDelete=sqlite.prepare('SELECT id FROM returns WHERE order_id=? ORDER BY id DESC LIMIT 1')
+ .get(returnedOldOrder.orderId)
+const appliedBeforeDelete=sqlite.prepare(`SELECT COUNT(*) AS n FROM inventory_lifecycle_events
+ WHERE operation_type='return' AND operation_id=? AND status='applied'
+ AND variant_id=?`).get(returnBeforeDelete.id,returnedBeforeRetireVariant.canonical).n
+assert(appliedBeforeDelete>0,'Test must have physically applied return movement before retirement')
+const physicalReturnPreview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'product',watchProductId:returnedBeforeRetireProduct
+}))
+assert.equal(physicalReturnPreview.status,200,JSON.stringify(physicalReturnPreview))
+const afterReturnDeleted=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'product',watchProductId:returnedBeforeRetireProduct,
+ expectedCount:physicalReturnPreview.count,
+ requestId:'watch-retire-after-physical-return-20261104-0001'
+}))
+assert.equal(afterReturnDeleted.status,200,JSON.stringify(afterReturnDeleted))
+const movementCountAfterReturnRetired=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+const cancelPhysicalOldReturn=await parse(cancelClient3WatchReturn(db,manager,1,
+ returnedOldOrder.orderId,returnBeforeDelete.id,{
+ requestId:'watch-return-cancel-after-delete-20261104-0001',
+ reason:'Отмена движения возврата в архивном SKU недопустима'
+}))
+assert.equal(cancelPhysicalOldReturn.status,409,JSON.stringify(cancelPhysicalOldReturn))
+assert.equal(cancelPhysicalOldReturn.code,'WATCH_RETURN_CANCEL_RETIRED_STOCK')
+assert.notEqual(sqlite.prepare('SELECT status FROM returns WHERE id=?')
+ .get(returnBeforeDelete.id).status,'cancelled')
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(returnedBeforeRetireVariant.canonical).quantity,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
+ movementCountAfterReturnRetired)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
