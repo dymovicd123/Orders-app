@@ -1,5 +1,6 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
+import {watchNetSaleSql,watchNetDebtSql} from './client3-watch-commercial.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
 // Exact brand-scoped customer list. Unknown phones are never merged into one
@@ -35,8 +36,9 @@ export async function listClient3WatchClients(
    SELECT ${phoneKey} AS phoneKey,o.id AS orderId,o.external_id AS externalId,
      o.order_date AS orderDate,wd.recipient_name AS recipientName,
      wd.recipient_phone AS recipientPhone,wd.city,
-     o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
-     o.return_amount AS returnAmount,o.debt_amount AS debtAmount,
+     ${watchNetSaleSql('o')} AS totalAmount,o.total_amount AS grossTotalAmount,
+     o.received_amount AS receivedAmount,
+     o.return_amount AS returnAmount,${watchNetDebtSql('o')} AS debtAmount,
      o.shipping_status AS shippingStatus
    ${scoped}
  ), clients AS (
@@ -83,8 +85,9 @@ export async function listClient3WatchCustomerOrders(
    SELECT ${phoneKey} AS phoneKey,o.id AS orderId,o.external_id AS externalId,
       o.order_date AS orderDate,wd.recipient_name AS recipientName,
       wd.recipient_phone AS recipientPhone,wd.city,
-      o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
-      o.return_amount AS returnAmount,o.debt_amount AS debtAmount,
+      ${watchNetSaleSql('o')} AS totalAmount,o.total_amount AS grossTotalAmount,
+      o.received_amount AS receivedAmount,
+      o.return_amount AS returnAmount,${watchNetDebtSql('o')} AS debtAmount,
       o.shipping_status AS shippingStatus
    ${scoped}
  )`
