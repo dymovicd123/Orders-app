@@ -90,7 +90,7 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
    </header>
    {showChain&&<WatchExchangeCancelChainPanel brand={brand} orderId={orderId}
      onClose={()=>setShowChain(false)}
-     onDone={()=>{setShowChain(false);setRefresh(n=>n+1);onDone()}}/>
+     onDone={()=>{setShowChain(false);setRefresh(n=>n+1);onDone()}}/>}
    {error&&<p role="alert" className="watch-exchange-history-error">{error}</p>}
    {loading?<p>Загружаю историю…</p>:items.length===0?<p>Обменов по заказу нет.</p>:<>
      <div className="watch-exchange-history-list">{items.map(entry=><article key={entry.id} className="watch-exchange-history-entry">
