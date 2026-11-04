@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = 638a2ffc6454d7e165e6f169554eed80ba3f4c3b
+          test "$(git rev-parse HEAD^)" = d1c4421a04295fb63e396e6b7ded5a4f31633e33
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -65,6 +65,7 @@ jobs:
             scripts/client3/test-watch-main-editor-and-cascade-20261104.mjs \
             scripts/client3/test-watch-logistics-20261102.mjs \
             scripts/client3/test-watch-workshop-parity-20261104.mjs \
+            scripts/client3/test-watch-main-catalog-stock-visual-parity-20261104.mjs \
             scripts/client3/test-watch-workspace-layout-20261102.mjs \
             scripts/client3/test-watch-return-money-ui-20261104.mjs \
             scripts/client3/test-watch-catalog-retirement-main-20261104.mjs \
