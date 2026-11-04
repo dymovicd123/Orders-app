@@ -402,7 +402,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       />
     })()}
     <StockResolutionConfirmModal prompt={stockPrompt?{
-      title:'Уточнение остатка перед отправкой',
+      title:stockPrompt.items.every(item=>item.stockWriteoffStatus==='catalog_retired')?
+        'Подтверждение передачи архивных часов':'Уточнение остатка перед отправкой',
       intro:'По системе товара недостаточно. Сверьте количество выбранных часов перед отправкой. Остатки склада этим действием не изменяются.',
       items:stockPrompt.items.map(item=>({
         productName:item.modelName||'Часы',
