@@ -4,7 +4,7 @@ import {WATCH_PAYMENTS,watchReferenceLabel} from '../../../shared/client3/watch-
 import '../../styles/client3-watch-return.css'
 
 type Line={
- id:number;productName:string;quantity:number;returnableQuantity:number;shipped:number;stockWriteoffStatus:string;
+ id:number;productName:string;quantity:number;returnableQuantity:number;unitPrice:number;shipped:number;stockWriteoffStatus:string;
  source:string;gender:string;movement:string;braceletMaterial:string;
  dialColor:string;braceletColor:string;engravingText:string
 }
@@ -24,13 +24,17 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  const lines=rows(order.itemLines)
  const returnable=lines.filter(x=>(Number(x.shipped)>0||x.stockWriteoffStatus==='fulfilled')&&Number(x.returnableQuantity)>0)
  const maxRefund=Math.max(0,Number(order.receivedAmount)-Number(order.returnAmount))
+ const availableGoodsValue=returnable.reduce((n,line)=>
+   n+Number(line.returnableQuantity)*Number(line.unitPrice||0),0)
+ const suggestedRefund=returnable.length?Math.min(maxRefund,availableGoodsValue):maxRefund
  const [kind,setKind]=useState<ReturnKind>(returnable.length?(maxRefund?'both':'items_only'):'money_only')
  const [selected,setSelected]=useState<Record<number,number>>(
    Object.fromEntries(returnable.map(x=>[x.id,Number(x.returnableQuantity)])))
- const [amount,setAmount]=useState(String(maxRefund))
+ const [amount,setAmount]=useState(String(suggestedRefund))
+ const [manuallyEditedRefund,setManuallyEditedRefund]=useState(false)
  const [methods,setMethods]=useState<string[]>([...WATCH_PAYMENTS])
  const [refunds,setRefunds]=useState<Array<{method:string;amount:string}>>([
-   {method:'KASPI GOLD',amount:String(maxRefund)}])
+   {method:'KASPI GOLD',amount:String(suggestedRefund)}])
  const [reason,setReason]=useState('')
  const [confirmed,setConfirmed]=useState(false)
  const [busy,setBusy]=useState(false)
@@ -86,9 +90,12 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
    finally{setBusy(false)}
  }
  const chosenQty=returnable.reduce((n,x)=>n+Math.max(0,Number(selected[x.id]||0)),0)
+ const selectedGoodsValue=returnable.reduce((n,x)=>
+   n+Math.max(0,Number(selected[x.id]||0))*Number(x.unitPrice||0),0)
  return <form className="watch-return-form" onSubmit={e=>void submit(e)}>
    <h4>Возврат по заказу {order.externalId}</h4>
    <p>Выберите конкретные отправленные часы. Деньги и физическая приёмка оформляются отдельно: регистрация возврата не добавляет остаток на склад.</p>
+   <p className="watch-return-accounting-note">Важно: в текущем учёте Main оформление возврата товара само по себе не уменьшает сумму заказа и долг. Денежный возврат фиксируется отдельно. Изменение коммерческого итога продажи требует отдельного согласованного механизма.</p>
    <label>Вид возврата
      <select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
        {maxRefund>0&&<option value="money_only">Только деньги</option>}
@@ -98,6 +105,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
    </label>
    {isItems&&<div className="watch-return-items">
      <strong>Возвращаемые часы · {chosenQty} шт.</strong>
+     <small>Стоимость выбранных часов по исходной цене продажи: {money(selectedGoodsValue)}</small>
      {returnable.map(line=><label key={line.id} className="watch-return-item-row">
        <span><strong>{line.productName}</strong>
          <small>{line.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('movements',line.movement)} ·
@@ -108,7 +116,15 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
        <input type="number" min={0} max={line.returnableQuantity} step={1}
          value={selected[line.id]??0} aria-label={'Вернуть штук: '+line.productName}
          onChange={e=>{
-           setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
+           const nextQuantity=e.target.value===''?0:Number(e.target.value)
+           const next={...selected,[line.id]:nextQuantity}
+           setSelected(next)
+           if(!manuallyEditedRefund&&refunds.length===1&&kind==='both'){
+             const nextValue=Math.min(maxRefund,returnable.reduce((n,x)=>
+               n+Math.max(0,Number(next[x.id]||0))*Number(x.unitPrice||0),0))
+             setAmount(String(nextValue))
+             setRefunds(parts=>[{...parts[0],amount:String(nextValue)}])
+           }
            setConfirmed(false)
          }}/>
      </label>)}
@@ -118,6 +134,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
        <input type="number" min={1} max={maxRefund} step={1} value={amount} required
          onChange={e=>{
            const v=e.target.value
+           setManuallyEditedRefund(true)
            setAmount(v);setRefunds(p=>p.length===1?[{...p[0],amount:v}]:p)
            setConfirmed(false)
          }}/>
@@ -144,6 +161,8 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
        </button>}
        <small>Суммы всех способов должны равняться {money(Number(amount)||0)}.
          Каждая часть учитывается отдельно.</small>
+       {isItems&&Number(amount)>selectedGoodsValue&&
+         <p className="watch-return-money-warning">Возвращаемые деньги превышают стоимость выбранных часов. Проверьте сумму: дополнительный возврат должен быть осознанным решением.</p>}
      </div>
    </>}
    <label>Причина
