@@ -70,6 +70,7 @@ export async function createClient3WatchReturn(
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
    JOIN watch_products wp ON wp.id=wv.watch_product_id
+   JOIN catalog_variants cv ON cv.id=oi.variant_id
    WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id
  `).bind(orderId).all<Record<string,unknown>>()
  const byId=new Map((watchRows.results||[]).map(row=>[Number(row.id),row]))
