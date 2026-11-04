@@ -91,8 +91,8 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
    line.movement_type!=='sale'||line.movement_variant!==line.variant_id||
    line.movement_source!==line.source_type||
    line.movement_quantity==null||line.movement_quantity>0||
-   line.retirement_id==null||Number(line.stock_quantity||0)!==0||
-   Number(line.stock_reserved||0)!==0||
+   line.retirement_id==null||line.stock_quantity==null||line.stock_reserved==null||
+   Number(line.stock_quantity)!==0||Number(line.stock_reserved)!==0||
    line.other_issues>0||line.returns_count>0||line.exchange_old_count>0)
    stop('Архивная отправка имеет неоднозначную историю или связанные операции. Исправление остановлено.')
  const conflicts=await db.prepare(`
@@ -143,9 +143,12 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items other
            WHERE other.order_item_id=oi.id AND other.id<>di.id
              AND other.quantity>COALESCE(other.cancelled_quantity,0))
+         AND EXISTS(SELECT 1 FROM inventory_stock s WHERE s.variant_id=oi.variant_id
+           AND s.inventory_source=di.source_type AND COALESCE(s.quantity,0)=0
+           AND COALESCE(s.reserved_quantity,0)=0)
          AND NOT EXISTS(SELECT 1 FROM inventory_stock s
            WHERE s.variant_id=oi.variant_id AND
-             (s.quantity<>0 OR s.reserved_quantity<>0))
+             (COALESCE(s.quantity,0)<>0 OR COALESCE(s.reserved_quantity,0)<>0))
      )`).bind(stamp,brandId,id,orderId,line.quantity),
    db.prepare(`UPDATE order_dispatch_items SET cancelled_quantity=quantity
        WHERE id=? AND cancelled_quantity=0 AND reservation_id=? AND movement_id=?`)
