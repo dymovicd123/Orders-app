@@ -547,6 +547,7 @@ const physicalReturnPreview=await parse(previewClient3WatchDelete(db,admin,1,{
  kind:'product',watchProductId:returnedBeforeRetireProduct
 }))
 assert.equal(physicalReturnPreview.status,200,JSON.stringify(physicalReturnPreview))
+assert(physicalReturnPreview.appliedPhysicalReturnExchangeCount>=1)
 const afterReturnDeleted=await parse(deleteClient3WatchCatalog(db,admin,1,{
  kind:'product',watchProductId:returnedBeforeRetireProduct,
  expectedCount:physicalReturnPreview.count,
@@ -620,6 +621,7 @@ const exchangedOldPreview=await parse(previewClient3WatchDelete(db,admin,1,{
  kind:'product',watchProductId:exchangedBeforeRetireProduct
 }))
 assert.equal(exchangedOldPreview.status,200,JSON.stringify(exchangedOldPreview))
+assert(exchangedOldPreview.appliedPhysicalReturnExchangeCount>=1)
 const exchangedOldDeleted=await parse(deleteClient3WatchCatalog(db,admin,1,{
  kind:'product',watchProductId:exchangedBeforeRetireProduct,
  expectedCount:exchangedOldPreview.count,
