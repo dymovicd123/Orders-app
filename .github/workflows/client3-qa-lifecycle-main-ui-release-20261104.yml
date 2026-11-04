@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = 42c74a9462f9dc53d3953a0bdfaf9d06c8d0be42
+          test "$(git rev-parse HEAD^)" = 9f84ec9eabe11b9e4a01693812d11c1c168286c3
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -67,6 +67,7 @@ jobs:
             scripts/client3/test-watch-workshop-parity-20261104.mjs \
             scripts/client3/test-watch-workspace-layout-20261102.mjs \
             scripts/client3/test-watch-return-money-ui-20261104.mjs \
+            scripts/client3/test-watch-catalog-retirement-main-20261104.mjs \
             scripts/client3/test-watch-full-order-engine-20261102.mjs \
             scripts/client3/test-watch-full-exchange-engine-20261102.mjs \
             scripts/client3/test-main-return-table-parity-20261104.mjs \
@@ -97,6 +98,14 @@ jobs:
           set -euo pipefail
           npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('admin_order_delete_sagas','admin_order_delete_saga_steps') ORDER BY name" | jq -c '.[0].results'
           echo "Missing journal tables imply deletion chains remain blocked by the server."
+      - name: Read-only Main catalog retirement schema guard for Client3 QA
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_operations') AS operations,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_variants') AS snapshots,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_history_events') AS history" |
+            jq -e '.[0].results[0] | select(.operations==1 and .snapshots==1 and .history==1)'
       - name: Deploy only EXISTING TEST Worker and TEST D1; no migrations
         run: |
           set -euo pipefail
