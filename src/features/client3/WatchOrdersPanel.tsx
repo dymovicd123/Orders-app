@@ -8,6 +8,7 @@ import {watchItemFullyIssued,watchIssuedQuantity} from './watchItemLifecycle'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
+import {WatchAdminDeleteChainPanel} from './WatchAdminDeleteChainPanel'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import '../../styles/client3-watch-orders.css'
 import '../../styles/client3-main-orders-copied.css'
@@ -86,6 +87,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [returnHistoryOrderId,setReturnHistoryOrderId]=useState<number|null>(null)
   const [exchangeHistoryOrderId,setExchangeHistoryOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
+  const [deleteOrderId,setDeleteOrderId]=useState<number|null>(null)
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(null)
   // Keep Main's dense orders table collapsed by default; detail opens only on request.
   const [,setExpanded]=useState<number|null>(null)
@@ -118,6 +120,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   },[brand,month,query,page,refresh,shipping,payment])
   const editingOrder=workflow==='orders'&&editOrderId!==null
     ?data?.rows.find(row=>row.orderId===editOrderId):null
+  const deletingOrder=workflow==='orders'&&isAdmin&&deleteOrderId!==null
+    ?data?.rows.find(row=>row.orderId===deleteOrderId):null
   return <section className="watch-orders">
     <header className="watch-orders-header">
       <div><h2>{workflow==='returns'?'Оформление возвратов':workflow==='exchange'?'Обмены часов':'Список заказов'}</h2>
@@ -179,7 +183,17 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
     </div>}
     {error&&<p role="alert" className="watch-orders-error">{error}</p>}
     {busy&&<p role="status">Загрузка заказов…</p>}
-    {workflow==='orders'&&data&&(editingOrder?<section className="watch-main-edit-workspace" aria-label={'Редактирование заказа '+editingOrder.externalId}>
+    {workflow==='orders'&&data&&(deletingOrder?<section className="watch-main-edit-workspace" aria-label={'Удаление заказа '+deletingOrder.externalId}>
+      <header className="watch-main-edit-workspace-head">
+        <div><h3>Удаление заказа {deletingOrder.externalId}</h3>
+          <p>Администратор · проверка возвратов, обменов, финансов и фактической отправки. Перед выполнением будут показаны последствия.</p></div>
+        <button type="button" className="secondary back-action" onClick={()=>setDeleteOrderId(null)}>Назад к заказам</button>
+      </header>
+      <WatchAdminDeleteChainPanel key={'delete-'+deletingOrder.orderId} brand={brand}
+        orderId={deletingOrder.orderId} externalId={deletingOrder.externalId}
+        onClose={()=>setDeleteOrderId(null)}
+        onDone={()=>{setDeleteOrderId(null);setRefresh(v=>v+1)}}/>
+    </section>:editingOrder?<section className="watch-main-edit-workspace" aria-label={'Редактирование заказа '+editingOrder.externalId}>
       <header className="watch-main-edit-workspace-head">
         <div><h3>Редактирование заказа {editingOrder.externalId}</h3>
           <p>{isAdmin?'Полный набор действий администратора Main':'Исправление реквизитов, цены и отмена операций по правилам Main'}. Отправка — только в логистике.</p></div>
@@ -340,6 +354,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                         onClick={()=>openFlow('exchange')}>Обмен</button>}
                     {workflow==='orders'&&<button type="button" className="secondary compact"
                       onClick={()=>showDetailAction('edit')}>{isAdmin?'Полное редактирование':'Исправить · доп. действия'}</button>}
+                    {workflow==='orders'&&isAdmin&&<button type="button"
+                      className="secondary compact watch-order-delete-direct"
+                      onClick={()=>{setEditOrderId(null);setDeleteOrderId(order.orderId)}}>Удалить заказ</button>}
                     {workflow==='orders'&&order.debtAmount>0&&onOpenDebt&&
                       <button type="button" className="secondary compact debt-action-button"
                         onClick={()=>onOpenDebt(brand,order.orderId,order.externalId)}>
