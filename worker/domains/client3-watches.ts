@@ -3,7 +3,7 @@ import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
 import {retryClient3WatchReservations} from './client3-watch-reservation-recovery.ts'
 import {correctClient3WatchDispatch} from './client3-watch-dispatch-correction.ts'
 import {readClient3WatchHandover,clarifyClient3WatchHandover} from './client3-watch-handover.ts'
-import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
+import {addClient3WatchDebtPayment,listClient3WatchDebtHistory} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from './client3-watch-admin-order.ts'
@@ -688,6 +688,13 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return correctClient3WatchItemPrices(db,actor,scope.row!.id,Number(pricesMatch[1]),input as Parameters<typeof correctClient3WatchItemPrices>[4])
+  }
+  if(url.pathname==='/api/client3/watches/debt-history'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    const idRaw=url.searchParams.get('orderId')
+    const orderId=idRaw===null?0:Number(idRaw)
+    return listClient3WatchDebtHistory(db,actor,scope.row!.id,orderId)
   }
   const paymentMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/payments$/.exec(url.pathname)
   if(paymentMatch&&request.method==='POST'){
