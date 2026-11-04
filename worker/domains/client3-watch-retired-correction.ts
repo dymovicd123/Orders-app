@@ -68,6 +68,11 @@ export async function cancelRetiredWatchDispatch(db:D1Database,brandId:number,or
          AND di.quantity=oi.quantity AND oi.stock_writeoff_status='retired_physically_issued'
          AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
            WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
+         AND NOT EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+           WHERE ei.order_item_id=oi.id AND ei.role='old'
+             AND COALESCE(e.status,'completed')<>'cancelled')
+         AND EXISTS(SELECT 1 FROM retired_order_item_issues j WHERE j.order_item_id=oi.id
+           AND j.retired_variant_id=oi.variant_id AND j.quantity=oi.quantity)
      )`).bind(stamp,id,orderId),
    db.prepare(`UPDATE order_dispatch_items SET cancelled_quantity=quantity
      WHERE id=? AND cancelled_quantity=0 AND movement_id IS NULL AND reservation_id IS NULL`).bind(id),
