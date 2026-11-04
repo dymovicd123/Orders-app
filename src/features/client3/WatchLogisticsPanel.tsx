@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
+import {watchItemFullyIssued,watchIssuedQuantity,watchItemReturnSummary,watchItemAwaitingReceipt} from './watchItemLifecycle'
 import '../../styles/client3-watch-logistics.css'
 
 export type WatchLogisticsRow = {
@@ -25,6 +26,9 @@ export type WatchLogisticsRow = {
   reservationStatus: string | null
   stockWriteoffStatus: string | null
   shippedQuantity: number
+  returnedQuantity: number
+  pendingReturnQuantity: number
+  pendingExchangeReceiptQuantity: number
   dispatchItemId: number | null
   itemSource: 'warehouse' | 'boutique' | null
   modelName: string | null
@@ -57,8 +61,7 @@ async function readApi<T extends { ok: boolean; message?: string }>(
   return data
 }
 
-export const logisticsItemIssued=(item:WatchLogisticsRow)=>
-  Number(item.shippedQuantity||0)>0||item.stockWriteoffStatus==='fulfilled'
+export const logisticsItemIssued=(item:WatchLogisticsRow)=>watchItemFullyIssued(item)
 export const logisticsOrderComplete=(group:LogisticsGroup)=>{
   const items=group.items.filter(i=>i.orderItemId!=null&&Number(i.quantity||0)>0)
   return items.length>0&&items.every(logisticsItemIssued)
@@ -105,7 +108,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [nextOffset,setNextOffset]=useState<number|null>(null)
   const [loadingMore,setLoadingMore]=useState(false)
   const pageScope=useRef('')
-  const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'|'urgent'|'overdue'>('unshipped')
+  const [filter, setFilter] = useState<'pending'|'engraving'|'ready'|'unshipped'|'sent'|'all'|'urgent'|'overdue'|'returns'>('unshipped')
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
   const [dispatching,setDispatching]=useState<number|null>(null)
@@ -133,6 +136,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       Date.parse(order.shippingDeadlineAt)<Date.now()
     if(filter==='unshipped')return !sent
     if(filter==='sent')return sent
+    if(filter==='returns')return items.some(i=>Number(i.returnedQuantity||0)>0||
+      watchItemAwaitingReceipt(i)>0)
     if(filter==='urgent')return !sent&&Boolean(order.urgent)
     if(filter==='overdue')return overdue
     if(filter==='all')return true
@@ -283,6 +288,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
             <option value="all">Все заказы</option>
             <option value="unshipped">К отправке</option>
             <option value="sent">Отправлены</option>
+            <option value="returns">Возвраты и обмены</option>
             <option value="pending">Ожидает</option>
             <option value="engraving">В работе</option>
             <option value="ready">Готово</option>
@@ -310,6 +316,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         ['overdue','Просроченные','Требуют внимания'],
         ['ready','Гравировка готова','Можно отправлять'],
         ['sent','Отправленные','Завершённые отгрузки'],
+        ['returns','Возвраты','Возвраты и ожидание приёмки'],
         ['all','Все','Общая история'],
       ] as const).map(([value,label,hint])=>
         <button type="button" key={value}
@@ -323,6 +330,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       <div className="summary-card warning-card"><span>Срочные</span><strong>{allGroups.filter(g=>g.order.urgent&&!logisticsOrderComplete(g)).length}</strong></div>
       <div className="summary-card danger-card"><span>Срок прошёл</span><strong>{allGroups.filter(g=>!logisticsOrderComplete(g)&&Date.parse(g.order.shippingDeadlineAt)<Date.now()).length}</strong></div>
       <div className="summary-card"><span>Гравировка готова</span><strong>{allGroups.filter(g=>!logisticsOrderComplete(g)&&g.items.some(i=>!logisticsItemIssued(i)&&Boolean(i.engravingReady))).length}</strong></div>
+      <div className="summary-card"><span>Ожидаем приём</span><strong>{allGroups.reduce((n,g)=>n+g.items.reduce((m,i)=>m+watchItemAwaitingReceipt(i),0),0)}</strong></div>
     </div>
     {nextOffset!==null&&<p className="mini-panel-note" role="status">
       Показаны первые {allGroups.length} заказов. Очередь продолжается — загрузите следующую страницу.
@@ -339,10 +347,13 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
         </tr></thead>
         <tbody>{groups.map(({order,items})=>{
           const completed=logisticsOrderComplete({order,items})
-          const dispatched=items.filter(logisticsItemIssued).length
+          const dispatched=items.filter(i=>watchIssuedQuantity(i)>0).length
+          const returnedCount=items.reduce((n,i)=>n+Number(i.returnedQuantity||0),0)
+          const intakePending=items.reduce((n,i)=>n+watchItemAwaitingReceipt(i),0)
+          const hasActive=items.some(i=>Number(i.quantity||0)>0)
           const shipStatus=completed
             ?(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Ранее выдан · подтверждено')
-            :dispatched>0?'Частично отправлен':'Не отправлен'
+            :!hasActive?'Нет активных позиций':dispatched>0?'Частично отправлен':'Не отправлен'
           const selectable=items.filter(item=>eligible(order,item))
           const selectedIds=dispatchSelection[order.orderId]||[]
           const selected=selectable.filter(item=>item.orderItemId&&(
@@ -365,7 +376,9 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
               <td><span className={'watch-logistics-status '+(order.engravingStatus==='ready'?'is-ready':'')}>
                 {statusText(order.engravingStatus)}</span></td>
               <td><span className={'watch-main-logistics-send-status '+(completed?'is-sent':'is-awaiting')}>
-                {shipStatus}</span></td>
+                {shipStatus}</span>
+                {returnedCount>0&&<small>Возврат: {returnedCount} шт.</small>}
+                {intakePending>0&&<small className="watch-logistics-intake-warning">Ожидается приём: {intakePending} шт.</small>}</td>
               <td>{items.length}</td>
               <td><button type="button" className="secondary compact" aria-expanded={expanded===order.orderId}
                 onClick={()=>setExpanded(v=>v===order.orderId?null:order.orderId)}>
@@ -382,8 +395,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                 <div className="watch-main-logistics-items">
                   {items.map(item=>{
                     const enabled=eligible(order,item)
-                    const isSent=Number(item.shippedQuantity||0)>0||
-                      item.stockWriteoffStatus==='fulfilled'
+                    const isSent=logisticsItemIssued(item)
                     return <div key={item.orderItemId} className={
                       'watch-main-logistics-item'+(isSent?' is-dispatched':'')+(!enabled&&!isSent?' is-blocked':'')}>
                       <label className="watch-logistics-select-line">
@@ -413,11 +425,14 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                             value={dispatchQuantities[order.orderId]?.[item.orderItemId]??Number(item.quantity)}
                             onChange={e=>setQuantity(order.orderId,item.orderItemId!,e.target.value===''?0:Number(e.target.value))}/>
                         </label>}
-                      <div><small>Состояние</small><strong>{Number(item.shippedQuantity||0)>0?'Отправлен':
-                        item.stockWriteoffStatus==='fulfilled'?'Выдан до ревизии · подтверждено':
+                      <div><small>Состояние</small><strong>{Number(item.quantity||0)===0?'Историческая позиция':
+                        isSent?(item.stockWriteoffStatus==='fulfilled'&&Number(item.shippedQuantity||0)===0?
+                          'Выдан до ревизии · подтверждено':'Отправлен'):
+                        watchIssuedQuantity(item)>0?'Частично отправлен: '+watchIssuedQuantity(item)+' из '+item.quantity:
                         item.reservationStatus!=='active'?'Ожидает товар / резерв':
                         item.engravingText?.trim()&&!item.engravingReady?'Ожидает гравировки':
-                        'Готов к отправке'}</strong></div>
+                        'Готов к отправке'}</strong>
+                        {watchItemReturnSummary(item)&&<small className="watch-logistics-intake-warning">{watchItemReturnSummary(item)}</small>}</div>
                       {canCorrectDispatch&&isSent&&item.dispatchItemId&&
                         <button type="button" className="secondary compact watch-dispatch-correction-open"
                           disabled={correcting!==null||dispatching!==null}
