@@ -12,6 +12,14 @@ assert(!/\/api\/orders\/|\/api\/workshop\/|\/api\/finance\/|\/api\/cash/.test(so
   'Logistics may not post to shipping, cash or legacy workshop endpoints')
 assert(source.includes("crypto.randomUUID()"), 'Ready must have an idempotency key')
 assert(source.includes("credentials: 'include'"), 'Only authenticated API calls allowed')
+assert(source.includes('onOpenReturns(order.brand)'), 'Logistics links physical intake using the exact order brand')
+assert(source.includes('Перейти к приёмке возвратов'),
+  'Physical intake is an available action from return-bearing logistics details')
+const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
+assert(app.includes("onOpenReturns={canSales?selected=>{setBrand(selected);goTo('returns')}:undefined}"),
+  'Sales roles can navigate from Logistics to the correct physical-intake queue')
+assert(app.includes("initialBrand={brand||undefined}"),
+  'Returns intake must not silently reset selected brand to the first brand')
 
 const server = await createServer({
   configFile: false, plugins: [reactPlugin()], appType: 'custom',
