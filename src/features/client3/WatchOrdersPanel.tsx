@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import {projectWatchOrderLikeMain} from './watchMainOrderProjection'
 import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {WatchReturnForm} from './WatchReturnForm'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
@@ -17,6 +18,8 @@ type WatchOrder={
   deliveryAddress:string;postalCode:string;unresolvedReservations:number
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
   totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
+  committedReturnCount:number;committedExchangeCount:number;committedItemReturnQuantity:number
+  latestReturnDate:string|null;latestExchangeDate:string|null
   lineCount:number;shippedLineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
   activeWatchVariantId:number|null;pendingReplacement:number
@@ -34,7 +37,7 @@ const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ож�
   physicallyIssued(order)?'Выдано до ревизии · подтверждено':
   order.shippedLineCount>0?'Частично отправлено':'Не отправлено'
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
-type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;unitPrice:number;
+type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;returnedQuantity?:number;unitPrice:number;
   lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
   stockWriteoffStatus:string;
   engravingText:string;gender:string;movement:string;braceletMaterial:string;
@@ -78,6 +81,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
       ?initialFocusedOrder.orderId:null)
   // Keep Main's dense orders table collapsed by default; detail opens only on request.
   const [expanded,setExpanded]=useState<number|null>(null)
+  const [extraActionsOrderId,setExtraActionsOrderId]=useState<number|null>(null)
+  const [expandedItemCounts,setExpandedItemCounts]=useState<Record<number,number>>({})
+  const [expandedPaymentCounts,setExpandedPaymentCounts]=useState<Record<number,number>>({})
   useEffect(()=>{
     const controller=new AbortController()
     setBusy(true);setError('');setData(null)
@@ -167,10 +173,34 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
               <th>Товары</th><th>Доставка / комментарий</th><th>Оплаты</th>
               <th>Сумма</th><th>Получено</th><th>Долг</th><th>Статус</th><th>Действия</th>
             </tr></thead>
-            <tbody>{data.rows.map(order=><Fragment key={order.orderId}>
-              <tr className={'watch-main-order-row'+(expanded===order.orderId?' is-open':'')}>
-                <td><strong>{order.externalId||'#'+order.orderId}</strong>
-                  <small>{order.orderDate}</small>
+            <tbody>{data.rows.map(order=>{
+              const {operational,shipment}=projectWatchOrderLikeMain(order,isAdmin)
+              const lines=parsedRows<ItemLine>(order.itemLines)
+              const payments=parsedRows<PaymentLine>(order.paymentLines)
+              const visibleItems=Math.max(3,expandedItemCounts[order.orderId]||3)
+              const visiblePayments=Math.max(2,expandedPaymentCounts[order.orderId]||2)
+              const openFlow=(type:'returns'|'exchange')=>{
+                if(onOpenWorkflow){onOpenWorkflow(type,{
+                  brand,orderId:order.orderId,externalId:order.externalId,orderDate:order.orderDate
+                });return}
+                setExpanded(order.orderId)
+                if(type==='returns'){setReturnOrderId(order.orderId);setExchangeOrderId(null)}
+                else{setExchangeOrderId(order.orderId);setReturnOrderId(null)}
+              }
+              const showDetailAction=(type:'debt'|'edit'|'handover')=>{
+                setExpanded(order.orderId);setExtraActionsOrderId(null)
+                if(type==='debt'){setDebtOrderId(order.orderId);setEditOrderId(null);setHandoverOrderId(null)}
+                if(type==='edit'){setEditOrderId(order.orderId);setDebtOrderId(null);setHandoverOrderId(null)}
+                if(type==='handover'){setHandoverOrderId(order.orderId);setDebtOrderId(null);setEditOrderId(null)}
+              }
+              return <Fragment key={order.orderId}>
+              <tr data-order-id={order.orderId} className={'watch-main-order-row'+
+                (expanded===order.orderId?' is-open':'')+
+                (operational.hasCommittedDownstreamOperation?' row-returned':'')}>
+                <td><div className="order-cell-stack">
+                  <strong>{order.orderDate}</strong>
+                  <span>{order.externalId||'#'+order.orderId}</span>
+                  </div>
                   {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}</td>
                 <td>{order.managerName||'—'}</td>
                 <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
@@ -346,7 +376,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>}
                 </section>
               </td></tr>}
-            </Fragment>)}</tbody>
+              </Fragment>})}</tbody>
           </table>
         </LinkedTableScroll>}
       <div className="watch-orders-pages">
