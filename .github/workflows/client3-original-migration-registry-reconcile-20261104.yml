@@ -1,0 +1,98 @@
+name: Client3 ORIGINAL D1 audit-proven migration registry reconciliation (ONE RECORD)
+on:
+  push:
+    branches: [client3/shared-cash-main-team-20261103]
+    paths: ['.github/workflows/client3-original-migration-registry-reconcile-20261104.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: client3-original-production-migration-registry
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    name: Confirm unchanged business data and mark already-existing 1004 schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: "24",cache: npm}
+      - name: Exact production D1 and audit-proven source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/shared-cash-main-team-20261103
+          test "$(git rev-parse HEAD^)" = e27e430785a7872308790bace0fe12701c94f054
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-original-migration-registry-reconcile-20261104.yml
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41769874854 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41769874854 --jq .head_sha)" = e27e430785a7872308790bace0fe12701c94f054
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - run: npm ci
+      - name: Verify the ONLY pending migration is 1004
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-migrations-before
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-migrations-before | sort -u || true)"
+          test "$pending" = 1004_watch_item_engraving_readiness.sql
+      - name: Verify exact physically applied schema and ZERO incomplete legacy readiness
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_engraving_item_readiness') AS has_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_watch_engraving_ready_actor') AS has_index,
+            (SELECT COUNT(*) FROM pragma_table_info('watch_logistics_events') WHERE name='order_item_id') AS has_event_item_column,
+            (SELECT COUNT(*) FROM d1_migrations WHERE name='1004_watch_item_engraving_readiness.sql') AS already_recorded,
+            (SELECT COUNT(*) FROM watch_logistics_jobs lj
+              WHERE lj.status='ready' AND lj.ready_at IS NOT NULL
+                AND (SELECT COUNT(*) FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+                  WHERE oi.order_id=lj.order_id AND oi.quantity>0 AND LENGTH(TRIM(wi.engraving_text))>0)=1
+                AND EXISTS (SELECT 1 FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+                  LEFT JOIN watch_engraving_item_readiness ri ON ri.order_item_id=oi.id
+                    AND ri.engraving_text=wi.engraving_text
+                  WHERE oi.order_id=lj.order_id AND oi.quantity>0 AND LENGTH(TRIM(wi.engraving_text))>0
+                    AND ri.order_item_id IS NULL)) AS unbackfilled_single_ready,
+            (SELECT COUNT(*) FROM watch_logistics_jobs lj WHERE lj.status='ready'
+              AND EXISTS (SELECT 1 FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+                LEFT JOIN watch_engraving_item_readiness ri ON ri.order_item_id=oi.id
+                  AND ri.engraving_text=wi.engraving_text
+                WHERE oi.order_id=lj.order_id AND oi.quantity>0
+                  AND LENGTH(TRIM(wi.engraving_text))>0 AND ri.order_item_id IS NULL)
+            ) AS ambiguous_ready_orders" |
+            jq -e '.[0].results[0] | select(.has_table==1 and .has_index==1 and .has_event_item_column==1 and .already_recorded==0 and .unbackfilled_single_ready==0 and .ambiguous_ready_orders==0)'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+      - name: Record point-in-time recovery bookmark before registry reconciliation
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info orders_db_client3_old_client --config wrangler.jsonc --json > /tmp/client3-original-bookmark
+          jq -er '.bookmark // .result.bookmark' /tmp/client3-original-bookmark
+      - name: Mark ONLY physically pre-existing 1004 in Wrangler migration registry
+        run: |
+          set -euo pipefail
+          # This does NOT execute 1004 SQL or touch products, orders, finance,
+          # inventory, or operational readiness. Schema/backfill are verified.
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="INSERT INTO d1_migrations (name, applied_at)
+              SELECT '1004_watch_item_engraving_readiness.sql', datetime('now')
+              WHERE NOT EXISTS(SELECT 1 FROM d1_migrations
+                WHERE name='1004_watch_item_engraving_readiness.sql')" |
+            jq -e '.[0].success==true'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json \
+            --command="SELECT COUNT(*) AS applied FROM d1_migrations WHERE name='1004_watch_item_engraving_readiness.sql'" |
+            jq -e '.[0].results[0] | select(.applied==1)'
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-migrations-after
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-migrations-after | sort -u || true)"
+          test -z "$pending"
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo "CLIENT3_ORIGINAL_MIGRATION_LEDGER_RECONCILED_ONLY_1004"
