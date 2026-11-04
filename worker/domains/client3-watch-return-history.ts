@@ -1,7 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {cancelReturn} from './returns-exchanges.ts'
-import {retiredAppliedMovementBlocker} from './client3-watch-retired-reversal-guard.ts'
+import {inspectRetiredAppliedMovements} from './client3-watch-retired-reversal-guard.ts'
 
 const fail=(code:string,message:string,status=409)=>
   json({ok:false,code,message},{status})
@@ -72,16 +72,21 @@ export async function cancelClient3WatchReturn(
    .bind(returnId).first<{id:number}>()
  if(exchange)return fail('WATCH_RETURN_EXCHANGE_LINKED',
    'Этот денежный возврат связан с обменом. Отменять нужно сам обмен с учётом его цепочки.',409)
- if(own.status!=='cancelled'){
-   const affected=await retiredAppliedMovementBlocker(db,'return',returnId)
-   if(affected)return fail('WATCH_RETURN_CANCEL_RETIRED_STOCK',
-     'Этот возврат изменил склад до удаления товара. Позже остаток был выведен из рабочего каталога. Обычная отмена возврата не может безопасно обратить старое складское движение. История и деньги не изменены; требуется отдельная сверка физического факта.',409)
- }
+ // Main's lifecycle cancellation protects physical truth for a valid
+ // retirement. Only missing audit proofs or nonzero archived balances block.
+ const inspection=own.status==='cancelled'
+   ?null:await inspectRetiredAppliedMovements(db,'return',returnId)
+ if(inspection?.blocked)return fail('WATCH_RETURN_CANCEL_RETIRED_STOCK',
+   'Отмена остановлена: '+inspection.blocked.reason+
+   ' Склад и деньги не изменены. Проверьте историю удаления и остатки.',409)
  try{
    const result=await cancelReturn(db,returnId,{
      requestId:input.requestId,comment:reason,
    })
-   return json(result)
+   return json({...result,
+     archivedPhysicalMovementCount:inspection?.retiredCount||0,
+     archivedStockPreserved:(inspection?.retiredCount||0)>0,
+   })
  }catch(cause){
    return fail('WATCH_RETURN_CANCEL_BLOCKED',
      cause instanceof Error?cause.message:'Нельзя отменить возврат из-за зависимых операций.')
