@@ -497,8 +497,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                     <span>{shipStatus}</span></div>
                 </div>
                 {canCompleteEngraving&&missingEngraving.length>0&&<div className="watch-logistics-ready-all">
-                  <div><strong>Гравировка ожидает подтверждения: {missingEngraving.length} поз.</strong>
-                    <small>Отметки относятся только к указанным часам и не отправляют заказ.</small></div>
+                  <div><strong>Готовность по отдельным часам: {items.length-missingEngraving.length} из {items.length}</strong>
+                    <small>Подтверждайте готовность каждой позиции ниже. Можно отметить только часть заказа и отправить только готовые часы. Общая кнопка — необязательная.</small></div>
                   {readyConfirmOrderId===order.orderId?
                     <div className="watch-logistics-ready-all-actions">
                       <button type="button" className="primary compact" disabled={saving!==null}
@@ -533,11 +533,22 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                               item.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',item.braceletColor):''].filter(Boolean).join(' · ')}</small>
                         </span>
                       </label>
-                      <div><small>Гравировка</small><strong>{item.engravingText||'Не требуется'}</strong>
-                        {item.engravingText?.trim()&&<small>{item.engravingReady?'Готово':'Ожидает готовности'}</small>}
+                      <div className="watch-logistics-line-ready">
+                        <small>Гравировка</small>
+                        <strong>{item.engravingText||'Не требуется'}</strong>
+                        <span className={'watch-logistics-line-state '+(item.engravingReady?'is-ready':'is-pending')}>
+                          {item.engravingReady?'Готово':'Не готово'}
+                        </span>
                         {canCompleteEngraving&&item.orderItemId&&item.engravingText?.trim()&&!item.engravingReady&&Number(item.shippedQuantity||0)===0&&
-                          <button type="button" disabled={saving!==null} onClick={()=>void complete(order.orderId,item.orderItemId!)}>
-                            {saving===item.orderItemId?'Сохраняю…':'Готово · эта позиция'}</button>}</div>
+                          <button type="button" className="watch-logistics-ready-one"
+                            disabled={saving!==null}
+                            aria-label={'Подтвердить готовность только '+(item.modelName||'этой модели')}
+                            onClick={()=>void complete(order.orderId,item.orderItemId!)}>
+                            {saving===item.orderItemId?'Сохраняю…':'Отметить готовым эти часы'}
+                          </button>}
+                        {item.engravingReady&&!item.engravingText?.trim()&&
+                          <small className="watch-logistics-auto-ready">Гравировка не нужна · готовы к отправке</small>}
+                      </div>
                       {enabled&&canDispatch&&item.orderItemId&&
                         <label className="watch-logistics-quantity">
                           <small>Отправить, шт. (из {item.quantity})</small>
