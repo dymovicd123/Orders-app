@@ -64,3 +64,20 @@
   .watch-orders .watch-debt-multi-form .watch-main-debt-grid{grid-template-columns:1fr}
   .watch-debt-history-table{min-width:500px}
 }
+
+.watch-orders .watch-orders-finance-tools{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  flex-wrap:wrap;margin:8px 0 11px
+}
+.watch-orders .watch-orders-finance-tools>.watch-orders-note{margin:0;flex:1;min-width:240px}
+.watch-orders .watch-engraving-order-state{display:grid;gap:3px;margin-top:5px}
+.watch-orders .watch-engraving-ready-pill{
+  display:inline-flex;width:fit-content;max-width:100%;
+  border-radius:8px;padding:3px 7px;font-size:10px;line-height:1.3;font-weight:750
+}
+.watch-orders .watch-engraving-ready-pill.is-ready{background:#dcfce7;color:#166534}
+.watch-orders .watch-engraving-ready-pill.is-pending{background:#fef3c7;color:#92400e}
+.watch-orders .watch-main-row-actions .watch-engraving-nav{
+  border:1px solid #93c5fd!important;background:#eff6ff!important;
+  color:#1d4ed8!important;font-weight:650!important
+}
