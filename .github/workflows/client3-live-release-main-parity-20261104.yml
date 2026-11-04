@@ -30,10 +30,15 @@ jobs:
           set -eEuo pipefail
           trap 'echo "CLIENT3_REAL_RELEASE_HALTED at line $LINENO"' ERR
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = f3ef05293d9cb284b59fb3fa1a68929581cb5c54
+          test "$(git rev-parse HEAD^)" = cdea4c3a27f150aecaed7cfb0b713410e615acc9
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-live-release-main-parity-20261104.yml
-          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41780511827 --jq .conclusion)" = success
-          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41780511827 --jq .head_sha)" = f3ef05293d9cb284b59fb3fa1a68929581cb5c54
+          git merge-base --is-ancestor ca9193cb2d28a3c618cb67b8ecc538a5b6237b7e HEAD
+          if git diff --name-only ca9193cb2d28a3c618cb67b8ecc538a5b6237b7e HEAD | grep -Eq '^(migrations/|wrangler\.jsonc|package(-lock)?\.json)'; then
+            echo 'Client3 release blocked: unexpected schema/config/dependency change'
+            exit 1
+          fi
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41796162765 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41796162765 --jq .head_sha)" = cdea4c3a27f150aecaed7cfb0b713410e615acc9
           test "$(jq -r .name wrangler.jsonc)" = "$REAL_WORKER"
           test "$(jq -r .main wrangler.jsonc)" = worker/index.ts
           test "$(jq -r .d1_databases[0].binding wrangler.jsonc)" = DB
@@ -56,6 +61,8 @@ jobs:
           for testfile in \
             scripts/client3/test-watch-orders-read-20261102.mjs \
             scripts/client3/test-watch-logistics-20261102.mjs \
+            scripts/client3/test-watch-workshop-parity-20261104.mjs \
+            scripts/client3/test-watch-workspace-layout-20261102.mjs \
             scripts/client3/test-watch-handover-after-revision-20261103.mjs \
             scripts/client3/test-watch-debt-multi-ui-20261104.mjs \
             scripts/client3/test-watch-return-money-ui-20261104.mjs \
