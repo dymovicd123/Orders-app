@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
+import {editClient3WatchVariant} from '../../worker/domains/client3-watch-catalog-edit.ts'
 import {receiveClient3WatchArrival} from '../../worker/domains/client3-watch-inventory.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-demand-report.ts'
@@ -1037,6 +1038,42 @@ for(const scenario of generationCases){
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=?')
    .get(finalCanonical).n,1,'Fifth generation has exactly one arrival')
 }
+
+// A v5 UNIQUE slot may remain occupied after a draft was edited into v6.
+// Creating the OLD characteristics again must produce another active SKU,
+// without overwriting the first variant's truthful edited attributes.
+const editedModel=await model('WORK EDITED V5 UNIQUE SLOT QA')
+const originallyCustom={
+ gender:'female',movement:'quartz',braceletMaterial:'leather',
+ dialColor:'black',braceletColor:'ЧЕРНЫЙ'
+}
+const firstCustom=await parse(registerWatchVariant(db,admin,1,{
+ watchProductId:editedModel,...originallyCustom
+}))
+assert.equal(firstCustom.status,201,JSON.stringify(firstCustom))
+assert(sqlite.prepare('SELECT * FROM watch_variant_attributes_v5 WHERE watch_variant_id=?')
+ .get(firstCustom.watchVariantId),'First custom watch keeps backward-compatible v5')
+const editedCustom=await parse(editClient3WatchVariant(db,admin,1,{
+ watchProductId:editedModel,watchVariantId:firstCustom.watchVariantId,
+ expected:originallyCustom,...originallyCustom,dialColor:'white'
+}))
+assert.equal(editedCustom.status,200,JSON.stringify(editedCustom))
+assert.equal(sqlite.prepare('SELECT dial_color FROM watch_variant_attributes_v5 WHERE watch_variant_id=?')
+ .get(firstCustom.watchVariantId).dial_color,'black',
+ 'v5 legacy history must remain original')
+assert.equal(sqlite.prepare('SELECT dial_color FROM watch_variant_attributes_v6 WHERE watch_variant_id=?')
+ .get(firstCustom.watchVariantId).dial_color,'white')
+const recreatedOriginal=await parse(registerWatchVariant(db,admin,1,{
+ watchProductId:editedModel,...originallyCustom
+}))
+assert.equal(recreatedOriginal.status,201,JSON.stringify(recreatedOriginal))
+assert.notEqual(recreatedOriginal.watchVariantId,firstCustom.watchVariantId)
+assert.equal(sqlite.prepare('SELECT dial_color FROM watch_variant_attributes_v6 WHERE watch_variant_id=?')
+ .get(recreatedOriginal.watchVariantId).dial_color,'black')
+const editedView=await parse(listWatchCatalogDrafts(db,admin,1))
+const editedRows=editedView.rows.filter(x=>x.watchProductId===editedModel)
+assert.equal(editedRows.length,2)
+assert.deepEqual(editedRows.map(x=>x.dialColor).sort(),['black','white'])
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
