@@ -395,10 +395,11 @@ export function WatchClient3App() {
                 onSave={saveWatchOrder}/>
           </section>:
         activeSection==='returns'?<>
-          {brands.length>0&&<WatchOrdersPanel workflow="returns" key={'return-order-flow-'+catalogVersion}
+          {brands.length>0&&<WatchOrdersPanel workflow="returns" key={'return-order-flow-'+catalogVersion+'-'+(reportOrderFocus?.orderId||0)}
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
-            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
+            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}
+            onOpenOrders={()=>goTo('orders')}/>}
           {brands.length>0&&<WatchReturnsPanel key={'returns-'+catalogVersion}
             brands={brands.map(x=>x.code)}/>}
           {brands.length>0&&<WatchOperationHistoryPanel kind="return"
@@ -411,10 +412,11 @@ export function WatchClient3App() {
             }}/>}
         </>:
         activeSection==='exchange'?<>
-          {brands.length>0&&<WatchOrdersPanel workflow="exchange" key={'exchange-order-flow-'+catalogVersion}
+          {brands.length>0&&<WatchOrdersPanel workflow="exchange" key={'exchange-order-flow-'+catalogVersion+'-'+(reportOrderFocus?.orderId||0)}
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
-            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}/>}
+            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}
+            onOpenOrders={()=>goTo('orders')}/>}
           {brands.length>0&&<WatchOperationHistoryPanel kind="exchange"
             isAdmin={canAdmin}
             key={'exchange-history-'+catalogVersion}
