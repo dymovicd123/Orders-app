@@ -221,7 +221,9 @@ const linkedEdit=await parse(editClient3WatchVariant(db,admin,1,{
 assert.equal(linkedEdit.ok,true,JSON.stringify(linkedEdit))
 assert.equal(linkedEdit.canonicalVariantId,existingCanonicalId)
 assert.equal(sql.prepare('SELECT catalog_variant_id FROM watch_variants WHERE id=?').get(draftId).catalog_variant_id,existingCanonicalId)
-assert.equal(sql.prepare('SELECT movement FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId).movement,'mechanical')
+assert.equal(sql.prepare('SELECT movement FROM watch_variant_attributes_v6 WHERE watch_variant_id=?').get(draftId).movement,'mechanical')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId).n,0,
+ 'Canonical edit must not mutate historical v5 uniqueness')
 const canonicalAfterEdit=sql.prepare('SELECT gender,color,material,stock_position_id FROM catalog_variants WHERE id=?').get(existingCanonicalId)
 assert.equal(canonicalAfterEdit.gender,'ЖЕН')
 assert.equal(canonicalAfterEdit.color,'WATCH_DIAL_WHITE')
