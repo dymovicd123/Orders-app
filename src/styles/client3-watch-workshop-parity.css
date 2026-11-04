@@ -1,0 +1,75 @@
+/* Derived from Main WorkshopSection: one line per watch, core facts visible. */
+.watch-logistics .watch-task-section{max-width:100%;min-width:0;margin-top:14px}
+.watch-logistics .watch-task-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 2px}
+.watch-logistics .watch-task-head>div{display:grid;gap:3px}
+.watch-logistics .watch-task-head strong{font-size:15px;color:#0f172a}
+.watch-logistics .watch-task-head span{font-size:12px;color:#64748b}
+.watch-logistics .watch-task-count{font-weight:750;color:#334155}
+.watch-logistics .watch-task-scroll{max-width:100%;min-width:0;overflow-x:auto}
+.watch-logistics .watch-task-table{width:100%;min-width:900px;table-layout:fixed}
+.watch-logistics .watch-task-table th{background:#eaf1fb;color:#334155}
+.watch-logistics .watch-task-table th:nth-child(1){width:15%}
+.watch-logistics .watch-task-table th:nth-child(2){width:30%}
+.watch-logistics .watch-task-table th:nth-child(3){width:21%}
+.watch-logistics .watch-task-table th:nth-child(4){width:16%}
+.watch-logistics .watch-task-table th:nth-child(5){width:18%}
+.watch-logistics .watch-task-table td{padding:12px 9px!important;min-width:0!important;
+  max-width:none!important;vertical-align:top;overflow-wrap:anywhere}
+.watch-logistics .watch-task-table .workshop-product-card{min-width:0;max-width:100%;width:100%}
+.watch-logistics .watch-task-product{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:10px}
+.watch-logistics .watch-task-engraving{display:grid;gap:3px;padding-top:7px;margin-top:6px;
+  border-top:1px solid #e2e8f0}
+.watch-logistics .watch-task-engraving small{font-size:10px;color:#64748b}
+.watch-logistics .watch-task-engraving strong{font-size:12px;color:#0f172a}
+.watch-logistics .watch-task-client{display:grid;gap:4px;line-height:1.4}
+.watch-logistics .watch-task-client strong{font-size:13px}
+.watch-logistics .watch-task-client span{font-size:11px;color:#334155}
+.watch-logistics .watch-task-priority{display:grid;gap:7px;justify-items:start}
+.watch-logistics .watch-task-deadline{font-size:11px;font-weight:650}
+.watch-logistics .watch-task-deadline.is-overdue{color:#b91c1c}
+.watch-logistics .watch-task-return-note,.watch-logistics .watch-task-intake{color:#92400e;font-size:11px}
+.watch-logistics .watch-task-actions{display:grid!important;gap:8px;align-content:start}
+.watch-logistics .watch-task-actions button{
+  width:100%;min-width:0;max-width:100%;white-space:normal;min-height:35px;
+  font-size:11px!important;border-radius:8px!important;padding:7px 8px!important
+}
+.watch-logistics .watch-task-actions button.primary{
+  background:#2563eb!important;border:1px solid #2563eb!important;
+  color:#fff!important;font-weight:750!important
+}
+.watch-logistics .watch-task-actions button.primary:hover:not(:disabled){
+  background:#1d4ed8!important
+}
+.watch-logistics .watch-task-actions button.primary:disabled{background:#94a3b8!important}
+.watch-logistics .watch-task-actions button.secondary{
+  color:#334155!important;background:#fff!important;border:1px solid #cbd5e1!important
+}
+.watch-logistics .watch-task-send-box{display:grid;gap:7px}
+.watch-logistics .watch-task-qty{display:grid;gap:4px;color:#475569;font-size:11px}
+.watch-logistics .watch-task-qty input{width:90px;max-width:100%;padding:6px 8px;
+  border:1px solid #cbd5e1;border-radius:7px;color:#0f172a;background:#fff}
+.watch-logistics .watch-task-stock-hint{font-size:10.5px;color:#9a3412;line-height:1.4}
+.watch-logistics .watch-task-correction{display:grid;gap:8px;background:#fff7ed;
+  padding:10px;border-radius:9px;border:1px solid #fed7aa}
+.watch-logistics .watch-task-correction textarea{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.watch-logistics .watch-task-correction-buttons{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.watch-logistics .watch-task-row.is-urgent>td:first-child{border-left:3px solid #f97316}
+.watch-logistics .watch-task-row.needs-preparation{background:#fffbeb}
+.watch-logistics .watch-task-row.is-shipped{opacity:.85}
+@media(max-width:1060px){
+ .watch-logistics .watch-task-table,.watch-logistics .watch-task-table tbody{display:block;min-width:0!important}
+ .watch-logistics .watch-task-table thead{display:none}
+ .watch-logistics .watch-task-row{display:grid;grid-template-columns:1fr 1fr;
+   margin:0 0 11px;border:1px solid #dbe4ee;border-radius:11px;overflow:hidden}
+ .watch-logistics .watch-task-row td{display:block;border:0!important;min-width:0!important}
+ .watch-logistics .watch-task-row td:nth-child(2),
+ .watch-logistics .watch-task-row td:nth-child(5){grid-column:1/-1}
+ .watch-logistics .watch-task-actions{display:flex!important;flex-direction:row!important;flex-wrap:wrap}
+ .watch-logistics .watch-task-actions>button,.watch-logistics .watch-task-send-box{max-width:240px}
+}
+@media(max-width:620px){
+ .watch-logistics .watch-task-row{grid-template-columns:1fr}
+ .watch-logistics .watch-task-row td{grid-column:1/-1}
+ .watch-logistics .watch-task-actions{display:grid!important;grid-template-columns:1fr 1fr}
+ .watch-logistics .watch-task-actions>button,.watch-logistics .watch-task-send-box{max-width:none}
+}
