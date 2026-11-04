@@ -22,6 +22,7 @@ import {listClient3WatchReferences,createClient3WatchReference,updateClient3Watc
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
 import {listClient3WatchOrders} from '../../worker/domains/client3-watch-orders-read.ts'
+import {listWatchLogistics} from '../../worker/domains/client3-watches.ts'
 import {listClient3WatchClients,listClient3WatchCustomerOrders} from '../../worker/domains/client3-watch-clients.ts'
 import {listClient3WatchDemand} from '../../worker/domains/client3-watch-demand.ts'
 import {getClient3WatchFinance} from '../../worker/domains/client3-watch-finance.ts'
@@ -1771,6 +1772,19 @@ assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 // Audit the exact two-item partial-order scenario through the same API
 // that powers Client3's Main-like All Orders table. A physical return is a
 // per-item fact; it must remain visible after all cash was refunded.
+// A Main order-row Send button must address the exact original order,
+// regardless of the default logistics pagination or urgent sorting.
+const targetLogistics=await parse(listWatchLogistics(db,admin,
+ new URL('https://test.invalid/api/client3/watches/logistics?brand=TAUWACH&orderId='+partialCreated.orderId)))
+assert.equal(targetLogistics.status,200,JSON.stringify(targetLogistics))
+assert(targetLogistics.rows.length>=2,'Exact order must preserve all watch SKU lines')
+assert(targetLogistics.rows.every(row=>row.orderId===partialCreated.orderId),
+ 'Direct send must not open unrelated customer orders')
+const otherBrandLogistics=await parse(listWatchLogistics(db,admin,
+ new URL('https://test.invalid/api/client3/watches/logistics?brand=WACHIZEN&orderId='+partialCreated.orderId)))
+assert.equal(otherBrandLogistics.status,200)
+assert.equal(otherBrandLogistics.rows.length,0,
+ 'Order lookup must not reveal other brand watches')
 const tableQuery=new URL('https://test.invalid/api/client3/watches/orders?brand=TAUWACH&limit=50&q='+encodeURIComponent(partialCreated.externalId))
 const tableResult=await parse(listClient3WatchOrders(db,admin,1,tableQuery))
 assert.equal(tableResult.status,200,JSON.stringify(tableResult))
