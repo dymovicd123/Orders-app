@@ -7,8 +7,6 @@ import {WatchExchangeHistoryPanel} from './WatchExchangeHistoryPanel'
 import {watchItemFullyIssued,watchIssuedQuantity} from './watchItemLifecycle'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
-import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
-import {WatchDebtHistoryPanel} from './WatchDebtHistoryPanel'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
@@ -59,11 +57,12 @@ const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
 }
-export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,onOpenWorkflow,onOpenOrders,isAdmin=false,workflow='orders'}:{
+export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,onOpenWorkflow,onOpenOrders,onOpenDebt,isAdmin=false,workflow='orders'}:{
   allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;
   initialFocusedOrder?:{orderId:number;externalId:string;orderDate:string};
   onOpenLogistics?:(brand:WatchBrand,orderId:number)=>void;
   onOpenOrders?:()=>void;
+  onOpenDebt?:(brand:WatchBrand,orderId:number,externalId:string)=>void;
   onOpenWorkflow?:(kind:'returns'|'exchange',order:{
     brand:WatchBrand;orderId:number;externalId:string;orderDate:string
   })=>void;
@@ -85,12 +84,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
     workflow==='returns'?initialFocusedOrder?.orderId||null:null)
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(
     workflow==='exchange'?initialFocusedOrder?.orderId||null:null)
-  const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [returnHistoryOrderId,setReturnHistoryOrderId]=useState<number|null>(null)
   const [exchangeHistoryOrderId,setExchangeHistoryOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(null)
-  const [showDebtHistory,setShowDebtHistory]=useState(false)
   // Keep Main's dense orders table collapsed by default; detail opens only on request.
   const [,setExpanded]=useState<number|null>(null)
   const [,setExtraActionsOrderId]=useState<number|null>(null)
@@ -189,14 +186,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         <div><small>Остаток долга</small><strong>{sum(data.totals.debtAmount)}</strong></div>
         <div><small>Учтено возвратов</small><strong>{sum(data.totals.returnAmount)}</strong></div>
       </div>
-      <div className="watch-orders-finance-tools">
-        <p className="watch-orders-note">Отправка отдельно проверяет ревизию, резерв, готовность гравировки и факт передачи. Возвраты и обмены не блокируют прочие операции.</p>
-        <button type="button" className="secondary compact watch-debt-history-toggle"
-          aria-expanded={showDebtHistory} onClick={()=>setShowDebtHistory(x=>!x)}>
-          {showDebtHistory?'Скрыть историю оплат долга':'История закрытия долгов'}
-        </button>
-      </div>
-      {showDebtHistory&&<WatchDebtHistoryPanel brand={brand} refreshToken={refresh}/>}
+      <p className="watch-orders-note">Отправка отдельно проверяет ревизию, резерв, готовность гравировки и факт передачи. Возвраты и обмены не блокируют прочие операции. Для закрытия долга используйте отдельную вкладку «Закрытие долга».</p>
 
       {data.rows.length===0?<p>Заказов за выбранный период нет.</p>:
         <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
@@ -212,7 +202,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
               const visibleItems=Math.max(3,expandedItemCounts[order.orderId]||3)
               const visiblePayments=Math.max(2,expandedPaymentCounts[order.orderId]||2)
               const rowActionOpen=editOrderId===order.orderId||
-                debtOrderId===order.orderId||handoverOrderId===order.orderId||
+                handoverOrderId===order.orderId||
                 returnHistoryOrderId===order.orderId||exchangeHistoryOrderId===order.orderId||
                 returnOrderId===order.orderId||exchangeOrderId===order.orderId
               const openFlow=(type:'returns'|'exchange')=>{
@@ -223,11 +213,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                 if(type==='returns'){setReturnOrderId(order.orderId);setExchangeOrderId(null)}
                 else{setExchangeOrderId(order.orderId);setReturnOrderId(null)}
               }
-              const showDetailAction=(type:'debt'|'edit'|'handover')=>{
+              const showDetailAction=(type:'edit'|'handover')=>{
                 setExpanded(order.orderId);setExtraActionsOrderId(null)
-                if(type==='debt'){setDebtOrderId(order.orderId);setEditOrderId(null);setHandoverOrderId(null)}
-                if(type==='edit'){setEditOrderId(order.orderId);setDebtOrderId(null);setHandoverOrderId(null)}
-                if(type==='handover'){setHandoverOrderId(order.orderId);setDebtOrderId(null);setEditOrderId(null)}
+                if(type==='edit'){setEditOrderId(order.orderId);setHandoverOrderId(null)}
+                if(type==='handover'){setHandoverOrderId(order.orderId);setEditOrderId(null)}
               }
               return <Fragment key={order.orderId}>
               <tr data-order-id={order.orderId} className={'watch-main-order-row'+
@@ -343,9 +332,11 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                         onClick={()=>openFlow('exchange')}>Обмен</button>}
                     {workflow==='orders'&&<button type="button" className="secondary compact"
                       onClick={()=>showDetailAction('edit')}>Исправить</button>}
-                    {workflow==='orders'&&order.debtAmount>0&&
+                    {workflow==='orders'&&order.debtAmount>0&&onOpenDebt&&
                       <button type="button" className="secondary compact debt-action-button"
-                        onClick={()=>showDetailAction('debt')}>Закрыть долг</button>}
+                        onClick={()=>onOpenDebt(brand,order.orderId,order.externalId)}>
+                        Перейти к закрытию долга
+                      </button>}
                     {workflow==='orders'&&Boolean(order.stockHandoverReviewNeeded)&&
                       <button type="button" className="secondary compact order-stock-handover-trigger"
                         onClick={()=>showDetailAction('handover')}>Проверить выдачу</button>}
@@ -367,7 +358,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   <header className="watch-order-action-head">
                     <strong>Заказ {order.externalId}</strong>
                     <button type="button" className="secondary compact" onClick={()=>{
-                      setEditOrderId(null);setDebtOrderId(null);setHandoverOrderId(null);
+                      setEditOrderId(null);setHandoverOrderId(null);
                       setReturnHistoryOrderId(null);setExchangeHistoryOrderId(null);
                       setReturnOrderId(null);setExchangeOrderId(null);setExpanded(null)
                     }}>Закрыть действие</button>
@@ -385,10 +376,6 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     brand={brand} order={order} isAdmin={isAdmin}
                     onCancel={()=>setEditOrderId(null)}
                     onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
-                  {debtOrderId===order.orderId&&<WatchDebtPaymentForm
-                    brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
-                    debt={order.debtAmount} onCancel={()=>setDebtOrderId(null)}
-                    onDone={()=>{setDebtOrderId(null);setRefresh(v=>v+1)}}/>}
                   {exchangeOrderId===order.orderId&&<WatchExchangeForm brand={brand} order={order}
                     onCancel={()=>setExchangeOrderId(null)}
                     onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>}
