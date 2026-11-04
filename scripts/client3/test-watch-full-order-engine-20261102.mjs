@@ -28,6 +28,7 @@ import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {listClient3WatchReturnHistory,cancelClient3WatchReturn} from '../../worker/domains/client3-watch-return-history.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
 const sqlite=new DatabaseSync(':memory:')
@@ -414,10 +415,30 @@ const foreignReturn=await parse(createClient3WatchReturn(db,manager,2,firstPurch
 }))
 assert.equal(foreignReturn.status,404)
 const returnedItem=sqlite.prepare('SELECT ri.id,ri.return_id FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=?').get(firstPurchase.orderId)
+const returnHistory=await parse(listClient3WatchReturnHistory(db,manager,1,firstPurchase.orderId))
+assert.equal(returnHistory.status,200,JSON.stringify(returnHistory))
+assert.equal(returnHistory.rows.length,1,'Main return history must expose one registered operation')
+assert.equal(JSON.parse(returnHistory.rows[0].items)[0].quantity,1,
+  'Return history must preserve the exact watch line quantity')
+assert.equal(JSON.parse(returnHistory.rows[0].items)[0].physicalReceivedAt,null,
+  'A monetary refund does not prove the watch has reached the warehouse')
+const otherBrandHistory=await parse(listClient3WatchReturnHistory(db,manager,2,firstPurchase.orderId))
+assert.equal(otherBrandHistory.status,404,'Other watch brand cannot read the return history')
+const otherBrandCancel=await parse(cancelClient3WatchReturn(db,manager,2,firstPurchase.orderId,returnedItem.return_id,{
+ requestId:'watch-history-foreign-cancel-20261104',reason:'Случайное действие в чужом бренде',
+}))
+assert.equal(otherBrandCancel.status,404,'Cannot cancel a different watch brands return')
+const missingReasonCancel=await parse(cancelClient3WatchReturn(db,manager,1,firstPurchase.orderId,returnedItem.return_id,{
+ requestId:'watch-history-empty-cancel-20261104',reason:'нет',
+}))
+assert.equal(missingReasonCancel.status,400,'Cancellation requires a meaningful reason')
 const intake={requestId:'watch-real-intake-000001',returnId:returnedItem.return_id,
  returnItemId:returnedItem.id,destination:'warehouse'}
 const intakeSaved=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
 assert.equal(intakeSaved.status,200,JSON.stringify(intakeSaved))
+const receivedHistory=await parse(listClient3WatchReturnHistory(db,manager,1,firstPurchase.orderId))
+assert(JSON.parse(receivedHistory.rows[0].items)[0].physicalReceivedAt,
+  'Physical receipt becomes visible in the order return history')
 assert.equal(stock('warehouse').quantity,physicalBeforeReturn+1)
 const intakeReplay=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
 assert.equal(intakeReplay.ok,true)
