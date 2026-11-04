@@ -1,5 +1,7 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
+import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,
+  WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL,WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
 const validDate=(raw:string|null):string|null=>{
@@ -44,9 +46,9 @@ export async function listClient3WatchOrders(
       SELECT 1 FROM order_items pending
       WHERE pending.order_id=o.id AND pending.quantity>0
         AND COALESCE(pending.stock_writeoff_status,'')<>'fulfilled'
-        AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di
-          WHERE di.order_item_id=pending.id
-            AND di.quantity>COALESCE(di.cancelled_quantity,0))
+        AND COALESCE((SELECT SUM(MAX(0,di.quantity-COALESCE(di.cancelled_quantity,0)))
+          FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+          WHERE di.order_item_id=pending.id AND d.order_id=pending.order_id),0)<pending.quantity
     )`
     const issuedOperationally=`(${noUnissuedItems} AND
       (o.shipping_status='sent' OR EXISTS (
@@ -98,18 +100,16 @@ export async function listClient3WatchOrders(
           'id',oi.id,'watchVariantId',wi2.watch_variant_id,
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,
-          'returnableQuantity',MAX(0,oi.quantity-COALESCE((
-             SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id=ri.return_id
-             WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'
-           ),0)),
-          'unitPrice',oi.unit_price,
+          'shippedQuantity',${WATCH_ITEM_SHIPPED_SQL},
+           'returnedQuantity',${WATCH_ITEM_RETURNED_SQL},
+           'pendingReturnQuantity',${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL},
+           'pendingExchangeReceiptQuantity',${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL},
+           'returnableQuantity',${WATCH_ITEM_RETURNABLE_SQL},
+           'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
-          'shipped',EXISTS(SELECT 1 FROM order_dispatch_items di2
-            JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
-            WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
-              AND di2.quantity>COALESCE(di2.cancelled_quantity,0)),
-          'engravingText',COALESCE(wi2.engraving_text,''),
+          'shipped',CASE WHEN ${WATCH_ITEM_SHIPPED_SQL}>0 THEN 1 ELSE 0 END,
+           'engravingText',COALESCE(wi2.engraving_text,''),
           'gender',COALESCE(wv2.gender,''),'movement',COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.movement,''),
           'braceletMaterial',COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.bracelet_material,''),
           'dialColor',COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id),wv2.dial_color,''),
