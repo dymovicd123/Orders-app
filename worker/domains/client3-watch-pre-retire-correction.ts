@@ -80,7 +80,7 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
    LEFT JOIN inventory_movements m ON m.id=di.movement_id
    LEFT JOIN inventory_stock s ON s.variant_id=oi.variant_id AND s.inventory_source=di.source_type
    WHERE di.id=? AND d.order_id=?`).bind(brandId,id,orderId).first<OldDispatch>()
- if(!line)stop('Не удалось подтвердить отправку, архивный SKU и журнал удаления этого бренда.')
+ if(!line)throw new CriticalOperationConflictError('Не удалось подтвердить отправку, архивный SKU и журнал удаления этого бренда.')
  if(line.order_status!=='active'||line.archived_at||
    line.quantity<1||line.quantity!==line.order_qty||line.cancelled_quantity!==0||
    !['warehouse','boutique'].includes(line.source_type)||
