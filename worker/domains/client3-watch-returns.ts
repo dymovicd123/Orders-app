@@ -204,10 +204,10 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
    SELECT 'return' AS operationType,ri.id AS returnItemId,ri.return_id AS returnId,r.order_id AS orderId,
      o.external_id AS externalOrderId,ri.quantity,r.return_date AS returnDate,
      wp.model_name AS modelName,wv.gender,
-     COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.movement) AS movement,
-     COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_material) AS braceletMaterial,
-     COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.dial_color) AS dialColor,
-     COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color) AS braceletColor
+     COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.movement) AS movement,
+     COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_material) AS braceletMaterial,
+     COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.dial_color) AS dialColor,
+     COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_color) AS braceletColor
    FROM return_items ri
    JOIN returns r ON r.id=ri.return_id
    JOIN orders o ON o.id=r.order_id
@@ -221,10 +221,10 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
    SELECT 'exchange' AS operationType,ei.id AS returnItemId,ei.exchange_id AS returnId,e.order_id AS orderId,
      o.external_id AS externalOrderId,ei.quantity,e.exchange_date AS returnDate,
      wp.model_name AS modelName,wv.gender,
-     COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.movement) AS movement,
-     COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_material) AS braceletMaterial,
-     COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.dial_color) AS dialColor,
-     COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color) AS braceletColor
+     COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.movement) AS movement,
+     COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_material) AS braceletMaterial,
+     COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.dial_color) AS dialColor,
+     COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_color) AS braceletColor
    FROM exchange_items ei
    JOIN exchanges e ON e.id=ei.exchange_id
    JOIN orders o ON o.id=e.order_id
