@@ -8,6 +8,7 @@ type RetiredLine={
  stock_writeoff_status:string;watch_variant_id:number;model_name:string;engraving_text:string;
  ready_text:string|null;brand_id:number;retirement_id:number|null;
  reservation_id:number|null;reservation_quantity:number|null;reservation_status:string|null;
+ reservation_reason:string|null;
  retirement_count:number;open_returns:number;open_old_exchanges:number;shipped:number;
  replacement_id:number|null;replacement_event_id:number|null;replacement_quantity:number|null
 }
@@ -75,6 +76,7 @@ export async function dispatchRetiredClient3WatchLines(
     wi.watch_variant_id,wi.engraving_text,wp.model_name,wp.brand_id,
     ready.engraving_text AS ready_text,rv.retirement_id,
     r.id AS reservation_id,r.quantity AS reservation_quantity,r.status AS reservation_status,
+    r.unresolved_reason AS reservation_reason,
     (SELECT COUNT(*) FROM catalog_retirement_variants snap
        JOIN catalog_retirement_operations op ON op.id=snap.retirement_id
        WHERE snap.variant_id=oi.variant_id AND op.status='completed'
@@ -121,7 +123,7 @@ export async function dispatchRetiredClient3WatchLines(
    if(line.brand_id!==brandId||line.stock_writeoff_status!=='catalog_retired'||
       !['warehouse','boutique'].includes(line.source_type)||line.retirement_count!==1||
       !line.retirement_id||line.reservation_status!=='released'||
-      line.reservation_quantity!==line.quantity||
+      line.reservation_quantity!==line.quantity||line.reservation_reason!=='catalog_retired'||
       Number(line.open_returns)!==0||Number(line.open_old_exchanges)!==0||
       Number(line.shipped)!==0)
      conflict('Состояние архивных часов, резерва или связанных операций изменилось. Проверьте заказ.')
@@ -162,7 +164,7 @@ export async function dispatchRetiredClient3WatchLines(
        JOIN catalog_retirement_operations op ON op.id=rv.retirement_id
          AND op.status='completed' AND op.entity_type='product' AND op.product_id=cp.id
        JOIN inventory_reservations ir ON ir.order_item_id=oi.id AND ir.id=?
-         AND ir.status='released' AND ir.quantity=?
+         AND ir.status='released' AND ir.unresolved_reason='catalog_retired' AND ir.quantity=?
        WHERE oi.id=? AND oi.order_id=? AND oi.variant_id=? AND oi.quantity=?
          AND oi.stock_writeoff_status='catalog_retired'
          AND o.order_status='active' AND COALESCE(o.archived_at,'')=''
@@ -276,7 +278,7 @@ export async function dispatchRetiredClient3WatchLines(
        WHERE oi.order_id=? AND oi.inventory_obligation_key=?
          AND oi.quantity=? AND oi.line_total=oi.unit_price*oi.quantity
          AND oi.stock_writeoff_status='catalog_retired'
-         AND wi.watch_variant_id=? AND ir.status='released' AND ir.quantity=?
+         AND wi.watch_variant_id=? AND ir.status='released' AND ir.unresolved_reason='catalog_retired' AND ir.quantity=?
      ))
    `).bind(stamp,requestId,orderId,picked.line.id,picked.quantity,picked.quantity,
      remaining,orderId,splitKey,remaining,picked.line.watch_variant_id,remaining))
