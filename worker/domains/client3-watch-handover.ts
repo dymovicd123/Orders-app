@@ -51,8 +51,8 @@ export async function readClient3WatchHandover(
 export async function clarifyClient3WatchHandover(
   db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:Clarification,
 ){
-  if(!actor?.id||actor.employeeRole==='Логист'&&actor.role!=='admin')
-    return fail('Уточнять выдачу вправе менеджер или администратор.',403)
+  if(!actor?.id||actor.employeeRole==='Завсклад'&&actor.role!=='admin')
+    return fail('Уточнять фактическую выдачу вправе сотрудник, отвечающий за заказ или отправку.',403)
   const action=input.action
   if(action!=='issued_before_checkpoint'&&action!=='still_here')
     return fail('Укажите, выдали ли часы до ревизии или они оставались на месте.',400)
