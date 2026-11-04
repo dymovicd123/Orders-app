@@ -190,7 +190,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
    <p>Выберите старые часы, затем укажите новые. Доступно несколько позиций и способов доплаты или возврата. Новые часы сначала поступят в логистику. Физическая приёмка старых часов требуется только если они уже были у клиента.</p>
    {Number(order.commercialReturnedValue||0)>0&&<p>
      Ранее возвращённые часы уменьшают коммерческий итог на {amount(order.commercialReturnedValue)}.
-     Эта сумма учитывается в расчёте обмена, но не является новой оплатой.</p>
+     Эта сумма учитывается в расчёте обмена, но не является новой оплатой.</p>}
    <div className="watch-exchange-lines">
      <strong>Какие часы меняет клиент</strong>
      {old.map(x=><div key={x.id} className="watch-exchange-old">
