@@ -129,15 +129,31 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
        <div><small>Доступно к возврату</small><strong>{money(maxRefund)}</strong></div>
      </div>
    </header>
-   <label>Вид возврата
-     <select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
-       {maxRefund>0&&<option value="money_only">Только деньги</option>}
-       {!!returnable.length&&<option value="items_only">Только товар</option>}
-       {!!returnable.length&&maxRefund>0&&<option value="both">Товар и деньги</option>}
-     </select>
-   </label>
-   {isItems&&<div className="watch-return-items">
-     <div className="watch-return-items-head">
+   <div className="mini-item order-payment-card watch-return-main-parameters">
+     <div className="mini-item-head"><strong>Параметры возврата</strong></div>
+     <div className="subgrid order-payment-grid">
+       <label><span>Дата возврата</span>
+         <input type="date" required value={returnDate}
+           onChange={e=>{setReturnDate(e.target.value);setConfirmed(false)}}/></label>
+       <label><span>Сумма возврата, ₸</span>
+         <input type="number" min={0} max={maxRefund} step={1}
+           value={amount} onChange={e=>{
+             const value=e.target.value
+             setAmount(value)
+             setRefunds(old=>old.length===1?[{...old[0],amount:value}]:old)
+             setConfirmed(false)
+           }}/>
+         <small>Введите фактическую сумму самостоятельно. Ноль означает возврат только товаров.</small>
+       </label>
+       <div className="watch-return-main-kind">
+         <small>Вид операции по выбранным данным</small>
+         <strong>{isItems?(isMoney?'Товары и деньги':'Только товары'):
+           isMoney?'Только деньги':'Выберите товары или укажите деньги'}</strong>
+       </div>
+     </div>
+   </div>
+   <div className="mini-item order-payment-card watch-return-items">
+   <div className="watch-return-items-head">
        <div><strong>Возвращаемые часы · {chosenQty} шт.</strong>
          <p>Можно вернуть один товар, несколько позиций или только часть количества.</p></div>
        <div className="watch-return-selection-actions">
@@ -151,58 +167,104 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
        </div>
      </div>
      <div className="return-smart-grid">
-     {returnable.map(line=><div key={line.id} className={'watch-return-item-row return-smart-card'+
-       (Number(selected[line.id]||0)>0?' is-selected':'')}>
-       <label className="watch-return-select return-smart-pick">
-         <input type="checkbox" checked={Number(selected[line.id]||0)>0}
-           onChange={e=>{
-             setSelected(prev=>({...prev,[line.id]:e.target.checked?Number(line.returnableQuantity):0}))
-             setConfirmed(false)
-           }}/>
-         <span className="return-smart-main"><strong>{line.productName}</strong>
-           <small>{line.gender==='male'?'Мужские':'Женские'} · {watchReferenceLabel('movements',line.movement)} ·
-             {watchReferenceLabel('bracelets',line.braceletMaterial)} · {watchReferenceLabel('dials',line.dialColor)}
-             {line.braceletColor?' · '+watchReferenceLabel('leatherColors',line.braceletColor):''}</small>
-           {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-           <small>Доступно к возврату: {line.returnableQuantity} шт.</small>
-         </span>
-       </label>
-       <div className="watch-return-line-controls return-smart-controls">
-         <label className="watch-return-quantity return-smart-quantity">
-           <span>Вернуть, шт.</span>
-           <input type="number" min={0} max={line.returnableQuantity} step={1}
-             value={selected[line.id]??0} aria-label={'Количество возврата: '+line.productName}
-             onChange={e=>{
-               setSelected(prev=>({...prev,[line.id]:e.target.value===''?0:Number(e.target.value)}))
-               setConfirmed(false)
-             }}/>
-         </label>
-         {Number(selected[line.id]||0)>0&&<label className="watch-return-physical-choice return-smart-physical">
-           <span>Где эти часы сейчас?</span>
-           <select value={physicalByItem[line.id]||'pending'}
-             onChange={e=>{
-               setPhysicalByItem(prev=>({...prev,[line.id]:e.target.value as PhysicalState}))
+       {lines.map(line=>{
+         const isIssued=issued(line)
+         const available=isIssued&&Number(line.returnableQuantity)>0
+         const selectedLine=available&&Number(selected[line.id]||0)>0
+         const returned=Math.max(0,Number(line.returnedQuantity||0))
+         const arrived=(physicalByItem[line.id]||'pending')!=='pending'
+         return <div key={line.id} className={'watch-return-item-row return-smart-card'+
+           (selectedLine?' is-selected':'')+(!available?' is-unissued':'')}>
+           <button type="button" className="watch-return-select return-smart-pick"
+             disabled={!available||busy} onClick={()=>{
+               setSelected(previous=>({...previous,
+                 [line.id]:selectedLine?0:Number(line.returnableQuantity)}))
                setConfirmed(false)
              }}>
-             <option value="pending">У клиента / в пути — ещё не получили</option>
-             <option value="warehouse">Уже получили в офис</option>
-             <option value="boutique">Уже получили на витрину</option>
-             <option value="no_stock">Уже получили, без добавления в остаток</option>
-           </select>
-         </label>}
-       </div>
-     </div>)}
+             <span className="return-smart-check">{selectedLine?'✓':''}</span>
+             <span className="return-smart-main">
+               <strong>{line.productName}</strong>
+               <small className="return-smart-characteristics">
+                 {[
+                   line.gender==='male'?'Мужские':line.gender==='female'?'Женские':'',
+                   watchReferenceLabel('movements',line.movement),
+                   watchReferenceLabel('bracelets',line.braceletMaterial),
+                   watchReferenceLabel('dials',line.dialColor),
+                   line.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',line.braceletColor):'',
+                 ].filter(Boolean).join(' · ')}
+               </small>
+               {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
+               <small>{line.source==='boutique'?'Витрина':'Офис'} ·
+                 доступно к возврату {available?line.returnableQuantity:0} шт.</small>
+               {returned>0&&<small className="watch-return-prior">
+                 Ранее возвращено: {returned} шт.</small>}
+             </span>
+             <b>{!isIssued?'Не выдавали':!available?'Уже возвращён':
+               selectedLine?'Возвращаем':'Выбрать'}</b>
+           </button>
+           {!available&&<div className="return-smart-unissued">
+             <strong>{!isIssued?'Эти часы остаются у вас':'Возврат этой позиции уже оформлен'}</strong>
+             <span>{!isIssued
+               ?'Физически невыданные часы нельзя вернуть второй раз. Для отмены продажи измените состав заказа.'
+               :'Все доступные к возврату штуки этой позиции уже учтены. История сохранена.'}</span>
+           </div>}
+           {selectedLine&&<div className="watch-return-line-controls return-smart-controls">
+             {Number(line.returnableQuantity)>1
+               ?<div className="watch-return-quantity return-smart-quantity">
+                 <span>Сколько возвращается</span>
+                 <div className="watch-return-quantity-controls">
+                   <button type="button" disabled={busy||Number(selected[line.id])<=1}
+                     onClick={()=>{setSelected(v=>({...v,[line.id]:Math.max(1,Number(v[line.id])-1)}));setConfirmed(false)}}>−</button>
+                   <input type="number" min={1} max={line.returnableQuantity} step={1}
+                     value={selected[line.id]||1} aria-label={'Количество возврата: '+line.productName}
+                     onChange={e=>{
+                       const quantity=Math.min(line.returnableQuantity,Math.max(1,Number(e.target.value)||1))
+                       setSelected(v=>({...v,[line.id]:quantity}));setConfirmed(false)
+                     }}/>
+                   <button type="button" disabled={busy||Number(selected[line.id])>=line.returnableQuantity}
+                     onClick={()=>{setSelected(v=>({...v,[line.id]:Math.min(line.returnableQuantity,Number(v[line.id])+1)}));setConfirmed(false)}}>+</button>
+                   <button type="button" className="return-smart-all"
+                     onClick={()=>{setSelected(v=>({...v,[line.id]:line.returnableQuantity}));setConfirmed(false)}}>
+                     Все {line.returnableQuantity}
+                   </button>
+                 </div>
+               </div>
+               :<div className="return-smart-one-unit">Возвращается 1 шт.</div>}
+             <div className="watch-return-physical-choice return-smart-physical">
+               <span>Где часы сейчас?</span>
+               <div className="return-smart-choice-row">
+                 <button type="button" className={!arrived?'is-active':''}
+                   onClick={()=>{setPhysicalByItem(v=>({...v,[line.id]:'pending'}));setConfirmed(false)}}>
+                   Ещё едет обратно
+                 </button>
+                 <button type="button" className={arrived?'is-active':''}
+                   onClick={()=>{setPhysicalByItem(v=>({...v,[line.id]:
+                     line.source==='boutique'?'boutique':'warehouse'}));setConfirmed(false)}}>
+                   Уже вернули
+                 </button>
+               </div>
+               {arrived?<label><span>Куда принять</span>
+                 <select value={physicalByItem[line.id]||'warehouse'}
+                   onChange={e=>{
+                     setPhysicalByItem(v=>({...v,[line.id]:e.target.value as PhysicalState}))
+                     setConfirmed(false)
+                   }}>
+                   <option value="warehouse">Офис</option>
+                   <option value="boutique">Витрина</option>
+                   <option value="no_stock">Не добавлять в остаток</option>
+                 </select>
+               </label>:<small>После оформления часы появятся в очереди физической приёмки.</small>}
+             </div>
+           </div>}
+         </div>
+       })}
      </div>
-   </div>}
+     {lines.some(line=>!issued(line))&&<p className="watch-return-physical-help">
+       Есть невыданные товары. Они показаны в списке, но их физический возврат невозможен:
+       клиент их не получал. При отмене невыданной позиции измените состав заказа.
+     </p>}
+   </div>
    {isMoney&&<>
-     <label>Всего вернуть денег, ₸ (не более {money(maxRefund)})
-       <input type="number" min={1} max={maxRefund} step={1} value={amount} required
-         onChange={e=>{
-           const v=e.target.value
-           setAmount(v);setRefunds(p=>p.length===1?[{...p[0],amount:v}]:p)
-           setConfirmed(false)
-         }}/>
-     </label>
      <div className="watch-return-split-payments">
        <strong>Как возвращаете деньги</strong>
        {refunds.map((part,index)=><div className="watch-return-pay-part" key={index}>
