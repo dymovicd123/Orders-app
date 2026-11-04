@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {listExchanges,cancelExchange,cancelExchangeSetV2,isExchangeSetV2} from './returns-exchanges.ts'
+import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} from './client3-watch-item-projection.ts'
 
 const error=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 const validKey=(s:unknown)=>typeof s==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(s)
@@ -34,7 +35,12 @@ export async function listClient3WatchExchangeHistory(
      COALESCE(a.bracelet_material,wv.bracelet_material,'') AS braceletMaterial,
      COALESCE(a.dial_color,wv.dial_color,'') AS dialColor,
      COALESCE(a.bracelet_color,wv.bracelet_color,'') AS braceletColor,
-     COALESCE(wi.engraving_text,'') AS engravingText
+     COALESCE(wi.engraving_text,'') AS engravingText,
+     COALESCE(oi.stock_writeoff_status,'') AS stockWriteoffStatus,
+     oi.quantity AS activeQuantity,
+     ${WATCH_ITEM_SHIPPED_SQL} AS shippedQuantity,
+     ${WATCH_ITEM_RETURNED_SQL} AS returnedQuantity,
+     ${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} AS pendingReturnQuantity
    FROM order_items oi
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id
@@ -54,6 +60,11 @@ export async function listClient3WatchExchangeHistory(
      braceletColor:item?String(item.braceletColor||''):'',
      engravingText:item?String(item.engravingText||''):'',
      watchVariantId:item?Number(item.watchVariantId):null,
+     activeQuantity:item?Number(item.activeQuantity):0,
+     stockWriteoffStatus:item?String(item.stockWriteoffStatus||''):'',
+     shippedQuantity:item?Number(item.shippedQuantity):0,
+     returnedQuantity:item?Number(item.returnedQuantity):0,
+     pendingReturnQuantity:item?Number(item.pendingReturnQuantity):0,
    }
  }
  return json({...history,brandId,orderId,
