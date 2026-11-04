@@ -6,6 +6,8 @@ import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provi
 import {receiveClient3WatchArrival} from '../../worker/domains/client3-watch-inventory.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-demand-report.ts'
+import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
+import {markWatchLogisticsReady} from '../../worker/domains/client3-watches.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
 const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
@@ -19,6 +21,8 @@ assert(catalogUI.includes('<WatchCatalogRetiredHistory brand={brand}/>'),
 const deleteUI=fs.readFileSync('src/features/client3/WatchCatalogDeleteAction.tsx','utf8')
 assert(deleteUI.includes('inventoryWillBeRemoved')&&
  deleteUI.includes('reservationsWillBeReleased')&&
+ deleteUI.includes('preview.openOrders')&&
+ deleteUI.includes('обычная отправка архивного товара сейчас заблокирована')&&
  deleteUI.includes('historicalOrderItems'),
  'Deletion preview must disclose concrete Main stock, reservation and historical effects')
 const deleteDomain=fs.readFileSync('worker/domains/client3-watch-catalog-delete.ts','utf8')
@@ -114,7 +118,7 @@ const beforeRetire=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements
 const historyOrder=await parse(createClient3WatchOrder(db,manager,1,{
  brand:'TAUWACH',source:'office',watchVariantId:productVariant.id,
  catalogVariantId:productVariant.canonical,quantity:1,unitPrice:9000,
- receivedAmount:0,payments:[],engravingText:'',
+ receivedAmount:0,payments:[],engravingText:'ГРАВИРОВКА QA',
  requestId:'watch-retire-order-history-20261104-0001',
  recipientName:'Тест истории товара',recipientPhone:'+77015550101',
  address:'Улица истории, 1',postalCode:'050001',city:'Алматы',
@@ -147,6 +151,7 @@ assert.equal(productPreview.status,200,JSON.stringify(productPreview))
 assert.equal(productPreview.canDelete,true,JSON.stringify(productPreview))
 assert.equal(productPreview.physicalQuantity,3)
 assert(productPreview.activeReservations>=1)
+assert(productPreview.openOrders>=1, 'Deletion preview must count outstanding customer orders')
 assert.equal(productPreview.inventoryWillBeRemoved,true)
 const productApplied=await parse(deleteClient3WatchCatalog(db,admin,1,{
  kind:'product',watchProductId:productId,expectedCount:productPreview.count,
@@ -164,6 +169,27 @@ assert(sqlite.prepare('SELECT id FROM orders WHERE id=?').get(historyOrder.order
 assert(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=? AND movement_type='delete'").get(productVariant.canonical).n>=1)
 assert(sqlite.prepare("SELECT COUNT(*) AS n FROM catalog_retirement_operations WHERE entity_type='product' AND status='completed'").get().n>=1)
 assert(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n>beforeRetire)
+// The order survives archival but its outgoing Main shipment cannot be applied:
+// retirement releases the reservation, writes off tracked inventory, and
+// disables the canonical variant. Engraving readiness is independent of stock.
+// This is a known incomplete lifecycle, not evidence of successful dispatch.
+const readyAfterArchive=await parse(markWatchLogisticsReady(db,admin,
+ historyOrder.orderId,orderLine.id,'watch-ready-retired-20261104-0001'))
+assert.equal(readyAfterArchive.status,200,JSON.stringify(readyAfterArchive))
+assert.equal(readyAfterArchive.stockUnchanged,true)
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+ .get(orderLine.id).stock_writeoff_status,'catalog_retired')
+const noDoubleStock=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+const archivedSend=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-send-retired-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(archivedSend.status,409,
+ 'Current Main dispatcher must fail closed for retired watches; never silently issue stock')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatch_items').get().n,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,noDoubleStock)
+assert.equal(sqlite.prepare('SELECT SUM(quantity) AS q FROM inventory_stock WHERE variant_id=?')
+ .get(productVariant.canonical).q,0)
 const archived=await archive()
 assert(archived.rows.some(x=>x.watchProductId===productId&&x.productActive===0))
 assert(archived.rows.some(x=>x.watchVariantId===item.id&&x.variantActive===0))
