@@ -36,3 +36,22 @@
 .watch-logistics .watch-main-logistics-detail-head{grid-template-columns:1fr}
 .watch-logistics .watch-logistics-actions>.client3-logistics-dispatch-button{width:100%}
 }
+
+/* Each engraved watch is independently confirmable; bulk ready is optional. */
+.watch-logistics .watch-logistics-line-ready{display:grid;align-content:start;justify-items:start;gap:5px;min-width:0}
+.watch-logistics .watch-logistics-line-ready>strong{font-size:13px;overflow-wrap:anywhere}
+.watch-logistics .watch-logistics-line-state{display:inline-flex;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:750;line-height:1.4}
+.watch-logistics .watch-logistics-line-state.is-ready{background:#dcfce7;color:#166534}
+.watch-logistics .watch-logistics-line-state.is-pending{background:#fef3c7;color:#92400e}
+.watch-logistics .watch-logistics-line-ready>.watch-logistics-ready-one{
+  display:inline-flex!important;align-items:center;justify-content:center;
+  background:#2563eb!important;color:#fff!important;border:1px solid #2563eb!important;
+  font-size:12px!important;font-weight:750!important;line-height:1.4!important;
+  min-height:36px!important;border-radius:8px!important;padding:8px 12px!important;
+  max-width:100%;white-space:normal!important
+}
+.watch-logistics .watch-logistics-line-ready>.watch-logistics-ready-one:hover:not(:disabled){background:#1d4ed8!important}
+.watch-logistics .watch-logistics-line-ready>.watch-logistics-ready-one:disabled{
+  background:#94a3b8!important;color:#fff!important;border-color:#94a3b8!important
+}
+.watch-logistics .watch-logistics-auto-ready{font-size:11px;color:#64748b}
