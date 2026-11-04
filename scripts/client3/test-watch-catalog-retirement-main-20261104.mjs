@@ -571,6 +571,22 @@ const afterReturnDeleted=await parse(deleteClient3WatchCatalog(db,admin,1,{
 }))
 assert.equal(afterReturnDeleted.status,200,JSON.stringify(afterReturnDeleted))
 const movementCountAfterReturnRetired=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+sqlite.prepare('UPDATE inventory_stock SET quantity=1 WHERE variant_id=?')
+ .run(returnedBeforeRetireVariant.canonical)
+const blockedOnNonzeroArchive=await parse(cancelClient3WatchReturn(db,manager,1,
+ returnedOldOrder.orderId,returnBeforeDelete.id,{
+ requestId:'watch-return-cancel-after-delete-20261104-0001',
+ reason:'Отмена денежного возврата с непроверенным архивным остатком'
+}))
+assert.equal(blockedOnNonzeroArchive.status,409)
+assert.equal(blockedOnNonzeroArchive.code,'WATCH_RETURN_CANCEL_RETIRED_STOCK')
+assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
+ .get(returnedOldOrder.orderId).return_amount,11000,
+ 'Do not refund-reverse money when archived inventory is inconsistent')
+assert.notEqual(sqlite.prepare('SELECT status FROM returns WHERE id=?')
+ .get(returnBeforeDelete.id).status,'cancelled')
+sqlite.prepare('UPDATE inventory_stock SET quantity=0 WHERE variant_id=?')
+ .run(returnedBeforeRetireVariant.canonical)
 const cancelPhysicalOldReturn=await parse(cancelClient3WatchReturn(db,manager,1,
  returnedOldOrder.orderId,returnBeforeDelete.id,{
  requestId:'watch-return-cancel-after-delete-20261104-0001',
