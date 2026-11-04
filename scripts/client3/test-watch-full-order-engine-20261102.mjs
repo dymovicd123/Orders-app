@@ -1660,6 +1660,55 @@ assert.equal(sqlite.prepare('SELECT received_amount FROM orders WHERE id=?')
 const afterSetHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,stage4Pay.created.orderId))
 assert.equal(afterSetHistory.exchanges[0].status,'cancelled',
  'Cancelled Main exchange remains visible in watch order history')
+// Reversing a split refund must restore both the sale total and the original
+// received cash. Main emits compensating financial events; do not add a manual
+// order-level adjustment in Client3.
+const refundBeforeCancel=sqlite.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId)
+assert.equal(refundBeforeCancel.total_amount,30000)
+assert.equal(refundBeforeCancel.return_amount,40000)
+const refundCancelPayload={requestId:'watch-set-refund-cancel-20261104-01',
+ reason:'Контрольная отмена обмена с двумя способами возврата денег'}
+const refundCancelled=await parse(cancelClient3WatchExchange(db,manager,1,stage4Refund.created.orderId,
+ refundSet.exchangeId,refundCancelPayload))
+assert.equal(refundCancelled.status,200,JSON.stringify(refundCancelled))
+assert.deepEqual({...sqlite.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId)},{
+ total_amount:70000,received_amount:70000,return_amount:0,debt_amount:0,
+},'Native Main cancellation restores full original value and both refund methods')
+const refundCancelRepeat=await parse(cancelClient3WatchExchange(db,manager,1,stage4Refund.created.orderId,
+ refundSet.exchangeId,refundCancelPayload))
+assert.equal(refundCancelRepeat.ok,true,'A repeated refund-exchange cancellation cannot refund twice')
+assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId).return_amount,0)
+
+// One replacement can depart while the other still waits in logistics, even
+// though both old units have not yet physically returned from the customer.
+fixtureEngravingReady(twoOld.orderId)
+const firstReplacementSent=await parse(dispatchClient3WatchOrder(db,logisticActor,1,twoOld.orderId,{
+ requestId:'watch-swap-followup-send-20261104-01',
+ items:[{orderItemId:activeSwap[0].id,quantity:1}],
+}))
+assert.equal(firstReplacementSent.status,200,JSON.stringify(firstReplacementSent))
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(twoOld.orderId).shipping_status,'not_sent',
+ 'An exchange with one remaining replacement stays partially shipped')
+const pendingOldExchange=sqlite.prepare(`SELECT COUNT(*) AS n FROM exchange_items
+ WHERE exchange_id=? AND role='old' AND physical_tracking=1 AND physical_received_at IS NULL`)
+ .get(twoSwap.exchangeId)
+assert.equal(pendingOldExchange.n,2,'New shipping cannot erase old physical return obligations')
+const exchangeAfterShipment=await parse(listClient3WatchExchangeHistory(db,manager,1,twoOld.orderId))
+assert.equal(exchangeAfterShipment.exchanges[0].oldItems.length,2)
+assert.equal(exchangeAfterShipment.exchanges[0].newItems.length,2)
+assert.equal(exchangeAfterShipment.exchanges[0].newItems.filter(x=>x.shippedQuantity>0).length,1)
+const cancelDispatchedReplacement=await parse(cancelClient3WatchExchange(db,manager,1,twoOld.orderId,
+ twoSwap.exchangeId,{requestId:'watch-swap-cancel-after-send-20261104-01',
+ reason:'Попытка отменить обмен после фактической выдачи одной замены'}))
+assert.equal(cancelDispatchedReplacement.status,409,
+ 'Main must refuse destructive exchange cancellation after a replacement has been shipped')
+assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
+ .get(twoSwap.exchangeId).status,'completed',
+ 'Failed cancel must not erase a real fulfilled replacement')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
