@@ -12,9 +12,10 @@ assert(!/\/api\/orders\/|\/api\/workshop\/|\/api\/finance\/|\/api\/cash/.test(so
   'Logistics may not post to shipping, cash or legacy workshop endpoints')
 assert(source.includes("crypto.randomUUID()"), 'Ready must have an idempotency key')
 assert(source.includes("credentials: 'include'"), 'Only authenticated API calls allowed')
-assert(source.includes('onOpenReturns(order.brand)'), 'Logistics links physical intake using the exact order brand')
-assert(source.includes('Перейти к приёмке возвратов'),
-  'Physical intake is an available action from return-bearing logistics details')
+const tasksSource=fs.readFileSync('src/features/client3/WatchLogisticsTaskTable.tsx','utf8')
+assert(tasksSource.includes('onOpenReturns(order.brand)'), 'Each watch row links physical intake for its exact brand')
+assert(tasksSource.includes('Приёмка возврата'),
+  'Physical intake remains actionable on its specific watch item')
 const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
 assert(app.includes('onOpenReturns={canSales?selected=>{') &&
   app.includes("setBrand(selected);setLastOrderBrand(selected);setReportOrderFocus(null);goTo('returns')"),
@@ -64,12 +65,17 @@ try {
   assert(view.includes('Логистика') && view.includes('Гравировка'))
   assert(view.includes('Ожидает') && view.includes('Готово'))
   assert(!view.includes('Зарплата цеха'))
-assert(source.includes('Отметить готовым эти часы') &&
-  source.includes('Подтверждайте готовность каждой позиции') &&
-  source.includes('complete(order.orderId,item.orderItemId!)'),
-  'Each engraved watch must have its own readiness confirmation, not only an all-ready action')
-assert(source.includes("selectedIds.includes(item.orderItemId)"),
-  'Only selected ready watches are shipped')
+assert(tasksSource.includes('Готово в логистике')&&tasksSource.includes('onReady(order.orderId,id)'),
+  'Each engraved watch must have one direct prep action, without a bulk confirmation')
+assert(tasksSource.includes('onSend(order,item,requested)') &&
+  source.includes('reviewSendHandover(order,[{...item,quantity}])'),
+  'Every individual Send click must pass Main revision preflight with exact quantity')
+assert(source.includes('StockResolutionConfirmModal') &&
+  source.includes('physicalQuantity')&&source.includes('tracked:'),
+  'Main stock resolution must display actual tracked quantity when reservation is incomplete')
+assert(source.includes('WatchOrderHandoverPanel')&&
+  !source.includes('confirmPhysicalStock:true,'),
+  'No generic physical confirmation that bypasses Main revision check')
   assert(!view.includes('Готово · гравировка'), 'No action without loaded order')
   console.log('CLIENT3_WATCH_LOGISTICS_SSR_PASS: grouping, Almaty exact deadline, brand/API isolation, no shipping or money mutation')
 } finally {
