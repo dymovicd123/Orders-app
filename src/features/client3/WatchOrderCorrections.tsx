@@ -63,6 +63,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  const update=(field:keyof Metadata,value:string)=>setNext(v=>({...v,[field]:value}))
  const submit=async(e:FormEvent<HTMLFormElement>)=>{
    e.preventDefault();if(busy)return
+   if(mode==='returns'||mode==='exchanges'||mode==='admin'||mode==='composition')return
    const body:Record<string,unknown>={brand}
    if(mode==='metadata'){
      if(JSON.stringify(expected)===JSON.stringify(next)){
