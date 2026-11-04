@@ -13,12 +13,12 @@ type Order={orderId:number;externalId:string;totalAmount:number;receivedAmount:n
  returnAmount:number;commercialReturnedValue?:number;itemLines:string}
 type NewLine={key:string;modelName:string;gender:WatchGender;movement:string;
  braceletMaterial:string;dialColor:string;braceletColor:string;source:WatchSource;
- quantity:string;unitPrice:string;engravingText:string;shipmentState:''|'pending'|'sent';issuePossessionConfirmed:boolean}
+ quantity:string;unitPrice:string;engravingText:string;shipmentState:'pending';issuePossessionConfirmed:false}
 type Payment={key:string;method:string;amount:string}
 type OldChoice={quantity:string;physicalState:''|'not_issued'|'pending'|'warehouse'|'boutique'|'no_stock'}
 const blank=():NewLine=>({key:crypto.randomUUID(),modelName:'',gender:'male',
  movement:'quartz',braceletMaterial:'steel',dialColor:'black',braceletColor:'',
- source:'office',quantity:'1',unitPrice:'',engravingText:'',shipmentState:'',issuePossessionConfirmed:false})
+ source:'office',quantity:'1',unitPrice:'',engravingText:'',shipmentState:'pending',issuePossessionConfirmed:false})
 const opt=(a:readonly {value:string;label:string}[],v:string)=>
  a.find(x=>x.value===v)?.label||v
 const codeFor=(a:readonly {value:string;label:string}[],v:string)=>
@@ -125,16 +125,15 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
        braceletColor:x.braceletColor.trim()},
      quantity:Number(x.quantity),unitPrice:Number(x.unitPrice),
      source:x.source,engravingText:x.engravingText.trim(),
-     shipmentState:x.shipmentState,issuePossessionConfirmed:x.issuePossessionConfirmed,
+     shipmentState:'pending' as const,issuePossessionConfirmed:false as const,
    }))
    if(next.some(x=>!x.manual.modelName||!x.manual.movement||
       !x.manual.braceletMaterial||!x.manual.dialColor||
       (x.manual.braceletMaterial==='leather'&&!x.manual.braceletColor)||
       !Number.isSafeInteger(x.quantity)||x.quantity<1||x.quantity>1000||
       !Number.isSafeInteger(x.unitPrice)||x.unitPrice<0||
-      !['pending','sent'].includes(x.shipmentState)||
-      (x.shipmentState==='sent'&&!x.issuePossessionConfirmed))){
-     setError('Заполните характеристики, количество, цену и факт отправки новых часов.');return
+      x.shipmentState!=='pending'))){
+     setError('Заполните характеристики, количество и цену новых часов. Отправка выполняется только в логистике.');return
    }
    const pay=payments.map(x=>({method:x.method,amount:Number(x.amount)}))
    const back=refunds.map(x=>({method:x.method,amount:Number(x.amount)}))
@@ -313,27 +312,10 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
          <label className="watch-exchange-wide">Гравировка<textarea rows={2} maxLength={500}
            value={x.engravingText} onChange={e=>update(x.key,{engravingText:e.target.value})}/></label>
        </div></div>
-       <div className={'exchange-shipment-choice'+(!x.shipmentState?' needs-choice':'')}>
-         <strong>Новые часы уже отправили клиенту?</strong>
-         <div className="exchange-choice-row" role="group" aria-label="Фактическая отправка замены">
-           <button type="button" aria-pressed={x.shipmentState==='sent'}
-             className={x.shipmentState==='sent'?'is-active':''}
-             onClick={()=>update(x.key,{shipmentState:'sent',issuePossessionConfirmed:false})}>Уже отправили</button>
-           <button type="button" aria-pressed={x.shipmentState==='pending'}
-             className={x.shipmentState==='pending'?'is-active':''}
-             onClick={()=>update(x.key,{shipmentState:'pending',issuePossessionConfirmed:false})}>Ещё не отправили</button>
-         </div>
-         {x.shipmentState==='pending'&&<div className="exchange-shipment-warning" role="status">
-           <strong>Не забудьте отметить отправку!</strong>
-           <span>После передачи откройте «Отправить» в заказе и выберите готовые часы в логистике.</span>
-         </div>}
+       <div className="exchange-shipment-warning" role="status">
+         <strong>Замена ожидает отправки в логистике</strong>
+         <span>Обмен меняет состав, деньги и резервы. Подготовку и фактическую отправку каждой позиции оформляют только во вкладке «Логистика».</span>
        </div>
-         {x.shipmentState==='sent'&&<label className="watch-exchange-wide watch-exchange-physical-verified">
-           <input type="checkbox" checked={x.issuePossessionConfirmed}
-             onChange={e=>update(x.key,{issuePossessionConfirmed:e.target.checked})}/>
-           Подтверждаю фактическую передачу именно этих часов. Main зафиксирует физическую выдачу;
-           если по учёту не хватает остатка, он не станет отрицательным.
-         </label>}
        </>:<div className="exchange-new-hint">Сначала выберите модель — появятся характеристики и цена.</div>}
      </div>)}
      <button type="button" className="secondary" disabled={newLines.length>=20}
