@@ -174,6 +174,16 @@ export async function receiveClient3WatchReturn(
       AND COALESCE(r.status,'completed')<>'cancelled' LIMIT 1`,
  ).bind(returnItemId,returnId,orderId,brandId).first<{id:number}>()
  if(!match)return fail('WATCH_RECEIPT_NOT_FOUND','Часы не принадлежат возврату этого бренда.',404)
+ if(destination!=='no_stock'){
+   const retired=await db.prepare(`SELECT cv.is_active AS active
+     FROM order_items oi JOIN catalog_variants cv ON cv.id=oi.variant_id
+     WHERE oi.id=(SELECT CASE WHEN ?='exchange'
+       THEN (SELECT ei.order_item_id FROM exchange_items ei WHERE ei.id=? AND ei.exchange_id=?)
+       ELSE (SELECT ri.order_item_id FROM return_items ri WHERE ri.id=? AND ri.return_id=?) END)`)
+     .bind(operationType,returnItemId,returnId,returnItemId,returnId).first<{active:number}>()
+   if(retired?.active===0)return fail('WATCH_RETIRED_RECEIPT_STOCK_BLOCKED',
+     'Архивные часы нельзя зачислять в удалённый SKU. Выберите приём без добавления в остаток.',409)
+ }
  try {
    const result=await receiveReturnedItem(db,{
      requestId:input.requestId as string,operationType,
