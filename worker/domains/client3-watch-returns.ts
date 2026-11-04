@@ -10,9 +10,10 @@ type ReturnInput={
 const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
 const dateAlmaty=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 
-/** Main multi-line exact watch returns. The Main financial engine accepts
-  * paymentParts (not the client-facing refundParts). Never silently discard
-  * split refund amounts and payment methods. */
+/** Exact Main business return with Client3's existing split-refund adapter.
+  * The isolated watch branch currently expects refundParts, unlike today's
+  * Main paymentParts. Preserve the tested adapter until the common engine
+  * and cancellation/replay are ported as a single transaction-safe unit. */
 export async function createClient3WatchReturn(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:ReturnInput,
 ) {
@@ -110,7 +111,7 @@ export async function createClient3WatchReturn(
    const response=await createReturn(db,{
      requestId:input.requestId as string,orderId,returnDate,
      amount,paymentMethod:amount>0?selectedMethods[0]:undefined,
-     ...(refunds.length?{paymentParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
+     ...(refunds.length?{refundParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
      comment:reason,restockSource:'none',
      items:selected,
    })
