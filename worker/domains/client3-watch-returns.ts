@@ -10,10 +10,9 @@ type ReturnInput={
 const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
 const dateAlmaty=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 
-/** Exact Main business return with Client3's existing split-refund adapter.
-  * The isolated watch branch currently expects refundParts, unlike today's
-  * Main paymentParts. Preserve the tested adapter until the common engine
-  * and cancellation/replay are ported as a single transaction-safe unit. */
+/** Exact Main business return with Client3 watch brand and SKU validation.
+  * The canonical Main createReturn and cancelReturn functions are copied
+  * unchanged; Client3's external refundParts are mapped to paymentParts. */
 export async function createClient3WatchReturn(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:ReturnInput,
 ) {
@@ -40,7 +39,7 @@ export async function createClient3WatchReturn(
    (kind!=='items_only'&&amount<=0))
    return fail('WATCH_RETURN_QUANTITY_INVALID','Исправьте количество и сумму возврата.',400)
  const refunds=Array.isArray(input.refundParts)?input.refundParts as Array<{method?:unknown;amount?:unknown}>:[]
- if(refunds.length>3||refunds.some(p=>!p||typeof p.method!=='string'||
+ if(refunds.length>2||refunds.some(p=>!p||typeof p.method!=='string'||
     !p.method.trim()||!Number.isSafeInteger(p.amount)||Number(p.amount)<1)||
    (refunds.length>0&&refunds.reduce((t,p)=>t+Number(p.amount),0)!==amount))
    return fail('WATCH_RETURN_SPLIT_INVALID','Суммы всех способов возврата должны точно совпадать с общей суммой.',400)
@@ -111,7 +110,7 @@ export async function createClient3WatchReturn(
    const response=await createReturn(db,{
      requestId:input.requestId as string,orderId,returnDate,
      amount,paymentMethod:amount>0?selectedMethods[0]:undefined,
-     ...(refunds.length?{refundParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
+     ...(refunds.length?{paymentParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
      comment:reason,restockSource:'none',
      items:selected,
    })
