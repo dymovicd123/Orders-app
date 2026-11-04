@@ -50,10 +50,11 @@ const initialMonth=()=>{
   const date=new Date(Date.now()+5*60*60*1000).toISOString()
   return date.slice(0,7)
 }
-export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,onOpenWorkflow,isAdmin=false,workflow='orders'}:{
+export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,onOpenWorkflow,onOpenOrders,isAdmin=false,workflow='orders'}:{
   allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;
   initialFocusedOrder?:{orderId:number;externalId:string;orderDate:string};
   onOpenLogistics?:(brand:WatchBrand)=>void;
+  onOpenOrders?:()=>void;
   onOpenWorkflow?:(kind:'returns'|'exchange',order:{
     brand:WatchBrand;orderId:number;externalId:string;orderDate:string
   })=>void;
@@ -112,8 +113,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   return <section className="watch-orders">
     <header className="watch-orders-header">
       <div><h2>{workflow==='returns'?'Оформление возвратов':workflow==='exchange'?'Обмены часов':'Список заказов'}</h2>
-        <p>{workflow==='orders'?'Поиск, статусы, оплата и действия по выбранному бренду.':
-          'Выберите заказ в компактной таблице. Форма откроется отдельно от списка, как в Main.'}</p></div>
+        <p>{workflow==='orders'?'Состав, оплаты и все операционные действия в исходной таблице Main.':
+          'Возвраты и обмены открываются из строки нужного заказа в разделе «Все заказы».'}</p></div>
       <button type="button" disabled={busy} onClick={()=>setRefresh(x=>x+1)}>Обновить</button>
     </header>
     {workflow!=='orders'&&data&&(
@@ -131,7 +132,20 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
             onCancel={()=>setExchangeOrderId(null)}
             onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>)}
       </section>}
-    <div className="watch-orders-filters">
+    {workflow!=='orders'&&
+      !(workflow==='returns'?returnOrderId:exchangeOrderId)&&
+      <section className="mini-panel debt-table-panel watch-main-select-from-orders">
+        <div className="mini-panel-head">
+          <div>
+            <h3>Откройте {workflow==='returns'?'возврат':'обмен'} из таблицы заказов</h3>
+            <p>В Main заказ выбирается непосредственно из списка. Зайдите в «Все заказы»
+              и нажмите «{workflow==='returns'?'Возврат':'Обмен'}» в нужной строке.</p>
+          </div>
+          {onOpenOrders&&<button type="button" className="secondary compact back-action"
+            onClick={onOpenOrders}>К заказам</button>}
+        </div>
+      </section>}
+    {workflow==='orders'&&<div className="watch-orders-filters">
       <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
         {allowedBrands.map(code=><option key={code} value={code}>{code}</option>)}
       </select></label>
@@ -154,10 +168,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         </label>
         <button type="submit">Найти</button>
       </form>
-    </div>
+    </div>}
     {error&&<p role="alert" className="watch-orders-error">{error}</p>}
     {busy&&<p role="status">Загрузка заказов…</p>}
-    {data&&<>
+    {workflow==='orders'&&data&&<>
       <div className="watch-orders-summary">
         <div><small>Заказов</small><strong>{data.totals.orderCount}</strong></div>
         <div><small>Сумма заказов</small><strong>{sum(data.totals.totalAmount)}</strong></div>
