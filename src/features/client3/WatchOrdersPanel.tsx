@@ -28,8 +28,8 @@ type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmou
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
 const sum=(value:number)=>Number(value||0).toLocaleString('ru-RU')+' ₸'
 const physicallyIssued=(order:WatchOrder)=>{
-  const lines=parsedRows<ItemLine>(order.itemLines)
-  return lines.length>0&&lines.every(watchItemFullyIssued)
+  const active=parsedRows<ItemLine>(order.itemLines).filter(line=>Number(line.quantity)>0)
+  return active.length>0&&active.every(watchItemFullyIssued)
 }
 const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ожидает отправки':
   physicallyIssued(order)?(order.shippingStatus==='sent'?'Отправлено':'Выдано до ревизии · подтверждено'):
@@ -161,7 +161,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                 <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
                 <td>{order.city||'—'}</td>
                 <td className="watch-main-order-sku">
-                  {parsedRows<ItemLine>(order.itemLines).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
+                  {parsedRows<ItemLine>(order.itemLines).filter(line=>Number(line.quantity)>0).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
                     <strong>{line.productName}</strong><small>{line.quantity} шт. ·
                       {line.source==='warehouse'?' Офис':' Витрина'} ·
                       {[watchReferenceLabel('movements',line.movement),watchReferenceLabel('bracelets',line.braceletMaterial),watchReferenceLabel('dials',line.dialColor)].filter(Boolean).join(' / ')}</small>
@@ -222,12 +222,13 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                             line.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',line.braceletColor):'',
                           ].filter(Boolean).join(' · ')}</small>
                           {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-                          <small>{line.source==='warehouse'?'Офис':'Витрина'} · {watchItemFullyIssued(line)?
+                          <small>{Number(line.quantity)===0?'Историческая позиция · возвращена или обменена':
+                            (line.source==='warehouse'?'Офис':'Витрина')+' · '+(watchItemFullyIssued(line)?
                               (line.stockWriteoffStatus==='fulfilled'&&line.shippedQuantity===0?'Ранее выдан · подтверждено':'Отправлен'):
                               watchIssuedQuantity(line)>0?'Частично отправлен: '+watchIssuedQuantity(line)+' из '+line.quantity:
-                              'Не отправлен'}</small>
+                              'Не отправлен')}</small>
                           {watchItemReturnSummary(line)&&<small className="watch-main-return-state">{watchItemReturnSummary(line)}</small>}</div>
-                        <strong>{line.quantity} × {sum(line.unitPrice)}</strong>
+                        <strong>{Number(line.quantity)>0?line.quantity+' × '+sum(line.unitPrice):'История позиции'}</strong>
                       </div>)}
                       {parsedRows<ItemLine>(order.itemLines).length===0&&
                         <p>Состав заказа пока недоступен.</p>}
