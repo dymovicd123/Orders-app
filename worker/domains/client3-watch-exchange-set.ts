@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser,OrderInput} from '../core/types.ts'
 import {createExchangeSetV2} from './returns-exchanges.ts'
+import {WATCH_ITEM_ISSUED_SQL,WATCH_ITEM_RETURNED_SQL} from './client3-watch-item-projection.ts'
 import {ensureManualWatchOrderSku,type ManualWatchOrderItem} from './client3-watch-order-manual.ts'
 import type {WatchSource} from '../../shared/client3/watch-domain.ts'
 
@@ -50,6 +51,8 @@ export async function exchangeClient3WatchSet(
  if(ids.some(id=>!Number.isSafeInteger(id)||id<1||unique.has(id)||!unique.add(id)))
    return fail('WATCH_EXCHANGE_OLD_INVALID','Выберите уникальные старые позиции.',400)
  const oldRows=await db.prepare(`SELECT oi.id,oi.quantity,oi.unit_price,oi.line_total,
+   ${WATCH_ITEM_ISSUED_SQL} AS issued_quantity,
+   ${WATCH_ITEM_RETURNED_SQL} AS returned_quantity,
    oi.catalog_price_snapshot,oi.variant_id,wi.watch_variant_id,
    wp.brand_id FROM order_items oi
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
@@ -71,6 +74,20 @@ export async function exchangeClient3WatchSet(
      line.expectedActiveQuantity!==Number(snapshot.quantity)&&!retry||
      line.expectedCatalogPriceSnapshot!==(snapshot.catalog_price_snapshot==null?null:Number(snapshot.catalog_price_snapshot)))
      return fail('WATCH_EXCHANGE_OLD_STALE','Характеристики или количество старых часов изменились. Обновите заказ.',409)
+   // One outgoing watch is distinct from an unsent reserved watch. The
+   // physical state must agree with exact dispatch evidence before Main can
+   // create any exchange movements or financial entries.
+   if(!retry){
+     const issued=Math.min(Number(snapshot.quantity),Math.max(0,Number(snapshot.issued_quantity)))
+     const returned=Math.max(0,Number(snapshot.returned_quantity))
+     const limit=line.physicalState==='pending'
+       ?Math.max(0,issued-returned)
+       :Math.max(0,Number(snapshot.quantity)-issued)
+     if(line.quantity>limit)return fail('WATCH_EXCHANGE_OLD_PHYSICAL_STATE',
+       line.physicalState==='pending'
+         ?'Выбранные часы не выдавались клиенту в указанном количестве. Для неотправленных позиций выберите «Ещё не отправляли».'
+         :'Часы уже отправлены клиенту. Для них необходимо оформить физический возврат при обмене.',409)
+   }
  }
  for(const line of raw.newItems){
    if(!line||!['office','showcase'].includes(line.source)||
