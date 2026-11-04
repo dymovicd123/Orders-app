@@ -415,7 +415,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       trackedLabel:'По системе',
        neededLabel:'К отправке',
        question:'Эти часы физически есть для отправки?',
-       actionLabel:'Да, часы в наличии — отправить',
+       actionLabel:stockPrompt.items.every(item=>item.stockWriteoffStatus==='catalog_retired')?
+         'Да, часы переданы — записать отправку':'Да, часы в наличии — отправить',
       cancelLabel:'Остановить отправку',
       note:'Подтверждение относится только к этой передаче. Сервер по-прежнему проверяет ревизию и статус резерва.',
     }:null}
