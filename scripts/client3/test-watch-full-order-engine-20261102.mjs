@@ -11,7 +11,7 @@ import {addClient3WatchDebtPayment,listClient3WatchDebtHistory} from '../../work
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from '../../worker/domains/client3-watch-admin-details.ts'
 import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from '../../worker/domains/client3-watch-admin-order.ts'
-import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
+import {correctClient3AdminPaymentMethod,correctClient3AdminRecordedPayment} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
@@ -928,6 +928,41 @@ const blockedMethodStale=await parse(correctClient3AdminPaymentMethod(db,admin,1
  ...methodInput,requestId:'watch-stale-paymethod-20261103-01',change:{...recorded,method:'Наличные'}
 }))
 assert.equal(blockedMethodStale.status,400,'Unknown payment methods must remain protected')
+// Full Main admin payment edit: date/amount/comment corrections stay in the
+// original payment ID, never create another payment or touch physical stock.
+const originalPayment=sqlite.prepare(`SELECT id AS paymentId,method AS expectedMethod,
+ amount AS expectedAmount,payment_date AS expectedPaymentDate,
+ payment_kind AS expectedPaymentKind,COALESCE(comment,'') AS expectedComment
+ FROM payments WHERE order_id=? ORDER BY id LIMIT 1`).get(editOrderId)
+const dateBefore=originalPayment.expectedPaymentDate
+const dateAfter=new Date(Date.parse(dateBefore+'T00:00:00Z')-86400000).toISOString().slice(0,10)
+const amountAfter=originalPayment.expectedAmount-1
+assert(amountAfter>0,'Need a nontrivial recorded payment to test Main corrections')
+const fullPaymentInput={requestId:'watch-admin-full-payment-20261104-a',
+ expectedOrderDate:snapshot().orderDate,
+ change:{...originalPayment,paymentDate:dateAfter,amount:amountAfter,
+   paymentKind:originalPayment.expectedPaymentKind,
+   method:originalPayment.expectedMethod,comment:'Проверенная администратором оплата'}}
+const moneyBeforeFull=snapshot(),physicalBeforeFull=count('inventory_movements'),
+ paymentsBeforeFull=count('payments')
+const fullChanged=await parse(correctClient3AdminRecordedPayment(db,admin,1,editOrderId,fullPaymentInput))
+assert.equal(fullChanged.status,200,JSON.stringify(fullChanged))
+assert.equal(sqlite.prepare('SELECT amount,payment_date,comment FROM payments WHERE id=?')
+ .get(originalPayment.paymentId).amount,amountAfter)
+assert.equal(sqlite.prepare('SELECT payment_date FROM payments WHERE id=?')
+ .get(originalPayment.paymentId).payment_date,dateAfter)
+assert.equal(snapshot().receivedAmount,moneyBeforeFull.receivedAmount-1)
+assert.equal(snapshot().debtAmount,moneyBeforeFull.debtAmount+1)
+assert.equal(count('inventory_movements'),physicalBeforeFull)
+assert.equal(count('payments'),paymentsBeforeFull)
+const fullReplay=await parse(correctClient3AdminRecordedPayment(db,admin,1,editOrderId,fullPaymentInput))
+assert.equal(fullReplay.ok,true,'Repeated critical payment correction must not double the amount delta')
+assert.equal((await parse(correctClient3AdminRecordedPayment(db,manager,1,editOrderId,{
+ ...fullPaymentInput,requestId:'watch-manager-full-pay-denied-20261104'
+}))).status,403)
+assert.equal((await parse(correctClient3AdminRecordedPayment(db,admin,2,editOrderId,{
+ ...fullPaymentInput,requestId:'watch-foreign-full-pay-denied-20261104'
+}))).status,404)
 const beforeDeletionMoney=count('payments')
 const safePreview=await parse(previewClient3AdminOrderDelete(db,admin,1,editOrderId))
 assert.equal(safePreview.ok,true,JSON.stringify(safePreview))
