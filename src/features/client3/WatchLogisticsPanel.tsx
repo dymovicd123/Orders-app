@@ -47,6 +47,7 @@ type Props = {
   canCompleteEngraving: boolean
   canDispatch?: boolean
   canCorrectDispatch?:boolean
+  onOpenReturns?:(brand:WatchBrand)=>void
 }
 
 type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; hasMore?:boolean; nextOffset?:number|null; message?: string }
@@ -104,7 +105,7 @@ function statusText(status: WatchLogisticsRow['engravingStatus']) {
 
 /** Main's operational workflow: engraving readiness and actual dispatch remain
  * separate confirmed actions; both use isolated brand-scoped Client3 routes. */
-export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false}:Props) {
+export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false,onOpenReturns}:Props) {
   const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
   const [nextOffset,setNextOffset]=useState<number|null>(null)
@@ -489,6 +490,12 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                     </div>
                   </div>}
                 <div className="watch-logistics-actions">
+                  {intakePending>0&&<div className="watch-logistics-receipt-notice">
+                    <strong>Возвращённые часы ещё не приняты: {intakePending} шт.</strong>
+                    <small>Возврат денег не увеличивает склад. Отметка об отправке сохраняется в истории. Физическую приёмку оформляют отдельно по исходному SKU.</small>
+                    {onOpenReturns&&<button type="button" className="secondary compact"
+                      onClick={()=>onOpenReturns(order.brand)}>Перейти к приёмке возвратов</button>}
+                  </div>}
                   <span>{order.engravingStatus==='ready'?'Все гравировки готовы':
                     'Гравировка подтверждается отдельно у каждой позиции выше'}</span>
                   {canDispatch&&selected.length>0&&
