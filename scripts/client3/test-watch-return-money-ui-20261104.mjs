@@ -60,9 +60,9 @@ try{
    brand:'TAUWACH',order:{...order,receivedAmount:0,returnAmount:0,totalAmount:25000,
      itemLines:JSON.stringify([unissued])},onDone:()=>{},onCancel:()=>{},
  }))
- assert(exchangeCreate.includes('доступно к обмену 1 шт.'),
-   'Unissued watch must be selectable for exchange')
- assert(exchangeCreate.includes('не отправляли: 1 шт.'))
+ assert(exchangeCreate.includes('Можно обменять: 1 шт.') &&
+   exchangeCreate.includes('Что убираем из заказа'),
+   'Main-style old-item checkbox must include an unissued watch and quantity')
  const exchangeView=renderToStaticMarkup(React.createElement(WatchExchangeHistoryPanel,{
    brand:'TAUWACH',orderId:91,onClose:()=>{},onDone:()=>{},
  }))
