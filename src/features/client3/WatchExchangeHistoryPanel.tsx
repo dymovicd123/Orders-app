@@ -13,7 +13,7 @@ type ExchangeLine={
 type ExchangeEntry={
  id:number;exchangeDate:string;isSetExchange:boolean;status:string;comment:string;
  cancellationComment:string|null;oldItems:ExchangeLine[];newItems:ExchangeLine[];
- financialAction:string;financialAmount:number;paymentMethod:string
+ financialAction:string;financialAmount:number;paymentMethod:string;archivedAppliedCount:number
 }
 type History={ok:boolean;exchanges:ExchangeEntry[];hasMore:boolean;message?:string}
 const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
@@ -43,6 +43,7 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
  const [selected,setSelected]=useState<number|null>(null)
  const [reason,setReason]=useState('')
  const [confirmed,setConfirmed]=useState(false)
+ const [physicalLocation,setPhysicalLocation]=useState<'customer'|'office'|'unknown'>('unknown')
  const [showChain,setShowChain]=useState(false)
  const requests=useRef<Record<number,{fingerprint:string;requestId:string}>>({})
  useEffect(()=>{
@@ -60,19 +61,21 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
  },[brand,orderId,refresh])
  const cancel=async(entry:ExchangeEntry)=>{
    if(busy||selected!==entry.id||!confirmed||reason.trim().length<8)return
-   const fingerprint=JSON.stringify([brand,orderId,entry.id,reason.trim()])
+   const fingerprint=JSON.stringify([brand,orderId,entry.id,reason.trim(),
+     Number(entry.archivedAppliedCount||0)>0?physicalLocation:null])
    if(requests.current[entry.id]?.fingerprint!==fingerprint)
      requests.current[entry.id]={fingerprint,requestId:'watch-exchange-cancel-'+crypto.randomUUID()}
    setBusy(true);setError('')
    try{
      const response=await fetch('/api/client3/watches/orders/'+orderId+'/exchanges/'+entry.id+'/cancel',{
        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({brand,requestId:requests.current[entry.id].requestId,reason:reason.trim()}),
+       body:JSON.stringify({brand,requestId:requests.current[entry.id].requestId,reason:reason.trim(),
+         physicalLocation:Number(entry.archivedAppliedCount||0)>0?physicalLocation:undefined}),
      })
      const result=await response.json() as {ok:boolean;message?:string}
      if(!response.ok||!result.ok)throw new Error(result.message||'Отмена обмена не выполнена')
      delete requests.current[entry.id]
-     setSelected(null);setReason('');setConfirmed(false)
+     setSelected(null);setReason('');setConfirmed(false);setPhysicalLocation('unknown')
      setRefresh(n=>n+1);onDone()
    }catch(cause){setError(cause instanceof Error?cause.message:'Обмен не отменён')}
    finally{setBusy(false)}
@@ -124,7 +127,21 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
        {entry.cancellationComment&&<small>Причина отмены: {entry.cancellationComment}</small>}
        {entry.status!=='cancelled'&&(selected===entry.id?
          <div className="watch-exchange-history-confirm">
-           <p>Отмена изменит текущий состав продажи, резервы и денежные операции. Main откажет при зависимых возвратах, отправках или последующих обменах.</p>
+           <p>Отмена изменит текущий состав продажи и денежные операции. Main проверит все связанные возвраты, отправки и последующие обмены.</p>
+           {Number(entry.archivedAppliedCount||0)>0&&<div className="watch-exchange-history-archive-note">
+             <strong>Часы удалены из рабочего каталога</strong>
+             <p>Операция и финансы отменяются, а старый закрытый остаток остаётся неизменным. Где физически часы? Ответ сохранится в истории отмены; «Пока неизвестно» также допустимо.</p>
+             <label>Фактическое местонахождение
+               <select value={physicalLocation} onChange={e=>{
+                 setPhysicalLocation(e.target.value as 'customer'|'office'|'unknown')
+                 setConfirmed(false)
+               }}>
+                 <option value="unknown">Пока неизвестно</option>
+                 <option value="office">У продавца</option>
+                 <option value="customer">У клиента</option>
+               </select>
+             </label>
+           </div>}
            <label>Причина отмены<textarea rows={2} maxLength={500} value={reason}
              onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/></label>
            <label className="watch-exchange-history-check"><input type="checkbox" checked={confirmed}
@@ -132,11 +149,11 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
            <div><button type="button" disabled={busy||!confirmed||reason.trim().length<8}
              onClick={()=>void cancel(entry)}>{busy?'Проверяю…':'Подтвердить отмену'}</button>
              <button type="button" className="secondary" disabled={busy} onClick={()=>{
-               setSelected(null);setConfirmed(false);setReason('')
+               setSelected(null);setConfirmed(false);setReason('');setPhysicalLocation('unknown')
              }}>Не отменять</button></div>
          </div>:
          <button type="button" className="secondary compact" disabled={busy}
-           onClick={()=>{setSelected(entry.id);setReason('');setConfirmed(false)}}>Отменить этот обмен</button>)}
+           onClick={()=>{setSelected(entry.id);setReason('');setConfirmed(false);setPhysicalLocation('unknown')}}>Отменить этот обмен</button>)}
      </article>)}</div>
      {hasMore&&<p>Показаны последние 100 обменов. Для более старых операций потребуется отдельная загрузка истории.</p>}
    </>}
