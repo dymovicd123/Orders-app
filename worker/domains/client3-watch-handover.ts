@@ -46,17 +46,22 @@ async function snapshot(db:D1Database,brandId:number,orderId:number){
   const state={...original,items:original.items.map(item=>({
     ...item,reviewNeeded:watchCheckpointNeedsClarification(item),
   }))}
-  const lines=await db.prepare(`SELECT oi.id AS orderItemId
+  const lines=await db.prepare(`SELECT oi.id AS orderItemId,wp.model_name AS modelName
     FROM order_items oi
     JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
     JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
     JOIN watch_products wp ON wp.id=wv.watch_product_id AND wp.brand_id=?
     WHERE oi.order_id=? AND oi.quantity>0 AND oi.is_workshop=0`)
-    .bind(brandId,orderId).all<{orderItemId:number}>()
-  const valid=new Set((lines.results||[]).map(x=>Number(x.orderItemId)))
-  if(state.items.some(x=>!valid.has(x.orderItemId)))
+    .bind(brandId,orderId).all<{orderItemId:number;modelName:string}>()
+  const names=new Map((lines.results||[]).map(x=>[Number(x.orderItemId),x.modelName]))
+  if(state.items.some(x=>!names.has(x.orderItemId)))
     throw Error('Состав заказа не совпадает с активными комплектациями выбранного бренда. Нужна проверка администратора.')
-  return {own,state}
+  // Main's stocktake query uses legacy catalog placeholders. Show the actual
+  // watch model from the tenant's watch SKU, preserving the Main checkpoint.
+  const watchState={...state,items:state.items.map(x=>({
+    ...x,productName:names.get(x.orderItemId)||x.productName,
+  }))}
+  return {own,state:watchState}
 }
 export async function readClient3WatchHandover(
   db:D1Database,actor:AuthUser,brandId:number,orderId:number,
