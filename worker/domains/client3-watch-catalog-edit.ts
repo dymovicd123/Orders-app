@@ -60,13 +60,14 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
    expected=normalizeWatchVariant(input.expected)
  }catch(e){return error(e instanceof Error?e.message:'Некорректные характеристики.')}
  const row=await db.prepare(`SELECT v.id,v.gender,v.catalog_variant_id,wp.is_active AS product_active,
-   COALESCE(a.movement,v.movement) AS movement,
-   COALESCE(a.bracelet_material,v.bracelet_material) AS bracelet_material,
-   COALESCE(a.dial_color,v.dial_color) AS dial_color,
-   COALESCE(a.bracelet_color,v.bracelet_color) AS bracelet_color
+   COALESCE(a6.movement,a.movement,v.movement) AS movement,
+   COALESCE(a6.bracelet_material,a.bracelet_material,v.bracelet_material) AS bracelet_material,
+   COALESCE(a6.dial_color,a.dial_color,v.dial_color) AS dial_color,
+   COALESCE(a6.bracelet_color,a.bracelet_color,v.bracelet_color) AS bracelet_color
    FROM watch_variants v
    JOIN watch_products wp ON wp.id=v.watch_product_id AND wp.brand_id=?
    LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
+   LEFT JOIN watch_variant_attributes_v6 a6 ON a6.watch_variant_id=v.id
    WHERE v.id=? AND v.watch_product_id=? AND v.is_active=1`)
    .bind(brandId,variantId,productId).first<{id:number;gender:string;catalog_variant_id:number|null;
      movement:string;bracelet_material:string;dial_color:string;bracelet_color:string;product_active:number}>()
@@ -87,12 +88,13 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
  }
  const collision=await db.prepare(`SELECT v.id FROM watch_variants v
    LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
-   WHERE v.watch_product_id=? AND v.id<>?
+   LEFT JOIN watch_variant_attributes_v6 a6 ON a6.watch_variant_id=v.id
+   WHERE v.watch_product_id=? AND v.is_active=1 AND v.id<>?
    AND v.gender=?
-   AND COALESCE(a.movement,v.movement)=?
-   AND COALESCE(a.bracelet_material,v.bracelet_material)=?
-   AND COALESCE(a.dial_color,v.dial_color)=?
-   AND COALESCE(a.bracelet_color,v.bracelet_color)=? LIMIT 1`)
+   AND COALESCE(a6.movement,a.movement,v.movement)=?
+   AND COALESCE(a6.bracelet_material,a.bracelet_material,v.bracelet_material)=?
+   AND COALESCE(a6.dial_color,a.dial_color,v.dial_color)=?
+   AND COALESCE(a6.bracelet_color,a.bracelet_color,v.bracelet_color)=? LIMIT 1`)
    .bind(productId,variantId,...after).first<{id:number}>()
  if(collision)return error('Такая комплектация уже существует. Выберите её вместо создания дубля.',409)
  if(row.catalog_variant_id){
@@ -145,7 +147,7 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
            AND EXISTS (SELECT 1 FROM catalog_variants cv
              WHERE cv.id=? AND cv.stock_position_id=? AND cv.updated_at=? AND cv.is_active=1)`)
          .bind(next.gender,sentinel,variantId,productId,canonicalId,canonicalId,execution.id,now),
-       db.prepare(`INSERT INTO watch_variant_attributes_v5(
+       db.prepare(`INSERT INTO watch_variant_attributes_v6(
          watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
        ) SELECT v.id,v.watch_product_id,v.gender,?,?,?,?
          FROM watch_variants v
@@ -183,12 +185,12 @@ export async function editClient3WatchVariant(db:D1Database,actor:AuthUser,brand
          dial_color='black',bracelet_color=?
        WHERE id=? AND watch_product_id=? AND is_active=1
          AND catalog_variant_id IS NULL AND gender=?
-         AND COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement)=?
-         AND COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material)=?
-         AND COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color)=?
-         AND COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_color)=?`)
+         AND COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.movement)=?
+         AND COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_material)=?
+         AND COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.dial_color)=?
+         AND COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_color)=?`)
        .bind(next.gender,sentinel,variantId,productId,...prev),
-     db.prepare(`INSERT INTO watch_variant_attributes_v5(
+     db.prepare(`INSERT INTO watch_variant_attributes_v6(
        watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
      ) SELECT v.id,v.watch_product_id,v.gender,?,?,?,?
        FROM watch_variants v
