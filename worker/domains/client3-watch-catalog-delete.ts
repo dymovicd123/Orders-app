@@ -110,10 +110,17 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
        .bind(scope.model.id,brandId,canonicalId).first<{id:number}>()
      if(!owner?.id)return fail('Внутренняя карточка товара не соответствует выбранному бренду.',409)
      try{
-       await retireCatalogEntity(db,'product',canonicalId,{
+       const outcome=await retireCatalogEntity(db,'product',canonicalId,{
          requestId,reason:'Удалён товар часов '+scope.model.model_name+' из Client3',
          actor:actor.displayName||actor.email||'Администратор',
        })
+       if(outcome.status&&outcome.status!=='completed')
+         return fail('Удаление Main не завершено. Прервана проверка журнала — рабочая модель не скрыта.',409)
+       const fresh=await previewCatalogRetirement(db,'product',canonicalId)
+       if(fresh.active||fresh.activeVariantCount>0||fresh.physicalQuantity!==0||
+          fresh.stockReservedQuantity!==0||fresh.activeReservationQuantity!==0||
+          fresh.inactiveOperationalVariantCount>0)
+         return fail('Main не подтвердил полный вывод остатков, резервов и складских SKU. Обновите каталог перед повтором.',409)
      }catch(cause){
        return fail(cause instanceof Error?cause.message:'Main не завершил безопасное удаление товара.',409)
      }
