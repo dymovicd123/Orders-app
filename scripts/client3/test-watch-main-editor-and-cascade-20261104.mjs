@@ -28,7 +28,7 @@ for(const label of ['Реквизиты','Записанная цена','Дан
  assert(editor.includes(label),'Client3 role editor does not expose '+label)
 }
 assert(orderList.includes('Полное редактирование')&&
- orderList.includes('Доп. действия'),'Admin/manager entry points need separate labels')
+ orderList.includes('Исправить · доп. действия'),'Admin/manager entry points need separate labels')
 assert(admin.includes('WatchAdminDeleteChainPanel')&&
  !admin.includes('setAck('),'Admin deletion must use integrated Main saga, not old one-click form')
 assert(saga.includes('delete-chain')&&
