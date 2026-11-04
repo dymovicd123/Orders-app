@@ -404,7 +404,9 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     <StockResolutionConfirmModal prompt={stockPrompt?{
       title:stockPrompt.items.every(item=>item.stockWriteoffStatus==='catalog_retired')?
         'Подтверждение передачи архивных часов':'Уточнение остатка перед отправкой',
-      intro:'По системе товара недостаточно. Сверьте количество выбранных часов перед отправкой. Остатки склада этим действием не изменяются.',
+      intro:stockPrompt.items.every(item=>item.stockWriteoffStatus==='catalog_retired')?
+        'Этот товар удалён из рабочего каталога. Остатки и резервы были выведены при удалении. Если часы физически передаются клиенту, логистика запишет отправку без повторного списания и без восстановления архивного SKU.':
+        'По системе товара недостаточно. Сверьте количество выбранных часов перед отправкой. Остатки склада этим действием не изменяются.',
       items:stockPrompt.items.map(item=>({
         productName:item.modelName||'Часы',
         tracked:Math.max(0,Number(item.physicalQuantity||0)),
