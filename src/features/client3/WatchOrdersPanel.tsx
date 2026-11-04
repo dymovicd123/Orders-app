@@ -8,7 +8,6 @@ import {watchItemFullyIssued,watchIssuedQuantity} from './watchItemLifecycle'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
-import {WatchAdminOrderActions} from './WatchAdminOrderActions'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import '../../styles/client3-watch-orders.css'
 import '../../styles/client3-main-orders-copied.css'
@@ -331,7 +330,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       <button type="button" className="secondary compact"
                         onClick={()=>openFlow('exchange')}>Обмен</button>}
                     {workflow==='orders'&&<button type="button" className="secondary compact"
-                      onClick={()=>showDetailAction('edit')}>Исправить</button>}
+                      onClick={()=>showDetailAction('edit')}>{isAdmin?'Полное редактирование':'Доп. действия'}</button>}
                     {workflow==='orders'&&order.debtAmount>0&&onOpenDebt&&
                       <button type="button" className="secondary compact debt-action-button"
                         onClick={()=>onOpenDebt(brand,order.orderId,order.externalId)}>
@@ -368,10 +367,6 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     lines={parsedRows<ItemLine>(order.itemLines)}
                     onDone={()=>setRefresh(v=>v+1)}
                     onClose={()=>setHandoverOrderId(null)}/>}
-                  {isAdmin&&editOrderId===order.orderId&&<WatchAdminOrderActions
-                    brand={brand} orderId={order.orderId} externalId={order.externalId||'#'+order.orderId}
-                    managerId={Number(order.managerId||0)} paymentLines={order.paymentLines}
-                    onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
                   {editOrderId===order.orderId&&<WatchOrderCorrections
                     brand={brand} order={order} isAdmin={isAdmin}
                     onCancel={()=>setEditOrderId(null)}
