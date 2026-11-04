@@ -3,6 +3,7 @@ import type {AuthUser} from '../core/types.ts'
 import {dispatchSelectedCompleteOrderLines} from './order-dispatch.ts'
 import {getOrderStockHandoverState} from './order-reservations.ts'
 import {watchCheckpointNeedsClarification} from './client3-watch-handover.ts'
+import {dispatchRetiredClient3WatchLines} from './client3-watch-retired-dispatch.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type WatchDispatchSelection={orderItemId:number;quantity:number}
@@ -83,6 +84,10 @@ export async function dispatchClient3WatchOrder(
    return fail('WATCH_DISPATCH_REQUEST_CONFLICT','Номер операции использован другим заказом.',409)
 
  const selected=chosen.map(x=>byId.get(x.orderItemId)!)
+ const retired=selected.filter(row=>row.stock_writeoff_status==='catalog_retired')
+ if(retired.length>0&&retired.length!==selected.length)
+   return fail('WATCH_ARCHIVED_SELECT_SEPARATELY',
+     'Обычные и архивные часы отправляются отдельными подтверждениями. Выберите одну позицию архивных часов.',409)
  if(!prior){
    // Main's SKU-specific stocktake/stock-check checkpoint is mandatory
    // BEFORE any real watch shipment. confirmPhysicalStock is NOT a bypass.
@@ -103,7 +108,8 @@ export async function dispatchClient3WatchOrder(
      return fail('WATCH_HANDOVER_LINE_MISSING',
        'Не удалось проверить ревизию выбранных часов. Отправка остановлена.',409)
    const requiresReview=handover.items.filter(item=>
-     picked.has(item.orderItemId)&&watchCheckpointNeedsClarification(item))
+     picked.has(item.orderItemId)&&watchCheckpointNeedsClarification(item)&&
+     !retired.some(row=>Number(row.id)===item.orderItemId))
    if(requiresReview.length){
      return json({ok:false,code:'WATCH_HANDOVER_REQUIRED',
        message:'Ревизия прошла после даты заказа. До отправки уточните фактическую выдачу часов. Если резерв не подтверждён, сначала восстановите его по реальному остатку.',
@@ -120,8 +126,8 @@ export async function dispatchClient3WatchOrder(
    if(selected.some(x=>String(x.engraving_text||'').trim()&&Number(x.engraving_ready)!==1))
      return fail('WATCH_ENGRAVING_NOT_READY',
        'Для отправки сначала подтвердите готовность гравировки выбранных часов.',409)
-   const needsPhysicalCheck=selected.some(x=>x.reservation_status!=='active'||
-     x.stock_writeoff_status!=='reserved')
+   const needsPhysicalCheck=retired.length>0||selected.some(x=>
+     x.reservation_status!=='active'||x.stock_writeoff_status!=='reserved')
    // The user explicitly confirms physical handover in the send review.
    // Unlike the earlier Client3-only recovery gate, do NOT demand a free
    // accounting reserve: Main supports a bounded shipment with verified fact.
@@ -133,12 +139,20 @@ export async function dispatchClient3WatchOrder(
 
  const localDate=new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
  try{
-   const result=await dispatchSelectedCompleteOrderLines(db,orderId,{
+   // Archived catalog retirement has already accounted for physical inventory.
+   // The special Client3 dispatch creates the canonical shipment ledger, but
+   // NO sale movement, NO reserved units and NO stock changes.
+   const result=retired.length
+     ?await dispatchRetiredClient3WatchLines(db,brandId,orderId,{
+       requestId,items:chosen,actor:'client3-watch:'+actor.id,dispatchDate:localDate,
+     })
+     :await dispatchSelectedCompleteOrderLines(db,orderId,{
      requestId,items:chosen,actor:'client3-watch:'+actor.id,dispatchDate:localDate,
      watchSplitBrandId:brandId,watchPhysicalConfirmed:input.confirmPhysicalStock===true,
    })
    if(!result?.ok)return fail('WATCH_DISPATCH_FAILED','Склад не подтвердил отправку.')
-   return json({...result,orderId,brandId,stockDispatched:true,
+   return json({...result,orderId,brandId,
+     stockDispatched:retired.length===0,retiredWithoutStockChange:retired.length>0,
      engravingUnchanged:true,selectedItems:chosen.length})
  }catch(cause){
    return fail('WATCH_DISPATCH_BLOCKED',
