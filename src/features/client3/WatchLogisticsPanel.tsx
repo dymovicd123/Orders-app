@@ -85,15 +85,6 @@ export const logisticsItemEligible=(item:WatchLogisticsRow)=>Boolean(
   item.orderItemId&&Number(item.quantity)>0&&item.reservationStatus==='active'&&
   item.stockWriteoffStatus==='reserved'&&Number(item.shippedQuantity||0)===0&&
   (!item.engravingText?.trim()||Boolean(item.engravingReady)))
-/** A missing reservation can be activated only by Main's guarded physical-stock
- * recovery, after the operator explicitly verifies these exact watch SKU items. */
-const logisticsAwaitingPhysicalConfirmation=(item:WatchLogisticsRow)=>Boolean(
-  item.orderItemId&&Number(item.quantity)>0&&
-  item.reservationStatus==='unresolved'&&
-  item.stockWriteoffStatus==='pending_reservation'&&
-  Number(item.shippedQuantity||0)===0&&
-  (!item.engravingText?.trim()||Boolean(item.engravingReady)))
-
 export function groupWatchLogistics(rows: readonly WatchLogisticsRow[]): LogisticsGroup[] {
   const map = new Map<number, LogisticsGroup>()
   for (const row of rows) {
@@ -238,121 +229,83 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     }
   }, [canCompleteEngraving, saving])
 
-  const correctDispatch=async(order:WatchLogisticsRow)=>{
-    if(!canCorrectDispatch||!correctionTarget||correcting!==null||
-       correctionTarget.orderId!==order.orderId||correctionReason.trim().length<8)return
-    const id=correctionTarget.dispatchItemId
-    setCorrecting(id);setError('');setFeedback('')
-    const requestId=correctionIds.current[id]||='watch-correct-send-'+crypto.randomUUID()
+  const correctDispatch=async(order:WatchLogisticsRow,dispatchItemId:number,reason:string)=>{
+    if(!canCorrectDispatch||correcting!==null||reason.trim().length<8)return
+    setCorrecting(dispatchItemId);setError('');setFeedback('')
+    const requestId=correctionIds.current[dispatchItemId]||='watch-correct-send-'+crypto.randomUUID()
     try{
       const data=await readApi<{
         ok:boolean;message?:string;physicalRestoredQuantity?:number;needsStockCheck?:boolean
       }>('/api/client3/watches/orders/'+order.orderId+'/dispatch-correction',{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({brand:order.brand,dispatchItemId:id,
-          reason:correctionReason.trim(),requestId}),
+        body:JSON.stringify({brand:order.brand,dispatchItemId,
+          reason:reason.trim(),requestId}),
       })
-      delete correctionIds.current[id]
-      setCorrectionTarget(null);setCorrectionReason('')
-      setDispatchSelection(prev=>({...prev,[order.orderId]:[]}))
+      delete correctionIds.current[dispatchItemId]
       setFeedback(data.needsStockCheck
-        ?'Запись об отправке исправлена, но физический остаток не увеличен: нужна проверка склада.'
-        :'Ошибочная отправка исправлена через Main. Резерв и остаток пересчитаны.')
+        ?'Исправлено. Физический остаток не восстановлен автоматически; проверьте склад.'
+        :'Ошибочная отправка исправлена. Остаток и резерв пересчитаны через Main.')
       setRefreshKey(value=>value+1)
-    }catch(cause){setError(cause instanceof Error?cause.message:'Исправление отправки заблокировано')}
-    finally{setCorrecting(null)}
+    }catch(cause){
+      setError(cause instanceof Error?cause.message:'Исправление отправки заблокировано')
+      throw cause
+    }finally{setCorrecting(null)}
   }
-  const setSelected=(orderId:number,itemId:number,enabled:boolean,initial:number[])=>{
-    setDispatchConfirm(null)
-    delete dispatchIds.current[orderId]
-    setDispatchSelection(prev=>{
-      const old=prev[orderId]??initial
-      return {...prev,[orderId]:enabled?[...new Set([...old,itemId])]:old.filter(id=>id!==itemId)}
-    })
-  }
-  const setQuantity=(orderId:number,itemId:number,value:number)=>{
-    setDispatchConfirm(null)
-    delete dispatchIds.current[orderId]
-    setDispatchQuantities(prev=>({...prev,[orderId]:{...prev[orderId],[itemId]:value}}))
-  }
-  const completeAllEngraving=async(orderId:number,items:WatchLogisticsRow[])=>{
-    if(!canCompleteEngraving||saving!==null||readyConfirmOrderId!==orderId)return
-    const pending=items.filter(x=>x.orderItemId&&x.engravingText?.trim()&&
-      !Boolean(x.engravingReady)&&watchIssuedQuantity(x)===0)
-    if(!pending.length)return
-    setSaving(-1);setError('');setFeedback('');setReadyConfirmOrderId(null)
-    let completed=0
-    try{
-      for(const item of pending){
-        const id=Number(item.orderItemId)
-        const requestId=requestIds.current[id]||='watch-'+crypto.randomUUID()
-        await readApi<{ok:boolean;message?:string}>(
-          '/api/client3/watches/logistics/'+orderId+'/ready',{
-            method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({requestId,orderItemId:id}),
-          })
-        delete requestIds.current[id];completed++
-      }
-      setFeedback('Готовность подтверждена для '+completed+' позиций. Теперь выберите часы к отправке.')
-    }catch(reason){
-      setError('Готово '+completed+' из '+pending.length+'. '+
-        (reason instanceof Error?reason.message:'Не удалось завершить подтверждение.'))
-    }finally{setSaving(null);setRefreshKey(v=>v+1)}
-  }
-  const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>
-    logisticsItemEligible(item)||logisticsAwaitingPhysicalConfirmation(item)
-  const reviewSendHandover=async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
-    if(!canDispatch||checkingHandover!==null||dispatching!==null)return
-    setCheckingHandover(order.orderId);setError('');setDispatchConfirm(null)
-    try{
-      const status=await readApi<{
-        ok:boolean;state?:{items:Array<{orderItemId:number;reviewNeeded:boolean}>}
-      }>('/api/client3/watches/orders/'+order.orderId+
-        '/stock-handover?brand='+encodeURIComponent(order.brand))
-      // Main's checkpoint review concerns the exact items being dispatched.
-      // The server repeats this check at the final POST boundary.
-      const selectedIds=new Set(selected.map(x=>Number(x.orderItemId)))
-      const needsReview=status.state?.items.some(x=>
-        selectedIds.has(x.orderItemId)&&x.reviewNeeded)
-      if(needsReview){
-        setHandoverPromptOrderId(order.orderId)
-        setError('Для выбранных часов есть ревизия после заказа. Уточните выдачу до отправки.')
-      }else{
-        setHandoverPromptOrderId(null)
-        setDispatchConfirm(order.orderId)
-      }
-    }catch(e){
-      setError(e instanceof Error?e.message:'Не удалось проверить ревизию. Отправка остановлена.')
-    }finally{setCheckingHandover(null)}
-  }
-  const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
-    if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
+
+  const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[],confirmedPhysical=false)=>{
+    if(!canDispatch||dispatching!==null)return
     setDispatching(order.orderId);setError('');setFeedback('')
-    const requestId=dispatchIds.current[order.orderId]||=
-      'watch-send-'+crypto.randomUUID()
+    const fingerprint=order.orderId+':'+selected.map(row=>row.orderItemId+':'+row.quantity).join(',')
+    const requestId=dispatchIds.current[fingerprint]||='watch-send-'+crypto.randomUUID()
     try{
       await readApi<{ok:boolean;message?:string}>(
         '/api/client3/watches/orders/'+order.orderId+'/send',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({brand:order.brand,requestId,
-            confirmPhysicalStock:true,
+            confirmPhysicalStock:confirmedPhysical,
             items:selected.map(row=>({orderItemId:row.orderItemId,quantity:row.quantity}))}),
         })
-      delete dispatchIds.current[order.orderId]
-      setDispatchConfirm(null)
-      setDispatchSelection(prev=>({...prev,[order.orderId]:[]}))
-      setDispatchQuantities(prev=>({...prev,[order.orderId]:{}}))
-      setFeedback('Отправлено выбранное количество. Оставшиеся часы и резервы сохранены.')
+      delete dispatchIds.current[fingerprint]
+      setFeedback('Отправлены выбранные часы. Остальные позиции и резервы не изменены.')
       setRefreshKey(value=>value+1)
     }catch(cause){
-      if((cause as Error&{code?:string})?.code==='WATCH_HANDOVER_REQUIRED'){
-        setDispatchConfirm(null)
+      const code=(cause as Error&{code?:string})?.code
+      if(code==='WATCH_HANDOVER_REQUIRED')setHandoverPromptOrderId(order.orderId)
+      if(code==='WATCH_PHYSICAL_CONFIRM_REQUIRED')setStockPrompt({order,items:selected})
+      setError(cause instanceof Error?cause.message:'Отправка не выполнена')
+    }finally{setDispatching(null)}
+  },[canDispatch,dispatching])
+
+  const reviewSendHandover=async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
+    if(!canDispatch||checkingHandover!==null||dispatching!==null||!selected.length)return
+    setCheckingHandover(order.orderId);setError('')
+    try{
+      const status=await readApi<{
+        ok:boolean;state?:{items:Array<{orderItemId:number;reviewNeeded:boolean;state:string}>}
+      }>('/api/client3/watches/orders/'+order.orderId+
+        '/stock-handover?brand='+encodeURIComponent(order.brand))
+      const selectedIds=new Set(selected.map(x=>Number(x.orderItemId)))
+      if(!status.state||selected.some(x=>!status.state?.items.some(line=>line.orderItemId===x.orderItemId)))
+        throw Error('Не удалось проверить ревизию выбранных часов. Отправка остановлена.')
+      if(status.state.items.some(x=>selectedIds.has(x.orderItemId)&&x.reviewNeeded)){
         setHandoverPromptOrderId(order.orderId)
+        return
       }
-      setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')
-    }
-    finally{setDispatching(null)}
-  },[canDispatch,dispatching,dispatchConfirm])
+      if(status.state.items.some(x=>selectedIds.has(x.orderItemId)&&x.state==='already_issued'))
+        throw Error('Эти часы уже выданы до ревизии. Повторная отправка запрещена.')
+      const shortage=selected.some(x=>x.reservationStatus!=='active'||
+        x.stockWriteoffStatus!=='reserved')
+      if(shortage){
+        setStockPrompt({order,items:selected})
+        return
+      }
+      // A single deliberate item-level Send click is the whole operation.
+      // The server still enforces stocktake, actual SKU and engraving readiness.
+      await send(order,selected,false)
+    }catch(cause){
+      setError(cause instanceof Error?cause.message:'Не удалось проверить ревизию. Отправка остановлена.')
+    }finally{setCheckingHandover(null)}
+  }
   return <section className="watch-logistics workshop-workspace">
     <div className="watch-logistics-heading">
       <div>
