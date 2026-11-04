@@ -95,7 +95,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
  return <form className="watch-return-form" onSubmit={e=>void submit(e)}>
    <h4>Возврат по заказу {order.externalId}</h4>
    <p>Выберите конкретные отправленные часы. Деньги и физическая приёмка оформляются отдельно: регистрация возврата не добавляет остаток на склад.</p>
-   <p className="watch-return-accounting-note">Важно: в текущем учёте Main оформление возврата товара само по себе не уменьшает сумму заказа и долг. Денежный возврат фиксируется отдельно. Изменение коммерческого итога продажи требует отдельного согласованного механизма.</p>
+   <p className="watch-return-accounting-note">В Client3 возвращённые часы уменьшают стоимость оставшейся продажи и расчётный долг. Денежный возврат и физическая приёмка фиксируются отдельными действиями. Исходная продажа сохраняется в истории Main.</p>
    <label>Вид возврата
      <select value={kind} onChange={e=>{setKind(e.target.value as ReturnKind);setConfirmed(false)}}>
        {maxRefund>0&&<option value="money_only">Только деньги</option>}
