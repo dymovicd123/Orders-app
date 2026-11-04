@@ -70,6 +70,15 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
    }).catch(()=>{})
    return ()=>abort.abort()
  },[brand])
+ const toggleOld=(line:OldLine)=>{
+   const selected=Number(chosen[line.id]?.quantity||0)>0
+   const physicalState:OldChoice['physicalState']=
+     watchExchangeQuantityForState(line,'pending')>0?'pending':'not_issued'
+   const quantity=selected?'0':'1'
+   setChosen(current=>({...current,[line.id]:{quantity,
+     physicalState:selected?'':physicalState}}))
+   setConfirmed(false)
+ }
  const choose=(id:number,update:Partial<OldChoice>)=>{
    setChosen(state=>({...state,[id]:{...(state[id]||{quantity:'0',physicalState:''}),...update}}))
    setConfirmed(false)
@@ -198,49 +207,90 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
         {noncashCredit>0&&<div><small>Зачёт возвращённых часов (не деньги)</small><strong>{amount(noncashCredit)}</strong></div>}
       </div>
    </header>
-   <p>Оформление как в основной системе: отметьте конкретные старые часы и где они физически находятся, добавьте новые и для каждой позиции укажите, уже выдали её клиенту или нет. Доплату и возврат можно разделить по способам оплаты.</p>
-   <div className="watch-exchange-lines exchange-set-workspace">
-     <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">ШАГ 1</span>
-       <h3>Какие часы меняет клиент</h3>
-       <p>Выберите товары, количество и состояние каждой старой позиции.</p></div></div>
-     {old.map(x=><div key={x.id} className="watch-exchange-old exchange-old-card">
-       <div><strong>{x.productName}</strong><small>{x.gender==='male'?'Мужские':'Женские'} ·
-         {opt(WATCH_OPTIONS.movements,x.movement)} · {opt(WATCH_OPTIONS.braceletMaterials,x.braceletMaterial)} · {opt(WATCH_OPTIONS.dialColors,x.dialColor)}</small>
-         <small>В заказе {x.quantity} · доступно к обмену {watchExchangeQuantityForState(x,'')} шт. · {amount(x.unitPrice)}/шт.</small>
-         <small>Выдано: {watchExchangeQuantityForState(x,'pending')} шт. · не отправляли: {watchExchangeQuantityForState(x,'not_issued')} шт.</small></div>
-       <label>Количество<input type="number" min={0}
-         max={watchExchangeQuantityForState(x,chosen[x.id]?.physicalState||'')} step={1}
-         value={chosen[x.id]?.quantity??'0'}
-         onChange={e=>choose(x.id,{quantity:e.target.value})}/></label>
-       {Number(chosen[x.id]?.quantity||0)>0&&<label>Что произошло с товаром?
-         <select value={chosen[x.id]?.physicalState||''} required
-           onChange={e=>{
-             const state=e.target.value as OldChoice['physicalState']
-             const max=watchExchangeQuantityForState(x,state)
-             choose(x.id,{physicalState:state,
-               quantity:String(Math.min(Number(chosen[x.id]?.quantity||0),max))})
-           }}>
-           <option value="">Выберите</option>
-           <option value="pending" disabled={watchExchangeQuantityForState(x,'pending')===0}>У клиента или в пути — ожидаем возврата</option>
-           <option value="warehouse">Уже получили в офис</option>
-           <option value="boutique">Уже получили на витрину</option>
-           <option value="no_stock">Получили, но не добавляем в остаток</option>
-           <option value="not_issued" disabled={watchExchangeQuantityForState(x,'not_issued')===0}>Товар клиенту ещё не выдавали</option>
-         </select></label>}
-     </div>)}
-   </div>
-   <div className="watch-exchange-lines exchange-set-workspace">
-     <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">ШАГ 2</span>
-       <h3>Новые часы для клиента</h3>
-       <p>Можно выбрать несколько комплектаций, как в Main.</p></div></div>
+   <p className="exchange-workspace-note">Отметьте старые часы, добавьте новые позиции и подтвердите фактическую отправку. Денежные расчёты учитываются отдельно.</p>
+   <section className="exchange-set-step watch-exchange-old-step">
+     <div className="exchange-set-section-head">
+       <div><span className="exchange-set-kicker">1 · Старые товары</span>
+         <h3>Что убираем из заказа</h3>
+         <p>Выберите товары из этого заказа и нужное количество.</p></div>
+     </div>
+     <div className="exchange-old-grid">
+       {old.map(x=>{
+         const selection=chosen[x.id]
+         const selected=Number(selection?.quantity||0)>0
+         const max=watchExchangeQuantityForState(x,selection?.physicalState||'')
+         const returned=selected&&selection.physicalState!=='not_issued'&&selection.physicalState!=='pending'
+         return <div key={x.id} className={'exchange-old-card'+(selected?' is-selected':'')}>
+           <button type="button" className="exchange-old-pick" onClick={()=>toggleOld(x)}>
+             <span className="exchange-check">{selected?'✓':''}</span>
+             <span className="exchange-old-main"><strong>{x.productName}</strong>
+               <small>{[x.gender==='male'?'Мужские':'Женские',
+                 opt(WATCH_OPTIONS.movements,x.movement),
+                 opt(WATCH_OPTIONS.braceletMaterials,x.braceletMaterial),
+                 opt(WATCH_OPTIONS.dialColors,x.dialColor),x.braceletColor].filter(Boolean).join(' · ')}</small>
+             </span>
+             <span className="exchange-old-order-info">
+               <strong>{x.quantity} шт.</strong><small>в заказе</small>
+               <small>Можно обменять: {watchExchangeQuantityForState(x,'')} шт.</small>
+               <em>Цена: {amount(x.unitPrice)} / шт.</em>
+             </span>
+           </button>
+           {selected&&<div className="exchange-old-controls">
+             {max>1?<div className="exchange-quantity-control">
+               <span>Меняем</span>
+               <button type="button" disabled={Number(selection.quantity)<=1}
+                 onClick={()=>choose(x.id,{quantity:String(Math.max(1,Number(selection.quantity)-1))})}>−</button>
+               <strong>{selection.quantity} из {max}</strong>
+               <button type="button" disabled={Number(selection.quantity)>=max}
+                 onClick={()=>choose(x.id,{quantity:String(Math.min(max,Number(selection.quantity)+1))})}>+</button>
+             </div>:<span className="exchange-one-unit">Меняем 1 шт.</span>}
+             {watchExchangeQuantityForState(x,'pending')===0?
+               <div className="exchange-auto-state"><strong>Клиенту не выдавали</strong>
+                 <span>Позицию уберём из заказа без фиктивной обратной приёмки.</span></div>:
+               <div className="exchange-physical-choice">
+                 <span>Часы уже вернулись?</span>
+                 <div className="exchange-choice-row">
+                   <button type="button" className={!returned?'is-active':''}
+                     onClick={()=>choose(x.id,{physicalState:'pending'})}>Нет, ещё у клиента</button>
+                   <button type="button" className={returned?'is-active':''}
+                     onClick={()=>choose(x.id,{physicalState:x.source==='boutique'?'boutique':'warehouse'})}>
+                     Да, уже у нас</button>
+                 </div>
+                 {returned?<label><span>Куда принять часы</span>
+                   <select value={selection.physicalState} onChange={e=>choose(x.id,{physicalState:e.target.value as OldChoice['physicalState']})}>
+                     <option value="warehouse">Офис</option>
+                     <option value="boutique">Витрина</option>
+                     <option value="no_stock">Не добавлять в остаток</option>
+                   </select></label>:<small>После обмена часы появятся в очереди приёмки.</small>}
+               </div>}
+           </div>}
+         </div>
+       })}
+       {old.length===0&&<p className="exchange-set-empty-inline">Нет часов, доступных к обмену.</p>}
+     </div>
+   </section>
+   <section className="exchange-set-step watch-exchange-new-step">
+     <div className="exchange-set-section-head"><div><span className="exchange-set-kicker">2 · Клиент получает</span>
+       <h3>Что выдаём взамен</h3>
+       <p>Добавьте часы, затем укажите их характеристики, количество и источник.</p></div></div>
      {newLines.map((x,index)=><div key={x.key} className="watch-exchange-new exchange-new-card">
-       <div className="watch-exchange-new-title"><strong>Позиция {index+1}</strong>
+       <div className="exchange-new-card-head"><div><span>Товар {index+1}</span><strong>{x.modelName||'Выберите часы'}</strong></div>
          <button className="secondary" type="button" disabled={newLines.length===1}
            onClick={()=>{setNewLines(v=>v.filter(r=>r.key!==x.key));setConfirmed(false)}}>Удалить</button>
        </div>
-       <div className="watch-exchange-new-grid">
-         <label>Название модели<SmartPickerInput value={x.modelName} options={models}
-           onChange={v=>update(x.key,{modelName:v})}/></label>
+       <div className="exchange-new-primary-fields">
+         <label><span>Товар</span><SmartPickerInput value={x.modelName} options={models}
+           placeholder="Начните вводить название" onChange={v=>update(x.key,{modelName:v})}/></label>
+         <label><span>Количество</span><input required type="number" min={1} max={1000} step={1}
+           value={x.quantity} onChange={e=>update(x.key,{quantity:e.target.value})}/></label>
+         <label><span>Откуда выдаём</span><select value={x.source}
+           onChange={e=>update(x.key,{source:e.target.value as WatchSource})}>
+           {WATCH_OPTIONS.sources.map(v=><option key={v.value} value={v.value}>{v.label}</option>)}
+         </select></label>
+       </div>
+       {x.modelName.trim()?<>
+       <div className="exchange-new-details"><span className="exchange-field-group-title">Характеристики</span>
+       <div className="watch-exchange-new-grid exchange-new-fields">
          <label>Пол<select value={x.gender}
            onChange={e=>update(x.key,{gender:e.target.value as WatchGender})}>
            {WATCH_OPTIONS.genders.map(v=><option key={v.value} value={v.value}>{v.label}</option>)}
@@ -257,39 +307,38 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
          {x.braceletMaterial==='leather'&&<label>Цвет ремешка
            <SmartPickerInput value={x.braceletColor} options={refs.leatherColors||[]}
              onChange={v=>update(x.key,{braceletColor:v})}/></label>}
-         <label>Источник<select value={x.source}
-           onChange={e=>update(x.key,{source:e.target.value as WatchSource})}>
-           {WATCH_OPTIONS.sources.map(v=><option key={v.value} value={v.value}>{v.label}</option>)}
-         </select></label>
-         <label>Количество<input required type="number" min={1} max={1000} step={1}
-           value={x.quantity} onChange={e=>update(x.key,{quantity:e.target.value})}/></label>
-         <label>Цена за шт., ₸<input required type="number" min={0} step={1}
+         <label>Цена продажи за шт., ₸<input required type="number" min={0} step={1}
            value={x.unitPrice} onChange={e=>update(x.key,{unitPrice:e.target.value})}/></label>
          <label className="watch-exchange-wide">Гравировка<textarea rows={2} maxLength={500}
            value={x.engravingText} onChange={e=>update(x.key,{engravingText:e.target.value})}/></label>
-         <label className="watch-exchange-wide watch-exchange-shipment-state">
-           <strong>Новые часы уже передали клиенту?</strong>
-           <select required value={x.shipmentState}
-             onChange={e=>update(x.key,{
-               shipmentState:e.target.value as NewLine['shipmentState'],
-               issuePossessionConfirmed:false,
-             })}>
-             <option value="">Укажите факт отправки</option>
-             <option value="pending">Нет, ещё не отправлены — передадим в логистику</option>
-             <option value="sent">Да, часы уже выданы клиенту</option>
-           </select>
-         </label>
+       </div></div>
+       <div className={'exchange-shipment-choice'+(!x.shipmentState?' needs-choice':'')}>
+         <strong>Новые часы уже отправили клиенту?</strong>
+         <div className="exchange-choice-row" role="group" aria-label="Фактическая отправка замены">
+           <button type="button" aria-pressed={x.shipmentState==='sent'}
+             className={x.shipmentState==='sent'?'is-active':''}
+             onClick={()=>update(x.key,{shipmentState:'sent',issuePossessionConfirmed:false})}>Уже отправили</button>
+           <button type="button" aria-pressed={x.shipmentState==='pending'}
+             className={x.shipmentState==='pending'?'is-active':''}
+             onClick={()=>update(x.key,{shipmentState:'pending',issuePossessionConfirmed:false})}>Ещё не отправили</button>
+         </div>
+         {x.shipmentState==='pending'&&<div className="exchange-shipment-warning" role="status">
+           <strong>Не забудьте отметить отправку!</strong>
+           <span>После передачи откройте «Отправить» в заказе и выберите готовые часы в логистике.</span>
+         </div>}
+       </div>
          {x.shipmentState==='sent'&&<label className="watch-exchange-wide watch-exchange-physical-verified">
            <input type="checkbox" checked={x.issuePossessionConfirmed}
              onChange={e=>update(x.key,{issuePossessionConfirmed:e.target.checked})}/>
            Подтверждаю фактическую передачу именно этих часов. Main зафиксирует физическую выдачу;
            если по учёту не хватает остатка, он не станет отрицательным.
          </label>}
-       </div>
+       </>}
+       {!x.modelName.trim()&&<div className="exchange-new-hint">Сначала выберите модель — появятся характеристики и цена.</div>}
      </div>)}
      <button type="button" className="secondary" disabled={newLines.length>=20}
        onClick={()=>{setNewLines(v=>[...v,blank()]);setConfirmed(false)}}>+ Добавить часы</button>
-   </div>
+   </section>
    <div className="watch-exchange-set-money exchange-settlement-card">
      <strong>Итог обмена: {amount(finalTotal)}</strong>
      <small>Уже оплачено за вычетом возвратов: {amount(netPaid)} ·
