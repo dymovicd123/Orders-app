@@ -164,7 +164,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         <div><small>Остаток долга</small><strong>{sum(data.totals.debtAmount)}</strong></div>
         <div><small>Учтено возвратов</small><strong>{sum(data.totals.returnAmount)}</strong></div>
       </div>
-      <p className="watch-orders-note">Суммы и долги взяты из заказов. Неотправленные часы с отсутствующим остатком остаются видимыми в таблице.</p>
+      <p className="watch-orders-note">Возвраты, обмены, оплаты и отправки отображаются раздельно, как в Main. Нехватка свободного резерва не скрывает заказ и не закрывает кнопку отправки.</p>
       {data.rows.length===0?<p>Заказов за выбранный период нет.</p>:
         <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
           <table className="data-table orders-table watch-main-orders-table">
@@ -311,30 +311,59 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   </div>
                 </td>
                 <td>
-                  <div className="watch-main-row-actions">
-                    {workflow==='orders'&&onOpenWorkflow&&
-                      parsedRows<ItemLine>(order.itemLines).some(line=>line.returnableQuantity>0)&&
+                  <div className="order-table-actions watch-main-row-actions">
+                    {workflow==='orders'&&onOpenLogistics&&
                       <button type="button" className="secondary compact"
-                        onClick={()=>onOpenWorkflow('returns',{
-                          brand,orderId:order.orderId,externalId:order.externalId,orderDate:order.orderDate
-                        })}>Возврат</button>}
-                    {workflow==='orders'&&onOpenWorkflow&&
-                      parsedRows<ItemLine>(order.itemLines).some(line=>line.returnableQuantity>0)&&
+                        onClick={()=>onOpenLogistics(brand)}>
+                        {shipment.state==='sent'?'Отправки':'Отправить товары'}
+                      </button>}
+                    {order.debtAmount>0&&workflow==='orders'&&
+                      <button type="button" className="secondary compact debt-action-button"
+                        onClick={()=>showDetailAction('debt')}>Закрыть долг</button>}
+                    {(workflow==='orders'||workflow==='returns')&&operational.canOpenReturn&&
                       <button type="button" className="secondary compact"
-                        onClick={()=>onOpenWorkflow('exchange',{
-                          brand,orderId:order.orderId,externalId:order.externalId,orderDate:order.orderDate
-                        })}>Обмен</button>}
-                    <button type="button" className="watch-main-detail-button"
-                      aria-expanded={workflow==='orders'&&expanded===order.orderId}
+                        onClick={()=>openFlow('returns')}>Возврат</button>}
+                    {(workflow==='orders'||workflow==='exchange')&&operational.canOpenExchange&&
+                      <button type="button" className="secondary compact"
+                        onClick={()=>openFlow('exchange')}>Обмен</button>}
+                    {workflow==='orders'&&
+                      <button type="button" className={isAdmin?'primary compact':'secondary compact'}
+                        onClick={()=>showDetailAction('edit')}>
+                        {isAdmin&&operational.canEdit?'Редактировать':
+                          isAdmin?'Исправить заказ':'Исправить реквизиты'}
+                      </button>}
+                    {workflow==='orders'&&
+                      <div className="order-extra-actions watch-order-extra-actions">
+                        <button type="button" className="secondary compact"
+                          aria-expanded={extraActionsOrderId===order.orderId}
+                          onClick={()=>setExtraActionsOrderId(old=>old===order.orderId?null:order.orderId)}>
+                          Доп. действия
+                        </button>
+                        {extraActionsOrderId===order.orderId&&<>
+                          {order.committedReturnCount>0&&
+                            <button type="button" className="secondary compact"
+                              onClick={()=>openFlow('returns')}>История / отмена возврата</button>}
+                          {order.committedExchangeCount>0&&
+                            <button type="button" className="secondary compact"
+                              onClick={()=>openFlow('exchange')}>История / отмена обмена</button>}
+                          {shipment.state!=='sent'&&
+                            <button type="button" className="secondary compact"
+                              onClick={()=>showDetailAction('handover')}>Уточнить выдачу</button>}
+                          {isAdmin&&
+                            <button type="button" className="secondary compact"
+                              onClick={()=>showDetailAction('edit')}>Цены, состав, удалить заказ</button>}
+                        </>}
+                      </div>}
+                    <button type="button" className="secondary compact watch-main-detail-button"
+                      aria-expanded={expanded===order.orderId}
                       onClick={()=>{
-                        if(workflow==='returns'){setReturnOrderId(order.orderId);setExchangeOrderId(null);return}
-                        if(workflow==='exchange'){setExchangeOrderId(order.orderId);setReturnOrderId(null);return}
-                        setExpanded(v=>v===order.orderId?null:order.orderId);
-                        setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);
-                        setEditOrderId(null);setHandoverOrderId(null)
+                        if(workflow==='returns'){openFlow('returns');return}
+                        if(workflow==='exchange'){openFlow('exchange');return}
+                        setExpanded(value=>value===order.orderId?null:order.orderId)
+                        setReturnOrderId(null);setExchangeOrderId(null)
+                        setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)
                       }}>
-                      {workflow==='returns'?'Оформить возврат':workflow==='exchange'?'Оформить обмен':
-                        expanded===order.orderId?'Скрыть':'Подробнее'}
+                      {expanded===order.orderId?'Скрыть':'Подробнее'}
                     </button>
                   </div>
                 </td>
