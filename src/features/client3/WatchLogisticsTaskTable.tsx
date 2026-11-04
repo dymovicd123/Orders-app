@@ -158,7 +158,7 @@ export function WatchLogisticsTaskTable({
                {issued&&<span className="status-pill status-online">Отправлено</span>}
                {!historical&&!issued&&!prepared&&!engravingNeeded&&<small className="watch-task-stock-hint">
                  Проверьте статус товара и складскую привязку.</small>}
-               {!historical&&!issued&&shortage&&onOpenStock&&<button type="button" className="secondary compact"
+               {!historical&&!issued&&shortage&&item.stockWriteoffStatus!=='catalog_retired'&&onOpenStock&&<button type="button" className="secondary compact"
                  onClick={()=>onOpenStock(order.brand)}>Проверить остаток</button>}
                {waitingReceipt>0&&onOpenReturns&&<button type="button" className="secondary compact"
                  onClick={()=>onOpenReturns(order.brand)}>Приёмка возврата</button>}
