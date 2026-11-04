@@ -206,3 +206,22 @@
   padding:5px 8px!important;min-height:28px!important;white-space:nowrap}
 .watch-main-orders-table .watch-main-order-row{vertical-align:top}
 .watch-main-orders-table td.watch-main-order-sku{min-width:190px;max-width:270px}
+
+
+/* Main's editing is a dedicated workspace, never a table accordion. */
+.watch-orders .watch-main-edit-workspace{display:grid;gap:15px;min-width:0;
+  margin:17px 0;padding:18px;border:1px solid #dbe4ee;border-radius:12px;background:#fff}
+.watch-orders .watch-main-edit-workspace-head{display:flex;gap:15px;align-items:start;
+  justify-content:space-between;flex-wrap:wrap}
+.watch-orders .watch-main-edit-workspace-head h3{font-size:19px;margin:0;color:#0f172a}
+.watch-orders .watch-main-edit-workspace-head p{font-size:13px;line-height:1.5;
+  color:#475569;margin:5px 0 0;max-width:780px}
+.watch-orders .watch-main-edit-workspace-head button{white-space:nowrap}
+.watch-orders .watch-main-edit-workspace>.watch-corrections{margin:0;max-width:none}
+.watch-orders .watch-main-edit-workspace .watch-corrections-tabs{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.watch-orders .watch-main-edit-workspace .watch-corrections-tabs button{
+  min-height:39px;white-space:normal;text-align:center}
+.watch-orders .watch-main-edit-workspace .watch-corrections-tabs button.primary{
+  background:#2563eb!important;border-color:#2563eb!important;color:#fff!important}
+@media(max-width:650px){.watch-orders .watch-main-edit-workspace{padding:12px}}
