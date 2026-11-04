@@ -156,6 +156,8 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
    if(!/^watch-retire-[A-Za-z0-9_.:-]{16,120}$/.test(requestId))
      return fail('Повторите подтверждение удаления товара с новым идентификатором.',400)
    if(canonicalId){
+     const waiting=await pendingPhysicalIntake(db,scope.items)
+     if(waiting)return fail('Удаление остановлено: ожидается физическая приёмка возвращённых часов ('+waiting+' поз.).',409)
      const owner=await db.prepare(`SELECT cp.id
        FROM catalog_products cp JOIN watch_products wp ON wp.catalog_product_id=cp.id
        JOIN watch_brands b ON b.id=wp.brand_id
@@ -167,6 +169,7 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
        const outcome=await retireCatalogEntity(db,'product',canonicalId,{
          requestId,reason:'Удалён товар часов '+scope.model.model_name+' из Client3',
          actor:actor.displayName||actor.email||'Администратор',
+         client3WatchScope:{watchProductId:scope.model.id,brandId},
        })
        if(outcome.status&&outcome.status!=='completed')
          return fail('Удаление Main не завершено. Прервана проверка журнала — рабочая модель не скрыта.',409)
@@ -179,14 +182,46 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
        return fail(cause instanceof Error?cause.message:'Main не завершил безопасное удаление товара.',409)
      }
    }
-   // Retrying after an interrupted UI request is repair-safe: this step only
-   // archives watch catalog shells; canonical Main history is already durable.
-   await db.batch([
-     db.prepare('UPDATE watch_variants SET is_active=0 WHERE watch_product_id=? AND is_active=1')
-       .bind(scope.model.id),
-     db.prepare('UPDATE watch_products SET is_active=0 WHERE id=? AND brand_id=? AND is_active=1')
-       .bind(scope.model.id,brandId),
-   ])
+   // Main now deactivates canonical + watch rows in ONE atomic batch.
+   // Only deployments interrupted before this fix may require a proof-gated
+   // idempotent shell-only repair; never perform another physical movement.
+   const shell=await db.prepare('SELECT is_active FROM watch_products WHERE id=? AND brand_id=?')
+     .bind(scope.model.id,brandId).first<{is_active:number}>()
+   if(shell?.is_active===1&&canonicalId){
+     const proof=await db.prepare(`SELECT id FROM catalog_retirement_operations
+       WHERE entity_type='product' AND entity_id=? AND status='completed'
+       ORDER BY id DESC LIMIT 1`).bind(canonicalId).first<{id:number}>()
+     if(!proof?.id)return fail('Не найден завершённый журнал вывода товара Main. Склад не изменён повторно.',409)
+     try{
+       await db.batch([
+         db.prepare(`UPDATE watch_variants SET is_active=0 WHERE watch_product_id=? AND is_active=1
+           AND EXISTS(SELECT 1 FROM catalog_products p WHERE p.id=? AND p.is_active=0)`)
+           .bind(scope.model.id,canonicalId),
+         db.prepare(`UPDATE watch_products SET is_active=0
+           WHERE id=? AND brand_id=? AND is_active=1
+             AND EXISTS(SELECT 1 FROM catalog_products p WHERE p.id=? AND p.is_active=0)`)
+           .bind(scope.model.id,brandId,canonicalId),
+       ])
+     }catch{
+       return fail('Вывод склада Main завершён, но оболочка часов не закрыта. Повторите удаление — нового списания не будет.',409)
+     }
+   }else if(shell?.is_active===1){
+     // A never-provisioned watch draft has no Main inventory to remove.
+     await db.batch([
+       db.prepare('UPDATE watch_variants SET is_active=0 WHERE watch_product_id=? AND is_active=1')
+         .bind(scope.model.id),
+       db.prepare('UPDATE watch_products SET is_active=0 WHERE id=? AND brand_id=? AND is_active=1')
+         .bind(scope.model.id,brandId),
+     ])
+   }
+   const incomplete=await db.prepare(`SELECT wp.is_active AS model_active,
+     (SELECT COUNT(*) FROM watch_variants v WHERE v.watch_product_id=wp.id
+       AND v.is_active=1) AS live_variants
+     FROM watch_products wp WHERE wp.id=? AND wp.brand_id=?`)
+     .bind(scope.model.id,brandId)
+     .first<{model_active:number;live_variants:number}>()
+   if(!incomplete||incomplete.model_active!==0||Number(incomplete.live_variants)!==0)
+     return fail('Архивация часовой карточки не подтверждена. Проверьте запись перед повтором.',409)
    return json({ok:true,kind:'product',deletedCount:scope.items.length,
      productDeleted:true,historyPreserved:true,mainRetirement:Boolean(canonicalId)})
  }
