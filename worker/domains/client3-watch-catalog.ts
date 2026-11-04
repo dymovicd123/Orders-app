@@ -207,9 +207,14 @@ export async function registerWatchVariant(
       )`
     ).bind(productId,v.gender,...anchor,productId,v.gender,
       v.movement,v.braceletMaterial,v.dialColor,v.braceletColor)
+    // Preserve the established v5 format for a first custom generation.
+    // Once that identity is retired, use v6 for each subsequent generation;
+    // v5's global UNIQUE must not occupy another historical identity.
+    const detailTable=previousRetired
+      ?'watch_variant_attributes_v6':'watch_variant_attributes_v5'
     const outcome=legacy?[await insert.run()]:await db.batch([
       insert,
-      db.prepare(`INSERT INTO watch_variant_attributes_v6(
+      db.prepare(`INSERT INTO ${detailTable}(
         watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
       ) SELECT id,watch_product_id,gender,?,?,?,? FROM watch_variants
         WHERE watch_product_id=? AND gender=? AND bracelet_color=? AND is_active=1`)
