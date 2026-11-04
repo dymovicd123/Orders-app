@@ -224,6 +224,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
   if(!pageIds.length)return json({ok:true,rows:[],hasMore:false,nextOffset:null})
   const rows=await db.prepare(`
     SELECT o.id AS orderId,o.external_id AS externalId,wb.code AS brand,
+      o.order_date AS orderDate,o.manager_snapshot_name AS managerName,
       o.source_type AS legacySource,o.shipping_status AS shippingStatus,
       wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
       wd.delivery_full_address AS address,wd.postal_code AS postalCode,wd.city,
@@ -233,6 +234,12 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       oi.id AS orderItemId,oi.quantity,oi.source_type AS itemSource,
       oi.stock_writeoff_status AS stockWriteoffStatus,
       ir.status AS reservationStatus,wp.model_name AS modelName,
+      COALESCE((SELECT stock.quantity FROM inventory_stock stock
+        WHERE stock.variant_id=oi.variant_id AND stock.inventory_source=oi.source_type LIMIT 1),0)
+        AS physicalQuantity,
+      COALESCE((SELECT stock.reserved_quantity FROM inventory_stock stock
+        WHERE stock.variant_id=oi.variant_id AND stock.inventory_source=oi.source_type LIMIT 1),0)
+        AS systemReservedQuantity,
       ${WATCH_ITEM_SHIPPED_SQL} AS shippedQuantity,
       ${WATCH_ITEM_RETURNED_SQL} AS returnedQuantity,
       ${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} AS pendingReturnQuantity,
