@@ -28,6 +28,8 @@ import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
+import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,
+  WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL} from './client3-watch-item-projection.ts'
 import {listClient3WatchClients,listClient3WatchCustomerOrders} from './client3-watch-clients.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
@@ -222,9 +224,10 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       oi.id AS orderItemId,oi.quantity,oi.source_type AS itemSource,
       oi.stock_writeoff_status AS stockWriteoffStatus,
       ir.status AS reservationStatus,wp.model_name AS modelName,
-      COALESCE((SELECT SUM(di.quantity-di.cancelled_quantity)
-        FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
-        WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id),0) AS shippedQuantity,
+      ${WATCH_ITEM_SHIPPED_SQL} AS shippedQuantity,
+      ${WATCH_ITEM_RETURNED_SQL} AS returnedQuantity,
+      ${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} AS pendingReturnQuantity,
+      ${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL} AS pendingExchangeReceiptQuantity,
       (SELECT di2.id FROM order_dispatch_items di2
         JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
         WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
@@ -241,7 +244,14 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     JOIN watch_brands wb ON wb.id=wd.brand_id
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
     JOIN watch_logistics_jobs lj ON lj.order_id=wd.order_id
-    LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND oi.quantity>0
+    LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND (
+      oi.quantity>0
+      OR EXISTS (SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+        WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
+      OR EXISTS (SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+        WHERE ei.order_item_id=oi.id AND ei.role='old'
+          AND COALESCE(e.status,'completed')<>'cancelled')
+    )
     LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
     LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
