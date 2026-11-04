@@ -96,6 +96,7 @@ export function WatchClient3App() {
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
+  const [logisticsFocusOrderId,setLogisticsFocusOrderId]=useState<number|null>(null)
   const [correctionPrefill,setCorrectionPrefill]=useState<{
     brand:WatchBrand;source:'office'|'showcase';watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'
   }|null>(null)
@@ -379,7 +380,9 @@ export function WatchClient3App() {
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}
+            isAdmin={canAdmin} onOpenLogistics={(selected,orderId)=>{
+              setLogisticsFocusOrderId(orderId);setBrand(selected);goTo('logistics')
+            }}
             onOpenWorkflow={(kind,order)=>{
               setReportOrderFocus(order);setLastOrderBrand(order.brand);
               goTo(kind==='returns'?'returns':'exchange')
@@ -428,7 +431,9 @@ export function WatchClient3App() {
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}
-      {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand+'-'+isLogisticsRole}
+      {activeSection==='logistics'&&<WatchLogisticsPanel
+        key={'logistics-'+catalogVersion+'-'+brand+'-'+isLogisticsRole+'-'+(logisticsFocusOrderId||0)}
+        focusOrderId={logisticsFocusOrderId}
         brand={isLogisticsRole?'all':brand||'all'} allowedBrands={brands.map(x=>x.code)}
         canDispatch={canSales||isLogisticsRole} canCorrectDispatch={canAdmin}
         canCompleteEngraving={canAdmin||isLogisticsRole}/>}
