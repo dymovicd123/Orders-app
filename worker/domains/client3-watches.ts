@@ -24,6 +24,7 @@ import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
 import {listClient3WatchStockHistory} from './client3-watch-history.ts'
 import {listClient3WatchDemand} from './client3-watch-demand.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
+import {listClient3WatchReturnHistory,cancelClient3WatchReturn} from './client3-watch-return-history.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
@@ -563,6 +564,20 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return exchangeClient3Watch(db,actor,scope.row!.id,Number(exchangeMatch[1]),input)
+  }
+  const watchReturnHistoryMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/returns\/history$/.exec(url.pathname)
+  if(watchReturnHistoryMatch&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchReturnHistory(db,actor,scope.row!.id,Number(watchReturnHistoryMatch[1]))
+  }
+  const watchReturnCancelMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/returns\/(\d+)\/cancel$/.exec(url.pathname)
+  if(watchReturnCancelMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return cancelClient3WatchReturn(db,actor,scope.row!.id,
+      Number(watchReturnCancelMatch[1]),Number(watchReturnCancelMatch[2]),input)
   }
   const watchReturnMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return$/.exec(url.pathname)
   if(watchReturnMatch&&request.method==='POST'){
