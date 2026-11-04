@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = c194fdc80ca864906566a3999cf652b75b896c74
+          test "$(git rev-parse HEAD^)" = 5ac76f8da4b8a67c73394520fdd2799c9978fa6a
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -62,6 +62,7 @@ jobs:
             scripts/client3/test-watch-orders-read-20261102.mjs \
             scripts/client3/test-watch-handover-after-revision-20261103.mjs \
             scripts/client3/test-watch-debt-multi-ui-20261104.mjs \
+            scripts/client3/test-watch-main-editor-and-cascade-20261104.mjs \
             scripts/client3/test-watch-logistics-20261102.mjs \
             scripts/client3/test-watch-workshop-parity-20261104.mjs \
             scripts/client3/test-watch-workspace-layout-20261102.mjs \
@@ -91,6 +92,11 @@ jobs:
             jq -e '.[0].results[0] | select(.admins>=1 and .brands>=2 and .ready_table==1 and .cash_table==1 and .return_value==1 and .exchange_link==1)'
           npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="PRAGMA foreign_key_check" |
             jq -e '.[0].results|length==0'
+      - name: Read-only check if Main admin deletion saga journal exists in QA
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('admin_order_delete_sagas','admin_order_delete_saga_steps') ORDER BY name" | jq -c '.[0].results'
+          echo "Missing journal tables imply deletion chains remain blocked by the server."
       - name: Deploy only EXISTING TEST Worker and TEST D1; no migrations
         run: |
           set -euo pipefail
