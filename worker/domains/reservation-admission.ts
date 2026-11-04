@@ -116,7 +116,8 @@ export async function recoverPendingOrderReservationsBeforeShipping(
        AND r.inventory_source IN ('warehouse', 'boutique') AND r.quantity > 0
        AND oi.quantity = r.quantity AND oi.variant_id = r.variant_id AND oi.product_id = r.product_id
        AND COALESCE(oi.is_workshop, 0) = 0 AND oi.stock_writeoff_status = 'pending_reservation'
-       AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+       AND (COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+         OR ${sentReplacementAllowed})
        AND COALESCE(o.order_status, 'active') = 'active' AND COALESCE(o.archived_at, '') = ''
        AND NOT EXISTS (
          SELECT 1 FROM return_items ri JOIN returns ret ON ret.id = ri.return_id
@@ -153,7 +154,8 @@ export async function recoverPendingOrderReservationsBeforeShipping(
         AND oi.product_id = r.product_id AND oi.variant_id = r.variant_id
         AND oi.quantity = r.quantity AND COALESCE(oi.is_workshop, 0) = 0
         AND oi.stock_writeoff_status = 'pending_reservation'
-        AND COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+        AND (COALESCE(o.shipping_status, 'not_sent') <> 'sent'
+         OR ${sentReplacementAllowed})
         AND COALESCE(o.order_status, 'active') = 'active'
         AND COALESCE(o.archived_at, '') = ''
         AND NOT EXISTS (
