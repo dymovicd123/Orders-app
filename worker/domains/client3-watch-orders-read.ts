@@ -74,6 +74,26 @@ export async function listClient3WatchOrders(
         o.order_status AS orderStatus,
         o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
         o.debt_amount AS debtAmount,o.return_amount AS returnAmount,
+        (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
+          AND COALESCE(r.status,'completed')<>'cancelled'
+          AND NOT EXISTS (SELECT 1 FROM exchanges e
+             WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
+        ) AS committedReturnCount,
+        (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=o.id
+          AND COALESCE(e.status,'completed')<>'cancelled'
+        ) AS committedExchangeCount,
+        (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri
+          JOIN returns r ON r.id=ri.return_id
+          WHERE r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled'
+          AND NOT EXISTS (SELECT 1 FROM exchanges e
+             WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
+        ) AS committedItemReturnQuantity,
+        (SELECT r.return_date FROM returns r WHERE r.order_id=o.id
+          AND COALESCE(r.status,'completed')<>'cancelled'
+          ORDER BY r.id DESC LIMIT 1) AS latestReturnDate,
+        (SELECT e.exchange_date FROM exchanges e WHERE e.order_id=o.id
+          AND COALESCE(e.status,'completed')<>'cancelled'
+          ORDER BY e.id DESC LIMIT 1) AS latestExchangeDate,
         wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
         wd.city,wd.delivery_method AS deliveryMethod,
         COALESCE(o.customer_name_override,c.display_name,'') AS canonicalCustomerName,
@@ -100,9 +120,17 @@ export async function listClient3WatchOrders(
           'id',oi.id,'watchVariantId',wi2.watch_variant_id,
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,
+          'returnedQuantity',COALESCE((
+            SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id=ri.return_id
+            WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'
+              AND NOT EXISTS(SELECT 1 FROM exchanges e
+                WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
+          ),0),
           'returnableQuantity',MAX(0,oi.quantity-COALESCE((
              SELECT SUM(ri.quantity) FROM return_items ri JOIN returns r ON r.id=ri.return_id
              WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'
+              AND NOT EXISTS(SELECT 1 FROM exchanges e
+                WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
            ),0)),
           'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
