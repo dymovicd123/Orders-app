@@ -715,8 +715,17 @@ export async function retireCatalogEntity(
   db: D1Database,
   entityType: CatalogRetirementEntityType,
   entityId: number,
-  input: { requestId?: unknown; reason?: unknown; actor?: unknown } = {},
+  input: { requestId?: unknown; reason?: unknown; actor?: unknown;
+    client3WatchScope?: {watchProductId:number;brandId:number} } = {},
 ) {
+  // Optional Client3-only finalizer. When supplied, archive both the canonical
+  // inventory and the watch identity in ONE D1 batch, not two transactions.
+  const watchScope=input.client3WatchScope;
+  if(watchScope&&(
+     entityType!=='product'||!Number.isSafeInteger(watchScope.watchProductId)||
+     watchScope.watchProductId<=0||!Number.isSafeInteger(watchScope.brandId)||
+     watchScope.brandId<=0))
+    throw new Error('Недопустимые границы удаления часов Client3.');
   const requestId = cleanText(input.requestId);
   if (!requestId || requestId.length < 8) throw new Error('Для безопасного удаления нужен requestId операции.');
   const replay = await db.prepare(
@@ -874,7 +883,31 @@ export async function retireCatalogEntity(
          AND NOT EXISTS (SELECT 1 FROM catalog_retirement_operations op WHERE op.request_id=?)`
     ).bind(requestId, reason, actor, now, entityId, requestId);
 
-  const statements: D1PreparedStatement[] = [insertOperation];
+  const statements: D1PreparedStatement[] = [];
+  if(watchScope){
+    // Write-time preflight: a return/exchange awaiting physical receipt is
+    // recorded in Client3 return_items/exchange_items, often WITHOUT a Main
+    // pending inventory_lifecycle_events entry. A competing intake invalidates
+    // the retirement atomically, before any stock is written off.
+    statements.push(db.prepare(`INSERT INTO watch_products(id)
+      SELECT wp.id FROM watch_products wp
+      WHERE wp.id=? AND (
+        wp.brand_id<>? OR wp.catalog_product_id<>? OR wp.is_active<>1
+        OR EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+          JOIN order_items oi ON oi.id=ri.order_item_id
+          JOIN catalog_variants cv ON cv.id=oi.variant_id
+          WHERE cv.product_id=? AND ri.physical_tracking=1
+            AND ri.physical_received_at IS NULL
+            AND COALESCE(r.status,'completed')<>'cancelled')
+        OR EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
+          JOIN order_items oi ON oi.id=ei.order_item_id
+          JOIN catalog_variants cv ON cv.id=oi.variant_id
+          WHERE cv.product_id=? AND ei.role='old' AND ei.physical_tracking=1
+            AND ei.physical_received_at IS NULL
+            AND COALESCE(ex.status,'completed')<>'cancelled')
+      )`).bind(watchScope.watchProductId,watchScope.brandId,entityId,entityId,entityId))
+  }
+  statements.push(insertOperation);
 
   statements.push(
     db.prepare(
@@ -1000,6 +1033,31 @@ export async function retireCatalogEntity(
          WHERE id=? AND is_active=1
            AND EXISTS (SELECT 1 FROM catalog_retirement_operations WHERE request_id=? AND status='started')`
       ).bind(now, entityId, requestId),
+    );
+  }
+
+  if(watchScope){
+    // These writes are now in the SAME transaction as Main stock write-offs,
+    // canonical deactivation and reservation release.
+    statements.push(
+      db.prepare(`UPDATE watch_variants SET is_active=0
+        WHERE watch_product_id=? AND is_active=1
+          AND EXISTS(SELECT 1 FROM watch_products wp
+            JOIN catalog_products cp ON cp.id=wp.catalog_product_id
+            WHERE wp.id=? AND wp.brand_id=? AND cp.id=?
+              AND cp.is_active=0)`)
+        .bind(watchScope.watchProductId,watchScope.watchProductId,watchScope.brandId,entityId),
+      db.prepare(`UPDATE watch_products SET is_active=0
+        WHERE id=? AND brand_id=? AND catalog_product_id=? AND is_active=1
+          AND EXISTS(SELECT 1 FROM catalog_products cp WHERE cp.id=? AND cp.is_active=0)`)
+        .bind(watchScope.watchProductId,watchScope.brandId,entityId,entityId),
+      // If model metadata could not be archived, force failure and rollback
+      // the complete Main inventory retirement; no half-deleted product.
+      db.prepare(`INSERT INTO catalog_products(id)
+        SELECT id FROM catalog_products WHERE id=? AND EXISTS(
+          SELECT 1 FROM watch_products wp WHERE wp.id=? AND wp.brand_id=?
+            AND wp.catalog_product_id=? AND wp.is_active<>0)`)
+        .bind(entityId,watchScope.watchProductId,watchScope.brandId,entityId),
     );
   }
 
