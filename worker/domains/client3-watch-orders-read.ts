@@ -105,6 +105,7 @@ export async function listClient3WatchOrders(
            'pendingReturnQuantity',${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL},
            'pendingExchangeReceiptQuantity',${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL},
            'returnableQuantity',${WATCH_ITEM_RETURNABLE_SQL},
+           'exchangeableQuantity',MAX(0,oi.quantity-${WATCH_ITEM_RETURNED_SQL}),
            'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
