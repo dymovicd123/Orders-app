@@ -127,3 +127,11 @@
 .client3-physical-send-confirm input[type="checkbox"]{
   flex:none;width:18px;height:18px;margin:2px 0 0;
 }
+
+/* Physical receipt is an independent Main-like step even after a refund. */
+.watch-logistics-receipt-notice{display:grid;gap:8px;flex-basis:100%;min-width:0;
+  padding:11px 14px;border:1px solid #ead3ab;border-radius:9px;background:#fff9ee}
+.watch-logistics-receipt-notice strong{font-size:.87rem;color:#92400e}
+.watch-logistics-receipt-notice small{font-size:.78rem;color:#76543a;line-height:1.45}
+.watch-logistics-receipt-notice button{justify-self:start}
+.watch-logistics-intake-warning{color:#92400e!important;font-weight:650}
