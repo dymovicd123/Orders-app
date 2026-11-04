@@ -184,8 +184,14 @@ export async function listClient3WatchRetiredCatalog(
  if(!Number.isSafeInteger(offset)||offset<0||offset>100000)
    return fail('Неправильная страница архива.',400)
  const rows=await db.prepare(`SELECT wp.id AS watchProductId,
-   wp.model_name AS modelName,wp.is_active AS productActive,
-   v.id AS watchVariantId,v.is_active AS variantActive,
+   wp.model_name AS modelName,
+   CASE WHEN wp.is_active=1 AND (wp.catalog_product_id IS NULL OR cp.is_active=1)
+     THEN 1 ELSE 0 END AS productActive,
+   v.id AS watchVariantId,
+   CASE WHEN v.id IS NULL THEN NULL
+     WHEN v.is_active=1 AND (v.catalog_variant_id IS NULL OR
+       (cv.is_active=1 AND cp.is_active=1 AND sp.is_active=1))
+     THEN 1 ELSE 0 END AS variantActive,
    v.catalog_variant_id AS catalogVariantId,
    v.gender,COALESCE(va.movement,v.movement) AS movement,
    COALESCE(va.bracelet_material,v.bracelet_material) AS braceletMaterial,
@@ -206,7 +212,13 @@ export async function listClient3WatchRetiredCatalog(
  FROM watch_products wp
  LEFT JOIN watch_variants v ON v.watch_product_id=wp.id
  LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
- WHERE wp.brand_id=? AND (wp.is_active=0 OR v.is_active=0)
+ LEFT JOIN catalog_products cp ON cp.id=wp.catalog_product_id
+ LEFT JOIN catalog_variants cv ON cv.id=v.catalog_variant_id
+ LEFT JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
+ WHERE wp.brand_id=? AND (wp.is_active=0 OR v.is_active=0 OR
+   (wp.catalog_product_id IS NOT NULL AND COALESCE(cp.is_active,0)=0) OR
+   (v.catalog_variant_id IS NOT NULL AND
+     (COALESCE(cv.is_active,0)=0 OR COALESCE(sp.is_active,0)=0)))
  ORDER BY COALESCE(NULLIF(modelRetiredAt,''),NULLIF(variantRetiredAt,''),'') DESC,
    wp.id DESC, v.id DESC LIMIT 101 OFFSET ?`)
   .bind(brandId,offset).all<Record<string,unknown>>()
