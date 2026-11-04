@@ -19,10 +19,10 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
       CASE WHEN wp.is_active=1 AND (wp.catalog_product_id IS NULL OR cp.is_active=1)
         THEN 1 ELSE 0 END AS productActive,
       wv.id AS watchVariantId,wv.catalog_variant_id AS catalogVariantId,
-      wv.gender,COALESCE(va.movement,wv.movement) AS movement,
-      COALESCE(va.bracelet_material,wv.bracelet_material) AS braceletMaterial,
-      COALESCE(va.dial_color,wv.dial_color) AS dialColor,
-      COALESCE(va.bracelet_color,wv.bracelet_color) AS braceletColor,
+      wv.gender,COALESCE(va6.movement,va.movement,wv.movement) AS movement,
+      COALESCE(va6.bracelet_material,va.bracelet_material,wv.bracelet_material) AS braceletMaterial,
+      COALESCE(va6.dial_color,va.dial_color,wv.dial_color) AS dialColor,
+      COALESCE(va6.bracelet_color,va.bracelet_color,wv.bracelet_color) AS braceletColor,
       CASE WHEN wv.id IS NULL THEN NULL
         WHEN wv.is_active=1 AND (wv.catalog_variant_id IS NULL OR
           (cv.is_active=1 AND sp.is_active=1 AND cp.is_active=1))
@@ -38,6 +38,7 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
     LEFT JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id
     LEFT JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
     LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=wv.id
     WHERE wp.brand_id=?
     ORDER BY wp.model_name COLLATE NOCASE,wp.id,wv.id
   `).bind(brandId).all<Record<string,unknown>>()
@@ -142,11 +143,12 @@ export async function registerWatchVariant(
   const values=[productId,v.gender,v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]
   const find=`SELECT v.id,v.is_active,v.catalog_variant_id FROM watch_variants v
     LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=v.id
     WHERE v.watch_product_id=? AND v.gender=? AND
-      COALESCE(va.movement,v.movement)=? AND
-      COALESCE(va.bracelet_material,v.bracelet_material)=? AND
-      COALESCE(va.dial_color,v.dial_color)=? AND
-      COALESCE(va.bracelet_color,v.bracelet_color)=?
+      COALESCE(va6.movement,va.movement,v.movement)=? AND
+      COALESCE(va6.bracelet_material,va.bracelet_material,v.bracelet_material)=? AND
+      COALESCE(va6.dial_color,va.dial_color,v.dial_color)=? AND
+      COALESCE(va6.bracelet_color,va.bracelet_color,v.bracelet_color)=?
     ORDER BY v.is_active DESC,v.id DESC LIMIT 1`
   const old=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
   if(old?.is_active===0&&options.fromVerifiedOrder)
@@ -183,19 +185,42 @@ export async function registerWatchVariant(
     // sentinel guarantees the old UNIQUE key never merges separate SKU IDs.
     const anchor=legacy?[v.movement,v.braceletMaterial,v.dialColor,v.braceletColor]:
       ['quartz','leather','black','__WATCH_V5__'+crypto.randomUUID().replaceAll('-','')]
-    const insert=db.prepare(
-      'INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(?,?,?,?,?,?)'
-    ).bind(productId,v.gender,...anchor)
-    const result=legacy?await insert.run():(await db.batch([
+    // Duplicate prevention is part of the INSERT statement itself, not a
+    // stale preflight. SQLite serializes this against competing D1 requests.
+    // v6 has no historical-identity UNIQUE: an archived generation must never
+    // occupy the name of a subsequent, independent physical SKU.
+    const insert=db.prepare(`
+      INSERT INTO watch_variants(
+        watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
+      ) SELECT ?,?,?,?,?,? WHERE NOT EXISTS(
+        SELECT 1 FROM watch_variants current
+        LEFT JOIN watch_variant_attributes_v5 previous
+          ON previous.watch_variant_id=current.id
+        LEFT JOIN watch_variant_attributes_v6 generation
+          ON generation.watch_variant_id=current.id
+        WHERE current.watch_product_id=? AND current.is_active=1
+          AND current.gender=?
+          AND COALESCE(generation.movement,previous.movement,current.movement)=?
+          AND COALESCE(generation.bracelet_material,previous.bracelet_material,current.bracelet_material)=?
+          AND COALESCE(generation.dial_color,previous.dial_color,current.dial_color)=?
+          AND COALESCE(generation.bracelet_color,previous.bracelet_color,current.bracelet_color)=?
+      )`
+    ).bind(productId,v.gender,...anchor,productId,v.gender,
+      v.movement,v.braceletMaterial,v.dialColor,v.braceletColor)
+    const outcome=legacy?[await insert.run()]:await db.batch([
       insert,
-      db.prepare(`INSERT INTO watch_variant_attributes_v5(
+      db.prepare(`INSERT INTO watch_variant_attributes_v6(
         watch_variant_id,watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color
       ) SELECT id,watch_product_id,gender,?,?,?,? FROM watch_variants
-        WHERE watch_product_id=? AND gender=? AND bracelet_color=?`)
-        .bind(v.movement,v.braceletMaterial,v.dialColor,v.braceletColor,productId,v.gender,anchor[3]),
-    ]))[0]
-    const id=Number(result.meta?.last_row_id||0)
-    if(!Number.isSafeInteger(id)||id<=0)throw new Error('Не удалось подтвердить комплектацию часов.')
+        WHERE watch_product_id=? AND gender=? AND bracelet_color=? AND is_active=1`)
+        .bind(v.movement,v.braceletMaterial,v.dialColor,v.braceletColor,
+          productId,v.gender,anchor[3]),
+    ])
+    const id=Number(outcome[0]?.meta?.last_row_id||0)
+    if(Number(outcome[0]?.meta?.changes||0)!==1||
+       (!legacy&&Number(outcome[1]?.meta?.changes||0)!==1)||
+       !Number.isSafeInteger(id)||id<=0)
+      throw new Error('Не удалось подтвердить новую комплектацию часов.')
     return json({ok:true,watchVariantId:id,created:true,stockLinked:false},{status:201})
   }catch(cause){
     const other=await db.prepare(find).bind(...values).first<{id:number;is_active:number;catalog_variant_id:number|null}>()
