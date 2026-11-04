@@ -8,8 +8,9 @@ sqlite.exec('PRAGMA foreign_keys=ON')
 sqlite.exec([
 'CREATE TABLE managers(id INTEGER PRIMARY KEY);',
 'CREATE TABLE app_users(id INTEGER PRIMARY KEY);',
-'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY);',
-'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,stock_position_id INTEGER,category TEXT DEFAULT \'adult\');',
+'CREATE TABLE catalog_products(id INTEGER PRIMARY KEY,is_active INTEGER DEFAULT 1);',
+'CREATE TABLE catalog_stock_positions(id INTEGER PRIMARY KEY,is_active INTEGER DEFAULT 1);',
+'CREATE TABLE catalog_variants(id INTEGER PRIMARY KEY,stock_position_id INTEGER,category TEXT DEFAULT \'adult\',is_active INTEGER DEFAULT 1);',
 'CREATE TABLE catalog_execution_prices(stock_position_id INTEGER,category TEXT,sale_price INTEGER,PRIMARY KEY(stock_position_id,category));',
 'CREATE TABLE orders(id INTEGER PRIMARY KEY);',
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY);',
@@ -24,6 +25,7 @@ sqlite.exec([
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/client3-watch/0006_client3_watch_sku_generations.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0999_watch_model_aliases.sql','utf8'))
 // The small catalogue fixture also needs the v5 characteristic overlay used
 // by the current Client3 resolver. The live installation has these tables.

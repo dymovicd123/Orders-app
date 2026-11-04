@@ -37,7 +37,7 @@ import {listClient3WatchClients,listClient3WatchCustomerOrders} from './client3-
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
 import {editClient3WatchModel,editClient3WatchVariant} from './client3-watch-catalog-edit.ts'
-import {previewClient3WatchDelete,deleteClient3WatchCatalog} from './client3-watch-catalog-delete.ts'
+import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from './client3-watch-catalog-delete.ts'
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from './client3-watch-references.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import { json, readJson } from '../core/http.ts'
@@ -164,10 +164,10 @@ export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
   const rows=await db.prepare(`
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
       v.id AS watchVariantId,v.catalog_variant_id AS catalogVariantId,
-      v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
-      COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
-      COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color) AS dialColor,
-      COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_color) AS braceletColor,
+      v.gender,COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.movement) AS movement,
+      COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_material) AS braceletMaterial,
+      COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.dial_color) AS dialColor,
+      COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_color) AS braceletColor,
       MAX(ep.sale_price) AS catalogPriceSnapshot,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.quantity ELSE 0 END),0) AS officePhysical,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.reserved_quantity ELSE 0 END),0) AS officeReserved,
@@ -239,10 +239,10 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       wditem.engraving_text AS engravingText,
       CASE WHEN TRIM(COALESCE(wditem.engraving_text,''))='' THEN 1
         WHEN ready.engraving_text=wditem.engraving_text THEN 1 ELSE 0 END AS engravingReady,
-      v.gender,COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.movement) AS movement,
-      COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_material) AS braceletMaterial,
-      COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.dial_color) AS dialColor,
-      COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id),v.bracelet_color) AS braceletColor
+      v.gender,COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.movement) AS movement,
+      COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_material) AS braceletMaterial,
+      COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.dial_color) AS dialColor,
+      COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_color) AS braceletColor
     FROM watch_order_details wd
     JOIN watch_brands wb ON wb.id=wd.brand_id
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
@@ -450,10 +450,15 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return listWatchCatalogDrafts(db,actor,scope.row!.id)
   }
+  if(url.pathname==='/api/client3/watches/catalog/retired'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
+    if(scope.error)return scope.error
+    return listClient3WatchRetiredCatalog(db,actor,scope.row!.id,url)
+  }
   if((url.pathname==='/api/client3/watches/catalog/delete-preview'||
       url.pathname==='/api/client3/watches/catalog/delete')&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;kind?:unknown;watchProductId?:unknown;watchVariantId?:unknown;
-      movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown}>(request)
+      movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown;requestId?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return url.pathname.endsWith('delete-preview')

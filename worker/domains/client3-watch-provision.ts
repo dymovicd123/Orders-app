@@ -31,14 +31,15 @@ export async function provisionClient3WatchSku(
 
   const row=await db.prepare(`
     SELECT v.id,v.watch_product_id,v.catalog_variant_id,v.gender,
-      COALESCE(va.movement,v.movement) AS movement,
-      COALESCE(va.bracelet_material,v.bracelet_material) AS bracelet_material,
-      COALESCE(va.dial_color,v.dial_color) AS dial_color,
-      COALESCE(va.bracelet_color,v.bracelet_color) AS bracelet_color,
+      COALESCE(va6.movement,va.movement,v.movement) AS movement,
+      COALESCE(va6.bracelet_material,va.bracelet_material,v.bracelet_material) AS bracelet_material,
+      COALESCE(va6.dial_color,va.dial_color,v.dial_color) AS dial_color,
+      COALESCE(va6.bracelet_color,va.bracelet_color,v.bracelet_color) AS bracelet_color,
       wp.brand_id,wp.catalog_product_id,wp.model_name,b.code AS brand
     FROM watch_variants v
     JOIN watch_products wp ON wp.id=v.watch_product_id AND wp.is_active=1
     LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=v.id
     JOIN watch_brands b ON b.id=wp.brand_id AND b.is_active=1
     WHERE v.id=? AND wp.brand_id=? AND v.is_active=1 LIMIT 1
   `).bind(watchVariantId,brandId).first<{

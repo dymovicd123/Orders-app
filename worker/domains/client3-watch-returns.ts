@@ -5,13 +5,15 @@ import {WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type ReturnInput={
-  requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;
+  requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;returnDate?:unknown;
   items?:unknown;paymentMethod?:unknown;refundParts?:unknown;reason?:unknown
 }
 const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
 const dateAlmaty=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 
-/** Main multi-line exact watch returns, physical receipt explicitly deferred. */
+/** Exact Main business return with Client3 watch brand and SKU validation.
+  * The canonical Main createReturn and cancelReturn functions are copied
+  * unchanged; Client3's external refundParts are mapped to paymentParts. */
 export async function createClient3WatchReturn(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:ReturnInput,
 ) {
@@ -23,6 +25,10 @@ export async function createClient3WatchReturn(
    return fail('WATCH_RETURN_KIND_REQUIRED','Выберите возврат денег, товара или обоих.',400)
  const kind=String(input.kind)
  const itemSelected=kind!=='money_only'
+ const returnDate=typeof input.returnDate==='string'&&
+   /^\d{4}-\d{2}-\d{2}$/.test(input.returnDate)?input.returnDate:dateAlmaty()
+ if(input.returnDate!==undefined&&returnDate!==input.returnDate)
+   return fail('WATCH_RETURN_DATE_INVALID','Укажите дату возврата в формате ГГГГ-ММ-ДД.',400)
  const quantity=Number(input.quantity||0)
  const amount=Number(input.amount||0)
  const reason=typeof input.reason==='string'?input.reason.trim():''
@@ -34,7 +40,7 @@ export async function createClient3WatchReturn(
    (kind!=='items_only'&&amount<=0))
    return fail('WATCH_RETURN_QUANTITY_INVALID','Исправьте количество и сумму возврата.',400)
  const refunds=Array.isArray(input.refundParts)?input.refundParts as Array<{method?:unknown;amount?:unknown}>:[]
- if(refunds.length>3||refunds.some(p=>!p||typeof p.method!=='string'||
+ if(refunds.length>2||refunds.some(p=>!p||typeof p.method!=='string'||
     !p.method.trim()||!Number.isSafeInteger(p.amount)||Number(p.amount)<1)||
    (refunds.length>0&&refunds.reduce((t,p)=>t+Number(p.amount),0)!==amount))
    return fail('WATCH_RETURN_SPLIT_INVALID','Суммы всех способов возврата должны точно совпадать с общей суммой.',400)
@@ -58,11 +64,13 @@ export async function createClient3WatchReturn(
  const watchRows=await db.prepare(`
    SELECT oi.id,oi.quantity,oi.unit_price,oi.variant_id,oi.is_workshop,wi.watch_variant_id,
      ${WATCH_ITEM_RETURNABLE_SQL} AS returnable_quantity,
+     cv.is_active AS canonical_active,
      wp.brand_id AS sku_brand
    FROM order_items oi
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
    JOIN watch_products wp ON wp.id=wv.watch_product_id
+   JOIN catalog_variants cv ON cv.id=oi.variant_id
    WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id
  `).bind(orderId).all<Record<string,unknown>>()
  const byId=new Map((watchRows.results||[]).map(row=>[Number(row.id),row]))
@@ -72,13 +80,14 @@ export async function createClient3WatchReturn(
    [...byId.values()].some(row=>Number(row.sku_brand)!==brandId||Number(row.is_workshop)!==0))
    return fail('WATCH_RETURN_UNVERIFIED_SKU',
      'Не все активные позиции принадлежат часам выбранного бренда. Возврат остановлен.',409)
- // Main's createReturn handles cached idempotent retries. A completed return
- // already consumes its own returnable quantity, so do not reject its replay.
+ // Replayed requests already consumed their own returnable quantity.
+ // Main verifies the request fingerprint and returns the cached result.
  const replay=await db.prepare(`SELECT 1 AS ok FROM critical_operations
    WHERE request_id=? AND operation_type='return_create' LIMIT 1`)
    .bind(input.requestId).first<{ok:number}>()
  const rawItems=Array.isArray(input.items)?input.items:null
- const selected:Array<{orderItemId:number;quantity:number;amount:number;restock:boolean;physicalState:'pending'}>=[]
+ const selected:Array<{orderItemId:number;quantity:number;amount:number;restock:boolean;
+   physicalState:'pending'|'warehouse'|'boutique'|'no_stock'}>=[]
  if(itemSelected){
    const supplied=rawItems||(byId.size===1?[{
      orderItemId:[...byId.keys()][0],quantity,
@@ -87,40 +96,48 @@ export async function createClient3WatchReturn(
      return fail('WATCH_RETURN_SELECTION_REQUIRED','Выберите конкретные часы и количество для возврата.',400)
    const seen=new Set<number>()
    for(const candidate of supplied){
-     const x=candidate as {orderItemId?:unknown;quantity?:unknown}
+     const x=candidate as {orderItemId?:unknown;quantity?:unknown;physicalState?:unknown}
      const id=Number(x?.orderItemId),qty=Number(x?.quantity)
+     const physicalState=String(x?.physicalState||'pending')
+     if(!['pending','warehouse','boutique','no_stock'].includes(physicalState))
+       return fail('WATCH_RETURN_PHYSICAL_INVALID',
+         'Выберите, где физически находятся возвращаемые часы.',400)
      const row=byId.get(id)
      if(!Number.isSafeInteger(id)||!row||seen.has(id)||
        !Number.isSafeInteger(qty)||qty<1||
        qty>(replay?Number(row.quantity):Number(row.returnable_quantity)))
        return fail('WATCH_RETURN_SELECTION_INVALID',
-         'Возврат товара возможен только после фактической отправки/выдачи. Проверьте количество и ранее оформленные возвраты.',409)
+         'Возврат товара возможен только после фактической выдачи. Проверьте ранее оформленные возвраты и количество.',409)
+     if(Number(row.canonical_active)===0&&
+       (physicalState==='warehouse'||physicalState==='boutique'))
+       return fail('WATCH_RETIRED_RETURN_STOCK_BLOCKED',
+         'Архивные часы нельзя зачислять в удалённый SKU. Выберите приём без зачисления в остаток; для новой продажи создайте действующую комплектацию и отдельный приход.',409)
      const credit=qty*Number(row.unit_price)
      if(!Number.isSafeInteger(credit)||credit<0||credit>1_000_000_000_000)
-       return fail('WATCH_RETURN_COMMERCIAL_VALUE',
-         'Стоимость выбранных часов слишком велика для точного учёта.',409)
+       return fail('WATCH_RETURN_COMMERCIAL_VALUE','Недопустимая стоимость возвращаемых часов.',409)
      seen.add(id)
-     // Return item amount is the immutable sale-value snapshot, distinct
-     // from returns.amount (the money really refunded to the customer).
      selected.push({orderItemId:id,quantity:qty,amount:credit,
-       restock:false,physicalState:'pending'})
+       restock:physicalState==='warehouse'||physicalState==='boutique',
+       physicalState:physicalState as 'pending'|'warehouse'|'boutique'|'no_stock'})
    }
  }else if(rawItems?.length){
    return fail('WATCH_RETURN_MONEY_ONLY','Для возврата только денег нельзя выбирать товары.',400)
  }
  try {
    const response=await createReturn(db,{
-     requestId:input.requestId as string,orderId,returnDate:dateAlmaty(),
+     requestId:input.requestId as string,orderId,returnDate,
      amount,paymentMethod:amount>0?selectedMethods[0]:undefined,
-     ...(refunds.length?{refundParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
+     ...(refunds.length?{paymentParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
      comment:reason,restockSource:'none',
      items:selected,
    })
    if(!response||typeof response!=='object'||!('ok' in response)||response.ok!==true)
      return fail('WATCH_RETURN_NOT_APPLIED','Возврат не подтверждён финансовым ядром.')
-   return json({...response,brandId,orderId,
-     physicalReceiptPending:itemSelected,
-     ...(itemSelected?{notice:'Деньги и возврат зарегистрированы. Физическое принятие часов оформите отдельно.'}:{})})
+   const physicalReceiptPending=selected.some(x=>x.physicalState==='pending')
+   return json({...response,brandId,orderId,physicalReceiptPending,
+     ...(itemSelected?{notice:physicalReceiptPending
+       ?'Возврат оформлен. Часы в пути появятся в очереди приёмки; уже полученные отмечены отдельно.'
+       :'Возврат и указанное фактическое получение часов оформлены.'}:{})})
  }catch(cause){
    return fail('WATCH_RETURN_FAILED',cause instanceof Error?cause.message:'Не удалось оформить возврат.')
  }
@@ -157,6 +174,16 @@ export async function receiveClient3WatchReturn(
       AND COALESCE(r.status,'completed')<>'cancelled' LIMIT 1`,
  ).bind(returnItemId,returnId,orderId,brandId).first<{id:number}>()
  if(!match)return fail('WATCH_RECEIPT_NOT_FOUND','Часы не принадлежат возврату этого бренда.',404)
+ if(destination!=='no_stock'){
+   const retired=await db.prepare(`SELECT cv.is_active AS active
+     FROM order_items oi JOIN catalog_variants cv ON cv.id=oi.variant_id
+     WHERE oi.id=(SELECT CASE WHEN ?='exchange'
+       THEN (SELECT ei.order_item_id FROM exchange_items ei WHERE ei.id=? AND ei.exchange_id=?)
+       ELSE (SELECT ri.order_item_id FROM return_items ri WHERE ri.id=? AND ri.return_id=?) END)`)
+     .bind(operationType,returnItemId,returnId,returnItemId,returnId).first<{active:number}>()
+   if(retired?.active===0)return fail('WATCH_RETIRED_RECEIPT_STOCK_BLOCKED',
+     'Архивные часы нельзя зачислять в удалённый SKU. Выберите приём без добавления в остаток.',409)
+ }
  try {
    const result=await receiveReturnedItem(db,{
      requestId:input.requestId as string,operationType,
@@ -177,10 +204,10 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
    SELECT 'return' AS operationType,ri.id AS returnItemId,ri.return_id AS returnId,r.order_id AS orderId,
      o.external_id AS externalOrderId,ri.quantity,r.return_date AS returnDate,
      wp.model_name AS modelName,wv.gender,
-     COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.movement) AS movement,
-     COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_material) AS braceletMaterial,
-     COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.dial_color) AS dialColor,
-     COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color) AS braceletColor
+     COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.movement) AS movement,
+     COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_material) AS braceletMaterial,
+     COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.dial_color) AS dialColor,
+     COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_color) AS braceletColor
    FROM return_items ri
    JOIN returns r ON r.id=ri.return_id
    JOIN orders o ON o.id=r.order_id
@@ -194,10 +221,10 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
    SELECT 'exchange' AS operationType,ei.id AS returnItemId,ei.exchange_id AS returnId,e.order_id AS orderId,
      o.external_id AS externalOrderId,ei.quantity,e.exchange_date AS returnDate,
      wp.model_name AS modelName,wv.gender,
-     COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.movement) AS movement,
-     COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_material) AS braceletMaterial,
-     COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.dial_color) AS dialColor,
-     COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color) AS braceletColor
+     COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.movement) AS movement,
+     COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_material) AS braceletMaterial,
+     COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.dial_color) AS dialColor,
+     COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_color) AS braceletColor
    FROM exchange_items ei
    JOIN exchanges e ON e.id=ei.exchange_id
    JOIN orders o ON o.id=e.order_id

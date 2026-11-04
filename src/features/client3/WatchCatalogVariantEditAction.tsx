@@ -8,7 +8,7 @@ type Row={
 }
 type Choices={movements:string[];bracelets:string[];dials:string[]}
 type Props={brand:WatchBrand;row:Row;choices:Choices;strapColors:string[];
-  disabled?:boolean;onSaved:()=>void;onCreateReplacement:(variant:WatchVariantInput)=>void}
+  disabled?:boolean;buttonLabel?:string;onSaved:()=>void;onCreateReplacement:(variant:WatchVariantInput)=>void}
 const request=async (brand:WatchBrand,body:Record<string,unknown>)=>{
  const response=await fetch('/api/client3/watches/catalog/variants',{
    method:'PATCH',credentials:'include',cache:'no-store',
@@ -26,7 +26,7 @@ const label=(value:string)=>[
 ].find(x=>x.value===value)?.label.toLocaleUpperCase('ru-RU')||value.toLocaleUpperCase('ru-RU')
 
 /** Main's catalog variant editor, adapted for watch identity and shared reference values. */
-export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,disabled,onSaved,onCreateReplacement}:Props){
+export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,disabled,buttonLabel='Изменить характеристики',onSaved,onCreateReplacement}:Props){
  const initial=():WatchVariantInput=>({
    gender:row.gender==='female'?'female':'male',
    movement:row.movement||'quartz',
@@ -56,7 +56,7 @@ export function WatchCatalogVariantEditAction({brand,row,choices,strapColors,dis
  return <>
    <button className="secondary compact" type="button" disabled={disabled}
      onClick={()=>{setDraft(initial());setError('');setOpen(true)}}>
-     Изменить характеристики
+     {buttonLabel}
    </button>
    {open&&<div className="modal-backdrop catalog-retirement-backdrop" role="presentation"
      onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)setOpen(false)}}>
