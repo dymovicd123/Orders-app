@@ -54,6 +54,7 @@ export async function exchangeClient3WatchSet(
    ${WATCH_ITEM_ISSUED_SQL} AS issued_quantity,
    ${WATCH_ITEM_RETURNED_SQL} AS returned_quantity,
    oi.catalog_price_snapshot,oi.variant_id,wi.watch_variant_id,
+   cv.is_active AS canonical_active,
    wp.brand_id FROM order_items oi
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
