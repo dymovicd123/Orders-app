@@ -8,7 +8,7 @@ type OldLine={id:number;productName:string;quantity:number;returnableQuantity:nu
  unitPrice:number;lineTotal:number;catalogPriceSnapshot:number|null;shipped:number;
  gender:string;movement:string;braceletMaterial:string;dialColor:string;braceletColor:string}
 type Order={orderId:number;externalId:string;totalAmount:number;receivedAmount:number;
- returnAmount:number;itemLines:string}
+ returnAmount:number;commercialReturnedValue:number;itemLines:string}
 type NewLine={key:string;modelName:string;gender:WatchGender;movement:string;
  braceletMaterial:string;dialColor:string;braceletColor:string;source:WatchSource;
  quantity:string;unitPrice:string;engravingText:string}
@@ -82,7 +82,10 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  const removed=choiceRows.reduce((v,x)=>v+Number(chosen[x.id].quantity)*x.unitPrice,0)
  const added=newLines.reduce((v,x)=>v+(Number(x.quantity)||0)*(Number(x.unitPrice)||0),0)
  const finalTotal=order.totalAmount-removed+added
- const netPaid=order.receivedAmount-order.returnAmount
+ // Main keeps the original itemized gross total; standalone physical
+ // returned units supply a noncash commercial credit for exchange settlement.
+ const netPaid=order.receivedAmount-order.returnAmount+
+   Number(order.commercialReturnedValue||0)
  const due=Math.max(0,finalTotal-netPaid)
  const refundDue=Math.max(0,netPaid-finalTotal)
  const updatePay=(type:'payment'|'refund',key:string,patch:Partial<Payment>)=>{
@@ -185,6 +188,9 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  return <form className="watch-exchange-form watch-exchange-set" onSubmit={e=>void save(e)}>
    <h4>Обмен · {order.externalId}</h4>
    <p>Выберите старые часы, затем укажите новые. Доступно несколько позиций и способов доплаты или возврата. Новые часы сначала поступят в логистику. Физическая приёмка старых часов требуется только если они уже были у клиента.</p>
+   {Number(order.commercialReturnedValue||0)>0&&<p>
+     Ранее возвращённые часы уменьшают коммерческий итог на {amount(order.commercialReturnedValue)}.
+     Эта сумма учитывается в расчёте обмена, но не является новой оплатой.</p>
    <div className="watch-exchange-lines">
      <strong>Какие часы меняет клиент</strong>
      {old.map(x=><div key={x.id} className="watch-exchange-old">
