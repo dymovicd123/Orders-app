@@ -1,5 +1,9 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
+import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,
+  WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL,WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
+import {watchCommercialReturnCreditSql,watchNetSaleSql,watchNetDebtSql,
+  watchNetPaidSql,watchCustomerOverpaymentSql} from './client3-watch-commercial.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
 const validDate=(raw:string|null):string|null=>{
@@ -44,9 +48,9 @@ export async function listClient3WatchOrders(
       SELECT 1 FROM order_items pending
       WHERE pending.order_id=o.id AND pending.quantity>0
         AND COALESCE(pending.stock_writeoff_status,'')<>'fulfilled'
-        AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di
-          WHERE di.order_item_id=pending.id
-            AND di.quantity>COALESCE(di.cancelled_quantity,0))
+        AND COALESCE((SELECT SUM(MAX(0,di.quantity-COALESCE(di.cancelled_quantity,0)))
+          FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+          WHERE di.order_item_id=pending.id AND d.order_id=pending.order_id),0)<pending.quantity
     )`
     const issuedOperationally=`(${noUnissuedItems} AND
       (o.shipping_status='sent' OR EXISTS (
@@ -56,7 +60,7 @@ export async function listClient3WatchOrders(
       AND (? IS NULL OR o.order_date>=?)
       AND (? IS NULL OR o.order_date<=?)
       AND (?='all' OR (?='sent' AND ${issuedOperationally}) OR (?='not_sent' AND NOT ${issuedOperationally}))
-      AND (?='all' OR (?='debt' AND o.debt_amount>0) OR (?='paid' AND o.debt_amount<=0))
+      AND (?='all' OR (?='debt' AND ${watchNetDebtSql('o')}>0) OR (?='paid' AND ${watchNetDebtSql('o')}<=0))
       AND (?=0 OR o.external_id LIKE ? ESCAPE '\\'
         OR wd.recipient_name LIKE ? ESCAPE '\\'
         OR wd.recipient_phone LIKE ? ESCAPE '\\'
@@ -149,22 +153,32 @@ export async function listClient3WatchOrders(
           LEFT JOIN watch_order_item_details wi2 ON wi2.order_item_id=oi.id
           LEFT JOIN watch_variants wv2 ON wv2.id=wi2.watch_variant_id
           LEFT JOIN watch_products wp2 ON wp2.id=wv2.watch_product_id
-          WHERE oi.order_id=o.id AND oi.quantity>0) AS itemLines,
+          WHERE oi.order_id=o.id AND (
+            oi.quantity>0
+            OR EXISTS (SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+              WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
+            OR EXISTS (SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+              WHERE ei.order_item_id=oi.id AND ei.role='old'
+                AND COALESCE(e.status,'completed')<>'cancelled')
+          )) AS itemLines,
         EXISTS (
-          SELECT 1 FROM exchanges e JOIN order_items repl ON repl.id=e.new_order_item_id
-          WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
-            AND repl.quantity>0 AND NOT EXISTS (
-              SELECT 1 FROM order_dispatch_items di
-              JOIN order_dispatches d ON d.id=di.dispatch_id
-              WHERE di.order_item_id=repl.id AND di.quantity>di.cancelled_quantity
-            )
+          SELECT 1 FROM exchange_items ei
+          JOIN exchanges e ON e.id=ei.exchange_id AND e.order_id=o.id
+          JOIN order_items repl ON repl.id=ei.order_item_id
+          WHERE ei.role='new' AND COALESCE(e.status,'completed')<>'cancelled'
+            AND repl.quantity>0 AND
+            COALESCE(repl.stock_writeoff_status,'')<>'fulfilled'
+            AND COALESCE((
+              SELECT SUM(MAX(0,di.quantity-COALESCE(di.cancelled_quantity,0)))
+              FROM order_dispatch_items di
+              JOIN order_dispatches d ON d.id=di.dispatch_id AND d.order_id=o.id
+              WHERE di.order_item_id=repl.id
+            ),0)<repl.quantity
         ) AS pendingReplacement,
         (SELECT oi.id FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS firstItemId,
         (SELECT wi.watch_variant_id FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS activeWatchVariantId,
-        (SELECT oi.quantity-COALESCE((SELECT SUM(ri.quantity) FROM return_items ri
-          JOIN returns r ON r.id=ri.return_id
-          WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled'),0)
-          FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS returnableQuantity,
+        (SELECT ${WATCH_ITEM_RETURNABLE_SQL} FROM order_items oi
+          WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS returnableQuantity,
         (SELECT wp.model_name || ' · ' || CASE wv.gender WHEN 'male' THEN 'Мужские' ELSE 'Женские' END ||
           ' · ' || COALESCE((SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.movement) || ' · ' || COALESCE((SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_material) || ' · ' || COALESCE((SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.dial_color) ||
           CASE WHEN length(COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color))>0 THEN ' · ' || COALESCE((SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id),wv.bracelet_color) ELSE '' END
@@ -182,9 +196,12 @@ export async function listClient3WatchOrders(
       ORDER BY o.order_date DESC,o.id DESC LIMIT ? OFFSET ?
     `).bind(...args,rawLimit,rawOffset).all()
     const totals=await db.prepare(`
-      SELECT COUNT(*) AS orderCount,COALESCE(SUM(o.total_amount),0) AS totalAmount,
+      SELECT COUNT(*) AS orderCount,
+        COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalAmount,
+        COALESCE(SUM(o.total_amount),0) AS grossTotalAmount,
+        COALESCE(SUM(${watchCommercialReturnCreditSql('o')}),0) AS commercialReturnedValue,
         COALESCE(SUM(o.received_amount),0) AS receivedAmount,
-        COALESCE(SUM(o.debt_amount),0) AS debtAmount,
+        COALESCE(SUM(${watchNetDebtSql('o')}),0) AS debtAmount,
         COALESCE(SUM(o.return_amount),0) AS returnAmount
       FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
       WHERE ${where}
