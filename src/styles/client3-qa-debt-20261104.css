@@ -124,3 +124,25 @@
   .watch-debt-workspace .watch-debt-list-page,
   .watch-debt-workspace .watch-debt-form-page{padding:12px}
 }
+
+
+/* .watch-orders button overrides the shared .primary background, leaving
+   white text on white buttons. Pin the foreground and background together. */
+.watch-debt-workspace .watch-debt-search button.primary,
+.watch-debt-workspace .watch-debt-list-table td button.primary{
+  display:inline-flex;align-items:center;justify-content:center;
+  background:#2563eb!important;border:1px solid #2563eb!important;
+  color:#fff!important;opacity:1;font-size:13px;font-weight:750;
+  min-height:40px;min-width:90px;text-shadow:none;
+}
+.watch-debt-workspace .watch-debt-list-table td button.primary{
+  min-width:126px;white-space:normal;
+}
+.watch-debt-workspace .watch-debt-search button.primary:hover:not(:disabled),
+.watch-debt-workspace .watch-debt-list-table td button.primary:hover:not(:disabled){
+  background:#1d4ed8!important;border-color:#1d4ed8!important;color:#fff!important;
+}
+.watch-debt-workspace .watch-debt-search button.primary:focus-visible,
+.watch-debt-workspace .watch-debt-list-table td button.primary:focus-visible{
+  outline:3px solid #93c5fd;outline-offset:2px;
+}
