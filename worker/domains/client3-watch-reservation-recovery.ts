@@ -33,7 +33,8 @@ export async function retryClient3WatchReservations(
  if(invalid)return fail('WATCH_RESERVE_UNVERIFIED_SKU',
    'Не все активные позиции имеют подтверждённую комплектацию выбранного бренда.',409)
  try{
-   const result=await recoverPendingOrderReservationsBeforeShipping(db,orderId,new Date().toISOString())
+   const result=await recoverPendingOrderReservationsBeforeShipping(db,orderId,new Date().toISOString(),
+     {allowSentExchangeReplacements:true})
    const pending=await db.prepare(`
      SELECT COUNT(*) AS count FROM inventory_reservations
      WHERE order_id=? AND status='unresolved'
