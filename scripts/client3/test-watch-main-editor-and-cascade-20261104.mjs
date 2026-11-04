@@ -20,7 +20,7 @@ const orderList=read('src/features/client3/WatchOrdersPanel.tsx')
 
 for(const label of ['Исправить реквизиты','Исправить записанную цену',
  'Отменить обмены','Отменить возврат','Редактировать','Удалить']){
- assert(main.includes(label),'Main's expected order editor/operation missing: '+label)
+ assert(main.includes(label),'Main editor/operation missing: '+label)
 }
 for(const label of ['Реквизиты','Записанная цена','Данные часов и логистики',
  'Состав товаров','Оплаты, менеджер и удаление',
