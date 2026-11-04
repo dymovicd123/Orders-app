@@ -9,7 +9,7 @@ type Item={
 }
 type Entry={
  id:number;date:string;amount:number;commercialGoodsValue:number;method:string;status:string;comment:string;
- parentExchangeId:number|null;items:string
+ parentExchangeId:number|null;items:string;archivedAppliedCount:number
 }
 type HistoryResponse={ok:boolean;rows:Entry[];message?:string}
 const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
@@ -29,6 +29,7 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
  const [selected,setSelected]=useState<number|null>(null)
  const [reason,setReason]=useState('')
  const [confirmed,setConfirmed]=useState(false)
+ const [physicalLocation,setPhysicalLocation]=useState<'customer'|'office'|'unknown'>('unknown')
  const requests=useRef<Record<number,{fingerprint:string;requestId:string}>>({})
  useEffect(()=>{
    const controller=new AbortController()
@@ -45,7 +46,8 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
  },[brand,orderId,reload])
  const cancel=async(row:Entry)=>{
    if(busy||selected!==row.id||!confirmed||reason.trim().length<8)return
-   const fingerprint=JSON.stringify([brand,orderId,row.id,reason.trim()])
+   const fingerprint=JSON.stringify([brand,orderId,row.id,reason.trim(),
+   Number(row.archivedAppliedCount||0)>0?physicalLocation:null])
    if(requests.current[row.id]?.fingerprint!==fingerprint){
      requests.current[row.id]={fingerprint,requestId:'watch-return-cancel-'+crypto.randomUUID()}
    }
@@ -53,12 +55,13 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
    try{
      const response=await fetch('/api/client3/watches/orders/'+orderId+'/returns/'+row.id+'/cancel',{
        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({brand,requestId:requests.current[row.id].requestId,reason:reason.trim()}),
+       body:JSON.stringify({brand,requestId:requests.current[row.id].requestId,reason:reason.trim(),
+         physicalLocation:Number(row.archivedAppliedCount||0)>0?physicalLocation:undefined}),
      })
      const result=await response.json() as {ok:boolean;message?:string}
      if(!response.ok||!result.ok)throw new Error(result.message||'Невозможно отменить возврат')
      delete requests.current[row.id]
-     setSelected(null);setReason('');setConfirmed(false)
+     setSelected(null);setReason('');setConfirmed(false);setPhysicalLocation('unknown')
      setReload(x=>x+1);onDone()
    }catch(cause){setError(cause instanceof Error?cause.message:'Возврат не отменён')}
    finally{setBusy(false)}
@@ -103,6 +106,20 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
          {linked&&!cancelled&&<small>Отмена этого возврата отдельно запрещена. Управляйте цепочкой обмена.</small>}
          {!cancelled&&!linked&&(selected===row.id?
            <div className="watch-return-history-confirm">
+             {Number(row.archivedAppliedCount||0)>0&&<div className="watch-return-history-archive-note">
+               <strong>Часы удалены из рабочего каталога</strong>
+               <p>Денежный возврат и коммерческая операция отменяются через Main. Старый складской остаток не меняется. Уточните, где фактически находятся часы; это сохранится в причине отмены.</p>
+               <label>Фактическое местонахождение
+                 <select value={physicalLocation} onChange={e=>{
+                   setPhysicalLocation(e.target.value as 'customer'|'office'|'unknown')
+                   setConfirmed(false)
+                 }}>
+                   <option value="unknown">Пока неизвестно</option>
+                   <option value="office">У продавца</option>
+                   <option value="customer">У клиента</option>
+                 </select>
+               </label>
+             </div>}
              <label>Причина отмены
                <textarea rows={2} maxLength={500} value={reason} onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
              </label>
@@ -112,10 +129,10 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
              <div><button type="button" disabled={busy||!confirmed||reason.trim().length<8}
                onClick={()=>void cancel(row)}>{busy?'Сохраняю…':'Подтвердить отмену'}</button>
                <button type="button" className="secondary" disabled={busy}
-                 onClick={()=>{setSelected(null);setConfirmed(false);setReason('')}}>Не отменять</button></div>
+                 onClick={()=>{setSelected(null);setConfirmed(false);setReason('');setPhysicalLocation('unknown')}}>Не отменять</button></div>
            </div>:
            <button type="button" className="secondary compact" disabled={busy}
-             onClick={()=>{setSelected(row.id);setReason('');setConfirmed(false)}}>Отменить возврат</button>)}
+             onClick={()=>{setSelected(row.id);setReason('');setConfirmed(false);setPhysicalLocation('unknown')}}>Отменить возврат</button>)}
        </article>
      })}</div>}
  </section>
