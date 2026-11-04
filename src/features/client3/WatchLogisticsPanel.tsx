@@ -5,6 +5,7 @@ import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import {watchItemFullyIssued,watchIssuedQuantity,watchItemReturnSummary,watchItemAwaitingReceipt}
  from './watchItemLifecycle'
 import '../../styles/client3-watch-logistics.css'
+import '../../styles/client3-qa-logistics-20261104.css'
 
 export type WatchLogisticsRow = {
   orderId: number
