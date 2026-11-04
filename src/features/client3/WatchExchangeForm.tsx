@@ -195,7 +195,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
       <div className="exchange-order-context">
         <div><small>Сумма заказа</small><strong>{amount(order.totalAmount)}</strong></div>
         <div><small>Оплачено деньгами</small><strong>{amount(cashPaid)}</strong></div>
-        {noncashCredit>0&&<div><small>Зачёт возвращённых часов (не деньги)</small><strong>{amount(noncashCredit)}</strong></div>
+        {noncashCredit>0&&<div><small>Зачёт возвращённых часов (не деньги)</small><strong>{amount(noncashCredit)}</strong></div>}
       </div>
    </header>
    <p>Оформление как в основной системе: отметьте конкретные старые часы и где они физически находятся, добавьте новые и для каждой позиции укажите, уже выдали её клиенту или нет. Доплату и возврат можно разделить по способам оплаты.</p>
