@@ -10,6 +10,7 @@ type RetiredLine={
  reservation_id:number|null;reservation_quantity:number|null;reservation_status:string|null;
  reservation_reason:string|null;
  retirement_count:number;open_returns:number;open_old_exchanges:number;shipped:number;
+ invalid_stock_rows:number;
  replacement_id:number|null;replacement_event_id:number|null;replacement_quantity:number|null
 }
 export const retiredWatchShippingProjectionSql=`UPDATE orders SET
@@ -80,6 +81,8 @@ export async function dispatchRetiredClient3WatchLines(
     ready.engraving_text AS ready_text,rv.retirement_id,
     r.id AS reservation_id,r.quantity AS reservation_quantity,r.status AS reservation_status,
     r.unresolved_reason AS reservation_reason,
+    (SELECT COUNT(*) FROM inventory_stock st WHERE st.variant_id=oi.variant_id
+      AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0)) AS invalid_stock_rows,
     (SELECT COUNT(*) FROM catalog_retirement_variants snap
        JOIN catalog_retirement_operations op ON op.id=snap.retirement_id
        WHERE snap.variant_id=oi.variant_id AND op.status='completed'
@@ -127,7 +130,7 @@ export async function dispatchRetiredClient3WatchLines(
       !['warehouse','boutique'].includes(line.source_type)||line.retirement_count!==1||
       !line.retirement_id||line.reservation_status!=='released'||
       line.reservation_quantity!==line.quantity||line.reservation_reason!=='catalog_retired'||
-      Number(line.open_returns)!==0||Number(line.open_old_exchanges)!==0||
+      Number(line.invalid_stock_rows)!==0||Number(line.open_returns)!==0||Number(line.open_old_exchanges)!==0||
       Number(line.shipped)!==0)
      conflict('Состояние архивных часов, резерва или связанных операций изменилось. Проверьте заказ.')
    if(item.quantity>line.quantity)conflict('Нельзя отправить больше архивных часов, чем осталось в заказе.')
@@ -171,6 +174,8 @@ export async function dispatchRetiredClient3WatchLines(
        WHERE oi.id=? AND oi.order_id=? AND oi.variant_id=? AND oi.quantity=?
          AND oi.stock_writeoff_status='catalog_retired'
          AND o.order_status='active' AND COALESCE(o.archived_at,'')=''
+         AND NOT EXISTS (SELECT 1 FROM inventory_stock st WHERE st.variant_id=oi.variant_id
+           AND (COALESCE(st.quantity,0)<>0 OR COALESCE(st.reserved_quantity,0)<>0))
          AND NOT EXISTS (SELECT 1 FROM inventory_reservations more
             WHERE more.order_item_id=oi.id AND more.status IN ('active','unresolved','fulfilled'))
          AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di
