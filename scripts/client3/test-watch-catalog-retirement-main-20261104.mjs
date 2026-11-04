@@ -60,6 +60,7 @@ const admin={id:1,role:'admin',managerId:null,employeeRole:'Администра
 const manager={id:2,role:'manager',managerId:2,employeeRole:'Менеджер'}
 sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'QA Admin')").run()
 sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(2,'QA Manager')").run()
+sqlite.prepare("INSERT OR IGNORE INTO app_users(id,email,password_hash,role,manager_id,display_name,is_active) VALUES(1,'retirement-qa@example.test','fixture-only','admin',1,'QA Admin',1)").run()
 sqlite.prepare("INSERT OR IGNORE INTO watch_manager_brands(manager_id,brand_id) VALUES(2,1)").run()
 sqlite.prepare("INSERT OR REPLACE INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-04')").run()
 const model=async name=>{
