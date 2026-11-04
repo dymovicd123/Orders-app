@@ -12,6 +12,7 @@ import {rewriteClient3AdminWatchItems} from './client3-watch-admin-composition.t
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
 import {listClient3WatchExchangeHistory,cancelClient3WatchExchange} from './client3-watch-exchange-history.ts'
+import {previewClient3WatchExchangeCancellationPlan} from './client3-watch-exchange-chain.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
@@ -588,6 +589,15 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
     return listClient3WatchExchangeHistory(db,actor,scope.row!.id,Number(watchExchangeHistoryMatch[1]))
+  }
+  const watchExchangePlanMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchanges\/cancel-plan$/.exec(url.pathname)
+  if(watchExchangePlanMatch&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    const mode=url.searchParams.get('mode')
+    if(mode!=='last'&&mode!=='all')return BAD('Выберите последний или все обмены.')
+    return previewClient3WatchExchangeCancellationPlan(db,actor,scope.row!.id,
+      Number(watchExchangePlanMatch[1]),mode)
   }
   const watchExchangeCancelMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchanges\/(\d+)\/cancel$/.exec(url.pathname)
   if(watchExchangeCancelMatch&&request.method==='POST'){
