@@ -27,5 +27,18 @@ jobs:
         run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
       - name: Main exchange and return lineage
         run: node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+      - name: Main-style watch catalog, workspace and warehouse checks
+        run: |
+          set -euo pipefail
+          for file in \
+            scripts/client3/test-watch-main-step1-20261102.mjs \
+            scripts/client3/test-watch-form-20261102.mjs \
+            scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
+            scripts/client3/test-watch-full-stock-engine-20261102.mjs \
+            scripts/client3/test-watch-shared-cash-team-20261103.mjs \
+            scripts/client3/test-watch-workspace-layout-20261102.mjs \
+            scripts/client3/test-main-workflow-parity-20261102.mjs; do
+            node --experimental-strip-types "$file"
+          done
       - name: TypeScript and production bundle compile
         run: npm run build
