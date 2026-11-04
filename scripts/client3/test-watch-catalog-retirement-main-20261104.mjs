@@ -567,6 +567,79 @@ assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_
  .get(returnedBeforeRetireVariant.canonical).quantity,0)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
  movementCountAfterReturnRetired)
+// Another history boundary: an Exchange physically returned a watch while
+// active, then the old product was retired. Cancelling the Exchange must not
+// reverse its earlier old-in movement after that later retirement.
+const exchangedBeforeRetireProduct=await model('ARCHIVED AFTER PHYSICAL EXCHANGE QA')
+const exchangedBeforeRetireVariant=await variant(exchangedBeforeRetireProduct)
+const oldExchangeArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:exchangedBeforeRetireVariant.id,quantity:2,
+ comment:'Exchange receipt before SKU retirement',
+ requestId:'watch-exchange-before-retire-arrival-20261104-0001'
+}))
+assert.equal(oldExchangeArrival.status,200,JSON.stringify(oldExchangeArrival))
+const oldExchangeOrder=await parse(createClient3WatchOrder(db,manager,1,{
+ brand:'TAUWACH',source:'office',watchVariantId:exchangedBeforeRetireVariant.id,
+ catalogVariantId:exchangedBeforeRetireVariant.canonical,quantity:1,unitPrice:12000,
+ receivedAmount:0,payments:[],engravingText:'',
+ requestId:'watch-exchange-before-retire-order-20261104-0001',
+ recipientName:'Тест обмена до архива',recipientPhone:'+77015550105',
+ address:'Улица обмена, 5',postalCode:'050005',city:'Алматы',
+ deliveryMethod:'Казпочта',shippingDeadlineLocal:'2026-11-15T14:00',
+ urgent:false,paymentMethod:'KASPI GOLD'
+}))
+assert.equal(oldExchangeOrder.status,201,JSON.stringify(oldExchangeOrder))
+const oldExchangeLine=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
+ FROM order_items WHERE order_id=?`).get(oldExchangeOrder.orderId)
+const deliveredOldExchange=await parse(dispatchClient3WatchOrder(db,admin,1,oldExchangeOrder.orderId,{
+ requestId:'watch-exchange-before-retire-shipment-20261104-0001',
+ items:[{orderItemId:oldExchangeLine.id,quantity:1}]
+}))
+assert.equal(deliveredOldExchange.status,200,JSON.stringify(deliveredOldExchange))
+const newExchangeWatch={modelName:'NEW AFTER OLD EXCHANGE ARCHIVED QA',gender:'female',
+ movement:'quartz',braceletMaterial:'steel',dialColor:'silver',braceletColor:''}
+const oldExchangeMade=await parse(exchangeClient3WatchSet(db,manager,1,oldExchangeOrder.orderId,{
+ requestId:'watch-exchange-with-physical-return-20261104-0001',
+ expectedOrderTotal:12000,
+ oldItems:[{orderItemId:oldExchangeLine.id,quantity:1,physicalState:'warehouse',
+   expectedActiveQuantity:1,expectedUnitPrice:12000,
+   expectedLineTotal:12000,expectedCatalogPriceSnapshot:oldExchangeLine.catalog_price_snapshot}],
+ newItems:[{manual:newExchangeWatch,source:'office',quantity:1,unitPrice:12000,
+   engravingText:'',shipmentState:'pending',issuePossessionConfirmed:false}],
+ paymentParts:[],refundParts:[],reason:'Физический обмен с возвратом исходных часов'
+}))
+assert.equal(oldExchangeMade.status,200,JSON.stringify(oldExchangeMade))
+const exchangeBeforeDelete=sqlite.prepare(`SELECT id FROM exchanges
+ WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled'
+ ORDER BY id DESC LIMIT 1`).get(oldExchangeOrder.orderId)
+assert(exchangeBeforeDelete?.id)
+assert(sqlite.prepare(`SELECT COUNT(*) AS n FROM inventory_lifecycle_events
+ WHERE operation_type='exchange' AND operation_id=? AND status='applied'
+ AND variant_id=?`).get(exchangeBeforeDelete.id,exchangedBeforeRetireVariant.canonical).n>0)
+const exchangedOldPreview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'product',watchProductId:exchangedBeforeRetireProduct
+}))
+assert.equal(exchangedOldPreview.status,200,JSON.stringify(exchangedOldPreview))
+const exchangedOldDeleted=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'product',watchProductId:exchangedBeforeRetireProduct,
+ expectedCount:exchangedOldPreview.count,
+ requestId:'watch-retire-old-exchange-20261104-0001'
+}))
+assert.equal(exchangedOldDeleted.status,200,JSON.stringify(exchangedOldDeleted))
+const beforeBlockedExchange=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+const forbiddenArchiveExchangeCancel=await parse(cancelClient3WatchExchange(db,manager,1,
+ oldExchangeOrder.orderId,exchangeBeforeDelete.id,{
+ requestId:'watch-cancel-old-exchange-after-delete-20261104-0001',
+ reason:'Нельзя обращать складское движение уже удалённого товара'
+}))
+assert.equal(forbiddenArchiveExchangeCancel.status,409,JSON.stringify(forbiddenArchiveExchangeCancel))
+assert.equal(forbiddenArchiveExchangeCancel.code,'WATCH_EXCHANGE_CANCEL_RETIRED_STOCK')
+assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
+ .get(exchangeBeforeDelete.id).status,'completed')
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(exchangedBeforeRetireVariant.canonical).quantity,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
+ beforeBlockedExchange)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
