@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {cancelReturn} from './returns-exchanges.ts'
+import {retiredAppliedMovementBlocker} from './client3-watch-retired-reversal-guard.ts'
 
 const fail=(code:string,message:string,status=409)=>
   json({ok:false,code,message},{status})
@@ -71,6 +72,11 @@ export async function cancelClient3WatchReturn(
    .bind(returnId).first<{id:number}>()
  if(exchange)return fail('WATCH_RETURN_EXCHANGE_LINKED',
    'Этот денежный возврат связан с обменом. Отменять нужно сам обмен с учётом его цепочки.',409)
+ if(own.status!=='cancelled'){
+   const affected=await retiredAppliedMovementBlocker(db,'return',returnId)
+   if(affected)return fail('WATCH_RETURN_CANCEL_RETIRED_STOCK',
+     'Этот возврат изменил склад до удаления товара. Позже остаток был выведен из рабочего каталога. Обычная отмена возврата не может безопасно обратить старое складское движение. История и деньги не изменены; требуется отдельная сверка физического факта.',409)
+ }
  try{
    const result=await cancelReturn(db,returnId,{
      requestId:input.requestId,comment:reason,
