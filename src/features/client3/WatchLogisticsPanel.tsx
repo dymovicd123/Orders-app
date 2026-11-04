@@ -418,7 +418,9 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
        actionLabel:stockPrompt.items.every(item=>item.stockWriteoffStatus==='catalog_retired')?
          'Да, часы переданы — записать отправку':'Да, часы в наличии — отправить',
       cancelLabel:'Остановить отправку',
-      note:'Подтверждение относится только к этой передаче. Сервер по-прежнему проверяет ревизию и статус резерва.',
+      note:stockPrompt.items.every(item=>item.stockWriteoffStatus==='catalog_retired')?
+        'Только для этих часов. Физический склад остаётся неизменным; готовность гравировки, историю выдач и факт удаления сервер проверяет отдельно.':
+        'Подтверждение относится только к этой передаче. Сервер по-прежнему проверяет ревизию и статус резерва.',
     }:null}
       onDecision={confirmed=>{
         const pending=stockPrompt
