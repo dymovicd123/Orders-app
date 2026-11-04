@@ -95,10 +95,27 @@ export async function cancelClient3WatchExchange(
  if(!await ownedWatchOrder(db,brandId,orderId))
    return error('WATCH_EXCHANGE_CANCEL_NOT_FOUND','Заказ не найден в выбранном бренде.',404)
  const owned=await db.prepare(`
-   SELECT e.id,e.order_id FROM exchanges e
+   SELECT e.id,e.order_id,e.status FROM exchanges e
    WHERE e.id=? AND e.order_id=? LIMIT 1
- `).bind(exchangeId,orderId).first<{id:number;order_id:number}>()
+ `).bind(exchangeId,orderId).first<{id:number;order_id:number;status:string|null}>()
  if(!owned)return error('WATCH_EXCHANGE_CANCEL_NOT_FOUND','Обмен не принадлежит этому заказу.',404)
+ // Main's generalized exchange cancellation can reverse its outbound lifecycle
+ // event. In watches, a new unit already physically sent to a client must
+ // never be treated as available stock merely because its exchange was voided.
+ // The only safe paths are a genuine return/receipt or a separately reviewed
+ // mistaken-shipment correction, followed by cancellation if still eligible.
+ if(owned.status!=='cancelled'){
+   const sent=await db.prepare(`
+     SELECT di.id FROM exchange_items ei
+     JOIN order_dispatch_items di ON di.order_item_id=ei.order_item_id
+     JOIN order_dispatches d ON d.id=di.dispatch_id AND d.order_id=?
+     WHERE ei.exchange_id=? AND ei.role='new'
+       AND di.quantity>COALESCE(di.cancelled_quantity,0)
+     LIMIT 1
+   `).bind(orderId,exchangeId).first<{id:number}>()
+   if(sent)return error('WATCH_EXCHANGE_REPLACEMENT_ALREADY_SENT',
+     'Нельзя отменить обмен: новые часы уже фактически отправляли клиенту. Сначала оформите возврат и приёмку либо исправьте ошибочную отправку. Саму отправку отмена обмена не откатывает.',409)
+ }
  try{
    const inputMain={requestId:input.requestId as string,comment:reason}
    const setExchange=await isExchangeSetV2(db,exchangeId)
