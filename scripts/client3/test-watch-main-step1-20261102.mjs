@@ -140,7 +140,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM catalog_retirement_history_e
 // Whole product disappears without purging its historical canonical keys.
 preview=await parse(previewClient3WatchDelete(db,admin,1,{kind:'product',watchProductId:p}))
 assert.equal(preview.canDelete,true)
-removed=await parse(deleteClient3WatchCatalog(db,admin,1,{kind:'product',watchProductId:p,expectedCount:0}))
+removed=await parse(deleteClient3WatchCatalog(db,admin,1,{kind:'product',watchProductId:p,expectedCount:0,requestId:'watch-retire-main-step1-20261104-0001'}))
 assert.equal(removed.ok,true)
 assert.equal(sql.prepare('SELECT is_active FROM watch_products WHERE id=?').get(p).is_active,0)
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM watch_variants WHERE id=?').get(v).n,1)
