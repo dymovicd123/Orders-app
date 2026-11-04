@@ -225,3 +225,11 @@
 .watch-orders .watch-main-edit-workspace .watch-corrections-tabs button.primary{
   background:#2563eb!important;border-color:#2563eb!important;color:#fff!important}
 @media(max-width:650px){.watch-orders .watch-main-edit-workspace{padding:12px}}
+
+
+.watch-orders .watch-admin-payment-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:11px;margin:12px 0}
+.watch-orders .watch-admin-payment-grid>label{display:grid;gap:6px;min-width:0;font-weight:600;color:#334155}
+.watch-orders .watch-admin-payment-grid input,.watch-orders .watch-admin-payment-grid select,.watch-orders .watch-admin-payment-grid textarea{
+ width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:9px;font-size:14px;background:#fff;color:#0f172a}
+.watch-orders .watch-admin-payment-grid .watch-admin-payment-comment{grid-column:1/-1}
+.watch-orders .watch-admin-payment-grid :is(input,select,textarea):disabled{background:#f1f5f9;color:#64748b;opacity:1;cursor:not-allowed}
