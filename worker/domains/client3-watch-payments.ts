@@ -58,3 +58,37 @@ export async function addClient3WatchDebtPayment(
      cause instanceof Error?cause.message:'Долг изменился. Обновите заказ и повторите.')
  }
 }
+
+
+/** Main's recorded debt-close payments, restricted to the exact watch brand.
+ * This is history of actual money received, not commercial-return credits. */
+export async function listClient3WatchDebtHistory(
+ db:D1Database,actor:AuthUser,brandId:number,orderId=0,
+):Promise<Response>{
+ if(!actor||actor.employeeRole==='Логист'&&actor.role!=='admin')
+   return fail('WATCH_PAYMENT_FORBIDDEN','История оплат доступна менеджеру и администратору.',403)
+ if(!Number.isSafeInteger(brandId)||brandId<=0||
+    !Number.isSafeInteger(orderId)||orderId<0)
+   return fail('WATCH_PAYMENT_HISTORY_SCOPE','Некорректный заказ или бренд.',400)
+ if(actor.role!=='admin'){
+   const grant=await db.prepare(`SELECT 1 AS ok FROM watch_manager_brands mb
+     JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+     WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1`)
+     .bind(actor.managerId||0,brandId).first<{ok:number}>()
+   if(!grant?.ok)return fail('WATCH_PAYMENT_BRAND_FORBIDDEN',
+     'Нет доступа к истории этого бренда.',403)
+ }
+ const items=await db.prepare(`SELECT p.id, p.order_id AS orderId,
+     o.external_id AS externalId, o.order_date AS orderDate,
+     p.payment_date AS paymentDate,p.method,p.amount,p.comment,
+     p.created_at AS recordedAt,wd.recipient_name AS customer
+   FROM payments p
+   JOIN orders o ON o.id=p.order_id
+   JOIN watch_order_details wd ON wd.order_id=o.id
+   WHERE wd.brand_id=? AND p.payment_kind='debt_close' AND p.amount>0
+     AND (?=0 OR o.id=?)
+   ORDER BY p.payment_date DESC,p.id DESC LIMIT 81`)
+   .bind(brandId,orderId,orderId).all<Record<string,unknown>>()
+ const rows=items.results||[]
+ return json({ok:true,brandId,orderId,rows:rows.slice(0,80),hasMore:rows.length>80})
+}
