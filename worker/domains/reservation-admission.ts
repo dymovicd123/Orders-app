@@ -100,8 +100,27 @@ export async function admitOrderReservationAtomically(db: D1Database, p: Reserva
 export async function recoverPendingOrderReservationsBeforeShipping(
   db: D1Database, orderId: number, timestamp: string,
   selectedOrderItemIds?: readonly number[],
+  options: {allowSentExchangeReplacements?:boolean} = {},
 ) {
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return { attempted: 0, activated: 0 };
+  // QA retains selection by exact line. The Client3 recovery path may additionally
+  // consider an authentic unshipped exchange replacement on a legacy sent order.
+  const sentReplacementAllowed=options.allowSentExchangeReplacements
+    ? `EXISTS (
+        SELECT 1 FROM inventory_lifecycle_events le
+        JOIN exchange_items ei ON ei.id=le.operation_item_id
+          AND ei.exchange_id=le.operation_id AND ei.order_item_id=oi.id AND ei.role='new'
+        JOIN exchanges ex ON ex.id=ei.exchange_id AND ex.order_id=o.id
+          AND COALESCE(ex.status,'completed')<>'cancelled'
+        WHERE le.order_id=o.id AND le.order_item_id=oi.id
+          AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
+          AND le.status='pending' AND le.pending_reason='awaiting_dispatch'
+          AND NOT EXISTS (
+            SELECT 1 FROM order_dispatch_items di
+            JOIN order_dispatches d ON d.id=di.dispatch_id AND d.order_id=o.id
+            WHERE di.order_item_id=oi.id AND di.quantity>COALESCE(di.cancelled_quantity,0)
+          )
+      )` : '0';
   const pending = await db.prepare(
     `SELECT r.id AS reservation_id, r.order_item_id, r.inventory_source, r.variant_id,
             r.product_id, r.quantity, stock.id AS stock_id
