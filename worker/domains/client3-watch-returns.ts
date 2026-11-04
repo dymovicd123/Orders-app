@@ -4,7 +4,7 @@ import {createReturn,receiveReturnedItem} from './returns-exchanges.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type ReturnInput={
-  requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;
+  requestId?:unknown;kind?:unknown;quantity?:unknown;amount?:unknown;returnDate?:unknown;
   items?:unknown;paymentMethod?:unknown;refundParts?:unknown;reason?:unknown
 }
 const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
@@ -24,6 +24,10 @@ export async function createClient3WatchReturn(
    return fail('WATCH_RETURN_KIND_REQUIRED','Выберите возврат денег, товара или обоих.',400)
  const kind=String(input.kind)
  const itemSelected=kind!=='money_only'
+ const returnDate=typeof input.returnDate==='string'&&
+   /^\d{4}-\d{2}-\d{2}$/.test(input.returnDate)?input.returnDate:dateAlmaty()
+ if(input.returnDate!==undefined&&returnDate!==input.returnDate)
+   return fail('WATCH_RETURN_DATE_INVALID','Укажите дату возврата в формате ГГГГ-ММ-ДД.',400)
  const quantity=Number(input.quantity||0)
  const amount=Number(input.amount||0)
  const reason=typeof input.reason==='string'?input.reason.trim():''
@@ -104,7 +108,7 @@ export async function createClient3WatchReturn(
  }
  try {
    const response=await createReturn(db,{
-     requestId:input.requestId as string,orderId,returnDate:dateAlmaty(),
+     requestId:input.requestId as string,orderId,returnDate,
      amount,paymentMethod:amount>0?selectedMethods[0]:undefined,
      ...(refunds.length?{paymentParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
      comment:reason,restockSource:'none',
