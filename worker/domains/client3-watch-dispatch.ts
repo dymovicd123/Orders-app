@@ -84,7 +84,14 @@ export async function dispatchClient3WatchOrder(
    return fail('WATCH_DISPATCH_REQUEST_CONFLICT','Номер операции использован другим заказом.',409)
 
  const selected=chosen.map(x=>byId.get(x.orderItemId)!)
- const retired=selected.filter(row=>row.stock_writeoff_status==='catalog_retired')
+ const priorRetired=prior?await db.prepare(`SELECT COUNT(*) AS n
+   FROM order_dispatch_items di JOIN retired_order_item_issues j
+     ON j.order_item_id=di.order_item_id AND j.quantity=di.quantity
+   WHERE di.dispatch_id=? AND di.reservation_id IS NULL AND di.movement_id IS NULL`)
+   .bind(prior.id).first<{n:number}>():null
+ const archivedReplay=Boolean(prior&&Number(priorRetired?.n||0)===chosen.length)
+ const retired=selected.filter(row=>row.stock_writeoff_status==='catalog_retired'||
+   (archivedReplay&&row.stock_writeoff_status==='retired_physically_issued'))
  if(retired.length>0&&retired.length!==selected.length)
    return fail('WATCH_ARCHIVED_SELECT_SEPARATELY',
      'Обычные и архивные часы отправляются отдельными подтверждениями. Выберите одну позицию архивных часов.',409)
