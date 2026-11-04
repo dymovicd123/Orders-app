@@ -1640,15 +1640,15 @@ const foreignExchangeCancel=await parse(cancelClient3WatchExchange(db,admin,2,st
 assert.equal(foreignExchangeCancel.status,404,'An exchange of another watch brand cannot be cancelled')
 const beforeSetCancel=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
  .get(stage4Pay.created.orderId)
-assert.deepEqual(beforeSetCancel,{total_amount:60000,received_amount:60000,debt_amount:0})
+assert.deepEqual({...beforeSetCancel},{total_amount:60000,received_amount:60000,debt_amount:0})
 const cancelSetInput={requestId:'watch-set-exchange-cancel-20261104-001',reason:'Контрольная отмена обмена с доплатой двумя способами'}
 const cancelSet=await parse(cancelClient3WatchExchange(db,manager,1,stage4Pay.created.orderId,
  extraResult.exchangeId,cancelSetInput))
 assert.equal(cancelSet.status,200,JSON.stringify(cancelSet))
 assert.equal(cancelSet.ok,true)
 assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?').get(extraResult.exchangeId).status,'cancelled')
-assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
- .get(stage4Pay.created.orderId),{total_amount:40000,received_amount:40000,debt_amount:0},
+assert.deepEqual({...sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId)},{total_amount:40000,received_amount:40000,debt_amount:0},
  'Exchange cancel restores the original sale and reverses both extra payment methods')
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=? AND quantity>0')
  .get(stage4Pay.created.orderId).n,1,'Cancelled replacement must not remain an active sale item')
