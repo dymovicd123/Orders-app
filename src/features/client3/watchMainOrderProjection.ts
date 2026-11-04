@@ -9,11 +9,11 @@ import type {OrderRecord} from '../../app/types'
  */
 export type WatchMainItem = {
   id:number;quantity:number;source:string;stockWriteoffStatus:string;
-  shipped:number;returnableQuantity:number;returnedQuantity?:number
+  shipped:number;shippedQuantity?:number;returnableQuantity:number;returnedQuantity?:number
 }
 export type WatchMainOrder = {
   orderStatus:string;shippingStatus:string;totalAmount:number;receivedAmount:number;
-  returnAmount:number;debtAmount:number;committedReturnCount?:number;
+  returnAmount:number;debtAmount:number;netSaleAmount?:number;committedReturnCount?:number;
   committedExchangeCount?:number;committedItemReturnQuantity?:number;
   itemLines:string
 }
@@ -30,21 +30,22 @@ export function projectWatchOrderLikeMain(order:WatchMainOrder,isAdmin=false){
   const items=parseWatchMainLines(order.itemLines).map(item=>{
     const quantity=Math.max(1,Math.trunc(Number(item.quantity||1)))
     const stock=String(item.stockWriteoffStatus||'')
-    const shipped=Boolean(Number(item.shipped))||
-      ['fulfilled','written_off','negative','retired_physically_issued'].includes(stock)
+    const issuedByLegacyState=['fulfilled','written_off','negative','retired_physically_issued'].includes(stock)
+    const sentQuantity=Math.max(0,Math.min(quantity,Number(item.shippedQuantity??
+      (Number(item.shipped)>0?quantity:0))))
     return {
       id:item.id,
       quantity,
       sourceType:item.source==='boutique'?'boutique':'warehouse',
       isWorkshop:false,
       stockWriteoffStatus:stock,
-      shipmentSentQuantity:shipped?quantity:0,
+      shipmentSentQuantity:issuedByLegacyState?quantity:sentQuantity,
     }
   })
   const main={
     order_status:order.orderStatus,
     shipping_status:order.shippingStatus,
-    total_amount:order.totalAmount,
+    total_amount:Number(order.netSaleAmount??order.totalAmount),
     received_amount:order.receivedAmount,
     debt_amount:order.debtAmount,
     return_amount:order.returnAmount,
