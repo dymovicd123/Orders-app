@@ -4,6 +4,7 @@ import {WatchReturnForm} from './WatchReturnForm'
 import {WatchReturnHistoryPanel} from './WatchReturnHistoryPanel'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
+import {WatchExchangeHistoryPanel} from './WatchExchangeHistoryPanel'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
@@ -69,6 +70,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
   const [returnHistoryOrderId,setReturnHistoryOrderId]=useState<number|null>(null)
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
+  const [exchangeHistoryOrderId,setExchangeHistoryOrderId]=useState<number|null>(null)
   const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(
@@ -252,6 +254,14 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   </div>
                   <div className="watch-main-order-actions">
                     <button type="button" className="secondary compact"
+                      aria-expanded={exchangeHistoryOrderId===order.orderId}
+                      onClick={()=>{
+                        setExchangeHistoryOrderId(v=>v===order.orderId?null:order.orderId)
+                        setExchangeOrderId(null);setReturnOrderId(null)
+                      }}>
+                      {exchangeHistoryOrderId===order.orderId?'Скрыть историю обменов':'История / отмена обменов'}
+                    </button>
+                    <button type="button" className="secondary compact"
                       aria-expanded={returnHistoryOrderId===order.orderId}
                       onClick={()=>{
                         setReturnHistoryOrderId(v=>v===order.orderId?null:order.orderId)
@@ -310,6 +320,10 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   {exchangeOrderId===order.orderId&&<WatchExchangeForm brand={brand} order={order}
                     onCancel={()=>setExchangeOrderId(null)}
                     onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>}
+                  {exchangeHistoryOrderId===order.orderId&&<WatchExchangeHistoryPanel
+                    brand={brand} orderId={order.orderId}
+                    onClose={()=>setExchangeHistoryOrderId(null)}
+                    onDone={()=>setRefresh(v=>v+1)}/>}
                   {returnOrderId===order.orderId&&<WatchReturnForm brand={brand} order={order}
                     onCancel={()=>setReturnOrderId(null)}
                     onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>}
