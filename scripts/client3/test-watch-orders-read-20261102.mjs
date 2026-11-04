@@ -14,7 +14,7 @@ sql.exec([
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,product_name_snapshot TEXT,unit_price INTEGER,source_type TEXT);',
 'CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,amount INTEGER,payment_kind TEXT);',
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
-'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
+'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER,amount INTEGER DEFAULT 0,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
 'CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,quantity INTEGER,role TEXT,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
 'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,status TEXT);',
 'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY,order_id INTEGER);',
