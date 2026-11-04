@@ -306,7 +306,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
        onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
    </label>
    {isItems&&<p className="watch-return-physical-help">Товары в пути останутся в очереди приёмки. Уже полученные часы учитываются по выбранному физическому состоянию.</p>}
-   <p className="watch-return-accounting-note">Стоимость реально возвращённых часов уменьшит коммерческий итог продажи и расчётный долг Client3. Исходный заказ сохранится в истории. Это не создаёт фиктивную оплату или приёмку на склад.</p>}
+   <p className="watch-return-accounting-note">Стоимость реально возвращённых часов уменьшит коммерческий итог продажи и расчётный долг Client3. Исходный заказ сохранится в истории. Это не создаёт фиктивную оплату или приёмку на склад.</p>
    <label className="watch-return-confirm"><input type="checkbox" checked={confirmed}
      onChange={e=>setConfirmed(e.target.checked)}/>
      Подтверждаю возврат {isItems?chosenQty+' шт.':''}
