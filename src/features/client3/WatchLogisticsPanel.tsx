@@ -290,7 +290,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       const selectedIds=new Set(selected.map(x=>Number(x.orderItemId)))
       if(!status.state||selected.some(x=>!status.state?.items.some(line=>line.orderItemId===x.orderItemId)))
         throw Error('Не удалось проверить ревизию выбранных часов. Отправка остановлена.')
-      if(status.state.items.some(x=>selectedIds.has(x.orderItemId)&&x.reviewNeeded)){
+      if(status.state.items.some(x=>selectedIds.has(x.orderItemId)&&x.reviewNeeded&&
+        !selected.some(row=>row.orderItemId===x.orderItemId&&row.stockWriteoffStatus==='catalog_retired'))){
         setHandoverPromptOrderId(order.orderId)
         return
       }
