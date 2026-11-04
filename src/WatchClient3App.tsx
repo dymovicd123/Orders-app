@@ -394,7 +394,8 @@ export function WatchClient3App() {
           <article className="card wide"><div className="card-label">Возвраты</div>
             <div className="card-meta">Для оформления возврата выберите исходный заказ во вкладке «Все заказы». Ниже находится очередь физической приёмки возвратов и старых часов после обмена.</div>
             <button type="button" className="secondary compact" onClick={()=>goTo('orders')}>Открыть заказы</button></article>
-          {brands.length&&<WatchReturnsPanel key={'returns-'+catalogVersion} brands={brands.map(x=>x.code)}/>}
+          {brands.length&&<WatchReturnsPanel key={'returns-'+catalogVersion+'-'+brand}
+            brands={brands.map(x=>x.code)} initialBrand={brand||undefined}/>}
         </>:
         activeSection==='exchange'?<>
           <article className="card wide"><div className="card-label">Обмены</div>
