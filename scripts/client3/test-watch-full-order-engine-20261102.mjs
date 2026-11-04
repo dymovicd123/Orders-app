@@ -1748,6 +1748,60 @@ assert.equal(cancelDispatchedReplacement.status,409,
 assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
  .get(twoSwap.exchangeId).status,'completed',
  'Failed cancel must not erase a real fulfilled replacement')
+// Stage4 no-shipment exchange: replacing a watch still physically in Office
+// must not create a fictitious return, a stock arrival, or an outgoing dispatch.
+const unissuedArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:1,quantity:2,
+ requestId:'watch-unissued-exchange-arrival-20261104',
+ comment:'Real available unit for a no-shipment watch exchange',
+}))
+assert.equal(unissuedArrival.status,200,JSON.stringify(unissuedArrival))
+const unissuedCreated=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-unissued-exchange-create-20261104',
+ quantity:1,unitPrice:18000,receivedAmount:0,engravingText:'',
+ items:[{watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:18000,
+   source:'office',engravingText:''}],
+}))
+assert.equal(unissuedCreated.status,201,JSON.stringify(unissuedCreated))
+const unissuedOld=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.unit_price,oi.line_total,
+ oi.catalog_price_snapshot,oi.stock_writeoff_status,ir.status AS reserveStatus
+ FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0`).get(unissuedCreated.orderId)
+assert.equal(unissuedOld.reserveStatus,'active','Original watch is reserved but not physically sent')
+const unissuedBase={
+ requestId:'watch-unissued-exchange-operation-20261104',
+ expectedOrderTotal:18000,oldItems:[{
+   orderItemId:unissuedOld.id,quantity:1,physicalState:'not_issued',
+   expectedActiveQuantity:unissuedOld.quantity,expectedUnitPrice:unissuedOld.unit_price,
+   expectedLineTotal:unissuedOld.line_total,
+   expectedCatalogPriceSnapshot:unissuedOld.catalog_price_snapshot,
+ }],
+ newItems:[{manual:manualReplacement,quantity:1,unitPrice:18000,
+   source:'office',engravingText:''}],
+ paymentParts:[],refundParts:[],reason:'Поменяли неотправленные часы на другую модель',
+}
+const wronglyMarkedPhysical=await parse(exchangeClient3WatchSet(
+ db,manager,1,unissuedCreated.orderId,{
+   ...unissuedBase,requestId:'watch-unissued-wrong-physical-20261104',
+   oldItems:[{...unissuedBase.oldItems[0],physicalState:'pending'}],
+ }))
+assert.equal(wronglyMarkedPhysical.status,409,
+ 'Cannot create a physical customer return for watches never sent')
+const unissuedPhysicalBefore=stock('warehouse').quantity
+const unissuedExchange=await parse(exchangeClient3WatchSet(
+ db,manager,1,unissuedCreated.orderId,unissuedBase))
+assert.equal(unissuedExchange.status,200,JSON.stringify(unissuedExchange))
+assert.equal(unissuedExchange.physicalOldIntakePending,false,
+ 'Unissued old watch was in Office, so no client return should be expected')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM exchange_items WHERE exchange_id=? AND role=? AND physical_tracking=1')
+ .get(unissuedExchange.exchangeId,'old').n,0)
+assert.equal(sqlite.prepare('SELECT quantity FROM order_items WHERE id=?').get(unissuedOld.id).quantity,0)
+assert.equal(stock('warehouse').quantity,unissuedPhysicalBefore,
+ 'Changing an unsent reserved order does not physically ship or receive watches')
+assert.equal(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(unissuedCreated.orderId).debt_amount,18000)
+const unissuedHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,unissuedCreated.orderId))
+assert.equal(unissuedHistory.exchanges[0].oldItems[0].wasNotIssued,true)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
