@@ -1,6 +1,5 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react'
 import {WATCH_PAYMENTS,type WatchBrand} from '../../../shared/client3/watch-domain'
-import {WatchDebtHistoryPanel} from './WatchDebtHistoryPanel'
 import '../../styles/client3-qa-debt-20261104.css'
 
 type Props={
@@ -24,7 +23,6 @@ export function WatchDebtPaymentForm({brand,orderId,externalId,debt,onDone,onCan
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const [message,setMessage]=useState('')
- const [historyRefresh,setHistoryRefresh]=useState(0)
  const keys=useRef<Record<string,{fingerprint:string;requestId:string}>>({})
  const total=parts.reduce((sum,x)=>sum+Number(x.amount||0),0)
  const remaining=debt-total
@@ -96,7 +94,6 @@ export function WatchDebtPaymentForm({brand,orderId,externalId,debt,onDone,onCan
        if(!response.ok||!data.ok)throw Error(data.message||'Оплата не сохранена.')
        accepted++
        setSaved(previous=>({...previous,[part.id]:true}))
-       setHistoryRefresh(previous=>previous+1)
      }
      setMessage('Сохранено '+parts.length+' оплат на '+fmt(total)+'.')
      onDone()
@@ -164,6 +161,5 @@ export function WatchDebtPaymentForm({brand,orderId,externalId,debt,onDone,onCan
      </button>
      <button className="secondary" type="button" disabled={busy} onClick={onCancel}>Отмена</button>
    </div>
-   <WatchDebtHistoryPanel brand={brand} orderId={orderId} refreshToken={historyRefresh}/>
  </form>
 }
