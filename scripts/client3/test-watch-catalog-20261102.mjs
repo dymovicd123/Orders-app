@@ -24,6 +24,7 @@ sqlite.exec([
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
+sqlite.exec(fs.readFileSync('migrations/client3-watch/0006_client3_watch_sku_generations.sql','utf8'))
 sqlite.exec(fs.readFileSync('migrations/client3-watch/0999_watch_model_aliases.sql','utf8'))
 // The small catalogue fixture also needs the v5 characteristic overlay used
 // by the current Client3 resolver. The live installation has these tables.
