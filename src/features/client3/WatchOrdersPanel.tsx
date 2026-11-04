@@ -372,8 +372,6 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     <button type="button" className="secondary compact watch-main-detail-button"
                       aria-expanded={expanded===order.orderId}
                       onClick={()=>{
-                        if(workflow==='returns'){openFlow('returns');return}
-                        if(workflow==='exchange'){openFlow('exchange');return}
                         setExpanded(value=>value===order.orderId?null:order.orderId)
                         setReturnOrderId(null);setExchangeOrderId(null)
                         setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)
