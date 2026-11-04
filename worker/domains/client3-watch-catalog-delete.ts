@@ -1,11 +1,12 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
 import { assertCatalogVariantMayDeactivate } from './catalog.ts'
+import {previewCatalogRetirement,retireCatalogEntity} from './catalog-retirement.ts'
 
 const fail=(message:string,status=400)=>json({ok:false,message},{status})
 type Scope='variant'|'execution'|'product'
 type Input={kind?:unknown;watchProductId?:unknown;watchVariantId?:unknown;
-  movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown}
+  movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown;requestId?:unknown}
 const positive=(v:unknown)=>Number.isSafeInteger(Number(v))&&Number(v)>0?Number(v):0
 type Item={id:number;catalog_variant_id:number|null;movement:string;bracelet_material:string}
 async function target(db:D1Database,brandId:number,input:Input){
@@ -15,22 +16,23 @@ async function target(db:D1Database,brandId:number,input:Input){
  const model=await db.prepare('SELECT id,model_name,catalog_product_id,is_active FROM watch_products WHERE id=? AND brand_id=?')
    .bind(productId,brandId).first<{id:number;model_name:string;catalog_product_id:number|null;is_active:number}>()
  if(!model)throw new Error('Товар не найден в выбранном бренде.')
+ if(model.is_active!==1)throw new Error('Этот товар уже удалён из рабочего каталога.')
  const rows=await db.prepare(`SELECT v.id,v.catalog_variant_id,COALESCE(va.movement,v.movement) AS movement,
      COALESCE(va.bracelet_material,v.bracelet_material) AS bracelet_material FROM watch_variants v
    LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
-   WHERE v.watch_product_id=? AND is_active=1 ORDER BY id`).bind(productId).all<Item>()
+   WHERE v.watch_product_id=? AND v.is_active=1 ORDER BY v.id`).bind(productId).all<Item>()
  let items=rows.results||[]
  if(kind==='variant'){
    const id=positive(input.watchVariantId)
    items=items.filter(row=>row.id===id)
-   if(!items.length&&model.is_active===1)throw new Error('Позиция уже удалена либо не принадлежит этому товару.')
+   if(!items.length)throw new Error('Позиция уже удалена либо не принадлежит этому товару.')
  }
  if(kind==='execution'){
    const movement=typeof input.movement==='string'?input.movement:''
    const material=typeof input.braceletMaterial==='string'?input.braceletMaterial:''
    if(!movement||!material)throw new Error('Выберите точное исполнение.')
    items=items.filter(row=>row.movement===movement&&row.bracelet_material===material)
-   if(!items.length&&model.is_active===1)throw new Error('Исполнение уже удалено либо не найдено.')
+   if(!items.length)throw new Error('Исполнение уже удалено либо не найдено.')
  }
  return {kind,model,items}
 }
@@ -50,12 +52,32 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
  try{scope=await target(db,brandId,input)}catch(cause){
    return fail(cause instanceof Error?cause.message:'Не удалось определить товар.',404)
  }
- const issues=await blockers(db,scope.items)
- if(scope.kind==='product'&&scope.model.is_active!==1)return json({ok:true,alreadyDeleted:true,count:0,canDelete:false})
+ // Whole-product retirement follows Main's audited removal of working inventory,
+ // while an exact SKU/group requires an empty physical and reservation balance.
+ const main=scope.kind==='product'&&scope.model.catalog_product_id
+   ?await previewCatalogRetirement(db,'product',scope.model.catalog_product_id):null
+ const issues=scope.kind==='product'?
+   (main?[
+     ...(main.activeStocktake?['Идёт незавершённая ревизия.']:[]),
+     ...(main.pendingLifecycle?['Есть незавершённая приёмка или возврат.']:[]),
+     ...(main.activeWorkshopTaskCount?['Есть незавершённая задача.']:[]),
+     ...(main.inactiveOperationalVariantCount?['У ранее удалённой позиции остался живой резерв/остаток.']:[])
+   ]:[]):await blockers(db,scope.items)
+ const historicalItems=scope.items.length?await db.prepare(`SELECT COUNT(*) AS qty
+   FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+   WHERE wi.watch_variant_id IN (${scope.items.map(()=>'?').join(',')})`)
+   .bind(...scope.items.map(v=>v.id)).first<{qty:number}>():null
+ const physical=main?.physicalQuantity||0
+ const reserved=main?.activeReservationQuantity||0
  return json({ok:true,kind:scope.kind,watchProductId:scope.model.id,
    modelName:scope.model.model_name,count:scope.items.length,
    canDelete:issues.length===0,blockers:issues,
-   physicalAndReservationsPreserved:true,historyPreserved:true})
+   physicalQuantity:physical,activeReservations:reserved,
+   openOrders:main?.openOrderItemCount||0,historicalOrderItems:Number(historicalItems?.qty||0),
+   inventoryWillBeRemoved:scope.kind==='product'&&physical!==0,
+   reservationsWillBeReleased:scope.kind==='product'&&reserved!==0,
+   physicalAndReservationsPreserved:scope.kind!=='product',
+   historyPreserved:true})
 }
 export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,brandId:number,input:Input){
  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Удалять товары может только администратор.',403)
@@ -66,9 +88,46 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
  const expected=Number(input.expectedCount)
  if(!Number.isSafeInteger(expected)||expected<0||expected!==scope.items.length)
    return fail('Состав исполнения изменился. Обновите каталог перед удалением.',409)
+ if(scope.kind==='product'){
+   // Main whole-product retirement carries a durable operation ID, snapshots all
+   // variants, records stock-removal movements and releases active reservations.
+   // Client3 never directly zeroes stock or loses old order/movement identities.
+   const canonicalId=scope.model.catalog_product_id
+   const requestId=String(input.requestId||'')
+   if(!/^watch-retire-[A-Za-z0-9_.:-]{16,120}$/.test(requestId))
+     return fail('Повторите подтверждение удаления товара с новым идентификатором.',400)
+   if(canonicalId){
+     const owner=await db.prepare(`SELECT cp.id
+       FROM catalog_products cp JOIN watch_products wp ON wp.catalog_product_id=cp.id
+       JOIN watch_brands b ON b.id=wp.brand_id
+       WHERE wp.id=? AND wp.brand_id=? AND cp.id=?
+         AND cp.name=('WATCH_'||b.code||'_MODEL_'||wp.id)`)
+       .bind(scope.model.id,brandId,canonicalId).first<{id:number}>()
+     if(!owner?.id)return fail('Внутренняя карточка товара не соответствует выбранному бренду.',409)
+     try{
+       await retireCatalogEntity(db,'product',canonicalId,{
+         requestId,reason:'Удалён товар часов '+scope.model.model_name+' из Client3',
+         actor:actor.displayName||actor.email||'Администратор',
+       })
+     }catch(cause){
+       return fail(cause instanceof Error?cause.message:'Main не завершил безопасное удаление товара.',409)
+     }
+   }
+   // Retrying after an interrupted UI request is repair-safe: this step only
+   // archives watch catalog shells; canonical Main history is already durable.
+   await db.batch([
+     db.prepare('UPDATE watch_variants SET is_active=0 WHERE watch_product_id=? AND is_active=1')
+       .bind(scope.model.id),
+     db.prepare('UPDATE watch_products SET is_active=0 WHERE id=? AND brand_id=? AND is_active=1')
+       .bind(scope.model.id,brandId),
+   ])
+   return json({ok:true,kind:'product',deletedCount:scope.items.length,
+     productDeleted:true,historyPreserved:true,mainRetirement:Boolean(canonicalId)})
+ }
  const issues=await blockers(db,scope.items)
  if(issues.length)return fail('Удаление заблокировано: '+issues.join('; '),409)
- // One D1 batch transaction. Both watch and canonical variants retire together.
+ // Granular Main-style retirement: exact SKU or watch execution group only.
+ // No physical stock write-off here, and historical identities are retained.
  // Historical FK rows are never deleted or changed.
  const ids=scope.items.map(row=>row.id)
  const canonical=scope.items.map(row=>row.catalog_variant_id).filter((id):id is number=>!!id)
