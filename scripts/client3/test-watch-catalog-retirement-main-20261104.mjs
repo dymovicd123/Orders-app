@@ -374,6 +374,60 @@ assert.equal(historyDemand.status,200,JSON.stringify(historyDemand))
 assert(historyDemand.rows.some(x=>x.variantId===productVariant.id),
  'Archived watch remains visible in historical sales statistics')
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,operationsBefore+2)
+// A different edge case: a watch was sent from live stock BEFORE its model
+// was retired. Generic Main send cancellation would return units to archived
+// stock; Client3 must fail closed rather than recreate deleted inventory.
+const historicSentProduct=await model('ARCHIVED AFTER NORMAL SEND QA')
+const normalVariant=await variant(historicSentProduct)
+const physicalArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:normalVariant.id,quantity:2,
+ comment:'Before-deletion dispatch correction regression',
+ requestId:'watch-pre-delete-arrival-20261104-0001'
+}))
+assert.equal(physicalArrival.status,200,JSON.stringify(physicalArrival))
+const earlyOrder=await parse(createClient3WatchOrder(db,manager,1,{
+ brand:'TAUWACH',source:'office',watchVariantId:normalVariant.id,
+ catalogVariantId:normalVariant.canonical,quantity:1,unitPrice:10000,
+ receivedAmount:0,payments:[],engravingText:'',
+ requestId:'watch-before-deletion-order-20261104-0001',
+ recipientName:'Тест старой отправки',recipientPhone:'+77015550103',
+ address:'Улица обычной выдачи, 3',postalCode:'050003',city:'Алматы',
+ deliveryMethod:'Казпочта',shippingDeadlineLocal:'2026-11-15T14:00',
+ urgent:false,paymentMethod:'KASPI GOLD'
+}))
+assert.equal(earlyOrder.status,201,JSON.stringify(earlyOrder))
+const earlyLine=sqlite.prepare('SELECT id FROM order_items WHERE order_id=?').get(earlyOrder.orderId)
+const earlyDispatch=await parse(dispatchClient3WatchOrder(db,admin,1,earlyOrder.orderId,{
+ requestId:'watch-normal-before-retire-20261104-0001',
+ items:[{orderItemId:earlyLine.id,quantity:1}],
+}))
+assert.equal(earlyDispatch.status,200,JSON.stringify(earlyDispatch))
+const beforeDeletionPreview=await parse(previewClient3WatchDelete(db,admin,1,{
+ kind:'product',watchProductId:historicSentProduct
+}))
+assert.equal(beforeDeletionPreview.status,200)
+const afterShipmentDeletion=await parse(deleteClient3WatchCatalog(db,admin,1,{
+ kind:'product',watchProductId:historicSentProduct,
+ expectedCount:beforeDeletionPreview.count,
+ requestId:'watch-retire-after-normal-send-20261104-0001'
+}))
+assert.equal(afterShipmentDeletion.status,200,JSON.stringify(afterShipmentDeletion))
+const historicShipment=sqlite.prepare('SELECT id FROM order_dispatch_items WHERE order_item_id=?')
+ .get(earlyLine.id)
+const stockProof=sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(normalVariant.canonical).quantity
+assert.equal(stockProof,0)
+const preRetireCorrection=await parse(correctClient3WatchDispatch(db,admin,1,earlyOrder.orderId,{
+ dispatchItemId:historicShipment.id,
+ requestId:'watch-normal-correct-after-retire-20261104-0001',
+ reason:'Обычная отмена не должна восстановить архивный остаток'
+}))
+assert.equal(preRetireCorrection.status,409)
+assert.equal(preRetireCorrection.code,'WATCH_PRE_RETIRE_DISPATCH_CORRECTION_REVIEW')
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(normalVariant.canonical).quantity,0)
+assert.equal(sqlite.prepare('SELECT cancelled_quantity FROM order_dispatch_items WHERE id=?')
+ .get(historicShipment.id).cancelled_quantity,0)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
