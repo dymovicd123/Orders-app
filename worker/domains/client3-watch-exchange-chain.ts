@@ -49,7 +49,7 @@ export async function previewClient3WatchExchangeCancellationPlan(
        }
      }
    }
-   const indegree=new Map([...nodes.keys()].map(key=>[key,0]))
+   const indegree=new Map<string,number>([...nodes.keys()].map(key=>[key,0] as [string,number]))
    for(const children of edges.values())for(const k of children)
      indegree.set(k,(indegree.get(k)||0)+1)
    const compare=(a:string,b:string)=>{
