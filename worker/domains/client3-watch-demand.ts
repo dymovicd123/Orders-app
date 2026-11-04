@@ -26,10 +26,10 @@ export async function listClient3WatchDemand(
  const ledger=`WITH lines AS (
    SELECT oi.id AS orderItemId,o.id AS orderId,wv.id AS watchVariantId,
      wp.model_name AS modelName,wv.gender,
-     COALESCE(va.movement,wv.movement) AS movement,
-     COALESCE(va.bracelet_material,wv.bracelet_material) AS braceletMaterial,
-     COALESCE(va.dial_color,wv.dial_color) AS dialColor,
-     COALESCE(va.bracelet_color,wv.bracelet_color) AS braceletColor,
+     COALESCE(va6.movement,va.movement,wv.movement) AS movement,
+     COALESCE(va6.bracelet_material,va.bracelet_material,wv.bracelet_material) AS braceletMaterial,
+     COALESCE(va6.dial_color,va.dial_color,wv.dial_color) AS dialColor,
+     COALESCE(va6.bracelet_color,va.bracelet_color,wv.bracelet_color) AS braceletColor,
      oi.quantity AS soldQuantity,oi.unit_price AS unitPrice,
      MAX(0,oi.line_total-${watchReturnedValueForItemSql('oi')}) AS lineRevenue,
      oi.line_total AS grossRevenue,
@@ -42,6 +42,7 @@ export async function listClient3WatchDemand(
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id
    JOIN watch_products wp ON wp.id=wv.watch_product_id AND wp.brand_id=wd.brand_id
    LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=wv.id
    WHERE wd.brand_id=? AND o.order_date>=? AND o.order_date<=?
  ), grouped AS (
    SELECT watchVariantId,modelName,gender,movement,braceletMaterial,dialColor,braceletColor,
