@@ -30,10 +30,10 @@ export async function listClient3WatchOperationHistory(
     'id',ri.id,'orderItemId',ri.order_item_id,
     'productName',COALESCE(wp.model_name,ri.product_name_snapshot),
     'quantity',ri.quantity,'role','old',
-    'gender',COALESCE(wv.gender,''),'movement',COALESCE(wa.movement,wv.movement,''),
-    'braceletMaterial',COALESCE(wa.bracelet_material,wv.bracelet_material,''),
-    'dialColor',COALESCE(wa.dial_color,wv.dial_color,''),
-    'braceletColor',COALESCE(wa.bracelet_color,wv.bracelet_color,''),
+    'gender',COALESCE(wv.gender,''),'movement',COALESCE(wa6.movement,wa.movement,wv.movement,''),
+    'braceletMaterial',COALESCE(wa6.bracelet_material,wa.bracelet_material,wv.bracelet_material,''),
+    'dialColor',COALESCE(wa6.dial_color,wa.dial_color,wv.dial_color,''),
+    'braceletColor',COALESCE(wa6.bracelet_color,wa.bracelet_color,wv.bracelet_color,''),
     'source',COALESCE(ri.inventory_source,''),
     'physicalTracking',COALESCE(ri.physical_tracking,0),
     'physicalReceivedAt',ri.physical_received_at))
@@ -41,6 +41,7 @@ export async function listClient3WatchOperationHistory(
     LEFT JOIN watch_order_item_details wi ON wi.order_item_id=ri.order_item_id
     LEFT JOIN watch_variants wv ON wv.id=wi.watch_variant_id
     LEFT JOIN watch_variant_attributes_v5 wa ON wa.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 wa6 ON wa6.watch_variant_id=wv.id
     LEFT JOIN watch_products wp ON wp.id=wv.watch_product_id
     WHERE ri.return_id=r.id),'[]') AS itemsJson`
    :`
@@ -48,10 +49,10 @@ export async function listClient3WatchOperationHistory(
     'id',ei.id,'orderItemId',ei.order_item_id,
     'productName',COALESCE(wp.model_name,ei.product_name_snapshot),
     'quantity',ei.quantity,'role',ei.role,
-    'gender',COALESCE(wv.gender,''),'movement',COALESCE(wa.movement,wv.movement,''),
-    'braceletMaterial',COALESCE(wa.bracelet_material,wv.bracelet_material,''),
-    'dialColor',COALESCE(wa.dial_color,wv.dial_color,''),
-    'braceletColor',COALESCE(wa.bracelet_color,wv.bracelet_color,''),
+    'gender',COALESCE(wv.gender,''),'movement',COALESCE(wa6.movement,wa.movement,wv.movement,''),
+    'braceletMaterial',COALESCE(wa6.bracelet_material,wa.bracelet_material,wv.bracelet_material,''),
+    'dialColor',COALESCE(wa6.dial_color,wa.dial_color,wv.dial_color,''),
+    'braceletColor',COALESCE(wa6.bracelet_color,wa.bracelet_color,wv.bracelet_color,''),
     'source',COALESCE(ei.inventory_source,''),
     'physicalTracking',COALESCE(ei.physical_tracking,0),
     'physicalReceivedAt',ei.physical_received_at,
@@ -61,6 +62,7 @@ export async function listClient3WatchOperationHistory(
     LEFT JOIN watch_order_item_details wi ON wi.order_item_id=ei.order_item_id
     LEFT JOIN watch_variants wv ON wv.id=wi.watch_variant_id
     LEFT JOIN watch_variant_attributes_v5 wa ON wa.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 wa6 ON wa6.watch_variant_id=wv.id
     LEFT JOIN watch_products wp ON wp.id=wv.watch_product_id
     WHERE ei.exchange_id=e.id),'[]') AS itemsJson`
  const mode=`(?='all' OR (?='cancelled' AND COALESCE(${alias}.status,'completed')='cancelled')
