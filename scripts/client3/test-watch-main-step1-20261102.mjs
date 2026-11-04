@@ -178,7 +178,9 @@ const changedDraft=await parse(editClient3WatchVariant(db,admin,1,{
  watchProductId:editableId,watchVariantId:draftId,expected:oldDraft,...updatedDraft,
 }))
 assert.equal(changedDraft.ok,true,JSON.stringify(changedDraft))
-const rowDraft=sql.prepare('SELECT * FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId)
+const rowDraft=sql.prepare('SELECT * FROM watch_variant_attributes_v6 WHERE watch_variant_id=?').get(draftId)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM watch_variant_attributes_v5 WHERE watch_variant_id=?').get(draftId).n,0,
+ 'Editing a legacy draft must not create a v5 uniqueness collision with future archived generations')
 assert.equal(rowDraft.movement,'Механизм с турбийоном')
 assert.equal(rowDraft.bracelet_material,'Мягкая кожа')
 assert.equal(sql.prepare('SELECT catalog_variant_id FROM watch_variants WHERE id=?').get(draftId).catalog_variant_id,null)
