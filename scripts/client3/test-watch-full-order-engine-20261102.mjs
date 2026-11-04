@@ -14,6 +14,7 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
+import {listClient3WatchExchangeHistory,cancelClient3WatchExchange} from '../../worker/domains/client3-watch-exchange-history.ts'
 import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
 import {addWatchModelAlias,listWatchModelAliases,deleteWatchModelAlias,findWatchModelByIdentity} from '../../worker/domains/client3-watch-model-aliases.ts'
 import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
@@ -1616,6 +1617,49 @@ const otherBrandBook=await parse(listClient3WatchClients(db,admin,2,
 assert.equal(otherBrandBook.status,200,JSON.stringify(otherBrandBook))
 assert(otherBrandBook.rows.every(x=>!clientBook.rows.some(c=>c.phoneKey===x.phoneKey&&c.phone===x.phone)) ||
  otherBrandBook.rows.length>0,'Customer views are scoped by brand, not global clients')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+// The new Client3 exchange history is Main's actual exchange ledger, not a
+// parallel watch-only status. Cancellation delegates all physical/money
+// compensations to the Main Exchange Set V2 engine.
+const mainExchangeHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,stage4Pay.created.orderId))
+assert.equal(mainExchangeHistory.status,200,JSON.stringify(mainExchangeHistory))
+assert.equal(mainExchangeHistory.exchanges.length,1)
+const firstSetHistory=mainExchangeHistory.exchanges[0]
+assert.equal(firstSetHistory.id,extraResult.exchangeId)
+assert.equal(firstSetHistory.isSetExchange,true)
+assert.equal(firstSetHistory.oldItems.length,1)
+assert.equal(firstSetHistory.newItems.length,1)
+assert.equal(firstSetHistory.newItems[0].modelName,'REAL ENGINE EXCHANGE MODEL')
+assert.equal(firstSetHistory.newItems[0].engravingText,'Новая гравировка')
+assert.equal(firstSetHistory.financialAction,'extra_payment')
+const foreignExchangeHistory=await parse(listClient3WatchExchangeHistory(db,admin,2,stage4Pay.created.orderId))
+assert.equal(foreignExchangeHistory.status,404,'Watch brand cannot read another brand exchange history')
+const foreignExchangeCancel=await parse(cancelClient3WatchExchange(db,admin,2,stage4Pay.created.orderId,extraResult.exchangeId,{
+ requestId:'watch-set-cancel-wrong-brand-20261104',reason:'Попытка отмены из другого бренда',
+}))
+assert.equal(foreignExchangeCancel.status,404,'An exchange of another watch brand cannot be cancelled')
+const beforeSetCancel=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId)
+assert.deepEqual(beforeSetCancel,{total_amount:60000,received_amount:60000,debt_amount:0})
+const cancelSetInput={requestId:'watch-set-exchange-cancel-20261104-001',reason:'Контрольная отмена обмена с доплатой двумя способами'}
+const cancelSet=await parse(cancelClient3WatchExchange(db,manager,1,stage4Pay.created.orderId,
+ extraResult.exchangeId,cancelSetInput))
+assert.equal(cancelSet.status,200,JSON.stringify(cancelSet))
+assert.equal(cancelSet.ok,true)
+assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?').get(extraResult.exchangeId).status,'cancelled')
+assert.deepEqual(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId),{total_amount:40000,received_amount:40000,debt_amount:0},
+ 'Exchange cancel restores the original sale and reverses both extra payment methods')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=? AND quantity>0')
+ .get(stage4Pay.created.orderId).n,1,'Cancelled replacement must not remain an active sale item')
+const cancelSetReplay=await parse(cancelClient3WatchExchange(db,manager,1,stage4Pay.created.orderId,
+ extraResult.exchangeId,cancelSetInput))
+assert.equal(cancelSetReplay.status,200,JSON.stringify(cancelSetReplay))
+assert.equal(sqlite.prepare('SELECT received_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId).received_amount,40000,'Cancelled split payment must not be reversed twice')
+const afterSetHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,stage4Pay.created.orderId))
+assert.equal(afterSetHistory.exchanges[0].status,'cancelled',
+ 'Cancelled Main exchange remains visible in watch order history')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
