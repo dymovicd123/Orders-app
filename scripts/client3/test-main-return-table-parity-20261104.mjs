@@ -32,8 +32,19 @@ const server=await createServer({
  server:{middlewareMode:true},logLevel:'error',
 })
 try{
+ const {WatchOrdersPanel}=await server.ssrLoadModule('/src/features/client3/WatchOrdersPanel.tsx')
  const {WatchReturnForm}=await server.ssrLoadModule('/src/features/client3/WatchReturnForm.tsx')
  const {projectWatchOrderLikeMain}=await server.ssrLoadModule('/src/features/client3/watchMainOrderProjection.ts')
+ const bareOperation=renderToStaticMarkup(React.createElement(WatchOrdersPanel,{
+  workflow:'returns',allowedBrands:['TAUWACH'],isAdmin:true,
+  onOpenOrders:()=>{},
+ }))
+ assert(bareOperation.includes('Откройте возврат из таблицы заказов'))
+ assert(bareOperation.includes('К заказам'))
+ assert(!bareOperation.includes('Поиск по заказу, ФИО или телефону'),
+  'Main return workspace must not duplicate order selection table')
+ assert(watchTable.includes("workflow==='orders'&&data&&<>"),
+  'Only All Orders may show the complete Main order table')
  const item=(id,shipped,returned=0)=>({
    id,productName:id===1?'ARYSTAN':'ALTYN ZAMAN',quantity:1,
    returnedQuantity:returned,returnableQuantity:returned?0:1,
