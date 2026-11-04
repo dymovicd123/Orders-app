@@ -463,8 +463,9 @@ export function WatchClient3App() {
             {([
               {section:'warehouse' as const,label:'Остатки',hint:'Товар на месте, резерв и доступность'},
               {section:'catalog' as const,label:'Товары',hint:'Модели и комплектации часов'},
+              ...(canWarehouse?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'},{section:'revision' as const,label:'Ревизия',hint:'Полная и выборочная проверка с сохранением'}]:[]),
               {section:'statistics' as const,label:'Статистика',hint:'Продажи по комплектациям и реальным ценам'},
-              ...(canWarehouse?[{section:'operations' as const,label:'Операции',hint:'Приход, списание, перемещение и пересчёт'},{section:'revision' as const,label:'Ревизия',hint:'Полная и выборочная проверка с сохранением'},{section:'history' as const,label:'История',hint:'Складские движения по товарам'}]:[]),
+              ...(canWarehouse?[{section:'history' as const,label:'История',hint:'Складские движения по товарам'}]:[]),
             ]).map(item=><button key={item.section} type="button"
               className={activeSection===item.section?'is-active':''} title={item.hint}
               aria-current={activeSection===item.section?'page':undefined}
