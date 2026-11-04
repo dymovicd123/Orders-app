@@ -197,6 +197,19 @@ assert.equal(readyAfterArchive.status,200,JSON.stringify(readyAfterArchive))
 assert.equal(readyAfterArchive.stockUnchanged,true)
 assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
  .get(orderLine.id).stock_writeoff_status,'catalog_retired')
+// Corrupt post-retirement stock must fail closed; the special no-stock
+// dispatch must never ignore positive physical units under a deleted SKU.
+sqlite.prepare('UPDATE inventory_stock SET quantity=2 WHERE variant_id=?')
+ .run(productVariant.canonical)
+const divergentRetiredSend=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-retired-unsafe-stock-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(divergentRetiredSend.status,409,'Unexpected physical stock under archived SKU must block')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatch_items WHERE order_item_id=?')
+ .get(orderLine.id).n,0)
+sqlite.prepare('UPDATE inventory_stock SET quantity=0 WHERE variant_id=?')
+ .run(productVariant.canonical)
 const noDoubleStock=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
 const noConfirmation=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
  requestId:'watch-send-retired-20261104-0001',
