@@ -120,6 +120,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [correctionTarget,setCorrectionTarget]=useState<{orderId:number;dispatchItemId:number}|null>(null)
   const [correctionReason,setCorrectionReason]=useState('')
   const [correcting,setCorrecting]=useState<number|null>(null)
+  const [recovering,setRecovering]=useState<number|null>(null)
   const correctionIds=useRef<Record<number,string>>({})
   const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
@@ -243,6 +244,21 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     }catch(cause){setError(cause instanceof Error?cause.message:'Исправление отправки заблокировано')}
     finally{setCorrecting(null)}
   }
+  const retryReservation=async(order:WatchLogisticsRow)=>{
+    if(recovering!==null||busy)return
+    setRecovering(order.orderId);setError('');setFeedback('')
+    try{
+      const data=await readApi<{ok:boolean;message?:string;activated:number;pending:number;notice?:string}>(
+        '/api/client3/watches/orders/'+order.orderId+'/reserve/retry',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({brand:order.brand}),
+        })
+      setFeedback(data.notice||(
+        data.activated>0?'Резервы восстановлены.':'Свободного товара для резерва пока нет.'))
+      setRefreshKey(v=>v+1)
+    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось проверить резерв')}
+    finally{setRecovering(null)}
+  }
   const setSelected=(orderId:number,itemId:number,enabled:boolean)=>{
     setDispatchConfirm(null)
     delete dispatchIds.current[orderId]
@@ -353,6 +369,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
           const returnedCount=items.reduce((n,i)=>n+Number(i.returnedQuantity||0),0)
           const intakePending=items.reduce((n,i)=>n+watchItemAwaitingReceipt(i),0)
           const hasActive=items.some(i=>Number(i.quantity||0)>0)
+          const hasPendingReservation=items.some(i=>i.orderItemId&&Number(i.quantity||0)>0&&
+            i.reservationStatus==='unresolved')
           const shipStatus=!hasActive
             ?(intakePending>0?'Возврат ожидает приёмки':'Нет активных позиций')
             :completed
@@ -500,6 +518,12 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                   {canDispatch&&selectable.length>0&&selectable.some(i=>i.orderItemId&&
                     dispatchQuantities[order.orderId]?.[i.orderItemId]===0)&&
                     <small>Для отправки укажите положительное количество.</small>}
+                  {canDispatch&&hasPendingReservation&&
+                    <button type="button" className="secondary compact"
+                      disabled={recovering!==null||busy||dispatching!==null}
+                      onClick={()=>void retryReservation(order)}>
+                      {recovering===order.orderId?'Проверяю остаток…':'Проверить резерв после поступления'}
+                    </button>}
                   {canDispatch&&selectable.length===0&&items.some(i=>Number(i.shippedQuantity||0)===0)&&
                     <small>Нет позиций, готовых к отправке: проверьте гравировку, остатки или резервы.</small>}
                   {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
