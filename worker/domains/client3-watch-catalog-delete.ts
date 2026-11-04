@@ -63,10 +63,15 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
      ...(main.activeWorkshopTaskCount?['Есть незавершённая задача.']:[]),
      ...(main.inactiveOperationalVariantCount?['У ранее удалённой позиции остался живой резерв/остаток.']:[])
    ]:[]):await blockers(db,scope.items)
- const historicalItems=scope.items.length?await db.prepare(`SELECT COUNT(*) AS qty
-   FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
-   WHERE wi.watch_variant_id IN (${scope.items.map(()=>'?').join(',')})`)
-   .bind(...scope.items.map(v=>v.id)).first<{qty:number}>():null
+ const historicalItems=scope.kind==='product'
+   ?await db.prepare(`SELECT COUNT(*) AS qty FROM order_items oi
+     JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+     JOIN watch_variants v ON v.id=wi.watch_variant_id
+     WHERE v.watch_product_id=?`).bind(scope.model.id).first<{qty:number}>()
+   :scope.items.length?await db.prepare(`SELECT COUNT(*) AS qty
+     FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+     WHERE wi.watch_variant_id IN (${scope.items.map(()=>'?').join(',')})`)
+     .bind(...scope.items.map(v=>v.id)).first<{qty:number}>():null
  const physical=main?.physicalQuantity||0
  const reserved=main?.activeReservationQuantity||0
  return json({ok:true,kind:scope.kind,watchProductId:scope.model.id,
@@ -140,8 +145,18 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
        WHERE wv.id=? AND r.status='active')
      AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN orders o ON o.id=oi.order_id
        JOIN watch_variants wv ON wv.catalog_variant_id=oi.variant_id
-       WHERE wv.id=? AND o.order_status='active' AND o.shipping_status<>'sent' AND oi.quantity>0)`)
-   .bind(id,scope.model.id,id,id,id))
+       WHERE wv.id=? AND o.order_status='active' AND o.shipping_status<>'sent' AND oi.quantity>0)
+     AND NOT EXISTS (SELECT 1 FROM inventory_stocktake_items i
+       JOIN inventory_stocktake_sessions ss ON ss.id=i.session_id
+       JOIN watch_variants wv ON wv.catalog_variant_id=i.variant_id
+       WHERE wv.id=? AND ss.status='active')
+     AND NOT EXISTS (SELECT 1 FROM inventory_lifecycle_events e
+       JOIN watch_variants wv ON wv.catalog_variant_id=e.variant_id
+       WHERE wv.id=? AND e.status='pending')
+     AND NOT EXISTS (SELECT 1 FROM workshop_tasks t
+       JOIN watch_variants wv ON wv.catalog_variant_id=t.variant_id
+       WHERE wv.id=? AND t.status='active')`)
+   .bind(id,scope.model.id,id,id,id,id,id,id))
  // Same Main retirement history table used by CatalogVariant PATCH.
  const now=new Date().toISOString()
  for(const id of canonical){
