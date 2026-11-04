@@ -27,6 +27,26 @@ for(const label of ['Реквизиты','Записанная цена','Дан
  'Отменить возврат','Отменить обмены']){
  assert(editor.includes(label),'Client3 role editor does not expose '+label)
 }
+const statsUI=read('src/features/client3/WatchDemandMainPanel.tsx')
+const statsBackend=read('worker/domains/client3-watch-demand-report.ts')
+const app=read('src/WatchClient3App.tsx')
+assert(orderList.includes('watch-order-delete-direct')&&
+ orderList.includes('Удалить заказ</button>')&&
+ orderList.includes('deletingOrder?<section')&&
+ orderList.includes('isAdmin&&<button'),
+ 'Every admin must have direct visible deletion action, not a nested hidden menu')
+assert(app.includes('<WatchDemandMainPanel')&&
+ !app.includes('<WatchDemandPanel'), 'Client3 must show the complete Main-style demand page')
+for(const keyword of ['demand-main-grid','demand-rank-row','demand-dialog-root',
+ 'demand-dialog-variants','Отправлено часов','Только фактически отправленные часы',
+ 'Цвета циферблата','Браслеты','Механизмы','Тип часов','Цвет ремешка']){
+ assert(statsUI.includes(keyword),'Missing Main watch demand feature: '+keyword)
+}
+for(const keyword of ['listClient3WatchDemandReport',
+ 'watchReturnedUnitsForItemSql','order_dispatch_items','dispatch_date',
+ "mode==='orders'",'wd.brand_id=?','GROUP BY variantId']){
+ assert(statsBackend.includes(keyword),'Main watch analytics scope or drilldown missing: '+keyword)
+}
 assert(orderList.includes('Полное редактирование')&&
  orderList.includes('Исправить · доп. действия'),'Admin/manager entry points need separate labels')
 assert(orderList.includes('watch-main-edit-workspace')&&
@@ -68,6 +88,13 @@ const server=await createServer({
  server:{middlewareMode:true},logLevel:'error',
 })
 try{
+ const {WatchDemandMainPanel}=await server.ssrLoadModule(
+  '/src/features/client3/WatchDemandMainPanel.tsx')
+ const demand=renderToStaticMarkup(React.createElement(WatchDemandMainPanel,{brand:'TAUWACH'}))
+ assert(demand.includes('Какие часы пользуются спросом')&&
+   demand.includes('Все оформленные заказы')&&
+   demand.includes('Только фактически отправленные часы'),
+   'Main-style watch demand component must render essential controls')
  const {WatchOrderCorrections}=await server.ssrLoadModule(
   '/src/features/client3/WatchOrderCorrections.tsx')
  const order={
