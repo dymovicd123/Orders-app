@@ -30,15 +30,15 @@ function characteristics(row:WatchOrderChoice) {
  * Main CSS layers. Only variant detail labels map to watches (no fake sizes).
  * Read-only overview; mutations remain behind brand-scoped watch endpoints.
  */
-export function WatchStockMainBrowse({brand,canCorrect,onCorrect}:{
-  brand:WatchBrand;canCorrect:boolean;
+export function WatchStockMainBrowse({brand,canCorrect,onCorrect,initialModelName=''}:{
+  brand:WatchBrand;canCorrect:boolean;initialModelName?:string;
   onCorrect:(selection:{source:Source;watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'})=>void
 }){
   const [rows,setRows]=useState<WatchOrderChoice[]>([])
   const [source,setSource]=useState<Source>('office')
-  const [search,setSearch]=useState('')
+  const [search,setSearch]=useState(initialModelName)
   const [availableOnly,setAvailableOnly]=useState(false)
-  const [selectedKey,setSelectedKey]=useState('')
+  const [selectedKey,setSelectedKey]=useState(initialModelName.trim().toLocaleLowerCase('ru'))
   const [loading,setLoading]=useState(true)
   const [error,setError]=useState('')
   const [refresh,setRefresh]=useState(0)
