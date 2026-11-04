@@ -10,7 +10,9 @@ type ReturnInput={
 const keyValid=(value:unknown)=>typeof value==='string'&&/^[A-Za-z0-9._:-]{8,128}$/.test(value)
 const dateAlmaty=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 
-/** Main multi-line exact watch returns, physical receipt explicitly deferred. */
+/** Main multi-line exact watch returns. The Main financial engine accepts
+  * paymentParts (not the client-facing refundParts). Never silently discard
+  * split refund amounts and payment methods. */
 export async function createClient3WatchReturn(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,input:ReturnInput,
 ) {
@@ -104,7 +106,7 @@ export async function createClient3WatchReturn(
    const response=await createReturn(db,{
      requestId:input.requestId as string,orderId,returnDate:dateAlmaty(),
      amount,paymentMethod:amount>0?selectedMethods[0]:undefined,
-     ...(refunds.length?{refundParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
+     ...(refunds.length?{paymentParts:refunds.map(p=>({method:String(p.method).trim(),amount:Number(p.amount)}))}:{}),
      comment:reason,restockSource:'none',
      items:selected,
    })
