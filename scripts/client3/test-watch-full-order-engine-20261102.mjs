@@ -21,6 +21,7 @@ import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
+import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-demand-report.ts'
 import {listClient3WatchOrders} from '../../worker/domains/client3-watch-orders-read.ts'
 import {listWatchLogistics} from '../../worker/domains/client3-watches.ts'
 import {listClient3WatchClients,listClient3WatchCustomerOrders} from '../../worker/domains/client3-watch-clients.ts'
@@ -1859,5 +1860,34 @@ const exchanged=afterExchangeTable.rows.find(row=>row.orderId===twoOld.orderId)
 assert(exchanged&&exchanged.committedExchangeCount>=1,
  'Exchange does not turn the order invisible or hide its original lifecycle')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+// Main warehouse statistics parity on actual watch sales and dispatch records.
+// Brand isolation is enforced by the same scoped brand ID as the live route.
+const demandUrl=(scope,mode='ranking',variantId=0)=>new URL(
+ 'https://client3.test/api/client3/watches/stock/demand-report?'+
+ new URLSearchParams({start:'2025-01-01',end:'2027-12-31',scope,mode,
+   ...(variantId?{variantId:String(variantId)}:{})}))
+const allDemand=await parse(listClient3WatchDemandReport(db,admin,1,demandUrl('orders')))
+assert.equal(allDemand.status,200,JSON.stringify(allDemand))
+assert.equal(allDemand.truncated,false,'Test data should have a complete watch-variant ranking')
+assert(allDemand.rows.length>0&&allDemand.totals.sold>0,'Main-style demand needs actual ordered watches')
+assert(allDemand.rows.every(x=>Number(x.variantId)>0&&x.model),'Exact SKU variant and model are required')
+assert(allDemand.rows.every(x=>x.net<=x.sold&&x.amount>=0),'No negative price or duplicate returns')
+const sentDemand=await parse(listClient3WatchDemandReport(db,admin,1,demandUrl('shipped')))
+assert.equal(sentDemand.status,200,JSON.stringify(sentDemand))
+assert(sentDemand.totals.sold<=allDemand.totals.sold,
+ 'Confirmed logistics dispatches cannot exceed total ordered watches')
+assert(sentDemand.totals.sold>0,'Partial order test must produce real dispatch records')
+const detailDemand=await parse(listClient3WatchDemandReport(db,admin,1,
+ demandUrl('orders','orders',allDemand.rows[0].variantId)))
+assert.equal(detailDemand.status,200,JSON.stringify(detailDemand))
+assert(detailDemand.orders.length>0,'A ranked watch variant must drill down to exact orders')
+assert(detailDemand.orders.every(x=>x.net>=0&&x.sold>=x.returned),'Order drilldown cannot over-return')
+const otherBrandDemand=await parse(listClient3WatchDemandReport(db,admin,2,demandUrl('orders')))
+assert.equal(otherBrandDemand.status,200)
+assert(!otherBrandDemand.rows.some(x=>allDemand.rows.some(v=>v.variantId===x.variantId)),
+ 'Each watch variant is tied to only one Client3 brand')
+const noScope=await parse(listClient3WatchDemandReport(db,admin,1,
+ new URL('https://test.invalid/stock/demand-report?start=2026-02-30&end=2026-12-31')))
+assert.equal(noScope.status,400,'Invalid statistics dates must fail closed')
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
