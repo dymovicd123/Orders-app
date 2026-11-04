@@ -1380,25 +1380,34 @@ const forbiddenTwoSwap=await parse(exchangeClient3WatchSet(db,manager,2,twoOld.o
 }))
 assert.equal(forbiddenTwoSwap.status,404)
 
-// Main exchange parity: explicit fact the NEW replacement has already shipped,
-// and Main's financial/order transaction must preserve the exact watch SKU.
+// Client3 constraint: exchange records the new watch as awaiting dispatch.
+// Even an administrator cannot mark it physically sent outside Logistics.
 const alreadyIssuedOld=await createSetOld('watch-main-actual-sent-20261104',40000)
 const alreadySentExchange=await parse(exchangeClient3WatchSet(db,manager,1,alreadyIssuedOld.created.orderId,{
  requestId:'watch-main-replacement-sent-20261104',
  expectedOrderTotal:40000,oldItems:[oldSelection(alreadyIssuedOld.old)],
  newItems:[{manual:manualReplacement,source:'office',quantity:1,
   unitPrice:40000,engravingText:'',shipmentState:'sent',issuePossessionConfirmed:true}],
- paymentParts:[],refundParts:[],reason:'Клиент уже получил новую модель взамен старой',
+ paymentParts:[],refundParts:[],reason:'Прямая отправка через обмен должна отклоняться',
 }))
-assert.equal(alreadySentExchange.status,200,JSON.stringify(alreadySentExchange))
-assert.equal(alreadySentExchange.newShippingStatus,'sent')
+assert.equal(alreadySentExchange.status,400,'Only Logistics can record replacement dispatch')
+assert.equal(alreadySentExchange.code,'WATCH_EXCHANGE_NEW_INVALID')
+const pendingReplacement=await parse(exchangeClient3WatchSet(db,manager,1,alreadyIssuedOld.created.orderId,{
+ requestId:'watch-main-replacement-logistics-only-20261104',
+ expectedOrderTotal:40000,oldItems:[oldSelection(alreadyIssuedOld.old)],
+ newItems:[{manual:manualReplacement,source:'office',quantity:1,
+  unitPrice:40000,engravingText:'',shipmentState:'pending',issuePossessionConfirmed:false}],
+ paymentParts:[],refundParts:[],reason:'Замена ожидает отправки через логистику',
+}))
+assert.equal(pendingReplacement.status,200,JSON.stringify(pendingReplacement))
+assert.equal(pendingReplacement.newShippingStatus,'pending')
 const sentNewWatch=sqlite.prepare(`SELECT oi.id,oi.stock_writeoff_status,wi.watch_variant_id
  FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
  WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1`)
  .get(alreadyIssuedOld.created.orderId)
-assert(sentNewWatch.watch_variant_id>0,'Immediate shipped replacement retains exact brand watch link')
-assert.equal(sentNewWatch.stock_writeoff_status,'fulfilled',
- 'Main should mark a physically given replacement as issued in the same exchange')
+assert(sentNewWatch.watch_variant_id>0,'Replacement retains exact brand watch link')
+assert.notEqual(sentNewWatch.stock_writeoff_status,'fulfilled',
+ 'An exchange must never silently dispatch new watches; only Logistics can')
 
 // Main returns parity: received watches can be booked immediately in the right
 // physical source; an item still in transit must not be added to warehouse.
