@@ -51,7 +51,7 @@ export async function addClient3WatchDebtPayment(
  try{
    const saved=await createManualOrderPaymentCritical(db,{
      requestId,orderId,paymentDate,method,amount,paymentKind:'debt_close',comment,
-   })
+   },{watchCommercialBalance:true})
    return json({...saved,brandId,mainFinancialLedger:true},{status:201})
  }catch(cause){
    return fail('WATCH_PAYMENT_BLOCKED',
