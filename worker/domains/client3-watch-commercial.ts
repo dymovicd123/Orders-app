@@ -27,6 +27,23 @@ export const watchCommercialReturnCreditSql=(orderAlias='o')=>`COALESCE((
    )
 ),0)`
 
+export const watchReturnedUnitsForItemSql=(itemAlias='oi')=>`COALESCE((
+ SELECT SUM(ri.quantity) FROM return_items ri
+ JOIN returns r ON r.id=ri.return_id
+ WHERE ri.order_item_id=${itemAlias}.id AND COALESCE(r.status,'completed')<>'cancelled'
+   AND NOT EXISTS(SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id
+     AND COALESCE(ex.status,'completed')<>'cancelled')
+),0)`
+
+export const watchReturnedValueForItemSql=(itemAlias='oi')=>`COALESCE((
+ SELECT SUM(CASE WHEN COALESCE(ri.amount,0)>0 THEN ri.amount
+   ELSE COALESCE(ri.quantity,0)*COALESCE(${itemAlias}.unit_price,0) END)
+ FROM return_items ri JOIN returns r ON r.id=ri.return_id
+ WHERE ri.order_item_id=${itemAlias}.id AND COALESCE(r.status,'completed')<>'cancelled'
+   AND NOT EXISTS(SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id
+     AND COALESCE(ex.status,'completed')<>'cancelled')
+),0)`
+
 export const watchNetSaleSql=(orderAlias='o')=>
   `MAX(0,COALESCE(${orderAlias}.total_amount,0)-${watchCommercialReturnCreditSql(orderAlias)})`
 
