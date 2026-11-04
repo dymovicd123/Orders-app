@@ -81,3 +81,46 @@
   border:1px solid #93c5fd!important;background:#eff6ff!important;
   color:#1d4ed8!important;font-weight:650!important
 }
+
+
+/* Separate Main-style Debt tab: list, payment workspace and history. */
+.watch-debt-workspace{display:grid;gap:16px;min-width:0}
+.watch-debt-workspace .watch-debt-workspace-nav{display:flex;gap:9px;flex-wrap:wrap;
+  border-bottom:1px solid #dbe4ee;padding:0 0 12px}
+.watch-debt-workspace .watch-debt-workspace-nav button{min-height:41px;padding:9px 15px;
+  font-size:13px;font-weight:700;border:1px solid #cbd5e1;border-radius:8px}
+.watch-debt-workspace .watch-debt-workspace-nav button.is-active{color:#fff;
+  background:#2563eb;border-color:#2563eb}
+.watch-debt-workspace .watch-debt-brand-filter{display:flex;align-items:flex-end;gap:12px}
+.watch-debt-workspace .watch-debt-brand-filter label{display:grid;gap:6px;font-weight:650;color:#334155}
+.watch-debt-workspace .watch-debt-brand-filter select{min-height:39px;min-width:155px;
+  border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;padding:8px}
+.watch-debt-workspace .watch-debt-list-page,
+.watch-debt-workspace .watch-debt-form-page{display:grid;gap:14px;padding:17px;
+  border:1px solid #dbe4ee;border-radius:12px;background:#fff;min-width:0}
+.watch-debt-workspace .watch-debt-search{display:flex;gap:9px;align-items:flex-end;flex-wrap:wrap}
+.watch-debt-workspace .watch-debt-search label{display:grid;gap:5px;flex:1 1 260px;
+  max-width:480px;font-weight:650;color:#334155}
+.watch-debt-workspace .watch-debt-search input{width:100%;min-height:39px;border:1px solid #cbd5e1;
+  border-radius:8px;padding:8px 10px;background:#fff;color:#0f172a}
+.watch-debt-workspace .watch-debt-search button{min-height:39px}
+.watch-debt-workspace .watch-debt-list-summary{display:flex;gap:16px;flex-wrap:wrap;
+  align-items:center;color:#475569;font-size:14px}
+.watch-debt-workspace .watch-debt-list-scroll{max-width:100%;overflow-x:auto}
+.watch-debt-workspace .watch-debt-list-table{width:100%;min-width:920px;font-size:13px}
+.watch-debt-workspace .watch-debt-list-table th,
+.watch-debt-workspace .watch-debt-list-table td{padding:11px 10px;vertical-align:top}
+.watch-debt-workspace .watch-debt-list-table td small{display:block;margin-top:5px;color:#64748b}
+.watch-debt-workspace .watch-debt-list-table td button{white-space:nowrap}
+.watch-debt-workspace .watch-debt-pagination{display:flex;gap:12px;justify-content:flex-end;
+  align-items:center;color:#475569}
+.watch-debt-workspace .watch-debt-order-context{display:grid;gap:6px;padding:14px;
+  background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px}
+.watch-debt-workspace .watch-debt-order-context strong{font-size:17px;color:#0f172a}
+.watch-debt-workspace .watch-debt-order-context span{font-size:13px;color:#475569}
+.watch-debt-workspace .watch-debt-history{margin:0;padding:17px;background:#fff}
+@media(max-width:700px){
+  .watch-debt-workspace .watch-debt-workspace-nav button{flex:1 1 145px}
+  .watch-debt-workspace .watch-debt-list-page,
+  .watch-debt-workspace .watch-debt-form-page{padding:12px}
+}
