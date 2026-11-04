@@ -3,6 +3,7 @@ import {SmartPickerInput} from '../../components/inputs/SmartPickerInput'
 import {WATCH_OPTIONS,WATCH_PAYMENTS,type WatchBrand,type WatchGender,type WatchSource} from '../../../shared/client3/watch-domain'
 import '../../styles/193-exchange-set-v2.css'
 import '../../styles/client3-watch-exchange.css'
+import '../../styles/client3-qa-exchange-parity-20261104.css'
 
 type OldLine={id:number;productName:string;quantity:number;returnableQuantity:number;
  exchangeableQuantity:number;shippedQuantity:number;returnedQuantity:number;stockWriteoffStatus:string;
