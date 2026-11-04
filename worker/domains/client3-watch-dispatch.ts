@@ -2,6 +2,7 @@ import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {dispatchSelectedCompleteOrderLines} from './order-dispatch.ts'
 import {getOrderStockHandoverState} from './order-reservations.ts'
+import {watchCheckpointNeedsClarification} from './client3-watch-handover.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type WatchDispatchSelection={orderItemId:number;quantity:number}
@@ -96,14 +97,24 @@ export async function dispatchClient3WatchOrder(
    if(!handover)return fail('WATCH_HANDOVER_CHECK_FAILED',
      'История ревизий заказа недоступна. Нельзя подтвердить отправку.',409)
    const picked=new Set(chosen.map(x=>x.orderItemId))
+   // Fail closed when a watch line cannot be reconciled against Main's
+   // stocktake lineage; no fallback to a generic physical checkbox.
+   if(chosen.some(x=>!handover.items.some(item=>item.orderItemId===x.orderItemId)))
+     return fail('WATCH_HANDOVER_LINE_MISSING',
+       'Не удалось проверить ревизию выбранных часов. Отправка остановлена.',409)
    const requiresReview=handover.items.filter(item=>
-     picked.has(item.orderItemId)&&item.reviewNeeded)
+     picked.has(item.orderItemId)&&watchCheckpointNeedsClarification(item))
    if(requiresReview.length){
      return json({ok:false,code:'WATCH_HANDOVER_REQUIRED',
-       message:'После создания заказа проведена ревизия. Сначала уточните фактическую выдачу выбранных часов до проверки.',
+       message:'Ревизия прошла после даты заказа. До отправки уточните фактическую выдачу часов. Если резерв не подтверждён, сначала восстановите его по реальному остатку.',
        orderId,brandId,reviewCount:requiresReview.length,
        reviewItemIds:requiresReview.map(x=>x.orderItemId)}, {status:409})
    }
+   const alreadyIssued=handover.items.filter(item=>picked.has(item.orderItemId)&&
+     item.state==='already_issued')
+   if(alreadyIssued.length)
+     return fail('WATCH_ALREADY_ISSUED_BEFORE_REVISION',
+       'Выбранные часы уже отмечены физически выданными до ревизии. Повторная отправка запрещена.',409)
    if(selected.some(x=>Number(x.shipped_quantity)>0))
      return fail('WATCH_ALREADY_SHIPPED','Эти часы уже отправлены. Обновите логистику.',409)
    if(selected.some(x=>String(x.engraving_text||'').trim()&&Number(x.engraving_ready)!==1))
