@@ -27,14 +27,15 @@ export async function listClient3WatchStockHistory(
   SELECT m.id,m.inventory_source,m.movement_type,m.quantity_delta,
     m.quantity_after,m.reference_type,m.reference_id,m.comment,m.created_at,
     wp.model_name,wv.id AS watch_variant_id,wv.gender,
-    COALESCE(a.movement,wv.movement) AS mechanism,
-    COALESCE(a.bracelet_material,wv.bracelet_material) AS bracelet_material,
-    COALESCE(a.dial_color,wv.dial_color) AS dial_color,
-    COALESCE(a.bracelet_color,wv.bracelet_color) AS bracelet_color
+    COALESCE(a6.movement,a.movement,wv.movement) AS mechanism,
+    COALESCE(a6.bracelet_material,a.bracelet_material,wv.bracelet_material) AS bracelet_material,
+    COALESCE(a6.dial_color,a.dial_color,wv.dial_color) AS dial_color,
+    COALESCE(a6.bracelet_color,a.bracelet_color,wv.bracelet_color) AS bracelet_color
   FROM inventory_movements m
   JOIN watch_variants wv ON wv.catalog_variant_id=m.variant_id
   JOIN watch_products wp ON wp.id=wv.watch_product_id
   LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 a6 ON a6.watch_variant_id=wv.id
   WHERE wp.brand_id=?
     AND (?='' OR m.inventory_source=?)
     AND (?=0 OR m.id<?)
