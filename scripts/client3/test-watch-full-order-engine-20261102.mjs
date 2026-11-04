@@ -1689,7 +1689,12 @@ const firstReplacementSent=await parse(dispatchClient3WatchOrder(db,logisticActo
  requestId:'watch-swap-followup-send-20261104-01',
  items:[{orderItemId:activeSwap[0].id,quantity:1}],
 }))
-assert.equal(firstReplacementSent.status,200,JSON.stringify(firstReplacementSent))
+const replacementState=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.source_type,
+ oi.stock_writeoff_status,ir.id AS reservationId,ir.status AS reservationStatus,
+ ir.quantity AS reservedQuantity,ir.variant_id AS reservedVariant
+ FROM order_items oi LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(twoOld.orderId)
+assert.equal(firstReplacementSent.status,200,JSON.stringify({result:firstReplacementSent,replacementState}))
 assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
  .get(twoOld.orderId).shipping_status,'not_sent',
  'An exchange with one remaining replacement stays partially shipped')
