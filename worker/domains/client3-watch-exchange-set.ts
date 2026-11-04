@@ -9,7 +9,7 @@ type Old={orderItemId:number;quantity:number;physicalState:'not_issued'|'pending
  expectedActiveQuantity:number;expectedUnitPrice:number;
  expectedLineTotal:number;expectedCatalogPriceSnapshot:number|null}
 type New={manual:ManualWatchOrderItem;quantity:number;unitPrice:number;
- source:WatchSource;engravingText:string;shipmentState:'pending';issuePossessionConfirmed?:false}
+ source:WatchSource;engravingText:string;shipmentState:'pending'|'sent';issuePossessionConfirmed?:boolean}
 type Part={method:string;amount:number}
 type Input={requestId?:unknown;expectedOrderTotal?:unknown;
  oldItems?:Old[];newItems?:New[];paymentParts?:Part[];refundParts?:Part[];
