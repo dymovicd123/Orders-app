@@ -1,0 +1,147 @@
+name: Client3 ORIGINAL — QA-verified order/lifecycle & UI release (NO MIGRATIONS)
+on:
+  push:
+    branches: [client3/qa-main-ui-plus-lifecycle-20261104]
+    paths: ['.github/workflows/client3-live-release-main-parity-20261104.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: client3-original-production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+      REAL_WORKER: orders-app-client3-old-client
+      REAL_D1: orders_db_client3_old_client
+      REAL_D1_ID: 0717f239-6d81-4837-8586-777d94e22c53
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Guard exact approved QA source and real ONLY Client3 identity
+        run: |
+          set -eEuo pipefail
+          trap 'echo "CLIENT3_REAL_RELEASE_HALTED at line $LINENO"' ERR
+          test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
+          test "$(git rev-parse HEAD^)" = f3ef05293d9cb284b59fb3fa1a68929581cb5c54
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-live-release-main-parity-20261104.yml
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41780511827 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41780511827 --jq .head_sha)" = f3ef05293d9cb284b59fb3fa1a68929581cb5c54
+          test "$(jq -r .name wrangler.jsonc)" = "$REAL_WORKER"
+          test "$(jq -r .main wrangler.jsonc)" = worker/index.ts
+          test "$(jq -r .d1_databases[0].binding wrangler.jsonc)" = DB
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$REAL_D1_ID"
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = "$REAL_D1"
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          test "$(jq -r .vars.CLIENT3_INSTALLATION wrangler.jsonc)" = 1
+          test "$(jq -r .assets.directory wrangler.jsonc)" = ./dist/client
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          echo REAL_ONLY_CLIENT3_TARGET_PINNED
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Retest EXACT code before releasing to real Client3
+        run: |
+          set -euo pipefail
+          npm run build
+          for testfile in \
+            scripts/client3/test-watch-orders-read-20261102.mjs \
+            scripts/client3/test-watch-logistics-20261102.mjs \
+            scripts/client3/test-watch-handover-after-revision-20261103.mjs \
+            scripts/client3/test-watch-debt-multi-ui-20261104.mjs \
+            scripts/client3/test-watch-return-money-ui-20261104.mjs \
+            scripts/client3/test-watch-full-order-engine-20261102.mjs \
+            scripts/client3/test-watch-full-exchange-engine-20261102.mjs \
+            scripts/client3/test-main-return-table-parity-20261104.mjs \
+            scripts/client3/test-watch-main-step1-20261102.mjs \
+            scripts/client3/test-watch-form-20261102.mjs \
+            scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
+            scripts/client3/test-watch-shared-cash-team-20261103.mjs; do
+            echo "::group::$testfile"
+            node --experimental-strip-types "$testfile"
+            echo "::endgroup::"
+          done
+      - name: Read-only ORIGINAL D1 preflight; no schema changes authorized
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list "$REAL_D1" --remote --config wrangler.jsonc | tee /tmp/live-migrations.txt
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/live-migrations.txt | sort -u || true)"
+          if test -n "$pending"; then
+            echo "Existing ORIGINAL D1 has pending migrations. No migration or deployment permitted."
+            exit 1
+          fi
+          npx wrangler d1 execute "$REAL_D1" --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_engraving_item_readiness') AS item_ready,
+            (SELECT COUNT(*) FROM pragma_table_info('watch_logistics_events') WHERE name='order_item_id') AS readiness_events,
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_order_details') AS watches,
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_variant_attributes_v5') AS attributes,
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_shared_cash_register') AS cash,
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='inventory_handover_reviews') AS revision_review,
+            (SELECT COUNT(*) FROM sqlite_master WHERE name='critical_operations') AS idempotency,
+            (SELECT COUNT(*) FROM pragma_table_info('return_items') WHERE name='amount') AS return_values,
+            (SELECT COUNT(*) FROM pragma_table_info('exchanges') WHERE name='refund_return_id') AS exchange_link" |
+            jq -e '.[0].results[0]|select(.item_ready==1 and .readiness_events==1 and .watches==1 and .attributes==1 and .cash==1 and .revision_review==1 and .idempotency==1 and .return_values==1 and .exchange_link==1)'
+          npx wrangler d1 execute "$REAL_D1" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          npx wrangler d1 execute "$REAL_D1" --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS item_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM financial_events) AS financial_events,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock" |
+            jq -c '.[0].results[0]' | tee /tmp/live-before.json
+          echo ORIGINAL_D1_SCHEMA_SAFE_READ_ONLY
+      - name: Deploy ONLY original working Client3 Worker; NO migrations; NO other Workers
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = "$REAL_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$REAL_D1_ID"
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Verify actual live original SPA binary, authorization and D1 integrity
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          for attempt in $(seq 1 8); do
+            code="$(curl -sSL -o /tmp/live-index -w '%{http_code}' --max-time 25 "$base/?release=$GITHUB_SHA" || true)"
+            test "$code" = 200 && break
+            sleep 2
+          done
+          test "$code" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/live-index
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset" && test -s "dist/client$asset"
+          curl -fsSL --max-time 30 "$base$asset" > /tmp/live-bundle.js
+          cmp -s "dist/client$asset" /tmp/live-bundle.js
+          for path in \
+            '/api/client3/watches/orders?brand=TAUWACH' \
+            '/api/client3/watches/logistics?brand=TAUWACH' \
+            '/api/client3/watches/debt-history?brand=TAUWACH' \
+            '/api/client3/watches/returns/pending?brand=TAUWACH' \
+            '/api/client3/watches/orders/1/stock-handover?brand=TAUWACH'; do
+            status="$(curl -sS -o /tmp/live-anon -w '%{http_code}' --max-time 20 "$base$path")"
+            test "$status" = 401 -o "$status" = 403
+          done
+          npx wrangler d1 execute "$REAL_D1" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          npx wrangler d1 execute "$REAL_D1" --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS item_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM financial_events) AS financial_events,
+            (SELECT COUNT(*) FROM inventory_movements) AS movements,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock" |
+            jq -c '.[0].results[0]' | tee /tmp/live-after.json
+          if ! diff -u /tmp/live-before.json /tmp/live-after.json; then
+            echo 'Counts changed: possible concurrent live work. Never auto-rollback or rewrite business transactions.'
+          fi
+          echo ORIGINAL_CLIENT3_ONLY_LIVE_ASSET_API_AND_FK_VERIFIED
