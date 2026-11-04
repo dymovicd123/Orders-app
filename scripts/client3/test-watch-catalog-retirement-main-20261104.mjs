@@ -573,10 +573,15 @@ const cancelPhysicalOldReturn=await parse(cancelClient3WatchReturn(db,manager,1,
  requestId:'watch-return-cancel-after-delete-20261104-0001',
  reason:'Отмена движения возврата в архивном SKU недопустима'
 }))
-assert.equal(cancelPhysicalOldReturn.status,409,JSON.stringify(cancelPhysicalOldReturn))
-assert.equal(cancelPhysicalOldReturn.code,'WATCH_RETURN_CANCEL_RETIRED_STOCK')
-assert.notEqual(sqlite.prepare('SELECT status FROM returns WHERE id=?')
+assert.equal(cancelPhysicalOldReturn.status,200,JSON.stringify(cancelPhysicalOldReturn))
+assert.equal(cancelPhysicalOldReturn.archivedStockPreserved,true)
+assert(cancelPhysicalOldReturn.stockReversals.some(x=>
+ x.physicalReversalSkipped===true&&x.physicalReversalReason==='retired_identity'),
+ 'Main must cancel return commercially without reversing retired stock')
+assert.equal(sqlite.prepare('SELECT status FROM returns WHERE id=?')
  .get(returnBeforeDelete.id).status,'cancelled')
+assert.equal(sqlite.prepare(`SELECT status FROM inventory_lifecycle_events
+ WHERE operation_type='return' AND operation_id=?`).get(returnBeforeDelete.id).status,'cancelled')
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
  .get(returnedBeforeRetireVariant.canonical).quantity,0)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
@@ -642,15 +647,18 @@ const exchangedOldDeleted=await parse(deleteClient3WatchCatalog(db,admin,1,{
 }))
 assert.equal(exchangedOldDeleted.status,200,JSON.stringify(exchangedOldDeleted))
 const beforeBlockedExchange=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
-const forbiddenArchiveExchangeCancel=await parse(cancelClient3WatchExchange(db,manager,1,
+const approvedArchiveExchangeCancel=await parse(cancelClient3WatchExchange(db,manager,1,
  oldExchangeOrder.orderId,exchangeBeforeDelete.id,{
  requestId:'watch-cancel-old-exchange-after-delete-20261104-0001',
  reason:'Нельзя обращать складское движение уже удалённого товара'
 }))
-assert.equal(forbiddenArchiveExchangeCancel.status,409,JSON.stringify(forbiddenArchiveExchangeCancel))
-assert.equal(forbiddenArchiveExchangeCancel.code,'WATCH_EXCHANGE_CANCEL_RETIRED_STOCK')
+assert.equal(approvedArchiveExchangeCancel.status,200,JSON.stringify(approvedArchiveExchangeCancel))
+assert.equal(approvedArchiveExchangeCancel.archivedStockPreserved,true)
+assert(approvedArchiveExchangeCancel.stockReversals.some(x=>
+ x.physicalReversalSkipped===true&&x.physicalReversalReason==='retired_identity'),
+ 'Main must cancel Exchange commercially without resurrecting retired stock')
 assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
- .get(exchangeBeforeDelete.id).status,'completed')
+ .get(exchangeBeforeDelete.id).status,'cancelled')
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
  .get(exchangedBeforeRetireVariant.canonical).quantity,0)
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,
