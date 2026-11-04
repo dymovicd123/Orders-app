@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
+import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import {watchItemFullyIssued,watchIssuedQuantity,watchItemReturnSummary,watchItemAwaitingReceipt}
  from './watchItemLifecycle'
 import '../../styles/client3-watch-logistics.css'
@@ -60,7 +61,11 @@ async function readApi<T extends { ok: boolean; message?: string }>(
 ): Promise<T> {
   const response = await fetch(path, { credentials: 'include', cache: 'no-store', ...options })
   const data = await response.json() as T
-  if (!response.ok || !data.ok) throw new Error(data.message || 'Запрос не выполнен (' + response.status + ')')
+  if (!response.ok || !data.ok) {
+    const failure= new Error(data.message || 'Запрос не выполнен (' + response.status + ')') as Error&{code?:string}
+    failure.code=(data as {code?:string}).code
+    throw failure
+  }
   return data
 }
 
@@ -127,6 +132,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [dispatching,setDispatching]=useState<number|null>(null)
   const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
   const [readyConfirmOrderId,setReadyConfirmOrderId]=useState<number|null>(null)
+  const [checkingHandover,setCheckingHandover]=useState<number|null>(null)
+  const [handoverPromptOrderId,setHandoverPromptOrderId]=useState<number|null>(null)
 
   const [dispatchSelection,setDispatchSelection]=useState<Record<number,number[]>>({})
   const [dispatchQuantities,setDispatchQuantities]=useState<Record<number,Record<number,number>>>({})
@@ -313,6 +320,30 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   }
   const eligible=(_order:WatchLogisticsRow,item:WatchLogisticsRow)=>
     logisticsItemEligible(item)||logisticsAwaitingPhysicalConfirmation(item)
+  const reviewSendHandover=async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
+    if(!canDispatch||checkingHandover!==null||dispatching!==null)return
+    setCheckingHandover(order.orderId);setError('');setDispatchConfirm(null)
+    try{
+      const status=await readApi<{
+        ok:boolean;state?:{items:Array<{orderItemId:number;reviewNeeded:boolean}>}
+      }>('/api/client3/watches/orders/'+order.orderId+
+        '/stock-handover?brand='+encodeURIComponent(order.brand))
+      // Main's checkpoint review concerns the exact items being dispatched.
+      // The server repeats this check at the final POST boundary.
+      const selectedIds=new Set(selected.map(x=>Number(x.orderItemId)))
+      const needsReview=status.state?.items.some(x=>
+        selectedIds.has(x.orderItemId)&&x.reviewNeeded)
+      if(needsReview){
+        setHandoverPromptOrderId(order.orderId)
+        setError('Для выбранных часов есть ревизия после заказа. Уточните выдачу до отправки.')
+      }else{
+        setHandoverPromptOrderId(null)
+        setDispatchConfirm(order.orderId)
+      }
+    }catch(e){
+      setError(e instanceof Error?e.message:'Не удалось проверить ревизию. Отправка остановлена.')
+    }finally{setCheckingHandover(null)}
+  }
   const send=useCallback(async(order:WatchLogisticsRow,selected:WatchLogisticsRow[])=>{
     if(!canDispatch||dispatching!==null||dispatchConfirm!==order.orderId)return
     setDispatching(order.orderId);setError('');setFeedback('')
@@ -332,7 +363,13 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       setDispatchQuantities(prev=>({...prev,[order.orderId]:{}}))
       setFeedback('Отправлено выбранное количество. Оставшиеся часы и резервы сохранены.')
       setRefreshKey(value=>value+1)
-    }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')}
+    }catch(cause){
+      if((cause as Error&{code?:string})?.code==='WATCH_HANDOVER_REQUIRED'){
+        setDispatchConfirm(null)
+        setHandoverPromptOrderId(order.orderId)
+      }
+      setError(cause instanceof Error?cause.message:'Не удалось подтвердить отправку')
+    }
     finally{setDispatching(null)}
   },[canDispatch,dispatching,dispatchConfirm])
   return <section className="watch-logistics workshop-workspace">
@@ -549,6 +586,19 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                         onClick={()=>setCorrectionTarget(null)}>Отмена</button>
                     </div>
                   </div>}
+                {handoverPromptOrderId===order.orderId&&
+                  <div className="watch-logistics-handover-required">
+                    <strong>Уточнение выдачи обязательно перед отправкой</strong>
+                    <p>Последняя ревизия проведена после создания заказа. По каждой затронутой позиции укажите, выдали ли часы до проверки или они оставались у вас.</p>
+                    <WatchOrderHandoverPanel brand={order.brand} orderId={order.orderId}
+                      lines={items.filter(i=>i.orderItemId).map(i=>({
+                        id:Number(i.orderItemId),gender:i.gender||'',movement:i.movement||'',
+                        braceletMaterial:i.braceletMaterial||'',dialColor:i.dialColor||'',
+                        braceletColor:i.braceletColor||'',
+                      }))}
+                      onDone={()=>{setDispatchConfirm(null);setRefreshKey(v=>v+1)}}
+                      onClose={()=>{setHandoverPromptOrderId(null);setDispatchConfirm(null)}}/>
+                  </div>}
                 <div className="watch-logistics-actions">
                   {intakePending>0&&<div className="watch-logistics-receipt-notice">
                     <strong>Возвращённые часы ожидают физическую приёмку: {intakePending} шт.</strong>
@@ -558,7 +608,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                   </div>}
                   <span>{order.engravingStatus==='ready'?'Все гравировки готовы':
                     'Гравировка подтверждается отдельно у каждой позиции выше'}</span>
-                  {canDispatch&&selected.length>0&&
+                  {canDispatch&&selected.length>0&&handoverPromptOrderId!==order.orderId&&
                     (dispatchConfirm===order.orderId?
                     <div className="client3-logistics-dispatch-confirm">
                       <strong>Отправляем {selected.length} поз. / {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.</strong>
@@ -575,8 +625,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
                         onClick={()=>setDispatchConfirm(null)}>Отмена</button>
                     </div>:
                     <button type="button" className="client3-logistics-dispatch-button"
-                      disabled={saving!==null||dispatching!==null}
-                      onClick={()=>setDispatchConfirm(order.orderId)}>Отправить выбранные · {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.</button>)}
+                      disabled={saving!==null||dispatching!==null||checkingHandover!==null}
+                      onClick={()=>void reviewSendHandover(order,selected)}>
+                      {checkingHandover===order.orderId?'Проверяю ревизию…':
+                        'Отправить выбранные · '+selected.reduce((n,x)=>n+Number(x.quantity),0)+' шт.'}
+                    </button>)}
                   {!completed&&items.some(i=>i.engravingText?.trim()&&!logisticsItemIssued(i))&&
                     order.engravingStatus!=='ready'&&
                     <small>Часы с гравировкой отправляются после отметки «Готово». Остальные можно отправить отдельно.</small>}
