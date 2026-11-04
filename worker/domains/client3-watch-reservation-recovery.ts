@@ -10,7 +10,8 @@ const fail=(code:string,message:string,status=409)=>json({ok:false,code,message}
 export async function retryClient3WatchReservations(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,
 ){
- if(!actor?.id||(!['admin','manager'].includes(actor.role||'')&&actor.employeeRole!=='Логист'))
+ if(!actor?.id||['Завсклад','Упаковщик'].includes(actor.employeeRole||'')&&actor.role!=='admin'||
+   actor.role!=='admin'&&actor.role!=='manager')
    return fail('WATCH_RESERVE_FORBIDDEN','Резерв может проверить менеджер, логист или администратор.',403)
  if(!Number.isSafeInteger(orderId)||orderId<1)
    return fail('WATCH_RESERVE_ORDER_INVALID','Выберите заказ.',400)
