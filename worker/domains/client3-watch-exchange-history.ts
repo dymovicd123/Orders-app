@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {listExchanges,cancelExchange,cancelExchangeSetV2,isExchangeSetV2} from './returns-exchanges.ts'
+import {retiredAppliedMovementBlocker} from './client3-watch-retired-reversal-guard.ts'
 import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} from './client3-watch-item-projection.ts'
 
 const error=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
@@ -105,6 +106,9 @@ export async function cancelClient3WatchExchange(
  // The only safe paths are a genuine return/receipt or a separately reviewed
  // mistaken-shipment correction, followed by cancellation if still eligible.
  if(owned.status!=='cancelled'){
+   const affected=await retiredAppliedMovementBlocker(db,'exchange',exchangeId)
+   if(affected)return error('WATCH_EXCHANGE_CANCEL_RETIRED_STOCK',
+     'Обмен уже изменял складскую позицию, которая позднее была удалена из каталога. Простая отмена изменила бы закрытый остаток. Данные оставлены без изменений; требуется отдельная сверка связанных физических движений.',409)
    const sent=await db.prepare(`
      SELECT di.id FROM exchange_items ei
      JOIN order_dispatch_items di ON di.order_item_id=ei.order_item_id
