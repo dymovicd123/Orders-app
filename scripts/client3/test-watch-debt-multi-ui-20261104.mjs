@@ -37,6 +37,10 @@ try{
   'Назад к таблице долгов']){
    assert(workspace.includes(word),'Dedicated Main debt workspace missing '+word)
  }
+ const list=renderToStaticMarkup(React.createElement(WatchDebtWorkspace,{
+   brands:['TAUWACH','ARYSTAN'],
+ }))
+ assert(list.includes('>Найти</button>'),'Debt search button must keep visible label')
  const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
  const orderPanel=fs.readFileSync('src/features/client3/WatchOrdersPanel.tsx','utf8')
  assert(app.includes("goTo('debts')")&&app.includes("panel==='debt'?'debts'")&&
@@ -47,6 +51,16 @@ try{
  assert(css.includes('.watch-main-debt-actions button[type=submit]') &&
    css.includes('background:#2563eb!important;color:white!important'),
    'Primary debt button needs explicit readable blue background and white text')
+ for(const selector of [
+   '.watch-debt-workspace .watch-debt-search button.primary',
+   '.watch-debt-workspace .watch-debt-list-table td button.primary',
+ ]){
+   assert(css.includes(selector),'Debt action contrast rule missing '+selector)
+ }
+ assert(css.includes('background:#2563eb!important')&&
+   css.includes('color:#fff!important')&&
+   css.includes('min-width:126px;white-space:normal'),
+   'Debt table and search buttons need explicit legible foreground/background and width')
  const ui=fs.readFileSync('src/features/client3/WatchDebtPaymentForm.tsx','utf8')
  assert(ui.includes('keys.current[part.id]') &&
    ui.includes('saved[part.id]') &&
