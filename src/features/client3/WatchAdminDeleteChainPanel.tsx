@@ -80,7 +80,7 @@ export function WatchAdminDeleteChainPanel({brand,orderId,externalId,onDone,onCl
    ||preview?.canStartChain&&!warning&&!progress)
  const canCorrect=Boolean(preview?.canPreparePhysicalCorrection&&!progress&&physical==='not_issued')
  const snapshot=preview?.chainPlan?.snapshotFingerprint||''
- const finalAck=ack&&reason.trim().length>=5&&reason.trim().length<=500
+ const finalAck=ack&&(!direct||(reason.trim().length>=5&&reason.trim().length<=500))
  const post=(suffix:string,payload:Record<string,unknown>)=>read<{ok:boolean;
   message?:string;progress?:Progress;preview?:MainPreview}>(
    base(orderId)+suffix,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -174,9 +174,11 @@ export function WatchAdminDeleteChainPanel({brand,orderId,externalId,onDone,onCl
     {physical==='issued'&&<p>Используйте возврат и приёмку, а не удаление физически переданного товара.</p>}
    </div>}
    {(direct||chained)&&<div className="watch-admin-delete-confirm">
-    <label>Причина аннулирования *<textarea rows={3} minLength={5} maxLength={500}
+    {direct?<label>Причина аннулирования *<textarea rows={3} minLength={5} maxLength={500}
       disabled={busy} value={reason} onChange={e=>{setReason(e.target.value);setAck(false)}}
-      placeholder="Причина для журнала операций"/></label>
+      placeholder="Причина для журнала операций"/></label>:
+      <p>Каждая отмена цепочки будет записана в журнале Main с указанием операции.
+        Незавершённые шаги можно продолжить с тем же идентификатором.</p>}
     <label><input type="checkbox" disabled={busy} checked={ack}
       onChange={e=>setAck(e.target.checked)}/>
       Подтверждаю последствия для остатков, резерва, возвратов и денег. Это учётное сторно, не выдача денег клиенту.</label>
