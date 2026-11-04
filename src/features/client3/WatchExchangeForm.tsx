@@ -334,8 +334,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
            Подтверждаю фактическую передачу именно этих часов. Main зафиксирует физическую выдачу;
            если по учёту не хватает остатка, он не станет отрицательным.
          </label>}
-       </>}
-       {!x.modelName.trim()&&<div className="exchange-new-hint">Сначала выберите модель — появятся характеристики и цена.</div>}
+       </>:<div className="exchange-new-hint">Сначала выберите модель — появятся характеристики и цена.</div>}
      </div>)}
      <button type="button" className="secondary" disabled={newLines.length>=20}
        onClick={()=>{setNewLines(v=>[...v,blank()]);setConfirmed(false)}}>+ Добавить часы</button>
