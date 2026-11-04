@@ -81,7 +81,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  }
  const addPay=(type:'payment'|'refund')=>{
    const setter=type==='payment'?setPayments:setRefunds
-   setter(rows=>rows.length>=3?rows:[...rows,{key:crypto.randomUUID(),
+   setter(rows=>rows.length>=2?rows:[...rows,{key:crypto.randomUUID(),
      method:methods[0]||'',amount:type==='refund'?String(refundDue):''}])
    setConfirmed(false)
  }
@@ -167,7 +167,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
            setConfirmed(false)
          }}>Убрать</button>
      </div>)}
-     {parts.length<3&&<button className="secondary" type="button" onClick={()=>addPay(type)}>
+     {parts.length<2&&<button className="secondary" type="button" onClick={()=>addPay(type)}>
        + Ещё один способ оплаты
      </button>}
      <small>{type==='payment'?'Доплату можно внести частично; остаток станет долгом.':
