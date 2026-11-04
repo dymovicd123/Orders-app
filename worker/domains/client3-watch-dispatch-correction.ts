@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {cancelExactOrderDispatchItem} from './order-dispatch-cancel.ts'
+import {cancelRetiredWatchDispatch} from './client3-watch-retired-correction.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type Raw={dispatchItemId?:unknown;requestId?:unknown;reason?:unknown}
@@ -37,9 +38,19 @@ export async function correctClient3WatchDispatch(
  if(!own)return fail('WATCH_DISPATCH_CORRECTION_NOT_FOUND',
    'Эта отправка не принадлежит выбранному заказу и бренду.',404)
  try{
-   const result=await cancelExactOrderDispatchItem(db,orderId,{
-     dispatchItemId:Number(id),requestId,actor:'client3-watch-admin:'+actor.id,reason,
-   })
+   const line=await db.prepare(`SELECT oi.stock_writeoff_status,di.movement_id,
+     di.reservation_id,j.order_item_id AS retired_journal
+     FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+     JOIN order_items oi ON oi.id=di.order_item_id
+     LEFT JOIN retired_order_item_issues j ON j.order_item_id=oi.id
+     WHERE di.id=? AND d.order_id=?`).bind(Number(id),orderId).first<Record<string,unknown>>()
+   const archived=line?.retired_journal!=null&&line.movement_id==null&&
+     line.reservation_id==null
+   const payload={dispatchItemId:Number(id),requestId,
+     actor:'client3-watch-admin:'+actor.id,reason}
+   const result=archived
+     ?await cancelRetiredWatchDispatch(db,brandId,orderId,payload)
+     :await cancelExactOrderDispatchItem(db,orderId,payload)
    return json({...result,orderId,brandId,mainDispatchCorrection:true})
  }catch(cause){
    return fail('WATCH_DISPATCH_CORRECTION_BLOCKED',
