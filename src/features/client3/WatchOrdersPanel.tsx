@@ -8,6 +8,7 @@ import {watchItemFullyIssued,watchIssuedQuantity} from './watchItemLifecycle'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
+import {WatchDebtHistoryPanel} from './WatchDebtHistoryPanel'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
@@ -48,7 +49,7 @@ type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:n
   returnedQuantity:number;shippedQuantity:number;pendingReturnQuantity:number;pendingExchangeReceiptQuantity:number;unitPrice:number;
   lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
   stockWriteoffStatus:string;
-  engravingText:string;gender:string;movement:string;braceletMaterial:string;
+  engravingText:string;engravingReady:number|boolean;gender:string;movement:string;braceletMaterial:string;
   dialColor:string;braceletColor:string}
 function parsedRows<T>(raw:string|undefined):T[]{
   try{const rows=JSON.parse(raw||'[]') as unknown;return Array.isArray(rows)?rows as T[]:[]}catch{return []}
@@ -88,6 +89,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [exchangeHistoryOrderId,setExchangeHistoryOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(null)
+  const [showDebtHistory,setShowDebtHistory]=useState(false)
   // Keep Main's dense orders table collapsed by default; detail opens only on request.
   const [,setExpanded]=useState<number|null>(null)
   const [,setExtraActionsOrderId]=useState<number|null>(null)
@@ -186,7 +188,15 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         <div><small>Остаток долга</small><strong>{sum(data.totals.debtAmount)}</strong></div>
         <div><small>Учтено возвратов</small><strong>{sum(data.totals.returnAmount)}</strong></div>
       </div>
-      <p className="watch-orders-note">Возвраты, обмены, оплаты и отправки отображаются раздельно, как в Main. Нехватка свободного резерва не скрывает заказ и не закрывает кнопку отправки.</p>
+      <div className="watch-orders-finance-tools">
+        <p className="watch-orders-note">Отправка отдельно проверяет ревизию, резерв, готовность гравировки и факт передачи. Возвраты и обмены не блокируют прочие операции.</p>
+        <button type="button" className="secondary compact watch-debt-history-toggle"
+          aria-expanded={showDebtHistory} onClick={()=>setShowDebtHistory(x=>!x)}>
+          {showDebtHistory?'Скрыть историю оплат долга':'История закрытия долгов'}
+        </button>
+      </div>
+      {showDebtHistory&&<WatchDebtHistoryPanel brand={brand} refreshToken={refresh}/>}
+
       {data.rows.length===0?<p>Заказов за выбранный период нет.</p>:
         <LinkedTableScroll className="watch-main-orders-scroll" ariaLabel="Горизонтальная прокрутка таблицы заказов">
           <table className="data-table orders-table watch-main-orders-table">
@@ -255,7 +265,12 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                           <span className="soft-badge watch-item-returned">
                             Возвращено {line.returnedQuantity} шт.
                           </span>}
-                        {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
+                        {line.engravingText&&<div className="watch-engraving-order-state">
+                          <small>Гравировка: {line.engravingText}</small>
+                          <span className={'watch-engraving-ready-pill '+(line.engravingReady?'is-ready':'is-pending')}>
+                            {line.engravingReady?'Гравировка готова':'Ожидает подтверждения'}
+                          </span>
+                        </div>}
                         <div className="order-item-chip-meta">
                           <span className={'order-item-source-badge source-'+
                             (line.source==='boutique'?'boutique':'warehouse')}>
@@ -312,6 +327,12 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       <button type="button" className="primary compact"
                         onClick={()=>onOpenLogistics(brand,order.orderId)}>
                         {shipLabel(order)==='Отправлено'?'Отправки':'Отправить'}
+                      </button>}
+                    {workflow==='orders'&&onOpenLogistics&&
+                      lines.some(line=>line.engravingText?.trim()&&!line.engravingReady)&&
+                      <button type="button" className="secondary compact watch-engraving-nav"
+                        onClick={()=>onOpenLogistics(brand,order.orderId)}>
+                        Готовность гравировки
                       </button>}
                     {(workflow==='orders'||workflow==='returns')&&operational.canOpenReturn&&
                       <button type="button" className="secondary compact"
