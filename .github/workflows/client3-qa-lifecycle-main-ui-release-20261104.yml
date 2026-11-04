@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = 73c5bca9f9ccbbb108052105007e64af3ea367ec
+          test "$(git rev-parse HEAD^)" = 1f7b45ab9ba5835b50045fec238db38917ddd9d5
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -56,7 +56,8 @@ jobs:
         run: npm run build
       - name: Exact Main returns, exchange, partial dispatch and physical intake tests
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          failed=0
           for testfile in \
             scripts/client3/test-watch-orders-read-20261102.mjs \
             scripts/client3/test-watch-logistics-20261102.mjs \
@@ -69,9 +70,10 @@ jobs:
             scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
             scripts/client3/test-watch-shared-cash-team-20261103.mjs; do
             echo "::group::$testfile"
-            node --experimental-strip-types "$testfile"
+            node --experimental-strip-types "$testfile" || { failed=1; echo "::error::FAILED $testfile"; }
             echo "::endgroup::"
           done
+          exit "$failed"
       - name: Read-only QA D1 schema, admin, watch operations, FK
         run: |
           set -euo pipefail
