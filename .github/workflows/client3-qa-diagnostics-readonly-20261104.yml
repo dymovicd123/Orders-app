@@ -1,0 +1,62 @@
+name: Client3 QA actual stocktake and shipped order audit (read only)
+on:
+  push:
+    branches: [client3/qa-main-ui-plus-lifecycle-20261104]
+    paths: ['.github/workflows/client3-qa-diagnostics-readonly-20261104.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "24",cache: npm}
+      - name: Verify QA target, never original
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+      - run: npm ci
+      - name: Query QA stocktake lineage and order dates WITHOUT identifying clients
+        run: |
+          set -euo pipefail
+          db=orders_db_client3_qa_41698114208
+          id=fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+          jq -n --arg id "$id" --arg db "$db" '{name:"orders-app-client3-qa-20261103",main:"worker/index.ts",d1_databases:[{binding:"DB",database_name:$db,database_id:$id}]}' > /tmp/qa-check.json
+          echo '=== REVISION SESSIONS ==='
+          npx wrangler d1 execute "$db" --config /tmp/qa-check.json --remote --json \
+            --command="SELECT id,inventory_source,status,started_at,completed_at,
+            substr(created_by,1,40) as owner
+            FROM inventory_stocktake_sessions ORDER BY COALESCE(completed_at,started_at) DESC LIMIT 15" | jq -c '.[0].results'
+          echo '=== ORDERS NOV 1-4, no recipient or monetary data ==='
+          npx wrangler d1 execute "$db" --config /tmp/qa-check.json --remote --json \
+            --command="SELECT o.id, o.order_date, o.created_at, o.shipping_status,
+            oi.id AS order_item_id,oi.quantity,oi.stock_writeoff_status,oi.created_at AS item_created_at,
+            ir.status AS reservation_status,ir.inventory_source,ir.variant_id,
+            (SELECT MAX(s.completed_at) FROM inventory_stocktake_sessions s
+             WHERE s.status='completed' AND s.inventory_source=ir.inventory_source) AS latest_revision,
+            (SELECT COUNT(*) FROM inventory_handover_reviews h WHERE h.order_item_id=oi.id) AS review_count,
+            (SELECT COUNT(*) FROM order_dispatch_items di
+             JOIN order_dispatches d ON d.id=di.dispatch_id
+             WHERE d.order_id=o.id AND di.order_item_id=oi.id AND di.quantity>COALESCE(di.cancelled_quantity,0)) AS sent_count
+            FROM orders o JOIN watch_order_details wd ON wd.order_id=o.id
+            JOIN order_items oi ON oi.order_id=o.id
+            LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+            WHERE o.order_date BETWEEN '2026-11-01' AND '2026-11-04'
+            ORDER BY o.id DESC,oi.id DESC LIMIT 24" | jq -c '.[0].results'
+          echo '=== STOCKTAKE CHECKPOINT and RELEASE GUARD ==='
+          npx wrangler d1 execute "$db" --config /tmp/qa-check.json --remote --json \
+            --command="SELECT
+             (SELECT COUNT(*) FROM inventory_stocktake_sessions WHERE status='completed') AS completed_sessions,
+             (SELECT COUNT(*) FROM inventory_stock_checks) AS sku_checks,
+             (SELECT COUNT(*) FROM inventory_handover_reviews) AS reviewed_lines,
+             (SELECT COUNT(*) FROM order_dispatches) AS shipment_count,
+             (SELECT COUNT(*) FROM watch_engraving_item_readiness) AS engraving_items" | jq -c '.[0].results'
