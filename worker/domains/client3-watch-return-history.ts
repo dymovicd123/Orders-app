@@ -18,6 +18,10 @@ export async function listClient3WatchReturnHistory(
  const entries=await db.prepare(`
    SELECT r.id,r.return_date AS date,r.amount,r.payment_method AS method,
      COALESCE(r.status,'completed') AS status,COALESCE(r.comment,'') AS comment,
+     COALESCE((SELECT SUM(CASE WHEN COALESCE(ri.amount,0)>0 THEN ri.amount
+       ELSE COALESCE(ri.quantity,0)*COALESCE(oi.unit_price,0) END)
+       FROM return_items ri JOIN order_items oi ON oi.id=ri.order_item_id
+       WHERE ri.return_id=r.id),0) AS commercialGoodsValue,
      (SELECT e.id FROM exchanges e WHERE e.refund_return_id=r.id
        AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1) AS parentExchangeId,
      (SELECT COALESCE(json_group_array(json_object(
