@@ -56,7 +56,7 @@ export async function createClient3WatchReturn(
  ).bind(orderId,brandId).first<Record<string,unknown>>()
  if(!row)return fail('WATCH_RETURN_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
  const watchRows=await db.prepare(`
-   SELECT oi.id,oi.quantity,oi.variant_id,oi.is_workshop,wi.watch_variant_id,
+   SELECT oi.id,oi.quantity,oi.unit_price,oi.variant_id,oi.is_workshop,wi.watch_variant_id,
      ${WATCH_ITEM_RETURNABLE_SQL} AS returnable_quantity,
      wp.brand_id AS sku_brand
    FROM order_items oi
@@ -95,8 +95,14 @@ export async function createClient3WatchReturn(
        qty>(replay?Number(row.quantity):Number(row.returnable_quantity)))
        return fail('WATCH_RETURN_SELECTION_INVALID',
          'Возврат товара возможен только после фактической отправки/выдачи. Проверьте количество и ранее оформленные возвраты.',409)
+     const credit=qty*Number(row.unit_price)
+     if(!Number.isSafeInteger(credit)||credit<0||credit>1_000_000_000_000)
+       return fail('WATCH_RETURN_COMMERCIAL_VALUE',
+         'Стоимость выбранных часов слишком велика для точного учёта.',409)
      seen.add(id)
-     selected.push({orderItemId:id,quantity:qty,amount:0,
+     // Return item amount is the immutable sale-value snapshot, distinct
+     // from returns.amount (the money really refunded to the customer).
+     selected.push({orderItemId:id,quantity:qty,amount:credit,
        restock:false,physicalState:'pending'})
    }
  }else if(rawItems?.length){
