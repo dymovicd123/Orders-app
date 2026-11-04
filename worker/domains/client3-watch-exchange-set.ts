@@ -9,7 +9,7 @@ type Old={orderItemId:number;quantity:number;physicalState:'not_issued'|'pending
  expectedActiveQuantity:number;expectedUnitPrice:number;
  expectedLineTotal:number;expectedCatalogPriceSnapshot:number|null}
 type New={manual:ManualWatchOrderItem;quantity:number;unitPrice:number;
- source:WatchSource;engravingText:string;shipmentState:'pending'|'sent';issuePossessionConfirmed?:boolean}
+ source:WatchSource;engravingText:string;shipmentState:'pending';issuePossessionConfirmed?:false}
 type Part={method:string;amount:number}
 type Input={requestId?:unknown;expectedOrderTotal?:unknown;
  oldItems?:Old[];newItems?:New[];paymentParts?:Part[];refundParts?:Part[];
@@ -95,9 +95,8 @@ export async function exchangeClient3WatchSet(
      !Number.isSafeInteger(line.unitPrice)||line.unitPrice<0||line.unitPrice>1_000_000_000||
      typeof line.engravingText!=='string'||line.engravingText.length>500||
      !line.manual||!line.manual.modelName?.trim()||
-     !['pending','sent'].includes(line.shipmentState)||
-     (line.shipmentState==='sent'&&line.issuePossessionConfirmed!==true))
-     return fail('WATCH_EXCHANGE_NEW_INVALID','Заполните новые часы, источник, количество и цену.',400)
+     line.shipmentState!=='pending'||line.issuePossessionConfirmed===true)
+     return fail('WATCH_EXCHANGE_NEW_INVALID','Заполните новые часы, источник, количество и цену. Отправка доступна только через логистику.',400)
  }
  const paymentParts=raw.paymentParts||[],refundParts=raw.refundParts||[]
  if(!Array.isArray(paymentParts)||paymentParts.length>2||
@@ -136,8 +135,8 @@ export async function exchangeClient3WatchSet(
        audienceType:'ВЗРОСЛЫЙ',gender:String(sku.gender||''),
        color:String(sku.color||''),material:String(sku.material||''),
        length:String(sku.length||''),size:String(sku.size||''),
-       shipmentState:newLine.shipmentState,
-       issuePossessionConfirmed:newLine.shipmentState==='sent'&&newLine.issuePossessionConfirmed===true,
+       shipmentState:'pending',
+       issuePossessionConfirmed:false,
        shortageAcknowledged:true,
      } as NonNullable<OrderInput['items']>[number])
      watchLines.push({watchVariantId:Number(sku.id),catalogProductId:Number(sku.productId),
@@ -158,8 +157,7 @@ export async function exchangeClient3WatchSet(
      return fail('WATCH_EXCHANGE_NOT_APPLIED','Main не подтвердил обмен.',409)
    return json({...settled,orderId,brandId,
      physicalOldIntakePending:raw.oldItems.some(x=>x.physicalState==='pending'),
-     newShippingStatus:raw.newItems.every(x=>x.shipmentState==='sent')?'sent':
-       raw.newItems.every(x=>x.shipmentState==='pending')?'pending':'partial'})
+     newShippingStatus:'pending'})
  }catch(cause){
    return fail('WATCH_EXCHANGE_FAILED',
      cause instanceof Error?cause.message:'Обмен не завершён. Повторите исходный запрос.',409)
