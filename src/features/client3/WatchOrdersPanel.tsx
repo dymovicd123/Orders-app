@@ -15,6 +15,7 @@ import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import '../../styles/client3-watch-orders.css'
 import '../../styles/client3-main-orders-copied.css'
 import '../../styles/client3-qa-main-parity-20261104.css'
+import '../../styles/client3-watch-edit-buttons-20261104.css'
 
 type WatchOrder={
   orderId:number;externalId:string;orderDate:string;managerName:string|null;managerId:number
