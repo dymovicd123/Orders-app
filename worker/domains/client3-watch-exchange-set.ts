@@ -76,6 +76,10 @@ export async function exchangeClient3WatchSet(
      line.expectedActiveQuantity!==Number(snapshot.quantity)&&!retry||
      line.expectedCatalogPriceSnapshot!==(snapshot.catalog_price_snapshot==null?null:Number(snapshot.catalog_price_snapshot)))
      return fail('WATCH_EXCHANGE_OLD_STALE','Характеристики или количество старых часов изменились. Обновите заказ.',409)
+   if(!retry&&Number(snapshot.canonical_active)===0&&
+     (line.physicalState==='warehouse'||line.physicalState==='boutique'))
+     return fail('WATCH_ARCHIVED_EXCHANGE_STOCK_BLOCKED',
+       'Обмен архивных часов разрешён, но нельзя зачислять их в удалённый SKU. Выберите физическое состояние без зачисления в остаток.',409)
    // One outgoing watch is distinct from an unsent reserved watch. The
    // physical state must agree with exact dispatch evidence before Main can
    // create any exchange movements or financial entries.
