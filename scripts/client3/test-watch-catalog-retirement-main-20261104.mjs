@@ -8,6 +8,8 @@ import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create
 import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-demand-report.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {markWatchLogisticsReady} from '../../worker/domains/client3-watches.ts'
+import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
+import {createClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
 const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
@@ -129,6 +131,20 @@ const historyOrder=await parse(createClient3WatchOrder(db,manager,1,{
 assert.equal(historyOrder.status,201,JSON.stringify(historyOrder))
 const orderLine=sqlite.prepare('SELECT id,variant_id FROM order_items WHERE order_id=?')
  .get(historyOrder.orderId)
+const partialOrder=await parse(createClient3WatchOrder(db,manager,1,{
+ brand:'TAUWACH',source:'office',watchVariantId:productVariant.id,
+ catalogVariantId:productVariant.canonical,quantity:2,unitPrice:9000,
+ receivedAmount:0,payments:[],engravingText:'',
+ requestId:'watch-retire-second-order-20261104-0001',
+ recipientName:'Тест частичной выдачи',recipientPhone:'+77015550102',
+ address:'Улица частичной отправки, 2',postalCode:'050002',city:'Алматы',
+ deliveryMethod:'Казпочта',shippingDeadlineLocal:'2026-11-15T14:00',
+ urgent:false,paymentMethod:'KASPI GOLD'
+}))
+assert.equal(partialOrder.status,201,JSON.stringify(partialOrder))
+const partialLine=sqlite.prepare('SELECT id,variant_id,quantity FROM order_items WHERE order_id=?')
+ .get(partialOrder.orderId)
+assert.equal(partialLine.quantity,2)
 assert.equal(orderLine.variant_id,productVariant.canonical)
 const activeReserve=sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='active'")
  .get(historyOrder.orderId).n
@@ -152,7 +168,7 @@ assert.equal(productPreview.status,200,JSON.stringify(productPreview))
 assert.equal(productPreview.canDelete,true,JSON.stringify(productPreview))
 assert.equal(productPreview.physicalQuantity,3)
 assert(productPreview.activeReservations>=1)
-assert(productPreview.openOrders>=1, 'Deletion preview must count outstanding customer orders')
+assert(productPreview.openOrders>=2, 'Deletion preview must count outstanding customer orders')
 assert.equal(productPreview.inventoryWillBeRemoved,true)
 const productApplied=await parse(deleteClient3WatchCatalog(db,admin,1,{
  kind:'product',watchProductId:productId,expectedCount:productPreview.count,
@@ -170,10 +186,8 @@ assert(sqlite.prepare('SELECT id FROM orders WHERE id=?').get(historyOrder.order
 assert(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=? AND movement_type='delete'").get(productVariant.canonical).n>=1)
 assert(sqlite.prepare("SELECT COUNT(*) AS n FROM catalog_retirement_operations WHERE entity_type='product' AND status='completed'").get().n>=1)
 assert(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n>beforeRetire)
-// The order survives archival but its outgoing Main shipment cannot be applied:
-// retirement releases the reservation, writes off tracked inventory, and
-// disables the canonical variant. Engraving readiness is independent of stock.
-// This is a known incomplete lifecycle, not evidence of successful dispatch.
+// Real archival dispatch: engraving ready; explicit physical confirmation is
+// mandatory. Retirement already consumed all tracked inventory and reserve.
 const readyAfterArchive=await parse(markWatchLogisticsReady(db,admin,
  historyOrder.orderId,orderLine.id,'watch-ready-retired-20261104-0001'))
 assert.equal(readyAfterArchive.status,200,JSON.stringify(readyAfterArchive))
@@ -181,16 +195,86 @@ assert.equal(readyAfterArchive.stockUnchanged,true)
 assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
  .get(orderLine.id).stock_writeoff_status,'catalog_retired')
 const noDoubleStock=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+const noConfirmation=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-send-retired-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:false,
+}))
+assert.equal(noConfirmation.status,409,'Archived watches require explicit physical handover')
 const archivedSend=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
  requestId:'watch-send-retired-20261104-0001',
  items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
 }))
-assert.equal(archivedSend.status,409,
- 'Current Main dispatcher must fail closed for retired watches; never silently issue stock')
-assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatch_items').get().n,0)
+assert.equal(archivedSend.status,200,JSON.stringify(archivedSend))
+assert.equal(archivedSend.retiredWithoutStockChange,true)
+assert.equal(archivedSend.stockDispatched,false)
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+ .get(orderLine.id).stock_writeoff_status,'retired_physically_issued')
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(historyOrder.orderId).shipping_status,'sent')
+const ledger=sqlite.prepare('SELECT id,movement_id,reservation_id,quantity FROM order_dispatch_items WHERE order_item_id=?').get(orderLine.id)
+assert.equal(ledger.quantity,1);assert.equal(ledger.movement_id,null);assert.equal(ledger.reservation_id,null)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM retired_order_item_issues WHERE order_item_id=?')
+ .get(orderLine.id).n,1)
+const retrySend=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-send-retired-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(retrySend.status,200,JSON.stringify(retrySend))
+assert.equal(retrySend.alreadyCommitted,true)
+const archivedCorrection=await parse(correctClient3WatchDispatch(db,admin,1,historyOrder.orderId,{
+ dispatchItemId:ledger.id,requestId:'watch-correct-retired-20261104-0001',
+ reason:'Ошибочно отмеченная отправка архивных часов',
+}))
+assert.equal(archivedCorrection.status,200,JSON.stringify(archivedCorrection))
+assert.equal(archivedCorrection.physicalRestoredQuantity,0)
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+ .get(orderLine.id).stock_writeoff_status,'catalog_retired')
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(historyOrder.orderId).shipping_status,'not_sent')
+const secondCorrection=await parse(correctClient3WatchDispatch(db,admin,1,historyOrder.orderId,{
+ dispatchItemId:ledger.id,requestId:'watch-correct-retired-20261104-0001',
+ reason:'Ошибочно отмеченная отправка архивных часов',
+}))
+assert.equal(secondCorrection.status,200);assert.equal(secondCorrection.alreadyCorrected,true)
+const reissued=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-send-retired-again-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(reissued.status,200,JSON.stringify(reissued))
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,noDoubleStock)
 assert.equal(sqlite.prepare('SELECT SUM(quantity) AS q FROM inventory_stock WHERE variant_id=?')
  .get(productVariant.canonical).q,0)
+
+// Partial archival dispatch: split product identity, price, engraving and
+// released reservation; no extra inventory_stock or inventory_movements.
+const partialBefore=sqlite.prepare('SELECT SUM(line_total) AS total FROM order_items WHERE order_id=?')
+ .get(partialOrder.orderId).total
+const partialSent=await parse(dispatchClient3WatchOrder(db,admin,1,partialOrder.orderId,{
+ requestId:'watch-send-retired-part-20261104-0001',
+ items:[{orderItemId:partialLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(partialSent.status,200,JSON.stringify(partialSent))
+const pieces=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.line_total,oi.stock_writeoff_status,
+ wi.watch_variant_id,ir.status AS reservation_status
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ WHERE oi.order_id=? ORDER BY oi.id`).all(partialOrder.orderId)
+assert.equal(pieces.length,2,JSON.stringify(pieces))
+assert.deepEqual(pieces.map(x=>x.quantity),[1,1])
+assert.equal(pieces[0].stock_writeoff_status,'retired_physically_issued')
+assert.equal(pieces[1].stock_writeoff_status,'catalog_retired')
+assert(pieces.every(x=>x.watch_variant_id===productVariant.id&&x.reservation_status==='released'))
+assert.equal(pieces.reduce((n,x)=>n+x.line_total,0),partialBefore)
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(partialOrder.orderId).shipping_status,'not_sent')
+const lastSent=await parse(dispatchClient3WatchOrder(db,admin,1,partialOrder.orderId,{
+ requestId:'watch-send-retired-rest-20261104-0001',
+ items:[{orderItemId:pieces[1].id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(lastSent.status,200,JSON.stringify(lastSent))
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(partialOrder.orderId).shipping_status,'sent')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,noDoubleStock)
 const archived=await archive()
 assert(archived.rows.some(x=>x.watchProductId===productId&&x.productActive===0))
 assert(archived.rows.some(x=>x.watchVariantId===item.id&&x.variantActive===0))
@@ -212,4 +296,4 @@ assert(historyDemand.rows.some(x=>x.variantId===productVariant.id),
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,operationsBefore+2)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
-console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: exact SKU, physical product retirement, movement ledger, brand isolation, archive and no resurrection')
+console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
