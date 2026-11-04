@@ -48,8 +48,12 @@ assert(stock.includes('StocktakeSizeCountCell'),
  'Revisions retain the Main stock count input component')
 assert(orders.includes('LinkedTableScroll')&&orders.includes('watch-main-orders-table'),
  'Orders must be a proper Main-style scrollable table')
-assert(logistics.includes('LinkedTableScroll')&&logistics.includes('watch-main-logistics-table'),
- 'Logistics must show a Main-style table')
+const logisticsTasks=fs.readFileSync('src/features/client3/WatchLogisticsTaskTable.tsx','utf8')
+assert(logistics.includes('WatchLogisticsTaskTable')&&
+  logisticsTasks.includes('LinkedTableScroll')&&
+  logisticsTasks.includes('workshop-order-like-table')&&
+  logisticsTasks.includes('workshop-product-card'),
+ 'Logistics must reuse actual Main Workshop table structure with each watch in its own row')
 assert(finance.includes('LinkedTableScroll')&&finance.includes('finance-days-truth-table')&&
  finance.includes('finance-operation-ledger'),
  'Finance must include Main-style day reconciliation and operation journal tables')
