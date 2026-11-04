@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react'
 import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
+import {WatchExchangeCancelChainPanel} from './WatchExchangeCancelChainPanel'
 import '../../styles/client3-watch-exchange-history.css'
 
 type ExchangeLine={
@@ -42,6 +43,7 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
  const [selected,setSelected]=useState<number|null>(null)
  const [reason,setReason]=useState('')
  const [confirmed,setConfirmed]=useState(false)
+ const [showChain,setShowChain]=useState(false)
  const requests=useRef<Record<number,{fingerprint:string;requestId:string}>>({})
  useEffect(()=>{
    const ctrl=new AbortController()
@@ -78,8 +80,17 @@ export function WatchExchangeHistoryPanel({brand,orderId,onClose,onDone}:{
  return <section className="watch-exchange-history" aria-label="История обменов заказа">
    <header className="watch-exchange-history-head">
      <div><h3>История обменов</h3><p>Используется история Main: старые и новые позиции, физическая приёмка и денежные действия.</p></div>
-     <button type="button" className="secondary compact" disabled={busy} onClick={onClose}>Закрыть</button>
+     <div className="watch-exchange-history-top-actions">
+       {items.some(item=>item.status!=='cancelled')&&<button type="button"
+         className="secondary compact" disabled={busy} onClick={()=>setShowChain(x=>!x)}>
+         {showChain?'Скрыть отмену цепочки':'Отменить последний / все обмены'}
+       </button>}
+       <button type="button" className="secondary compact" disabled={busy} onClick={onClose}>Закрыть</button>
+     </div>
    </header>
+   {showChain&&<WatchExchangeCancelChainPanel brand={brand} orderId={orderId}
+     onClose={()=>setShowChain(false)}
+     onDone={()=>{setShowChain(false);setRefresh(n=>n+1);onDone()}}/>
    {error&&<p role="alert" className="watch-exchange-history-error">{error}</p>}
    {loading?<p>Загружаю историю…</p>:items.length===0?<p>Обменов по заказу нет.</p>:<>
      <div className="watch-exchange-history-list">{items.map(entry=><article key={entry.id} className="watch-exchange-history-entry">
