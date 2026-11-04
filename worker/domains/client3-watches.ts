@@ -39,7 +39,7 @@ import {listClient3WatchClients,listClient3WatchCustomerOrders} from './client3-
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
 import {editClient3WatchModel,editClient3WatchVariant} from './client3-watch-catalog-edit.ts'
-import {previewClient3WatchDelete,deleteClient3WatchCatalog} from './client3-watch-catalog-delete.ts'
+import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from './client3-watch-catalog-delete.ts'
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from './client3-watch-references.ts'
 import type { WatchVariantInput } from '../../shared/client3/watch-domain.ts'
 import { json, readJson } from '../core/http.ts'
@@ -470,10 +470,15 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return listWatchCatalogDrafts(db,actor,scope.row!.id)
   }
+  if(url.pathname==='/api/client3/watches/catalog/retired'&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'warehouse')
+    if(scope.error)return scope.error
+    return listClient3WatchRetiredCatalog(db,actor,scope.row!.id,url)
+  }
   if((url.pathname==='/api/client3/watches/catalog/delete-preview'||
       url.pathname==='/api/client3/watches/catalog/delete')&&request.method==='POST'){
     const input=await readJson<{brand?:unknown;kind?:unknown;watchProductId?:unknown;watchVariantId?:unknown;
-      movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown}>(request)
+      movement?:unknown;braceletMaterial?:unknown;expectedCount?:unknown;requestId?:unknown}>(request)
     const scope=await scopedBrand(db,actor,input.brand,'warehouse')
     if(scope.error)return scope.error
     return url.pathname.endsWith('delete-preview')
