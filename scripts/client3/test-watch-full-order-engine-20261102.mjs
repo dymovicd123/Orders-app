@@ -21,6 +21,7 @@ import {editClient3WatchModel} from '../../worker/domains/client3-watch-catalog-
 import {listClient3WatchReferences,createClient3WatchReference,updateClient3WatchReference,deleteClient3WatchReference} from '../../worker/domains/client3-watch-references.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {getClient3WatchAnalytics} from '../../worker/domains/client3-watch-analytics.ts'
+import {listClient3WatchOrders} from '../../worker/domains/client3-watch-orders-read.ts'
 import {listClient3WatchClients,listClient3WatchCustomerOrders} from '../../worker/domains/client3-watch-clients.ts'
 import {listClient3WatchDemand} from '../../worker/domains/client3-watch-demand.ts'
 import {getClient3WatchFinance} from '../../worker/domains/client3-watch-finance.ts'
@@ -1766,6 +1767,27 @@ const otherBrandBook=await parse(listClient3WatchClients(db,admin,2,
 assert.equal(otherBrandBook.status,200,JSON.stringify(otherBrandBook))
 assert(otherBrandBook.rows.every(x=>!clientBook.rows.some(c=>c.phoneKey===x.phoneKey&&c.phone===x.phone)) ||
  otherBrandBook.rows.length>0,'Customer views are scoped by brand, not global clients')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+// Audit the exact two-item partial-order scenario through the same API
+// that powers Client3's Main-like All Orders table. A physical return is a
+// per-item fact; it must remain visible after all cash was refunded.
+const tableQuery=new URL('https://test.invalid/api/client3/watches/orders?brand=TAUWACH&limit=50&q='+encodeURIComponent(partialCreated.externalId))
+const tableResult=await parse(listClient3WatchOrders(db,admin,1,tableQuery))
+assert.equal(tableResult.status,200,JSON.stringify(tableResult))
+const afterFullTwoReturn=tableResult.rows.find(row=>row.orderId===partialCreated.orderId)
+assert(afterFullTwoReturn,'Return must not make the order disappear from All Orders')
+assert(afterFullTwoReturn.committedReturnCount>=1)
+assert(afterFullTwoReturn.committedItemReturnQuantity>=2)
+const returnedLines=JSON.parse(afterFullTwoReturn.itemLines||'[]')
+assert.equal(returnedLines.length,2,'Both item rows remain visible in the table')
+assert(returnedLines.every(line=>line.returnedQuantity>=1))
+assert.equal(afterFullTwoReturn.returnAmount,9000,'Financial refund shown separately')
+const exchangeQuery=new URL('https://test.invalid/api/client3/watches/orders?brand=TAUWACH&limit=50&q='+encodeURIComponent(twoOld.externalId))
+const afterExchangeTable=await parse(listClient3WatchOrders(db,admin,1,exchangeQuery))
+assert.equal(afterExchangeTable.status,200,JSON.stringify(afterExchangeTable))
+const exchanged=afterExchangeTable.rows.find(row=>row.orderId===twoOld.orderId)
+assert(exchanged&&exchanged.committedExchangeCount>=1,
+ 'Exchange does not turn the order invisible or hide its original lifecycle')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
