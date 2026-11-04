@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = 2a9221c85872fd3600b6f77df21c17dced2606a1
+          test "$(git rev-parse HEAD^)" = 9790790799bbc9b024d89c8de30c3526eaee4816
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -108,7 +108,23 @@ jobs:
             (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_history_events') AS history,
             (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_issues') AS retired_issue_log" |
             jq -e '.[0].results[0] | select(.operations==1 and .snapshots==1 and .history==1 and .retired_issue_log==1)'
-      - name: Deploy only EXISTING TEST Worker and TEST D1; no migrations
+      - name: Install additive v6 watch generation attributes on QA D1 ONLY
+        run: |
+          set -euo pipefail
+          test "$QA_DB_ID" = fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+          test "$QA_DB" = orders_db_client3_qa_41698114208
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          # Only CREATE TABLE / CREATE INDEX IF NOT EXISTS. No ALTER, DROP,
+          # UPDATE, DELETE or writes to historical data.
+          test "$(grep -Ec '^CREATE TABLE IF NOT EXISTS|^CREATE INDEX IF NOT EXISTS' migrations/client3-watch/0006_client3_watch_sku_generations.sql)" = 2
+          ! grep -Ei '^(ALTER|DROP|UPDATE|DELETE|INSERT|REPLACE|TRUNCATE)' migrations/client3-watch/0006_client3_watch_sku_generations.sql
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --file=migrations/client3-watch/0006_client3_watch_sku_generations.sql
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_variant_attributes_v6') AS v6,
+            (SELECT COUNT(*) FROM pragma_table_info('watch_variant_attributes_v6') WHERE name='watch_variant_id') AS identity,
+            (SELECT COUNT(*) FROM pragma_table_info('watch_variant_attributes_v6') WHERE name='bracelet_color') AS bracelet" |
+            jq -e '.[0].results[0] | select(.v6==1 and .identity==1 and .bracelet==1)'
+      - name: Deploy only EXISTING TEST Worker and TEST D1; additive v6 already installed
         run: |
           set -euo pipefail
           test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
