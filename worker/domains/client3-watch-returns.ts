@@ -64,6 +64,7 @@ export async function createClient3WatchReturn(
  const watchRows=await db.prepare(`
    SELECT oi.id,oi.quantity,oi.unit_price,oi.variant_id,oi.is_workshop,wi.watch_variant_id,
      ${WATCH_ITEM_RETURNABLE_SQL} AS returnable_quantity,
+     cv.is_active AS canonical_active,
      wp.brand_id AS sku_brand
    FROM order_items oi
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
