@@ -6,7 +6,7 @@ import {readClient3WatchHandover,clarifyClient3WatchHandover} from './client3-wa
 import {addClient3WatchDebtPayment,listClient3WatchDebtHistory} from './client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from './client3-watch-order-corrections.ts'
 import {correctClient3AdminWatchDetails} from './client3-watch-admin-details.ts'
-import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager} from './client3-watch-admin-order.ts'
+import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3AdminOrderManager,client3AdminDeleteChain,client3AdminDeletePhysicalConfirm} from './client3-watch-admin-order.ts'
 import {correctClient3AdminPaymentMethod} from './client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from './client3-watch-admin-composition.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
@@ -665,6 +665,23 @@ export async function routeClient3Watches(
       ?previewClient3AdminOrderDelete(db,actor,scope.row!.id,Number(adminDeleteMatch[1]))
       :deleteClient3AdminOrder(db,actor,scope.row!.id,Number(adminDeleteMatch[1]),
         input as Parameters<typeof deleteClient3AdminOrder>[4])
+  }
+  const adminChainMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/delete-chain$/.exec(url.pathname)
+  if(adminChainMatch&&(request.method==='GET'||request.method==='POST')){
+    const input=request.method==='POST'?await readJson<Record<string,unknown>>(request):{}
+    const scope=await scopedBrand(db,actor,
+      input.brand??url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return client3AdminDeleteChain(db,actor,scope.row!.id,Number(adminChainMatch[1]),
+      request.method as 'GET'|'POST',input)
+  }
+  const physicalConfirmMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/delete-physical-confirm$/.exec(url.pathname)
+  if(physicalConfirmMatch&&request.method==='POST'){
+    const input=await readJson<Record<string,unknown>>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return client3AdminDeletePhysicalConfirm(db,actor,scope.row!.id,
+      Number(physicalConfirmMatch[1]),input)
   }
   const managerEditMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/manager$/.exec(url.pathname)
   if(managerEditMatch&&request.method==='PATCH'){
