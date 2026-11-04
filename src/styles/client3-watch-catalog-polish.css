@@ -172,7 +172,8 @@
 .client3-watch-catalog-main .client3-watch-sku-actions{
  display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;
 }
-.client3-watch-catalog-main .client3-watch-sku-actions button{
+.client3-watch-catalog-main .client3-watch-sku-actions > button,
+.client3-watch-catalog-main .client3-watch-sku-actions > .catalog-retirement-action > button{
  min-width:0;white-space:nowrap;min-height:33px;
  padding:6px 10px;font-size:11px;font-weight:700;border-radius:8px;
 }
