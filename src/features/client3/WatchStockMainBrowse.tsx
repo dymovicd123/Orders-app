@@ -79,6 +79,46 @@ export function WatchStockMainBrowse({brand,canCorrect,onCorrect,initialModelNam
     const s=stats(row,source)
     return {physical:a.physical+s.physical,reserved:a.reserved+s.reserved,free:a.free+s.free}
   },{physical:0,reserved:0,free:0})
+  // Main warehouse: group active watch variants by execution and dial color.
+  // Keep zero-stock SKUs available under a separate disclosure for arrivals.
+  const grouped=(list:WatchOrderChoice[])=>{
+    const groups=new Map<string,{key:string;movement:string;bracelet:string;rows:WatchOrderChoice[]}>()
+    for(const row of list){
+      const key=JSON.stringify([row.movement,row.braceletMaterial])
+      const group=groups.get(key)||{key,movement:row.movement,bracelet:row.braceletMaterial,rows:[]}
+      group.rows.push(row);groups.set(key,group)
+    }
+    return [...groups.values()].sort((a,b)=>a.key.localeCompare(b.key,'ru'))
+  }
+  const available=selected?.rows.filter(row=>{
+    const n=stats(row,source);return n.physical!==0||n.reserved!==0
+  })||[]
+  const empty=selected?.rows.filter(row=>{
+    const n=stats(row,source);return n.physical===0&&n.reserved===0
+  })||[]
+  const stockTile=(row:WatchOrderChoice)=>{
+    const n=stats(row,source)
+    return <article key={row.watchVariantId} className={'stock-v13-size-card client3-stock-tile '+(n.free<0?'is-shortage':'')}>
+      <div className="stock-v13-size-main">
+        <span className="stock-v13-size-label"><strong>{label(WATCH_OPTIONS.genders,row.gender)}</strong></span>
+        <small className="client3-stock-tile-detail">
+          {row.braceletMaterial==='leather'?'Ремешок: '+(row.braceletColor||'—'):
+            label(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial)}
+        </small>
+        <div className="stock-v13-size-values">
+          <span><small>На месте</small><b>{amount(n.physical)}</b></span>
+          <span><small>Резерв</small><b>{amount(n.reserved)}</b></span>
+          <span className="stock-v13-size-free"><small>Свободно</small><b>{amount(n.free)}</b></span>
+        </div>
+      </div>
+      {canCorrect&&<div className="client3-stock-tile-actions">
+        <button type="button" className="secondary compact"
+          onClick={()=>onCorrect({source,watchProductId:row.watchProductId,watchVariantId:row.watchVariantId,operation:'arrival'})}>Приход</button>
+        <button type="button" className="secondary compact"
+          onClick={()=>onCorrect({source,watchProductId:row.watchProductId,watchVariantId:row.watchVariantId,operation:'count'})}>Исправить количество</button>
+      </div>}
+    </article>
+  }
   return <div className="inventory-overview-panel inventory-calm-stock stock-v13-page stock-v14-page client3-main-stock-v13" data-stock-browser="catalog-master-detail">
     <div className="inventory-calm-head warehouse-clean-stock-head stock-v14-heading">
       <div><h3>Остатки</h3><p>Выберите модель и комплектацию часов. Количество показано по одной точке.</p></div>
@@ -155,25 +195,36 @@ export function WatchStockMainBrowse({brand,canCorrect,onCorrect,initialModelNam
                 <strong>{amount(detail?.free||0)}</strong></div>
             </div>
           </header>
-          <div className="client3-stock-v13-variants">
-            {selected.rows.map(row=>{
-              const s=stats(row,source)
-              return <div className="client3-stock-v13-variant" key={row.watchVariantId}>
-                <strong>{characteristics(row)}</strong>
-                <div><span>На месте <b>{amount(s.physical)}</b></span>
-                  <span>Резерв <b>{amount(s.reserved)}</b></span>
-                  <span>Свободно <b>{amount(s.free)}</b></span></div>
-                {canCorrect&&<div className="client3-stock-variant-actions">
-                  <button type="button" className="primary compact"
-                    onClick={()=>onCorrect({source,watchProductId:row.watchProductId,
-                      watchVariantId:row.watchVariantId,operation:'arrival'})}>Оформить приход</button>
-                  <button type="button" className="secondary compact"
-                    onClick={()=>onCorrect({source,watchProductId:row.watchProductId,
-                      watchVariantId:row.watchVariantId,operation:'count'})}>Исправить количество</button>
-                </div>}
+          <div className="stock-v13-execution-list client3-stock-execution-list" data-main-stock-groups="true">
+            {grouped(available).map(group=><section className="stock-v13-execution" key={group.key}>
+              <div className="stock-v13-execution-title">
+                <strong>{label(WATCH_OPTIONS.movements,group.movement)} · {label(WATCH_OPTIONS.braceletMaterials,group.bracelet)}</strong>
+                <span>{group.rows.length} комплектаций</span>
               </div>
-            })}
+              <div className="stock-v13-colors">
+                {Array.from(new Set(group.rows.map(row=>row.dialColor))).sort((a,b)=>a.localeCompare(b,'ru'))
+                  .map(color=><section className="stock-v13-color" key={color}>
+                    <div className="stock-v13-color-head">
+                      <strong>{label(WATCH_OPTIONS.dialColors,color)}</strong><small>Циферблат</small>
+                    </div>
+                    <div className="stock-v13-size-grid">{group.rows.filter(row=>row.dialColor===color).map(stockTile)}</div>
+                  </section>)}
+              </div>
+            </section>)}
+            {!available.length&&<div className="stock-v13-no-active">
+              <strong>Нет часов с остатком или резервом</strong>
+              <span>Нулевые комплектации доступны ниже для оформления прихода.</span>
+            </div>}
           </div>
+          {empty.length>0&&<details className="stock-v13-zero-disclosure">
+            <summary>Без остатка и резерва <strong>{empty.length}</strong><span>Показать комплектации</span></summary>
+            <div className="client3-stock-zero-content">
+              {grouped(empty).map(group=><section key={group.key}>
+                <strong>{label(WATCH_OPTIONS.movements,group.movement)} · {label(WATCH_OPTIONS.braceletMaterials,group.bracelet)}</strong>
+                <div className="stock-v13-size-grid">{group.rows.map(stockTile)}</div>
+              </section>)}
+            </div>
+          </details>}
         </section>:<div className="stock-v13-empty">Выберите модель слева.</div>}
       </div>
     </div>}
