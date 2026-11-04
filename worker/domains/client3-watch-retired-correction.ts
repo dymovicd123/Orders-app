@@ -40,7 +40,7 @@ export async function cancelRetiredWatchDispatch(db:D1Database,brandId:number,or
    JOIN retired_order_item_issues j ON j.order_item_id=oi.id
    WHERE di.id=? AND d.order_id=? AND wd.brand_id=?`)
    .bind(id,orderId,brandId).first<Record<string,unknown>>()
- if(!line)stop('Запись архивной отправки не найдена.')
+ if(!line)throw new CriticalOperationConflictError('Запись архивной отправки не найдена.')
  if(line.reservation_id!=null||line.movement_id!=null||
     toInt(line.cancelled_quantity,0)!==0||
     toInt(line.quantity,0)!==toInt(line.order_qty,0)||
