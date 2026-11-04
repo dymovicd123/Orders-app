@@ -4,6 +4,8 @@ import {DatabaseSync} from 'node:sqlite'
 import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
 import {receiveClient3WatchArrival} from '../../worker/domains/client3-watch-inventory.ts'
+import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
+import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-demand-report.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
 const sqlite=new DatabaseSync(':memory:')
@@ -33,6 +35,8 @@ const parse=async p=>{const r=await p;return {status:r.status,...await r.json()}
 const admin={id:1,role:'admin',managerId:null,employeeRole:'Администратор',displayName:'QA'}
 const manager={id:2,role:'manager',managerId:2,employeeRole:'Менеджер'}
 sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(1,'QA Admin')").run()
+sqlite.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES(2,'QA Manager')").run()
+sqlite.prepare("INSERT OR IGNORE INTO watch_manager_brands(manager_id,brand_id) VALUES(2,1)").run()
 sqlite.prepare("INSERT OR REPLACE INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active','2026-11-04')").run()
 const model=async name=>{
  const r=await parse(registerWatchModel(db,admin,1,{modelName:name}))
@@ -87,12 +91,30 @@ const arrival=await parse(receiveClient3WatchArrival(db,admin,1,{
 assert.equal(arrival.status,200,JSON.stringify(arrival))
 assert.equal(sqlite.prepare('SELECT SUM(quantity) AS q FROM inventory_stock WHERE variant_id=?').get(productVariant.canonical).q,3)
 const beforeRetire=sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+const historyOrder=await parse(createClient3WatchOrder(db,manager,1,{
+ brand:'TAUWACH',source:'office',watchVariantId:productVariant.id,
+ catalogVariantId:productVariant.canonical,quantity:1,unitPrice:9000,
+ receivedAmount:0,payments:[],engravingText:'',
+ requestId:'watch-retire-order-history-20261104-0001',
+ recipientName:'Тест истории товара',recipientPhone:'+77015550101',
+ address:'Улица истории, 1',postalCode:'050001',city:'Алматы',
+ deliveryMethod:'Казпочта',shippingDeadlineLocal:'2026-11-15T14:00',
+ urgent:false,paymentMethod:'KASPI GOLD'
+}))
+assert.equal(historyOrder.status,201,JSON.stringify(historyOrder))
+const orderLine=sqlite.prepare('SELECT id,variant_id FROM order_items WHERE order_id=?')
+ .get(historyOrder.orderId)
+assert.equal(orderLine.variant_id,productVariant.canonical)
+const activeReserve=sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='active'")
+ .get(historyOrder.orderId).n
+assert(activeReserve>=1,'Stocked watch must reserve exact SKU for order')
 const productPreview=await parse(previewClient3WatchDelete(db,admin,1,{
  kind:'product',watchProductId:productId
 }))
 assert.equal(productPreview.status,200,JSON.stringify(productPreview))
 assert.equal(productPreview.canDelete,true,JSON.stringify(productPreview))
 assert.equal(productPreview.physicalQuantity,3)
+assert(productPreview.activeReservations>=1)
 assert.equal(productPreview.inventoryWillBeRemoved,true)
 const productApplied=await parse(deleteClient3WatchCatalog(db,admin,1,{
  kind:'product',watchProductId:productId,expectedCount:productPreview.count,
@@ -104,6 +126,9 @@ assert.equal(sqlite.prepare('SELECT is_active FROM watch_products WHERE id=?').g
 assert.equal(sqlite.prepare('SELECT is_active FROM watch_variants WHERE id=?').get(productVariant.id).is_active,0)
 assert.equal(sqlite.prepare('SELECT is_active FROM catalog_variants WHERE id=?').get(productVariant.canonical).is_active,0)
 assert.equal(sqlite.prepare('SELECT SUM(quantity) AS q FROM inventory_stock WHERE variant_id=?').get(productVariant.canonical).q,0)
+assert(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status='active'").get(historyOrder.orderId).n===0)
+assert.equal(sqlite.prepare('SELECT variant_id FROM order_items WHERE id=?').get(orderLine.id).variant_id,productVariant.canonical,'Historical order line must retain canonical identity')
+assert(sqlite.prepare('SELECT id FROM orders WHERE id=?').get(historyOrder.orderId),'Historical order cannot be removed')
 assert(sqlite.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=? AND movement_type='delete'").get(productVariant.canonical).n>=1)
 assert(sqlite.prepare("SELECT COUNT(*) AS n FROM catalog_retirement_operations WHERE entity_type='product' AND status='completed'").get().n>=1)
 assert(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n>beforeRetire)
@@ -120,6 +145,11 @@ assert.equal(wrongBrand.status,404,'Cannot retire a foreign-brand watch')
 const denied=await parse(previewClient3WatchDelete(db,manager,1,{kind:'product',watchProductId:itemModel}))
 assert.equal(denied.status,403,'Manager cannot delete catalog models')
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM payments').get().n,paymentsBefore)
+const historyDemand=await parse(listClient3WatchDemandReport(db,admin,1,
+ new URL('https://test.invalid/?start=2026-01-01&end=2027-12-31&scope=orders')))
+assert.equal(historyDemand.status,200,JSON.stringify(historyDemand))
+assert(historyDemand.rows.some(x=>x.variantId===productVariant.id),
+ 'Archived watch remains visible in historical sales statistics')
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,operationsBefore+2)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
