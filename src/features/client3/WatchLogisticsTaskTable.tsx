@@ -153,7 +153,7 @@ export function WatchLogisticsTaskTable({
                    {item.stockWriteoffStatus==='catalog_retired'?
                      'Товар удалён из каталога. Отправка без повторного списания после подтверждения передачи.':
                      'Резерв не подтверждён. Потребуется уточнить физический остаток.'}
-                 </small>
+                 </small>}
                </div>}
                {issued&&<span className="status-pill status-online">Отправлено</span>}
                {!historical&&!issued&&!prepared&&!engravingNeeded&&<small className="watch-task-stock-hint">
