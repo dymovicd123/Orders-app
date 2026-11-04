@@ -37,8 +37,8 @@ try{
  assert(view.includes('value="5000"'),'A 5K physical return must not preselect all 30K of cash')
  assert(!view.includes('value="30000"'),
   'Partial return default cannot silently refund the whole payment')
- assert(view.includes('само по себе не уменьшает сумму заказа и долг'),
-  'Do not imply Main has already corrected commercial total and debt')
+ assert(view.includes('возвращённые часы уменьшают стоимость оставшейся продажи'),
+  'Explain Client3 commercial credit while Main historical amount stays immutable')
  const {WatchExchangeForm,watchExchangeQuantityForState}=await server.ssrLoadModule(
    '/src/features/client3/WatchExchangeForm.tsx')
  const unissued={id:3,productName:'ALTYN ZAMAN',quantity:1,returnableQuantity:0,
