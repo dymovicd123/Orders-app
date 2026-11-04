@@ -36,15 +36,56 @@ async function target(db:D1Database,brandId:number,input:Input){
  }
  return {kind,model,items}
 }
+/** Client3 watches may wait for physical Return/Exchange intake without any
+ * Main lifecycle event. That queue is authoritative for pending physical items. */
+async function pendingPhysicalIntake(db:D1Database,items:Item[]):Promise<number>{
+ const ids=[...new Set(items.map(x=>x.catalog_variant_id).filter((x):x is number=>!!x))]
+ if(!ids.length)return 0
+ const ph=ids.map(()=>'?').join(',')
+ const row=await db.prepare(`SELECT
+  (SELECT COUNT(*) FROM return_items ri JOIN returns r ON r.id=ri.return_id
+   JOIN order_items oi ON oi.id=ri.order_item_id
+   WHERE oi.variant_id IN (${ph}) AND ri.physical_tracking=1
+     AND ri.physical_received_at IS NULL
+     AND COALESCE(r.status,'completed')<>'cancelled')+
+  (SELECT COUNT(*) FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
+   JOIN order_items oi ON oi.id=ei.order_item_id
+   WHERE oi.variant_id IN (${ph}) AND ei.role='old'
+     AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
+     AND COALESCE(ex.status,'completed')<>'cancelled') AS n`)
+  .bind(...ids,...ids).first<{n:number}>()
+ return Number(row?.n||0)
+}
+async function scopedMetrics(db:D1Database,items:Item[]){
+ const ids=[...new Set(items.map(x=>x.catalog_variant_id).filter((x):x is number=>!!x))]
+ if(!ids.length)return {physical:0,reserved:0,openOrders:0}
+ const ph=ids.map(()=>'?').join(',')
+ const row=await db.prepare(`SELECT
+  (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock WHERE variant_id IN (${ph})) physical,
+  (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock WHERE variant_id IN (${ph})) stockReserved,
+  (SELECT COALESCE(SUM(quantity),0) FROM inventory_reservations
+    WHERE variant_id IN (${ph}) AND status='active') activeReserved,
+  (SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id=oi.order_id
+    WHERE oi.variant_id IN (${ph}) AND COALESCE(o.order_status,'active')='active'
+      AND COALESCE(o.shipping_status,'not_sent')<>'sent' AND oi.quantity>0) openOrders`)
+  .bind(...ids,...ids,...ids,...ids)
+  .first<{physical:number;stockReserved:number;activeReserved:number;openOrders:number}>()
+ return {physical:Number(row?.physical||0),
+  reserved:Math.max(Number(row?.stockReserved||0),Number(row?.activeReserved||0)),
+  openOrders:Number(row?.openOrders||0)}
+}
 async function blockers(db:D1Database,items:Item[]){
  const errors:string[]=[]
  for(const row of items){
-   if(!row.catalog_variant_id)continue // Pure unsold draft has no stock identity.
-   try{await assertCatalogVariantMayDeactivate(db,row.catalog_variant_id)}
-   catch(cause){errors.push(cause instanceof Error?cause.message:'Есть незавершённая операция.')}
+  if(!row.catalog_variant_id)continue
+  try{await assertCatalogVariantMayDeactivate(db,row.catalog_variant_id)}
+  catch(cause){errors.push(cause instanceof Error?cause.message:'Есть незавершённая операция.')}
  }
+ const pending=await pendingPhysicalIntake(db,items)
+ if(pending)errors.push('Ожидается физический возврат или обмен: '+pending+' поз.')
  return [...new Set(errors)]
 }
+
 /** Same preflight rules as Main's catalog variant deletion; no physical stock changes. */
 export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,brandId:number,input:Input){
  if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return fail('Удалять товары может только администратор.',403)
@@ -56,27 +97,27 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
  // while an exact SKU/group requires an empty physical and reservation balance.
  const main=scope.kind==='product'&&scope.model.catalog_product_id
    ?await previewCatalogRetirement(db,'product',scope.model.catalog_product_id):null
- const issues=scope.kind==='product'?
-   (main?[
-     ...(main.activeStocktake?['Идёт незавершённая ревизия.']:[]),
-     ...(main.pendingLifecycle?['Есть незавершённая приёмка или возврат.']:[]),
-     ...(main.activeWorkshopTaskCount?['Есть незавершённая задача.']:[]),
-     ...(main.inactiveOperationalVariantCount?['У ранее удалённой позиции остался живой резерв/остаток.']:[])
-   ]:[]):await blockers(db,scope.items)
+ const pending=scope.kind==='product'?await pendingPhysicalIntake(db,scope.items):0
+ const issues=scope.kind==='product'?(main?[
+   ...(main.activeStocktake?['Идёт незавершённая ревизия.']:[]),
+   ...(main.pendingLifecycle?['Есть незавершённая приёмка или возврат.']:[]),
+   ...(main.activeWorkshopTaskCount?['Есть незавершённая задача.']:[]),
+   ...(main.inactiveOperationalVariantCount?['У ранее удалённой позиции остался живой резерв/остаток.']:[]),
+   ...(pending?['Ожидается физический возврат или обмен: '+pending+' поз.']:[])
+ ]:(pending?['Ожидается физический возврат или обмен: '+pending+' поз.']:[]))
+ :await blockers(db,scope.items)
  const historicalItems=scope.kind==='product'
-   ?await db.prepare(`SELECT COUNT(*) AS qty FROM order_items oi
-     JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
-     JOIN watch_variants v ON v.id=wi.watch_variant_id
-     WHERE v.watch_product_id=?`).bind(scope.model.id).first<{qty:number}>()
-   :scope.items.length?await db.prepare(`SELECT COUNT(*) AS qty
-     FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
-     WHERE wi.watch_variant_id IN (${scope.items.map(()=>'?').join(',')})`)
-     .bind(...scope.items.map(v=>v.id)).first<{qty:number}>():null
- const physical=main?.physicalQuantity||0
- const reserved=main?.activeReservationQuantity||0
- // An applied Return/Exchange stock movement may have happened BEFORE this
- // retirement. Show the administrator that reversing it after deleting the
- // SKU needs separate physical reconciliation; no silent negative stock.
+  ?await db.prepare(`SELECT COUNT(*) AS qty FROM order_items oi
+    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    JOIN watch_variants v ON v.id=wi.watch_variant_id
+    WHERE v.watch_product_id=?`).bind(scope.model.id).first<{qty:number}>()
+  :scope.items.length?await db.prepare(`SELECT COUNT(*) AS qty FROM order_items oi
+    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+    WHERE wi.watch_variant_id IN (${scope.items.map(()=>'?').join(',')})`)
+    .bind(...scope.items.map(v=>v.id)).first<{qty:number}>():null
+ const metrics=scope.kind!=='product'?await scopedMetrics(db,scope.items):null
+ const physical=main?.physicalQuantity??metrics?.physical??0
+ const reserved=main?Math.max(main.activeReservationQuantity,main.stockReservedQuantity):metrics?.reserved??0
  const earlierAppliedPhysical=scope.kind==='product'&&scope.model.catalog_product_id
    ?await db.prepare(`SELECT COUNT(*) AS n FROM inventory_lifecycle_events ev
      JOIN catalog_variants cv ON cv.id=ev.variant_id
@@ -89,7 +130,8 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
    modelName:scope.model.model_name,count:scope.items.length,
    canDelete:issues.length===0,blockers:issues,
    physicalQuantity:physical,activeReservations:reserved,
-   openOrders:main?.openOrderItemCount||0,historicalOrderItems:Number(historicalItems?.qty||0),
+   openOrders:main?.openOrderItemCount??metrics?.openOrders??0,
+   pendingPhysicalIntakeCount:pending,historicalOrderItems:Number(historicalItems?.qty||0),
    appliedPhysicalReturnExchangeCount:Number(earlierAppliedPhysical?.n||0),
    inventoryWillBeRemoved:scope.kind==='product'&&physical!==0,
    reservationsWillBeReleased:scope.kind==='product'&&reserved!==0,
