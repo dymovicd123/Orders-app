@@ -39,13 +39,27 @@ export async function correctClient3WatchDispatch(
    'Эта отправка не принадлежит выбранному заказу и бренду.',404)
  try{
    const line=await db.prepare(`SELECT oi.stock_writeoff_status,di.movement_id,
-     di.reservation_id,j.order_item_id AS retired_journal
+     di.reservation_id,j.order_item_id AS retired_journal,
+     cv.is_active AS canonical_active,sp.is_active AS execution_active,
+     cp.is_active AS product_active
      FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
      JOIN order_items oi ON oi.id=di.order_item_id
+     JOIN catalog_variants cv ON cv.id=oi.variant_id
+     JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
+     JOIN catalog_products cp ON cp.id=cv.product_id
      LEFT JOIN retired_order_item_issues j ON j.order_item_id=oi.id
      WHERE di.id=? AND d.order_id=?`).bind(Number(id),orderId).first<Record<string,unknown>>()
    const archived=line?.retired_journal!=null&&line.movement_id==null&&
      line.reservation_id==null
+   // A normal shipment may PRECEDE catalog retirement. Main's generic
+   // correction could then restore stock into a now-deleted variant. Keep
+   // old inventory immutable; this different case needs explicit reconciliation.
+   if(!archived&&line&&(
+       Number(line.canonical_active)===0||
+       Number(line.execution_active)===0||
+       Number(line.product_active)===0))
+     return fail('WATCH_PRE_RETIRE_DISPATCH_CORRECTION_REVIEW',
+       'Эти часы были отправлены до удаления товара. Обычная отмена вернула бы количество в архивный склад. Исправление остановлено; требуется отдельное уточнение физического движения без восстановления удалённого SKU.',409)
    const payload={dispatchItemId:Number(id),requestId,
      actor:'client3-watch-admin:'+actor.id,reason}
    const result=archived
