@@ -13,11 +13,13 @@ const watchReturns=fs.readFileSync('worker/domains/client3-watch-returns.ts','ut
 assert(mainTable.includes('projectOrderOperationalState'))
 assert(watchTable.includes('projectWatchOrderLikeMain'))
 for(const mechanism of [
- 'order-item-card','order-payment-chip','order-table-actions',
- 'order-status-stack','row-returned','Возврат','Обмен',
- 'Отправить товары','Закрыть долг','Доп. действия','Исправить заказ',
+ 'order-item-card','watch-main-method-chip','order-table-actions',
+ 'watch-main-finance-col','row-returned','Возврат','Обмен',
+ 'Отправить','Закрыть долг','Исправить','stockHandoverReviewNeeded',
  'committedReturnCount','committedExchangeCount',
-])assert(watchTable.includes(mechanism),'Main table parity lacks '+mechanism)
+])assert(watchTable.includes(mechanism),'Main operational table parity lacks '+mechanism)
+assert(!watchTable.includes('>Подробнее</button>'), 'No redundant detail toggle in six-column orders grid')
+assert(!watchTable.includes('>Доп. действия'), 'No nested action menu that hides core operations')
 assert(!watchTable.includes('Требует поступления/резерва:'),
  'Availability warnings must not become a customer send-blocking label')
 assert(watchRead.includes('committedItemReturnQuantity'))
