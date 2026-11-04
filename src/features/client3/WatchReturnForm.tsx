@@ -5,7 +5,7 @@ import '../../styles/194-return-smart-ux.css'
 import '../../styles/client3-watch-return.css'
 
 type Line={
- id:number;productName:string;quantity:number;returnableQuantity:number;returnedQuantity?:number;
+ id:number;productName:string;quantity:number;returnableQuantity:number;returnedQuantity?:number;unitPrice:number;
  shipped:number;stockWriteoffStatus:string;
  source:string;gender:string;movement:string;braceletMaterial:string;
  dialColor:string;braceletColor:string;engravingText:string
@@ -98,6 +98,9 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
    finally{setBusy(false)}
  }
  const chosenQty=returnable.reduce((n,x)=>n+Math.max(0,Number(selected[x.id]||0)),0)
+ const selectedSaleValue=returnable.reduce((total,x)=>
+   total+Number(selected[x.id]||0)*Math.max(0,Number(x.unitPrice||0)),0)
+ const excessiveRefund=isItems&&Number(amount)>selectedSaleValue
  if(!returnable.length&&maxRefund===0)return <section className="watch-return-form watch-return-exhausted">
    <div className="watch-return-main-header">
      <h3>{order.externalId} · возврат</h3>
@@ -122,7 +125,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
    <header className="watch-return-main-header">
      <div><span className="watch-return-eyebrow">ВОЗВРАТ · ЗАКАЗ</span>
        <h3>{order.externalId}</h3>
-       <p>Укажите возвращаемые позиции, деньги и физическое состояние часов — как в Main.</p></div>
+       <p>Укажите возвращаемые позиции, деньги и физическое состояние часов. Денежная операция и приёмка на склад учитываются отдельно.</p></div>
      <div className="watch-return-main-balances">
        <div><small>Оплачено</small><strong>{money(order.receivedAmount)}</strong></div>
        <div><small>Уже возвращено</small><strong>{money(order.returnAmount)}</strong></div>
@@ -143,7 +146,16 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
              setRefunds(old=>old.length===1?[{...old[0],amount:value}]:old)
              setConfirmed(false)
            }}/>
-         <small>Введите фактическую сумму самостоятельно. Ноль означает возврат только товаров.</small>
+         <small>Стоимость выбранных часов: {money(selectedSaleValue)}. Фактически возвращённые деньги укажите отдельно; ноль означает возврат только товаров.</small>
+         {isItems&&selectedSaleValue>0&&<button type="button" className="secondary compact"
+           onClick={()=>{
+             const value=String(Math.min(maxRefund,selectedSaleValue))
+             setAmount(value);setRefunds(old=>old.length===1?[{...old[0],amount:value}]:old)
+             setConfirmed(false)
+           }}>Предложить сумму по выбранным товарам</button>
+         }
+         {excessiveRefund&&<small className="watch-return-money-warning" role="status">
+           Возвращаемые деньги превышают стоимость выбранных часов на {money(Number(amount)-selectedSaleValue)}. Проверьте дополнительный возврат.</small>}
        </label>
        <div className="watch-return-main-kind">
          <small>Вид операции по выбранным данным</small>
@@ -293,7 +305,8 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
      <input required maxLength={300} value={reason}
        onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>
    </label>
-   {isItems&&<p className="watch-return-physical-help">Товары в пути останутся в очереди приёмки. Для уже полученных часов Main зафиксирует выбранный физический статус сразу при оформлении возврата.</p>}
+   {isItems&&<p className="watch-return-physical-help">Товары в пути останутся в очереди приёмки. Уже полученные часы учитываются по выбранному физическому состоянию.</p>}
+   <p className="watch-return-accounting-note">Стоимость реально возвращённых часов уменьшит коммерческий итог продажи и расчётный долг Client3. Исходный заказ сохранится в истории. Это не создаёт фиктивную оплату или приёмку на склад.</p>}
    <label className="watch-return-confirm"><input type="checkbox" checked={confirmed}
      onChange={e=>setConfirmed(e.target.checked)}/>
      Подтверждаю возврат {isItems?chosenQty+' шт.':''}
