@@ -116,6 +116,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
     }).finally(()=>{if(!controller.signal.aborted)setBusy(false)})
     return ()=>controller.abort()
   },[brand,month,query,page,refresh,shipping,payment])
+  const editingOrder=workflow==='orders'&&editOrderId!==null
+    ?data?.rows.find(row=>row.orderId===editOrderId):null
   return <section className="watch-orders">
     <header className="watch-orders-header">
       <div><h2>{workflow==='returns'?'Оформление возвратов':workflow==='exchange'?'Обмены часов':'Список заказов'}</h2>
@@ -177,7 +179,15 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
     </div>}
     {error&&<p role="alert" className="watch-orders-error">{error}</p>}
     {busy&&<p role="status">Загрузка заказов…</p>}
-    {workflow==='orders'&&data&&<>
+    {workflow==='orders'&&data&&(editingOrder?<section className="watch-main-edit-workspace" aria-label={'Редактирование заказа '+editingOrder.externalId}>
+      <header className="watch-main-edit-workspace-head">
+        <div><h3>Редактирование заказа {editingOrder.externalId}</h3>
+          <p>{isAdmin?'Полный набор действий администратора Main':'Исправление реквизитов, цены и отмена операций по правилам Main'}. Отправка — только в логистике.</p></div>
+        <button type="button" className="secondary back-action" onClick={()=>setEditOrderId(null)}>Назад к заказам</button>
+      </header>
+      <WatchOrderCorrections key={'edit-'+editingOrder.orderId} brand={brand} order={editingOrder} isAdmin={isAdmin}
+        onCancel={()=>setEditOrderId(null)} onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>
+    </section>:<>
       <div className="watch-orders-summary">
         <div><small>Заказов</small><strong>{data.totals.orderCount}</strong></div>
         <div><small>Сумма заказов</small><strong>{sum(data.totals.totalAmount)}</strong></div>
@@ -200,8 +210,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
               const payments=parsedRows<PaymentLine>(order.paymentLines)
               const visibleItems=Math.max(3,expandedItemCounts[order.orderId]||3)
               const visiblePayments=Math.max(2,expandedPaymentCounts[order.orderId]||2)
-              const rowActionOpen=editOrderId===order.orderId||
-                handoverOrderId===order.orderId||
+              const rowActionOpen=handoverOrderId===order.orderId||
                 returnHistoryOrderId===order.orderId||exchangeHistoryOrderId===order.orderId||
                 returnOrderId===order.orderId||exchangeOrderId===order.orderId
               const openFlow=(type:'returns'|'exchange')=>{
@@ -367,10 +376,6 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     lines={parsedRows<ItemLine>(order.itemLines)}
                     onDone={()=>setRefresh(v=>v+1)}
                     onClose={()=>setHandoverOrderId(null)}/>}
-                  {editOrderId===order.orderId&&<WatchOrderCorrections
-                    brand={brand} order={order} isAdmin={isAdmin}
-                    onCancel={()=>setEditOrderId(null)}
-                    onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>}
                   {exchangeOrderId===order.orderId&&<WatchExchangeForm brand={brand} order={order}
                     onCancel={()=>setExchangeOrderId(null)}
                     onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>}
@@ -395,6 +400,6 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         <span>Страница {page+1}</span>
         <button type="button" disabled={busy||!data.hasMore} onClick={()=>setPage(x=>x+1)}>Дальше</button>
       </div>
-    </>}
+    </>)}
   </section>
 }
