@@ -1,0 +1,66 @@
+/* Client3: explicit Main-like multi-line debt settlement. Never inherit
+   invisible white submit-button styles from generic form utilities. */
+.watch-orders .watch-debt-multi-form{display:grid;gap:16px;max-width:none;width:100%}
+.watch-orders .watch-debt-multi-form>.watch-debt-head{display:grid;gap:5px;margin:0}
+.watch-orders .watch-debt-multi-form>.watch-debt-head strong{font-size:16px;color:#0f172a}
+.watch-orders .watch-debt-totals{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;
+  margin:0;border:1px solid #dbe5f0;border-radius:12px;padding:12px;background:#eff6ff
+}
+.watch-orders .watch-debt-totals>div{display:grid;gap:7px;min-width:0}
+.watch-orders .watch-debt-totals strong{font-size:18px;color:#0f172a}
+.watch-orders .watch-debt-totals strong.is-error{color:#b91c1c}
+.watch-orders .watch-debt-totals small{color:#475569}
+.watch-orders .watch-debt-payments-head{
+  display:flex;justify-content:space-between;gap:10px;align-items:center;
+  flex-wrap:wrap;margin:0
+}
+.watch-orders .watch-debt-payments-head h3{font-size:15px;margin:0}
+.watch-orders .watch-debt-parts{display:grid;gap:11px}
+.watch-orders .watch-debt-part{border:1px solid #dbe5f0;border-radius:11px;padding:12px;background:#f8fafc}
+.watch-orders .watch-debt-part.is-saved{background:#f0fdf4;border-color:#a7f3d0}
+.watch-orders .watch-debt-part-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}
+.watch-orders .watch-debt-part-head strong{font-size:13px}
+.watch-orders .watch-debt-part-saved{font-size:11px;color:#166534;font-weight:750}
+.watch-orders .watch-debt-multi-form .watch-main-debt-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.watch-orders .watch-debt-multi-form .watch-main-debt-grid label{min-width:0}
+.watch-orders .watch-debt-multi-form .watch-main-debt-actions{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:0
+}
+.watch-orders .watch-debt-multi-form .watch-main-debt-actions button[type=submit]{
+  display:inline-flex!important;justify-content:center!important;align-items:center!important;
+  background:#2563eb!important;color:white!important;border:1px solid #2563eb!important;
+  opacity:1!important;border-radius:9px!important;min-height:40px!important;
+  min-width:160px!important;font-size:13px!important;font-weight:750!important;
+  padding:9px 16px!important;text-shadow:none!important;box-shadow:none!important
+}
+.watch-orders .watch-debt-multi-form .watch-main-debt-actions button[type=submit]:hover:not(:disabled){
+  background:#1d4ed8!important;border-color:#1d4ed8!important
+}
+.watch-orders .watch-debt-multi-form .watch-main-debt-actions button[type=submit]:disabled{
+  background:#94a3b8!important;border-color:#94a3b8!important;color:white!important
+}
+.watch-orders .watch-main-row-actions .debt-action-button{
+  background:#fff7ed!important;color:#92400e!important;border:1px solid #f59e0b!important;
+  opacity:1!important;font-weight:750!important
+}
+.watch-debt-history{display:grid;gap:12px;margin:13px 0;padding:13px;
+  border:1px solid #dbe5f0;background:#fff;border-radius:12px;min-width:0}
+.watch-debt-history-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.watch-debt-history-head>div{display:grid;gap:4px}
+.watch-debt-history-head strong{font-size:14px}
+.watch-debt-history-head small{color:#64748b;font-size:12px}
+.watch-debt-history-scroll{min-width:0;max-width:100%;overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px}
+.watch-debt-history-table{width:100%;min-width:560px;border-collapse:collapse;font-size:12px}
+.watch-debt-history-table th{background:#eef3fa;text-align:left;color:#475569}
+.watch-debt-history-table th,.watch-debt-history-table td{padding:9px 10px;border-bottom:1px solid #e2e8f0}
+.watch-debt-history-table td strong{display:block;color:#0f172a}
+.watch-debt-history-table td small{display:block;color:#64748b;margin-top:3px}
+.watch-debt-history-table td:nth-child(4){white-space:nowrap;font-weight:750}
+.watch-debt-empty{text-align:center;color:#64748b;padding:20px!important}
+.watch-debt-history-toggle{margin:6px 0}
+@media(max-width:650px){
+  .watch-orders .watch-debt-totals{grid-template-columns:1fr}
+  .watch-orders .watch-debt-multi-form .watch-main-debt-grid{grid-template-columns:1fr}
+  .watch-debt-history-table{min-width:500px}
+}
