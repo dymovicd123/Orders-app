@@ -72,6 +72,11 @@ export async function createClient3WatchReturn(
    [...byId.values()].some(row=>Number(row.sku_brand)!==brandId||Number(row.is_workshop)!==0))
    return fail('WATCH_RETURN_UNVERIFIED_SKU',
      'Не все активные позиции принадлежат часам выбранного бренда. Возврат остановлен.',409)
+ // Main's createReturn handles cached idempotent retries. A completed return
+ // already consumes its own returnable quantity, so do not reject its replay.
+ const replay=await db.prepare(`SELECT 1 AS ok FROM critical_operations
+   WHERE request_id=? AND operation_type='return_create' LIMIT 1`)
+   .bind(input.requestId).first<{ok:number}>()
  const rawItems=Array.isArray(input.items)?input.items:null
  const selected:Array<{orderItemId:number;quantity:number;amount:number;restock:boolean;physicalState:'pending'}>=[]
  if(itemSelected){
@@ -86,7 +91,8 @@ export async function createClient3WatchReturn(
      const id=Number(x?.orderItemId),qty=Number(x?.quantity)
      const row=byId.get(id)
      if(!Number.isSafeInteger(id)||!row||seen.has(id)||
-       !Number.isSafeInteger(qty)||qty<1||qty>Number(row.returnable_quantity))
+       !Number.isSafeInteger(qty)||qty<1||
+       qty>(replay?Number(row.quantity):Number(row.returnable_quantity)))
        return fail('WATCH_RETURN_SELECTION_INVALID',
          'Возврат товара возможен только после фактической отправки/выдачи. Проверьте количество и ранее оформленные возвраты.',409)
      seen.add(id)
