@@ -398,7 +398,7 @@ export function WatchClient3App() {
         </>:
         activeSection==='exchange'?<>
           <article className="card wide"><div className="card-label">Обмены</div>
-            <div className="card-meta">Откройте отправленный заказ и выберите «Обменять часы». Для сохранности остатков действуют проверки точного SKU, цены и отправки.</div></article>
+            <div className="card-meta">Выберите заказ и нажмите «Обменять часы». Обмен доступен и для ещё неотправленных позиций, и для часов у клиента. Физический приём требуется только для фактически выданных часов.</div></article>
           {brands.length&&<WatchOrdersPanel key={'exchange-'+catalogVersion}
             allowedBrands={brands.map(x=>x.code)}
             isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>}
@@ -408,7 +408,8 @@ export function WatchClient3App() {
       {activeSection==='logistics'&&<WatchLogisticsPanel key={'logistics-'+catalogVersion+'-'+brand+'-'+isLogisticsRole}
         brand={isLogisticsRole?'all':brand||'all'} allowedBrands={brands.map(x=>x.code)}
         canDispatch={canSales||isLogisticsRole} canCorrectDispatch={canAdmin}
-        canCompleteEngraving={canAdmin||isLogisticsRole}/>}
+        canCompleteEngraving={canAdmin||isLogisticsRole}
+        onOpenReturns={canSales?selected=>{setBrand(selected);goTo('returns')}:undefined}/>}
       {['warehouse','operations','revision','history','statistics','catalog'].includes(activeSection)&&<>
         <div className="warehouse-w2-navigation" data-w2-human-warehouse="task-navigation" data-cleanup-navigation="true">
           <div className="warehouse-w2-primary" aria-label="Разделы склада">
