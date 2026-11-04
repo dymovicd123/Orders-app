@@ -33,7 +33,7 @@ import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 
-export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'debts'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'dashboard',module:'dashboard',label:'Инфопанель'},
@@ -54,6 +54,7 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   plan:{title:'План',subtitle:'Денежные планы отдела и менеджеров — без KPI'},
   leads:{title:'Лиды',subtitle:'Журналы лидов и Call Centre'},
   orders:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
+  debts:{title:'Заказы',subtitle:'Закрытие долга и история оплат'},
   clients:{title:'Клиенты',subtitle:'Покупатели, история заказов и долги'},
   create:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   returns:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
@@ -96,7 +97,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
     return ()=>document.body.classList.remove('mobile-nav-open')
   },[mobileNavOpen])
   const isAdmin=user.role==='admin'
-  const current=section==='create'||section==='returns'||section==='exchange'||section==='legacy'?'orders':
+  const current=section==='create'||section==='returns'||section==='exchange'||section==='debts'||section==='legacy'?'orders':
     section==='catalog'||section==='operations'||section==='revision'||section==='history'||section==='statistics'?'warehouse':section==='accounts'?'staff':section
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'
