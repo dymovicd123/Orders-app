@@ -36,10 +36,10 @@ try{
  assert(view.includes('5 000')||view.includes('5 000')||view.includes('5 000'),
   'Only the selected watch sale price is the suggested return value')
  assert(view.includes('max="30000"'),'Money-only refund still knows recorded available funds')
- assert(view.includes('value="5000"'),'A 5K physical return must not preselect all 30K of cash')
+ assert(view.includes('value="0"'),'A partial physical return must not silently refund cash until entered')
  assert(!view.includes('value="30000"'),
   'Partial return default cannot silently refund the whole payment')
- assert(view.includes('возвращённые часы уменьшают стоимость оставшейся продажи'),
+ assert(view.includes('возвращённых часов уменьшит коммерческий итог продажи'),
   'Explain Client3 commercial credit while Main historical amount stays immutable')
  const {WatchExchangeForm,watchExchangeQuantityForState}=await server.ssrLoadModule(
    '/src/features/client3/WatchExchangeForm.tsx')
@@ -62,10 +62,10 @@ try{
  }))
  assert(exchangeCreate.includes('доступно к обмену 1 шт.'),
    'Unissued watch must be selectable for exchange')
- assert(exchangeCreate.includes('ещё не отправляли: 1 шт.'))
+ assert(exchangeCreate.includes('не отправляли: 1 шт.'))
  const exchangeView=renderToStaticMarkup(React.createElement(WatchExchangeHistoryPanel,{
    brand:'TAUWACH',orderId:91,onClose:()=>{},onDone:()=>{},
  }))
  assert(exchangeView.includes('История обменов'))
- console.log('CLIENT3_PARTIAL_REFUND_UI_PASS: price-based default, full money ceiling, explicit debt semantics and Main exchange history')
+ console.log('CLIENT3_PARTIAL_REFUND_UI_PASS: accurate returned-goods value, explicit zero cash default, Main-like item coverage and exchange history')
 }finally{await server.close()}
