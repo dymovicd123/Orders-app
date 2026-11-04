@@ -1,0 +1,15 @@
+/* Small watch-specific adaptation of Main's demand page. Main's own CSS is imported directly. */
+.watch-demand-main{max-width:none;padding:14px 0 30px}
+.watch-demand-main .demand-rank-action{white-space:nowrap;color:#205895}
+.watch-demand-main .demand-rank-row{min-height:70px}
+.watch-demand-main .demand-dialog-variants button{min-height:86px}
+.watch-demand-main .demand-dialog-variants button b{flex-shrink:0}
+.watch-demand-main .demand-dialog{width:min(670px,100vw)}
+.watch-demand-main .demand-dialog-metrics span{line-height:1.4}
+.watch-demand-main .demand-explain-counter{display:inline-block}
+.watch-demand-main button:disabled{opacity:.6;cursor:not-allowed}
+@media(max-width:600px){
+ .watch-demand-main .demand-dialog-variants button{flex-wrap:wrap}
+ .watch-demand-main .demand-rank-row{grid-template-columns:20px minmax(0,1fr);gap:8px}
+ .watch-demand-main .demand-rank-action{grid-column:2;justify-self:start}
+}
