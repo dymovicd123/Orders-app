@@ -34,10 +34,10 @@ export async function listClient3WatchReturnHistory(
        'id',ri.id,'orderItemId',ri.order_item_id,'quantity',ri.quantity,
        'modelName',COALESCE(wp.model_name,oi.product_name_snapshot,'Часы'),
        'gender',COALESCE(v.gender,''),
-       'movement',COALESCE(a.movement,v.movement,''),
-       'braceletMaterial',COALESCE(a.bracelet_material,v.bracelet_material,''),
-       'dialColor',COALESCE(a.dial_color,v.dial_color,''),
-       'braceletColor',COALESCE(a.bracelet_color,v.bracelet_color,''),
+       'movement',COALESCE(a6.movement,a.movement,v.movement,''),
+       'braceletMaterial',COALESCE(a6.bracelet_material,a.bracelet_material,v.bracelet_material,''),
+       'dialColor',COALESCE(a6.dial_color,a.dial_color,v.dial_color,''),
+       'braceletColor',COALESCE(a6.bracelet_color,a.bracelet_color,v.bracelet_color,''),
        'physicalTracking',COALESCE(ri.physical_tracking,0),
        'physicalReceivedAt',ri.physical_received_at
      )),'[]') FROM return_items ri
@@ -45,6 +45,7 @@ export async function listClient3WatchReturnHistory(
        LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
        LEFT JOIN watch_variants v ON v.id=wi.watch_variant_id
        LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=v.id
+    LEFT JOIN watch_variant_attributes_v6 a6 ON a6.watch_variant_id=v.id
        LEFT JOIN watch_products wp ON wp.id=v.watch_product_id
        WHERE ri.return_id=r.id) AS items
    FROM returns r WHERE r.order_id=? ORDER BY r.id DESC LIMIT 100
