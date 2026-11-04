@@ -7,7 +7,7 @@ import '../../styles/client3-watch-exchange.css'
 type OldLine={id:number;productName:string;quantity:number;returnableQuantity:number;
  exchangeableQuantity:number;shippedQuantity:number;returnedQuantity:number;stockWriteoffStatus:string;
  unitPrice:number;lineTotal:number;catalogPriceSnapshot:number|null;shipped:number;
- gender:string;movement:string;braceletMaterial:string;dialColor:string;braceletColor:string}
+ source?:string;gender:string;movement:string;braceletMaterial:string;dialColor:string;braceletColor:string}
 type Order={orderId:number;externalId:string;totalAmount:number;receivedAmount:number;
  returnAmount:number;commercialReturnedValue?:number;itemLines:string}
 type NewLine={key:string;modelName:string;gender:WatchGender;movement:string;
