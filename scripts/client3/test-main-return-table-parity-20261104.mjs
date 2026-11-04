@@ -45,8 +45,8 @@ try{
  assert(bareOperation.includes('К заказам'))
  assert(!bareOperation.includes('Поиск по заказу, ФИО или телефону'),
   'Main return workspace must not duplicate order selection table')
- assert(watchTable.includes("workflow==='orders'&&data&&<>"),
-  'Only All Orders may show the complete Main order table')
+ assert(watchTable.includes("workflow==='orders'&&data&&(editingOrder?<section")&&watchTable.includes('watch-main-orders-table'),
+  'Only All Orders may show the complete Main table and edit form separately')
  const item=(id,shipped,returned=0)=>({
    id,productName:id===1?'ARYSTAN':'ALTYN ZAMAN',quantity:1,
    returnedQuantity:returned,returnableQuantity:returned?0:1,
