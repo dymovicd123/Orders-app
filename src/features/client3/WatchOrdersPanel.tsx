@@ -53,7 +53,7 @@ const initialMonth=()=>{
 export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder,onOpenLogistics,onOpenWorkflow,onOpenOrders,isAdmin=false,workflow='orders'}:{
   allowedBrands:readonly WatchBrand[];initialBrand?:WatchBrand;
   initialFocusedOrder?:{orderId:number;externalId:string;orderDate:string};
-  onOpenLogistics?:(brand:WatchBrand)=>void;
+  onOpenLogistics?:(brand:WatchBrand,orderId:number)=>void;
   onOpenOrders?:()=>void;
   onOpenWorkflow?:(kind:'returns'|'exchange',order:{
     brand:WatchBrand;orderId:number;externalId:string;orderDate:string
@@ -329,7 +329,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   <div className="order-table-actions watch-main-row-actions">
                     {workflow==='orders'&&onOpenLogistics&&
                       <button type="button" className="secondary compact"
-                        onClick={()=>onOpenLogistics(brand)}>
+                        onClick={()=>onOpenLogistics(brand,order.orderId)}>
                         {shipment.state==='sent'?'Отправки':'Отправить товары'}
                       </button>}
                     {order.debtAmount>0&&workflow==='orders'&&
@@ -453,7 +453,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     {(order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&!physicallyIssued(order)||
                       Boolean(order.pendingReplacement))&&
                       (onOpenLogistics?<button type="button"
-                        onClick={()=>onOpenLogistics(brand)}>Подготовить / отправить в логистике</button>:
+                        onClick={()=>onOpenLogistics(brand,order.orderId)}>Подготовить / отправить в логистике</button>:
                         <small>Подготовка и отправка находятся в разделе «Логистика».</small>)}
                     {parsedRows<ItemLine>(order.itemLines).some(line=>line.returnableQuantity>0)&&
                       exchangeOrderId!==order.orderId&&
