@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 import {provisionClient3WatchSku} from '../../worker/domains/client3-watch-provision.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
+import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {readClient3WatchHandover,clarifyClient3WatchHandover} from '../../worker/domains/client3-watch-handover.ts'
 import {watchReferenceLabel} from '../../shared/client3/watch-domain.ts'
 import {startClient3WatchRevision,changeClient3WatchRevision} from '../../worker/domains/client3-watch-revision-session.ts'
@@ -101,6 +102,17 @@ assert.equal(firstRead.reviewCount,1,'Backdated October sale must trigger issuan
 const firstItem=firstRead.state.items.find(x=>x.reviewNeeded)
 assert(firstItem?.checkpointId&&firstItem.checkpointAt)
 const beforeOne=sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=? AND inventory_source=?').get(cv,'warehouse')
+const blockedSend=await parse(dispatchClient3WatchOrder(db,admin,1,firstOrder.orderId,{
+ requestId:'watch-handover-gate-before-main-20261104',
+ confirmPhysicalStock:true,
+ items:[{orderItemId:firstItem.orderItemId,quantity:1}],
+}))
+assert.equal(blockedSend.status,409,JSON.stringify(blockedSend))
+assert.equal(blockedSend.code,'WATCH_HANDOVER_REQUIRED',
+ 'Physical possession confirmation MUST NEVER bypass a later completed stocktake')
+assert.deepEqual(blockedSend.reviewItemIds,[firstItem.orderItemId])
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+ .get(firstOrder.orderId).n,0,'Blocked dispatch has zero stock and payment movements')
 const wrongBrand=await parse(readClient3WatchHandover(db,admin,2,firstOrder.orderId))
 assert.equal(wrongBrand.status,404,'Cannot read another brand order')
 const stale=await parse(clarifyClient3WatchHandover(db,admin,1,firstOrder.orderId,{
@@ -116,6 +128,20 @@ assert.equal(stillHere.status,200,JSON.stringify(stillHere))
 assert.equal(stillHere.state.items.find(x=>x.orderItemId===firstItem.orderItemId).reviewNeeded,false)
 assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?').get(firstItem.orderItemId).status,'active')
 assert.deepEqual(sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=? AND inventory_source=?').get(cv,'warehouse'),beforeOne)
+const approvedSend=await parse(dispatchClient3WatchOrder(db,admin,1,firstOrder.orderId,{
+ requestId:'watch-handover-gate-before-main-20261104',
+ confirmPhysicalStock:true,
+ items:[{orderItemId:firstItem.orderItemId,quantity:1}],
+}))
+assert.equal(approvedSend.status,200,JSON.stringify(approvedSend))
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+ .get(firstOrder.orderId).n,1,'After confirming STILL HERE, dispatch is allowed once')
+const replay=await parse(dispatchClient3WatchOrder(db,admin,1,firstOrder.orderId,{
+ requestId:'watch-handover-gate-before-main-20261104',
+ confirmPhysicalStock:true,
+ items:[{orderItemId:firstItem.orderItemId,quantity:1}],
+}))
+assert.equal(replay.status,200,'Idempotent retry of an already committed shipment remains possible')
 // New October 2 order: was physically given to customer BEFORE the
 // later revision. Main's CAS closes its reservation WITHOUT stock movement.
 const secondOrder=await parse(createClient3WatchOrder(db,admin,1,{
