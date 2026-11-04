@@ -528,7 +528,7 @@ assert.equal(beforeReturnArrival.status,200,JSON.stringify(beforeReturnArrival))
 const returnedOldOrder=await parse(createClient3WatchOrder(db,manager,1,{
  brand:'TAUWACH',source:'office',watchVariantId:returnedBeforeRetireVariant.id,
  catalogVariantId:returnedBeforeRetireVariant.canonical,quantity:1,unitPrice:11000,
- receivedAmount:0,payments:[],engravingText:'',
+ receivedAmount:11000,payments:[{method:'KASPI GOLD',amount:11000}],engravingText:'',
  requestId:'watch-return-before-retire-order-20261104-0001',
  recipientName:'Тест возврата до архива',recipientPhone:'+77015550104',
  address:'Улица возвратов, 4',postalCode:'050004',city:'Алматы',
@@ -545,11 +545,14 @@ const sentBeforeReturn=await parse(dispatchClient3WatchOrder(db,admin,1,returned
 assert.equal(sentBeforeReturn.status,200,JSON.stringify(sentBeforeReturn))
 const physicalReceived=await parse(createClient3WatchReturn(db,manager,1,returnedOldOrder.orderId,{
  requestId:'watch-return-before-retire-20261104-0001',
- kind:'items_only',amount:0,quantity:1,
+ kind:'both',amount:11000,paymentMethod:'KASPI GOLD',quantity:1,
  reason:'Физический возврат часов до удаления товара',
  items:[{orderItemId:returnedOldItem.id,quantity:1,physicalState:'warehouse'}]
 }))
 assert.equal(physicalReceived.status,200,JSON.stringify(physicalReceived))
+assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
+ .get(returnedOldOrder.orderId).return_amount,11000,
+ 'Refund amount must be recorded before retirement')
 const returnBeforeDelete=sqlite.prepare('SELECT id FROM returns WHERE order_id=? ORDER BY id DESC LIMIT 1')
  .get(returnedOldOrder.orderId)
 const appliedBeforeDelete=sqlite.prepare(`SELECT COUNT(*) AS n FROM inventory_lifecycle_events
@@ -580,6 +583,12 @@ assert(cancelPhysicalOldReturn.stockReversals.some(x=>
  'Main must cancel return commercially without reversing retired stock')
 assert.equal(sqlite.prepare('SELECT status FROM returns WHERE id=?')
  .get(returnBeforeDelete.id).status,'cancelled')
+const afterRefundCancellation=sqlite.prepare('SELECT received_amount,return_amount,debt_amount FROM orders WHERE id=?')
+ .get(returnedOldOrder.orderId)
+assert.equal(afterRefundCancellation.received_amount,11000)
+assert.equal(afterRefundCancellation.return_amount,0,
+ 'Main must restore commercial money ledger on cancellation of archived return')
+assert.equal(afterRefundCancellation.debt_amount,0)
 assert.equal(sqlite.prepare(`SELECT status FROM inventory_lifecycle_events
  WHERE operation_type='return' AND operation_id=?`).get(returnBeforeDelete.id).status,'cancelled')
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
