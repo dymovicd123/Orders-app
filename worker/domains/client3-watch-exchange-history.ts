@@ -32,10 +32,10 @@ export async function listClient3WatchExchangeHistory(
  const orderWatchItems=await db.prepare(`
    SELECT oi.id AS orderItemId,wi.watch_variant_id AS watchVariantId,
      wp.model_name AS modelName,wv.gender,
-     COALESCE(a.movement,wv.movement,'') AS movement,
-     COALESCE(a.bracelet_material,wv.bracelet_material,'') AS braceletMaterial,
-     COALESCE(a.dial_color,wv.dial_color,'') AS dialColor,
-     COALESCE(a.bracelet_color,wv.bracelet_color,'') AS braceletColor,
+     COALESCE(a6.movement,a.movement,wv.movement,'') AS movement,
+     COALESCE(a6.bracelet_material,a.bracelet_material,wv.bracelet_material,'') AS braceletMaterial,
+     COALESCE(a6.dial_color,a.dial_color,wv.dial_color,'') AS dialColor,
+     COALESCE(a6.bracelet_color,a.bracelet_color,wv.bracelet_color,'') AS braceletColor,
      COALESCE(wi.engraving_text,'') AS engravingText,
      COALESCE(oi.stock_writeoff_status,'') AS stockWriteoffStatus,
      oi.quantity AS activeQuantity,
@@ -47,6 +47,7 @@ export async function listClient3WatchExchangeHistory(
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id
    JOIN watch_products wp ON wp.id=wv.watch_product_id
    LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 a6 ON a6.watch_variant_id=wv.id
    WHERE oi.order_id=? AND wp.brand_id=?
  `).bind(orderId,brandId).all<Record<string,unknown>>()
  const archivalEvents=await db.prepare(`
