@@ -5,7 +5,7 @@ import { WatchCatalogEditor } from './features/client3/WatchCatalogEditor'
 import {WatchWarehouseMain} from './features/client3/WatchWarehouseMain'
 import {WatchWarehouseHistory} from './features/client3/WatchWarehouseStage5'
 import {WatchStockMainBrowse} from './features/client3/WatchStockMainBrowse'
-import {WatchDemandPanel} from './features/client3/WatchDemandPanel'
+import {WatchDemandMainPanel} from './features/client3/WatchDemandMainPanel'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
 import {WatchDebtWorkspace} from './features/client3/WatchDebtWorkspace'
 import {WatchClientsPanel} from './features/client3/WatchClientsPanel'
@@ -488,7 +488,7 @@ export function WatchClient3App() {
               </button>)}
             </div>
           </section>
-          {brand&&activeSection==='statistics'?<WatchDemandPanel key={'demand-'+brand} brand={brand}/>:
+          {brand&&activeSection==='statistics'?<WatchDemandMainPanel key={'demand-main-'+brand} brand={brand}/>:
           canWarehouse&&brand?(activeSection==='catalog'?
             <WatchCatalogEditor key={'catalog-'+brand} brand={brand} view="catalog" canEditPrices={canAdmin}
               onStockChanged={()=>setCatalogVersion(x=>x+1)}
