@@ -1692,6 +1692,9 @@ fixtureEngravingReady(twoOld.orderId)
 const withoutStock=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
 assert.equal(withoutStock.status,200,JSON.stringify(withoutStock))
 assert.equal(withoutStock.activated,0,'No actual stock means no reservation activation')
+const forbiddenReserveRetry=await parse(retryClient3WatchReservations(db,warehouseActor,1,twoOld.orderId))
+assert.equal(forbiddenReserveRetry.status,403,
+ 'Warehouse staff cannot override customer order reservation decisions')
 const foreignReserveRetry=await parse(retryClient3WatchReservations(db,manager,2,twoOld.orderId))
 assert.equal(foreignReserveRetry.status,404,'Cannot recover a different brand reservation')
 const incomingWatchVariant=activeSwap[0].watch_variant_id
