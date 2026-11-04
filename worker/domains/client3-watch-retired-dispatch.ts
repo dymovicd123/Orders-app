@@ -54,15 +54,18 @@ export async function dispatchRetiredClient3WatchLines(
       !Number.isSafeInteger(i.quantity)||i.quantity<1)||
     new Set(input.items.map(i=>i.orderItemId)).size!==input.items.length)
    conflict('Укажите неповторяющиеся позиции архивных часов и количество.')
- const prior=await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=?')
-   .bind(requestId).first<{id:number;order_id:number}>()
+ const prior=await db.prepare('SELECT id,order_id,status FROM order_dispatches WHERE request_id=?')
+   .bind(requestId).first<{id:number;order_id:number;status:string}>()
  if(prior){
-   const saved=await db.prepare(`SELECT order_item_id,quantity FROM order_dispatch_items
-     WHERE dispatch_id=? ORDER BY order_item_id`).bind(prior.id).all<{order_item_id:number;quantity:number}>()
+   const saved=await db.prepare(`SELECT order_item_id,quantity,cancelled_quantity FROM order_dispatch_items
+     WHERE dispatch_id=? ORDER BY order_item_id`).bind(prior.id)
+       .all<{order_item_id:number;quantity:number;cancelled_quantity:number}>()
    const previous=(saved.results||[]).map(x=>x.order_item_id+':'+x.quantity).sort()
    const wanted=input.items.map(x=>x.orderItemId+':'+x.quantity).sort()
    if(prior.order_id!==orderId||JSON.stringify(previous)!==JSON.stringify(wanted))
      conflict('Идентификатор отправки уже применялся к другим часам.')
+   if(prior.status!=='sent'||(saved.results||[]).some(x=>Number(x.cancelled_quantity)!==0))
+     conflict('Эта отправка была отменена. Повторите отправку с новым номером операции.')
    return {ok:true,alreadyCommitted:true,dispatchId:prior.id,retiredWithoutStockChange:true}
  }
  const order=await db.prepare(`SELECT o.id,o.external_id,o.order_status,
@@ -290,12 +293,17 @@ export async function dispatchRetiredClient3WatchLines(
    const found=await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=?')
      .bind(requestId).first<{id:number;order_id:number}>()
    if(found?.order_id===orderId){
-     const saved=await db.prepare('SELECT order_item_id,quantity FROM order_dispatch_items WHERE dispatch_id=?')
-       .bind(found.id).all<{order_item_id:number;quantity:number}>()
+     const saved=await db.prepare('SELECT order_item_id,quantity,cancelled_quantity FROM order_dispatch_items WHERE dispatch_id=?')
+       .bind(found.id).all<{order_item_id:number;quantity:number;cancelled_quantity:number}>()
      const a=(saved.results||[]).map(x=>x.order_item_id+':'+x.quantity).sort()
      const b=input.items.map(x=>x.orderItemId+':'+x.quantity).sort()
-     if(JSON.stringify(a)===JSON.stringify(b))
-       return {ok:true,alreadyCommitted:true,dispatchId:found.id,retiredWithoutStockChange:true}
+     if(JSON.stringify(a)===JSON.stringify(b)){
+       const active=await db.prepare('SELECT status FROM order_dispatches WHERE id=?')
+         .bind(found.id).first<{status:string}>()
+       if(active?.status==='sent'&&(saved.results||[]).every(x=>Number(x.cancelled_quantity)===0))
+         return {ok:true,alreadyCommitted:true,dispatchId:found.id,retiredWithoutStockChange:true}
+       conflict('Эта отправка уже исправлена. Создайте новую отправку.')
+     }
    }
    const msg=cleanText(error instanceof Error?error.message:error)
    if(/unique constraint failed|__retired_.*conflict__/i.test(msg))
