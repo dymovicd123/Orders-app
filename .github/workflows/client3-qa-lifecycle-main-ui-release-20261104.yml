@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = c4e5f44949fa8ffbc2512fff855adb0b7dcc4aa7
+          test "$(git rev-parse HEAD^)" = dc8fbd2e4b7981d1aa8f9de4725622d12262851f
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -105,8 +105,9 @@ jobs:
           npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT
             (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_operations') AS operations,
             (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_variants') AS snapshots,
-            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_history_events') AS history" |
-            jq -e '.[0].results[0] | select(.operations==1 and .snapshots==1 and .history==1)'
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='catalog_retirement_history_events') AS history,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='retired_order_item_issues') AS retired_issue_log" |
+            jq -e '.[0].results[0] | select(.operations==1 and .snapshots==1 and .history==1 and .retired_issue_log==1)'
       - name: Deploy only EXISTING TEST Worker and TEST D1; no migrations
         run: |
           set -euo pipefail
