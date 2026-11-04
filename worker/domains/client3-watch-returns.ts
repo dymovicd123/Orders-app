@@ -108,6 +108,10 @@ export async function createClient3WatchReturn(
        qty>(replay?Number(row.quantity):Number(row.returnable_quantity)))
        return fail('WATCH_RETURN_SELECTION_INVALID',
          'Возврат товара возможен только после фактической выдачи. Проверьте ранее оформленные возвраты и количество.',409)
+     if(Number(row.canonical_active)===0&&
+       (physicalState==='warehouse'||physicalState==='boutique'))
+       return fail('WATCH_RETIRED_RETURN_STOCK_BLOCKED',
+         'Архивные часы нельзя зачислять в удалённый SKU. Выберите приём без зачисления в остаток; для новой продажи создайте действующую комплектацию и отдельный приход.',409)
      const credit=qty*Number(row.unit_price)
      if(!Number.isSafeInteger(credit)||credit<0||credit>1_000_000_000_000)
        return fail('WATCH_RETURN_COMMERCIAL_VALUE','Недопустимая стоимость возвращаемых часов.',409)
