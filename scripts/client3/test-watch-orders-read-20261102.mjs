@@ -14,7 +14,8 @@ sql.exec([
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,product_name_snapshot TEXT,unit_price INTEGER,source_type TEXT);',
 'CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,amount INTEGER,payment_kind TEXT);',
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
-'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);',
+'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
+'CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,quantity INTEGER,role TEXT,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
 'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,status TEXT);',
 'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY,order_id INTEGER);',
 'CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER,order_item_id INTEGER,quantity INTEGER,cancelled_quantity INTEGER);',
@@ -101,6 +102,25 @@ assert.equal(lines[0].unitPrice,20000)
 assert.equal(lines[0].source,'warehouse')
 assert.equal(aliceMonth.rows[0].shippedLineCount,1,'Dispatch exists even when whole order status is not sent')
 assert.equal(lines[0].shipped,1,'Per-item shipment marker is derived from Main dispatch history')
+assert.equal(lines[0].shippedQuantity,1,'Exact per-position shipment quantity comes from dispatch ledger')
+assert.equal(lines[0].returnableQuantity,1,'Only the physically issued unit can be returned')
+sql.exec("UPDATE order_items SET quantity=2 WHERE id=101")
+const partialShipment=await query(alice,'brand=TAUWACH&shipping=not_sent')
+assert.equal(partialShipment.rows.length,2,
+  'A line with one of two units issued must remain in the unshipped queue')
+assert.equal(JSON.parse(partialShipment.rows.find(x=>x.orderId===1).itemLines)[0].shippedQuantity,1)
+sql.exec("UPDATE order_items SET quantity=1 WHERE id=101")
+sql.exec("INSERT INTO returns VALUES(1,1,'completed')")
+sql.exec("INSERT INTO return_items(id,return_id,order_item_id,quantity,physical_tracking) VALUES(1,1,101,1,1)")
+const afterReturn=await query(alice,'brand=TAUWACH&from=2026-11-01')
+const returnedLine=JSON.parse(afterReturn.rows[0].itemLines)[0]
+assert.equal(returnedLine.returnedQuantity,1,'Registered returned units remain visible')
+assert.equal(returnedLine.pendingReturnQuantity,1,'Physical intake is not implied by refund registration')
+assert.equal(returnedLine.returnableQuantity,0,'Already returned units cannot be returned twice')
+sql.exec("UPDATE return_items SET physical_received_at='2026-11-03T12:00:00Z' WHERE id=1")
+const afterIntake=await query(alice,'brand=TAUWACH&from=2026-11-01')
+assert.equal(JSON.parse(afterIntake.rows[0].itemLines)[0].pendingReturnQuantity,0,
+  'Only confirmed physical receipt clears the intake queue')
 const pct=await query(alice,'brand=TAUWACH&q=%25')
 assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
 const underscore=await query(alice,'brand=TAUWACH&q=_')
