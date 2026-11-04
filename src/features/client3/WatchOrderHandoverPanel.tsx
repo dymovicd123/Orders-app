@@ -86,7 +86,13 @@ export function WatchOrderHandoverPanel({brand,orderId,lines,onDone,onClose}:{
        <p>Последняя {item.checkpointKind==='revision'?'ревизия':'сверка'}:
          {' '}{item.checkpointAt?new Date(item.checkpointAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty'}):'—'}.
          По системе {item.physicalQuantity}, резерв {item.totalReservedQuantity}.</p>
-       <div className="client3-watch-handover-actions">
+       {item.reservationStatus!=='active'&&<div className="client3-watch-handover-stock-warning" role="alert">
+         <strong>Отправка заблокирована: резерв не подтверждён.</strong>
+         <p>Заказ старше ревизии, но нужных часов нет в подтверждённом резерве.
+         Сначала проверьте физический остаток в разделе «Склад» и восстановите резерв;
+         затем вернитесь к уточнению. Нельзя подтверждать выдачу несуществующего резерва.</p>
+       </div>}
+       {item.reservationStatus==='active'&&<div className="client3-watch-handover-actions">
          <button type="button" className={current==='issued_before_checkpoint'?'primary':'secondary'}
            disabled={busy} onClick={()=>{setChoice({id:item.orderItemId,decision:'issued_before_checkpoint'});setChecked(false)}}>
            Уже выдали до проверки
