@@ -658,11 +658,17 @@ const oldExchangeMade=await parse(exchangeClient3WatchSet(db,manager,1,oldExchan
  oldItems:[{orderItemId:oldExchangeLine.id,quantity:1,physicalState:'warehouse',
    expectedActiveQuantity:1,expectedUnitPrice:12000,
    expectedLineTotal:12000,expectedCatalogPriceSnapshot:oldExchangeLine.catalog_price_snapshot}],
- newItems:[{manual:newExchangeWatch,source:'office',quantity:1,unitPrice:12000,
+ newItems:[{manual:newExchangeWatch,source:'office',quantity:1,unitPrice:14000,
    engravingText:'',shipmentState:'pending',issuePossessionConfirmed:false}],
- paymentParts:[],refundParts:[],reason:'Физический обмен с возвратом исходных часов'
+ paymentParts:[{method:'KASPI GOLD',amount:2000}],refundParts:[],
+ reason:'Физический обмен с доплатой и возвратом исходных часов'
 }))
 assert.equal(oldExchangeMade.status,200,JSON.stringify(oldExchangeMade))
+const cashAfterExchange=sqlite.prepare('SELECT total_amount,received_amount FROM orders WHERE id=?')
+ .get(oldExchangeOrder.orderId)
+assert.equal(cashAfterExchange.total_amount,14000)
+assert.equal(cashAfterExchange.received_amount,2000,
+ 'Extra payment before retirement must be actually recorded')
 const exchangeBeforeDelete=sqlite.prepare(`SELECT id FROM exchanges
  WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled'
  ORDER BY id DESC LIMIT 1`).get(oldExchangeOrder.orderId)
@@ -694,6 +700,12 @@ assert(approvedArchiveExchangeCancel.stockReversals.some(x=>
  'Main must cancel Exchange commercially without resurrecting retired stock')
 assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
  .get(exchangeBeforeDelete.id).status,'cancelled')
+const cashAfterExchangeCancel=sqlite.prepare('SELECT total_amount,received_amount,return_amount FROM orders WHERE id=?')
+ .get(oldExchangeOrder.orderId)
+assert.equal(cashAfterExchangeCancel.total_amount,12000)
+assert.equal(cashAfterExchangeCancel.received_amount,0,
+ 'Main must reverse exchange extra payment when its older SKU was retired')
+assert.equal(cashAfterExchangeCancel.return_amount,0)
 assert(sqlite.prepare('SELECT cancellation_comment FROM exchanges WHERE id=?')
  .get(exchangeBeforeDelete.id).cancellation_comment.includes('часы у продавца'),
  'Explicit seller custody must be retained by exchange cancellation')
