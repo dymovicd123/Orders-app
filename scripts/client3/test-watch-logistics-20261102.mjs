@@ -18,7 +18,8 @@ const server = await createServer({
   server: { middlewareMode: true }, logLevel: 'error',
 })
 try {
-  const { WatchLogisticsPanel, groupWatchLogistics, formatWatchDeadline, logisticsItemEligible } =
+  const { WatchLogisticsPanel, groupWatchLogistics, formatWatchDeadline, logisticsItemEligible,
+      logisticsOrderComplete } =
     await server.ssrLoadModule('/src/features/client3/WatchLogisticsPanel.tsx')
   const row = {
     orderId: 42, externalId: 'WATCH-42', brand: 'TAUWACH',
@@ -43,6 +44,11 @@ try {
   assert.equal(logisticsItemEligible({...ready,shippedQuantity:1}),false,'Cannot resend shipped item')
   assert.equal(logisticsItemEligible({...ready,reservationStatus:'unresolved'}),false,
     'Unreserved stock cannot be sent')
+  assert.equal(logisticsOrderComplete({order:row,items:[{...ready,quantity:2,shippedQuantity:1}]}),false,
+    'One of two watch units dispatched is not a completed line')
+  assert.equal(logisticsOrderComplete({order:row,items:[{...ready,quantity:0,returnedQuantity:1,
+    pendingReturnQuantity:1}]}),true,
+    'A fully returned historic order is no longer a dispatch task; physical intake has its own queue')
   const view = renderToStaticMarkup(React.createElement(WatchLogisticsPanel, {
     brand: 'TAUWACH', canCompleteEngraving: true,
   }))
