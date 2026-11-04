@@ -1,39 +1,59 @@
-name: Client3 original postrelease HTTP diagnostics (read only)
+name: Client3 original postrelease acceptance (READ ONLY)
 on:
   push:
     branches: [release/client3-delete-v6-20261104]
-    paths:
-      - '.github/workflows/client3-original-postrelease-readonly-20261104.yml'
+    paths: ['.github/workflows/client3-original-postrelease-readonly-20261104.yml']
 permissions:
   contents: read
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
     steps:
-      - name: Inspect only public live Worker and auth boundaries
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Rebuild source already deployed, no writes or deployments
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+      - name: Verify binary parity, anonymous API permissions, original D1 consistency
         shell: bash
         run: |
-          set -uo pipefail
+          set -eEuo pipefail
+          trap 'echo "::error::CLIENT3_READONLY_ACCEPTANCE_FAILED_LINE_$LINENO"' ERR
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
           base='https://orders-app-client3-old-client.orders-clothes.workers.dev'
-          echo 'READ_ONLY_CLIENT3_POSTRELEASE_DIAGNOSTICS_START'
-          for attempt in 1 2 3; do
-            code="$(curl -sSL --max-time 20 -o /tmp/client3-home -w '%{http_code}' "$base/?readonly_audit=$GITHUB_RUN_ID" || true)"
-            echo "home attempt $attempt: HTTP $code bytes=$(wc -c </tmp/client3-home 2>/dev/null || echo 0)"
-            head -c 360 /tmp/client3-home 2>/dev/null || true
-            echo
-            if test "$code" = 200 && grep -Eq 'id="root"|type="module"' /tmp/client3-home; then
-              echo 'HTML_ROOT_DETECTED'
-              break
-            fi
-            sleep 3
-          done
-          if test -s /tmp/client3-home; then
-            grep -Eo 'src="/assets/[^"]+\.js"' /tmp/client3-home || true
+          curl -fsSL --max-time 25 "$base/?postrelease=$GITHUB_SHA" > /tmp/c3-original-index
+          grep -Eq 'id="root"|type="module"' /tmp/c3-original-index
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          test -s "dist/client$asset"
+          echo "LIVE_ASSET_TO_VERIFY=$asset"
+          curl -fsSL --max-time 30 "$base$asset" > /tmp/c3-original-bundle.js
+          if ! cmp -s "dist/client$asset" /tmp/c3-original-bundle.js; then
+            echo 'Local and published JS differ:'
+            sha256sum "dist/client$asset" /tmp/c3-original-bundle.js
+            exit 1
           fi
-          for path in '/assets/index-cXUkTPfU.js' '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/catalog/retired?brand=TAUWACH' '/api/auth/status'; do
-            code="$(curl -sSL --max-time 20 -o /tmp/client3-probe -w '%{http_code}' "$base$path" || true)"
-            echo "path $path: HTTP $code bytes=$(wc -c </tmp/client3-probe 2>/dev/null || echo 0)"
-            if [[ "$path" == /api/* ]]; then head -c 180 /tmp/client3-probe 2>/dev/null || true; echo; fi
+          echo 'CLIENT3_DEPLOYED_JS_BYTE_EQUAL_PASS'
+          for path in '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/catalog/retired?brand=TAUWACH'; do
+            code="$(curl -sS --max-time 20 -o /tmp/c3-api -w '%{http_code}' "$base$path")"
+            echo "CLIENT3_ANONYMOUS $path HTTP $code"
+            test "$code" = 401 -o "$code" = 403
           done
-          echo 'READ_ONLY_CLIENT3_POSTRELEASE_DIAGNOSTICS_COMPLETE'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_variant_attributes_v5') AS v5,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_variant_attributes_v6') AS v6,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_watch_v6_product_identity') AS v6_index" |
+            jq -e '.[0].results[0]|select(.v5==1 and .v6==1 and .v6_index==1)'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          echo 'CLIENT3_ORIGINAL_V6_RELEASE_READONLY_ACCEPTANCE_PASS'
