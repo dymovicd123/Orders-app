@@ -10,6 +10,8 @@ import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-disp
 import {markWatchLogisticsReady} from '../../worker/domains/client3-watches.ts'
 import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {cancelClient3WatchReturn} from '../../worker/domains/client3-watch-return-history.ts'
+import {cancelClient3WatchExchange} from '../../worker/domains/client3-watch-exchange-history.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
@@ -237,6 +239,12 @@ const secondCorrection=await parse(correctClient3WatchDispatch(db,admin,1,histor
  reason:'Ошибочно отмеченная отправка архивных часов',
 }))
 assert.equal(secondCorrection.status,200);assert.equal(secondCorrection.alreadyCorrected,true)
+const cancelledReplay=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-send-retired-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(cancelledReplay.status,409,
+ 'A canceled dispatch cannot replay as a successful shipment')
 const reissued=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
  requestId:'watch-send-retired-again-20261104-0001',
  items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
@@ -313,6 +321,29 @@ const lateCorrection=await parse(correctClient3WatchDispatch(db,admin,1,historyO
  reason:'Не должно отменяться после возврата часов',
 }))
 assert.equal(lateCorrection.status,409,'Return of shipped item must block later shipment correction')
+const cancelHistoricReturn=await parse(cancelClient3WatchReturn(db,manager,1,historyOrder.orderId,
+ physicalReturn.return_id,{
+ requestId:'watch-retired-return-cancel-20261104-0001',
+ reason:'Отмена возврата часов после архивной отправки'
+}))
+assert.equal(cancelHistoricReturn.status,200,JSON.stringify(cancelHistoricReturn))
+assert.equal(sqlite.prepare('SELECT status FROM returns WHERE id=?')
+ .get(physicalReturn.return_id).status,'cancelled')
+assert.equal(sqlite.prepare('SELECT SUM(quantity) AS qty FROM inventory_stock WHERE variant_id=?')
+ .get(productVariant.canonical).qty,0)
+const correctAfterReturnCancelled=await parse(correctClient3WatchDispatch(db,admin,1,historyOrder.orderId,{
+ dispatchItemId:sqlite.prepare('SELECT id FROM order_dispatch_items WHERE order_item_id=? ORDER BY id DESC LIMIT 1')
+   .get(orderLine.id).id,
+ requestId:'watch-retired-correct-after-return-cancel-20261104-0001',
+ reason:'Исправление разрешено только после отмены зависимого возврата'
+}))
+assert.equal(correctAfterReturnCancelled.status,200,JSON.stringify(correctAfterReturnCancelled))
+assert.equal(correctAfterReturnCancelled.physicalRestoredQuantity,0)
+const sendAfterReturnCancelled=await parse(dispatchClient3WatchOrder(db,admin,1,historyOrder.orderId,{
+ requestId:'watch-retired-after-return-cancel-20261104-0001',
+ items:[{orderItemId:orderLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(sendAfterReturnCancelled.status,200,JSON.stringify(sendAfterReturnCancelled))
 
 // Exchange can replace one already delivered archived watch, but the old
 // retired SKU cannot be restocked as a side effect of that exchange.
@@ -355,6 +386,22 @@ const replacementLine=sqlite.prepare(`SELECT oi.id,oi.stock_writeoff_status,wi.w
 assert(replacementLine?.watch_variant_id>0)
 assert.notEqual(replacementLine.stock_writeoff_status,'fulfilled',
  'Replacement must remain unshipped until Logistics')
+const exchangeForCancel=sqlite.prepare(`SELECT id FROM exchanges WHERE order_id=?
+ AND COALESCE(status,'completed')<>'cancelled' ORDER BY id DESC LIMIT 1`)
+ .get(partialOrder.orderId)
+assert(exchangeForCancel?.id)
+const reversedArchivedExchange=await parse(cancelClient3WatchExchange(db,manager,1,
+ partialOrder.orderId,exchangeForCancel.id,{
+ requestId:'watch-retired-exchange-cancel-20261104-0001',
+ reason:'Отмена обмена архивных часов с неотправленной заменой'
+}))
+assert.equal(reversedArchivedExchange.status,200,JSON.stringify(reversedArchivedExchange))
+assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
+ .get(exchangeForCancel.id).status,'cancelled')
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(productVariant.canonical).quantity,0)
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+ .get(pieces[0].id).stock_writeoff_status,'retired_physically_issued')
 const archived=await archive()
 assert(archived.rows.some(x=>x.watchProductId===productId&&x.productActive===0))
 assert(archived.rows.some(x=>x.watchVariantId===item.id&&x.variantActive===0))
