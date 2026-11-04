@@ -119,7 +119,14 @@ export async function listClient3WatchOrders(
           LEFT JOIN watch_order_item_details wi2 ON wi2.order_item_id=oi.id
           LEFT JOIN watch_variants wv2 ON wv2.id=wi2.watch_variant_id
           LEFT JOIN watch_products wp2 ON wp2.id=wv2.watch_product_id
-          WHERE oi.order_id=o.id AND oi.quantity>0) AS itemLines,
+          WHERE oi.order_id=o.id AND (
+            oi.quantity>0
+            OR EXISTS (SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+              WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
+            OR EXISTS (SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+              WHERE ei.order_item_id=oi.id AND ei.role='old'
+                AND COALESCE(e.status,'completed')<>'cancelled')
+          )) AS itemLines,
         EXISTS (
           SELECT 1 FROM exchanges e JOIN order_items repl ON repl.id=e.new_order_item_id
           WHERE e.order_id=o.id AND COALESCE(e.status,'completed')<>'cancelled'
