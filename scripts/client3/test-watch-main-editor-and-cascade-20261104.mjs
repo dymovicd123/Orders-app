@@ -29,6 +29,10 @@ for(const label of ['Реквизиты','Записанная цена','Дан
 }
 assert(orderList.includes('Полное редактирование')&&
  orderList.includes('Исправить · доп. действия'),'Admin/manager entry points need separate labels')
+assert(orderList.includes('watch-main-edit-workspace')&&
+ orderList.includes('editingOrder?<section')&&
+ !orderList.includes('{editOrderId===order.orderId&&<WatchOrderCorrections'),
+ 'Role-specific editor must have a Main-like standalone workspace, not a nested table accordion')
 assert(admin.includes('WatchAdminDeleteChainPanel')&&
  !admin.includes('setAck('),'Admin deletion must use integrated Main saga, not old one-click form')
 assert(saga.includes('delete-chain')&&
