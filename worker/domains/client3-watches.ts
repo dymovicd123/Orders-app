@@ -190,6 +190,11 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
   if(status&& !['pending','engraving','ready','all'].includes(status))return BAD('Некорректный статус логистики')
   const limit=Number(url.searchParams.get('limit')||'80')
   const offset=Number(url.searchParams.get('offset')||'0')
+  const focusRaw=url.searchParams.get('orderId')
+  const focusOrderId=focusRaw===null?0:Number(focusRaw)
+  if(!Number.isSafeInteger(focusOrderId)||focusOrderId<0||
+     (focusRaw!==null&&focusOrderId===0))
+    return BAD('Некорректный заказ для прямого открытия логистики.')
   if(!Number.isSafeInteger(limit)||limit<1||limit>150||
      !Number.isSafeInteger(offset)||offset<0||offset>100000)
     return BAD('Некорректная страница логистики.')
@@ -199,7 +204,8 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     SELECT o.id FROM watch_order_details wd
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
     JOIN watch_logistics_jobs lj ON lj.order_id=o.id
-    WHERE (?=0 OR wd.brand_id=?)
+    WHERE (?=0 OR o.id=?)
+      AND (?=0 OR wd.brand_id=?)
       AND (? IS NULL OR ?='all' OR lj.status=?)
       AND (?=1 OR EXISTS (
         SELECT 1 FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
@@ -207,7 +213,7 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       ))
     ORDER BY wd.urgent DESC,wd.shipping_deadline_at ASC,o.id ASC
     LIMIT ? OFFSET ?
-  `).bind(brandId,brandId,status,status,status,
+  `).bind(focusOrderId,focusOrderId,brandId,brandId,status,status,status,
     staffCanSeeAllLogistics(actor)?1:0,actor.managerId||0,limit+1,offset)
     .all<{id:number}>()
   const pageIds=(orderPage.results||[]).slice(0,limit).map(x=>x.id)
