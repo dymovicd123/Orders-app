@@ -51,6 +51,7 @@ sql.exec('ALTER TABLE financial_events ADD COLUMN created_at TEXT')
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
+sql.exec(fs.readFileSync('migrations/client3-watch/0006_client3_watch_sku_generations.sql','utf8'))
 sql.exec([
 'INSERT INTO watch_manager_brands(manager_id,brand_id) VALUES(1,1),(2,2);',
 "INSERT INTO watch_order_details(order_id,brand_id,recipient_name,recipient_phone,delivery_full_address,postal_code,city,delivery_method,urgent,shipping_deadline_at) VALUES(1,1,'Private Customer 1','777','Address 1','050000','Almaty','Kazpost',0,'2026-11-05T12:00:00Z');",

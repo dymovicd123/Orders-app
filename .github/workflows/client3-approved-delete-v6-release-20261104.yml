@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/release/client3-delete-v6-20261104
-          test "$(git rev-parse HEAD^)" = 83fd5b438e0a15b0b8be846f24e34567fa21008b
+          test "$(git rev-parse HEAD^)" = 3e327a55af74932494da4b285e041a92bf898f29
           test "$(git hash-object migrations/client3-watch/0006_client3_watch_sku_generations.sql)" = eba95a2f254b46d1ac47ce37bda958de9563b10c
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
@@ -40,27 +40,8 @@ jobs:
           python3 - <<'PY'
           import subprocess
           allowed={
-            'migrations/client3-watch/0006_client3_watch_sku_generations.sql',
-            'worker/domains/catalog-retirement.ts',
-            'worker/domains/client3-watch-catalog-delete.ts',
-            'worker/domains/client3-watch-catalog-edit.ts',
-            'worker/domains/client3-watch-catalog.ts',
-            'worker/domains/client3-watch-history.ts',
-            'worker/domains/client3-watch-provision.ts',
-            'worker/domains/client3-watch-order-manual.ts',
-            'worker/domains/client3-watch-revision-session.ts',
-            'worker/domains/client3-watch-demand.ts',
-            'worker/domains/client3-watch-returns.ts',
-            'worker/domains/client3-watches.ts',
-            'worker/domains/client3-watch-orders-read.ts',
-            'src/features/client3/WatchCatalogDeleteAction.tsx',
-            'src/features/client3/WatchCatalogEditor.tsx',
-            'src/features/client3/WatchCatalogRetiredHistory.tsx',
-            'src/features/client3/WatchCatalogVariantEditAction.tsx',
-            'src/styles/client3-watch-catalog-polish.css',
-            'src/styles/client3-watch-retired-history.css',
-            'scripts/client3/test-watch-catalog-v6-release-20261104.mjs',
-            'scripts/client3/test-watch-catalog-20261102.mjs',
+            'scripts/client3/test-watch-provision-20261102.mjs',
+            'scripts/client3/test-watch-orders-read-20261102.mjs',
             '.github/workflows/client3-approved-delete-v6-release-20261104.yml',
           }
           modified=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())

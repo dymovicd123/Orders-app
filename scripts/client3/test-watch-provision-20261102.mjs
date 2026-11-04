@@ -28,6 +28,7 @@ sql.exec(`CREATE TABLE watch_variant_attributes_v5 (
   watch_variant_id INTEGER PRIMARY KEY REFERENCES watch_variants(id),
   movement TEXT,bracelet_material TEXT,dial_color TEXT,bracelet_color TEXT
 )`)
+sql.exec(fs.readFileSync('migrations/client3-watch/0006_client3_watch_sku_generations.sql','utf8'))
 sql.exec([
   "INSERT INTO watch_products(brand_id,model_name) VALUES(1,'CLASSIC'),(2,'CLASSIC');",
   "INSERT INTO watch_variants(watch_product_id,gender,movement,bracelet_material,dial_color,bracelet_color) VALUES(1,'male','quartz','leather','black','ЧЁРНЫЙ');",
