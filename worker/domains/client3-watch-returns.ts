@@ -78,6 +78,11 @@ export async function createClient3WatchReturn(
    [...byId.values()].some(row=>Number(row.sku_brand)!==brandId||Number(row.is_workshop)!==0))
    return fail('WATCH_RETURN_UNVERIFIED_SKU',
      'Не все активные позиции принадлежат часам выбранного бренда. Возврат остановлен.',409)
+ // Replayed requests already consumed their own returnable quantity.
+ // Main verifies the request fingerprint and returns the cached result.
+ const replay=await db.prepare(`SELECT 1 AS ok FROM critical_operations
+   WHERE request_id=? AND operation_type='return_create' LIMIT 1`)
+   .bind(input.requestId).first<{ok:number}>()
  const rawItems=Array.isArray(input.items)?input.items:null
  const selected:Array<{orderItemId:number;quantity:number;amount:number;restock:boolean;
    physicalState:'pending'|'warehouse'|'boutique'|'no_stock'}>=[]
@@ -97,11 +102,15 @@ export async function createClient3WatchReturn(
          'Выберите, где физически находятся возвращаемые часы.',400)
      const row=byId.get(id)
      if(!Number.isSafeInteger(id)||!row||seen.has(id)||
-       !Number.isSafeInteger(qty)||qty<1||qty>Number(row.quantity))
+       !Number.isSafeInteger(qty)||qty<1||
+       qty>(replay?Number(row.quantity):Number(row.returnable_quantity)))
        return fail('WATCH_RETURN_SELECTION_INVALID',
-         'Выбранной позиции нет в заказе либо количество превышает доступное.',409)
+         'Возврат товара возможен только после фактической выдачи. Проверьте ранее оформленные возвраты и количество.',409)
+     const credit=qty*Number(row.unit_price)
+     if(!Number.isSafeInteger(credit)||credit<0||credit>1_000_000_000_000)
+       return fail('WATCH_RETURN_COMMERCIAL_VALUE','Недопустимая стоимость возвращаемых часов.',409)
      seen.add(id)
-     selected.push({orderItemId:id,quantity:qty,amount:0,
+     selected.push({orderItemId:id,quantity:qty,amount:credit,
        restock:physicalState==='warehouse'||physicalState==='boutique',
        physicalState:physicalState as 'pending'|'warehouse'|'boutique'|'no_stock'})
    }
