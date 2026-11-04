@@ -148,7 +148,10 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
      onClose={()=>setMode('metadata')} onDone={onDone}/>:
     mode==='admin'&&isAdmin?<WatchAdminOrderActions brand={brand}
      orderId={order.orderId} externalId={order.externalId}
-     managerId={order.managerId} paymentLines={order.paymentLines} onDone={onDone}/>:
+     managerId={order.managerId} paymentLines={order.paymentLines}
+     orderDate={order.orderDate}
+     linkedOperations={Number(order.committedReturnCount||0)>0||Number(order.committedExchangeCount||0)>0}
+     onDone={onDone}/>:
     mode==='composition'&&isAdmin
      ?<WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
        itemLines={order.itemLines} receivedAmount={order.receivedAmount}
