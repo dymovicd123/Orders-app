@@ -281,7 +281,7 @@ export function WatchReturnForm({brand,order,onDone,onCancel}:{
              setRefunds(p=>p.filter((_,i)=>i!==index));setConfirmed(false)
            }}>Убрать</button>}
        </div>)}
-       {refunds.length<3&&<button className="secondary" type="button"
+       {refunds.length<2&&<button className="secondary" type="button"
          onClick={()=>{setRefunds(p=>[...p,{method:methods[0]||'',amount:''}]);setConfirmed(false)}}>
          + Ещё один способ оплаты
        </button>}
