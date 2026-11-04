@@ -1723,8 +1723,15 @@ const replacementState=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.source_type,
  WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(twoOld.orderId)
 assert.equal(firstReplacementSent.status,200,JSON.stringify({result:firstReplacementSent,replacementState}))
 assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
- .get(twoOld.orderId).shipping_status,'not_sent',
- 'An exchange with one remaining replacement stays partially shipped')
+ .get(twoOld.orderId).shipping_status,'sent',
+ 'Historical order-wide sent marker must not override exact replacement shipment state')
+const dispatchedNewCount=sqlite.prepare(`SELECT COUNT(DISTINCT di.order_item_id) AS n
+ FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+ WHERE d.order_id=? AND di.order_item_id IN (?,?)
+ AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+ .get(twoOld.orderId,activeSwap[0].id,activeSwap[1].id)
+assert.equal(dispatchedNewCount.n,1,
+ 'One replacement has left the warehouse, the other remains a separate active obligation')
 const pendingOldExchange=sqlite.prepare(`SELECT COUNT(*) AS n FROM exchange_items
  WHERE exchange_id=? AND role='old' AND physical_tracking=1 AND physical_received_at IS NULL`)
  .get(twoSwap.exchangeId)
