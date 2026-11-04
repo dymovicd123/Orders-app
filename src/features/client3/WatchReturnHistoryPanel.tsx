@@ -8,7 +8,7 @@ type Item={
  physicalTracking:number;physicalReceivedAt:string|null
 }
 type Entry={
- id:number;date:string;amount:number;method:string;status:string;comment:string;
+ id:number;date:string;amount:number;commercialGoodsValue:number;method:string;status:string;comment:string;
  parentExchangeId:number|null;items:string
 }
 type HistoryResponse={ok:boolean;rows:Entry[];message?:string}
@@ -77,7 +77,11 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
        const cancelled=row.status==='cancelled'
        return <article className="watch-return-history-entry" key={row.id}>
          <header><div><strong>Возврат №{row.id}</strong><small>{row.date}</small></div>
-           <strong>{money(row.amount)} · {row.method||'Без денежного возврата'}</strong></header>
+           <strong>Деньги: {money(row.amount)} · {row.method||'Без денежного возврата'}</strong></header>
+         {row.commercialGoodsValue>0&&<small>
+           {cancelled?'Отменённый коммерческий зачёт товара: ':'Уменьшение стоимости продажи: '}
+           {money(row.commercialGoodsValue)}
+         </small>}
          <div className="watch-return-history-status">{cancelled?'Отменён':linked?
            'Связан с обменом №'+row.parentExchangeId:'Действующий возврат'}</div>
          {row.comment&&<p>{row.comment}</p>}
