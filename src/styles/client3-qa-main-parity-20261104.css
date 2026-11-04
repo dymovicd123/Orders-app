@@ -1,0 +1,90 @@
+/* Client3 QA — compact operational grid. Real Main action semantics; watch-specific
+   quantity and product details. Overrides legacy 1570/1260px minimum widths. */
+.watch-orders,.watch-orders *{box-sizing:border-box}
+.watch-orders .watch-main-orders-scroll{max-width:100%;min-width:0;overflow-x:visible}
+.watch-orders .watch-main-orders-scroll .linked-table-scroll-viewport{max-width:100%;min-width:0}
+.watch-orders .watch-main-orders-table{
+  width:100%!important;min-width:0!important;max-width:100%!important;
+  table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:12px
+}
+.watch-orders .watch-main-orders-table th,
+.watch-orders .watch-main-orders-table td{
+  min-width:0!important;max-width:none;overflow-wrap:anywhere;word-break:normal;
+  padding:10px 9px;vertical-align:top;line-height:1.4
+}
+.watch-orders .watch-main-orders-table th:nth-child(1){width:16%}
+.watch-orders .watch-main-orders-table th:nth-child(2){width:14%}
+.watch-orders .watch-main-orders-table th:nth-child(3){width:23%}
+.watch-orders .watch-main-orders-table th:nth-child(4){width:15%}
+.watch-orders .watch-main-orders-table th:nth-child(5){width:16%}
+.watch-orders .watch-main-orders-table th:nth-child(6){width:16%}
+.watch-orders .watch-main-order-sku{min-width:0!important;max-width:none!important}
+.watch-orders .order-item-card{
+  width:100%;min-width:0!important;max-width:100%;padding:8px;border-radius:9px;
+  box-shadow:none;gap:5px
+}
+.watch-orders .order-item-card strong{font-size:12px}
+.watch-orders .order-item-card .order-item-card-details{font-size:11px!important}
+.watch-orders .order-item-quantity-badge{flex:none}
+.watch-orders .watch-main-finance-col{min-width:0;white-space:normal}
+.watch-orders .watch-main-finance-head{display:grid;gap:4px}
+.watch-orders .watch-main-finance-head strong{font-size:14px;font-variant-numeric:tabular-nums}
+.watch-orders .watch-main-finance-col>small{display:block;margin:2px 0;color:#64748b}
+.watch-orders .watch-main-finance-balance{font-size:11px;font-weight:750;color:#15803d}
+.watch-orders .watch-main-finance-balance.is-debt{color:#b45309}
+.watch-orders .watch-main-finance-methods{display:grid;gap:3px;margin-top:7px}
+.watch-orders .watch-main-method-chip{font-size:10.5px;color:#475569;line-height:1.4}
+.watch-orders .watch-main-row-actions{
+  display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));
+  width:100%;min-width:0!important;max-width:none!important;gap:6px;align-items:stretch
+}
+.watch-orders .watch-main-row-actions>button{
+  display:inline-flex;justify-content:center;align-items:center;
+  font-size:11px!important;min-width:0!important;max-width:none!important;
+  width:100%;min-height:34px!important;padding:6px 4px!important;
+  line-height:1.25!important;white-space:normal!important;overflow-wrap:anywhere
+}
+.watch-orders .watch-main-row-actions>.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+.watch-orders .watch-main-row-actions>.primary:hover{background:#1d4ed8}
+.watch-orders .watch-main-order-expanded>td{width:100%;padding:0!important}
+.watch-orders .watch-main-order-detail{
+  max-height:none!important;overflow:visible!important;padding:15px;
+  background:#f8fbff
+}
+.watch-orders .watch-order-action-head{
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;
+  gap:10px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #dce5f1
+}
+.watch-orders .watch-order-action-head strong{font-size:14px}
+.watch-orders .watch-main-order-row.row-returned td{background:#fff!important}
+.watch-orders .watch-main-order-row:hover td{background:#f8fbff!important}
+.watch-orders .watch-orders-note{font-size:12px}
+.watch-orders .watch-main-order-delivery{min-width:0!important;max-width:none!important}
+.watch-orders .watch-main-order-delivery .status-pill{
+  white-space:normal;width:fit-content;max-width:100%;line-height:1.35;margin:7px 0
+}
+/* On narrow screens each watch order becomes a compact self-contained card.
+   All action buttons remain visible; no horizontal scrolling for operations. */
+@media(max-width:1070px){
+  .watch-orders .watch-main-orders-table,
+  .watch-orders .watch-main-orders-table tbody{display:block}
+  .watch-orders .watch-main-orders-table thead{display:none}
+  .watch-orders .watch-main-orders-table tr.watch-main-order-row{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;
+    border:1px solid #dbe4ef;border-radius:11px;margin-bottom:12px;
+    overflow:hidden;background:#fff
+  }
+  .watch-orders .watch-main-orders-table tr.watch-main-order-row>td{
+    display:block;border:0!important;min-width:0;padding:10px 12px
+  }
+  .watch-orders .watch-main-orders-table td.watch-main-order-sku,
+  .watch-orders .watch-main-orders-table td.watch-main-actions-col{grid-column:1/-1}
+  .watch-orders .watch-main-row-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .watch-orders .watch-main-orders-table tr.watch-main-order-expanded{display:block;margin:-12px 0 12px}
+  .watch-orders .watch-main-orders-table tr.watch-main-order-expanded>td{display:block}
+}
+@media(max-width:530px){
+  .watch-orders .watch-main-orders-table tr.watch-main-order-row{grid-template-columns:1fr}
+  .watch-orders .watch-main-row-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .watch-orders .watch-main-orders-table tr.watch-main-order-row>td{grid-column:1}
+}
