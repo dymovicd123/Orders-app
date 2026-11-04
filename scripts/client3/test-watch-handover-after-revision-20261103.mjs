@@ -169,6 +169,39 @@ const repeated=await parse(clarifyClient3WatchHandover(db,admin,1,secondOrder.or
  checkpointId:secondItem.checkpointId,checkpointAt:secondItem.checkpointAt,
 }))
 assert.equal(repeated.status,409,'Duplicate handover cannot spend physical stock twice')
+// Reproduce real QA: Nov 1 order entered after the Nov 3 stocktake,
+// with shortage/unresolved reservation. The ordinary physical checkbox
+// previously let these watches leave without a handover review.
+const shortageOrder=await parse(createClient3WatchOrder(db,admin,1,{
+ ...original,quantity:8,orderDate:'2026-11-01',
+ requestId:'watch-postdated-no-reserve-20261104',
+ recipientName:'Shortage Watch Client',recipientPhone:'+77015550103',
+}))
+assert.equal(shortageOrder.status,201,JSON.stringify(shortageOrder))
+const shortageRow=sqlite.prepare(`SELECT oi.id AS itemId,ir.status AS reservation
+ FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ WHERE oi.order_id=? LIMIT 1`).get(shortageOrder.orderId)
+assert.equal(shortageRow?.reservation,'unresolved','Test needs actual reservation shortage')
+const shortageHandover=await parse(readClient3WatchHandover(db,admin,1,shortageOrder.orderId))
+assert.equal(shortageHandover.status,200,JSON.stringify(shortageHandover))
+assert.equal(shortageHandover.reviewCount,1,
+ 'Nov 1 backdated order with unresolved reservation needs Nov 3 stocktake review')
+const blockedUnresolved=await parse(dispatchClient3WatchOrder(db,admin,1,shortageOrder.orderId,{
+ requestId:'watch-postdated-no-reserve-send-20261104',
+ confirmPhysicalStock:true,items:[{orderItemId:shortageRow.itemId,quantity:8}],
+}))
+assert.equal(blockedUnresolved.status,409,JSON.stringify(blockedUnresolved))
+assert.equal(blockedUnresolved.code,'WATCH_HANDOVER_REQUIRED',
+ 'No physical stock checkbox can bypass a post-stocktake unresolved reservation')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=?')
+ .get(shortageOrder.orderId).n,0)
+const unresolvedReview=shortageHandover.state.items.find(x=>x.orderItemId===shortageRow.itemId)
+const deniedClarification=await parse(clarifyClient3WatchHandover(db,admin,1,shortageOrder.orderId,{
+ action:'still_here',orderItemId:shortageRow.itemId,
+ checkpointId:unresolvedReview.checkpointId,checkpointAt:unresolvedReview.checkpointAt,
+}))
+assert.equal(deniedClarification.status,409,'Cannot fabricate reservation at stocktake review')
+assert.equal(deniedClarification.code,'WATCH_HANDOVER_RESERVATION_REQUIRED')
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
-console.log('CLIENT3_OCT_1_2_MAIN_HANDOVER_PARITY_PASS')
+console.log('CLIENT3_OCT_1_2_MAIN_HANDOVER_AND_UNRESOLVED_STOCK_GATES_PASS')
