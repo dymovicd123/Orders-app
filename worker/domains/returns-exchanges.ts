@@ -264,6 +264,96 @@ export async function correctMistakenOrderHandoverWithCurrentExchange(
 }
 
 
+type MoneyPartInput = { method?: string; amount?: number };
+type MoneyPart = { method: string; amount: number };
+
+// A settlement is one business operation but may have two actual payment channels.
+// Never create a combined-method cash event: cash reports must see each channel separately.
+export function normalizeMoneyParts(input: unknown, expected: number, legacyMethod: unknown): MoneyPart[] {
+  if (!Number.isSafeInteger(expected) || expected < 0) throw new Error('Некорректная сумма денежной операции.');
+  const raw = Array.isArray(input) ? input : null;
+  if (!expected) {
+    if (raw?.length) throw new Error('Для нулевой суммы способы оплаты не нужны.');
+    return [];
+  }
+  if (!raw) {
+    const method = upperText(legacyMethod);
+    if (!method) throw new Error('Выберите способ оплаты или возврата денег.');
+    return [{ method, amount: expected }];
+  }
+  if (raw.length < 1 || raw.length > 2) throw new Error('Можно указать один или два способа оплаты.');
+  const parts: MoneyPart[] = [];
+  const methods = new Set<string>();
+  for (const part of raw as MoneyPartInput[]) {
+    const method = upperText(part?.method);
+    const amount = Number(part?.amount);
+    if (!method || !Number.isSafeInteger(amount) || amount <= 0) throw new Error('Укажите способ и положительную целую сумму для каждого платежа.');
+    if (methods.has(method)) throw new Error('Один и тот же способ оплаты указан дважды.');
+    methods.add(method);
+    parts.push({ method, amount });
+  }
+  if (parts.reduce((sum, part) => sum + part.amount, 0) !== expected) {
+    throw new Error('Суммы по способам оплаты не совпадают с итогом операции.');
+  }
+  return parts;
+}
+function moneyMethodsSummary(parts: MoneyPart[]): string {
+  return parts.map(part => part.method).join(' + ');
+}
+
+// Reversing a split refund must mirror its original channels, not post a single
+// fictitious combined-method cash movement. Legacy single-method refunds use
+// the existing reversal path unchanged.
+async function splitRefundReversalStatements(
+  db: D1Database,
+  input: {
+    orderId: number; externalOrderId: string; amount: number; methodSummary: string;
+    timestamp: string; comment: string; reason: 'return_cancel' | 'exchange_cancel';
+    returnId?: number; exchangeId?: number;
+  },
+): Promise<D1PreparedStatement[] | null> {
+  const isExchange = Boolean(input.exchangeId);
+  const result = isExchange
+    ? await db.prepare(
+      "SELECT amount_delta, payment_method FROM financial_events WHERE source_type='exchange' AND source_id=? AND event_type='exchange_refund' AND event_key LIKE '1901:%:exchange-set-refund%' ORDER BY event_key"
+    ).bind(input.exchangeId).all<{amount_delta:number;payment_method:string}>()
+    : await db.prepare(
+      "SELECT amount_delta, payment_method FROM financial_events WHERE event_type='order_refund' AND source_ref = (SELECT 'critical-operation:' || request_id FROM critical_operations WHERE operation_type='return_create' AND target_id=? ORDER BY created_at DESC LIMIT 1) ORDER BY event_key"
+    ).bind(input.returnId).all<{amount_delta:number;payment_method:string}>();
+  const rows = result.results || [];
+  if (rows.length < 2) {
+    if (input.methodSummary.includes(' + ')) throw new CriticalOperationConflictError('Не найдены все исходные части возврата денег. Отмена остановлена без финансовых изменений.');
+    return null;
+  }
+  const total = rows.reduce((sum, row) => sum - Number(row.amount_delta), 0);
+  if (total !== input.amount || rows.some(row => Number(row.amount_delta) >= 0 || !cleanText(row.payment_method))) {
+    throw new CriticalOperationConflictError('Части возврата не совпадают с сохранённой суммой. Отмена остановлена.');
+  }
+  return rows.map((row, index) => financialEventStatement(db, {
+    eventKey: '189c:' + (isExchange ? 'exchange-set:' + input.exchangeId : 'return:' + input.returnId) + ':split-refund-cancel:' + (index + 1),
+    orderId: input.orderId,
+    externalOrderId: input.externalOrderId,
+    eventDate: input.timestamp.slice(0, 10),
+    eventAt: input.timestamp,
+    eventType: 'refund_reversal',
+    relatedType: isExchange ? 'exchange_refund' : 'order_refund',
+    amountDelta: -Number(row.amount_delta),
+    paymentMethod: cleanText(row.payment_method),
+    sourceType: isExchange ? 'exchange' : 'return',
+    sourceId: isExchange ? input.exchangeId : input.returnId,
+    sourceRef: isExchange ? 'exchanges:' + input.exchangeId : 'returns:' + input.returnId,
+    reason: input.reason,
+    comment: input.comment,
+  }));
+}
+
+async function exchangeSetPaymentIds(db: D1Database, exchangeId: number): Promise<number[]> {
+  const result = await db.prepare(
+    "SELECT ce.entity_id AS id FROM critical_operation_entities ce JOIN critical_operations co ON co.request_id=ce.request_id WHERE co.operation_type='exchange_set_create' AND co.target_id=? AND ce.entity_type='payment' AND ce.entity_key LIKE 'exchange:set:payment%' ORDER BY ce.entity_key"
+  ).bind(exchangeId).all<{id:number}>();
+  return (result.results || []).map(row => toInt(row.id, 0)).filter(id => id > 0);
+}
+
 export async function createReturn(
   db: D1Database,
   input: {
@@ -272,7 +362,7 @@ export async function createReturn(
     returnDate?: string;
     amount?: number;
     paymentMethod?: string;
-    refundParts?: Array<{method:string;amount:number}>;
+    paymentParts?: MoneyPartInput[];
     comment?: string;
     restockSource?: unknown;
     items?: Array<{ orderItemId?: number; quantity?: number; amount?: number; restock?: boolean; physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock' }>;
@@ -309,16 +399,8 @@ export async function createReturn(
   if (!rawReturnDate) throw new Error('Укажите дату возврата.');
   const returnDate = normalizeDate(rawReturnDate);
   const amount = Math.max(0, toInt(input.amount, 0));
-  const refundParts=(input.refundParts||[]).map(p=>({
-    method:upperText(p.method),amount:Number(p.amount),
-  }));
-  if(refundParts.length>3||refundParts.some(p=>!p.method||
-      !Number.isSafeInteger(p.amount)||p.amount<1)||
-      (refundParts.length>0&&refundParts.reduce((sum,p)=>sum+p.amount,0)!==amount)){
-    throw new CriticalOperationConflictError('Суммы по способам возврата должны точно совпасть с общей суммой.')
-  }
-  const paymentMethod = refundParts.length>1?'РАЗНЫЕ СПОСОБЫ'
-    :refundParts.length===1?refundParts[0].method:upperText(input.paymentMethod);
+  const paymentParts = normalizeMoneyParts(input.paymentParts, amount, input.paymentMethod);
+  const paymentMethod = moneyMethodsSummary(paymentParts);
   const comment = cleanText(input.comment);
   // On a retry the return created by this same operation is already included in
   // order.return_amount. Add only that operation-owned amount back so the request
@@ -541,21 +623,20 @@ export async function createReturn(
     for (const [index, validated] of validatedSelectedItems.entries()) {
       createStatements.push(returnItemClaim(validated, null), returnItemClaimMapping(index));
     }
-    if(amount>0){
-      const parts=refundParts.length?refundParts:[{method:paymentMethod,amount}]
-      for(const [index,part] of parts.entries()){
+    if (amount > 0) {
+      for (const [index, part] of paymentParts.entries()) {
         createStatements.push(refundMoneyEventStatement(db, {
-          eventKey: refundParts.length?returnEventKey+':part:'+index:returnEventKey,
+          eventKey: paymentParts.length === 1 ? returnEventKey : returnEventKey + ':part:' + (index + 1),
           orderId,
           externalOrderId: cleanText((existing as any).external_id),
           returnDate,
-          amount:part.amount,
-          paymentMethod:part.method,
-          timestamp:createdAt,
-          eventType:'order_refund',
-          sourceRef:`critical-operation:${criticalOperation.requestId}`,
-          comment:comment||null,
-        }))
+          amount: part.amount,
+          paymentMethod: part.method,
+          timestamp: createdAt,
+          eventType: 'order_refund',
+          sourceRef: `critical-operation:${criticalOperation.requestId}`,
+          comment: comment || null,
+        }));
       }
     }
     // The refund limit must be enforced atomically with Return creation.
@@ -2692,45 +2773,26 @@ export async function cancelReturn(db: D1Database, returnId: number, input: { re
     ).bind(timestamp, comment, returnId),
   ];
   if (toInt(ret.amount, 0) > 0) {
-    // Splits are stored as distinct immutable financial events. Undo each
-    // original method/amount instead of manufacturing a wrong mixed cash entry.
-    const parts=await db.prepare(`SELECT fe.event_key,fe.payment_method,fe.amount_delta
-      FROM financial_events fe
-      JOIN critical_operations co ON co.target_id=? AND co.operation_type='return_create'
-        AND fe.source_ref='critical-operation:'||co.request_id
-      WHERE fe.order_id=? AND fe.event_type='order_refund'
-        AND fe.event_key LIKE '1901:%:return-refund:part:%'
-      ORDER BY fe.event_key`).bind(returnId,toInt(ret.order_id,0))
-      .all<{event_key:string;payment_method:string;amount_delta:number}>()
-    const splitParts=parts.results||[]
-    if(splitParts.length>0){
-      const sum=splitParts.reduce((total,row)=>total-Math.min(0,Number(row.amount_delta)),0)
-      if(sum!==toInt(ret.amount,0))
-        throw new CriticalOperationConflictError('Финансовые части возврата не сходятся. Отмена остановлена.')
-      for(const [index,part] of splitParts.entries()){
-        cancelStatements.push(refundReversalMoneyEventStatement(db,{
-          eventKey:`189c:return:${returnId}:cancelled:part:${index}`,
-          orderId:toInt(ret.order_id,0),externalOrderId:cleanText(ret.external_id),
-          amount:-Number(part.amount_delta),paymentMethod:part.payment_method,
-          timestamp,relatedType:'order_refund',sourceId:returnId,
-          sourceRef:`returns:${returnId}`,reason:'return_cancel',comment,
-        }))
-      }
-    }else{
-      cancelStatements.push(refundReversalMoneyEventStatement(db, {
-        eventKey: `189c:return:${returnId}:cancelled`,
-        orderId: toInt(ret.order_id, 0),
-        externalOrderId: cleanText(ret.external_id),
-        amount: toInt(ret.amount, 0),
-        paymentMethod: cleanText(ret.payment_method) || null,
-        timestamp,
-        relatedType: 'order_refund',
-        sourceId: returnId,
-        sourceRef: `returns:${returnId}`,
-        reason: 'return_cancel',
-        comment,
-      }));
-    }
+    const splitReversals = await splitRefundReversalStatements(db, {
+      orderId: toInt(ret.order_id, 0),
+      externalOrderId: cleanText(ret.external_id),
+      amount: toInt(ret.amount, 0),
+      methodSummary: cleanText(ret.payment_method),
+      timestamp, comment, reason: 'return_cancel', returnId,
+    });
+    cancelStatements.push(...(splitReversals || [refundReversalMoneyEventStatement(db, {
+      eventKey: `189c:return:${returnId}:cancelled`,
+      orderId: toInt(ret.order_id, 0),
+      externalOrderId: cleanText(ret.external_id),
+      amount: toInt(ret.amount, 0),
+      paymentMethod: cleanText(ret.payment_method) || null,
+      timestamp,
+      relatedType: 'order_refund',
+      sourceId: returnId,
+      sourceRef: `returns:${returnId}`,
+      reason: 'return_cancel',
+      comment,
+    })]));
   }
   await db.batch(cancelStatements);
 
