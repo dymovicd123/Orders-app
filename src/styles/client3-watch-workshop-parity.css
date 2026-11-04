@@ -17,13 +17,15 @@
   max-width:none!important;vertical-align:top;overflow-wrap:anywhere}
 .watch-logistics .watch-task-table .workshop-product-card{min-width:0;max-width:100%;width:100%}
 .watch-logistics .watch-task-product{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:10px}
-.watch-logistics .watch-task-engraving{display:grid;gap:3px;padding-top:7px;margin-top:6px;
+.watch-logistics .watch-task-engraving{display:grid;gap:6px;padding-top:10px;margin-top:10px;
   border-top:1px solid #e2e8f0}
-.watch-logistics .watch-task-engraving small{font-size:10px;color:#64748b}
-.watch-logistics .watch-task-engraving strong{font-size:12px;color:#0f172a}
-.watch-logistics .watch-task-client{display:grid;gap:4px;line-height:1.4}
-.watch-logistics .watch-task-client strong{font-size:13px}
-.watch-logistics .watch-task-client span{font-size:11px;color:#334155}
+.watch-logistics .watch-task-engraving small{font-size:12px;color:#475569;font-weight:650}
+.watch-logistics .watch-task-engraving strong{font-size:16px;line-height:1.5;color:#0f172a;white-space:pre-wrap;overflow-wrap:anywhere}
+.watch-logistics .watch-task-client{display:grid;gap:7px;line-height:1.5}
+.watch-logistics .watch-task-client strong{font-size:16px;line-height:1.4;color:#0f172a}
+.watch-logistics .watch-task-client span{font-size:14px;line-height:1.5;color:#1e293b;overflow-wrap:anywhere}
+.watch-logistics .watch-task-client small{font-size:13px;line-height:1.5;color:#475569}
+.watch-logistics .watch-task-client span:first-of-type{font-weight:650}
 .watch-logistics .watch-task-priority{display:grid;gap:7px;justify-items:start}
 .watch-logistics .watch-task-deadline{font-size:11px;font-weight:650}
 .watch-logistics .watch-task-deadline.is-overdue{color:#b91c1c}
