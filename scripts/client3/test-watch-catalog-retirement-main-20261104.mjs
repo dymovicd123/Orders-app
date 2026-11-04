@@ -30,6 +30,8 @@ const sqlite=new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
 for(const name of fs.readdirSync('migrations').filter(x=>/^\d+.*\.sql$/.test(x)).sort())
  sqlite.exec(fs.readFileSync('migrations/'+name,'utf8'))
+if(!sqlite.prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'").get())
+ sqlite.exec('ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT')
 for(const name of fs.readdirSync('migrations/client3-watch').filter(x=>/^\d+.*\.sql$/.test(x)).sort())
  sqlite.exec(fs.readFileSync('migrations/client3-watch/'+name,'utf8'))
 const stmt=(sql,args=[])=>({
