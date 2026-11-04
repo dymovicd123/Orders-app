@@ -422,12 +422,38 @@ const preRetireCorrection=await parse(correctClient3WatchDispatch(db,admin,1,ear
  requestId:'watch-normal-correct-after-retire-20261104-0001',
  reason:'Обычная отмена не должна восстановить архивный остаток'
 }))
-assert.equal(preRetireCorrection.status,409)
-assert.equal(preRetireCorrection.code,'WATCH_PRE_RETIRE_DISPATCH_CORRECTION_REVIEW')
+assert.equal(preRetireCorrection.status,200,JSON.stringify(preRetireCorrection))
+assert.equal(preRetireCorrection.physicalRestoredQuantity,0)
+assert.equal(preRetireCorrection.historicalMovementPreserved,true)
 assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
  .get(normalVariant.canonical).quantity,0)
 assert.equal(sqlite.prepare('SELECT cancelled_quantity FROM order_dispatch_items WHERE id=?')
- .get(historicShipment.id).cancelled_quantity,0)
+ .get(historicShipment.id).cancelled_quantity,1)
+assert.equal(sqlite.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=?')
+ .get(earlyLine.id).stock_writeoff_status,'catalog_retired')
+assert.equal(sqlite.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?')
+ .get(earlyLine.id).status,'released')
+assert.equal(sqlite.prepare('SELECT unresolved_reason FROM inventory_reservations WHERE order_item_id=?')
+ .get(earlyLine.id).unresolved_reason,'catalog_retired')
+const preRetireReplay=await parse(correctClient3WatchDispatch(db,admin,1,earlyOrder.orderId,{
+ dispatchItemId:historicShipment.id,
+ requestId:'watch-normal-correct-after-retire-20261104-0001',
+ reason:'Обычная отмена не должна восстановить архивный остаток'
+}))
+assert.equal(preRetireReplay.status,200)
+assert.equal(preRetireReplay.alreadyCorrected,true)
+const preRetireSentAgain=await parse(dispatchClient3WatchOrder(db,admin,1,earlyOrder.orderId,{
+ requestId:'watch-reissue-after-retire-20261104-0001',
+ items:[{orderItemId:earlyLine.id,quantity:1}],confirmPhysicalStock:true,
+}))
+assert.equal(preRetireSentAgain.status,200,JSON.stringify(preRetireSentAgain))
+assert.equal(preRetireSentAgain.retiredWithoutStockChange,true)
+assert.equal(sqlite.prepare('SELECT quantity FROM inventory_stock WHERE variant_id=?')
+ .get(normalVariant.canonical).quantity,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_dispatch_items WHERE order_item_id=?')
+ .get(earlyLine.id).n,2)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=? AND movement_type=\'sale\'')
+ .get(normalVariant.canonical).n,1)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_MAIN_CATALOG_RETIREMENT_PASS: full+partial archived dispatch, idempotent correction, no second stock mutation, old sales history and brand isolation')
