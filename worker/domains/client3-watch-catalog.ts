@@ -207,10 +207,19 @@ export async function registerWatchVariant(
       )`
     ).bind(productId,v.gender,...anchor,productId,v.gender,
       v.movement,v.braceletMaterial,v.dialColor,v.braceletColor)
-    // Preserve the established v5 format for a first custom generation.
-    // Once that identity is retired, use v6 for each subsequent generation;
-    // v5's global UNIQUE must not occupy another historical identity.
-    const detailTable=previousRetired
+    // Editing an active custom SKU now writes its new truth to v6 but leaves
+    // its original v5 attributes intact for history. A SECOND active SKU with
+    // that original combination must use v6: v5's UNIQUE is still occupied.
+    const occupiedV5=!legacy&&!previousRetired
+      ?await db.prepare(`SELECT watch_variant_id FROM watch_variant_attributes_v5
+        WHERE watch_product_id=? AND gender=? AND movement=?
+          AND bracelet_material=? AND dial_color=? AND bracelet_color=?
+        LIMIT 1`).bind(productId,v.gender,v.movement,v.braceletMaterial,
+          v.dialColor,v.braceletColor).first<{watch_variant_id:number}>()
+      :null
+    // Keep original v5 storage for a first custom generation. A retired
+    // generation OR an edited legacy v5 slot uses the unbounded v6 ledger.
+    const detailTable=(previousRetired||occupiedV5)
       ?'watch_variant_attributes_v6':'watch_variant_attributes_v5'
     const outcome=legacy?[await insert.run()]:await db.batch([
       insert,
