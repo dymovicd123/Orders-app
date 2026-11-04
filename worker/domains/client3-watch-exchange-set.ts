@@ -83,8 +83,8 @@ export async function exchangeClient3WatchSet(
      return fail('WATCH_EXCHANGE_NEW_INVALID','Заполните новые часы, источник, количество и цену.',400)
  }
  const paymentParts=raw.paymentParts||[],refundParts=raw.refundParts||[]
- if(!Array.isArray(paymentParts)||paymentParts.length>3||
-   !Array.isArray(refundParts)||refundParts.length>3||
+ if(!Array.isArray(paymentParts)||paymentParts.length>2||
+   !Array.isArray(refundParts)||refundParts.length>2||
    [...paymentParts,...refundParts].some(x=>!x||!Number.isSafeInteger(x.amount)||
      x.amount<1||typeof x.method!=='string'||!x.method.trim()))
    return fail('WATCH_EXCHANGE_MONEY_INVALID','Некорректные способы или суммы оплаты.',400)
