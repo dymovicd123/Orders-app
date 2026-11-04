@@ -19,13 +19,14 @@ type WatchOrder={
   canonicalDeliveryType:string;orderComment:string;orderStatus:string;
   deliveryAddress:string;postalCode:string;unresolvedReservations:number
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
-  totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
+  totalAmount:number;netSaleAmount:number;commercialReturnedValue:number;netPaidAmount:number;overpaymentAmount:number;
+  receivedAmount:number;debtAmount:number;returnAmount:number;legacyDebtAmount:number
   lineCount:number;shippedLineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
   activeWatchVariantId:number|null;pendingReplacement:number
   paymentLines:string;itemLines:string
 }
-type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
+type Totals={orderCount:number;totalAmount:number;grossTotalAmount:number;commercialReturnedValue:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
 const sum=(value:number)=>Number(value||0).toLocaleString('ru-RU')+' ₸'
 const physicallyIssued=(order:WatchOrder)=>{
@@ -184,7 +185,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     + ещё {parsedRows<PaymentLine>(order.paymentLines).length-2}</small>}
                   {parsedRows<PaymentLine>(order.paymentLines).length===0&&<small>Не оплачено</small>}
                 </td>
-                <td className="watch-main-money">{sum(order.totalAmount)}</td>
+                <td className="watch-main-money">{sum(order.netSaleAmount)}
+                  {order.commercialReturnedValue>0&&<small>Исходно: {sum(order.totalAmount)} · возвращён товар: {sum(order.commercialReturnedValue)}</small>}</td>
                 <td className="watch-main-money">{sum(order.receivedAmount)}</td>
                 <td className={'watch-main-money '+(order.debtAmount>0?'is-debt':'is-paid')}>
                   {order.debtAmount>0?sum(order.debtAmount):'Оплачено'}</td>
@@ -205,7 +207,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       {order.deliveryAddress&&<span>{order.deliveryAddress}</span>}</div>
                     <div><small>Менеджер</small><strong>{order.managerName||'Не указан'}</strong>
                       <span>{order.lineCount} позиций</span></div>
-                    <div><small>Оплата</small><strong>{sum(order.receivedAmount)} из {sum(order.totalAmount)}</strong>
+                    <div><small>Оплата</small><strong>{sum(order.netPaidAmount)} из {sum(order.netSaleAmount)}</strong>
+                      {order.commercialReturnedValue>0&&<small>Возврат товаров: {sum(order.commercialReturnedValue)} · исходная продажа: {sum(order.totalAmount)}</small>}
+                      {order.overpaymentAmount>0&&<small>Переплата к урегулированию: {sum(order.overpaymentAmount)}</small>}
                       <span>Долг: {sum(order.debtAmount)} · Возвраты: {sum(order.returnAmount)}</span></div>
                     <div><small>Доставка и гравировка</small>
                       <strong>{shipLabel(order)}</strong>
