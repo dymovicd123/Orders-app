@@ -1,5 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
+import {watchNetSaleSql,watchNetDebtSql,watchReturnedUnitsForItemSql,watchReturnedValueForItemSql}
+ from './client3-watch-commercial.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
 const validDate=(value:string)=>{
@@ -33,8 +35,9 @@ export async function listClient3WatchReportCityOrders(
   db.prepare(`SELECT o.id AS id,o.external_id AS externalId,
      o.order_date AS orderDate,wd.recipient_name AS customer,
      COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),'НЕ УКАЗАН') AS manager,
-     o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
-     o.debt_amount AS debtAmount,o.shipping_status AS shippingStatus,
+     ${watchNetSaleSql('o')} AS totalAmount,o.total_amount AS grossTotalAmount,
+     o.received_amount AS receivedAmount,
+     ${watchNetDebtSql('o')} AS debtAmount,o.shipping_status AS shippingStatus,
      o.order_status AS orderStatus
      FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
      WHERE ${where} ORDER BY o.order_date DESC,o.id DESC LIMIT ? OFFSET ?`)
@@ -60,22 +63,24 @@ export async function getClient3WatchReportDayDetails(
  const where=`${salesBase} AND o.order_date=?`
  const [managers,cities,products,summary]=await Promise.all([
   db.prepare(`SELECT COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),'НЕ УКАЗАН') AS manager,
-    COUNT(*) AS orderCount,COALESCE(SUM(o.total_amount),0) AS totalSales,
+    COUNT(*) AS orderCount,COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalSales,
     COALESCE(SUM(o.received_amount),0) AS receivedOnOrders,
-    COALESCE(SUM(o.debt_amount),0) AS debt
+    COALESCE(SUM(${watchNetDebtSql('o')}),0) AS debt
     FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
     WHERE ${where}
     GROUP BY o.manager_id,o.manager_snapshot_name ORDER BY totalSales DESC,manager LIMIT 400`)
     .bind(...base).all(),
   db.prepare(`SELECT ${cityExpr} AS city,
-    COUNT(*) AS orderCount,COALESCE(SUM(o.total_amount),0) AS totalSales,
-    COALESCE(SUM(o.debt_amount),0) AS debt
+    COUNT(*) AS orderCount,COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalSales,
+    COALESCE(SUM(${watchNetDebtSql('o')}),0) AS debt
     FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
     WHERE ${where}
     GROUP BY ${cityExpr} ORDER BY orderCount DESC,city LIMIT 400`)
     .bind(...base).all(),
-  db.prepare(`SELECT ${modelExpr} AS product,COALESCE(SUM(oi.quantity),0) AS quantity,
-    COUNT(DISTINCT o.id) AS orderCount,COALESCE(SUM(oi.line_total),0) AS revenue
+  db.prepare(`SELECT ${modelExpr} AS product,
+    COALESCE(SUM(MAX(0,oi.quantity-${watchReturnedUnitsForItemSql('oi')})),0) AS quantity,
+    COUNT(DISTINCT o.id) AS orderCount,
+    COALESCE(SUM(MAX(0,oi.line_total-${watchReturnedValueForItemSql('oi')})),0) AS revenue
     FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
     JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
     LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
@@ -85,7 +90,7 @@ export async function getClient3WatchReportDayDetails(
     GROUP BY ${modelExpr} ORDER BY quantity DESC,product LIMIT 400`)
     .bind(...base).all(),
   db.prepare(`SELECT COUNT(*) AS orderCount,
-    COALESCE(SUM(o.total_amount),0) AS totalSales,
+    COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalSales,
     COALESCE(SUM(o.received_amount),0) AS receivedOnOrders
     FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
     WHERE ${where}`).bind(...base).first<Record<string,number>>(),

@@ -1,5 +1,6 @@
 import { createClient3WatchOrder, type WatchCreateInput } from './client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from './client3-watch-dispatch.ts'
+import {retryClient3WatchReservations} from './client3-watch-reservation-recovery.ts'
 import {correctClient3WatchDispatch} from './client3-watch-dispatch-correction.ts'
 import {readClient3WatchHandover,clarifyClient3WatchHandover} from './client3-watch-handover.ts'
 import {addClient3WatchDebtPayment} from './client3-watch-payments.ts'
@@ -10,6 +11,7 @@ import {correctClient3AdminPaymentMethod} from './client3-watch-admin-payment-me
 import {rewriteClient3AdminWatchItems} from './client3-watch-admin-composition.ts'
 import {exchangeClient3Watch} from './client3-watch-exchange.ts'
 import {exchangeClient3WatchSet} from './client3-watch-exchange-set.ts'
+import {listClient3WatchExchangeHistory,cancelClient3WatchExchange} from './client3-watch-exchange-history.ts'
 import {getClient3WatchFinance} from './client3-watch-finance.ts'
 import {getClient3WatchAnalytics} from './client3-watch-analytics.ts'
 import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from './client3-watch-report-details.ts'
@@ -24,10 +26,13 @@ import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
 import {listClient3WatchStockHistory} from './client3-watch-history.ts'
 import {listClient3WatchDemand} from './client3-watch-demand.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn,listPendingClient3WatchReturns} from './client3-watch-returns.ts'
+import {listClient3WatchReturnHistory,cancelClient3WatchReturn} from './client3-watch-return-history.ts'
 import { provisionClient3WatchSku } from './client3-watch-provision.ts'
 import { receiveClient3WatchArrival, transferClient3WatchStock } from './client3-watch-inventory.ts'
 import { writeoffClient3WatchStock } from './client3-watch-writeoff.ts'
 import { listClient3WatchOrders } from './client3-watch-orders-read.ts'
+import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,
+  WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL} from './client3-watch-item-projection.ts'
 import {listClient3WatchClients,listClient3WatchCustomerOrders} from './client3-watch-clients.ts'
 import { listWatchCatalogDrafts, registerWatchModel, registerWatchVariant } from './client3-watch-catalog.ts'
 import {listWatchModelAliases,addWatchModelAlias,deleteWatchModelAlias} from './client3-watch-model-aliases.ts'
@@ -222,9 +227,10 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
       oi.id AS orderItemId,oi.quantity,oi.source_type AS itemSource,
       oi.stock_writeoff_status AS stockWriteoffStatus,
       ir.status AS reservationStatus,wp.model_name AS modelName,
-      COALESCE((SELECT SUM(di.quantity-di.cancelled_quantity)
-        FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
-        WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id),0) AS shippedQuantity,
+      ${WATCH_ITEM_SHIPPED_SQL} AS shippedQuantity,
+      ${WATCH_ITEM_RETURNED_SQL} AS returnedQuantity,
+      ${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL} AS pendingReturnQuantity,
+      ${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL} AS pendingExchangeReceiptQuantity,
       (SELECT di2.id FROM order_dispatch_items di2
         JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
         WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
@@ -241,7 +247,14 @@ export async function listWatchLogistics(db:D1Database,actor:AuthUser,url:URL) {
     JOIN watch_brands wb ON wb.id=wd.brand_id
     JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
     JOIN watch_logistics_jobs lj ON lj.order_id=wd.order_id
-    LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND oi.quantity>0
+    LEFT JOIN order_items oi ON oi.order_id=wd.order_id AND (
+      oi.quantity>0
+      OR EXISTS (SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
+        WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
+      OR EXISTS (SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
+        WHERE ei.order_item_id=oi.id AND ei.role='old'
+          AND COALESCE(e.status,'completed')<>'cancelled')
+    )
     LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
     LEFT JOIN watch_order_item_details wditem ON wditem.order_item_id=oi.id
     LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
@@ -527,6 +540,13 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return listPendingClient3WatchReturns(db,actor,scope.row!.id)
   }
+  const reserveWatchMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/reserve\/retry$/.exec(url.pathname)
+  if(reserveWatchMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'logistics')
+    if(scope.error)return scope.error
+    return retryClient3WatchReservations(db,actor,scope.row!.id,Number(reserveWatchMatch[1]))
+  }
   const watchHandoverMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/stock-handover$/.exec(url.pathname)
   if(watchHandoverMatch&&(request.method==='GET'||request.method==='POST')){
     const input=request.method==='POST'?await readJson<{brand?:unknown;action?:unknown;
@@ -538,6 +558,20 @@ export async function routeClient3Watches(
     return request.method==='GET'
       ?readClient3WatchHandover(db,actor,scope.row!.id,id)
       :clarifyClient3WatchHandover(db,actor,scope.row!.id,id,input||{})
+  }
+  const watchExchangeHistoryMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchanges\/history$/.exec(url.pathname)
+  if(watchExchangeHistoryMatch&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchExchangeHistory(db,actor,scope.row!.id,Number(watchExchangeHistoryMatch[1]))
+  }
+  const watchExchangeCancelMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchanges\/(\d+)\/cancel$/.exec(url.pathname)
+  if(watchExchangeCancelMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return cancelClient3WatchExchange(db,actor,scope.row!.id,
+      Number(watchExchangeCancelMatch[1]),Number(watchExchangeCancelMatch[2]),input)
   }
   const exchangeSetMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/exchange-set$/.exec(url.pathname)
   if(exchangeSetMatch&&request.method==='POST'){
@@ -553,6 +587,20 @@ export async function routeClient3Watches(
     const scope=await scopedBrand(db,actor,input.brand,'sales')
     if(scope.error)return scope.error
     return exchangeClient3Watch(db,actor,scope.row!.id,Number(exchangeMatch[1]),input)
+  }
+  const watchReturnHistoryMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/returns\/history$/.exec(url.pathname)
+  if(watchReturnHistoryMatch&&request.method==='GET'){
+    const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
+    if(scope.error)return scope.error
+    return listClient3WatchReturnHistory(db,actor,scope.row!.id,Number(watchReturnHistoryMatch[1]))
+  }
+  const watchReturnCancelMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/returns\/(\d+)\/cancel$/.exec(url.pathname)
+  if(watchReturnCancelMatch&&request.method==='POST'){
+    const input=await readJson<{brand?:unknown;requestId?:unknown;reason?:unknown}>(request)
+    const scope=await scopedBrand(db,actor,input.brand,'sales')
+    if(scope.error)return scope.error
+    return cancelClient3WatchReturn(db,actor,scope.row!.id,
+      Number(watchReturnCancelMatch[1]),Number(watchReturnCancelMatch[2]),input)
   }
   const watchReturnMatch=/^\/api\/client3\/watches\/orders\/(\d+)\/return$/.exec(url.pathname)
   if(watchReturnMatch&&request.method==='POST'){

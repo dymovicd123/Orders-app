@@ -100,3 +100,13 @@
 .watch-dispatch-correction-confirm .watch-logistics-actions{margin:0}
 .watch-dispatch-correction-commit{background:#92400e!important;color:#fff!important}
 @media(max-width:680px){.watch-dispatch-correction-confirm{padding:11px}}
+
+/* Main's separate physical-return queue remains actionable from logistics. */
+.watch-logistics-receipt-notice{
+  display:grid;gap:8px;padding:11px 14px;margin:2px 0 10px;
+  border:1px solid #f0d7b3;background:#fffaf1;border-radius:9px;
+  flex-basis:100%;min-width:0
+}
+.watch-logistics-receipt-notice>strong{color:#92400e;font-size:.86rem}
+.watch-logistics-receipt-notice>small{color:#76543a;line-height:1.45;font-size:.79rem}
+.watch-logistics-receipt-notice>button{justify-self:start;max-width:100%}

@@ -1,0 +1,191 @@
+name: Client3 ORIGINAL production lifecycle + vetted engraving migration release
+on:
+  push:
+    branches: [client3/lifecycle-main-rebuild-20261104]
+    paths: ['.github/workflows/client3-original-production-release-20261104.yml']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: client3-original-production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Exact original Worker + vetted additive 1004 engraving migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Pin approved changes and ONLY the real Client3 installation
+        run: |
+          set -eEuo pipefail
+          trap 'echo "CLIENT3_REAL_RELEASE_PREFLIGHT_BLOCKED line $LINENO"' ERR
+          test "$GITHUB_REF" = refs/heads/client3/lifecycle-main-rebuild-20261104
+          test "$(git rev-parse HEAD^)" = ec20e0a6e1098368a66812fa066f9ef620814303
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-original-production-release-20261104.yml
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41769117108 --jq .conclusion)" = success
+          test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41769117108 --jq .head_sha)" = ec27f54ccfd18771936dcb26f29a7a1fd4862218
+          test "$(jq -r '.name' wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r '.main' wrangler.jsonc)" = worker/index.ts
+          test "$(jq -r '.d1_databases[0].binding' wrangler.jsonc)" = DB
+          test "$(jq -r '.d1_databases[0].database_name' wrangler.jsonc)" = orders_db_client3_old_client
+          test "$(jq -r '.d1_databases[0].database_id' wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r '.d1_databases[0].migrations_dir' wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r '.vars.CLIENT3_INSTALLATION' wrangler.jsonc)" = 1
+          test "$(jq -r '.vars.CLIENT3_WATCHES' wrangler.jsonc)" = 1
+          test "$(jq -r '.assets.directory' wrangler.jsonc)" = ./dist/client
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2|orders-app-branch2' wrangler.jsonc
+          echo "CLIENT3_EXACT_WORKER_DATABASE_AND_SOURCE_VERIFIED"
+      - uses: actions/setup-node@v4
+        with: {node-version: "24", cache: npm}
+      - run: npm ci
+      - name: Verify order, returns, exchange, logistics and money lifecycle on real schema fixtures
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-return-money-ui-20261104.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+      - name: Verify Main-style stock, catalog, team, shared cash and navigation
+        run: |
+          set -euo pipefail
+          for testfile in \
+            scripts/client3/test-watch-main-step1-20261102.mjs \
+            scripts/client3/test-watch-form-20261102.mjs \
+            scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
+            scripts/client3/test-watch-full-stock-engine-20261102.mjs \
+            scripts/client3/test-watch-shared-cash-team-20261103.mjs \
+            scripts/client3/test-watch-workspace-layout-20261102.mjs \
+            scripts/client3/test-main-workflow-parity-20261102.mjs; do
+            node --experimental-strip-types "$testfile"
+          done
+      - name: Build and typecheck EXACT source to deploy
+        run: npm run build
+      - name: Remote production D1 preflight, existing migration status and schema
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc | tee /tmp/client3-real-migrations.txt
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-real-migrations.txt | sort -u || true)"
+          if test -n "$pending"; then
+            test "$pending" = 1004_watch_item_engraving_readiness.sql || {
+              echo "Only audited 1004 engraving migration is authorized for this original D1"; exit 1;
+            }
+          fi
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM pragma_table_info('return_items') WHERE name='amount') AS return_value_column,
+            (SELECT COUNT(*) FROM pragma_table_info('exchanges') WHERE name='refund_return_id') AS exchange_relation,
+            (SELECT COUNT(*) FROM pragma_table_info('order_items') WHERE name='stock_writeoff_status') AS fulfillment_column,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_order_details') AS watch_scope,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_variant_attributes_v5') AS watch_skus,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_shared_cash_register') AS shared_cash,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='critical_operations') AS idempotency" \
+            | jq -e '.[0].results[0] | select(.return_value_column==1 and .exchange_relation==1 and .fulfillment_column==1 and .watch_scope==1 and .watch_skus==1 and .shared_cash==1 and .idempotency==1)'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" \
+            | jq -e '.[0].results | length==0'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+            (SELECT COUNT(*) FROM financial_events) AS money_events,
+            (SELECT COUNT(*) FROM inventory_movements) AS stock_movements,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity,
+            (SELECT COUNT(*) FROM watch_products) AS models,
+            (SELECT COUNT(*) FROM watch_variants) AS variants" \
+            | jq -ce '.[0].results[0] | select(.orders_count>=0 and .items_count>=0)' > /tmp/client3-real-before.json
+      - name: Record D1 Time Travel point before 1004 migration and Worker release (NO DB writes)
+        run: |
+          set -euo pipefail
+          npx wrangler d1 time-travel info orders_db_client3_old_client --config wrangler.jsonc --json > /tmp/client3-real-time-travel.json
+          jq -er '.bookmark // .result.bookmark' /tmp/client3-real-time-travel.json | tee /tmp/client3-real-rollback-bookmark
+          echo "Time Travel bookmark recorded. Never restore automatically: live orders may arrive after this point."
+      - name: Apply ONLY reviewed 1004 item engraving readiness migration to ORIGINAL D1
+        run: |
+          set -euo pipefail
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-real-migrations.txt | sort -u || true)"
+          if test -n "$pending"; then
+            test "$pending" = 1004_watch_item_engraving_readiness.sql
+            # Fail if someone partially applied this migration manually:
+            # its final ALTER TABLE has no IF NOT EXISTS guard.
+            npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='watch_engraving_item_readiness') AS readiness_table,
+              (SELECT COUNT(*) FROM pragma_table_info('watch_logistics_events') WHERE name='order_item_id') AS event_column" \
+              | jq -e '.[0].results[0] | select(.readiness_table==0 and .event_column==0)'
+            # This migration creates a table, backfills unambiguous completed
+            # engravings and downgrades ambiguous aggregate ready states only.
+            # No order, payment, stock, return or exchange quantity is written.
+            printf 'y\n' | npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+          fi
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_engraving_item_readiness') AS ready_table,
+            (SELECT COUNT(*) FROM pragma_table_info('watch_logistics_events') WHERE name='order_item_id') AS ready_event_column" \
+            | jq -e '.[0].results[0] | select(.ready_table==1 and .ready_event_column==1)'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" \
+            | jq -e '.[0].results | length==0'
+          npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-real-after-migrations.txt
+          pending_after="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-real-after-migrations.txt | sort -u || true)"
+          test -z "$pending_after"
+          echo "CLIENT3_REAL_1004_ONLY_MIGRATION_VERIFIED"
+      - name: Deploy ONLY original Client3 Worker (NO preview)
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          npx wrangler deploy --config wrangler.jsonc
+      - name: Verify live original Client3 SPA, bundled code and protected API
+        run: |
+          set -euo pipefail
+          base="https://orders-app-client3-old-client.orders-clothes.workers.dev"
+          curl -fsSL --max-time 30 "$base/?release=$GITHUB_SHA" > /tmp/client3-live-index.html
+          grep -Eq 'id="root"|type="module"' /tmp/client3-live-index.html
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n 1 | cut -d'"' -f 2)"
+          test -n "$asset"
+          test -s "dist/client$asset"
+          curl -fsSL --max-time 30 "$base$asset" > /tmp/client3-live-bundle.js
+          cmp -s "dist/client$asset" /tmp/client3-live-bundle.js
+          for endpoint in \
+            '/api/client3/watches/orders?brand=TAUWACH' \
+            '/api/client3/watches/logistics?brand=TAUWACH' \
+            '/api/client3/watches/returns/pending?brand=TAUWACH' \
+            '/api/client3/watches/orders/1/returns/history?brand=TAUWACH' \
+            '/api/client3/watches/orders/1/exchanges/history?brand=TAUWACH' \
+            '/api/client3/watches/analytics?brand=TAUWACH&from=2026-11-01&to=2026-11-04'; do
+            status="$(curl -sS -o /tmp/client3-private -w '%{http_code}' --max-time 30 "$base$endpoint")"
+            test "$status" = 401 -o "$status" = 403
+          done
+          status="$(curl -sS -o /tmp/client3-private -w '%{http_code}' --max-time 30 -X POST \
+            -H 'Content-Type: application/json' --data '{"brand":"TAUWACH"}' \
+            "$base/api/client3/watches/orders/1/reserve/retry")"
+          test "$status" = 401 -o "$status" = 403
+          echo "CLIENT3_ORIGINAL_PRODUCTION_LIVE_ASSET_AND_AUTH_SMOKE_SUCCESS"
+      - name: Verify production D1 integrity after code-only release
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" \
+            | jq -e '.[0].results | length==0'
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM exchanges) AS exchanges_count,
+            (SELECT COUNT(*) FROM financial_events) AS money_events,
+            (SELECT COUNT(*) FROM inventory_movements) AS stock_movements,
+            (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS stock_quantity,
+            (SELECT COUNT(*) FROM watch_products) AS models,
+            (SELECT COUNT(*) FROM watch_variants) AS variants" \
+            | jq -ce '.[0].results[0] | select(.orders_count>=0 and .items_count>=0)' > /tmp/client3-real-after.json
+          if ! diff -u /tmp/client3-real-before.json /tmp/client3-real-after.json; then
+            echo "Business counts changed during rollout. This may reflect live users; investigate, do NOT auto-restore."
+          fi
+          echo "CLIENT3_ORIGINAL_REAL_DB_INTEGRITY_VERIFIED"
+      - name: Production release confirmed
+        run: echo "CLIENT3_ORIGINAL_ONLY_PRODUCTION_RELEASE_SUCCESS https://orders-app-client3-old-client.orders-clothes.workers.dev"

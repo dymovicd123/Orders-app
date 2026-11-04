@@ -4,10 +4,11 @@ import {WATCH_OPTIONS,WATCH_PAYMENTS,type WatchBrand,type WatchGender,type Watch
 import '../../styles/client3-watch-exchange.css'
 
 type OldLine={id:number;productName:string;quantity:number;returnableQuantity:number;
+ exchangeableQuantity:number;shippedQuantity:number;returnedQuantity:number;stockWriteoffStatus:string;
  unitPrice:number;lineTotal:number;catalogPriceSnapshot:number|null;shipped:number;
  gender:string;movement:string;braceletMaterial:string;dialColor:string;braceletColor:string}
 type Order={orderId:number;externalId:string;totalAmount:number;receivedAmount:number;
- returnAmount:number;itemLines:string}
+ returnAmount:number;commercialReturnedValue:number;itemLines:string}
 type NewLine={key:string;modelName:string;gender:WatchGender;movement:string;
  braceletMaterial:string;dialColor:string;braceletColor:string;source:WatchSource;
  quantity:string;unitPrice:string;engravingText:string}
@@ -25,10 +26,20 @@ const parse=(v:string):OldLine[]=>{
  catch{return []}
 }
 const amount=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
+export const watchExchangeQuantityForState=(line:OldLine,state:OldChoice['physicalState'])=>{
+ const quantity=Math.max(0,Number(line.quantity||0))
+ const returned=Math.max(0,Number(line.returnedQuantity||0))
+ const shipped=Math.max(0,Number(line.shippedQuantity??(line.shipped?quantity:0)))
+ const issued=line.stockWriteoffStatus==='fulfilled'?quantity:Math.min(quantity,shipped)
+ if(state==='pending')return Math.min(
+   Math.max(0,Number(line.returnableQuantity||0)),Math.max(0,issued-returned))
+ if(state==='not_issued')return Math.max(0,quantity-issued)
+ return Math.max(0,Number(line.exchangeableQuantity??(quantity-returned)))
+}
 export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  brand:WatchBrand;order:Order;onDone:()=>void;onCancel:()=>void
 }){
- const old=parse(order.itemLines)
+ const old=parse(order.itemLines).filter(x=>watchExchangeQuantityForState(x,'')>0)
  const [chosen,setChosen]=useState<Record<number,OldChoice>>({})
  const [newLines,setNewLines]=useState<NewLine[]>([blank()])
  const [methods,setMethods]=useState<string[]>([...WATCH_PAYMENTS])
@@ -71,7 +82,10 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  const removed=choiceRows.reduce((v,x)=>v+Number(chosen[x.id].quantity)*x.unitPrice,0)
  const added=newLines.reduce((v,x)=>v+(Number(x.quantity)||0)*(Number(x.unitPrice)||0),0)
  const finalTotal=order.totalAmount-removed+added
- const netPaid=order.receivedAmount-order.returnAmount
+ // Main keeps the original itemized gross total; standalone physical
+ // returned units supply a noncash commercial credit for exchange settlement.
+ const netPaid=order.receivedAmount-order.returnAmount+
+   Number(order.commercialReturnedValue||0)
  const due=Math.max(0,finalTotal-netPaid)
  const refundDue=Math.max(0,netPaid-finalTotal)
  const updatePay=(type:'payment'|'refund',key:string,patch:Partial<Payment>)=>{
@@ -89,7 +103,8 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
    if(!choiceRows.length||!newLines.length||newLines.length>20||
      choiceRows.some(x=>{
        const y=chosen[x.id];return !['pending','not_issued'].includes(y.physicalState)||
-         !Number.isSafeInteger(Number(y.quantity))||Number(y.quantity)>x.returnableQuantity
+         !Number.isSafeInteger(Number(y.quantity))||Number(y.quantity)<1||
+         Number(y.quantity)>watchExchangeQuantityForState(x,y.physicalState)
      })){
      setError('Выберите старые часы, количество и факт отправки каждой позиции.');return
    }
@@ -172,22 +187,31 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
  )
  return <form className="watch-exchange-form watch-exchange-set" onSubmit={e=>void save(e)}>
    <h4>Обмен · {order.externalId}</h4>
-   <p>Выберите старые часы, затем укажите новые. Доступно несколько позиций и способов доплаты или возврата. Новые часы сначала поступят в логистику, а старые — в очередь физической приёмки.</p>
+   <p>Выберите старые часы, затем укажите новые. Доступно несколько позиций и способов доплаты или возврата. Новые часы сначала поступят в логистику. Физическая приёмка старых часов требуется только если они уже были у клиента.</p>
+   {Number(order.commercialReturnedValue||0)>0&&<p>
+     Ранее возвращённые часы уменьшают коммерческий итог на {amount(order.commercialReturnedValue)}.
+     Эта сумма учитывается в расчёте обмена, но не является новой оплатой.</p>}
    <div className="watch-exchange-lines">
      <strong>Какие часы меняет клиент</strong>
      {old.map(x=><div key={x.id} className="watch-exchange-old">
        <div><strong>{x.productName}</strong><small>{x.gender==='male'?'Мужские':'Женские'} ·
          {opt(WATCH_OPTIONS.movements,x.movement)} · {opt(WATCH_OPTIONS.braceletMaterials,x.braceletMaterial)} · {opt(WATCH_OPTIONS.dialColors,x.dialColor)}</small>
-         <small>В заказе {x.quantity} · доступно к обмену {x.returnableQuantity} шт. · {amount(x.unitPrice)}/шт.</small></div>
-       <label>Количество<input type="number" min={0} max={x.returnableQuantity} step={1}
+         <small>В заказе {x.quantity} · доступно к обмену {watchExchangeQuantityForState(x,'')} шт. · {amount(x.unitPrice)}/шт.</small>
+         <small>У клиента: {watchExchangeQuantityForState(x,'pending')} шт. · ещё не отправляли: {watchExchangeQuantityForState(x,'not_issued')} шт.</small></div>
+       <label>Количество<input type="number" min={0} max={watchExchangeQuantityForState(x,chosen[x.id]?.physicalState||'')} step={1}
          value={chosen[x.id]?.quantity??'0'}
          onChange={e=>choose(x.id,{quantity:e.target.value})}/></label>
        {Number(chosen[x.id]?.quantity||0)>0&&<label>Что произошло с товаром?
          <select value={chosen[x.id]?.physicalState||''} required
-           onChange={e=>choose(x.id,{physicalState:e.target.value as OldChoice['physicalState']})}>
+           onChange={e=>{
+             const state=e.target.value as OldChoice['physicalState']
+             const maximum=watchExchangeQuantityForState(x,state)
+             choose(x.id,{physicalState:state,quantity:String(Math.min(
+               Number(chosen[x.id]?.quantity||0),maximum))})
+           }}>
            <option value="">Выберите</option>
-           <option value="pending">Уже отправили клиенту — ожидаем возврат</option>
-           <option value="not_issued">Ещё не отправляли клиенту</option>
+           <option value="pending" disabled={watchExchangeQuantityForState(x,'pending')===0}>Уже отправили клиенту — ожидаем возврат</option>
+           <option value="not_issued" disabled={watchExchangeQuantityForState(x,'not_issued')===0}>Ещё не отправляли клиенту</option>
          </select></label>}
      </div>)}
    </div>

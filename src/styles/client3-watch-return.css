@@ -10,3 +10,7 @@
 .watch-return-pay-part>button{align-self:end}
 .watch-return-split-payments small{font-size:12px;color:#64748b}
 @media(max-width:600px){.watch-return-item-row{align-items:flex-start}.watch-return-item-row input{flex-basis:70px;width:70px!important}}
+
+/* Transparent partial-return valuation, separate from recorded money and debt. */
+.watch-return-accounting-note{font-size:.82rem;line-height:1.5;color:#92400e;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px}
+.watch-return-money-warning{font-size:.82rem;line-height:1.45;color:#92400e;margin:8px 0 0}

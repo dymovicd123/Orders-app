@@ -1,12 +1,15 @@
 import { Fragment, useEffect, useState } from 'react'
 import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {WatchReturnForm} from './WatchReturnForm'
+import {WatchReturnHistoryPanel} from './WatchReturnHistoryPanel'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
+import {WatchExchangeHistoryPanel} from './WatchExchangeHistoryPanel'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
 import {WatchOrderCorrections} from './WatchOrderCorrections'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
+import {watchItemFullyIssued,watchIssuedQuantity,watchItemReturnSummary} from './watchItemLifecycle'
 import '../../styles/client3-watch-orders.css'
 
 type WatchOrder={
@@ -16,26 +19,28 @@ type WatchOrder={
   canonicalDeliveryType:string;orderComment:string;orderStatus:string;
   deliveryAddress:string;postalCode:string;unresolvedReservations:number
   legacySource:'warehouse'|'boutique';shippingStatus:string;engravingStatus:string
-  totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number
+  totalAmount:number;netSaleAmount:number;commercialReturnedValue:number;netPaidAmount:number;overpaymentAmount:number;
+  receivedAmount:number;debtAmount:number;returnAmount:number;legacyDebtAmount:number
   lineCount:number;shippedLineCount:number;engravedLines:number;urgent:number;shippingDeadlineAt:string
   firstItemId:number|null;returnableQuantity:number;watchDescription:string|null
   activeWatchVariantId:number|null;pendingReplacement:number
   paymentLines:string;itemLines:string
 }
-type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
+type Totals={orderCount:number;totalAmount:number;grossTotalAmount:number;commercialReturnedValue:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
 const sum=(value:number)=>Number(value||0).toLocaleString('ru-RU')+' ₸'
 const physicallyIssued=(order:WatchOrder)=>{
-  const lines=parsedRows<ItemLine>(order.itemLines)
-  return lines.length>0&&lines.every(line=>Boolean(line.shipped)||line.stockWriteoffStatus==='fulfilled')
+  const active=parsedRows<ItemLine>(order.itemLines).filter(line=>Number(line.quantity)>0)
+  return active.length>0&&active.every(watchItemFullyIssued)
 }
 const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ожидает отправки':
-  order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлено':
-  physicallyIssued(order)?'Выдано до ревизии · подтверждено':
+  physicallyIssued(order)?(order.shippingStatus==='sent'?'Отправлено':'Выдано до ревизии · подтверждено'):
   order.shippedLineCount>0?'Частично отправлено':'Не отправлено'
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
-type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;unitPrice:number;
+type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;exchangeableQuantity:number;unitPrice:number;
   lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
+  shippedQuantity:number;returnedQuantity:number;pendingReturnQuantity:number;
+  pendingExchangeReceiptQuantity:number;
   stockWriteoffStatus:string;
   engravingText:string;gender:string;movement:string;braceletMaterial:string;
   dialColor:string;braceletColor:string}
@@ -64,7 +69,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [returnOrderId,setReturnOrderId]=useState<number|null>(null)
+  const [returnHistoryOrderId,setReturnHistoryOrderId]=useState<number|null>(null)
   const [exchangeOrderId,setExchangeOrderId]=useState<number|null>(null)
+  const [exchangeHistoryOrderId,setExchangeHistoryOrderId]=useState<number|null>(null)
   const [debtOrderId,setDebtOrderId]=useState<number|null>(null)
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(
@@ -141,18 +148,23 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
             <thead><tr>
               <th>Дата / заказ</th><th>Менеджер</th><th>Клиент</th><th>Город</th>
               <th>Товары</th><th>Доставка / комментарий</th><th>Оплаты</th>
-              <th>Сумма</th><th>Получено</th><th>Долг</th><th>Статус</th><th>Действия</th>
+              <th>Сумма</th><th>Получено</th><th>Долг</th><th>Статус</th>
             </tr></thead>
             <tbody>{data.rows.map(order=><Fragment key={order.orderId}>
               <tr className={'watch-main-order-row'+(expanded===order.orderId?' is-open':'')}>
                 <td><strong>{order.externalId||'#'+order.orderId}</strong>
                   <small>{order.orderDate}</small>
+                  <button type="button" className="watch-main-detail-button"
+                    aria-expanded={expanded===order.orderId}
+                    onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)}}>
+                    {expanded===order.orderId?'Скрыть действия':'Открыть действия'}
+                  </button>
                   {order.urgent===1&&<small className="watch-main-urgent">Срочно</small>}</td>
                 <td>{order.managerName||'—'}</td>
                 <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
                 <td>{order.city||'—'}</td>
                 <td className="watch-main-order-sku">
-                  {parsedRows<ItemLine>(order.itemLines).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
+                  {parsedRows<ItemLine>(order.itemLines).filter(line=>Number(line.quantity)>0).slice(0,3).map(line=><div className="watch-main-order-sku-row" key={line.id}>
                     <strong>{line.productName}</strong><small>{line.quantity} шт. ·
                       {line.source==='warehouse'?' Офис':' Витрина'} ·
                       {[watchReferenceLabel('movements',line.movement),watchReferenceLabel('bracelets',line.braceletMaterial),watchReferenceLabel('dials',line.dialColor)].filter(Boolean).join(' / ')}</small>
@@ -173,23 +185,20 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     + ещё {parsedRows<PaymentLine>(order.paymentLines).length-2}</small>}
                   {parsedRows<PaymentLine>(order.paymentLines).length===0&&<small>Не оплачено</small>}
                 </td>
-                <td className="watch-main-money">{sum(order.totalAmount)}</td>
+                <td className="watch-main-money">{sum(order.netSaleAmount)}
+                  {order.commercialReturnedValue>0&&<small>Исходно: {sum(order.totalAmount)} · возвращён товар: {sum(order.commercialReturnedValue)}</small>}</td>
                 <td className="watch-main-money">{sum(order.receivedAmount)}</td>
                 <td className={'watch-main-money '+(order.debtAmount>0?'is-debt':'is-paid')}>
                   {order.debtAmount>0?sum(order.debtAmount):'Оплачено'}</td>
-                <td><span className={'watch-main-order-status'+(order.pendingReplacement?' is-awaiting':order.shippingStatus==='sent'||physicallyIssued(order)?' is-sent':' is-awaiting')}>
+                <td><span className={'watch-main-order-status'+(order.pendingReplacement?' is-awaiting':physicallyIssued(order)?' is-sent':' is-awaiting')}>
                   {shipLabel(order)}
                   </span>
                   {order.unresolvedReservations>0&&<small className="watch-main-stock-warning">
                     Требует поступления/резерва: {order.unresolvedReservations}</small>}
                 </td>
-                <td><button type="button" className="watch-main-detail-button"
-                  aria-expanded={expanded===order.orderId}
-                  onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setReturnOrderId(null);setExchangeOrderId(null);setDebtOrderId(null);setEditOrderId(null);setHandoverOrderId(null)}}>
-                  {expanded===order.orderId?'Скрыть':'Открыть'}
-                </button></td>
+
               </tr>
-              {expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={12}>
+              {expanded===order.orderId&&<tr className="watch-main-order-expanded"><td colSpan={11}>
                 <section className="watch-main-order-detail" aria-label={'Детали заказа '+order.externalId}>
                   <div className="watch-main-order-detail-grid">
                     <div><small>Покупатель</small><strong>{order.recipientName}</strong>
@@ -198,7 +207,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       {order.deliveryAddress&&<span>{order.deliveryAddress}</span>}</div>
                     <div><small>Менеджер</small><strong>{order.managerName||'Не указан'}</strong>
                       <span>{order.lineCount} позиций</span></div>
-                    <div><small>Оплата</small><strong>{sum(order.receivedAmount)} из {sum(order.totalAmount)}</strong>
+                    <div><small>Оплата</small><strong>{sum(order.netPaidAmount)} из {sum(order.netSaleAmount)}</strong>
+                      {order.commercialReturnedValue>0&&<small>Возврат товаров: {sum(order.commercialReturnedValue)} · исходная продажа: {sum(order.totalAmount)}</small>}
+                      {order.overpaymentAmount>0&&<small>Переплата к урегулированию: {sum(order.overpaymentAmount)}</small>}
                       <span>Долг: {sum(order.debtAmount)} · Возвраты: {sum(order.returnAmount)}</span></div>
                     <div><small>Доставка и гравировка</small>
                       <strong>{shipLabel(order)}</strong>
@@ -217,9 +228,13 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                             line.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',line.braceletColor):'',
                           ].filter(Boolean).join(' · ')}</small>
                           {line.engravingText&&<small>Гравировка: {line.engravingText}</small>}
-                          <small>{line.source==='warehouse'?'Офис':'Витрина'} · {line.shipped?'Отправлен':
-                            line.stockWriteoffStatus==='fulfilled'?'Ранее выдан · подтверждено':'Не отправлен'}</small></div>
-                        <strong>{line.quantity} × {sum(line.unitPrice)}</strong>
+                          <small>{Number(line.quantity)===0?'Историческая позиция · возвращена или обменена':
+                            (line.source==='warehouse'?'Офис':'Витрина')+' · '+(watchItemFullyIssued(line)?
+                              (line.stockWriteoffStatus==='fulfilled'&&line.shippedQuantity===0?'Ранее выдан · подтверждено':'Отправлен'):
+                              watchIssuedQuantity(line)>0?'Частично отправлен: '+watchIssuedQuantity(line)+' из '+line.quantity:
+                              'Не отправлен')}</small>
+                          {watchItemReturnSummary(line)&&<small className="watch-main-return-state">{watchItemReturnSummary(line)}</small>}</div>
+                        <strong>{Number(line.quantity)>0?line.quantity+' × '+sum(line.unitPrice):'История позиции'}</strong>
                       </div>)}
                       {parsedRows<ItemLine>(order.itemLines).length===0&&
                         <p>Состав заказа пока недоступен.</p>}
@@ -242,6 +257,22 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                     </section>
                   </div>
                   <div className="watch-main-order-actions">
+                    <button type="button" className="secondary compact"
+                      aria-expanded={exchangeHistoryOrderId===order.orderId}
+                      onClick={()=>{
+                        setExchangeHistoryOrderId(v=>v===order.orderId?null:order.orderId)
+                        setExchangeOrderId(null);setReturnOrderId(null)
+                      }}>
+                      {exchangeHistoryOrderId===order.orderId?'Скрыть историю обменов':'История / отмена обменов'}
+                    </button>
+                    <button type="button" className="secondary compact"
+                      aria-expanded={returnHistoryOrderId===order.orderId}
+                      onClick={()=>{
+                        setReturnHistoryOrderId(v=>v===order.orderId?null:order.orderId)
+                        setReturnOrderId(null);setExchangeOrderId(null)
+                      }}>
+                      {returnHistoryOrderId===order.orderId?'Скрыть историю возвратов':'История / отмена возвратов'}
+                    </button>
                     {editOrderId!==order.orderId&&<button type="button" className="secondary compact"
                       onClick={()=>{setEditOrderId(order.orderId);setDebtOrderId(null);setReturnOrderId(null);setExchangeOrderId(null)}}>
                       {isAdmin?'Редактировать / исправить':'Доп. действия · исправить'}
@@ -251,19 +282,18 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                         onClick={()=>{setDebtOrderId(order.orderId);setReturnOrderId(null);setExchangeOrderId(null)}}>
                         Закрыть долг
                       </button>}
-                    {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&!physicallyIssued(order)&&
+                    {!physicallyIssued(order)&&
                       <button type="button" className="secondary compact"
                         aria-expanded={handoverOrderId===order.orderId}
                         onClick={()=>{setHandoverOrderId(v=>v===order.orderId?null:order.orderId);
                           setEditOrderId(null);setDebtOrderId(null);setExchangeOrderId(null);setReturnOrderId(null)}}>
                         Уточнить выдачу после ревизии
                       </button>}
-                    {(order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&!physicallyIssued(order)||
-                      Boolean(order.pendingReplacement))&&
+                    {(!physicallyIssued(order)||Boolean(order.pendingReplacement))&&
                       (onOpenLogistics?<button type="button"
                         onClick={()=>onOpenLogistics(brand)}>Подготовить / отправить в логистике</button>:
                         <small>Подготовка и отправка находятся в разделе «Логистика».</small>)}
-                    {parsedRows<ItemLine>(order.itemLines).some(line=>line.returnableQuantity>0)&&
+                    {parsedRows<ItemLine>(order.itemLines).some(line=>line.exchangeableQuantity>0)&&
                       exchangeOrderId!==order.orderId&&
                       <button type="button" onClick={()=>{setExchangeOrderId(order.orderId);setReturnOrderId(null)}}>
                         Обменять часы</button>}
@@ -294,9 +324,17 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                   {exchangeOrderId===order.orderId&&<WatchExchangeForm brand={brand} order={order}
                     onCancel={()=>setExchangeOrderId(null)}
                     onDone={()=>{setExchangeOrderId(null);setRefresh(v=>v+1)}}/>}
+                  {exchangeHistoryOrderId===order.orderId&&<WatchExchangeHistoryPanel
+                    brand={brand} orderId={order.orderId}
+                    onClose={()=>setExchangeHistoryOrderId(null)}
+                    onDone={()=>setRefresh(v=>v+1)}/>}
                   {returnOrderId===order.orderId&&<WatchReturnForm brand={brand} order={order}
                     onCancel={()=>setReturnOrderId(null)}
                     onDone={()=>{setReturnOrderId(null);setRefresh(v=>v+1)}}/>}
+                  {returnHistoryOrderId===order.orderId&&<WatchReturnHistoryPanel
+                    brand={brand} orderId={order.orderId}
+                    onClose={()=>setReturnHistoryOrderId(null)}
+                    onDone={()=>setRefresh(v=>v+1)}/>}
                 </section>
               </td></tr>}
             </Fragment>)}</tbody>

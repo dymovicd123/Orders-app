@@ -2,6 +2,7 @@
 // Business behavior is intentionally unchanged.
 import { readJson } from '../core/http.ts'
 import {persistWatchExchangeItem,type WatchExchangeCommit} from './client3-watch-exchange-commit.ts'
+import {readWatchCommercialBalance} from './client3-watch-commercial.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
@@ -3875,7 +3876,16 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         }
       }
 
+      // Third Worker only: a standalone returned watch reduces commercial
+      // sale value without forging a cash payment or erasing the original
+      // sale/dispatch. Add its noncash credit to the settlement side only.
+      // Main garment exchanges are entirely unchanged.
+      const returnCredit=watchCommit
+        ?(await readWatchCommercialBalance(db,orderId)).returnedGoodsValue:0
       const currentNetPaid = Math.max(0, ledger.receivedAmount - ledger.returnAmount)
+        + returnCredit
+      if(!Number.isSafeInteger(currentNetPaid))
+        throw new CriticalOperationConflictError('Коммерческий итог возвратов требует сверки.')
       const paymentAmount = Math.max(0, toInt(input.paymentAmount, 0))
       const settlement = deriveExchangeSetSettlement({
         currentTotalAmount: ledger.totalAmount,

@@ -1,6 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { cleanText, normalizeDate, normalizeOrderStatus, toInt, upperText } from '../core/text.ts'
+import {readWatchCommercialBalance,watchCommercialReturnCreditSql} from './client3-watch-commercial.ts'
 import type { PaymentKind } from '../core/types.ts'
 import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext } from './critical.ts'
 
@@ -384,6 +385,7 @@ export async function createManualOrderPaymentCritical(
     paymentKind?: unknown;
     comment?: unknown;
   },
+  options:{watchCommercialBalance?:boolean}={},
 ) {
   const orderId = toInt(input.orderId, 0);
   const amountNumber = Number(input.amount);
@@ -398,7 +400,8 @@ export async function createManualOrderPaymentCritical(
     throw new CriticalOperationConflictError('Обычной доплаты по заказу нет. Используйте закрытие долга; доплата доступна только внутри обмена.');
   }
 
-  const payload = { orderId, paymentDate: requestedPaymentDate, method, amount, paymentKind, comment };
+  const payload = { orderId, paymentDate: requestedPaymentDate, method, amount, paymentKind, comment,
+    ...(options.watchCommercialBalance?{__watchCommercialDebt:true}:{}) };
   const criticalOperation = await beginCriticalOperation(db, 'order_payment_create', input.requestId, payload);
   if (criticalOperation.row.status === 'completed') {
     const cached = criticalOperation.cachedResponse && typeof criticalOperation.cachedResponse === 'object'
@@ -445,11 +448,16 @@ export async function createManualOrderPaymentCritical(
       }
 
       const ledger = await readOrderFinancialLedger(db, orderId);
-      if (ledger.debtAmount <= 0) {
+      // A physical watch return credits the commercial sale without any
+      // forged payment. Keep Main's existing garment rule by default.
+      const debt=options.watchCommercialBalance
+        ?(await readWatchCommercialBalance(db,orderId)).netDebt
+        :ledger.debtAmount
+      if (debt <= 0) {
         throw new CriticalOperationConflictError('Долг по заказу уже закрыт.');
       }
-      if (amount > ledger.debtAmount) {
-        throw new CriticalOperationConflictError(`Сумма оплаты ${amount} больше текущего долга ${ledger.debtAmount}.`);
+      if (amount > debt) {
+        throw new CriticalOperationConflictError(`Сумма оплаты ${amount} больше текущего долга ${debt}.`);
       }
 
       plan = {
@@ -474,6 +482,16 @@ export async function createManualOrderPaymentCritical(
       // within the payment INSERT itself. An invalid payment explicitly hits
       // payments.amount NOT NULL, rolling the whole batch back; no orphaned
       // payment or stale last_insert_rowid mapping may be created.
+      // Check the effective Client3 debt again IN the payment INSERT, so
+      // concurrent returns or payments cannot accept a stale overpayment.
+      const watchRemaining=options.watchCommercialBalance
+        ?`MAX(0,COALESCE(o.total_amount,0)-${watchCommercialReturnCreditSql('o')}
+          -COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id=o.id AND p.amount>0),0)
+          +COALESCE((SELECT SUM(r.amount) FROM returns r WHERE r.order_id=o.id
+            AND COALESCE(r.status,'completed')<>'cancelled' AND r.amount>0),0))`
+        :`MAX(0,COALESCE(o.total_amount, 0) - COALESCE((
+          SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
+          FROM payments p WHERE p.order_id = o.id), 0))`
       let mapped;
       try {
         mapped = await insertCriticalMappedEntity(
@@ -489,10 +507,7 @@ export async function createManualOrderPaymentCritical(
                  WHERE o.id = ?
                    AND o.order_status NOT IN ('deleted', 'archived')
                    AND o.archived_at IS NULL
-                   AND ? <= MAX(0, COALESCE(o.total_amount, 0) - COALESCE((
-                     SELECT SUM(CASE WHEN p.amount > 0 THEN p.amount ELSE 0 END)
-                     FROM payments p WHERE p.order_id = o.id
-                   ), 0))
+                   AND ? <= ${watchRemaining}
                ) THEN ? ELSE NULL END,
                ?, ?, ?)`
           ).bind(

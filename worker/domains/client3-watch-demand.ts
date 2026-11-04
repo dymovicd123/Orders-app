@@ -1,5 +1,6 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
+import {watchReturnedValueForItemSql,watchReturnedUnitsForItemSql} from './client3-watch-commercial.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
 const valid=(date:string)=>/^\d{4}-\d{2}-\d{2}$/.test(date)&&
@@ -30,12 +31,10 @@ export async function listClient3WatchDemand(
      COALESCE(va.dial_color,wv.dial_color) AS dialColor,
      COALESCE(va.bracelet_color,wv.bracelet_color) AS braceletColor,
      oi.quantity AS soldQuantity,oi.unit_price AS unitPrice,
-     oi.line_total AS lineRevenue,
-     MIN(oi.quantity,COALESCE((
-       SELECT SUM(ri.quantity) FROM return_items ri
-       JOIN returns r ON r.id=ri.return_id AND COALESCE(r.status,'completed')<>'cancelled'
-       WHERE ri.order_item_id=oi.id
-     ),0)) AS returnedQuantity
+     MAX(0,oi.line_total-${watchReturnedValueForItemSql('oi')}) AS lineRevenue,
+     oi.line_total AS grossRevenue,
+     ${watchReturnedValueForItemSql('oi')} AS returnedValue,
+     MIN(oi.quantity,${watchReturnedUnitsForItemSql('oi')}) AS returnedQuantity
    FROM watch_order_details wd
    JOIN orders o ON o.id=wd.order_id AND o.order_status NOT IN ('deleted','archived')
    JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
@@ -51,7 +50,9 @@ export async function listClient3WatchDemand(
      SUM(returnedQuantity) AS returnedQuantity,
      SUM(soldQuantity-returnedQuantity) AS netQuantity,
      SUM(lineRevenue) AS revenue,
-     ROUND(SUM(lineRevenue)*1.0/NULLIF(SUM(soldQuantity),0),2) AS averagePrice,
+     SUM(grossRevenue) AS grossRevenue,
+     SUM(returnedValue) AS returnedValue,
+     ROUND(SUM(lineRevenue)*1.0/NULLIF(SUM(soldQuantity-returnedQuantity),0),2) AS averagePrice,
      MIN(unitPrice) AS minSalePrice,MAX(unitPrice) AS maxSalePrice
    FROM lines GROUP BY watchVariantId
  )`
@@ -64,7 +65,9 @@ export async function listClient3WatchDemand(
        COALESCE(SUM(soldQuantity),0) AS soldQuantity,
        COALESCE(SUM(returnedQuantity),0) AS returnedQuantity,
        COALESCE(SUM(netQuantity),0) AS netQuantity,
-       COALESCE(SUM(revenue),0) AS revenue
+       COALESCE(SUM(revenue),0) AS revenue,
+       COALESCE(SUM(grossRevenue),0) AS grossRevenue,
+       COALESCE(SUM(returnedValue),0) AS returnedValue
      FROM grouped`).bind(...args).first<Record<string,number>>(),
  ])
  const page=(rows.results||[]).slice(0,limit)

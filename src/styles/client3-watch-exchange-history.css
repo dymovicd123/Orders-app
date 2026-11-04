@@ -1,0 +1,25 @@
+.watch-exchange-history{margin-top:14px;padding:15px;border:1px solid #dbe4ee;border-radius:11px;background:#fff}
+.watch-exchange-history-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.watch-exchange-history-head h3{margin:0;font-size:1rem}
+.watch-exchange-history-head p{margin:6px 0;color:#64748b;font-size:.82rem;line-height:1.5}
+.watch-exchange-history-list{display:grid;gap:12px;margin-top:14px}
+.watch-exchange-history-entry{padding:14px;border:1px solid #e2e8f0;border-radius:10px;min-width:0}
+.watch-exchange-history-entry>p{color:#475569;font-size:.83rem;line-height:1.45}
+.watch-exchange-history-entry small{display:block;font-size:.76rem;color:#64748b;margin-top:5px}
+.watch-exchange-history-title{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px}
+.watch-exchange-history-title>div{display:grid;gap:3px}
+.watch-exchange-history-title>span{border-radius:7px;padding:5px 9px;background:#f1f5f9;color:#334155;font-size:.76rem;font-weight:700}
+.watch-exchange-history-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.watch-exchange-history-columns>div{border:1px solid #e2e8f0;border-radius:9px;padding:12px;min-width:0}
+.watch-exchange-history-columns h4{font-size:.84rem;margin:0 0 10px}
+.watch-exchange-history-item{display:grid;gap:3px;padding:9px 0;border-top:1px solid #f1f5f9;overflow-wrap:anywhere}
+.watch-exchange-history-item strong{font-size:.85rem}
+.watch-exchange-history-finance{font-weight:650;border-top:1px solid #edf1f6;padding-top:10px}
+.watch-exchange-history-confirm{display:grid;gap:12px;border-top:1px solid #e2e8f0;padding-top:12px}
+.watch-exchange-history-confirm>p{margin:0;color:#92400e;font-size:.8rem}
+.watch-exchange-history-confirm label{display:grid;gap:5px;font-size:.82rem;color:#334155}
+.watch-exchange-history-confirm textarea{border:1px solid #cbd5e1;border-radius:8px;padding:9px 10px;width:100%;min-height:65px;box-sizing:border-box;font:inherit}
+.watch-exchange-history-confirm .watch-exchange-history-check{display:flex;gap:8px;align-items:flex-start}
+.watch-exchange-history-confirm>div{display:flex;gap:9px;flex-wrap:wrap}
+.watch-exchange-history-error{color:#b91c1c;font-weight:650}
+@media(max-width:700px){.watch-exchange-history-columns{grid-template-columns:1fr}.watch-exchange-history-head{flex-direction:column}}

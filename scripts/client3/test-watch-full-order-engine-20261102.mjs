@@ -6,6 +6,7 @@ import {receiveClient3WatchArrival,transferClient3WatchStock} from '../../worker
 import {writeoffClient3WatchStock} from '../../worker/domains/client3-watch-writeoff.ts'
 import {createClient3WatchOrder} from '../../worker/domains/client3-watch-create.ts'
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
+import {retryClient3WatchReservations} from '../../worker/domains/client3-watch-reservation-recovery.ts'
 import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
 import {addClient3WatchDebtPayment} from '../../worker/domains/client3-watch-payments.ts'
 import {correctClient3WatchMetadata,correctClient3WatchItemPrices} from '../../worker/domains/client3-watch-order-corrections.ts'
@@ -14,6 +15,8 @@ import {previewClient3AdminOrderDelete,deleteClient3AdminOrder,reassignClient3Ad
 import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-watch-admin-payment-method.ts'
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
+import {listClient3WatchExchangeHistory,cancelClient3WatchExchange} from '../../worker/domains/client3-watch-exchange-history.ts'
+import {readWatchCommercialBalance} from '../../worker/domains/client3-watch-commercial.ts'
 import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
 import {addWatchModelAlias,listWatchModelAliases,deleteWatchModelAlias,findWatchModelByIdentity} from '../../worker/domains/client3-watch-model-aliases.ts'
 import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
@@ -28,6 +31,7 @@ import {listClient3WatchReportCityOrders,getClient3WatchReportDayDetails} from '
 import {getWatchBrandCash,setupWatchBrandCash,writeWatchBrandCash,setWatchBrandCashAuto,reverseWatchBrandManualCash,resetWatchBrandCashCycle} from '../../worker/domains/client3-watch-cash.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from '../../worker/domains/client3-watch-plans-leads.ts'
 import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {listClient3WatchReturnHistory,cancelClient3WatchReturn} from '../../worker/domains/client3-watch-return-history.ts'
 import {updateClient3WatchCatalogPrice} from '../../worker/domains/client3-watch-pricing.ts'
 
 const sqlite=new DatabaseSync(':memory:')
@@ -414,10 +418,30 @@ const foreignReturn=await parse(createClient3WatchReturn(db,manager,2,firstPurch
 }))
 assert.equal(foreignReturn.status,404)
 const returnedItem=sqlite.prepare('SELECT ri.id,ri.return_id FROM return_items ri JOIN returns r ON r.id=ri.return_id WHERE r.order_id=?').get(firstPurchase.orderId)
+const returnHistory=await parse(listClient3WatchReturnHistory(db,manager,1,firstPurchase.orderId))
+assert.equal(returnHistory.status,200,JSON.stringify(returnHistory))
+assert.equal(returnHistory.rows.length,1,'Main return history must expose one registered operation')
+assert.equal(JSON.parse(returnHistory.rows[0].items)[0].quantity,1,
+  'Return history must preserve the exact watch line quantity')
+assert.equal(JSON.parse(returnHistory.rows[0].items)[0].physicalReceivedAt,null,
+  'A monetary refund does not prove the watch has reached the warehouse')
+const otherBrandHistory=await parse(listClient3WatchReturnHistory(db,manager,2,firstPurchase.orderId))
+assert.equal(otherBrandHistory.status,404,'Other watch brand cannot read the return history')
+const otherBrandCancel=await parse(cancelClient3WatchReturn(db,manager,2,firstPurchase.orderId,returnedItem.return_id,{
+ requestId:'watch-history-foreign-cancel-20261104',reason:'Случайное действие в чужом бренде',
+}))
+assert.equal(otherBrandCancel.status,404,'Cannot cancel a different watch brands return')
+const missingReasonCancel=await parse(cancelClient3WatchReturn(db,manager,1,firstPurchase.orderId,returnedItem.return_id,{
+ requestId:'watch-history-empty-cancel-20261104',reason:'нет',
+}))
+assert.equal(missingReasonCancel.status,400,'Cancellation requires a meaningful reason')
 const intake={requestId:'watch-real-intake-000001',returnId:returnedItem.return_id,
  returnItemId:returnedItem.id,destination:'warehouse'}
 const intakeSaved=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
 assert.equal(intakeSaved.status,200,JSON.stringify(intakeSaved))
+const receivedHistory=await parse(listClient3WatchReturnHistory(db,manager,1,firstPurchase.orderId))
+assert(JSON.parse(receivedHistory.rows[0].items)[0].physicalReceivedAt,
+  'Physical receipt becomes visible in the order return history')
 assert.equal(stock('warehouse').quantity,physicalBeforeReturn+1)
 const intakeReplay=await parse(receiveClient3WatchReturn(db,manager,1,firstPurchase.orderId,intake))
 assert.equal(intakeReplay.ok,true)
@@ -1595,6 +1619,307 @@ const otherBrandBook=await parse(listClient3WatchClients(db,admin,2,
 assert.equal(otherBrandBook.status,200,JSON.stringify(otherBrandBook))
 assert(otherBrandBook.rows.every(x=>!clientBook.rows.some(c=>c.phoneKey===x.phoneKey&&c.phone===x.phone)) ||
  otherBrandBook.rows.length>0,'Customer views are scoped by brand, not global clients')
+assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
+// The new Client3 exchange history is Main's actual exchange ledger, not a
+// parallel watch-only status. Cancellation delegates all physical/money
+// compensations to the Main Exchange Set V2 engine.
+const mainExchangeHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,stage4Pay.created.orderId))
+assert.equal(mainExchangeHistory.status,200,JSON.stringify(mainExchangeHistory))
+assert.equal(mainExchangeHistory.exchanges.length,1)
+const firstSetHistory=mainExchangeHistory.exchanges[0]
+assert.equal(firstSetHistory.id,extraResult.exchangeId)
+assert.equal(firstSetHistory.isSetExchange,true)
+assert.equal(firstSetHistory.oldItems.length,1)
+assert.equal(firstSetHistory.newItems.length,1)
+assert.equal(firstSetHistory.newItems[0].modelName,'REAL ENGINE EXCHANGE MODEL')
+assert.equal(firstSetHistory.newItems[0].engravingText,'Новая гравировка')
+assert.equal(firstSetHistory.financialAction,'extra_payment')
+const foreignExchangeHistory=await parse(listClient3WatchExchangeHistory(db,admin,2,stage4Pay.created.orderId))
+assert.equal(foreignExchangeHistory.status,404,'Watch brand cannot read another brand exchange history')
+const foreignExchangeCancel=await parse(cancelClient3WatchExchange(db,admin,2,stage4Pay.created.orderId,extraResult.exchangeId,{
+ requestId:'watch-set-cancel-wrong-brand-20261104',reason:'Попытка отмены из другого бренда',
+}))
+assert.equal(foreignExchangeCancel.status,404,'An exchange of another watch brand cannot be cancelled')
+const beforeSetCancel=sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId)
+assert.deepEqual({...beforeSetCancel},{total_amount:60000,received_amount:60000,debt_amount:0})
+const cancelSetInput={requestId:'watch-set-exchange-cancel-20261104-001',reason:'Контрольная отмена обмена с доплатой двумя способами'}
+const cancelSet=await parse(cancelClient3WatchExchange(db,manager,1,stage4Pay.created.orderId,
+ extraResult.exchangeId,cancelSetInput))
+assert.equal(cancelSet.status,200,JSON.stringify(cancelSet))
+assert.equal(cancelSet.ok,true)
+assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?').get(extraResult.exchangeId).status,'cancelled')
+assert.deepEqual({...sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId)},{total_amount:40000,received_amount:40000,debt_amount:0},
+ 'Exchange cancel restores the original sale and reverses both extra payment methods')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=? AND quantity>0')
+ .get(stage4Pay.created.orderId).n,1,'Cancelled replacement must not remain an active sale item')
+const cancelSetReplay=await parse(cancelClient3WatchExchange(db,manager,1,stage4Pay.created.orderId,
+ extraResult.exchangeId,cancelSetInput))
+assert.equal(cancelSetReplay.status,200,JSON.stringify(cancelSetReplay))
+assert.equal(sqlite.prepare('SELECT received_amount FROM orders WHERE id=?')
+ .get(stage4Pay.created.orderId).received_amount,40000,'Cancelled split payment must not be reversed twice')
+const afterSetHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,stage4Pay.created.orderId))
+assert.equal(afterSetHistory.exchanges[0].status,'cancelled',
+ 'Cancelled Main exchange remains visible in watch order history')
+// Reversing a split refund must restore both the sale total and the original
+// received cash. Main emits compensating financial events; do not add a manual
+// order-level adjustment in Client3.
+const refundBeforeCancel=sqlite.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId)
+assert.equal(refundBeforeCancel.total_amount,30000)
+assert.equal(refundBeforeCancel.return_amount,40000)
+const refundCancelPayload={requestId:'watch-set-refund-cancel-20261104-01',
+ reason:'Контрольная отмена обмена с двумя способами возврата денег'}
+const refundCancelled=await parse(cancelClient3WatchExchange(db,manager,1,stage4Refund.created.orderId,
+ refundSet.exchangeId,refundCancelPayload))
+assert.equal(refundCancelled.status,200,JSON.stringify(refundCancelled))
+assert.deepEqual({...sqlite.prepare('SELECT total_amount,received_amount,return_amount,debt_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId)},{
+ total_amount:70000,received_amount:70000,return_amount:0,debt_amount:0,
+},'Native Main cancellation restores full original value and both refund methods')
+const refundCancelRepeat=await parse(cancelClient3WatchExchange(db,manager,1,stage4Refund.created.orderId,
+ refundSet.exchangeId,refundCancelPayload))
+assert.equal(refundCancelRepeat.ok,true,'A repeated refund-exchange cancellation cannot refund twice')
+assert.equal(sqlite.prepare('SELECT return_amount FROM orders WHERE id=?')
+ .get(stage4Refund.created.orderId).return_amount,0)
+
+// One replacement can depart while the other still waits in logistics, even
+// though both old units have not yet physically returned from the customer.
+fixtureEngravingReady(twoOld.orderId)
+// No stock for the newly resolved replacement SKU: the Main reserve admission
+// correctly left both obligations unresolved. A retry before physical arrival
+// must not manufacture inventory or convert them into active reservations.
+const withoutStock=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
+assert.equal(withoutStock.status,200,JSON.stringify(withoutStock))
+assert.equal(withoutStock.activated,0,'No actual stock means no reservation activation')
+const forbiddenReserveRetry=await parse(retryClient3WatchReservations(db,warehouseActor,1,twoOld.orderId))
+assert.equal(forbiddenReserveRetry.status,403,
+ 'Warehouse staff cannot override customer order reservation decisions')
+const foreignReserveRetry=await parse(retryClient3WatchReservations(db,manager,2,twoOld.orderId))
+assert.equal(foreignReserveRetry.status,404,'Cannot recover a different brand reservation')
+const incomingWatchVariant=activeSwap[0].watch_variant_id
+const arrivalForReplacementOffice=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:incomingWatchVariant,quantity:2,
+ requestId:'watch-swap-arrival-office-20261104',
+ comment:'Физически приняли новую комплектацию для обмена',
+}))
+assert.equal(arrivalForReplacementOffice.status,200,JSON.stringify(arrivalForReplacementOffice))
+const arrivalForReplacementShowcase=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'showcase',watchVariantId:incomingWatchVariant,quantity:1,
+ requestId:'watch-swap-arrival-showcase-20261104',
+ comment:'Физически приняли замену для витрины',
+}))
+assert.equal(arrivalForReplacementShowcase.status,200,JSON.stringify(arrivalForReplacementShowcase))
+const recovered=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
+assert.equal(recovered.status,200,JSON.stringify(recovered))
+assert.equal(recovered.activated,2,'Real arrivals let Main atomically activate the two pending reservations')
+const noDuplicateRecovery=await parse(retryClient3WatchReservations(db,manager,1,twoOld.orderId))
+assert.equal(noDuplicateRecovery.activated,0,'Repeat recovery must not reserve the same stock twice')
+const firstReplacementSent=await parse(dispatchClient3WatchOrder(db,logisticActor,1,twoOld.orderId,{
+ requestId:'watch-swap-followup-send-20261104-01',
+ items:[{orderItemId:activeSwap[0].id,quantity:1}],
+}))
+const replacementState=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.source_type,
+ oi.stock_writeoff_status,ir.id AS reservationId,ir.status AS reservationStatus,
+ ir.quantity AS reservedQuantity,ir.variant_id AS reservedVariant
+ FROM order_items oi LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).all(twoOld.orderId)
+assert.equal(firstReplacementSent.status,200,JSON.stringify({result:firstReplacementSent,replacementState}))
+assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
+ .get(twoOld.orderId).shipping_status,'sent',
+ 'Historical order-wide sent marker must not override exact replacement shipment state')
+const dispatchedNewCount=sqlite.prepare(`SELECT COUNT(DISTINCT di.order_item_id) AS n
+ FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+ WHERE d.order_id=? AND di.order_item_id IN (?,?)
+ AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+ .get(twoOld.orderId,activeSwap[0].id,activeSwap[1].id)
+assert.equal(dispatchedNewCount.n,1,
+ 'One replacement has left the warehouse, the other remains a separate active obligation')
+const pendingOldExchange=sqlite.prepare(`SELECT COUNT(*) AS n FROM exchange_items
+ WHERE exchange_id=? AND role='old' AND physical_tracking=1 AND physical_received_at IS NULL`)
+ .get(twoSwap.exchangeId)
+assert.equal(pendingOldExchange.n,2,'New shipping cannot erase old physical return obligations')
+const exchangeAfterShipment=await parse(listClient3WatchExchangeHistory(db,manager,1,twoOld.orderId))
+assert.equal(exchangeAfterShipment.exchanges[0].oldItems.length,2)
+assert.equal(exchangeAfterShipment.exchanges[0].newItems.length,2)
+assert.equal(exchangeAfterShipment.exchanges[0].newItems.filter(x=>x.shippedQuantity>0).length,1)
+const cancelDispatchedReplacement=await parse(cancelClient3WatchExchange(db,manager,1,twoOld.orderId,
+ twoSwap.exchangeId,{requestId:'watch-swap-cancel-after-send-20261104-01',
+ reason:'Попытка отменить обмен после фактической выдачи одной замены'}))
+assert.equal(cancelDispatchedReplacement.status,409,
+ 'Main must refuse destructive exchange cancellation after a replacement has been shipped')
+assert.equal(sqlite.prepare('SELECT status FROM exchanges WHERE id=?')
+ .get(twoSwap.exchangeId).status,'completed',
+ 'Failed cancel must not erase a real fulfilled replacement')
+// Stage4 no-shipment exchange: replacing a watch still physically in Office
+// must not create a fictitious return, a stock arrival, or an outgoing dispatch.
+const unissuedArrival=await parse(receiveClient3WatchArrival(db,admin,1,{
+ source:'office',watchVariantId:1,quantity:2,
+ requestId:'watch-unissued-exchange-arrival-20261104',
+ comment:'Real available unit for a no-shipment watch exchange',
+}))
+assert.equal(unissuedArrival.status,200,JSON.stringify(unissuedArrival))
+const unissuedCreated=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-unissued-exchange-create-20261104',
+ quantity:1,unitPrice:18000,receivedAmount:0,engravingText:'',
+ items:[{watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:18000,
+   source:'office',engravingText:''}],
+}))
+assert.equal(unissuedCreated.status,201,JSON.stringify(unissuedCreated))
+const unissuedOld=sqlite.prepare(`SELECT oi.id,oi.quantity,oi.unit_price,oi.line_total,
+ oi.catalog_price_snapshot,oi.stock_writeoff_status,ir.status AS reserveStatus
+ FROM order_items oi JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0`).get(unissuedCreated.orderId)
+assert.equal(unissuedOld.reserveStatus,'active','Original watch is reserved but not physically sent')
+const unissuedBase={
+ requestId:'watch-unissued-exchange-operation-20261104',
+ expectedOrderTotal:18000,oldItems:[{
+   orderItemId:unissuedOld.id,quantity:1,physicalState:'not_issued',
+   expectedActiveQuantity:unissuedOld.quantity,expectedUnitPrice:unissuedOld.unit_price,
+   expectedLineTotal:unissuedOld.line_total,
+   expectedCatalogPriceSnapshot:unissuedOld.catalog_price_snapshot,
+ }],
+ newItems:[{manual:manualReplacement,quantity:1,unitPrice:18000,
+   source:'office',engravingText:''}],
+ paymentParts:[],refundParts:[],reason:'Поменяли неотправленные часы на другую модель',
+}
+const wronglyMarkedPhysical=await parse(exchangeClient3WatchSet(
+ db,manager,1,unissuedCreated.orderId,{
+   ...unissuedBase,requestId:'watch-unissued-wrong-physical-20261104',
+   oldItems:[{...unissuedBase.oldItems[0],physicalState:'pending'}],
+ }))
+assert.equal(wronglyMarkedPhysical.status,409,
+ 'Cannot create a physical customer return for watches never sent')
+const unissuedPhysicalBefore=stock('warehouse').quantity
+const unissuedExchange=await parse(exchangeClient3WatchSet(
+ db,manager,1,unissuedCreated.orderId,unissuedBase))
+assert.equal(unissuedExchange.status,200,JSON.stringify(unissuedExchange))
+assert.equal(unissuedExchange.physicalOldIntakePending,false,
+ 'Unissued old watch was in Office, so no client return should be expected')
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM exchange_items WHERE exchange_id=? AND role=? AND physical_tracking=1')
+ .get(unissuedExchange.exchangeId,'old').n,0)
+assert.equal(sqlite.prepare('SELECT quantity FROM order_items WHERE id=?').get(unissuedOld.id).quantity,0)
+assert.equal(stock('warehouse').quantity,unissuedPhysicalBefore,
+ 'Changing an unsent reserved order does not physically ship or receive watches')
+assert.equal(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?')
+ .get(unissuedCreated.orderId).debt_amount,18000)
+const unissuedHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,unissuedCreated.orderId))
+assert.equal(unissuedHistory.exchanges[0].oldItems[0].wasNotIssued,true)
+// Stage 7: ARYSTAN-like partial standalone return, then a different watch
+// exchange. Commercial credit must reduce net sale without inventing any
+// payment, preserve physical-intake tracking, and make Main quote ONLY the
+// price difference for the unaffected product.
+for(const [sku,req] of [[1,'watch-credit-arrival-one-20261104'],
+  [2,'watch-credit-arrival-two-20261104']]){
+ const received=await parse(receiveClient3WatchArrival(db,admin,1,{
+   source:'office',watchVariantId:sku,quantity:15,requestId:req,
+ }))
+ assert.equal(received.status,200,JSON.stringify(received))
+}
+const creditPurchase=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-credit-return-exchange-create-20261104',
+ receivedAmount:70000,engravingText:'',
+ items:[
+   {watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:20000,source:'office',engravingText:''},
+   {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,quantity:1,unitPrice:50000,source:'office',engravingText:''},
+ ],
+}))
+assert.equal(creditPurchase.status,201,JSON.stringify(creditPurchase))
+const creditItems=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
+ FROM order_items WHERE order_id=? ORDER BY id`).all(creditPurchase.orderId)
+assert.deepEqual(creditItems.map(row=>row.unit_price),[20000,50000])
+const initialCreditDispatch=await parse(dispatchClient3WatchOrder(db,logisticActor,1,creditPurchase.orderId,{
+ requestId:'watch-credit-return-exchange-send-20261104',
+ items:creditItems.map(x=>({orderItemId:x.id,quantity:1})),
+}))
+assert.equal(initialCreditDispatch.status,200,JSON.stringify(initialCreditDispatch))
+const physicalCreditReturn=await parse(createClient3WatchReturn(db,manager,1,creditPurchase.orderId,{
+ requestId:'watch-credit-return-first-20261104',kind:'both',quantity:1,
+ items:[{orderItemId:creditItems[0].id,quantity:1}],amount:20000,
+ paymentMethod:'KASPI GOLD',refundParts:[{method:'KASPI GOLD',amount:20000}],
+ reason:'Вернули ARYSTAN, другие часы остаются в заказе',
+}))
+assert.equal(physicalCreditReturn.status,200,JSON.stringify(physicalCreditReturn))
+const storedCredit=sqlite.prepare('SELECT amount,quantity FROM return_items WHERE return_id=?')
+ .get(physicalCreditReturn.returnId)
+assert.equal(storedCredit.amount,20000,'Commercial value frozen with the physical return')
+let creditBalance=await readWatchCommercialBalance(db,creditPurchase.orderId)
+assert.deepEqual(creditBalance,{
+ grossTotal:70000,returnedGoodsValue:20000,netSale:50000,
+ received:70000,refunded:20000,netPaid:50000,netDebt:0,overpayment:0,
+})
+const creditExchange=await parse(exchangeClient3WatchSet(db,manager,1,creditPurchase.orderId,{
+ requestId:'watch-credit-exchange-second-20261104',
+ expectedOrderTotal:70000,
+ oldItems:[{
+   orderItemId:creditItems[1].id,quantity:1,physicalState:'pending',
+   expectedActiveQuantity:1,expectedUnitPrice:50000,
+   expectedLineTotal:50000,expectedCatalogPriceSnapshot:creditItems[1].catalog_price_snapshot,
+ }],
+ newItems:[{manual:manualReplacement,source:'office',quantity:1,
+   unitPrice:60000,engravingText:'Возврат других часов не блокирует обмен'}],
+ paymentParts:[{method:'KASPI RED',amount:10000}],refundParts:[],
+ reason:'Заменили только вторую модель с доплатой десять тысяч',
+}))
+assert.equal(creditExchange.status,200,JSON.stringify(creditExchange))
+assert.equal(creditExchange.paymentAmount,10000,
+ 'Prior returned sale unit is a noncash credit: new watch adds only 10K')
+creditBalance=await readWatchCommercialBalance(db,creditPurchase.orderId)
+assert.deepEqual(creditBalance,{
+ grossTotal:80000,returnedGoodsValue:20000,netSale:60000,
+ received:80000,refunded:20000,netPaid:60000,netDebt:0,overpayment:0,
+})
+assert.equal(sqlite.prepare(`SELECT COUNT(*) AS n FROM return_items
+ WHERE return_id=? AND physical_tracking=1 AND physical_received_at IS NULL`)
+ .get(physicalCreditReturn.returnId).n,1,
+ 'ARYSTAN physical receipt remains pending while second watch is exchanged')
+
+// Item-only return with an unpaid balance: customer owes price of remaining
+// goods, not the original gross order. Validate the debt at the exact Main
+// atomic payment insert, not just at the button or preliminary read.
+const debtPurchase=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-credit-debt-create-20261104',
+ receivedAmount:30000,engravingText:'',
+ items:[
+   {watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:20000,source:'office',engravingText:''},
+   {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,quantity:1,unitPrice:50000,source:'office',engravingText:''},
+ ],
+}))
+assert.equal(debtPurchase.status,201,JSON.stringify(debtPurchase))
+const debtItems=sqlite.prepare('SELECT id FROM order_items WHERE order_id=? ORDER BY id')
+ .all(debtPurchase.orderId)
+const debtShip=await parse(dispatchClient3WatchOrder(db,logisticActor,1,debtPurchase.orderId,{
+ requestId:'watch-credit-debt-send-20261104',
+ items:debtItems.map(x=>({orderItemId:x.id,quantity:1})),
+}))
+assert.equal(debtShip.status,200,JSON.stringify(debtShip))
+const debtReturned=await parse(createClient3WatchReturn(db,manager,1,debtPurchase.orderId,{
+ requestId:'watch-credit-debt-return-20261104',kind:'items_only',
+ amount:0,quantity:1,items:[{orderItemId:debtItems[0].id,quantity:1}],
+ reason:'Вернули одни часы, денег пока не возвращали',
+}))
+assert.equal(debtReturned.status,200,JSON.stringify(debtReturned))
+const debtCreditBalance=await readWatchCommercialBalance(db,debtPurchase.orderId)
+assert.equal(debtCreditBalance.netDebt,20000)
+assert.equal(sqlite.prepare('SELECT debt_amount FROM orders WHERE id=?')
+ .get(debtPurchase.orderId).debt_amount,40000,
+ 'Main raw debt retained, Client3 must use the adjusted commercial debt')
+const tooMuchMoney=await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,{
+ requestId:'watch-credit-debt-too-much-20261104',method:'KASPI GOLD',
+ amount:30000,paymentDate:'2026-11-04',
+}))
+assert.equal(tooMuchMoney.status,409,'Cannot charge for a physically returned watch')
+const exactDebtInput={requestId:'watch-credit-debt-exact-pay-20261104',
+ method:'KASPI GOLD',amount:20000,paymentDate:'2026-11-04'}
+const exactDebt=await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,exactDebtInput))
+assert.equal(exactDebt.status,201,JSON.stringify(exactDebt))
+assert.equal((await readWatchCommercialBalance(db,debtPurchase.orderId)).netDebt,0)
+assert.equal((await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,exactDebtInput))).ok,true,
+ 'Idempotent commercial debt settlement must not add money twice')
+assert.equal((await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,{
+ ...exactDebtInput,requestId:'watch-credit-debt-extra-reject-20261104',amount:10000,
+}))).status,409)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')

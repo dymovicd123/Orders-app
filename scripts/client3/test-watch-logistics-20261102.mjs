@@ -12,13 +12,22 @@ assert(!/\/api\/orders\/|\/api\/workshop\/|\/api\/finance\/|\/api\/cash/.test(so
   'Logistics may not post to shipping, cash or legacy workshop endpoints')
 assert(source.includes("crypto.randomUUID()"), 'Ready must have an idempotency key')
 assert(source.includes("credentials: 'include'"), 'Only authenticated API calls allowed')
+assert(source.includes('onOpenReturns(order.brand)'), 'Logistics links physical intake using the exact order brand')
+assert(source.includes('Перейти к приёмке возвратов'),
+  'Physical intake is an available action from return-bearing logistics details')
+const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
+assert(app.includes("onOpenReturns={canSales?selected=>{setBrand(selected);goTo('returns')}:undefined}"),
+  'Sales roles can navigate from Logistics to the correct physical-intake queue')
+assert(app.includes("initialBrand={brand||undefined}"),
+  'Returns intake must not silently reset selected brand to the first brand')
 
 const server = await createServer({
   configFile: false, plugins: [reactPlugin()], appType: 'custom',
   server: { middlewareMode: true }, logLevel: 'error',
 })
 try {
-  const { WatchLogisticsPanel, groupWatchLogistics, formatWatchDeadline, logisticsItemEligible } =
+  const { WatchLogisticsPanel, groupWatchLogistics, formatWatchDeadline, logisticsItemEligible,
+      logisticsOrderComplete } =
     await server.ssrLoadModule('/src/features/client3/WatchLogisticsPanel.tsx')
   const row = {
     orderId: 42, externalId: 'WATCH-42', brand: 'TAUWACH',
@@ -43,6 +52,11 @@ try {
   assert.equal(logisticsItemEligible({...ready,shippedQuantity:1}),false,'Cannot resend shipped item')
   assert.equal(logisticsItemEligible({...ready,reservationStatus:'unresolved'}),false,
     'Unreserved stock cannot be sent')
+  assert.equal(logisticsOrderComplete({order:row,items:[{...ready,quantity:2,shippedQuantity:1}]}),false,
+    'One of two watch units dispatched is not a completed line')
+  assert.equal(logisticsOrderComplete({order:row,items:[{...ready,quantity:0,returnedQuantity:1,
+    pendingReturnQuantity:1}]}),true,
+    'A fully returned historic order is no longer a dispatch task; physical intake has its own queue')
   const view = renderToStaticMarkup(React.createElement(WatchLogisticsPanel, {
     brand: 'TAUWACH', canCompleteEngraving: true,
   }))
