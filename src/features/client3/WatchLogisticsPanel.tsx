@@ -401,14 +401,17 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       />
     })()}
     <StockResolutionConfirmModal prompt={stockPrompt?{
-      title:'Товара по учёту меньше, чем нужно для отправки',
-      intro:'Проверьте физическое наличие именно выбранных часов. Общий остаток этим не пересчитывается.',
+      title:'Уточнение остатка перед отправкой',
+      intro:'По системе товара недостаточно. Сверьте количество выбранных часов перед отправкой. Остатки склада этим действием не изменяются.',
       items:stockPrompt.items.map(item=>({
         productName:item.modelName||'Часы',
         tracked:Math.max(0,Number(item.physicalQuantity||0)),
         needed:Math.max(1,Number(item.quantity||1)),
       })),
-      actionLabel:'Да, передаю эти часы',
+      trackedLabel:'По системе',
+       neededLabel:'К отправке',
+       question:'Эти часы физически есть для отправки?',
+       actionLabel:'Да, часы в наличии — отправить',
       cancelLabel:'Остановить отправку',
       note:'Подтверждение относится только к этой передаче. Сервер по-прежнему проверяет ревизию и статус резерва.',
     }:null}
