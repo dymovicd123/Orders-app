@@ -7,6 +7,7 @@ import {WatchWarehouseHistory} from './features/client3/WatchWarehouseStage5'
 import {WatchStockMainBrowse} from './features/client3/WatchStockMainBrowse'
 import {WatchDemandPanel} from './features/client3/WatchDemandPanel'
 import { WatchOrdersPanel } from './features/client3/WatchOrdersPanel'
+import {WatchDebtWorkspace} from './features/client3/WatchDebtWorkspace'
 import {WatchClientsPanel} from './features/client3/WatchClientsPanel'
 import {WatchFinancePanel} from './features/client3/WatchFinancePanel'
 import {WatchDashboardPanel} from './features/client3/WatchDashboardPanel'
@@ -37,13 +38,14 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'debts'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
   dashboard:{title:'Инфопанель',description:'Продажи, деньги и внимание к срокам логистики.',area:'Обзор'},
   reports:{title:'Отчёты',description:'Брендовые отчёты Main по оплатам, товарам, городам и менеджерам.',area:'Финансы'},
   plan:{title:'План',description:'Денежные планы отдела и менеджеров, без KPI.',area:'Продажи'},
   leads:{title:'Лиды',description:'Лиды и Колл-центр по каждому бренду, как в Main.',area:'Продажи'},
   orders:{title:'Заказы',description:'Продажи, отгрузки и состояние заказов по брендам.',area:'Продажи'},
+  debts:{title:'Закрытие долга',description:'Открытые долги, оплата и история закрытий.',area:'Продажи'},
   clients:{title:'Клиенты',description:'Покупатели, повторные продажи и история заказов.',area:'Продажи'},
   create:{title:'Новый заказ',description:'Выберите доступные часы, укажите оплату и данные получателя.',area:'Продажи'},
   logistics:{title:'Логистика',description:'Гравировка, сроки исполнения и подготовка к отправке.',area:'Рабочие процессы'},
@@ -97,6 +99,7 @@ export function WatchClient3App() {
   const [warning,setWarning] = useState('')
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [logisticsFocusOrderId,setLogisticsFocusOrderId]=useState<number|null>(null)
+  const [debtTarget,setDebtTarget]=useState<{brand:WatchBrand;orderId:number;externalId:string}|null>(null)
   const [correctionPrefill,setCorrectionPrefill]=useState<{
     brand:WatchBrand;source:'office'|'showcase';watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'
   }|null>(null)
@@ -328,10 +331,10 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['dashboard','reports','plan','leads','clients','orders','create','finance','returns','exchange'].includes(tab))||
+    (!canSales&&['dashboard','reports','plan','leads','clients','orders','create','debts','finance','returns','exchange'].includes(tab))||
     (!canSeeWarehouse&&['warehouse','operations','revision','history','statistics','catalog','references'].includes(tab))
       ? (isWarehouseRole?'warehouse':'logistics'):tab
-  const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
+  const orderTab=activeSection==='debts'?'debt':activeSection==='create'?'create':activeSection==='returns'?'returns':
     activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
   const viewModels=(brand&&models)||[]
   return <Client3MainChrome
@@ -359,11 +362,11 @@ export function WatchClient3App() {
           }}/>}
       {activeSection==='clients'&&brands.length>0&&<WatchClientsPanel brands={brands.map(x=>x.code)}
         onOpenOrder={order=>{setReportOrderFocus(order);setLastOrderBrand(order.brand);goTo('orders')}}/>}
-      {['orders','create','returns','exchange','legacy'].includes(activeSection)&&<>
+      {['orders','create','debts','returns','exchange','legacy'].includes(activeSection)&&<>
         <OrdersHeaderSection ctx={{
           orderPanel:orderTab,
           orderPanelOptions:orderPanelOptions.filter(panel=>
-            ['list','create','returns','exchange'].includes(panel.kind))
+            ['list','create','debt','returns','exchange'].includes(panel.kind))
             .map(panel=>panel.kind==='exchange'?{...panel,label:'Обмен'}:
               panel.kind==='returns'?{...panel,label:'Возвраты'}:
               panel),
@@ -371,16 +374,22 @@ export function WatchClient3App() {
           exchangeHistorySummary:{pendingPhysicalQuantity:0},
           sectorStyle:()=>({}),
           setEditorOpen:()=>{},
-          setOrderPanel:(panel:string)=>goTo(panel==='create'?'create':
-            panel==='returns'?'returns':panel==='exchange'?'exchange':
-            'orders'),
+          setOrderPanel:(panel:string)=>{
+            if(panel==='debt')setDebtTarget(null)
+            goTo(panel==='create'?'create':panel==='debt'?'debts':
+              panel==='returns'?'returns':panel==='exchange'?'exchange':
+              'orders')
+          },
         }}/>
         {activeSection==='orders'?(brands.length?
           <WatchOrdersPanel key={'orders-'+catalogVersion}
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenLogistics={(selected,orderId)=>{
+            isAdmin={canAdmin} onOpenDebt={(selected,orderId,externalId)=>{
+              setDebtTarget({brand:selected,orderId,externalId})
+              setLastOrderBrand(selected);goTo('debts')
+            }} onOpenLogistics={(selected,orderId)=>{
               setLogisticsFocusOrderId(orderId);setBrand(selected);goTo('logistics')
             }}
             onOpenWorkflow={(kind,order)=>{
@@ -388,6 +397,11 @@ export function WatchClient3App() {
               goTo(kind==='returns'?'returns':'exchange')
             }}/>:
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
+        activeSection==='debts'?(
+          brands.length?<WatchDebtWorkspace key={'debts-'+(debtTarget?.orderId||'list')+'-'+(debtTarget?.brand||lastOrderBrand||'')}
+            brands={brands.map(x=>x.code)} initialTarget={debtTarget||undefined}/>:
+          <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>
+        ):
         activeSection==='create'?
           <section className="watch-shell-create-page">
             <WatchOrderForm allowedBrands={brands.map(x=>x.code)} catalog={models}
