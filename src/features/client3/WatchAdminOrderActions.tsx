@@ -1,13 +1,9 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {WatchAdminDeleteChainPanel} from './WatchAdminDeleteChainPanel'
 
 type Manager={id:number;name:string}
 type Payment={id:number;method:string;amount:number;date:string;kind:string;comment:string}
-type DeletePreview={
- externalId:string;totalAmount:number;receivedAmount:number;returnedAmount:number;
- activeReturns:number;activeExchanges:number;issuedItems:number;paymentCount:number;
- reasons:string[];explanations:string[];canDelete:boolean;expectedSnapshot:string
-}
 const money=(x:number)=>Number(x||0).toLocaleString('ru-RU')+' ₸'
 type Props={
  brand:WatchBrand;orderId:number;externalId:string;managerId:number;paymentLines:string;
@@ -22,9 +18,6 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
  const [methods,setMethods]=useState<string[]>([])
  const [chosenPayment,setChosenPayment]=useState(0)
  const [method,setMethod]=useState('')
- const [preview,setPreview]=useState<DeletePreview|null>(null)
- const [reason,setReason]=useState('')
- const [ack,setAck]=useState(false)
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const pending=useRef<{key:string;id:string}|null>(null)
@@ -45,18 +38,6 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
      }).catch(()=>{})
    return ()=>controller.abort()
  },[brand])
- const openDelete=async()=>{
-   setBusy(true);setError('');setMode('delete');setPreview(null);setAck(false)
-   try{
-     const response=await fetch('/api/client3/watches/orders/'+orderId+'/delete?brand='+brand,{
-       credentials:'include',cache:'no-store',
-     })
-     const data=await response.json() as {ok?:boolean;preview?:DeletePreview;message?:string}
-     if(!response.ok||!data.ok||!data.preview)throw new Error(data.message||'Невозможно проверить удаление.')
-     setPreview(data.preview)
-   }catch(err){setError(err instanceof Error?err.message:'Ошибка проверки удаления.')}
-   finally{setBusy(false)}
- }
  const commit=async(url:string,body:Record<string,unknown>,method:'POST'|'PATCH')=>{
    const key=JSON.stringify({url,body})
    if(pending.current?.key!==key)pending.current={key,id:'watch-admin-'+crypto.randomUUID()}
@@ -68,7 +49,7 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
      })
      const data=await response.json() as {ok?:boolean;message?:string}
      if(!response.ok||!data.ok)throw new Error(data.message||'Действие не завершено.')
-     setMode(null);setPreview(null);onDone()
+     setMode(null);onDone()
    }catch(err){setError(err instanceof Error?err.message:'Действие не завершено.')}
    finally{setBusy(false)}
  }
@@ -96,17 +77,10 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
      },
    },'PATCH')
  }
- const executeDelete=async(event:FormEvent<HTMLFormElement>)=>{
-   event.preventDefault()
-   if(busy||!preview?.canDelete||!ack||reason.trim().length<5)return
-   await commit('/api/client3/watches/orders/'+orderId+'/delete',{
-     brand,expectedSnapshot:preview.expectedSnapshot,comment:reason.trim(),
-   },'POST')
- }
  return <section className="watch-admin-actions">
    <div className="watch-admin-actions-buttons">
      <button type="button" className="secondary compact" disabled={busy}
-       onClick={()=>{setMode(mode==='manager'?null:'manager');setError('');setPreview(null)}}>
+       onClick={()=>{setMode(mode==='manager'?null:'manager');setError('')}}>
        Сменить менеджера
      </button>
      {payments.length>0&&<button type="button" className="secondary compact" disabled={busy}
@@ -115,7 +89,7 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
          setChosenPayment(payments[0].id);setMethod(payments[0].method)
        }}>Исправить способ оплаты</button>}
      <button type="button" className="secondary compact watch-admin-delete-trigger" disabled={busy}
-       onClick={()=>void openDelete()}>Удалить заказ</button>
+       onClick={()=>{setMode('delete');setError('')}}>Удалить заказ</button>
    </div>
    {mode==='manager'&&<form className="watch-admin-action-form" onSubmit={e=>void setManager(e)}>
      <strong>Ответственный за заказ {externalId}</strong>
@@ -157,34 +131,8 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
        <button type="button" className="secondary" disabled={busy} onClick={()=>setMode(null)}>Отмена</button>
      </div>
    </form>}
-   {mode==='delete'&&<section className="watch-admin-action-form" aria-label="Предпросмотр последствий удаления">
-     <strong>Удаление заказа {externalId}</strong>
-     {busy&&!preview&&<p>Проверяю финансовые и складские последствия…</p>}
-     {preview&&<>
-       <p><strong>Сумма:</strong> {money(preview.totalAmount)} ·
-         <strong> Оплачено:</strong> {money(preview.receivedAmount)} ·
-         <strong> Возвраты:</strong> {money(preview.returnedAmount)}</p>
-       <p>Оплат: {preview.paymentCount} · Выданных позиций: {preview.issuedItems} ·
-         Возвратов: {preview.activeReturns} · Обменов: {preview.activeExchanges}</p>
-       {preview.explanations.map((x,i)=><p key={i}>{x}</p>)}
-       {preview.reasons.map((x,i)=><p className="watch-admin-delete-reason" key={i}>{x}</p>)}
-       {preview.canDelete?<form onSubmit={e=>void executeDelete(e)}>
-         <label>Причина удаления *
-           <textarea required minLength={5} maxLength={500} rows={2}
-             placeholder="Причина для истории" value={reason}
-             onChange={e=>setReason(e.target.value)}/></label>
-         <label className="watch-admin-delete-confirm">
-           <input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)}/>
-           Подтверждаю удаление заказа и отмену его учётных оплат/резервов
-         </label>
-         <div className="watch-admin-actions-buttons">
-           <button className="primary watch-admin-delete-confirm-button" type="submit"
-             disabled={busy||!ack||reason.trim().length<5}>Подтвердить удаление</button>
-           <button type="button" className="secondary" disabled={busy} onClick={()=>setMode(null)}>Отмена</button>
-         </div>
-       </form>:<p>Удаление заблокировано до разрешения перечисленных зависимостей.</p>}
-     </>}
-   </section>}
+   {mode==='delete'&&<WatchAdminDeleteChainPanel brand={brand} orderId={orderId}
+     externalId={externalId} onDone={onDone} onClose={()=>setMode(null)}/>}
    {error&&<p className="watch-orders-error" role="alert">{error}</p>}
  </section>
 }
