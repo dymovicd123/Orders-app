@@ -49,6 +49,15 @@ export async function listClient3WatchExchangeHistory(
    LEFT JOIN watch_variant_attributes_v5 a ON a.watch_variant_id=wv.id
    WHERE oi.order_id=? AND wp.brand_id=?
  `).bind(orderId,brandId).all<Record<string,unknown>>()
+ const archivalEvents=await db.prepare(`
+   SELECT le.operation_id AS exchangeId,COUNT(*) AS archivedCount
+   FROM inventory_lifecycle_events le JOIN catalog_variants cv ON cv.id=le.variant_id
+   JOIN catalog_products cp ON cp.id=cv.product_id
+   WHERE le.operation_type='exchange' AND le.order_id=? AND le.status='applied'
+     AND cp.is_active=0
+   GROUP BY le.operation_id`).bind(orderId).all<{exchangeId:number;archivedCount:number}>()
+ const archiveCounts=new Map((archivalEvents.results||[]).map(x=>[
+   Number(x.exchangeId),Number(x.archivedCount)]))
  const watchByItem=new Map((orderWatchItems.results||[]).map(x=>[Number(x.orderItemId),x]))
  const toWatchItem=(line:Record<string,unknown>)=>{
    const item=watchByItem.get(Number(line.orderItemId))
@@ -72,7 +81,7 @@ export async function listClient3WatchExchangeHistory(
    exchanges:history.exchanges.map((e)=>{
      const oldItems=(e.oldItems||[]).map((line:Record<string,unknown>)=>toWatchItem(line))
      const newItems=(e.newItems||[]).map((line:Record<string,unknown>)=>toWatchItem(line))
-     return {...e,oldItems,newItems}
+     return {...e,oldItems,newItems,archivedAppliedCount:archiveCounts.get(Number(e.id))||0}
    }),
  })
 }
@@ -83,7 +92,7 @@ export async function listClient3WatchExchangeHistory(
  */
 export async function cancelClient3WatchExchange(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,exchangeId:number,
- input:{requestId?:unknown;reason?:unknown},
+ input:{requestId?:unknown;reason?:unknown;physicalLocation?:unknown},
 ){
  if(!permitted(actor))
    return error('WATCH_EXCHANGE_CANCEL_FORBIDDEN','Отмена обменов доступна менеджеру и администратору.',403)
@@ -124,7 +133,15 @@ export async function cancelClient3WatchExchange(
      'Нельзя отменить обмен: новые часы уже фактически отправляли клиенту. Если передача была настоящей, оформите возврат и приёмку как отдельные операции. Если отправку отметили по ошибке, исправьте её перед отменой обмена. Саму отправку отмена обмена не откатывает.',409)
  }
  try{
-   const inputMain={requestId:input.requestId as string,comment:reason}
+   const locationLabels:Record<string,string>={
+     customer:'часы у клиента',office:'часы у продавца',unknown:'фактическое местонахождение не выяснено'
+   }
+   const location=typeof input.physicalLocation==='string'&&
+     Object.hasOwn(locationLabels,input.physicalLocation)
+     ?input.physicalLocation:'unknown'
+   const auditReason=archiveReversedCount>0
+     ?reason+' | Архивный товар: '+locationLabels[location]:reason
+   const inputMain={requestId:input.requestId as string,comment:auditReason}
    const setExchange=await isExchangeSetV2(db,exchangeId)
    const result=setExchange
      ?await cancelExchangeSetV2(db,exchangeId,inputMain)
