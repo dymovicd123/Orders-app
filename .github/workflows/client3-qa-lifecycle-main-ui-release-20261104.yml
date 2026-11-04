@@ -1,0 +1,119 @@
+name: Client3 QA — Main UI + latest real lifecycle (TEST ONLY)
+on:
+  push:
+    branches: [client3/qa-main-ui-plus-lifecycle-20261104]
+    paths: ['.github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml']
+permissions:
+  contents: read
+concurrency:
+  group: client3-qa-main-ui-lifecycle-release
+  cancel-in-progress: false
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      QA_WORKER: orders-app-client3-qa-20261103
+      QA_DB: orders_db_client3_qa_41698114208
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      PROD_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - uses: actions/setup-node@v4
+        with: {node-version: "24",cache: npm}
+      - name: Guard precise QA-only identity, never original Client3
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
+          test "$(git rev-parse HEAD^)" = e91f3b20ee5ddf6607ca1b4a76ef1d55096c66c1
+          test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$QA_DB_ID" != "$PROD_DB_ID"
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$PROD_DB_ID"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          original=json.loads(Path('wrangler.jsonc').read_text())
+          assert original['name']=='orders-app-client3-old-client'
+          assert original['d1_databases'][0]['database_id']==os.environ['PROD_DB_ID']
+          original['name']=os.environ['QA_WORKER']
+          original['d1_databases'][0]['database_name']=os.environ['QA_DB']
+          original['d1_databases'][0]['database_id']=os.environ['QA_DB_ID']
+          original['vars']['CLIENT3_QA_COPY']='1'
+          Path('wrangler.client3-qa.jsonc').write_text(json.dumps(original,ensure_ascii=False,indent=2))
+          PY
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.client3-qa.jsonc
+      - run: npm ci
+      - name: TypeScript and production bundle
+        run: npm run build
+      - name: Exact Main returns, exchange, partial dispatch and physical intake tests
+        run: |
+          set -euo pipefail
+          for testfile in \
+            scripts/client3/test-watch-orders-read-20261102.mjs \
+            scripts/client3/test-watch-logistics-20261102.mjs \
+            scripts/client3/test-watch-return-money-ui-20261104.mjs \
+            scripts/client3/test-watch-full-order-engine-20261102.mjs \
+            scripts/client3/test-watch-full-exchange-engine-20261102.mjs \
+            scripts/client3/test-main-return-table-parity-20261104.mjs \
+            scripts/client3/test-watch-main-step1-20261102.mjs \
+            scripts/client3/test-watch-form-20261102.mjs \
+            scripts/client3/test-watch-warehouse-order-parity-20261102.mjs \
+            scripts/client3/test-watch-shared-cash-team-20261103.mjs; do
+            echo "::group::$testfile"
+            node --experimental-strip-types "$testfile"
+            echo "::endgroup::"
+          done
+      - name: Read-only QA D1 schema, admin, watch operations, FK
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM app_users WHERE role='admin' AND is_active=1) admins,
+            (SELECT COUNT(*) FROM watch_brands) brands,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_engraving_item_readiness') ready_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_shared_cash_register') cash_table,
+            (SELECT COUNT(*) FROM pragma_table_info('return_items') WHERE name='amount') return_value,
+            (SELECT COUNT(*) FROM pragma_table_info('exchanges') WHERE name='refund_return_id') exchange_link" |
+            jq -e '.[0].results[0] | select(.admins>=1 and .brands>=2 and .ready_table==1 and .cash_table==1 and .return_value==1 and .exchange_link==1)'
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+      - name: Deploy only EXISTING TEST Worker and TEST D1; no migrations
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          npx wrangler deploy --config wrangler.client3-qa.jsonc
+      - name: Verify QA live assets and unauthenticated protection
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
+          for attempt in $(seq 1 8); do
+            status=$(curl -sSL -o /tmp/qa-home -w '%{http_code}' --max-time 20 "$base/" || true)
+            test "$status" = 200 && break
+            sleep 3
+          done
+          test "$status" = 200
+          grep -Eq 'id="root"|type="module"' /tmp/qa-home
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          curl -fsSL --max-time 30 "$base$asset" >/tmp/qa-bundle
+          cmp -s "dist/client$asset" /tmp/qa-bundle
+          for endpoint in '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/logistics?brand=TAUWACH' '/api/client3/watches/returns/pending?brand=TAUWACH'; do
+            code=$(curl -sS -o /tmp/qa-anon -w '%{http_code}' --max-time 20 "$base$endpoint")
+            test "$code" = 401 -o "$code" = 403
+          done
+          echo CLIENT3_QA_MAIN_UI_LIFECYCLE_RELEASE_VERIFIED
+      - name: Post-deploy test D1 integrity only
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          echo "TEST_CLIENT3_READY original Client3, Main and Branch2 untouched"
