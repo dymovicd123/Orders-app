@@ -1,0 +1,39 @@
+name: Client3 original postrelease HTTP diagnostics (read only)
+on:
+  push:
+    branches: [release/client3-delete-v6-20261104]
+    paths:
+      - '.github/workflows/client3-original-postrelease-readonly-20261104.yml'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Inspect only public live Worker and auth boundaries
+        shell: bash
+        run: |
+          set -uo pipefail
+          base='https://orders-app-client3-old-client.orders-clothes.workers.dev'
+          echo 'READ_ONLY_CLIENT3_POSTRELEASE_DIAGNOSTICS_START'
+          for attempt in 1 2 3; do
+            code="$(curl -sSL --max-time 20 -o /tmp/client3-home -w '%{http_code}' "$base/?readonly_audit=$GITHUB_RUN_ID" || true)"
+            echo "home attempt $attempt: HTTP $code bytes=$(wc -c </tmp/client3-home 2>/dev/null || echo 0)"
+            head -c 360 /tmp/client3-home 2>/dev/null || true
+            echo
+            if test "$code" = 200 && grep -Eq 'id="root"|type="module"' /tmp/client3-home; then
+              echo 'HTML_ROOT_DETECTED'
+              break
+            fi
+            sleep 3
+          done
+          if test -s /tmp/client3-home; then
+            grep -Eo 'src="/assets/[^"]+\.js"' /tmp/client3-home || true
+          fi
+          for path in '/assets/index-cXUkTPfU.js' '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/catalog/retired?brand=TAUWACH' '/api/auth/status'; do
+            code="$(curl -sSL --max-time 20 -o /tmp/client3-probe -w '%{http_code}' "$base$path" || true)"
+            echo "path $path: HTTP $code bytes=$(wc -c </tmp/client3-probe 2>/dev/null || echo 0)"
+            if [[ "$path" == /api/* ]]; then head -c 180 /tmp/client3-probe 2>/dev/null || true; echo; fi
+          done
+          echo 'READ_ONLY_CLIENT3_POSTRELEASE_DIAGNOSTICS_COMPLETE'
