@@ -7,7 +7,7 @@ type DeleteInput={kind:Kind;watchProductId:number;watchVariantId?:number;
 type Preview={ok:boolean;message?:string;modelName?:string;count:number;
   canDelete:boolean;blockers?:string[];alreadyDeleted?:boolean;
   physicalQuantity?:number;activeReservations?:number;openOrders?:number;
-  historicalOrderItems?:number;inventoryWillBeRemoved?:boolean;
+  historicalOrderItems?:number;appliedPhysicalReturnExchangeCount?:number;inventoryWillBeRemoved?:boolean;
   reservationsWillBeReleased?:boolean}
 export function WatchCatalogDeleteAction({brand,kind,watchProductId,watchVariantId,movement,
   braceletMaterial,label,onDeleted}:{
@@ -89,7 +89,12 @@ export function WatchCatalogDeleteAction({brand,kind,watchProductId,watchVariant
               <p>При удалении товара складские резервы будут освобождены, но позиции останутся в заказах и логистике. Гравировку можно будет отметить готовой, а отправку — подтвердить в логистике после явного подтверждения физической передачи.</p>
               <p>В этом случае отправка фиксируется в журнале заказа <strong>без повторного складского списания и без восстановления удалённого SKU</strong>. Частичная отправка сохраняет оставшиеся часы отдельной позицией. Возврат в остаток удалённого SKU запрещён: полученные часы принимаются без зачисления в архивный склад.</p>
             </div>}
-          <p>Восстановление удалённого товара выполняется отдельно; обычное создание заказа не возвращает архивные SKU в список.</p>
+          {kind==='product'&&Number(preview.appliedPhysicalReturnExchangeCount||0)>0&&
+            <div className="catalog-retirement-modal-error" role="alert">
+              <strong>Есть {preview.appliedPhysicalReturnExchangeCount} ранее применённых складских движений возвратов или обменов.</strong>
+              <p>После удаления автоматическая отмена этих старых операций, если она требует обратного складского движения, будет остановлена. Иначе можно испортить уже закрытый остаток. Сначала завершите нужные исправления; после удаления потребуется отдельная сверка физического факта и денежных последствий.</p>
+            </div>}
+          <p>Удалённые SKU не возвращаются автоматически в каталог. Повторное использование часов требует отдельной действующей комплектации и учётного прихода.</p>
           {preview.blockers?.length?<div className="catalog-retirement-modal-error" role="alert">
             <strong>Удаление запрещено:</strong> {preview.blockers.join('; ')}
           </div>:<strong>Блокирующих остатков и незавершённых операций не найдено.</strong>}
