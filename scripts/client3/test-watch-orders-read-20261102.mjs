@@ -14,8 +14,9 @@ sql.exec([
 'CREATE TABLE order_items(id INTEGER PRIMARY KEY,order_id INTEGER,quantity INTEGER,product_name_snapshot TEXT,unit_price INTEGER,source_type TEXT);',
 'CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,amount INTEGER,payment_kind TEXT);',
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
-'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER);',
-'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,status TEXT);',
+'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER,amount INTEGER DEFAULT 0,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
+'CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,quantity INTEGER,role TEXT,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
+'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,refund_return_id INTEGER,status TEXT);',
 'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY,order_id INTEGER);',
 'CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER,order_item_id INTEGER,quantity INTEGER,cancelled_quantity INTEGER);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
@@ -101,6 +102,38 @@ assert.equal(lines[0].unitPrice,20000)
 assert.equal(lines[0].source,'warehouse')
 assert.equal(aliceMonth.rows[0].shippedLineCount,1,'Dispatch exists even when whole order status is not sent')
 assert.equal(lines[0].shipped,1,'Per-item shipment marker is derived from Main dispatch history')
+assert.equal(lines[0].shippedQuantity,1,'Exact per-position shipment quantity comes from dispatch ledger')
+assert.equal(lines[0].returnableQuantity,1,'Only the physically issued unit can be returned')
+sql.exec("UPDATE order_items SET quantity=2 WHERE id=101")
+const partialShipment=await query(alice,'brand=TAUWACH&shipping=not_sent')
+assert.equal(partialShipment.rows.length,2,
+  'A line with one of two units issued must remain in the unshipped queue')
+assert.equal(JSON.parse(partialShipment.rows.find(x=>x.orderId===1).itemLines)[0].shippedQuantity,1)
+sql.exec("UPDATE order_items SET quantity=1 WHERE id=101")
+sql.exec("INSERT INTO returns VALUES(1,1,'completed')")
+sql.exec("INSERT INTO return_items(id,return_id,order_item_id,quantity,physical_tracking) VALUES(1,1,101,1,1)")
+const afterReturn=await query(alice,'brand=TAUWACH&from=2026-11-01')
+const returnedLine=JSON.parse(afterReturn.rows[0].itemLines)[0]
+assert.equal(returnedLine.returnedQuantity,1,'Registered returned units remain visible')
+assert.equal(returnedLine.pendingReturnQuantity,1,'Physical intake is not implied by refund registration')
+assert.equal(returnedLine.returnableQuantity,0,'Already returned units cannot be returned twice')
+sql.exec("UPDATE return_items SET physical_received_at='2026-11-03T12:00:00Z' WHERE id=1")
+const afterIntake=await query(alice,'brand=TAUWACH&from=2026-11-01')
+assert.equal(JSON.parse(afterIntake.rows[0].itemLines)[0].pendingReturnQuantity,0,
+  'Only confirmed physical receipt clears the intake queue')
+sql.exec("UPDATE order_items SET quantity=0 WHERE id=101")
+const historicalOrder=await query(alice,'brand=TAUWACH&from=2026-11-01')
+assert.equal(historicalOrder.rows.length,1,'A returned historical line does not erase the order')
+const historicalLine=JSON.parse(historicalOrder.rows[0].itemLines)[0]
+assert.equal(historicalLine.quantity,0,'Historical watch line remains available after its active quantity becomes zero')
+assert.equal(historicalLine.returnedQuantity,1,'Exact returned quantity remains visible')
+sql.exec("UPDATE order_items SET quantity=1 WHERE id=101")
+const historicalNotSent=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
+const unissuedWatch=JSON.parse(historicalNotSent.rows[0].itemLines)[0]
+assert.equal(unissuedWatch.returnableQuantity,0,
+ 'An old order-wide sent marker alone cannot prove actual customer possession')
+assert.equal(unissuedWatch.exchangeableQuantity,1,
+ 'Unissued watch may still be exchanged without physical intake')
 const pct=await query(alice,'brand=TAUWACH&q=%25')
 assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
 const underscore=await query(alice,'brand=TAUWACH&q=_')
@@ -153,5 +186,26 @@ assert.deepEqual((await oldAdmin.json()).rows,[],'All fixture orders have watch 
 const oldManager=await routeClient3Watches(db,new Request(oldUrl),oldUrl,alice)
 assert.equal(oldManager.status,403)
 
+// Exchange Set V2 can create two replacements, neither of which need be
+// in the legacy exchanges.new_order_item_id pointer. The pending status must
+// depend on the actual new exchange_items links and dispatch quantities.
+sql.exec("INSERT INTO order_items(id,order_id,quantity,product_name_snapshot,unit_price,source_type,stock_writeoff_status,line_total) VALUES(104,3,1,'NEW WATCH A',35000,'warehouse','reserved',35000)")
+sql.exec("INSERT INTO order_items(id,order_id,quantity,product_name_snapshot,unit_price,source_type,stock_writeoff_status,line_total) VALUES(105,3,1,'NEW WATCH B',35000,'warehouse','reserved',35000)")
+sql.exec("INSERT INTO exchanges(id,order_id,new_order_item_id,status) VALUES(80,3,NULL,'completed')")
+sql.exec("INSERT INTO exchange_items(id,exchange_id,order_item_id,quantity,role) VALUES(81,80,104,1,'new'),(82,80,105,1,'new')")
+const pendingReplacement=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
+assert.equal(pendingReplacement.rows[0].pendingReplacement,1,
+  'Every unsent replacement in Main Exchange Set V2 must trigger the Client3 logistics action')
+assert.equal(pendingReplacement.rows[0].shippingStatus,'sent',
+  'Legacy sent marker does not hide replacement obligations')
+sql.exec("INSERT INTO order_dispatches(id,order_id) VALUES(90,3)")
+sql.exec("INSERT INTO order_dispatch_items VALUES(91,90,104,1,0)")
+const partiallySentReplacement=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
+assert.equal(partiallySentReplacement.rows[0].pendingReplacement,1,
+  'Sending the first replacement must not conceal the second')
+sql.exec("INSERT INTO order_dispatch_items VALUES(92,90,105,1,0)")
+const fullySentReplacement=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
+assert.equal(fullySentReplacement.rows[0].pendingReplacement,0,
+  'Pending Exchange Set replacement clears only after all replacements are shipped')
 sql.close()
 console.log('CLIENT3_WATCH_ORDERS_READ_PASS: scoped manager ledger, brand totals, date validation, pagination, search')
