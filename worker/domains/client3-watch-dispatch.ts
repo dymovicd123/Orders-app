@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {dispatchSelectedCompleteOrderLines} from './order-dispatch.ts'
+import {getOrderStockHandoverState} from './order-reservations.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type WatchDispatchSelection={orderItemId:number;quantity:number}
@@ -82,6 +83,27 @@ export async function dispatchClient3WatchOrder(
 
  const selected=chosen.map(x=>byId.get(x.orderItemId)!)
  if(!prior){
+   // Main's SKU-specific stocktake/stock-check checkpoint is mandatory
+   // BEFORE any real watch shipment. confirmPhysicalStock is NOT a bypass.
+   // A replay of an already committed dispatch is handled by Main above.
+   let handover
+   try{
+     handover=await getOrderStockHandoverState(db,orderId)
+   }catch{
+     return fail('WATCH_HANDOVER_CHECK_FAILED',
+       'Не удалось проверить ревизию для выбранных часов. Отправка остановлена.',409)
+   }
+   if(!handover)return fail('WATCH_HANDOVER_CHECK_FAILED',
+     'История ревизий заказа недоступна. Нельзя подтвердить отправку.',409)
+   const picked=new Set(chosen.map(x=>x.orderItemId))
+   const requiresReview=handover.items.filter(item=>
+     picked.has(item.orderItemId)&&item.reviewNeeded)
+   if(requiresReview.length){
+     return json({ok:false,code:'WATCH_HANDOVER_REQUIRED',
+       message:'После создания заказа проведена ревизия. Сначала уточните фактическую выдачу выбранных часов до проверки.',
+       orderId,brandId,reviewCount:requiresReview.length,
+       reviewItemIds:requiresReview.map(x=>x.orderItemId)}, {status:409})
+   }
    if(selected.some(x=>Number(x.shipped_quantity)>0))
      return fail('WATCH_ALREADY_SHIPPED','Эти часы уже отправлены. Обновите логистику.',409)
    if(selected.some(x=>String(x.engraving_text||'').trim()&&Number(x.engraving_ready)!==1))
