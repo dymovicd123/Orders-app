@@ -16,9 +16,10 @@ assert(source.includes('onOpenReturns(order.brand)'), 'Logistics links physical 
 assert(source.includes('Перейти к приёмке возвратов'),
   'Physical intake is an available action from return-bearing logistics details')
 const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
-assert(app.includes("onOpenReturns={canSales?selected=>{setBrand(selected);goTo('returns')}:undefined}"),
+assert(app.includes('onOpenReturns={canSales?selected=>{') &&
+  app.includes("setBrand(selected);setLastOrderBrand(selected);setReportOrderFocus(null);goTo('returns')"),
   'Sales roles can navigate from Logistics to the correct physical-intake queue')
-assert(app.includes("initialBrand={brand||undefined}"),
+assert(app.includes('initialBrand={reportOrderFocus?.brand||brand||undefined}'),
   'Returns intake must not silently reset selected brand to the first brand')
 
 const server = await createServer({
