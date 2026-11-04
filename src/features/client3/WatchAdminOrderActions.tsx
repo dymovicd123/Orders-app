@@ -7,10 +7,11 @@ type Payment={id:number;method:string;amount:number;date:string;kind:string;comm
 const money=(x:number)=>Number(x||0).toLocaleString('ru-RU')+' ₸'
 type Props={
  brand:WatchBrand;orderId:number;externalId:string;managerId:number;paymentLines:string;
+ orderDate:string;linkedOperations:boolean;
  onDone:()=>void
 }
 /** Main's verified delete preview, never a one-click destructive button. */
-export function WatchAdminOrderActions({brand,orderId,externalId,managerId,paymentLines,onDone}:Props){
+export function WatchAdminOrderActions({brand,orderId,externalId,managerId,paymentLines,orderDate,linkedOperations,onDone}:Props){
  const payments:Payment[]=(()=>{try{return JSON.parse(paymentLines||'[]') as Payment[]}catch{return []}})()
  const [mode,setMode]=useState<'manager'|'delete'|'payment'|null>(null)
  const [managers,setManagers]=useState<Manager[]>([])
@@ -18,6 +19,11 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
  const [methods,setMethods]=useState<string[]>([])
  const [chosenPayment,setChosenPayment]=useState(0)
  const [method,setMethod]=useState('')
+ const [paymentDraft,setPaymentDraft]=useState({date:'',amount:'',kind:'primary',comment:''})
+ const selectPayment=(p:Payment|undefined)=>{
+   setChosenPayment(p?.id||0);setMethod(p?.method||'')
+   setPaymentDraft({date:p?.date||'',amount:String(p?.amount??''),kind:p?.kind||'primary',comment:p?.comment||''})
+ }
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const pending=useRef<{key:string;id:string}|null>(null)
@@ -62,20 +68,35 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
      brand,managerId:target,expectedManagerId:managerId,
    },'PATCH')
  }
- const changeMethod=async(event:FormEvent<HTMLFormElement>)=>{
+ const savePayment=async(event:FormEvent<HTMLFormElement>)=>{
    event.preventDefault()
    const original=payments.find(x=>x.id===chosenPayment)
-   if(!original||!method||method===original.method){
-     setError('Выберите оплату и новый способ.');return
+   if(!original||!method.trim()){setError('Выберите оплату и способ.');return}
+   const amount=Number(paymentDraft.amount)
+   if(!Number.isSafeInteger(amount)||amount<1||amount>1_000_000_000||
+     !/^\d{4}-\d{2}-\d{2}$/.test(paymentDraft.date)||
+     !['primary','debt_close','extra'].includes(paymentDraft.kind)){
+     setError('Введите корректную дату, целую сумму и назначение оплаты.');return
    }
-   await commit('/api/client3/watches/orders/'+orderId+'/payment-method',{
-     brand,change:{
-       paymentId:original.id,method,
-       expectedPaymentDate:original.date,expectedMethod:original.method,
-       expectedAmount:original.amount,expectedPaymentKind:original.kind,
-       expectedComment:original.comment||'',
-     },
-   },'PATCH')
+   const changedOther=amount!==original.amount||paymentDraft.date!==original.date||
+     paymentDraft.kind!==original.kind||paymentDraft.comment.trim()!==(original.comment||'').trim()
+   const changedMethod=method.trim().toLocaleUpperCase('ru-RU')!==original.method.toLocaleUpperCase('ru-RU')
+   if(!changedOther&&!changedMethod){setError('Изменений нет.');return}
+   if(changedOther&&(linkedOperations||original.kind==='extra')){
+     setError('После обмена или возврата, а также для доплаты обмена, отдельно разрешено исправить только способ оплаты.');return
+   }
+   const url='/api/client3/watches/orders/'+orderId+
+     (changedOther?'/recorded-payment':'/payment-method')
+   const expected={
+     paymentId:original.id,expectedPaymentDate:original.date,expectedMethod:original.method,
+     expectedAmount:original.amount,expectedPaymentKind:original.kind,
+     expectedComment:original.comment||'',
+   }
+   await commit(url,changedOther
+     ?{brand,expectedOrderDate:orderDate,change:{...expected,
+       method:method.trim(),paymentDate:paymentDraft.date,amount,
+       paymentKind:paymentDraft.kind,comment:paymentDraft.comment.trim()}}
+     :{brand,change:{...expected,method:method.trim()}},'PATCH')
  }
  return <section className="watch-admin-actions">
    <div className="watch-admin-actions-buttons">
@@ -86,8 +107,8 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
      {payments.length>0&&<button type="button" className="secondary compact" disabled={busy}
        onClick={()=>{
          setMode(mode==='payment'?null:'payment');setError('');
-         setChosenPayment(payments[0].id);setMethod(payments[0].method)
-       }}>Исправить способ оплаты</button>}
+         selectPayment(payments[0])
+       }}>Редактировать проведённые оплаты</button>}
      <button type="button" className="secondary compact watch-admin-delete-trigger" disabled={busy}
        onClick={()=>{setMode('delete');setError('')}}>Удалить заказ</button>
    </div>
@@ -105,29 +126,52 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
        <button type="button" className="secondary" disabled={busy} onClick={()=>setMode(null)}>Отмена</button>
      </div>
    </form>}
-   {mode==='payment'&&<form className="watch-admin-action-form" onSubmit={e=>void changeMethod(e)}>
-     <strong>Исправить способ проведённой оплаты</strong>
-     <p>Меняется только способ, не сумма и не дата. Main сохраняет финансовые последствия отдельной корректировкой.</p>
+   {mode==='payment'&&<form className="watch-admin-action-form" onSubmit={e=>void savePayment(e)}>
+     <strong>Редактирование проведённой оплаты · Main</strong>
+     <p>{linkedOperations
+       ?'В заказе есть возвраты или обмены: отдельно исправляется только способ оплаты. Изменение финансовой цепочки выполняется через соответствующую операцию.'
+       :'Администратор может исправить дату, сумму, способ, назначение и комментарий проведённой оплаты. Изменения проверяются финансовым ядром Main; новые оплаты оформляются отдельно.'}</p>
      <label>Проведённая оплата
-       <select required value={chosenPayment}
-         onChange={e=>{
-           const id=Number(e.target.value)
-           setChosenPayment(id);setMethod(payments.find(x=>x.id===id)?.method||'')
-         }}>
+       <select required value={chosenPayment} onChange={e=>selectPayment(payments.find(x=>x.id===Number(e.target.value)))}>
          {payments.map(x=><option value={x.id} key={x.id}>
            {x.date} · {x.method} · {money(x.amount)}
          </option>)}
        </select>
      </label>
-     <label>Правильный способ оплаты
-       <select required value={method} onChange={e=>setMethod(e.target.value)}>
-         <option value="">Выберите способ</option>
-         {methods.map(x=><option key={x} value={x}>{x}</option>)}
-       </select>
-     </label>
+     <div className="watch-admin-payment-grid">
+       <label>Дата оплаты
+         <input required type="date" disabled={busy||linkedOperations||payments.find(x=>x.id===chosenPayment)?.kind==='extra'}
+           value={paymentDraft.date} onChange={e=>setPaymentDraft(p=>({...p,date:e.target.value}))}/>
+       </label>
+       <label>Сумма оплаты, ₸
+         <input required type="number" min={1} max={1000000000} step={1}
+           disabled={busy||linkedOperations||payments.find(x=>x.id===chosenPayment)?.kind==='extra'}
+           value={paymentDraft.amount} onChange={e=>setPaymentDraft(p=>({...p,amount:e.target.value}))}/>
+       </label>
+       <label>Способ оплаты
+         <select required value={method} onChange={e=>setMethod(e.target.value)}>
+           <option value="">Выберите способ</option>
+           {methods.map(x=><option key={x} value={x}>{x}</option>)}
+           {method&&!methods.includes(method)&&<option value={method}>{method} · ранее использованный</option>}
+         </select>
+       </label>
+       <label>Назначение
+         <select value={paymentDraft.kind} disabled={busy||linkedOperations||payments.find(x=>x.id===chosenPayment)?.kind==='extra'}
+           onChange={e=>setPaymentDraft(p=>({...p,kind:e.target.value}))}>
+           <option value="primary">Первичная оплата</option>
+           <option value="debt_close">Закрытие долга</option>
+           {paymentDraft.kind==='extra'&&<option value="extra">Доплата за обмен (только способ)</option>}
+         </select>
+       </label>
+       <label className="watch-admin-payment-comment">Комментарий
+         <textarea rows={2} maxLength={500} value={paymentDraft.comment}
+           disabled={busy||linkedOperations||payments.find(x=>x.id===chosenPayment)?.kind==='extra'}
+           onChange={e=>setPaymentDraft(p=>({...p,comment:e.target.value}))}/>
+       </label>
+     </div>
      <div className="watch-admin-actions-buttons">
-       <button className="primary" type="submit" disabled={busy||!method}>
-         Сохранить способ оплаты</button>
+       <button className="primary" type="submit" disabled={busy||!method||!chosenPayment}>
+         {busy?'Сохраняю…':'Сохранить изменение оплаты'}</button>
        <button type="button" className="secondary" disabled={busy} onClick={()=>setMode(null)}>Отмена</button>
      </div>
    </form>}
