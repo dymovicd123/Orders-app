@@ -24,8 +24,8 @@ assert(watchRead.includes('committedItemReturnQuantity'))
 assert(watchRead.includes('returnedQuantity'))
 assert(watchRead.includes('committedExchangeCount'))
 assert(watchReturns.includes('items:selected'))
-assert(watchReturns.includes('refundParts:refunds.map'),
- 'Client3 split refund adapter must keep the exact tested financial contract')
+assert(watchReturns.includes('paymentParts:refunds.map'),
+ 'Client3 must forward exact channels to the Main paymentParts contract')
 
 const server=await createServer({
  configFile:false,plugins:[react()],appType:'custom',
