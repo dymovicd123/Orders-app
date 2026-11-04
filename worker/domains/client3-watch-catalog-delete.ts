@@ -74,11 +74,23 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
      .bind(...scope.items.map(v=>v.id)).first<{qty:number}>():null
  const physical=main?.physicalQuantity||0
  const reserved=main?.activeReservationQuantity||0
+ // An applied Return/Exchange stock movement may have happened BEFORE this
+ // retirement. Show the administrator that reversing it after deleting the
+ // SKU needs separate physical reconciliation; no silent negative stock.
+ const earlierAppliedPhysical=scope.kind==='product'&&scope.model.catalog_product_id
+   ?await db.prepare(`SELECT COUNT(*) AS n FROM inventory_lifecycle_events ev
+     JOIN catalog_variants cv ON cv.id=ev.variant_id
+     WHERE cv.product_id=? AND ev.status='applied'
+       AND ev.operation_type IN ('return','exchange')
+       AND ev.movement_id IS NOT NULL`)
+     .bind(scope.model.catalog_product_id).first<{n:number}>()
+   :null
  return json({ok:true,kind:scope.kind,watchProductId:scope.model.id,
    modelName:scope.model.model_name,count:scope.items.length,
    canDelete:issues.length===0,blockers:issues,
    physicalQuantity:physical,activeReservations:reserved,
    openOrders:main?.openOrderItemCount||0,historicalOrderItems:Number(historicalItems?.qty||0),
+   appliedPhysicalReturnExchangeCount:Number(earlierAppliedPhysical?.n||0),
    inventoryWillBeRemoved:scope.kind==='product'&&physical!==0,
    reservationsWillBeReleased:scope.kind==='product'&&reserved!==0,
    physicalAndReservationsPreserved:scope.kind!=='product',
