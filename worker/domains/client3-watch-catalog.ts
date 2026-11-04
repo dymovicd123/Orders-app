@@ -15,13 +15,18 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
   if((actor.role!=='admin'&&actor.employeeRole!=='Завсклад'))return error('WATCH_CATALOG_ADMIN_ONLY','Справочник часов изменяет администратор.',403)
   const records=await db.prepare(`
     SELECT wp.id AS watchProductId,wp.model_name AS modelName,
-      wp.catalog_product_id AS catalogProductId,wp.is_active AS productActive,
+      wp.catalog_product_id AS catalogProductId,
+      CASE WHEN wp.is_active=1 AND (wp.catalog_product_id IS NULL OR cp.is_active=1)
+        THEN 1 ELSE 0 END AS productActive,
       wv.id AS watchVariantId,wv.catalog_variant_id AS catalogVariantId,
       wv.gender,COALESCE(va.movement,wv.movement) AS movement,
       COALESCE(va.bracelet_material,wv.bracelet_material) AS braceletMaterial,
       COALESCE(va.dial_color,wv.dial_color) AS dialColor,
       COALESCE(va.bracelet_color,wv.bracelet_color) AS braceletColor,
-      wv.is_active AS variantActive,
+      CASE WHEN wv.id IS NULL THEN NULL
+        WHEN wv.is_active=1 AND (wv.catalog_variant_id IS NULL OR
+          (cv.is_active=1 AND sp.is_active=1 AND cp.is_active=1))
+        THEN 1 ELSE 0 END AS variantActive,
       (SELECT ep.sale_price FROM catalog_variants cv JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult') WHERE cv.id=wv.catalog_variant_id LIMIT 1) AS catalogPriceSnapshot,
       COALESCE((SELECT SUM(s.quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='warehouse'),0) AS officePhysical,
       MAX(COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='warehouse'),0), COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=wv.catalog_variant_id AND r.inventory_source='warehouse' AND r.status='active'),0)) AS officeReserved,
@@ -29,6 +34,9 @@ export async function listWatchCatalogDrafts(db:D1Database,actor:AuthUser,brandI
       MAX(COALESCE((SELECT SUM(s.reserved_quantity) FROM inventory_stock s WHERE s.variant_id=wv.catalog_variant_id AND s.inventory_source='boutique'),0), COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.variant_id=wv.catalog_variant_id AND r.inventory_source='boutique' AND r.status='active'),0)) AS showcaseReserved
     FROM watch_products wp
     LEFT JOIN watch_variants wv ON wv.watch_product_id=wp.id
+    LEFT JOIN catalog_products cp ON cp.id=wp.catalog_product_id
+    LEFT JOIN catalog_variants cv ON cv.id=wv.catalog_variant_id
+    LEFT JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
     LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=wv.id
     WHERE wp.brand_id=?
     ORDER BY wp.model_name COLLATE NOCASE,wp.id,wv.id
@@ -59,7 +67,16 @@ export async function registerWatchModel(
   if(existing){
     if(existing.is_active===0){
       if(options.fromVerifiedOrder)return error('WATCH_MODEL_RETIRED','Эта модель была удалена из каталога. Администратор должен отдельно решить вопрос восстановления.',409)
-      // Main restores the historical product shell without creating stock.
+      // Never revive a watch shell when Main has already retired its canonical
+      // product: the old physical/reservation generation must stay historical.
+      const linked=await db.prepare(`SELECT wp.catalog_product_id AS pid,
+        cp.is_active AS canonical_active FROM watch_products wp
+        LEFT JOIN catalog_products cp ON cp.id=wp.catalog_product_id
+        WHERE wp.id=? AND wp.brand_id=?`).bind(existing.id,brandId)
+        .first<{pid:number|null;canonical_active:number|null}>()
+      if(linked?.pid&&linked.canonical_active!==1)
+        return error('WATCH_MODEL_RETIRED_MAIN',
+          'Эта модель выведена из рабочего склада. История сохранена. Автоматически восстанавливать старые SKU и остатки нельзя.',409)
       await db.prepare('UPDATE watch_products SET is_active=1 WHERE id=? AND brand_id=? AND is_active=0')
         .bind(existing.id,brandId).run()
       return json({ok:true,watchProductId:existing.id,restored:true,active:true,stockCreated:false})
@@ -155,6 +172,18 @@ export async function registerWatchVariant(
       }
       return json({ok:true,watchVariantId:old.id,restored:true,active:true,
         stockLinked:old.catalog_variant_id!=null,stockCreated:false})
+    }
+    if(old.catalog_variant_id){
+      const status=await db.prepare(`SELECT cv.is_active AS variant_active,
+        cp.is_active AS product_active,sp.is_active AS execution_active
+        FROM catalog_variants cv JOIN catalog_products cp ON cp.id=cv.product_id
+        JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
+        WHERE cv.id=?`).bind(old.catalog_variant_id)
+        .first<{variant_active:number;product_active:number;execution_active:number}>()
+      if(!status||status.variant_active!==1||status.product_active!==1||
+        status.execution_active!==1)
+        return error('WATCH_VARIANT_RETIRED_CANONICAL',
+          'Комплектация выведена из рабочего каталога. Старую историю нельзя автоматически сделать активной.',409)
     }
     return json({ok:true,watchVariantId:old.id,alreadyExists:true,active:true,stockLinked:old.catalog_variant_id!=null})
   }
