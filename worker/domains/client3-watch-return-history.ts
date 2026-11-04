@@ -19,6 +19,11 @@ export async function listClient3WatchReturnHistory(
  const entries=await db.prepare(`
    SELECT r.id,r.return_date AS date,r.amount,r.payment_method AS method,
      COALESCE(r.status,'completed') AS status,COALESCE(r.comment,'') AS comment,
+     (SELECT COUNT(*) FROM inventory_lifecycle_events le
+       JOIN catalog_variants cv ON cv.id=le.variant_id
+       JOIN catalog_products cp ON cp.id=cv.product_id
+       WHERE le.operation_type='return' AND le.operation_id=r.id
+         AND le.status='applied' AND cp.is_active=0) AS archivedAppliedCount,
      COALESCE((SELECT SUM(CASE WHEN COALESCE(ri.amount,0)>0 THEN ri.amount
        ELSE COALESCE(ri.quantity,0)*COALESCE(oi.unit_price,0) END)
        FROM return_items ri JOIN order_items oi ON oi.id=ri.order_item_id
@@ -52,7 +57,7 @@ export async function listClient3WatchReturnHistory(
  */
 export async function cancelClient3WatchReturn(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,returnId:number,
- input:{requestId?:unknown;reason?:unknown},
+ input:{requestId?:unknown;reason?:unknown;physicalLocation?:unknown},
 ){
  if(!actor?.id||['Логист','Завсклад','Упаковщик'].includes(actor.employeeRole||'')&&actor.role!=='admin')
    return fail('WATCH_RETURN_CANCEL_FORBIDDEN','Отмену возврата оформляет менеджер или администратор.',403)
@@ -79,9 +84,19 @@ export async function cancelClient3WatchReturn(
  if(inspection?.blocked)return fail('WATCH_RETURN_CANCEL_RETIRED_STOCK',
    'Отмена остановлена: '+inspection.blocked.reason+
    ' Склад и деньги не изменены. Проверьте историю удаления и остатки.',409)
+ // Physical custody is informational, never an implicit stock adjustment.
+ // Unknown is a valid answer; don't force a false statement just to cancel.
+ const physicalLabel:Record<string,string>={
+   customer:'часы у клиента',office:'часы у продавца',unknown:'фактическое местонахождение не выяснено'
+ }
+ const location=typeof input.physicalLocation==='string'&&
+   Object.hasOwn(physicalLabel,input.physicalLocation)
+   ?input.physicalLocation:'unknown'
+ const auditReason=(inspection?.retiredCount||0)>0
+   ?reason+' | Архивный товар: '+physicalLabel[location]:reason
  try{
    const result=await cancelReturn(db,returnId,{
-     requestId:input.requestId,comment:reason,
+     requestId:input.requestId,comment:auditReason,
    })
    return json({...result,
      archivedPhysicalMovementCount:inspection?.retiredCount||0,
