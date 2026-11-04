@@ -4,7 +4,7 @@ import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch
 import {WatchReturnForm} from './WatchReturnForm'
 import {WatchReturnHistoryPanel} from './WatchReturnHistoryPanel'
 import {WatchExchangeHistoryPanel} from './WatchExchangeHistoryPanel'
-import {watchItemFullyIssued,watchIssuedQuantity,watchItemReturnSummary} from './watchItemLifecycle'
+import {watchItemFullyIssued,watchIssuedQuantity} from './watchItemLifecycle'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchExchangeForm} from './WatchExchangeForm'
 import {WatchDebtPaymentForm} from './WatchDebtPaymentForm'
@@ -36,11 +36,6 @@ type WatchOrder={
 type Totals={orderCount:number;totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number}
 type OrdersResponse={ok:boolean;rows:WatchOrder[];totals:Totals;hasMore:boolean;message?:string}
 const sum=(value:number)=>Number(value||0).toLocaleString('ru-RU')+' ₸'
-const physicallyIssued=(order:WatchOrder)=>{
-  const lines=parsedRows<ItemLine>(order.itemLines)
-  const active=lines.filter(line=>Number(line.quantity)>0)
-  return active.length>0&&active.every(watchItemFullyIssued)
-}
 const shipLabel=(order:WatchOrder)=>{
  const active=parsedRows<ItemLine>(order.itemLines).filter(x=>Number(x.quantity)>0)
  return order.pendingReplacement?'Замена ожидает отправки':
@@ -94,8 +89,8 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
   const [editOrderId,setEditOrderId]=useState<number|null>(null)
   const [handoverOrderId,setHandoverOrderId]=useState<number|null>(null)
   // Keep Main's dense orders table collapsed by default; detail opens only on request.
-  const [expanded,setExpanded]=useState<number|null>(null)
-  const [extraActionsOrderId,setExtraActionsOrderId]=useState<number|null>(null)
+  const [,setExpanded]=useState<number|null>(null)
+  const [,setExtraActionsOrderId]=useState<number|null>(null)
   const [expandedItemCounts,setExpandedItemCounts]=useState<Record<number,number>>({})
   const [expandedPaymentCounts,setExpandedPaymentCounts]=useState<Record<number,number>>({})
   useEffect(()=>{
