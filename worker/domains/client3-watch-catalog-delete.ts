@@ -194,7 +194,7 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
  if(changed!==ids.length)
    return fail('Состав товара изменился во время удаления. Обновите каталог и проверьте остатки.',409)
  return json({ok:true,deletedCount:changed,kind:scope.kind,
-   productDeleted:scope.kind==='product',historyPreserved:true})
+   productDeleted:false,historyPreserved:true})
 }
 
 
