@@ -1,9 +1,9 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {watchReferenceLabel,type WatchBrand} from '../../../shared/client3/watch-domain'
-import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
+import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
+import type {WatchBrand} from '../../../shared/client3/watch-domain'
+import {StockResolutionConfirmModal} from '../orders/StockResolutionConfirmModal'
+import {WatchLogisticsTaskTable} from './WatchLogisticsTaskTable'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
-import {watchItemFullyIssued,watchIssuedQuantity,watchItemReturnSummary,watchItemAwaitingReceipt}
- from './watchItemLifecycle'
+import {watchItemFullyIssued} from './watchItemLifecycle'
 import '../../styles/client3-watch-logistics.css'
 import '../../styles/client3-qa-logistics-20261104.css'
 
@@ -13,6 +13,8 @@ export type WatchLogisticsRow = {
   brand: WatchBrand
   legacySource: 'warehouse' | 'boutique'
   shippingStatus: string
+  orderDate:string
+  managerName:string|null
   recipientName: string
   recipientPhone: string
   address: string
@@ -28,6 +30,8 @@ export type WatchLogisticsRow = {
   quantity: number | null
   reservationStatus: string | null
   stockWriteoffStatus: string | null
+  physicalQuantity:number
+  systemReservedQuantity:number
   shippedQuantity: number
   returnedQuantity: number
   pendingReturnQuantity: number
@@ -52,6 +56,7 @@ type Props = {
   canCorrectDispatch?:boolean
   focusOrderId?:number|null
   onOpenReturns?:(brand:WatchBrand)=>void
+  onOpenStock?:(brand:WatchBrand)=>void
 }
 
 type LogisticsResponse = { ok: boolean; rows?: WatchLogisticsRow[]; hasMore?:boolean; nextOffset?:number|null; message?: string }
@@ -111,18 +116,11 @@ export function formatWatchDeadline(utc: string): string {
   }).format(value)
 }
 
-function statusText(status: WatchLogisticsRow['engravingStatus']) {
-  if (status === 'ready') return 'Гравировка готова'
-  if (status === 'engraving') return 'Гравировка в работе'
-  return 'Ожидает гравировки'
-}
-
 /** Main's operational workflow: engraving readiness and actual dispatch remain
  * separate confirmed actions; both use isolated brand-scoped Client3 routes. */
-export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false,focusOrderId=null,onOpenReturns}:Props) {
+export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving,canDispatch=false,canCorrectDispatch=false,focusOrderId=null,onOpenReturns,onOpenStock}:Props) {
   const [brandScope,setBrandScope]=useState<WatchBrand|'all'>(brand)
   const [focusedOrderId,setFocusedOrderId]=useState<number|null>(focusOrderId)
-  const [focusExpanded,setFocusExpanded]=useState(false)
   const [rows, setRows] = useState<WatchLogisticsRow[]>([])
   const [nextOffset,setNextOffset]=useState<number|null>(null)
   const [loadingMore,setLoadingMore]=useState(false)
@@ -131,18 +129,11 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState<number | null>(null)
   const [dispatching,setDispatching]=useState<number|null>(null)
-  const [dispatchConfirm,setDispatchConfirm]=useState<number|null>(null)
-  const [readyConfirmOrderId,setReadyConfirmOrderId]=useState<number|null>(null)
   const [checkingHandover,setCheckingHandover]=useState<number|null>(null)
   const [handoverPromptOrderId,setHandoverPromptOrderId]=useState<number|null>(null)
-
-  const [dispatchSelection,setDispatchSelection]=useState<Record<number,number[]>>({})
-  const [dispatchQuantities,setDispatchQuantities]=useState<Record<number,Record<number,number>>>({})
-  const [correctionTarget,setCorrectionTarget]=useState<{orderId:number;dispatchItemId:number}|null>(null)
-  const [correctionReason,setCorrectionReason]=useState('')
+  const [stockPrompt,setStockPrompt]=useState<{order:WatchLogisticsRow;items:WatchLogisticsRow[]}|null>(null)
   const [correcting,setCorrecting]=useState<number|null>(null)
   const correctionIds=useRef<Record<number,string>>({})
-  const [expanded,setExpanded]=useState<number|null>(null)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
   useEffect(()=>{
@@ -153,7 +144,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
   const [refreshKey, setRefreshKey] = useState(0)
   // Retain the same idempotency key across a failed/ambiguous network retry.
   const requestIds = useRef<Record<number, string>>({})
-  const dispatchIds=useRef<Record<number,string>>({})
+  const dispatchIds=useRef<Record<string,string>>({})
   // Main workshop parity: all status queues reuse one fetched dataset and
   // switch instantly, with priority for urgent and overdue deadlines.
   const allGroups=useMemo(()=>groupWatchLogistics(rows),[rows])
@@ -196,19 +187,8 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       if (!controller.signal.aborted) {
         setRows(data.rows || [])
         setNextOffset(data.hasMore?Number(data.nextOffset):null)
-        if(focusedOrderId&&data.rows?.some(row=>row.orderId===focusedOrderId)){
-          setExpanded(focusedOrderId)
+        if(focusedOrderId&&data.rows?.some(row=>row.orderId===focusedOrderId))
           setFilter('all')
-          // Show exact selected order immediately, retaining operator freedom
-          // to deselect items before physically confirming the shipment.
-          if(!focusExpanded){
-            const ready=data.rows.filter(row=>row.orderId===focusedOrderId&&
-              (logisticsItemEligible(row)||logisticsAwaitingPhysicalConfirmation(row)))
-              .map(row=>row.orderItemId).filter((id):id is number=>id!==null)
-            setDispatchSelection(previous=>({...previous,[focusedOrderId]:ready}))
-            setFocusExpanded(true)
-          }
-        }
       }
     }).catch(reason => {
       if (!controller.signal.aborted) {
@@ -381,8 +361,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       </div>
       <div className="watch-logistics-controls">
         {focusedOrderId&&<button type="button" className="secondary compact"
-          onClick={()=>{setFocusedOrderId(null);setFocusExpanded(false);
-            setExpanded(null);setDispatchConfirm(null);setDispatchSelection({});setFilter('unshipped')}}>
+          onClick={()=>{setFocusedOrderId(null);setFilter('unshipped')}}>
           Все заказы логистики
         </button>}
         <label>Статус
@@ -405,7 +384,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       {(['all',...allowedBrands] as const).map(code=><button key={code} type="button"
         className={'workshop-channel-tab '+(brandScope===code?'is-active':'')}
         aria-pressed={brandScope===code}
-        onClick={()=>{setBrandScope(code);setExpanded(null);setDispatchConfirm(null)}}>
+        onClick={()=>setBrandScope(code)}>
         <span>{code==='all'?'Все бренды':code}</span>
         <small>{code==='all'?'Общая очередь':'Отдельные заказы бренда'}</small>
       </button>)}
@@ -421,7 +400,7 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
       ] as const).map(([value,label,hint])=>
         <button type="button" key={value}
           className={'workshop-channel-tab '+(filter===value?'is-active':'')}
-          aria-pressed={filter===value} onClick={()=>{setFilter(value);setExpanded(null);setDispatchConfirm(null)}}>
+          aria-pressed={filter===value} onClick={()=>setFilter(value)}>
           <span>{label}</span><small>{hint}</small>
         </button>)}
     </div>
@@ -438,234 +417,51 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     {feedback && <p role="status" className="watch-logistics-feedback">{feedback}</p>}
     {busy && <p role="status">Загрузка логистики…</p>}
     {!busy && !error && groups.length === 0 && <p>В выбранной очереди заказов нет.</p>}
-    <LinkedTableScroll className="watch-main-logistics-scroll" ariaLabel="Очередь логистики">
-      <table className="data-table workshop-grid-table workshop-order-like-table watch-main-logistics-table">
-        <thead><tr>
-          <th>Заказ / бренд</th><th>Получатель</th><th>Отправить до</th>
-          <th>Готовность</th><th>Отправка</th><th>Действия</th>
-        </tr></thead>
-        <tbody>{groups.map(({order,items})=>{
-          const completed=logisticsOrderComplete({order,items})
-          const dispatched=items.filter(x=>watchIssuedQuantity(x)>0).length
-          const returnedCount=items.reduce((n,x)=>n+Math.max(0,Number(x.returnedQuantity||0)),0)
-          const intakePending=items.reduce((n,x)=>n+watchItemAwaitingReceipt(x),0)
-          const missingEngraving=items.filter(x=>x.orderItemId&&x.engravingText?.trim()&&
-            !Boolean(x.engravingReady)&&watchIssuedQuantity(x)===0)
-          const shipStatus=completed
-            ?(order.shippingStatus==='sent'||order.shippingStatus==='Отправлено'?'Отправлен':'Ранее выдан · подтверждено')
-            :dispatched>0?'Частично отправлен':'Не отправлен'
-          const selectable=items.filter(item=>eligible(order,item))
-          const selectedIds=dispatchSelection[order.orderId]??
-            selectable.map(x=>x.orderItemId!).filter(Boolean)
-          const selected=selectable.filter(item=>item.orderItemId&&(
-            selectedIds.includes(item.orderItemId)))
-            .map(item=>({...item,quantity:
-              dispatchQuantities[order.orderId]?.[item.orderItemId!]??Number(item.quantity)}))
-            .filter(item=>Number.isSafeInteger(item.quantity)&&item.quantity>0&&
-              item.quantity<=Number(selectable.find(x=>x.orderItemId===item.orderItemId)?.quantity))
-          const needsPhysicalConfirm=selected.some(logisticsAwaitingPhysicalConfirmation)
-          const overdue=!completed&&Number.isFinite(Date.parse(order.shippingDeadlineAt))&&
-            Date.parse(order.shippingDeadlineAt)<Date.now()
-          return <Fragment key={order.orderId}>
-            <tr className={'watch-main-logistics-row'+(expanded===order.orderId?' is-open':'')}>
-              <td><strong>{order.externalId||'#'+order.orderId}</strong>
-                <small>{order.brand} · {order.legacySource==='boutique'?'Витрина':'Офис'}</small>
-                {Boolean(order.urgent)&&<small className="watch-logistics-urgent">Срочно</small>}</td>
-              <td><strong>{order.recipientName}</strong><small>{order.recipientPhone}</small></td>
-              <td>{formatWatchDeadline(order.shippingDeadlineAt)}
-                {overdue&&<small className="watch-logistics-urgent">Срок прошёл</small>}</td>
-              <td><span className={'watch-logistics-status '+(order.engravingStatus==='ready'?'is-ready':'')}>
-                {statusText(order.engravingStatus)}</span>
-                <small>Гравировка: {items.filter(x=>!x.engravingText?.trim()||Boolean(x.engravingReady)).length} / {items.length}</small>
-              </td>
-              <td><span className={'watch-main-logistics-send-status '+(completed?'is-sent':'is-awaiting')}>
-                {shipStatus}</span>
-                {returnedCount>0&&<small>Возвращено {returnedCount} шт.</small>}
-                {intakePending>0&&<small className="watch-logistics-intake-warning">Ожидаем приём: {intakePending} шт.</small>}</td>
-              <td><button type="button" className="primary compact watch-logistics-open-order"
-                aria-expanded={expanded===order.orderId}
-                onClick={()=>{setExpanded(v=>v===order.orderId?null:order.orderId);setDispatchConfirm(null)}}>
-                {expanded===order.orderId?'Закрыть':completed?'История отправок':'Подготовить отправку'}
-              </button></td>
-            </tr>
-            {expanded===order.orderId&&<tr className="watch-main-logistics-expanded"><td colSpan={6}>
-              <section className="watch-main-logistics-detail">
-                <div className="watch-main-logistics-detail-head">
-                  <div><small>Получатель и адрес</small><strong>{order.recipientName} · {order.recipientPhone}</strong>
-                    <span>{order.city}, {order.postalCode} · {order.address}</span></div>
-                  <div><small>Доставка</small><strong>{order.deliveryMethod}</strong>
-                    <span>{shipStatus}</span></div>
-                </div>
-                {canCompleteEngraving&&missingEngraving.length>0&&<div className="watch-logistics-ready-all">
-                  <div><strong>Готовность по отдельным часам: {items.length-missingEngraving.length} из {items.length}</strong>
-                    <small>Подтверждайте готовность каждой позиции ниже. Можно отметить только часть заказа и отправить только готовые часы. Общая кнопка — необязательная.</small></div>
-                  {readyConfirmOrderId===order.orderId?
-                    <div className="watch-logistics-ready-all-actions">
-                      <button type="button" className="primary compact" disabled={saving!==null}
-                        onClick={()=>void completeAllEngraving(order.orderId,items)}>
-                        {saving===-1?'Подтверждаю…':'Подтвердить готовность всех '+missingEngraving.length}
-                      </button>
-                      <button type="button" className="secondary compact" disabled={saving!==null}
-                        onClick={()=>setReadyConfirmOrderId(null)}>Отмена</button>
-                    </div>:
-                    <button type="button" className="secondary compact" disabled={saving!==null}
-                      onClick={()=>setReadyConfirmOrderId(order.orderId)}>
-                      Всё готово · отметить
-                    </button>}
-                </div>}
-                <div className="watch-main-logistics-items">
-                  {items.map(item=>{
-                    const enabled=eligible(order,item)
-                    const isSent=logisticsItemIssued(item)
-                    return <div key={item.orderItemId} className={
-                      'watch-main-logistics-item'+(isSent?' is-dispatched':'')+(!enabled&&!isSent?' is-blocked':'')}>
-                      <label className="watch-logistics-select-line">
-                        <input type="checkbox" disabled={!canDispatch||!enabled||dispatching!==null}
-                          checked={Boolean(enabled&&item.orderItemId&&(
-                            selectedIds.includes(item.orderItemId)))}
-                          onChange={e=>{if(item.orderItemId)setSelected(order.orderId,item.orderItemId,e.target.checked,
-                          selectable.map(x=>x.orderItemId!).filter(Boolean))}}/>
-                        <span><strong>{item.modelName||'Модель не определена'}</strong> · {item.quantity||0} шт.
-                          <small>{item.itemSource==='boutique'?'Витрина':'Офис'} ·
-                            {[watchReferenceLabel('movements',item.movement||''),
-                              watchReferenceLabel('bracelets',item.braceletMaterial||''),
-                              watchReferenceLabel('dials',item.dialColor||''),
-                              item.braceletColor?'Ремешок: '+watchReferenceLabel('leatherColors',item.braceletColor):''].filter(Boolean).join(' · ')}</small>
-                        </span>
-                      </label>
-                      <div className="watch-logistics-line-ready">
-                        <small>Гравировка</small>
-                        <strong>{item.engravingText||'Не требуется'}</strong>
-                        <span className={'watch-logistics-line-state '+(item.engravingReady?'is-ready':'is-pending')}>
-                          {item.engravingReady?'Готово':'Не готово'}
-                        </span>
-                        {canCompleteEngraving&&item.orderItemId&&item.engravingText?.trim()&&!item.engravingReady&&Number(item.shippedQuantity||0)===0&&
-                          <button type="button" className="watch-logistics-ready-one"
-                            disabled={saving!==null}
-                            aria-label={'Подтвердить готовность только '+(item.modelName||'этой модели')}
-                            onClick={()=>void complete(order.orderId,item.orderItemId!)}>
-                            {saving===item.orderItemId?'Сохраняю…':'Отметить готовым эти часы'}
-                          </button>}
-                        {item.engravingReady&&!item.engravingText?.trim()&&
-                          <small className="watch-logistics-auto-ready">Гравировка не нужна · готовы к отправке</small>}
-                      </div>
-                      {enabled&&canDispatch&&item.orderItemId&&
-                        <label className="watch-logistics-quantity">
-                          <small>Отправить, шт. (из {item.quantity})</small>
-                          <input type="number" min={1} max={Number(item.quantity)} step={1}
-                            disabled={dispatching!==null}
-                            value={dispatchQuantities[order.orderId]?.[item.orderItemId]??Number(item.quantity)}
-                            onChange={e=>setQuantity(order.orderId,item.orderItemId!,e.target.value===''?0:Number(e.target.value))}/>
-                        </label>}
-                      <div><small>Состояние</small><strong>{
-                        Number(item.quantity||0)===0?'Историческая позиция':
-                        isSent?'Отправлен':
-                        watchIssuedQuantity(item)>0?'Частично отправлен '+watchIssuedQuantity(item)+' из '+item.quantity:
-                        item.reservationStatus!=='active'?'Можно отправить по факту наличия':
-                        item.engravingText?.trim()&&!item.engravingReady?'Ожидает гравировки':'Готов к отправке'
-                      }</strong>
-                      {watchItemReturnSummary(item)&&<small className="watch-logistics-intake-warning">{watchItemReturnSummary(item)}</small>}</div>
-                      {canCorrectDispatch&&isSent&&item.dispatchItemId&&
-                        <button type="button" className="secondary compact watch-dispatch-correction-open"
-                          disabled={correcting!==null||dispatching!==null}
-                          onClick={()=>{
-                            setCorrectionTarget({orderId:order.orderId,dispatchItemId:item.dispatchItemId!})
-                            setCorrectionReason('')
-                            setDispatchConfirm(null)
-                          }}>Исправить ошибочную отправку</button>}
-                    </div>
-                  })}
-                </div>
-                {canCorrectDispatch&&correctionTarget?.orderId===order.orderId&&
-                  <div className="watch-dispatch-correction-confirm">
-                    <strong>Исправление ошибочно отмеченной отправки</strong>
-                    <p>Используйте только если отправку отметили по ошибке. Если часы
-                      действительно у клиента, оформляйте возврат, а не отмену отправки.
-                      Main проверит историю ревизий и решит, можно ли восстановить физический остаток.</p>
-                    <label>Причина исправления (от 8 символов)
-                      <textarea required rows={2} maxLength={500} value={correctionReason}
-                        onChange={e=>{
-                          setCorrectionReason(e.target.value)
-                          delete correctionIds.current[correctionTarget.dispatchItemId]
-                        }}/>
-                    </label>
-                    <div className="watch-logistics-actions">
-                      <button type="button" className="watch-dispatch-correction-commit"
-                        disabled={correcting!==null||dispatching!==null||correctionReason.trim().length<8}
-                        onClick={()=>void correctDispatch(order)}>
-                        {correcting!==null?'Исправляю…':'Подтвердить исправление'}</button>
-                      <button type="button" className="secondary compact" disabled={correcting!==null}
-                        onClick={()=>setCorrectionTarget(null)}>Отмена</button>
-                    </div>
-                  </div>}
-                {handoverPromptOrderId===order.orderId&&
-                  <div className="watch-logistics-handover-required">
-                    <strong>Уточнение выдачи обязательно перед отправкой</strong>
-                    <p>Последняя ревизия проведена после создания заказа. По каждой затронутой позиции укажите, выдали ли часы до проверки или они оставались у вас.</p>
-                    <WatchOrderHandoverPanel brand={order.brand} orderId={order.orderId}
-                      lines={items.filter(i=>i.orderItemId).map(i=>({
-                        id:Number(i.orderItemId),gender:i.gender||'',movement:i.movement||'',
-                        braceletMaterial:i.braceletMaterial||'',dialColor:i.dialColor||'',
-                        braceletColor:i.braceletColor||'',
-                      }))}
-                      onDone={()=>{setDispatchConfirm(null);setRefreshKey(v=>v+1)}}
-                      onClose={()=>{setHandoverPromptOrderId(null);setDispatchConfirm(null)}}/>
-                  </div>}
-                <div className="watch-logistics-actions">
-                  {intakePending>0&&<div className="watch-logistics-receipt-notice">
-                    <strong>Возвращённые часы ожидают физическую приёмку: {intakePending} шт.</strong>
-                    <small>Возврат денег сам по себе не увеличивает склад. История отправок остаётся сохранена.</small>
-                    {onOpenReturns&&<button type="button" className="secondary compact"
-                      onClick={()=>onOpenReturns(order.brand)}>Перейти к приёмке возвратов</button>}
-                  </div>}
-                  <span>{order.engravingStatus==='ready'?'Все гравировки готовы':
-                    'Гравировка подтверждается отдельно у каждой позиции выше'}</span>
-                  {canDispatch&&selected.length>0&&handoverPromptOrderId!==order.orderId&&
-                    (dispatchConfirm===order.orderId?
-                    <div className="client3-logistics-dispatch-confirm">
-                      <strong>Отправляем {selected.length} поз. / {selected.reduce((n,x)=>n+Number(x.quantity),0)} шт.</strong>
-                      <span>Отправится указанное количество. Неотправленные часы останутся отдельной строкой. Оплаты не изменятся.</span>
-                      <p className="client3-physical-send-confirm">
-                        {needsPhysicalConfirm
-                          ?'Нажимая «Подтвердить отправку», вы подтверждаете, что выбранные часы действительно передаются клиенту. Даже при нулевом остатке отправка будет записана, а расхождение отмечено отдельно. Резервы других заказов не меняются.'
-                          :'Подтвердите физическую передачу выбранных часов клиенту. Склад спишет только эту отправку.'}
-                      </p>
-                      <button type="button" disabled={dispatching!==null||saving!==null}
-                        onClick={()=>void send(order,selected)}>
-                        {dispatching===order.orderId?'Сохраняю…':'Подтвердить отправку'}</button>
-                      <button type="button" className="secondary compact" disabled={dispatching!==null}
-                        onClick={()=>setDispatchConfirm(null)}>Отмена</button>
-                    </div>:
-                    <button type="button" className="client3-logistics-dispatch-button"
-                      disabled={saving!==null||dispatching!==null||checkingHandover!==null}
-                      onClick={()=>void reviewSendHandover(order,selected)}>
-                      {checkingHandover===order.orderId?'Проверяю ревизию…':
-                        'Отправить выбранные · '+selected.reduce((n,x)=>n+Number(x.quantity),0)+' шт.'}
-                    </button>)}
-                  {!completed&&items.some(i=>i.engravingText?.trim()&&!logisticsItemIssued(i))&&
-                    order.engravingStatus!=='ready'&&
-                    <small>Часы с гравировкой отправляются после отметки «Готово». Остальные можно отправить отдельно.</small>}
-                  {canDispatch&&items.length>1&&selectable.length>0&&
-                    <button type="button" className="secondary compact"
-                      disabled={dispatching!==null}
-                      onClick={()=>{
-                        setDispatchConfirm(null);delete dispatchIds.current[order.orderId]
-                        setDispatchSelection(prev=>({...prev,[order.orderId]:selectable.map(x=>x.orderItemId!).filter(Boolean)}))
-                      }}>Выбрать все готовые</button>}
-                  {canDispatch&&selectable.length>0&&selectable.some(i=>i.orderItemId&&
-                    dispatchQuantities[order.orderId]?.[i.orderItemId]===0)&&
-                    <small>Для отправки укажите положительное количество.</small>}
-                  {canDispatch&&selectable.length===0&&items.some(i=>Number(i.shippedQuantity||0)===0)&&
-                    <small>Нет позиций, готовых к отправке: проверьте гравировку, остатки или резервы.</small>}
-                  {order.shippingStatus!=='sent'&&order.shippingStatus!=='Отправлено'&&
-                    !canDispatch&&<small>Отправку подтверждает администратор или менеджер.</small>}
-                </div>
-              </section>
-            </td></tr>}
-          </Fragment>
-        })}</tbody>
-      </table>
-    </LinkedTableScroll>
+    <WatchLogisticsTaskTable groups={groups} filter={filter}
+      canCompleteEngraving={canCompleteEngraving} canDispatch={canDispatch}
+      canCorrectDispatch={canCorrectDispatch} workingReady={saving}
+      workingSend={dispatching} checkingOrder={checkingHandover}
+      workingCorrection={correcting}
+      onReady={(orderId,itemId)=>{void complete(orderId,itemId)}}
+      onSend={(order,item,quantity)=>{void reviewSendHandover(order,[{...item,quantity}])}}
+      onCorrect={correctDispatch} onOpenReturns={onOpenReturns}
+      onOpenStock={onOpenStock}
+    />
+    {handoverPromptOrderId!==null&&(()=>{
+      const group=allGroups.find(x=>x.order.orderId===handoverPromptOrderId)
+      if(!group)return null
+      return <WatchOrderHandoverPanel brand={group.order.brand} orderId={group.order.orderId}
+        lines={group.items.filter(x=>x.orderItemId).map(x=>({
+          id:Number(x.orderItemId),gender:x.gender||'',movement:x.movement||'',
+          braceletMaterial:x.braceletMaterial||'',dialColor:x.dialColor||'',
+          braceletColor:x.braceletColor||'',
+        }))}
+        onDone={()=>setRefreshKey(x=>x+1)}
+        onClose={()=>setHandoverPromptOrderId(null)}
+        onOpenStock={onOpenStock?()=>{
+          setHandoverPromptOrderId(null)
+          onOpenStock(group.order.brand)
+        }:undefined}
+      />
+    })()}
+    <StockResolutionConfirmModal prompt={stockPrompt?{
+      title:'Товара по учёту меньше, чем нужно для отправки',
+      intro:'Проверьте физическое наличие именно выбранных часов. Общий остаток этим не пересчитывается.',
+      items:stockPrompt.items.map(item=>({
+        productName:item.modelName||'Часы',
+        tracked:Math.max(0,Number(item.physicalQuantity||0)),
+        needed:Math.max(1,Number(item.quantity||1)),
+      })),
+      actionLabel:'Да, передаю эти часы',
+      cancelLabel:'Остановить отправку',
+      note:'Подтверждение относится только к этой передаче. Сервер по-прежнему проверяет ревизию и статус резерва.',
+    }:null}
+      onDecision={confirmed=>{
+        const pending=stockPrompt
+        setStockPrompt(null)
+        if(confirmed&&pending)void send(pending.order,pending.items,true)
+      }}
+    />
     {nextOffset!==null&&<button type="button" className="secondary" disabled={busy||loadingMore}
       onClick={()=>void loadMore()}>{loadingMore?'Загружаю…':'Показать ещё заказы'}</button>}
   </section>
