@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-main-ui-plus-lifecycle-20261104
-          test "$(git rev-parse HEAD^)" = 505f7601bfacce3709e090f5e0a94f5be1208928
+          test "$(git rev-parse HEAD^)" = 638a2ffc6454d7e165e6f169554eed80ba3f4c3b
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-qa-lifecycle-main-ui-release-20261104.yml
           test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$PROD_DB_ID"
@@ -116,20 +116,50 @@ jobs:
         run: |
           set -euo pipefail
           base=https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
-          for attempt in $(seq 1 8); do
-            status=$(curl -sSL -o /tmp/qa-home -w '%{http_code}' --max-time 20 "$base/" || true)
-            test "$status" = 200 && break
+          status=000
+          for attempt in $(seq 1 12); do
+            status=$(curl -sSL -o /tmp/qa-home -w '%{http_code}' --max-time 20 "$base/?qa_release=$GITHUB_SHA" || true)
+            if test "$status" = 200 && grep -Eq 'id="root"|type="module"' /tmp/qa-home; then
+              echo "QA homepage is ready: HTTP $status (attempt $attempt)"
+              break
+            fi
+            echo "QA homepage not ready on attempt $attempt: HTTP $status"
             sleep 3
           done
-          test "$status" = 200
-          grep -Eq 'id="root"|type="module"' /tmp/qa-home
+          if ! test "$status" = 200 || ! grep -Eq 'id="root"|type="module"' /tmp/qa-home; then
+            echo "::error::QA homepage is not a valid compiled app, HTTP $status"
+            head -c 400 /tmp/qa-home || true
+            exit 1
+          fi
           asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
-          test -n "$asset"
-          curl -fsSL --max-time 30 "$base$asset" >/tmp/qa-bundle
-          cmp -s "dist/client$asset" /tmp/qa-bundle
-          for endpoint in '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/logistics?brand=TAUWACH' '/api/client3/watches/returns/pending?brand=TAUWACH'; do
+          if test -z "$asset"; then
+            echo "::error::Compiled JS asset not found in dist/client/index.html"
+            head -c 500 dist/client/index.html
+            exit 1
+          fi
+          verified_asset=0
+          for attempt in $(seq 1 12); do
+            asset_status=$(curl -sSL -o /tmp/qa-bundle -w '%{http_code}' --max-time 30 "$base$asset" || true)
+            if test "$asset_status" = 200 && cmp -s "dist/client$asset" /tmp/qa-bundle; then
+              verified_asset=1
+              echo "QA deployed JS matches local build: $asset (attempt $attempt)"
+              break
+            fi
+            echo "QA JS not yet identical: $asset HTTP $asset_status (attempt $attempt)"
+            sleep 3
+          done
+          if test "$verified_asset" != 1; then
+            echo "::error::QA deployed JS does not match local build after retries"
+            exit 1
+          fi
+          for endpoint in '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/logistics?brand=TAUWACH' '/api/client3/watches/returns/pending?brand=TAUWACH' '/api/client3/watches/catalog/retired?brand=TAUWACH'; do
             code=$(curl -sS -o /tmp/qa-anon -w '%{http_code}' --max-time 20 "$base$endpoint")
-            test "$code" = 401 -o "$code" = 403
+            echo "Unauthenticated endpoint $endpoint: HTTP $code"
+            if test "$code" != 401 && test "$code" != 403; then
+              echo "::error::Unexpected public API access or route error for $endpoint"
+              head -c 400 /tmp/qa-anon
+              exit 1
+            fi
           done
           echo CLIENT3_QA_MAIN_UI_LIFECYCLE_RELEASE_VERIFIED
       - name: Post-deploy test D1 integrity only
