@@ -100,6 +100,8 @@ const firstRead=await parse(readClient3WatchHandover(db,admin,1,firstOrder.order
 assert.equal(firstRead.status,200,JSON.stringify(firstRead))
 assert.equal(firstRead.reviewCount,1,'Backdated October sale must trigger issuance review after later full revision')
 const firstItem=firstRead.state.items.find(x=>x.reviewNeeded)
+assert.equal(firstItem?.productName,'NEW EMPTY WATCH',
+ 'Handover must show real watch model from watch_products, never technical legacy catalog placeholder')
 assert(firstItem?.checkpointId&&firstItem.checkpointAt)
 const beforeOne=sqlite.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=? AND inventory_source=?').get(cv,'warehouse')
 const blockedSend=await parse(dispatchClient3WatchOrder(db,admin,1,firstOrder.orderId,{
