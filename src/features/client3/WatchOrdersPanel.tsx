@@ -36,7 +36,7 @@ const shipLabel=(order:WatchOrder)=>order.pendingReplacement?'Замена ож�
   physicallyIssued(order)?(order.shippingStatus==='sent'?'Отправлено':'Выдано до ревизии · подтверждено'):
   order.shippedLineCount>0?'Частично отправлено':'Не отправлено'
 type PaymentLine={id:number;method:string;amount:number;date:string;kind:string}
-type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;unitPrice:number;
+type ItemLine={id:number;productName:string;quantity:number;returnableQuantity:number;exchangeableQuantity:number;unitPrice:number;
   lineTotal:number;catalogPriceSnapshot:number|null;source:string;shipped:number;
   shippedQuantity:number;returnedQuantity:number;pendingReturnQuantity:number;
   pendingExchangeReceiptQuantity:number;
@@ -289,7 +289,7 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
                       (onOpenLogistics?<button type="button"
                         onClick={()=>onOpenLogistics(brand)}>Подготовить / отправить в логистике</button>:
                         <small>Подготовка и отправка находятся в разделе «Логистика».</small>)}
-                    {parsedRows<ItemLine>(order.itemLines).some(line=>line.returnableQuantity>0)&&
+                    {parsedRows<ItemLine>(order.itemLines).some(line=>line.exchangeableQuantity>0)&&
                       exchangeOrderId!==order.orderId&&
                       <button type="button" onClick={()=>{setExchangeOrderId(order.orderId);setReturnOrderId(null)}}>
                         Обменять часы</button>}
