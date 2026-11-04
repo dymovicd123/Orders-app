@@ -1,5 +1,6 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
+import {fetchOrderStockHandoverRows} from './order-reservations.ts'
 import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,
   WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL,WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
 import {watchCommercialReturnCreditSql,watchNetSaleSql,watchNetDebtSql,
@@ -202,7 +203,21 @@ export async function listClient3WatchOrders(
       FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
       WHERE ${where}
     `).bind(...args).first<Record<string,number>>()
-    return json({ok:true,brandId,rows:rows.results||[],totals:totals||{
+    // Identical compact review flags used by Main. An order created after a
+    // completed checkpoint is not a handover candidate. Never guess based
+    // on "not sent": expose the action only for an actual pending review.
+    const orderRows=rows.results||[]
+    const ids=orderRows.map(row=>Number(row.orderId))
+      .filter(id=>Number.isSafeInteger(id)&&id>0)
+    const handover=ids.length
+      ?await fetchOrderStockHandoverRows(db,ids,{listFlagsOnly:true}):[]
+    const needingReview=new Set(handover
+      .filter(row=>Number(row.review_needed)===1)
+      .map(row=>Number(row.order_id)))
+    const withHandoverFlags=orderRows.map(row=>({
+      ...row,stockHandoverReviewNeeded:needingReview.has(Number(row.orderId)),
+    }))
+    return json({ok:true,brandId,rows:withHandoverFlags,totals:totals||{
       orderCount:0,totalAmount:0,receivedAmount:0,debtAmount:0,returnAmount:0,
     },hasMore:rawOffset+rawLimit<Number(totals?.orderCount||0)})
   }
