@@ -1,4 +1,4 @@
-import {cleanText,toInt} from '../core/text.ts'
+import {cleanText} from '../core/text.ts'
 import {CriticalOperationConflictError} from './critical.ts'
 
 const conflict=(message:string):never=>{throw new CriticalOperationConflictError(message)}
@@ -57,7 +57,7 @@ export async function dispatchRetiredClient3WatchLines(
    .bind(requestId).first<{id:number;order_id:number}>()
  if(prior){
    const saved=await db.prepare(`SELECT order_item_id,quantity FROM order_dispatch_items
-     WHERE dispatch_id=? ORDER BY order_item_id`).bind(prior.id).all<Chosen>()
+     WHERE dispatch_id=? ORDER BY order_item_id`).bind(prior.id).all<{order_item_id:number;quantity:number}>()
    const previous=(saved.results||[]).map(x=>x.order_item_id+':'+x.quantity).sort()
    const wanted=input.items.map(x=>x.orderItemId+':'+x.quantity).sort()
    if(prior.order_id!==orderId||JSON.stringify(previous)!==JSON.stringify(wanted))
@@ -69,7 +69,7 @@ export async function dispatchRetiredClient3WatchLines(
     JOIN watch_order_details wd ON wd.order_id=o.id WHERE o.id=? AND wd.brand_id=?`)
    .bind(orderId,brandId).first<Record<string,unknown>>()
  if(!order||String(order.order_status)!=='active'||order.archived_at)
-   conflict('Архивная отправка разрешена только для действующего заказа выбранного бренда.')
+   throw new CriticalOperationConflictError('Архивная отправка разрешена только для действующего заказа выбранного бренда.')
  const rows=await db.prepare(`
   SELECT oi.id,oi.quantity,oi.variant_id,oi.product_id,oi.source_type,oi.stock_writeoff_status,
     wi.watch_variant_id,wi.engraving_text,wp.model_name,wp.brand_id,
@@ -259,7 +259,7 @@ export async function dispatchRetiredClient3WatchLines(
      .bind(requestId).first<{id:number;order_id:number}>()
    if(found?.order_id===orderId){
      const saved=await db.prepare('SELECT order_item_id,quantity FROM order_dispatch_items WHERE dispatch_id=?')
-       .bind(found.id).all<Chosen>()
+       .bind(found.id).all<{order_item_id:number;quantity:number}>()
      const a=(saved.results||[]).map(x=>x.order_item_id+':'+x.quantity).sort()
      const b=input.items.map(x=>x.orderItemId+':'+x.quantity).sort()
      if(JSON.stringify(a)===JSON.stringify(b))
@@ -272,7 +272,7 @@ export async function dispatchRetiredClient3WatchLines(
  }
  const saved=await db.prepare('SELECT id FROM order_dispatches WHERE request_id=?')
    .bind(requestId).first<{id:number}>()
- if(!saved?.id)conflict('Журнал отправки не подтверждён.')
+ if(!saved?.id)throw new CriticalOperationConflictError('Журнал отправки не подтверждён.')
  return {ok:true,dispatchId:saved.id,retiredWithoutStockChange:true,
    shippedQuantity:input.items.reduce((n,i)=>n+i.quantity,0)}
 }
