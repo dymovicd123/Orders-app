@@ -233,3 +233,16 @@
  width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:9px;font-size:14px;background:#fff;color:#0f172a}
 .watch-orders .watch-admin-payment-grid .watch-admin-payment-comment{grid-column:1/-1}
 .watch-orders .watch-admin-payment-grid :is(input,select,textarea):disabled{background:#f1f5f9;color:#64748b;opacity:1;cursor:not-allowed}
+
+
+/* Admin deletion is an explicit table action, not hidden inside a nested edit tab. */
+.watch-orders .watch-main-row-actions button.watch-order-delete-direct{
+ background:#fff5f5!important;border:1px solid #fca5a5!important;
+ color:#b91c1c!important;font-weight:750!important;white-space:nowrap;
+}
+.watch-orders .watch-main-row-actions button.watch-order-delete-direct:hover{
+ background:#fee2e2!important;border-color:#ef4444!important;color:#991b1b!important;
+}
+.watch-orders .watch-main-row-actions button.watch-order-delete-direct:focus-visible{
+ outline:3px solid #fca5a5;outline-offset:2px;
+}
