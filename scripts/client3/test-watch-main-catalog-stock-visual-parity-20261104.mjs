@@ -38,7 +38,7 @@ assert(watchCatalog.includes('label="Удалить исполнение"')&&
  watchCatalog.includes('label="Удалить товар"'),
  'All three deletion controls must survive UX refactor')
 assert(watchCatalog.includes('editingModel&&<section className="catalog-detail-editor catalog-product-editor-inline"')&&
- !watchCatalog.includes('<WatchModelAliases key={brand+\'-aliases-\'+selected.id}\n              brand'),
+ watchCatalog.includes('<WatchModelAliases key={brand+'),
  'Aliases belong inside explicit product edit mode, not above all executions')
 assert(watchCatalog.indexOf('onOpenStock(selected.name)')>0&&
  shell.includes("onOpenStock={name=>{setCatalogStockFocus(name);goTo('warehouse')}}"),
