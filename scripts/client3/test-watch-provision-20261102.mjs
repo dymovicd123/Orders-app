@@ -23,6 +23,7 @@ sql.exec([
   'INSERT INTO payments(id,amount) VALUES(1,50000);',
 ].join('\n'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
+sql.exec(fs.readFileSync('migrations/client3-watch/0006_client3_watch_sku_generations.sql','utf8'))
 // Provisioning now reads the optional editable SKU attribute extension too.
 sql.exec(`CREATE TABLE watch_variant_attributes_v5 (
   watch_variant_id INTEGER PRIMARY KEY REFERENCES watch_variants(id),
