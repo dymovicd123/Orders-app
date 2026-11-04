@@ -28,7 +28,7 @@ jobs:
           set -eEuo pipefail
           trap 'echo "CLIENT3_REAL_RELEASE_PREFLIGHT_BLOCKED line $LINENO"' ERR
           test "$GITHUB_REF" = refs/heads/client3/lifecycle-main-rebuild-20261104
-          test "$(git rev-parse HEAD^)" = ec27f54ccfd18771936dcb26f29a7a1fd4862218
+          test "$(git rev-parse HEAD^)" = ec20e0a6e1098368a66812fa066f9ef620814303
           test "$(git diff --name-only HEAD^ HEAD)" = .github/workflows/client3-original-production-release-20261104.yml
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41769117108 --jq .conclusion)" = success
           test "$(gh api repos/dymovicd123/Orders-app/actions/runs/41769117108 --jq .head_sha)" = ec27f54ccfd18771936dcb26f29a7a1fd4862218
@@ -112,7 +112,7 @@ jobs:
       - name: Apply ONLY reviewed 1004 item engraving readiness migration to ORIGINAL D1
         run: |
           set -euo pipefail
-          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\\.sql' /tmp/client3-real-migrations.txt | sort -u || true)"
+          pending="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-real-migrations.txt | sort -u || true)"
           if test -n "$pending"; then
             test "$pending" = 1004_watch_item_engraving_readiness.sql
             # Fail if someone partially applied this migration manually:
@@ -124,7 +124,7 @@ jobs:
             # This migration creates a table, backfills unambiguous completed
             # engravings and downgrades ambiguous aggregate ready states only.
             # No order, payment, stock, return or exchange quantity is written.
-            printf 'y\\n' | npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
+            printf 'y\n' | npx wrangler d1 migrations apply orders_db_client3_old_client --remote --config wrangler.jsonc
           fi
           npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
             (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_engraving_item_readiness') AS ready_table,
@@ -133,7 +133,7 @@ jobs:
           npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" \
             | jq -e '.[0].results | length==0'
           npx wrangler d1 migrations list orders_db_client3_old_client --remote --config wrangler.jsonc > /tmp/client3-real-after-migrations.txt
-          pending_after="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\\.sql' /tmp/client3-real-after-migrations.txt | sort -u || true)"
+          pending_after="$(grep -Eo '[0-9]{4}_[A-Za-z0-9_-]+\.sql' /tmp/client3-real-after-migrations.txt | sort -u || true)"
           test -z "$pending_after"
           echo "CLIENT3_REAL_1004_ONLY_MIGRATION_VERIFIED"
       - name: Deploy ONLY original Client3 Worker (NO preview)
