@@ -16,6 +16,7 @@ import {correctClient3AdminPaymentMethod} from '../../worker/domains/client3-wat
 import {rewriteClient3AdminWatchItems} from '../../worker/domains/client3-watch-admin-composition.ts'
 import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {listClient3WatchExchangeHistory,cancelClient3WatchExchange} from '../../worker/domains/client3-watch-exchange-history.ts'
+import {readWatchCommercialBalance} from '../../worker/domains/client3-watch-commercial.ts'
 import {ensureManualWatchOrderSku,watchIdentityKey,watchReferenceIdentityKey} from '../../worker/domains/client3-watch-order-manual.ts'
 import {addWatchModelAlias,listWatchModelAliases,deleteWatchModelAlias,findWatchModelByIdentity} from '../../worker/domains/client3-watch-model-aliases.ts'
 import {registerWatchModel,registerWatchVariant,listWatchCatalogDrafts} from '../../worker/domains/client3-watch-catalog.ts'
@@ -1805,6 +1806,120 @@ assert.equal(sqlite.prepare('SELECT total_amount,received_amount,debt_amount FRO
  .get(unissuedCreated.orderId).debt_amount,18000)
 const unissuedHistory=await parse(listClient3WatchExchangeHistory(db,manager,1,unissuedCreated.orderId))
 assert.equal(unissuedHistory.exchanges[0].oldItems[0].wasNotIssued,true)
+// Stage 7: ARYSTAN-like partial standalone return, then a different watch
+// exchange. Commercial credit must reduce net sale without inventing any
+// payment, preserve physical-intake tracking, and make Main quote ONLY the
+// price difference for the unaffected product.
+for(const [sku,req] of [[1,'watch-credit-arrival-one-20261104'],
+  [2,'watch-credit-arrival-two-20261104']]){
+ const received=await parse(receiveClient3WatchArrival(db,admin,1,{
+   source:'office',watchVariantId:sku,quantity:15,requestId:req,
+ }))
+ assert.equal(received.status,200,JSON.stringify(received))
+}
+const creditPurchase=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-credit-return-exchange-create-20261104',
+ receivedAmount:70000,engravingText:'',
+ items:[
+   {watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:20000,source:'office',engravingText:''},
+   {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,quantity:1,unitPrice:50000,source:'office',engravingText:''},
+ ],
+}))
+assert.equal(creditPurchase.status,201,JSON.stringify(creditPurchase))
+const creditItems=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
+ FROM order_items WHERE order_id=? ORDER BY id`).all(creditPurchase.orderId)
+assert.deepEqual(creditItems.map(row=>row.unit_price),[20000,50000])
+const initialCreditDispatch=await parse(dispatchClient3WatchOrder(db,logisticActor,1,creditPurchase.orderId,{
+ requestId:'watch-credit-return-exchange-send-20261104',
+ items:creditItems.map(x=>({orderItemId:x.id,quantity:1})),
+}))
+assert.equal(initialCreditDispatch.status,200,JSON.stringify(initialCreditDispatch))
+const physicalCreditReturn=await parse(createClient3WatchReturn(db,manager,1,creditPurchase.orderId,{
+ requestId:'watch-credit-return-first-20261104',kind:'both',quantity:1,
+ items:[{orderItemId:creditItems[0].id,quantity:1}],amount:20000,
+ paymentMethod:'KASPI GOLD',refundParts:[{method:'KASPI GOLD',amount:20000}],
+ reason:'Вернули ARYSTAN, другие часы остаются в заказе',
+}))
+assert.equal(physicalCreditReturn.status,200,JSON.stringify(physicalCreditReturn))
+const storedCredit=sqlite.prepare('SELECT amount,quantity FROM return_items WHERE return_id=?')
+ .get(physicalCreditReturn.returnId)
+assert.equal(storedCredit.amount,20000,'Commercial value frozen with the physical return')
+let creditBalance=await readWatchCommercialBalance(db,creditPurchase.orderId)
+assert.deepEqual(creditBalance,{
+ grossTotal:70000,returnedGoodsValue:20000,netSale:50000,
+ received:70000,refunded:20000,netPaid:50000,netDebt:0,overpayment:0,
+})
+const creditExchange=await parse(exchangeClient3WatchSet(db,manager,1,creditPurchase.orderId,{
+ requestId:'watch-credit-exchange-second-20261104',
+ expectedOrderTotal:70000,
+ oldItems:[{
+   orderItemId:creditItems[1].id,quantity:1,physicalState:'pending',
+   expectedActiveQuantity:1,expectedUnitPrice:50000,
+   expectedLineTotal:50000,expectedCatalogPriceSnapshot:creditItems[1].catalog_price_snapshot,
+ }],
+ newItems:[{manual:manualReplacement,source:'office',quantity:1,
+   unitPrice:60000,engravingText:'Возврат других часов не блокирует обмен'}],
+ paymentParts:[{method:'KASPI RED',amount:10000}],refundParts:[],
+ reason:'Заменили только вторую модель с доплатой десять тысяч',
+}))
+assert.equal(creditExchange.status,200,JSON.stringify(creditExchange))
+assert.equal(creditExchange.paymentAmount,10000,
+ 'Prior returned sale unit is a noncash credit: new watch adds only 10K')
+creditBalance=await readWatchCommercialBalance(db,creditPurchase.orderId)
+assert.deepEqual(creditBalance,{
+ grossTotal:80000,returnedGoodsValue:20000,netSale:60000,
+ received:80000,refunded:20000,netPaid:60000,netDebt:0,overpayment:0,
+})
+assert.equal(sqlite.prepare(`SELECT COUNT(*) AS n FROM return_items
+ WHERE return_id=? AND physical_tracking=1 AND physical_received_at IS NULL`)
+ .get(physicalCreditReturn.returnId).n,1,
+ 'ARYSTAN physical receipt remains pending while second watch is exchanged')
+
+// Item-only return with an unpaid balance: customer owes price of remaining
+// goods, not the original gross order. Validate the debt at the exact Main
+// atomic payment insert, not just at the button or preliminary read.
+const debtPurchase=await parse(createClient3WatchOrder(db,manager,1,{
+ ...purchase,requestId:'watch-credit-debt-create-20261104',
+ receivedAmount:30000,engravingText:'',
+ items:[
+   {watchVariantId:1,catalogVariantId:vid,quantity:1,unitPrice:20000,source:'office',engravingText:''},
+   {watchVariantId:2,catalogVariantId:secondSku.canonicalVariantId,quantity:1,unitPrice:50000,source:'office',engravingText:''},
+ ],
+}))
+assert.equal(debtPurchase.status,201,JSON.stringify(debtPurchase))
+const debtItems=sqlite.prepare('SELECT id FROM order_items WHERE order_id=? ORDER BY id')
+ .all(debtPurchase.orderId)
+const debtShip=await parse(dispatchClient3WatchOrder(db,logisticActor,1,debtPurchase.orderId,{
+ requestId:'watch-credit-debt-send-20261104',
+ items:debtItems.map(x=>({orderItemId:x.id,quantity:1})),
+}))
+assert.equal(debtShip.status,200,JSON.stringify(debtShip))
+const debtReturned=await parse(createClient3WatchReturn(db,manager,1,debtPurchase.orderId,{
+ requestId:'watch-credit-debt-return-20261104',kind:'items_only',
+ amount:0,quantity:1,items:[{orderItemId:debtItems[0].id,quantity:1}],
+ reason:'Вернули одни часы, денег пока не возвращали',
+}))
+assert.equal(debtReturned.status,200,JSON.stringify(debtReturned))
+const debtCreditBalance=await readWatchCommercialBalance(db,debtPurchase.orderId)
+assert.equal(debtCreditBalance.netDebt,20000)
+assert.equal(sqlite.prepare('SELECT debt_amount FROM orders WHERE id=?')
+ .get(debtPurchase.orderId).debt_amount,40000,
+ 'Main raw debt retained, Client3 must use the adjusted commercial debt')
+const tooMuchMoney=await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,{
+ requestId:'watch-credit-debt-too-much-20261104',method:'KASPI GOLD',
+ amount:30000,paymentDate:'2026-11-04',
+}))
+assert.equal(tooMuchMoney.status,409,'Cannot charge for a physically returned watch')
+const exactDebtInput={requestId:'watch-credit-debt-exact-pay-20261104',
+ method:'KASPI GOLD',amount:20000,paymentDate:'2026-11-04'}
+const exactDebt=await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,exactDebtInput))
+assert.equal(exactDebt.status,201,JSON.stringify(exactDebt))
+assert.equal((await readWatchCommercialBalance(db,debtPurchase.orderId)).netDebt,0)
+assert.equal((await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,exactDebtInput))).ok,true,
+ 'Idempotent commercial debt settlement must not add money twice')
+assert.equal((await parse(addClient3WatchDebtPayment(db,manager,1,debtPurchase.orderId,{
+ ...exactDebtInput,requestId:'watch-credit-debt-extra-reject-20261104',amount:10000,
+}))).status,409)
 assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[])
 sqlite.close()
 console.log('CLIENT3_FULL_MAIN_ORDER_LIFECYCLE_PASS: multi-position returns, multi-method payments/refunds, two-to-two exchange, watch identity, engraving, pending physical intake and replay')
