@@ -132,7 +132,7 @@ export function WatchExchangeForm({brand,order,onDone,onCancel}:{
       (x.manual.braceletMaterial==='leather'&&!x.manual.braceletColor)||
       !Number.isSafeInteger(x.quantity)||x.quantity<1||x.quantity>1000||
       !Number.isSafeInteger(x.unitPrice)||x.unitPrice<0||
-      x.shipmentState!=='pending'))){
+      x.shipmentState!=='pending')){
      setError('Заполните характеристики, количество и цену новых часов. Отправка выполняется только в логистике.');return
    }
    const pay=payments.map(x=>({method:x.method,amount:Number(x.amount)}))
