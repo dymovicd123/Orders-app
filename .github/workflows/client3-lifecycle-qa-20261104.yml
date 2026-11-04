@@ -1,0 +1,29 @@
+name: Client3 lifecycle rebuild QA (isolated, no deploy)
+on:
+  push:
+    branches: [client3/lifecycle-main-rebuild-20261104]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    name: Watch ledger, shipping, return, logistics, typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Exact per-item read, partial dispatch and physical intake
+        run: node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+      - name: Logistics component regressions
+        run: node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
+      - name: Main order engine and full returns
+        run: node --experimental-strip-types scripts/client3/test-watch-full-order-engine-20261102.mjs
+      - name: Main exchange and return lineage
+        run: node --experimental-strip-types scripts/client3/test-watch-full-exchange-engine-20261102.mjs
+      - name: TypeScript and production bundle compile
+        run: npm run build
