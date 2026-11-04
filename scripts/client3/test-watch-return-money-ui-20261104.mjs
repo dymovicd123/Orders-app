@@ -28,9 +28,11 @@ try{
  const view=renderToStaticMarkup(React.createElement(WatchReturnForm,{
    brand:'TAUWACH',order,onDone:()=>{},onCancel:()=>{},
  }))
- assert(view.includes('ARYSTAN')&&view.includes('ALTYN ZAMAN')===false,
-  'Physical return picker only shows previously issued watches')
- assert(view.includes('Стоимость выбранных часов по исходной цене продажи:'))
+ assert(view.includes('ARYSTAN')&&view.includes('ALTYN ZAMAN') &&
+  view.includes('is-unissued') &&
+  view.includes('Эти часы остаются у вас'),
+  'Main-like picker shows every watch but disables a physical return for unissued watches')
+ assert(view.includes('Стоимость выбранных часов:'))
  assert(view.includes('5 000')||view.includes('5 000')||view.includes('5 000'),
   'Only the selected watch sale price is the suggested return value')
  assert(view.includes('max="30000"'),'Money-only refund still knows recorded available funds')
