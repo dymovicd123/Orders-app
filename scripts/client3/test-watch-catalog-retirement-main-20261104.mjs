@@ -9,7 +9,8 @@ import {listClient3WatchDemandReport} from '../../worker/domains/client3-watch-d
 import {dispatchClient3WatchOrder} from '../../worker/domains/client3-watch-dispatch.ts'
 import {markWatchLogisticsReady} from '../../worker/domains/client3-watches.ts'
 import {correctClient3WatchDispatch} from '../../worker/domains/client3-watch-dispatch-correction.ts'
-import {createClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {createClient3WatchReturn,receiveClient3WatchReturn} from '../../worker/domains/client3-watch-returns.ts'
+import {exchangeClient3WatchSet} from '../../worker/domains/client3-watch-exchange-set.ts'
 import {previewClient3WatchDelete,deleteClient3WatchCatalog,listClient3WatchRetiredCatalog} from '../../worker/domains/client3-watch-catalog-delete.ts'
 
 const app=fs.readFileSync('src/WatchClient3App.tsx','utf8')
@@ -275,6 +276,85 @@ assert.equal(lastSent.status,200,JSON.stringify(lastSent))
 assert.equal(sqlite.prepare('SELECT shipping_status FROM orders WHERE id=?')
  .get(partialOrder.orderId).shipping_status,'sent')
 assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,noDoubleStock)
+// A physical Return after archived delivery must respect the ordinary
+// dispatch ledger but NEVER resurrect removed inventory/SKU identities.
+const forbiddenReturn=await parse(createClient3WatchReturn(db,manager,1,historyOrder.orderId,{
+ requestId:'watch-retired-return-stock-forbidden-20261104-0001',
+ kind:'items_only',quantity:1,amount:0,reason:'Проверка запрета восстановления архивного SKU',
+ items:[{orderItemId:orderLine.id,quantity:1,physicalState:'warehouse'}]
+}))
+assert.equal(forbiddenReturn.status,409,'Returning into deleted SKU is unsafe')
+assert.equal(forbiddenReturn.code,'WATCH_RETIRED_RETURN_STOCK_BLOCKED')
+const validReturn=await parse(createClient3WatchReturn(db,manager,1,historyOrder.orderId,{
+ requestId:'watch-retired-return-pending-20261104-0001',
+ kind:'items_only',quantity:1,amount:0,reason:'Часы возвращаются после отправки',
+ items:[{orderItemId:orderLine.id,quantity:1,physicalState:'pending'}],
+}))
+assert.equal(validReturn.status,200,JSON.stringify(validReturn))
+const physicalReturn=sqlite.prepare(`SELECT ri.id,ri.return_id FROM return_items ri
+ JOIN returns r ON r.id=ri.return_id WHERE r.order_id=? ORDER BY ri.id DESC LIMIT 1`)
+ .get(historyOrder.orderId)
+assert(physicalReturn?.id,'Archive return must retain exact historic order line')
+const forbiddenReceipt=await parse(receiveClient3WatchReturn(db,manager,1,historyOrder.orderId,{
+ requestId:'watch-retired-receipt-stock-forbidden-20261104-0001',
+ returnId:physicalReturn.return_id,returnItemId:physicalReturn.id,destination:'warehouse'
+}))
+assert.equal(forbiddenReceipt.status,409,'Intake must not restock removed SKU')
+assert.equal(forbiddenReceipt.code,'WATCH_RETIRED_RECEIPT_STOCK_BLOCKED')
+const receivedWithoutStock=await parse(receiveClient3WatchReturn(db,manager,1,historyOrder.orderId,{
+ requestId:'watch-retired-receipt-no-stock-20261104-0001',
+ returnId:physicalReturn.return_id,returnItemId:physicalReturn.id,destination:'no_stock'
+}))
+assert.equal(receivedWithoutStock.status,200,JSON.stringify(receivedWithoutStock))
+const lateCorrection=await parse(correctClient3WatchDispatch(db,admin,1,historyOrder.orderId,{
+ dispatchItemId:sqlite.prepare('SELECT id FROM order_dispatch_items WHERE order_item_id=? ORDER BY id DESC LIMIT 1')
+   .get(orderLine.id).id,
+ requestId:'watch-retired-correction-after-return-20261104',
+ reason:'Не должно отменяться после возврата часов',
+}))
+assert.equal(lateCorrection.status,409,'Return of shipped item must block later shipment correction')
+
+// Exchange can replace one already delivered archived watch, but the old
+// retired SKU cannot be restocked as a side effect of that exchange.
+const old=sqlite.prepare(`SELECT id,quantity,unit_price,line_total,catalog_price_snapshot
+ FROM order_items WHERE id=?`).get(pieces[0].id)
+const expectedTotal=sqlite.prepare('SELECT total_amount FROM orders WHERE id=?')
+ .get(partialOrder.orderId).total_amount
+const oldItem={
+ orderItemId:old.id,quantity:1,physicalState:'no_stock',
+ expectedActiveQuantity:old.quantity,expectedUnitPrice:old.unit_price,
+ expectedLineTotal:old.line_total,expectedCatalogPriceSnapshot:old.catalog_price_snapshot
+}
+const replacement={modelName:'АРХИВ ОБМЕН ЧАСЫ QA',gender:'male',movement:'quartz',
+ braceletMaterial:'steel',dialColor:'silver',braceletColor:''}
+const forbiddenExchange=await parse(exchangeClient3WatchSet(db,manager,1,partialOrder.orderId,{
+ requestId:'watch-retired-exchange-restock-forbidden-20261104',
+ expectedOrderTotal:expectedTotal,oldItems:[{...oldItem,physicalState:'warehouse'}],
+ newItems:[{manual:replacement,source:'office',quantity:1,unitPrice:9000,
+   engravingText:'',shipmentState:'pending',issuePossessionConfirmed:false}],
+ paymentParts:[],refundParts:[],reason:'Обмен не должен создавать остаток архивных часов'
+}))
+assert.equal(forbiddenExchange.status,409)
+assert.equal(forbiddenExchange.code,'WATCH_ARCHIVED_EXCHANGE_STOCK_BLOCKED')
+const validExchange=await parse(exchangeClient3WatchSet(db,manager,1,partialOrder.orderId,{
+ requestId:'watch-retired-exchange-no-stock-20261104',
+ expectedOrderTotal:expectedTotal,oldItems:[oldItem],
+ newItems:[{manual:replacement,source:'office',quantity:1,unitPrice:9000,
+   engravingText:'',shipmentState:'pending',issuePossessionConfirmed:false}],
+ paymentParts:[],refundParts:[],reason:'Обмен архивных часов с новой отправкой через логистику'
+}))
+assert.equal(validExchange.status,200,JSON.stringify(validExchange))
+assert.equal(sqlite.prepare('SELECT SUM(quantity) AS qty FROM inventory_stock WHERE variant_id=?')
+ .get(productVariant.canonical).qty,0)
+assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=? AND movement_type=\'sale\'')
+ .get(productVariant.canonical).n,0)
+const replacementLine=sqlite.prepare(`SELECT oi.id,oi.stock_writeoff_status,wi.watch_variant_id
+ FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+ WHERE oi.order_id=? AND oi.quantity>0 AND oi.id<>?
+ ORDER BY oi.id DESC LIMIT 1`).get(partialOrder.orderId,pieces[1].id)
+assert(replacementLine?.watch_variant_id>0)
+assert.notEqual(replacementLine.stock_writeoff_status,'fulfilled',
+ 'Replacement must remain unshipped until Logistics')
 const archived=await archive()
 assert(archived.rows.some(x=>x.watchProductId===productId&&x.productActive===0))
 assert(archived.rows.some(x=>x.watchVariantId===item.id&&x.variantActive===0))
