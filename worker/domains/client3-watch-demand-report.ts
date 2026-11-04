@@ -59,10 +59,10 @@ export async function listClient3WatchDemandReport(
      o.order_date AS orderDate,o.total_amount AS orderTotal,
      wv.id AS variantId,wp.model_name AS model,
      wv.gender AS gender,
-     COALESCE(va.movement,wv.movement) AS movement,
-     COALESCE(va.bracelet_material,wv.bracelet_material) AS bracelet,
-     COALESCE(va.dial_color,wv.dial_color) AS dialColor,
-     COALESCE(va.bracelet_color,wv.bracelet_color,'') AS braceletColor,
+     COALESCE(va6.movement,va.movement,wv.movement) AS movement,
+     COALESCE(va6.bracelet_material,va.bracelet_material,wv.bracelet_material) AS bracelet,
+     COALESCE(va6.dial_color,va.dial_color,wv.dial_color) AS dialColor,
+     COALESCE(va6.bracelet_color,va.bracelet_color,wv.bracelet_color,'') AS braceletColor,
      oi.quantity AS orderedQuantity,
      COALESCE(oi.unit_price,0) AS unitPrice,
      ${watchReturnedUnitsForItemSql('oi')} AS returnedAll,
@@ -79,6 +79,7 @@ export async function listClient3WatchDemandReport(
    JOIN watch_products wp ON wp.id=wv.watch_product_id
        AND wp.brand_id=wd.brand_id
    LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=wv.id
+    LEFT JOIN watch_variant_attributes_v6 va6 ON va6.watch_variant_id=wv.id
    WHERE wd.brand_id=? ${isShipped?'':'AND o.order_date>=? AND o.order_date<=?'}
  ), selected AS (
    SELECT *,
