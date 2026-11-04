@@ -59,6 +59,7 @@ export async function exchangeClient3WatchSet(
    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
    JOIN watch_variants wv ON wv.id=wi.watch_variant_id AND wv.catalog_variant_id=oi.variant_id
    JOIN watch_products wp ON wp.id=wv.watch_product_id
+   JOIN catalog_variants cv ON cv.id=oi.variant_id
    WHERE oi.order_id=? AND oi.id IN (${ids.map(()=>'?').join(',')})`)
    .bind(orderId,...ids).all<Record<string,unknown>>()
  const found=new Map((oldRows.results||[]).map(r=>[Number(r.id),r]))
