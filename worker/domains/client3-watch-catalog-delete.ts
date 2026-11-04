@@ -170,3 +170,47 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
  return json({ok:true,deletedCount:changed,kind:scope.kind,
    productDeleted:scope.kind==='product',historyPreserved:true})
 }
+
+
+/** Read-only archive. All records remain in the original watch and canonical
+ * identity tables, so order lines, exchange history and stock movements keep
+ * their original IDs. No migration and no physical inventory mutation. */
+export async function listClient3WatchRetiredCatalog(
+ db:D1Database,actor:AuthUser,brandId:number,url:URL,
+){
+ if(actor.role!=='admin'&&actor.employeeRole!=='Завсклад')
+   return fail('Просмотр архива каталога доступен администратору и заведующему складом.',403)
+ const offset=Number(url.searchParams.get('offset')||0)
+ if(!Number.isSafeInteger(offset)||offset<0||offset>100000)
+   return fail('Неправильная страница архива.',400)
+ const rows=await db.prepare(`SELECT wp.id AS watchProductId,
+   wp.model_name AS modelName,wp.is_active AS productActive,
+   v.id AS watchVariantId,v.is_active AS variantActive,
+   v.catalog_variant_id AS catalogVariantId,
+   v.gender,COALESCE(va.movement,v.movement) AS movement,
+   COALESCE(va.bracelet_material,v.bracelet_material) AS braceletMaterial,
+   COALESCE(va.dial_color,v.dial_color) AS dialColor,
+   COALESCE(va.bracelet_color,v.bracelet_color) AS braceletColor,
+   COALESCE((
+     SELECT MAX(e.created_at) FROM catalog_retirement_history_events e
+     WHERE e.variant_id=v.catalog_variant_id
+   ),'') AS variantRetiredAt,
+   COALESCE((
+     SELECT MAX(op.completed_at) FROM catalog_retirement_operations op
+     WHERE op.entity_type='product' AND op.entity_id=wp.catalog_product_id
+       AND op.status='completed'
+   ),'') AS modelRetiredAt,
+   COALESCE((SELECT COUNT(*) FROM order_items oi
+     JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+     WHERE wi.watch_variant_id=v.id),0) AS historicItemCount
+ FROM watch_products wp
+ LEFT JOIN watch_variants v ON v.watch_product_id=wp.id
+ LEFT JOIN watch_variant_attributes_v5 va ON va.watch_variant_id=v.id
+ WHERE wp.brand_id=? AND (wp.is_active=0 OR v.is_active=0)
+ ORDER BY COALESCE(NULLIF(modelRetiredAt,''),NULLIF(variantRetiredAt,''),'') DESC,
+   wp.id DESC, v.id DESC LIMIT 101 OFFSET ?`)
+  .bind(brandId,offset).all<Record<string,unknown>>()
+ const records=rows.results||[]
+ return json({ok:true,brandId,rows:records.slice(0,100),
+   hasMore:records.length>100,nextOffset:offset+Math.min(100,records.length)})
+}
