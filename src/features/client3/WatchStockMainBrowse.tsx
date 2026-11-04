@@ -19,12 +19,6 @@ const stats=(row:WatchOrderChoice,source:Source)=>{
   return {physical,reserved,free:physical-reserved}
 }
 const label=(values:readonly {value:string;label:string}[],code:string)=>values.find(x=>x.value===code)?.label||code
-function characteristics(row:WatchOrderChoice) {
-  return [label(WATCH_OPTIONS.genders,row.gender),label(WATCH_OPTIONS.movements,row.movement),
-    label(WATCH_OPTIONS.braceletMaterials,row.braceletMaterial),
-    label(WATCH_OPTIONS.dialColors,row.dialColor),
-    row.braceletColor?'Ремешок: '+row.braceletColor:''].filter(Boolean).join(' · ')
-}
 /**
  * Exact Main stock v13 master/detail information architecture and existing
  * Main CSS layers. Only variant detail labels map to watches (no fake sizes).
