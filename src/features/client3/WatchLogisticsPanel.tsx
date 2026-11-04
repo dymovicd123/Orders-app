@@ -151,6 +151,9 @@ export function WatchLogisticsPanel({brand,allowedBrands=[],canCompleteEngraving
     if(filter==='all')return true
     if(filter==='ready')return !sent&&items.some(i=>i.orderItemId&&
       !logisticsItemIssued(i)&&(!i.engravingText?.trim()||Boolean(i.engravingReady)))
+    if(filter==='engraving')return !sent&&items.some(i=>i.orderItemId&&
+      Number(i.quantity)>0&&!logisticsItemIssued(i)&&
+      Boolean(i.engravingText?.trim())&&!Boolean(i.engravingReady))
     return !sent&&order.engravingStatus===filter
   }).sort((a,b)=>{
     const aOverdue=Number(!logisticsOrderComplete(a)&&
