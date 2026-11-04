@@ -9,6 +9,7 @@ import {WatchOrderCorrections} from './WatchOrderCorrections'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
 import {WatchOrderHandoverPanel} from './WatchOrderHandoverPanel'
 import '../../styles/client3-watch-orders.css'
+import '../../styles/client3-main-orders-copied.css'
 
 type WatchOrder={
   orderId:number;externalId:string;orderDate:string;managerName:string|null;managerId:number
