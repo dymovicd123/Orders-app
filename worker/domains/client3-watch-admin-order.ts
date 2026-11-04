@@ -38,18 +38,24 @@ export async function previewClient3AdminOrderDelete(
  if(!order)return error('WATCH_DELETE_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
  try{
    const preview=await previewAdminOrderDeletion(db,orderId)
+   const liveDispatch=await db.prepare(`SELECT COUNT(*) AS live FROM order_dispatch_items di
+     JOIN order_dispatches d ON d.id=di.dispatch_id
+     WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+     .bind(orderId).first<{live:number}>()
+   const hasDispatch=Number(liveDispatch?.live||0)>0
    const physical=await issued(db,orderId)
    const safe=preview.canAttemptDelete&&physical===0
      &&order.shipping_status!=='sent'&&order.order_status==='active'
    const reasons=[...preview.reasons]
-   if(!safe&&!reasons.length)reasons.push('Есть отправка или неподтверждённая история. Сначала разрешите складские последствия в Main.')
-   return json({ok:true,brandId,orderId,mainPreview:preview,preview:{
+   if(hasDispatch)reasons.push('В логистике есть фактически отправленные часы. Сначала исправьте подтверждённую ошибочную отправку в логистике; нельзя автоматически отменить выдачу при удалении.')
+   if(!safe&&!reasons.length)reasons.push('Есть отправка или неподтверждённая история. Сначала разрешите складские последствия.')
+   return json({ok:true,brandId,orderId,mainPreview:{...preview,reasons,canStartChain:preview.canStartChain&&!hasDispatch},preview:{
      externalId:preview.externalId,totalAmount:Number(order.total_amount||0),
      receivedAmount:preview.receivedAmount,returnedAmount:preview.returnAmount,
      activeReturns:preview.activeReturns.length,activeExchanges:preview.activeExchanges.length,
      issuedItems:preview.issuedItemCount,paymentCount:preview.paymentCount,
      reasons,explanations:preview.explanations,canDelete:safe,
-     canStartChain:preview.canStartChain,canPreparePhysicalCorrection:preview.canPreparePhysicalCorrection,
+     canStartChain:preview.canStartChain&&!hasDispatch,canPreparePhysicalCorrection:preview.canPreparePhysicalCorrection&&!hasDispatch,
      expectedSnapshot:preview.chainPlan.snapshotFingerprint,
    }})
  }catch(cause){
@@ -104,6 +110,13 @@ export async function client3AdminDeleteChain(
    if(typeof input.requestId!=='string'||!/^[A-Za-z0-9_:.-]{10,128}$/.test(input.requestId)
      ||typeof input.expectedSnapshot!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedSnapshot))
      return error('WATCH_DELETE_CHAIN_INVALID','Обновите проверку удаления и идентификатор операции.',400)
+   const dispatch=await db.prepare(`SELECT COUNT(*) AS live
+     FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+     WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+     .bind(orderId).first<{live:number}>()
+   if(Number(dispatch?.live||0)>0)
+     return error('WATCH_DELETE_CHAIN_DISPATCH_ACTIVE',
+       'По заказу есть фактическая отправка. Сначала исправьте ошибочную отправку через «Логистику» или оформите возврат с приёмкой; автоматическая цепочка не изменяет физически выданные часы.',409)
    const result=await executeAdminDeleteChainStep(db,orderId,input,actor)
    return json({...result,brandId,orderId,mainDeleteChain:true})
  }catch(cause){
