@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { WATCH_OPTIONS, watchReferenceLabel, type WatchBrand, type WatchVariantInput } from '../../../shared/client3/watch-domain'
 import {WatchCatalogDeleteAction} from './WatchCatalogDeleteAction'
+import {WatchCatalogRetiredHistory} from './WatchCatalogRetiredHistory'
 import {WatchCatalogVariantEditAction} from './WatchCatalogVariantEditAction'
 import {WatchModelAliases} from './WatchModelAliases'
 import '../../styles/w6-catalog-browse.css'
@@ -145,7 +146,8 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
     void callApi('/api/client3/watches/catalog?brand='+encodeURIComponent(brand),{signal:controller.signal})
       .then(data=>{if(!controller.signal.aborted){
         setRows(data.rows||[])
-        setModelId(current=>(data.rows||[]).some(x=>x.watchProductId===current)?current:data.rows?.[0]?.watchProductId||0)
+        setModelId(current=>(data.rows||[]).some(x=>x.watchProductId===current&&x.productActive===1)?current:
+          (data.rows||[]).find(x=>x.productActive===1)?.watchProductId||0)
       }}).catch(cause=>{
         if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Не удалось загрузить каталог')
       }).finally(()=>{if(!controller.signal.aborted)setLoading(false)})
@@ -363,6 +365,7 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
       <div className="inventory-panel-headline w6-catalog-headline catalog-clean-headline">
         <div><h3>Товары</h3><p>Каталог моделей часов, комплектации и цены.</p></div>
         <div className="w6-catalog-head-actions">
+          <WatchCatalogRetiredHistory brand={brand}/>
           <button type="button" className="secondary compact" disabled={loading}
             onClick={()=>setReload(x=>x+1)}>Обновить</button>
         </div>
@@ -391,7 +394,7 @@ export function WatchCatalogEditor({brand,view='catalog',onStockChanged,onOpenRe
         <div className="w6-catalog-stats" aria-label="Сводка каталога">
           <span>Всего: <b>{models.length}</b> моделей</span>
           <span><b>{positionCount}</b> комплектаций</span>
-          <span><b>{rows.filter(row=>row.watchVariantId&&!row.catalogVariantId).length}</b> без складского SKU</span>
+          <span><b>{rows.filter(row=>row.productActive===1&&row.variantActive===1&&row.watchVariantId&&!row.catalogVariantId).length}</b> без складского SKU</span>
         </div>
       </div>
       {error&&<p role="alert" className="watch-catalog-editor-error">{error}</p>}
