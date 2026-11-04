@@ -101,8 +101,8 @@ export function WatchOrderHandoverPanel({brand,orderId,lines,onDone,onClose}:{
            disabled={busy} onClick={()=>{setChoice({id:item.orderItemId,decision:'still_here'});setChecked(false)}}>
            На момент проверки были у нас
          </button>
-       </div>
-       {current&&<div className="client3-watch-handover-confirm">
+       </div>}
+       {current&&item.reservationStatus==='active'&&<div className="client3-watch-handover-confirm">
          <strong>{current==='issued_before_checkpoint'
            ?'Часы физически передали клиенту ДО последней ревизии?'
            :'Часы оставались у компании во время последней ревизии?'}</strong>
