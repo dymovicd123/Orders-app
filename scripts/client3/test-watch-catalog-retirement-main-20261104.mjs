@@ -24,7 +24,7 @@ const deleteUI=fs.readFileSync('src/features/client3/WatchCatalogDeleteAction.ts
 assert(deleteUI.includes('inventoryWillBeRemoved')&&
  deleteUI.includes('reservationsWillBeReleased')&&
  deleteUI.includes('preview.openOrders')&&
- deleteUI.includes('обычная отправка архивного товара сейчас заблокирована')&&
+ deleteUI.includes('без повторного складского списания')&&
  deleteUI.includes('historicalOrderItems'),
  'Deletion preview must disclose concrete Main stock, reservation and historical effects')
 const deleteDomain=fs.readFileSync('worker/domains/client3-watch-catalog-delete.ts','utf8')
