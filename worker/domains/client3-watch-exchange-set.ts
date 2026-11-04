@@ -80,9 +80,9 @@ export async function exchangeClient3WatchSet(
    if(!retry){
      const issued=Math.min(Number(snapshot.quantity),Math.max(0,Number(snapshot.issued_quantity)))
      const returned=Math.max(0,Number(snapshot.returned_quantity))
-     const limit=line.physicalState==='pending'
-       ?Math.max(0,issued-returned)
-       :Math.max(0,Number(snapshot.quantity)-issued)
+     const limit=line.physicalState==='not_issued'
+       ?Math.max(0,Number(snapshot.quantity)-issued)
+       :Math.max(0,issued-returned)
      if(line.quantity>limit)return fail('WATCH_EXCHANGE_OLD_PHYSICAL_STATE',
        line.physicalState==='pending'
          ?'Выбранные часы не выдавались клиенту в указанном количестве. Для неотправленных позиций выберите «Ещё не отправляли».'
