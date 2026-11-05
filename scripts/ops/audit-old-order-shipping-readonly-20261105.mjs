@@ -5,9 +5,12 @@ import { execFileSync } from 'node:child_process'
 const db = 'orders_db_prod'
 const cutoff = '2026-11-02T09:26:53Z'
 const sql = `
-SELECT category, COUNT(*) AS items, COUNT(DISTINCT order_id) AS orders
+SELECT cohort, category, COUNT(*) AS items, COUNT(DISTINCT order_id) AS orders
 FROM (
   SELECT o.id AS order_id,
+    CASE WHEN julianday(o.created_at) IS NULL THEN 'unknown_date'
+      WHEN julianday(o.created_at)<julianday('${cutoff}') THEN 'legacy'
+      ELSE 'post_cutover' END AS cohort,
     CASE
       WHEN COALESCE(o.shipping_status,'not_sent')='sent'
         THEN '01_recorded_sent'
@@ -68,11 +71,10 @@ FROM (
     END AS category
   FROM orders o
   JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
-  WHERE julianday(o.created_at)<julianday('${cutoff}')
-    AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  WHERE COALESCE(o.order_status,'') NOT IN ('deleted','archived')
     AND COALESCE(o.archived_at,'')=''
 ) classified
-GROUP BY category ORDER BY category`
+GROUP BY cohort, category ORDER BY cohort, category`
 
 if (!/^\s*SELECT\b/i.test(sql) || /;\s*\S/.test(sql)) {
   throw new Error('READ_ONLY_SINGLE_SELECT_REQUIRED')
@@ -92,15 +94,61 @@ const allowable = new Set([
  '07_fulfilled_without_exact_prior_issue_proof',
  '08_other_physical_issue_requires_lineage_check','09_other_pending_or_inconsistent',
 ])
-if (rows.some(r=>!allowable.has(r.category) || !Number.isSafeInteger(r.items) ||
+if (rows.some(r=>!['legacy','post_cutover','unknown_date'].includes(r.cohort) || !allowable.has(r.category) || !Number.isSafeInteger(r.items) ||
     !Number.isSafeInteger(r.orders) || r.items<0 || r.orders<0 || r.orders>r.items)) {
   throw new Error('REMOTE_D1_AGGREGATE_INVALID')
 }
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_START')
 console.log('CUTOFF_UTC',cutoff)
 for (const row of rows) {
-  console.log('CATEGORY',row.category,'ITEMS',row.items,'ORDERS_TOUCHED',row.orders)
+  console.log('COHORT',row.cohort,'CATEGORY',row.category,'ITEMS',row.items,'ORDERS_TOUCHED',row.orders)
 }
+
+const diagnostics = `SELECT cohort, item_state, reservation_state,
+  COUNT(*) AS items, COUNT(DISTINCT order_id) AS orders
+FROM (
+  SELECT o.id AS order_id,
+    CASE WHEN julianday(o.created_at) IS NULL THEN 'unknown_date'
+      WHEN julianday(o.created_at)<julianday('${cutoff}') THEN 'legacy'
+      ELSE 'post_cutover' END AS cohort,
+    CASE WHEN COALESCE(oi.is_workshop,0)<>0 THEN 'workshop'
+      ELSE COALESCE(NULLIF(oi.stock_writeoff_status,''),'none') END AS item_state,
+    CASE
+      WHEN EXISTS (SELECT 1 FROM inventory_reservations r
+        WHERE r.order_item_id=oi.id AND r.status='active') THEN 'active'
+      WHEN EXISTS (SELECT 1 FROM inventory_reservations r
+        WHERE r.order_item_id=oi.id AND r.status='fulfilled') THEN 'fulfilled'
+      WHEN EXISTS (SELECT 1 FROM inventory_reservations r
+        WHERE r.order_item_id=oi.id AND r.status='unresolved') THEN 'unresolved'
+      WHEN EXISTS (SELECT 1 FROM inventory_reservations r
+        WHERE r.order_item_id=oi.id) THEN 'other_reservation'
+      ELSE 'no_reservation'
+    END AS reservation_state
+  FROM orders o JOIN order_items oi ON oi.order_id=o.id
+  WHERE oi.quantity>0
+    AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+    AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+    AND COALESCE(o.archived_at,'')=''
+) q GROUP BY cohort,item_state,reservation_state
+ORDER BY cohort,item_state,reservation_state`
+if (!/^\\s*SELECT\\b/i.test(diagnostics) || /;\\s*\\S/.test(diagnostics)) {
+  throw new Error('DIAGNOSTIC_MUST_BE_SELECT')
+}
+const rawDiagnostic=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+diagnostics],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const diagnosticResponse=JSON.parse(rawDiagnostic)
+if (!Array.isArray(diagnosticResponse)||diagnosticResponse.length!==1||
+ diagnosticResponse[0]?.success!==true||!Array.isArray(diagnosticResponse[0]?.results)) {
+ throw new Error('DIAGNOSTIC_FAILED_OR_INCOMPLETE')
+}
+for(const row of diagnosticResponse[0].results) {
+ if(!Number.isSafeInteger(row.items)||!Number.isSafeInteger(row.orders)||row.orders>row.items) {
+  throw new Error('DIAGNOSTIC_INVALID')
+ }
+ console.log('UNSENT_STATE',row.cohort,row.item_state,row.reservation_state,'ITEMS',row.items,'ORDERS_TOUCHED',row.orders)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
