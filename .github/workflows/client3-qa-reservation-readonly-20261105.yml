@@ -1,0 +1,71 @@
+name: Client3 QA order reserve snapshot read-only
+on:
+  push:
+    branches: [diagnostics/client3-qa-reservation-20261105]
+    paths: ['.github/workflows/client3-qa-reservation-readonly-20261105.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      QA_DB: orders_db_client3_qa_41698114208
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      LIVE_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Strict isolated QA database configuration
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/diagnostics/client3-qa-reservation-20261105
+          test "$QA_DB_ID" != "$LIVE_DB_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          data=json.loads(Path('wrangler.jsonc').read_text())
+          assert data['name']=='orders-app-client3-old-client'
+          assert data['d1_databases'][0]['database_id']==os.environ['LIVE_DB_ID']
+          data['name']='orders-app-client3-qa-20261103'
+          data['d1_databases'][0]['database_id']=os.environ['QA_DB_ID']
+          data['d1_databases'][0]['database_name']=os.environ['QA_DB']
+          data['vars']['CLIENT3_QA_COPY']='1'
+          Path('/tmp/client3-readonly-qa.jsonc').write_text(json.dumps(data,ensure_ascii=False))
+          PY
+          test "$(jq -r .d1_databases[0].database_id /tmp/client3-readonly-qa.jsonc)" = "$QA_DB_ID"
+          npm ci
+      - name: Read only target ARYSTAN order item/reservation from QA, no personal data
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$QA_DB" --remote --config /tmp/client3-readonly-qa.jsonc --json --command="SELECT
+            o.id AS orderId,
+            oi.id AS itemId,
+            oi.quantity AS orderedQuantity,
+            oi.source_type AS inventorySource,
+            oi.variant_id AS catalogVariantId,
+            oi.stock_writeoff_status AS stockStatus,
+            ir.status AS reservationStatus,
+            ir.unresolved_reason AS reservationReason,
+            ir.quantity AS reservationQuantity,
+            COALESCE(st.quantity,0) AS physical,
+            COALESCE(st.reserved_quantity,0) AS reserved,
+            (SELECT COUNT(*) FROM inventory_reservations r2 WHERE r2.variant_id=oi.variant_id
+              AND r2.inventory_source=oi.source_type AND r2.status='active' AND r2.order_id<>o.id)
+              AS otherActiveReserves,
+            (SELECT COUNT(*) FROM inventory_reservations r3 WHERE r3.variant_id=oi.variant_id
+              AND r3.inventory_source=oi.source_type AND r3.status='active' AND r3.order_id=o.id)
+              AS thisOrderActiveReserves
+          FROM orders o JOIN order_items oi ON oi.order_id=o.id
+          LEFT JOIN inventory_reservations ir ON ir.order_item_id=oi.id
+          LEFT JOIN inventory_stock st ON st.variant_id=oi.variant_id AND st.inventory_source=oi.source_type
+          WHERE o.external_id LIKE 'ORD-20261105162629%' ORDER BY oi.id" |
+            jq -c '.[0].results'
+          echo CLIENT3_QA_TARGET_RESERVATION_AUDIT_FINISHED
