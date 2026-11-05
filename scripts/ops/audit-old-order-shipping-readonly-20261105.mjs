@@ -664,6 +664,41 @@ for(const row of safeReadOnlyDiagnostic(isolatedExchangeStatusesSql)){
  console.log('LEGACY_UNATTRIBUTED_EXCHANGE_STATUS',JSON.stringify(row))
 }
 
+
+const replacementLifecycleSql = `WITH candidate AS (
+ SELECT o.id AS order_id,oi.id AS item_id
+ FROM orders o
+ JOIN order_items oi ON oi.order_id=o.id
+ JOIN exchange_items ei ON ei.order_item_id=oi.id AND ei.role='new'
+ JOIN exchanges e ON e.id=ei.exchange_id AND e.order_id=o.id
+ WHERE julianday(o.created_at)<julianday('2026-11-02T09:26:53Z')
+  AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+  AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  AND COALESCE(o.archived_at,'')=''
+  AND oi.stock_writeoff_status='fulfilled'
+  AND COALESCE(e.status,'completed')='completed'
+  AND EXISTS(SELECT 1 FROM inventory_reservations r
+   WHERE r.order_item_id=oi.id AND r.status='fulfilled'
+     AND r.reference_type='exchange_new')
+)
+SELECT
+ COALESCE(le.event_type,'none') AS event_type,
+ COALESCE(le.status,'none') AS lifecycle_status,
+ COALESCE(le.pending_reason,'none') AS pending_reason,
+ COUNT(*) AS events
+FROM candidate c
+LEFT JOIN inventory_lifecycle_events le ON le.order_item_id=c.item_id
+ AND le.operation_type='exchange'
+GROUP BY event_type,lifecycle_status,pending_reason
+ORDER BY events DESC,event_type LIMIT 25`;
+for(const row of safeReadOnlyDiagnostic(replacementLifecycleSql)){
+ for(const key of ['event_type','lifecycle_status','pending_reason']){
+  if(!/^[a-z0-9_]{1,80}$/.test(row[key]))throw Error('LIFECYCLE_CLASS_INVALID_'+key)
+ }
+ if(!Number.isSafeInteger(row.events)||row.events<0)throw Error('LIFECYCLE_AGGREGATE_INVALID')
+ console.log('EXCHANGE_REPLACEMENT_LIFECYCLE',JSON.stringify(row))
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
