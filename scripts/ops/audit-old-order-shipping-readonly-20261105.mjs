@@ -291,6 +291,75 @@ for(const r of discrepancyPayload[0].results){
   'LINES',r.lines,'ORDERS_TOUCHED',r.orders)
 }
 
+
+const unattributedSql = `SELECT
+  COUNT(*) AS lines,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM inventory_movements m
+    WHERE m.reference_id=o.external_id AND m.movement_type='sale'
+      AND m.variant_id=oi.variant_id AND m.inventory_source=oi.source_type
+  ) THEN 1 ELSE 0 END) AS same_order_sale_movement,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM inventory_movements m
+    WHERE m.reference_id=o.external_id AND m.movement_type='revision'
+      AND m.variant_id=oi.variant_id AND m.inventory_source=oi.source_type
+  ) THEN 1 ELSE 0 END) AS same_order_revision_movement,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM inventory_handover_reviews hr
+    WHERE hr.order_item_id=oi.id AND hr.decision='still_here'
+  ) THEN 1 ELSE 0 END) AS reviewed_still_here,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM activity_log a
+    WHERE a.order_id=o.id AND a.event_type='order_prior_issued_shipping_corrected'
+  ) THEN 1 ELSE 0 END) AS past_status_only_correction,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM order_dispatch_items di
+    WHERE di.order_item_id=oi.id AND di.cancelled_quantity=di.quantity
+  ) THEN 1 ELSE 0 END) AS canceled_dispatch,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
+    WHERE ri.order_item_id=oi.id AND ri.quantity>0
+      AND COALESCE(rt.status,'completed')<>'cancelled'
+  ) THEN 1 ELSE 0 END) AS physical_return,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM inventory_reservations r
+    WHERE r.order_item_id=oi.id AND r.status='fulfilled'
+  ) THEN 1 ELSE 0 END) AS fulfilled_reservation
+FROM orders o JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
+WHERE julianday(o.created_at)<julianday('${cutoff}')
+  AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+  AND oi.stock_writeoff_status='fulfilled'
+  AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  AND COALESCE(o.archived_at,'')=''
+  AND NOT EXISTS(
+    SELECT 1 FROM order_dispatch_items di
+    WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity
+  )
+  AND NOT EXISTS(
+    SELECT 1 FROM inventory_handover_reviews hr
+    WHERE hr.order_item_id=oi.id AND hr.decision='issued_before_checkpoint'
+  )
+  AND NOT EXISTS(
+    SELECT 1 FROM activity_log a
+    WHERE a.order_id=o.id AND a.entity_type='order_item' AND a.entity_id=oi.id
+      AND a.event_type IN ('order_stock_issued_before_full_shipping','order_stock_handover_reconciled')
+  )`
+if(!/^\s*SELECT\b/i.test(unattributedSql))throw Error('UNATTRIBUTED_MUST_BE_SELECT')
+const unattributedRaw=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+unattributedSql],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const unattributedResult=JSON.parse(unattributedRaw)
+if(!Array.isArray(unattributedResult)||unattributedResult.length!==1||
+ unattributedResult[0]?.success!==true||!Array.isArray(unattributedResult[0]?.results))throw Error('UNATTRIBUTED_READ_FAILED')
+for(const row of unattributedResult[0].results){
+ if(!Number.isSafeInteger(row.lines))throw Error('UNATTRIBUTED_COUNT_INVALID')
+ for(const name of ['same_order_sale_movement','same_order_revision_movement','reviewed_still_here',
+ 'past_status_only_correction','canceled_dispatch','physical_return','fulfilled_reservation']){
+  if(row[name]!==null && !Number.isSafeInteger(row[name]))throw Error('UNATTRIBUTED_INVALID_'+name)
+ }
+ console.log('UNATTRIBUTED_OLD_FULFILLED_PROVENANCE',JSON.stringify(row))
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
