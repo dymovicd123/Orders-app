@@ -6,6 +6,8 @@ type ReadOrder = {
   order_status?: string
   archived_at?: string | null
   shipping_status?: string
+  committed_exchange_count?: number
+  has_committed_item_return?: boolean
   updated_at?: string
   items: Array<Record<string, unknown>>
 }
@@ -17,6 +19,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
   // The old order-wide sent marker records an earlier issue; a NEW replacement
   // may still need shipping. Never re-offer already sent ordinary lines.
   const historicallySent = cleanText(order.shipping_status) === 'sent'
+  const hasCommittedPhysicalChange = toInt(order.committed_exchange_count, 0) > 0 || Boolean(order.has_committed_item_return)
   const activeById = new Map<number, {quantity: number; variantId: number}>()
   for (const reservation of reservations) {
     if (cleanText(reservation.status) !== 'active') continue
@@ -96,7 +99,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     selectedQuantity: lines.reduce((n, line) => n + line.selectedQuantity, 0),
     // This is not a selective stock dispatch: every original line must have
     // proof of exactly one prior fulfilled reservation.
-    canConfirmIssuedOnly: !closed && !historicallySent && lines.length > 0
+    canConfirmIssuedOnly: !closed && !historicallySent && !hasCommittedPhysicalChange && lines.length > 0
       && lines.every(line => line.canConfirmPriorIssue),
     draftOnly: true,
   }
