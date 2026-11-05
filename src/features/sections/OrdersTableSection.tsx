@@ -149,6 +149,30 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
       }
     })()
   }
+  const confirmIssuedOnlyDispatch=()=>{
+    const d=dispatchDraft
+    if(!d || d.loading || d.submitting || !d.plan?.canConfirmIssuedOnly)return
+    setDispatchDraft(v=>v?{...v,submitting:true,error:''}:v)
+    void (async()=>{
+      try{
+        const today=new Date()
+        const shippingDate=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+        const res=await apiFetch(`/api/orders/${d.order.id}/shipping`,{
+          method:'PATCH',
+          headers:{'Content-Type':'application/json','X-Idempotency-Key':d.requestId},
+          body:JSON.stringify({shippingStatus:'sent',shippingDate,confirmAlreadyIssued:true}),
+        })
+        const data=await res.json()
+        if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось подтвердить отправку.')
+        setDispatchDraft(null)
+        setMessage(`Заказ ${d.order.external_id}: отправка подтверждена без повторного списания склада.`)
+        await onShipmentChange()
+      }catch(e){
+        setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,
+          error:e instanceof Error?e.message:'Не удалось подтвердить отправку.'}:v)
+      }
+    })()
+  }
   const cancelDispatchedLine=(line:any)=>{
     const d=dispatchDraft
     if(!d||d.submitting)return
@@ -1481,6 +1505,20 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                         })}
                         {(dispatchDraft.plan?.lines||[]).length===0 ? <p>В заказе нет товаров для отправки.</p> : null}
+                        {dispatchDraft.plan?.canConfirmIssuedOnly ? (
+                          <div style={{marginTop:16}}>
+                            <p>Все товары уже выданы со склада. Их не нужно списывать повторно. Подтвердите только отправку клиенту.</p>
+                            <button className="primary" type="button"
+                              disabled={dispatchDraft.submitting}
+                              onClick={confirmIssuedOnlyDispatch}>
+                              {dispatchDraft.submitting?'Сохраняю…':'Подтвердить отправку без повторного списания'}
+                            </button>
+                          </div>
+                        ) : null}
+                        {dispatchDraft.plan && !dispatchDraft.plan.canConfirmIssuedOnly
+                          && !dispatchDraft.plan.selectedCount && dispatchDraft.plan.lines?.length ? (
+                            <p>Нет доступных для отправки товаров. Проверьте причину у каждой позиции. Повторная выдача уже списанного товара запрещена.</p>
+                          ) : null}
                         {dispatchDraft.plan?.selectedCount ? (
                           <div className="toolbar-actions" style={{marginTop:16}}>
                             <button className="primary" type="button"
