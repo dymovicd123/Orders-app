@@ -47,7 +47,44 @@ sql.exec(`CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT,phone_
  ALTER TABLE order_items ADD COLUMN stock_writeoff_status TEXT;
  UPDATE order_items SET line_total=unit_price*quantity;`)
 sql.exec('ALTER TABLE payments ADD COLUMN comment TEXT')
+sql.exec('ALTER TABLE returns ADD COLUMN return_date TEXT')
+sql.exec('ALTER TABLE exchanges ADD COLUMN exchange_date TEXT')
 sql.exec('ALTER TABLE financial_events ADD COLUMN created_at TEXT')
+sql.exec(`CREATE TABLE IF NOT EXISTS watch_engraving_item_readiness (
+ order_item_id INTEGER PRIMARY KEY,engraving_text TEXT NOT NULL
+)`)
+// Main's read-only stocktake flag SQL uses reservation/checkpoint lineage.
+// Keep this intentionally small fixture schema complete enough to execute
+// the real compact Main query, rather than mocking away its review gate.
+for(const [table,column,ddl] of [
+ ['order_items','created_at','TEXT'],['order_items','inventory_obligation_key','TEXT'],
+ ['order_items','inventory_obligation_origin_at','TEXT'],['order_items','is_workshop','INTEGER DEFAULT 0'],
+ ['inventory_reservations','order_item_id','INTEGER'],
+ ['inventory_reservations','inventory_source','TEXT'],
+ ['inventory_reservations','variant_id','INTEGER'],
+ ['inventory_reservations','quantity','INTEGER'],
+ ['inventory_stock','inventory_source','TEXT'],
+ ['inventory_stock','variant_id','INTEGER'],
+ ['inventory_stock','quantity','INTEGER'],
+ ['inventory_stock','reserved_quantity','INTEGER'],
+]){
+ if(!sql.prepare('SELECT name FROM pragma_table_info(?) WHERE name=?').get(table,column)){
+   sql.exec('ALTER TABLE '+table+' ADD COLUMN '+column+' '+ddl)
+ }
+}
+sql.exec(`
+ CREATE TABLE IF NOT EXISTS inventory_stock_checks(
+  id INTEGER PRIMARY KEY,inventory_source TEXT,variant_id INTEGER,
+  checked_at TEXT,reference_type TEXT,reference_id TEXT
+ );
+ CREATE TABLE IF NOT EXISTS inventory_stocktake_sessions(
+  id TEXT PRIMARY KEY,inventory_source TEXT,status TEXT,started_at TEXT,completed_at TEXT
+ );
+ CREATE TABLE IF NOT EXISTS inventory_handover_reviews(
+  id INTEGER PRIMARY KEY,order_id INTEGER,order_item_id INTEGER,
+  checkpoint_id INTEGER,checkpoint_at TEXT
+ );
+`)
 sql.exec(fs.readFileSync('migrations/client3-watch/0002_client3_watch_foundation.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0004_client3_shared_reference_values.sql','utf8'))
 sql.exec(fs.readFileSync('migrations/client3-watch/0005_client3_editable_sku_references.sql','utf8'))
@@ -111,7 +148,7 @@ assert.equal(partialShipment.rows.length,2,
   'A line with one of two units issued must remain in the unshipped queue')
 assert.equal(JSON.parse(partialShipment.rows.find(x=>x.orderId===1).itemLines)[0].shippedQuantity,1)
 sql.exec("UPDATE order_items SET quantity=1 WHERE id=101")
-sql.exec("INSERT INTO returns VALUES(1,1,'completed')")
+sql.exec("INSERT INTO returns(id,order_id,status) VALUES(1,1,'completed')")
 sql.exec("INSERT INTO return_items(id,return_id,order_item_id,quantity,physical_tracking) VALUES(1,1,101,1,1)")
 const afterReturn=await query(alice,'brand=TAUWACH&from=2026-11-01')
 const returnedLine=JSON.parse(afterReturn.rows[0].itemLines)[0]

@@ -1,5 +1,6 @@
 import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
+import {fetchOrderStockHandoverRows} from './order-reservations.ts'
 import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,
   WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL,WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
 import {watchCommercialReturnCreditSql,watchNetSaleSql,watchNetDebtSql,
@@ -71,7 +72,9 @@ export async function listClient3WatchOrders(
           WHERE oi2.order_id=o.id AND p3.model_name LIKE ? ESCAPE '\\'))`
     const rows=await db.prepare(`
       SELECT o.id AS orderId,o.external_id AS externalId,o.order_date AS orderDate,
-        o.manager_id AS managerId,o.manager_snapshot_name AS managerName,
+        o.manager_id AS managerId,
+        COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),
+          (SELECT m.name FROM managers m WHERE m.id=o.manager_id LIMIT 1)) AS managerName,
         o.source_type AS legacySource,o.shipping_status AS shippingStatus,
         o.order_status AS orderStatus,
         o.total_amount AS totalAmount,o.received_amount AS receivedAmount,
@@ -81,6 +84,26 @@ export async function listClient3WatchOrders(
         ${watchNetDebtSql('o')} AS debtAmount,
         ${watchNetPaidSql('o')} AS netPaidAmount,
         ${watchCustomerOverpaymentSql('o')} AS overpaymentAmount,
+        (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
+          AND COALESCE(r.status,'completed')<>'cancelled'
+          AND NOT EXISTS (SELECT 1 FROM exchanges e
+             WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
+        ) AS committedReturnCount,
+        (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=o.id
+          AND COALESCE(e.status,'completed')<>'cancelled'
+        ) AS committedExchangeCount,
+        (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri
+          JOIN returns r ON r.id=ri.return_id
+          WHERE r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled'
+          AND NOT EXISTS (SELECT 1 FROM exchanges e
+             WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
+        ) AS committedItemReturnQuantity,
+        (SELECT r.return_date FROM returns r WHERE r.order_id=o.id
+          AND COALESCE(r.status,'completed')<>'cancelled'
+          ORDER BY r.id DESC LIMIT 1) AS latestReturnDate,
+        (SELECT e.exchange_date FROM exchanges e WHERE e.order_id=o.id
+          AND COALESCE(e.status,'completed')<>'cancelled'
+          ORDER BY e.id DESC LIMIT 1) AS latestExchangeDate,
         wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
         wd.city,wd.delivery_method AS deliveryMethod,
         COALESCE(o.customer_name_override,c.display_name,'') AS canonicalCustomerName,
@@ -108,16 +131,20 @@ export async function listClient3WatchOrders(
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,
           'shippedQuantity',${WATCH_ITEM_SHIPPED_SQL},
-           'returnedQuantity',${WATCH_ITEM_RETURNED_SQL},
-           'pendingReturnQuantity',${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL},
-           'pendingExchangeReceiptQuantity',${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL},
-           'returnableQuantity',${WATCH_ITEM_RETURNABLE_SQL},
-           'exchangeableQuantity',MAX(0,oi.quantity-${WATCH_ITEM_RETURNED_SQL}),
-           'unitPrice',oi.unit_price,
+          'returnedQuantity',${WATCH_ITEM_RETURNED_SQL},
+          'pendingReturnQuantity',${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL},
+          'pendingExchangeReceiptQuantity',${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL},
+          'returnableQuantity',${WATCH_ITEM_RETURNABLE_SQL},
+          'exchangeableQuantity',MAX(0,oi.quantity-${WATCH_ITEM_RETURNED_SQL}),
+          'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
           'shipped',CASE WHEN ${WATCH_ITEM_SHIPPED_SQL}>0 THEN 1 ELSE 0 END,
-           'engravingText',COALESCE(wi2.engraving_text,''),
+          'engravingText',COALESCE(wi2.engraving_text,''),
+          'engravingReady',CASE WHEN TRIM(COALESCE(wi2.engraving_text,''))='' THEN 1
+            WHEN EXISTS(SELECT 1 FROM watch_engraving_item_readiness ready
+              WHERE ready.order_item_id=oi.id AND ready.engraving_text=wi2.engraving_text)
+            THEN 1 ELSE 0 END,
           'gender',COALESCE(wv2.gender,''),'movement',COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv2.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id)),wv2.movement,''),
           'braceletMaterial',COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv2.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id)),wv2.bracelet_material,''),
           'dialColor',COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv2.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv2.id)),wv2.dial_color,''),
@@ -180,7 +207,21 @@ export async function listClient3WatchOrders(
       FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
       WHERE ${where}
     `).bind(...args).first<Record<string,number>>()
-    return json({ok:true,brandId,rows:rows.results||[],totals:totals||{
+    // Identical compact review flags used by Main. An order created after a
+    // completed checkpoint is not a handover candidate. Never guess based
+    // on "not sent": expose the action only for an actual pending review.
+    const orderRows=rows.results||[]
+    const ids=orderRows.map(row=>Number(row.orderId))
+      .filter(id=>Number.isSafeInteger(id)&&id>0)
+    const handover=ids.length
+      ?await fetchOrderStockHandoverRows(db,ids,{listFlagsOnly:true}):[]
+    const needingReview=new Set(handover
+      .filter(row=>Number(row.review_needed)===1)
+      .map(row=>Number(row.order_id)))
+    const withHandoverFlags=orderRows.map(row=>({
+      ...row,stockHandoverReviewNeeded:needingReview.has(Number(row.orderId)),
+    }))
+    return json({ok:true,brandId,rows:withHandoverFlags,totals:totals||{
       orderCount:0,totalAmount:0,receivedAmount:0,debtAmount:0,returnAmount:0,
     },hasMore:rawOffset+rawLimit<Number(totals?.orderCount||0)})
   }

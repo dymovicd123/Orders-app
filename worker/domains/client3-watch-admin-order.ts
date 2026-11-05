@@ -2,6 +2,8 @@ import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {previewAdminOrderDeletion} from './order-delete-preview.ts'
 import {deleteOrderSafely} from './order-delete.ts'
+import {readActiveAdminDeleteChain,executeAdminDeleteChainStep} from './admin-delete-execute.ts'
+import {correctPhysicalBeforeAdminDelete} from './admin-delete-physical-confirm.ts'
 import {updateOrderCritical} from './orders-write.ts'
 import type {OrderInput} from '../core/types.ts'
 
@@ -36,17 +38,24 @@ export async function previewClient3AdminOrderDelete(
  if(!order)return error('WATCH_DELETE_NOT_FOUND','Заказ отсутствует в выбранном бренде.',404)
  try{
    const preview=await previewAdminOrderDeletion(db,orderId)
+   const liveDispatch=await db.prepare(`SELECT COUNT(*) AS live FROM order_dispatch_items di
+     JOIN order_dispatches d ON d.id=di.dispatch_id
+     WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+     .bind(orderId).first<{live:number}>()
+   const hasDispatch=Number(liveDispatch?.live||0)>0
    const physical=await issued(db,orderId)
    const safe=preview.canAttemptDelete&&physical===0
      &&order.shipping_status!=='sent'&&order.order_status==='active'
    const reasons=[...preview.reasons]
-   if(!safe&&!reasons.length)reasons.push('Есть отправка или неподтверждённая история. Сначала разрешите складские последствия в Main.')
-   return json({ok:true,brandId,orderId,preview:{
+   if(hasDispatch)reasons.push('В логистике есть фактически отправленные часы. Сначала исправьте подтверждённую ошибочную отправку в логистике; нельзя автоматически отменить выдачу при удалении.')
+   if(!safe&&!reasons.length)reasons.push('Есть отправка или неподтверждённая история. Сначала разрешите складские последствия.')
+   return json({ok:true,brandId,orderId,mainPreview:{...preview,reasons,canStartChain:preview.canStartChain&&!hasDispatch},preview:{
      externalId:preview.externalId,totalAmount:Number(order.total_amount||0),
      receivedAmount:preview.receivedAmount,returnedAmount:preview.returnAmount,
      activeReturns:preview.activeReturns.length,activeExchanges:preview.activeExchanges.length,
      issuedItems:preview.issuedItemCount,paymentCount:preview.paymentCount,
      reasons,explanations:preview.explanations,canDelete:safe,
+     canStartChain:preview.canStartChain&&!hasDispatch,canPreparePhysicalCorrection:preview.canPreparePhysicalCorrection&&!hasDispatch,
      expectedSnapshot:preview.chainPlan.snapshotFingerprint,
    }})
  }catch(cause){
@@ -84,6 +93,70 @@ export async function deleteClient3AdminOrder(
    return error('WATCH_DELETE_CONFLICT',cause instanceof Error?cause.message:'Удаление заблокировано.',409)
  }
 }
+
+/** Client3 brand-scoped gateway for Main's persistent, step-by-step delete saga.
+ * This is never a bulk SQL deletion. Each call can cancel at most one dependent
+ * Return/Exchange; Main rechecks its own current snapshot and journal. */
+export async function client3AdminDeleteChain(
+ db:D1Database,actor:AuthUser,brandId:number,orderId:number,
+ method:'GET'|'POST',input:{requestId?:unknown;expectedSnapshot?:unknown;physicalOutcome?:unknown}={},
+):Promise<Response>{
+ if(!authorize(actor))return error('WATCH_DELETE_ADMIN_ONLY','Цепочка удаления доступна только администратору.',403)
+ if(!(await watchOrder(db,brandId,orderId)))
+   return error('WATCH_DELETE_NOT_FOUND','Заказ не принадлежит выбранному бренду.',404)
+ try{
+   if(method==='GET')
+     return json({ok:true,progress:await readActiveAdminDeleteChain(db,orderId)})
+   if(typeof input.requestId!=='string'||!/^[A-Za-z0-9_:.-]{10,128}$/.test(input.requestId)
+     ||typeof input.expectedSnapshot!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedSnapshot))
+     return error('WATCH_DELETE_CHAIN_INVALID','Обновите проверку удаления и идентификатор операции.',400)
+   const dispatch=await db.prepare(`SELECT COUNT(*) AS live
+     FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
+     WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+     .bind(orderId).first<{live:number}>()
+   if(Number(dispatch?.live||0)>0)
+     return error('WATCH_DELETE_CHAIN_DISPATCH_ACTIVE',
+       'По заказу есть фактическая отправка. Сначала исправьте ошибочную отправку через «Логистику» или оформите возврат с приёмкой; автоматическая цепочка не изменяет физически выданные часы.',409)
+   const result=await executeAdminDeleteChainStep(db,orderId,input,actor)
+   return json({...result,brandId,orderId,mainDeleteChain:true})
+ }catch(cause){
+   const message=cause instanceof Error?cause.message:'Невозможно продолжить удаление.'
+   return error(/no such table: admin_order_delete_sagas|no such table: admin_order_delete_saga_steps/i.test(message)
+      ?'WATCH_DELETE_SAGA_SCHEMA_REQUIRED':'WATCH_DELETE_CHAIN_BLOCKED',
+     /no such table: admin_order_delete_saga/i.test(message)
+       ?'Журнал безопасного удаления Main отсутствует в базе Client3. Без миграции отмена цепочки заблокирована.'
+       :message,409)
+ }
+}
+
+/** Require explicit physical fact and fresh Main preview. If logistics records
+ * any actual dispatch, the admin must correct that evidence in Logistics first. */
+export async function client3AdminDeletePhysicalConfirm(
+ db:D1Database,actor:AuthUser,brandId:number,orderId:number,
+ input:{expectedSnapshot?:unknown;physicalOutcome?:unknown},
+):Promise<Response>{
+ if(!authorize(actor))return error('WATCH_DELETE_ADMIN_ONLY','Действие доступно только администратору.',403)
+ const order=await watchOrder(db,brandId,orderId)
+ if(!order)return error('WATCH_DELETE_NOT_FOUND','Заказ не принадлежит выбранному бренду.',404)
+ if(typeof input.expectedSnapshot!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedSnapshot)
+   ||input.physicalOutcome!=='not_issued')
+   return error('WATCH_DELETE_FACT_REQUIRED','Подтвердите факт и обновите проверку последствий.',400)
+ const dispatched=await db.prepare(`SELECT COUNT(*) AS count FROM order_dispatch_items di
+   JOIN order_dispatches d ON d.id=di.dispatch_id
+   WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)`)
+   .bind(orderId).first<{count:number}>()
+ if(Number(dispatched?.count||0)>0)
+   return error('WATCH_DELETE_HAS_LOGISTICS_DISPATCH',
+     'Заказ имеет фактические отправки. Их исправляют только в логистике с проверкой возвратов и склада.',409)
+ try{
+   const result=await correctPhysicalBeforeAdminDelete(db,orderId,input,actor)
+   return json({...result,brandId,orderId})
+ }catch(cause){
+   return error('WATCH_DELETE_FACT_BLOCKED',
+     cause instanceof Error?cause.message:'Не удалось достоверно исправить выдачу.',409)
+ }
+}
+
 /** Reassign the salesperson through Main's critical editor, with client3
  * brand-specific active-manager entitlement and strict preflight on money,
  * physical handover and dependent operations. Never rewrite item rows.

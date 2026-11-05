@@ -1,6 +1,9 @@
 import {useRef,useState,type FormEvent} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {WatchAdminCompositionEditor} from './WatchAdminCompositionEditor'
+import {WatchAdminOrderActions} from './WatchAdminOrderActions'
+import {WatchReturnHistoryPanel} from './WatchReturnHistoryPanel'
+import {WatchExchangeHistoryPanel} from './WatchExchangeHistoryPanel'
 
 export type WatchCorrectionOrder={
  orderId:number;orderDate:string;externalId:string;
@@ -9,6 +12,7 @@ export type WatchCorrectionOrder={
  orderComment:string;shippingStatus:string;orderStatus:string;
  deliveryAddress:string;postalCode:string;urgent:number;shippingDeadlineAt:string;
  totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number;
+ managerId:number;paymentLines:string;committedReturnCount:number;committedExchangeCount:number;
  itemLines:string
 }
 type Line={id:number;productName:string;quantity:number;unitPrice:number;
@@ -48,7 +52,7 @@ const fromOrder=(order:WatchCorrectionOrder):AdminWatch=>({
 export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Props){
  const expected=initial(order)
  const items=lines(order.itemLines)
- const [mode,setMode]=useState<'metadata'|'prices'|'watch'|'composition'>('metadata')
+ const [mode,setMode]=useState<'metadata'|'prices'|'watch'|'composition'|'admin'|'returns'|'exchanges'>('metadata')
  const [next,setNext]=useState<Metadata>(expected)
  const [prices,setPrices]=useState<Record<number,string>>(
    Object.fromEntries(items.map(x=>[x.id,String(x.unitPrice)])))
@@ -59,6 +63,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  const update=(field:keyof Metadata,value:string)=>setNext(v=>({...v,[field]:value}))
  const submit=async(e:FormEvent<HTMLFormElement>)=>{
    e.preventDefault();if(busy)return
+   if(mode==='returns'||mode==='exchanges'||mode==='admin'||mode==='composition')return
    const body:Record<string,unknown>={brand}
    if(mode==='metadata'){
      if(JSON.stringify(expected)===JSON.stringify(next)){
@@ -119,7 +124,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  return <section className="watch-corrections" aria-label={'Исправление заказа '+order.externalId}>
    <div className="watch-corrections-title">
      <strong>Исправить заказ {order.externalId}</strong>
-     <small>{isAdmin?'Администратор':'Менеджер'} · отдельные безопасные действия Main</small>
+     <small>{isAdmin?'Полное редактирование администратора':'Действия менеджера'} · операции и история Main; отправка только через Логистику</small>
    </div>
    <div className="watch-corrections-tabs">
      <button type="button" className={mode==='metadata'?'primary':'secondary'}
@@ -130,8 +135,24 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        onClick={()=>{setMode('watch');setError('')}}>Данные часов и логистики</button>}
      {isAdmin&&<button type="button" className={mode==='composition'?'primary':'secondary'}
        onClick={()=>{setMode('composition');setError('')}}>Состав товаров</button>}
+     {isAdmin&&<button type="button" className={mode==='admin'?'primary':'secondary'}
+       onClick={()=>{setMode('admin');setError('')}}>Оплаты, менеджер и удаление</button>}
+     {order.committedReturnCount>0&&<button type="button" className={mode==='returns'?'primary':'secondary'}
+       onClick={()=>{setMode('returns');setError('')}}>Отменить возврат</button>}
+     {order.committedExchangeCount>0&&<button type="button" className={mode==='exchanges'?'primary':'secondary'}
+       onClick={()=>{setMode('exchanges');setError('')}}>Отменить обмены</button>}
    </div>
-   {mode==='composition'&&isAdmin
+   {mode==='returns'?<WatchReturnHistoryPanel brand={brand} orderId={order.orderId}
+     onClose={()=>setMode('metadata')} onDone={onDone}/>:
+    mode==='exchanges'?<WatchExchangeHistoryPanel brand={brand} orderId={order.orderId}
+     onClose={()=>setMode('metadata')} onDone={onDone}/>:
+    mode==='admin'&&isAdmin?<WatchAdminOrderActions brand={brand}
+     orderId={order.orderId} externalId={order.externalId}
+     managerId={order.managerId} paymentLines={order.paymentLines}
+     orderDate={order.orderDate}
+     linkedOperations={Number(order.committedReturnCount||0)>0||Number(order.committedExchangeCount||0)>0}
+     onDone={onDone}/>:
+    mode==='composition'&&isAdmin
      ?<WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
        itemLines={order.itemLines} receivedAmount={order.receivedAmount}
        onDone={onDone} onCancel={onCancel}/>

@@ -379,7 +379,10 @@ export function WatchClient3App() {
             initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
             initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>:
+            isAdmin={canAdmin}
+            onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}
+            onOpenWorkflow={(kind,order)=>{setReportOrderFocus(order);setLastOrderBrand(order.brand);
+              goTo(kind==='returns'?'returns':'exchange')}}/>:
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
         activeSection==='create'?
           <section className="watch-shell-create-page">
@@ -394,15 +397,25 @@ export function WatchClient3App() {
           <article className="card wide"><div className="card-label">Возвраты</div>
             <div className="card-meta">Для оформления возврата выберите исходный заказ во вкладке «Все заказы». Ниже находится очередь физической приёмки возвратов и старых часов после обмена.</div>
             <button type="button" className="secondary compact" onClick={()=>goTo('orders')}>Открыть заказы</button></article>
+          {brands.length>0&&<WatchOrdersPanel workflow="returns"
+            key={'return-orders-'+catalogVersion+'-'+(reportOrderFocus?.orderId||0)}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            initialFocusedOrder={reportOrderFocus||undefined}
+            allowedBrands={brands.map(x=>x.code)} isAdmin={canAdmin}
+            onOpenOrders={()=>goTo('orders')}/>}
           {brands.length&&<WatchReturnsPanel key={'returns-'+catalogVersion+'-'+brand}
             brands={brands.map(x=>x.code)} initialBrand={brand||undefined}/>}
         </>:
         activeSection==='exchange'?<>
           <article className="card wide"><div className="card-label">Обмены</div>
             <div className="card-meta">Выберите заказ и нажмите «Обменять часы». Обмен доступен и для ещё неотправленных позиций, и для часов у клиента. Физический приём требуется только для фактически выданных часов.</div></article>
-          {brands.length&&<WatchOrdersPanel key={'exchange-'+catalogVersion}
+          {brands.length&&<WatchOrdersPanel workflow="exchange"
+            key={'exchange-'+catalogVersion+'-'+(reportOrderFocus?.orderId||0)}
+            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
+            initialFocusedOrder={reportOrderFocus||undefined}
             allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>}
+            isAdmin={canAdmin} onOpenOrders={()=>goTo('orders')}
+            onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>}
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}
