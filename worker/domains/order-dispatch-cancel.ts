@@ -140,7 +140,7 @@ export async function cancelExactOrderDispatchItem(
           WHERE ri.order_item_id=oi.id AND ri.quantity>0 AND COALESCE(r.status,'completed')<>'cancelled')
      )`
   ).bind(stamp,dispatchItemId,orderId,quantity,quantity))
-  if(!isWorkshop){
+  if(!isWorkshop && !statusOnlyPriorIssue){
     statements.push(
       db.prepare(
         `INSERT INTO inventory_model_meta(key,value,updated_at)
