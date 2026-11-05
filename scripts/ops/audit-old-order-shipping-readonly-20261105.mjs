@@ -699,6 +699,28 @@ for(const row of safeReadOnlyDiagnostic(replacementLifecycleSql)){
  console.log('EXCHANGE_REPLACEMENT_LIFECYCLE',JSON.stringify(row))
 }
 
+const exchangeMovementProofSql = `SELECT
+  COUNT(*) AS applied_exchange_new_events,
+  SUM(CASE WHEN le.movement_id IS NOT NULL THEN 1 ELSE 0 END) AS lifecycle_movement_id_present,
+  SUM(CASE WHEN EXISTS(SELECT 1 FROM inventory_movements m
+    WHERE m.id=le.movement_id AND m.movement_type='sale'
+      AND m.reference_type='exchange_new') THEN 1 ELSE 0 END) AS exact_sale_movement
+FROM inventory_lifecycle_events le
+JOIN exchanges e ON e.id=le.operation_id AND e.order_id=le.order_id
+JOIN orders o ON o.id=e.order_id
+JOIN order_items oi ON oi.id=le.order_item_id AND oi.order_id=o.id
+WHERE le.operation_type='exchange' AND le.event_type='exchange_new_out'
+ AND le.status='applied'
+ AND COALESCE(e.status,'completed')='completed'
+ AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+ AND julianday(o.created_at)<julianday('2026-11-02T09:26:53Z')`
+for(const row of safeReadOnlyDiagnostic(exchangeMovementProofSql)){
+  if(!Number.isSafeInteger(row.applied_exchange_new_events) ||
+     !Number.isSafeInteger(row.lifecycle_movement_id_present) ||
+     !Number.isSafeInteger(row.exact_sale_movement))throw Error('EXCHANGE_MOVEMENT_PROOF_INVALID')
+  console.log('EXCHANGE_MOVEMENT_PROOF',JSON.stringify(row))
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
