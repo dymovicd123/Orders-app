@@ -1,4 +1,4 @@
-name: Historical order shipment states: production READ ONLY
+name: 'Historical order shipment states - production READ ONLY'
 on:
   push:
     branches:
