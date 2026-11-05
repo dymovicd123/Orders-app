@@ -565,6 +565,105 @@ for(const row of safeReadOnlyDiagnostic(legacyEventsSql)){
  console.log('LEGACY_UNATTRIBUTED_EVENT',row.event_type,'COUNT',row.occurrences)
 }
 
+
+const isolatedExchangeSql = `WITH suspect AS (
+ SELECT o.id AS order_id,oi.id AS item_id,r.reference_id AS reservation_ref,
+  r.reference_type AS reservation_type,r.fulfilled_at,
+  r.inventory_source AS source,r.variant_id AS variant_id
+ FROM orders o
+ JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
+ JOIN inventory_reservations r ON r.order_id=o.id AND r.order_item_id=oi.id
+  AND r.status='fulfilled'
+ WHERE julianday(o.created_at)<julianday('2026-11-02T09:26:53Z')
+  AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+  AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  AND COALESCE(o.archived_at,'')=''
+  AND oi.stock_writeoff_status='fulfilled'
+  AND COALESCE(oi.is_workshop,0)=0
+  AND NOT EXISTS(SELECT 1 FROM inventory_handover_reviews hr
+   WHERE hr.order_item_id=oi.id AND hr.decision='issued_before_checkpoint')
+  AND NOT EXISTS(SELECT 1 FROM activity_log a WHERE a.order_id=o.id
+   AND a.entity_type='order_item' AND a.entity_id=oi.id
+   AND a.event_type IN ('order_stock_issued_before_full_shipping',
+    'order_stock_handover_reconciled'))
+  AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+   WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+)
+SELECT
+  s.reservation_type,
+  CASE WHEN s.reservation_ref LIKE 'exchange:%' THEN 'exchange'
+       WHEN s.reservation_ref LIKE 'order:%' THEN 'order'
+       ELSE 'other' END AS reservation_ref_family,
+  COALESCE(m.reference_type,'missing') AS sale_movement_ref_type,
+  CASE WHEN m.reference_id=s.reservation_ref THEN 'exact_reservation_reference'
+       ELSE 'not_matched' END AS sale_ref_match,
+  CASE WHEN EXISTS(SELECT 1 FROM exchanges e
+    WHERE e.order_id=s.order_id AND e.old_order_item_id=s.item_id)
+    THEN 1 ELSE 0 END AS is_exchange_old_item,
+  CASE WHEN EXISTS(SELECT 1 FROM exchanges e
+    WHERE e.order_id=s.order_id AND e.new_order_item_id=s.item_id)
+    THEN 1 ELSE 0 END AS is_exchange_new_item,
+  CASE WHEN EXISTS(SELECT 1 FROM exchange_items ei
+    JOIN exchanges e ON e.id=ei.exchange_id
+    WHERE e.order_id=s.order_id AND ei.order_item_id=s.item_id AND ei.role='old')
+    THEN 1 ELSE 0 END AS set_exchange_old_item,
+  CASE WHEN EXISTS(SELECT 1 FROM exchange_items ei
+    JOIN exchanges e ON e.id=ei.exchange_id
+    WHERE e.order_id=s.order_id AND ei.order_item_id=s.item_id AND ei.role='new')
+    THEN 1 ELSE 0 END AS set_exchange_new_item,
+  (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=s.order_id) AS exchange_count,
+  (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=s.order_id
+     AND COALESCE(e.status,'completed')<>'cancelled') AS active_exchange_count,
+  (SELECT COUNT(*) FROM inventory_lifecycle_events le
+     WHERE le.order_item_id=s.item_id AND le.status='pending') AS item_pending_lifecycle
+FROM suspect s
+LEFT JOIN inventory_movements m ON m.inventory_source=s.source
+ AND m.variant_id=s.variant_id AND m.movement_type='sale'
+ AND m.reference_id=s.reservation_ref
+ORDER BY m.id DESC LIMIT 5`;
+for (const row of safeReadOnlyDiagnostic(isolatedExchangeSql)) {
+ const keys=['reservation_type','reservation_ref_family','sale_movement_ref_type','sale_ref_match'];
+ for(const key of keys){if(!/^[a-z0-9_]{1,80}$/.test(row[key]||''))throw Error('REFERENCE_CLASS_INVALID_'+key)}
+ for(const key of ['is_exchange_old_item','is_exchange_new_item','set_exchange_old_item',
+  'set_exchange_new_item','exchange_count','active_exchange_count','item_pending_lifecycle']){
+  if(!Number.isSafeInteger(row[key])||row[key]<0)throw Error('RELATIONSHIP_CLASS_INVALID_'+key)
+ }
+ console.log('LEGACY_UNATTRIBUTED_EXCHANGE_RELATION',JSON.stringify(row))
+}
+
+const isolatedExchangeStatusesSql=`WITH suspect AS (
+ SELECT o.id AS order_id,oi.id AS item_id
+ FROM orders o JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
+ WHERE julianday(o.created_at)<julianday('2026-11-02T09:26:53Z')
+  AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+  AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  AND COALESCE(o.archived_at,'')=''
+  AND oi.stock_writeoff_status='fulfilled' AND COALESCE(oi.is_workshop,0)=0
+  AND EXISTS(SELECT 1 FROM inventory_reservations r
+   WHERE r.order_id=o.id AND r.order_item_id=oi.id AND r.status='fulfilled')
+  AND NOT EXISTS(SELECT 1 FROM inventory_handover_reviews hr
+   WHERE hr.order_item_id=oi.id AND hr.decision='issued_before_checkpoint')
+  AND NOT EXISTS(SELECT 1 FROM activity_log a WHERE a.order_id=o.id
+   AND a.entity_type='order_item' AND a.entity_id=oi.id
+   AND a.event_type IN ('order_stock_issued_before_full_shipping',
+    'order_stock_handover_reconciled'))
+  AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+   WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+)
+SELECT COALESCE(e.status,'none') AS exchange_status,
+ CASE WHEN e.old_order_item_id=s.item_id THEN 'old'
+      WHEN e.new_order_item_id=s.item_id THEN 'new'
+      ELSE 'other' END AS item_exchange_role,
+ COUNT(*) AS exchange_rows
+FROM suspect s JOIN exchanges e ON e.order_id=s.order_id
+GROUP BY exchange_status,item_exchange_role
+ORDER BY exchange_status,item_exchange_role`;
+for(const row of safeReadOnlyDiagnostic(isolatedExchangeStatusesSql)){
+ if(!/^[a-z0-9_]{1,80}$/.test(row.exchange_status)||!['old','new','other'].includes(row.item_exchange_role)
+ || !Number.isSafeInteger(row.exchange_rows))throw Error('EXCHANGE_STATUS_AGGREGATE_INVALID')
+ console.log('LEGACY_UNATTRIBUTED_EXCHANGE_STATUS',JSON.stringify(row))
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
