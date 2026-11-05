@@ -83,7 +83,8 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
         : Math.min(quantity, current?.quantity || 0)
     const reason = readyQuantity ? ''
       : alreadyClosed ? 'Эта позиция уже отправлена или заказ закрыт'
-        : alreadyIssued ? 'Уже выдан'
+        : recordedSent !== null && recordedSent >= quantity ? 'Уже отправлен'
+          : alreadyIssued ? 'Уже выдан'
           : isWorkshop ? 'Ещё не готов'
             : 'Проверьте наличие товара'
     return {

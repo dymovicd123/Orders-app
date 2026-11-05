@@ -3,6 +3,7 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { matchWorkshopTasksToOrderItems } from './workshop-matching.ts'
 import { fetchOrderStockHandoverRows } from './order-reservations.ts'
+import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts'
 
 export async function isOrderPricingFoundationEnabled(db: D1Database) {
   try {
@@ -108,7 +109,10 @@ export async function fetchOrderRelations(db: D1Database, orderIds: number[]) {
     const [itemsResult, paymentsResult, returnsResult, workshopTasksResult, handoverStateResult, standaloneReturnedResult] = await Promise.all([
       db.prepare(
         `SELECT oi.*,
-                (SELECT SUM(di.quantity - di.cancelled_quantity) FROM order_dispatch_items di WHERE di.order_item_id=oi.id) AS shipment_sent_quantity,
+                COALESCE(
+                  (SELECT SUM(di.quantity - di.cancelled_quantity) FROM order_dispatch_items di WHERE di.order_item_id=oi.id),
+                  CASE WHEN ${recordedExchangeShipmentSql('oi')} THEN oi.quantity ELSE NULL END
+                ) AS shipment_sent_quantity,
                 (SELECT e.id FROM inventory_lifecycle_events e
                  JOIN exchanges exchange_row ON exchange_row.id=e.operation_id
                  WHERE e.order_item_id=oi.id AND e.operation_type='exchange'
