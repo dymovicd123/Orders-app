@@ -208,6 +208,31 @@ for(const row of targetResponse[0].results) {
  'PRIOR_ISSUE_EVIDENCE',row.proven_prior_issued_lines)
 }
 
+
+// Audit only which existing mechanism set the shipment marker; never change it.
+const historySql=`SELECT
+  (SELECT COUNT(*) FROM activity_log a WHERE a.order_id=o.id
+    AND a.event_type='order_prior_issued_shipping_confirmed') AS status_only_confirmation_events,
+  (SELECT COUNT(*) FROM activity_log a WHERE a.order_id=o.id
+    AND a.event_type='order_stock_issued_before_full_shipping') AS early_handover_events,
+  (SELECT COUNT(*) FROM inventory_handover_reviews hr WHERE hr.order_id=o.id
+    AND hr.decision='issued_before_checkpoint') AS stocktake_prior_issue_reviews,
+  (SELECT COUNT(*) FROM activity_log a WHERE a.order_id=o.id
+    AND a.event_type='order_prior_issued_shipping_corrected') AS status_only_correction_events
+FROM orders o
+WHERE o.external_id='ORD-20261104091902-61F1772C'`
+const historyRaw=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+historySql],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const hist=JSON.parse(historyRaw)
+if(!Array.isArray(hist)||hist.length!==1||hist[0]?.success!==true||
+ !Array.isArray(hist[0]?.results))throw Error('HISTORY_AUDIT_FAILED')
+for(const r of hist[0].results){
+ console.log('TARGET_HISTORY_PROOFS','STATUS_ONLY_CONFIRM',r.status_only_confirmation_events,
+ 'EARLY_HANDOVER',r.early_handover_events,'STOCKTAKE_PRIOR_ISSUES',r.stocktake_prior_issue_reviews,
+ 'STATUS_ONLY_CORRECTIONS',r.status_only_correction_events)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
