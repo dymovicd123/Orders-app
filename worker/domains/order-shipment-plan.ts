@@ -30,6 +30,21 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       variantId: previous && previous.variantId !== variantId ? 0 : variantId,
     })
   }
+  // An earlier stock handover has already reduced physical stock. A full
+  // issued-only order can be marked sent without performing another issue.
+  const fulfilledById = new Map<number, { count: number; quantity: number; variantId: number }>()
+  for (const reservation of reservations) {
+    if (cleanText(reservation.status) !== 'fulfilled') continue
+    const id = toInt(reservation.order_item_id, 0)
+    if (id <= 0) continue
+    const previous = fulfilledById.get(id)
+    const variantId = toInt(reservation.variant_id, 0)
+    fulfilledById.set(id, {
+      count: (previous?.count || 0) + 1,
+      quantity: (previous?.quantity || 0) + Math.max(0, toInt(reservation.quantity, 0)),
+      variantId: previous && previous.variantId !== variantId ? 0 : variantId,
+    })
+  }
   const lines = order.items.filter(i => toInt(i.quantity, 0) > 0).map(item => {
     const orderItemId = toInt(item.id, 0)
     const quantity = Math.max(1, toInt(item.quantity, 1))
@@ -42,6 +57,10 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     const recordedSent = item.shipmentSentQuantity == null ? null : Math.max(0,toInt(item.shipmentSentQuantity,0))
     const alreadyIssued = ['fulfilled','written_off','negative','retired_physically_issued'].includes(stockState)
       || (recordedSent !== null && recordedSent >= quantity)
+    const fulfilled = fulfilledById.get(orderItemId)
+    const canConfirmPriorIssue = !closed && !historicallySent && !isWorkshop && !pendingReplacement
+      && stockState === 'fulfilled' && recordedSent === null
+      && fulfilled?.count === 1 && fulfilled.quantity === quantity && fulfilled.variantId > 0
     const physicallyReady = isWorkshop
       ? ['done', 'ready'].includes(workshopState)
       : stockState === 'reserved' && Boolean(current?.variantId)
@@ -64,6 +83,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       variantId: isWorkshop ? toInt(item.variantId, 0) : (current?.variantId || 0),
       readyQuantity, selectedQuantity: readyQuantity,
       selectable: readyQuantity > 0,
+      canConfirmPriorIssue,
       reason,
     }
   })
@@ -74,6 +94,10 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
     lines,
     selectedCount: lines.filter(line => line.selectedQuantity > 0).length,
     selectedQuantity: lines.reduce((n, line) => n + line.selectedQuantity, 0),
+    // This is not a selective stock dispatch: every original line must have
+    // proof of exactly one prior fulfilled reservation.
+    canConfirmIssuedOnly: !closed && !historicallySent && lines.length > 0
+      && lines.every(line => line.canConfirmPriorIssue),
     draftOnly: true,
   }
 }
