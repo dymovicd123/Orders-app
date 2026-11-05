@@ -47,8 +47,6 @@ const canonical=(options:readonly {value:string;label:string}[],raw:string)=>{
  return match?.value||value
 }
 const comparable=(value:string)=>value.trim().replace(/\s+/g,' ').toLocaleLowerCase('ru-RU')
-const free=(x:WatchOrderChoice,source:WatchSource)=>Math.max(0,Number(source==='office'?
- x.officePhysical-x.officeReserved:x.showcasePhysical-x.showcaseReserved)||0)
 const businessToday=()=>new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
 const newLine=(source:WatchSource='office'):DraftLine=>({
  id:crypto.randomUUID(),kind:'manual',watchVariantId:0,catalogVariantId:0,source,quantity:1,unitPrice:'',engravingText:'',
