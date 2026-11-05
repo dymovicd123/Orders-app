@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/release/client3-logistics-main-parity-20261105
-          test "$(git rev-parse HEAD^)" = 8cdf5976324ed3c5bc886b4cb04f53ace75aade9
+          test "$(git rev-parse HEAD^)" = d822eac5944752328a48315b2f525c282a72c289
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$(jq -r .name wrangler.jsonc)" = "$REAL_WORKER"
@@ -36,23 +36,7 @@ jobs:
           python3 - <<'PY'
           import subprocess
           allowed={
-            'src/features/client3/WatchLogisticsPanel.tsx',
-            'src/features/client3/WatchLogisticsTaskTable.tsx',
-            'src/features/client3/WatchOrderHandoverPanel.tsx',
-            'src/styles/client3-watch-logistics.css',
-            'src/styles/client3-watch-workshop-parity.css',
-            'src/styles/client3-qa-logistics-20261104.css',
-            'src/styles/client3-watch-handover-main-parity.css',
-            'worker/domains/client3-watch-handover.ts',
-            'worker/domains/client3-watch-dispatch.ts',
-            'worker/domains/client3-watch-dispatch-correction.ts',
-            'worker/domains/client3-watch-retired-dispatch.ts',
-            'worker/domains/client3-watch-retired-correction.ts',
-            'worker/domains/client3-watch-pre-retire-correction.ts',
-            'worker/domains/order-dispatch.ts',
-            'worker/domains/order-dispatch-cancel.ts',
-            'scripts/client3/test-watch-logistics-20261102.mjs',
-            'scripts/client3/test-watch-handover-after-revision-20261103.mjs',
+            'worker/domains/order-shipment-plan.ts',
             '.github/workflows/client3-logistics-main-parity-release-20261105.yml',
           }
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
