@@ -6,7 +6,7 @@ type Intent='stock'|'all'
 type Props={
  brand:WatchBrand;source:WatchSource;onSourceChange:(value:WatchSource)=>void;
  catalog:readonly WatchOrderChoice[];allocated:ReadonlyMap<string,number>;
- onAdd:(choice:WatchOrderChoice,intent:Intent,source:WatchSource)=>void;
+ onAdd:(choice:WatchOrderChoice,kind:'stock'|'preorder',source:WatchSource)=>void;
  onManual:(source:WatchSource)=>void;
 }
 export const stockKey=(source:WatchSource,variantId:number)=>source+':'+variantId

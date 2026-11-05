@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-source-first-ui-refine-20261105
-          test "$(git rev-parse HEAD^)" = 97640f0f209249ffd0103b18b3f4daa272e9e855
+          test "$(git rev-parse HEAD^)" = 2ef9b47f134f7ec94cbeba4a82eacd158d2b48db
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$LIVE_DB_ID"
@@ -41,14 +41,8 @@ jobs:
           python3 - <<'PY'
           import subprocess
           allowed={
-            '.github/workflows/client3-qa-source-first-ui-refine-20261105.yml',
-            'src/features/client3/WatchOrderForm.tsx',
             'src/features/client3/WatchOrderSourcePicker.tsx',
-            'src/features/client3/WatchOrderLineEditor.tsx',
-            'src/styles/client3-watch-source-picker-refine.css',
-            'src/styles/client3-watch-line-editor.css',
-            'scripts/client3/test-watch-form-20261102.mjs',
-            'scripts/client3/test-watch-source-first-order-20261105.mjs',
+            '.github/workflows/client3-qa-source-first-ui-refine-20261105.yml',
           }
           got=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
           assert got==allowed, 'QA order release missing/unexpected paths: '+repr(got.symmetric_difference(allowed))
