@@ -233,6 +233,64 @@ for(const r of hist[0].results){
  'STATUS_ONLY_CORRECTIONS',r.status_only_correction_events)
 }
 
+
+const discrepancySql = `SELECT cohort, explanation,
+  COUNT(*) AS lines,COUNT(DISTINCT order_id) AS orders
+FROM (
+  SELECT o.id AS order_id,
+    CASE WHEN julianday(o.created_at)<julianday('${cutoff}') THEN 'legacy'
+      ELSE 'post_cutover' END AS cohort,
+    CASE
+      WHEN EXISTS (
+        SELECT 1 FROM order_dispatch_items di
+        WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity
+      ) THEN 'active_selective_dispatch'
+      WHEN EXISTS (
+        SELECT 1 FROM order_dispatch_items di
+        WHERE di.order_item_id=oi.id AND di.cancelled_quantity=di.quantity
+      ) THEN 'selective_dispatch_cancelled'
+      WHEN EXISTS (
+        SELECT 1 FROM inventory_handover_reviews hr
+        JOIN inventory_reservations r ON r.id=hr.reservation_id
+        WHERE hr.order_item_id=oi.id AND r.order_item_id=oi.id
+          AND hr.decision='issued_before_checkpoint'
+      ) THEN 'physical_count_answer_issued_before'
+      WHEN EXISTS (
+        SELECT 1 FROM activity_log a
+        WHERE a.order_id=o.id AND a.entity_type='order_item'
+          AND a.entity_id=oi.id
+          AND a.event_type='order_stock_issued_before_full_shipping'
+      ) THEN 'early_handover_employee_action'
+      WHEN EXISTS (
+        SELECT 1 FROM activity_log a
+        WHERE a.order_id=o.id AND a.entity_type='order_item'
+          AND a.entity_id=oi.id
+          AND a.event_type='order_stock_handover_reconciled'
+      ) THEN 'historic_checkpoint_handover_action'
+      ELSE 'no_positive_prior_issue_trace'
+    END AS explanation
+  FROM orders o JOIN order_items oi ON oi.order_id=o.id
+  WHERE COALESCE(o.shipping_status,'not_sent')<>'sent'
+    AND oi.quantity>0 AND oi.stock_writeoff_status='fulfilled'
+    AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+    AND COALESCE(o.archived_at,'')=''
+) x
+GROUP BY cohort,explanation ORDER BY cohort,explanation`
+if(!/^\s*SELECT\b/i.test(discrepancySql))throw Error('DISCREPANCY_MUST_BE_SELECT')
+const discrepancyRaw=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+discrepancySql],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const discrepancyPayload=JSON.parse(discrepancyRaw)
+if(!Array.isArray(discrepancyPayload)||discrepancyPayload.length!==1||
+ discrepancyPayload[0]?.success!==true||!Array.isArray(discrepancyPayload[0]?.results)) {
+ throw Error('DISCREPANCY_READ_FAILED')
+}
+for(const r of discrepancyPayload[0].results){
+ if(!Number.isSafeInteger(r.lines)||!Number.isSafeInteger(r.orders))throw Error('DISCREPANCY_RESULT_INVALID')
+ console.log('UNSENT_FULFILLED_TRIAGE',r.cohort,r.explanation,
+  'LINES',r.lines,'ORDERS_TOUCHED',r.orders)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
