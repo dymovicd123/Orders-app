@@ -1,0 +1,158 @@
+name: Client3 ORIGINAL — promote QA fixes and remove historical orders
+on:
+  push:
+    branches: [release/client3-promote-qa-hide-legacy-20261105]
+    paths: ['.github/workflows/client3-original-qa-parity-release-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: client3-original-qa-parity-release-20261105
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      CLIENT3_WORKER: orders-app-client3-old-client
+      CLIENT3_DB: orders_db_client3_old_client
+      CLIENT3_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      QA_WORKER: orders-app-client3-qa-20261103
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      QA_SOURCE_SHA: 1a08015006ffaa2516e9ce5c486ce788271e1a73
+      PRODUCTION_BASE_SHA: 109a0126c3d98f509177ec03ba174ad8e17f4624
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 24}
+      - name: Exact QA source and original Client3-only isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/release/client3-promote-qa-hide-legacy-20261105
+          test "$(git rev-parse HEAD^)" = "$QA_SOURCE_SHA"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$CLIENT3_WORKER" != "$QA_WORKER"
+          test "$CLIENT3_DB_ID" != "$QA_DB_ID"
+          test "$(jq -r .name wrangler.jsonc)" = "$CLIENT3_WORKER"
+          test "$(jq -r .main wrangler.jsonc)" = worker/index.ts
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = "$CLIENT3_DB"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$CLIENT3_DB_ID"
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          test "$(jq -r .vars.CLIENT3_INSTALLATION wrangler.jsonc)" = 1
+          test "$(git rev-parse HEAD:src)" = afc3cbe247badc40d0ed45af1d35f2fe7de88ce5
+          test "$(git rev-parse HEAD:worker)" = 61cee58885a5508e663fddf4a472769f979e822c
+          test "$(git rev-parse HEAD:scripts)" = 0d896bc3c85785fb6a1d8c49a10b6ff6eb9426d7
+          test "$(git rev-parse HEAD:shared)" = fe8d6b8e2af91095466b47113a2e3e1b649ec40a
+          python3 - <<'PY'
+          import subprocess
+          own_path='.github/workflows/client3-original-qa-parity-release-20261105.yml'
+          last=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          assert last=={own_path},'Release workflow commit must contain no source mutations: '+repr(last)
+          paths=set(subprocess.check_output(['git','diff','--name-only','109a0126c3d98f509177ec03ba174ad8e17f4624','HEAD'],text=True).splitlines())
+          assert len(paths)>=58, 'Expected accepted QA feature changes; received too few files'
+          allowed_workflows={
+            '.github/workflows/client3-qa-dismissible-order-notice-20261105.yml',
+            '.github/workflows/client3-qa-hide-legacy-20261105.yml',
+            '.github/workflows/client3-qa-hide-legacy-retest-20261105.yml',
+            '.github/workflows/client3-qa-remove-exchange-20261105.yml',
+            '.github/workflows/client3-qa-source-first-order-20261105.yml',
+            '.github/workflows/client3-qa-source-first-ui-refine-20261105.yml',
+            own_path,
+          }
+          import re
+          allowed_source=re.compile(r'^(?:src/WatchClient3App\.tsx|src/features/client3/.+|src/styles/client3[^/]*|worker/domains/client3[^/]*|scripts/client3/.+)$')
+          bad=[p for p in paths if p not in allowed_workflows and not allowed_source.fullmatch(p)]
+          assert not bad, 'Unexpected shared, Main or Branch2 code changes: '+repr(bad)
+          assert not any(p.startswith('migrations/') or p in ('wrangler.jsonc','worker/index.ts','package.json','package-lock.json') for p in paths)
+          print('CLIENT3_ORIGINAL_EXACT_QA_SOURCE_ONLY_GUARD_PASS',len(paths))
+          PY
+          test ! -e src/features/client3/WatchLegacyOrdersPanel.tsx
+          test ! -e worker/domains/client3-watch-legacy.ts
+          test ! -e src/features/client3/WatchExchangeForm.tsx
+          test ! -e worker/domains/client3-watch-exchange.ts
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Build and regression-test known Client3 critical workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          node --experimental-strip-types scripts/client3/test-watch-hide-legacy-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-no-exchange-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-transient-notice-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-source-first-order-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-form-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-return-money-ui-20261104.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-editor-delete-release-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-commit-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-handover-after-revision-20261103.mjs
+          node --experimental-strip-types scripts/client3/test-watch-catalog-v6-release-20261104.mjs
+          node --experimental-strip-types scripts/client3/test-watch-manager-report-names-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-shell-20261102.mjs
+          echo CLIENT3_ORIGINAL_QA_PARITY_REGRESSION_PASS
+      - name: Read-only production D1 preflight — do not discard existing exchange data
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$CLIENT3_DB_ID"
+          npx wrangler d1 execute "$CLIENT3_DB" --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM exchanges) AS exchange_count,
+            (SELECT COUNT(*) FROM exchange_items) AS exchange_items_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE operation_type='exchange') AS exchange_lifecycle_count,
+            (SELECT COUNT(*) FROM financial_events WHERE event_type LIKE 'exchange_%') AS exchange_money_count,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_variant_attributes_v6') AS v6,
+            (SELECT COUNT(*) FROM watch_brands) AS brands,
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM order_items) AS items_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count" |
+            tee /tmp/client3-live-preflight.json |
+            jq -e '.[0].results[0] | select(.exchange_count==0 and .exchange_items_count==0 and .exchange_lifecycle_count==0 and .exchange_money_count==0 and .v6==1 and .brands>=2)'
+          npx wrangler d1 execute "$CLIENT3_DB" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo CLIENT3_ORIGINAL_LIVE_D1_READONLY_PREFLIGHT_PASS
+      - name: Deploy ONLY original Client3 Worker — no D1 writes, no migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = "$CLIENT3_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$CLIENT3_DB_ID"
+          npx wrangler deploy --config wrangler.jsonc
+          echo CLIENT3_ORIGINAL_QA_PARITY_WORKER_DEPLOY_PASS
+      - name: Verify exact published JS, protected API and unchanged FK
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          test -s "dist/client$asset"
+          verified=0
+          for attempt in $(seq 1 12); do
+            code="$(curl -sSL --max-time 20 -o /tmp/client3-prod-index -w '%{http_code}' "$base/?qa_parity=$GITHUB_SHA" || true)"
+            js_code="$(curl -sSL --max-time 25 -o /tmp/client3-prod-js -w '%{http_code}' "$base$asset" || true)"
+            if test "$code" = 200 && grep -Eq 'id="root"|type="module"' /tmp/client3-prod-index &&
+              test "$js_code" = 200 && cmp -s "dist/client$asset" /tmp/client3-prod-js; then
+              verified=1
+              echo "CLIENT3_ORIGINAL_QA_PARITY_PUBLISHED_JS_PASS attempt=$attempt asset=$asset"
+              break
+            fi
+            sleep 3
+          done
+          test "$verified" = 1
+          for path in '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/legacy-orders' '/api/client3/watches/orders/1/exchange' '/api/client3/watches/models?brand=WACHIZEN'; do
+            status="$(curl -sS --max-time 20 -o /tmp/client3-prod-anon -w '%{http_code}' "$base$path")"
+            echo "CLIENT3_ORIGINAL_QA_PARITY_PROTECTED_API $status $path"
+            test "$status" = 401 -o "$status" = 403
+          done
+          npx wrangler d1 execute "$CLIENT3_DB" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo CLIENT3_ORIGINAL_QA_PARITY_RELEASE_VERIFIED
