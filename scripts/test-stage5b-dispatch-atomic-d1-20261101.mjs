@@ -279,8 +279,66 @@ const setWorkshopLine=sql.prepare('SELECT id FROM order_dispatch_items WHERE dis
 await cancelExactOrderDispatchItem(db,9054,{dispatchItemId:setWorkshopLine,requestId:'stage5-set-v2-workshop-undo-01',actor:'QA',reason:'test'})
 assert.deepEqual({...stock()},snapshotBeforeWorkshop)
 
+// Post-Stage-5 order: old physical handover remains a regular selectable
+// shipment line. Only the genuinely reserved sibling affects inventory.
+sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(9909,'PRE ISSUED DISPATCH TEST','adult',1)").run()
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(9910,9909,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9911,'warehouse',9909,9910,'PRE ISSUED DISPATCH TEST','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',5,1)").run()
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9912,'ORD-NEW-MIXED-PREISSUED','2026-11-04',1,'active','warehouse','ready','not_sent','2026-11-04T09:00:00Z','2026-11-04T09:00:00Z')").run()
+for(const [id,status] of [[9913,'fulfilled'],[9914,'reserved']]) {
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,9912,9909,9910,'PRE ISSUED DISPATCH TEST','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1,1000,1000,0,'warehouse',?,'2026-11-04T09:00:00Z')").run(id,status)
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9912,?,'warehouse',9909,9910,1,?,'2026-11-04T09:00:00Z','2026-11-04T09:00:00Z')").run(id,status==='fulfilled'?'fulfilled':'active')
+}
+sql.prepare("INSERT INTO activity_log(event_type,entity_type,entity_id,order_id,title,created_at) VALUES('order_stock_issued_before_full_shipping','order_item',9913,9912,'Prior issue','2026-11-04T09:01:00Z')").run()
+const newOrder=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9912))
+const newReservations=sql.prepare('SELECT order_item_id,quantity,status,variant_id,inventory_source FROM inventory_reservations WHERE order_id=9912').all()
+const {readPriorIssuedItemIds}=await import('../worker/domains/order-prior-issued-origin.ts')
+const provenance=await readPriorIssuedItemIds(db,9912)
+assert(provenance.has(9913))
+const newPlan=buildOrderShipmentPlan(newOrder,newReservations,provenance)
+assert.equal(newPlan.canConfirmIssuedOnly,false,'No extra confirmation for new orders')
+assert.equal(newPlan.selectedQuantity,2)
+assert.equal(newPlan.lines.find(x=>x.orderItemId===9913).dispatchPriorIssued,true)
+const priorSent=await dispatchSelectedCompleteOrderLines(db,9912,{
+ requestId:'stage5b-prior-issue-status-only-001',items:[{orderItemId:9913,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-05',
+})
+assert.equal(priorSent.shippedQuantity,1)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9911').get()},{quantity:5,reserved_quantity:1})
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9912').get().shipping_status,'not_sent')
+const priorLedger=sql.prepare('SELECT id,movement_id,reservation_id FROM order_dispatch_items WHERE dispatch_id=?').get(priorSent.dispatchId)
+assert.equal(priorLedger.movement_id,null)
+assert(priorLedger.reservation_id>0)
+const laterSent=await dispatchSelectedCompleteOrderLines(db,9912,{
+ requestId:'stage5b-prior-issue-remaining-002',items:[{orderItemId:9914,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-05',
+})
+assert.equal(laterSent.shippedQuantity,1)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9911').get()},{quantity:4,reserved_quantity:0})
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9912').get().shipping_status,'sent')
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=9910 AND reference_type='order_dispatch'").get().n,1)
+await assert.rejects(dispatchSelectedCompleteOrderLines(db,9912,{
+ requestId:'stage5b-prior-issue-double-003',items:[{orderItemId:9913,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-05',
+}),/Товар изменился|не готов/)
+const priorCorrection=await cancelExactOrderDispatchItem(db,9912,{
+ dispatchItemId:priorLedger.id,requestId:'stage5b-prior-issue-undo-004',
+ actor:'QA',reason:'Status-only correction',
+})
+assert.equal(priorCorrection.statusOnly,true)
+assert.equal(priorCorrection.physicalRestoredQuantity,0)
+assert.equal(priorCorrection.needsStockCheck,false)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9911').get()},{quantity:4,reserved_quantity:0})
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9913').get().status,'fulfilled')
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9912').get().shipping_status,'not_sent')
+// Cancelled status-only lines are again available through the ordinary dispatch.
+const readyAgain=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9912))
+const againPlan=buildOrderShipmentPlan(readyAgain,newReservations,await readPriorIssuedItemIds(db,9912))
+assert.equal(againPlan.lines.find(x=>x.orderItemId===9913).selectable,true)
+
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
+console.log('STAGE5B_NEW_ORDER_PREISSUED_NORMAL_DISPATCH_NO_DOUBLE_STOCK_PASS')
 console.log('STAGE5B_TWO_EXCHANGE_REPLACEMENTS_ONE_BATCH_PASS')
 console.log('STAGE5B_WORKSHOP_REPLACEMENT_AFTER_SENT_AND_EXACT_CANCEL_PASS')
 

@@ -39,10 +39,10 @@ sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES (90
 sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(9031,9021,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1)").run()
 sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES (9041,'warehouse',9021,9031,'PRIOR ISSUE TEST',8,0)").run()
 
-function seed(orderId, itemStatuses, reservations = itemStatuses) {
+function seed(orderId, itemStatuses, reservations = itemStatuses, createdAt='2026-11-01T00:00:00Z', withEvidence=true) {
   sql.prepare(`INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at)
-    VALUES(?,?,'2026-11-05',1,'active','warehouse','ready','not_sent','2026-11-05T00:00:00Z','2026-11-05T00:00:00Z')`)
-    .run(orderId, 'ORD-TEST-ISSUED-' + orderId)
+    VALUES(?,?,'2026-11-05',1,'active','warehouse','ready','not_sent',?,?)`)
+    .run(orderId, 'ORD-TEST-ISSUED-' + orderId,createdAt,createdAt)
   return itemStatuses.map((stockWriteoffStatus, index) => {
     const id = orderId * 10 + index
     sql.prepare(`INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,
@@ -54,16 +54,24 @@ function seed(orderId, itemStatuses, reservations = itemStatuses) {
         VALUES(?,?,'warehouse',9021,9031,1,?,'2026-11-05T00:00:00Z','2026-11-05T00:00:00Z')`)
         .run(orderId, id, reservations[index] === 'fulfilled' ? 'fulfilled' : 'active')
     }
+    if (withEvidence && reservations[index] === 'fulfilled') {
+      sql.prepare(`INSERT INTO activity_log(event_type,entity_type,entity_id,order_id,title,created_at)
+        VALUES('order_stock_issued_before_full_shipping','order_item',?,?,'Prior handover','2026-11-05T00:00:00Z')`).run(id,orderId)
+    }
     return { id, quantity: 1, productName: 'PRIOR ISSUE TEST',
       stockWriteoffStatus, sourceType: 'warehouse', isWorkshop: false }
   })
 }
 const readReservations = orderId => sql.prepare(
-  'SELECT order_item_id,quantity,status,variant_id FROM inventory_reservations WHERE order_id=?',
+  'SELECT order_item_id,quantity,status,variant_id,inventory_source FROM inventory_reservations WHERE order_id=?',
 ).all(orderId)
 const plan = (id, items) => buildOrderShipmentPlan({
-  id, external_id: 'ORD-TEST-ISSUED-' + id, shipping_status: 'not_sent', items,
-}, readReservations(id))
+  id, external_id: 'ORD-TEST-ISSUED-' + id, shipping_status: 'not_sent',
+  created_at: sql.prepare('SELECT created_at FROM orders WHERE id=?').get(id).created_at, items,
+}, readReservations(id),new Set(sql.prepare(`
+  SELECT a.entity_id FROM activity_log a WHERE a.order_id=?
+  AND a.event_type='order_stock_issued_before_full_shipping'
+`).all(id).map(a=>a.entity_id)))
 const confirm = id => confirmPriorIssuedOrderShipping(db, id, { shippingDate: '2026-11-05', actor: 'QA' })
 const stockBefore = sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get()
 const movementsBefore = sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c
@@ -127,6 +135,24 @@ sql.prepare(`INSERT INTO order_dispatches(order_id,request_id,dispatch_date,crea
   VALUES(9505,'test-earlier-dispatch-9505','2026-11-05','2026-11-05T00:00:00Z','QA','sent')`).run()
 await assert.rejects(confirm(9505), /Обновите отправку/)
 assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get(), stockBefore)
+
+
+const newer = seed(9506, ['fulfilled','fulfilled'], undefined, '2026-11-04T00:00:00Z')
+const newerPlan = plan(9506,newer)
+assert.equal(newerPlan.canConfirmIssuedOnly,false,'New orders must never expose the extra confirmation')
+assert.equal(newerPlan.selectedQuantity,2,'Previously handed-over lines use normal dispatch selection')
+assert(newerPlan.lines.every(row=>row.dispatchPriorIssued && row.selectable))
+await assert.rejects(confirm(9506),/Обновите отправку/)
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9506').get().shipping_status,'not_sent')
+
+const unknown = seed(9507, ['fulfilled'], undefined, '2026-11-04T00:00:00Z',false)
+assert.equal(plan(9507,unknown).canConfirmIssuedOnly,false)
+assert.equal(plan(9507,unknown).selectedQuantity,0)
+await assert.rejects(confirm(9507),/Обновите отправку/)
+
+const fresh = seed(9508, ['reserved'],undefined,'2026-11-04T00:00:00Z')
+assert.equal(plan(9508,fresh).canConfirmIssuedOnly,false)
+assert.equal(plan(9508,fresh).selectedQuantity,1)
 
 const view = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'utf8')
 assert(view.includes('confirmAlreadyIssued:true'))

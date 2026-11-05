@@ -37,6 +37,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
+import { readPriorIssuedItemIds } from './domains/order-prior-issued-origin.ts'
 import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
 import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
@@ -1910,13 +1911,14 @@ export default {
         const order = await getOrder(env.DB, orderId);
         if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
         const activeReservations = await env.DB.prepare(
-          `SELECT order_item_id, quantity, status, variant_id
+          `SELECT order_item_id, quantity, status, variant_id, inventory_source
            FROM inventory_reservations WHERE order_id = ? AND status IN ('active','fulfilled')
            ORDER BY order_item_id ASC, id ASC`
         ).bind(orderId).all<Record<string,unknown>>();
         return json(buildOrderShipmentPlan(
           order as Parameters<typeof buildOrderShipmentPlan>[0],
           (activeReservations.results || []) as Parameters<typeof buildOrderShipmentPlan>[1],
+          await readPriorIssuedItemIds(env.DB, orderId),
         ));
       }
 

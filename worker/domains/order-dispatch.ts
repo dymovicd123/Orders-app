@@ -1,6 +1,7 @@
 import { cleanText, normalizeSourceType, toInt } from '../core/text.ts'
 import { getOrder } from './orders-write.ts'
 import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
+import { priorIssueEvidenceSql, readPriorIssuedItemIds } from './order-prior-issued-origin.ts'
 import { CriticalOperationConflictError } from './critical.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
 
@@ -50,7 +51,8 @@ export async function dispatchSelectedCompleteOrderLines(
   const reserved = await db.prepare(
     'SELECT id,order_item_id,quantity,status,inventory_source,variant_id FROM inventory_reservations WHERE order_id=? ORDER BY id'
   ).bind(orderId).all<Record<string,unknown>>()
-  const plan = buildOrderShipmentPlan(order as any,(reserved.results||[]) as any)
+  const plan = buildOrderShipmentPlan(order as any,(reserved.results||[]) as any,
+    await readPriorIssuedItemIds(db,orderId))
   const byId = new Map(plan.lines.map(row=>[row.orderItemId,row]))
   const selected = input.items.map(row=>{
     const found=byId.get(row.orderItemId)
@@ -59,10 +61,14 @@ export async function dispatchSelectedCompleteOrderLines(
         (found.sourceType === 'workshop' && row.quantity !== found.quantity)) {
       fail('Укажите количество не больше доступного. Товар из цеха пока отправляется всей готовой позицией.')
     }
+    if (found.dispatchPriorIssued && row.quantity !== found.quantity) {
+      fail('Ранее выданную вещь можно подтвердить только целиком.')
+    }
     return { ...found, originalQuantity: found.quantity, quantity: row.quantity }
   })
   const selectedStock=selected.filter(x=>x.sourceType!=='workshop')
   const selectedWorkshop=selected.filter(x=>x.sourceType==='workshop')
+  const selectedPhysicalStock=selectedStock.filter(x=>!x.dispatchPriorIssued)
   const selectedReplacements = selectedStock.filter(x=>toInt(x.exchangeEventId,0)>0)
   // A legacy 'sent' order can acquire a NEW unshipped exchange line.
   // Never reissue an original product merely because this button is open.
@@ -123,7 +129,10 @@ export async function dispatchSelectedCompleteOrderLines(
     replacementByItem.set(item.orderItemId,{eventId,exchangeId:toInt(event.operation_id,0)})
   }
   const reservations = (reserved.results||[]).filter(row=>selectedStock.some(x=>x.orderItemId===toInt(row.order_item_id,0)))
-  if (reservations.length!==selectedStock.length || reservations.some(x=>cleanText(x.status)!=='active')) fail('Резерв товара изменился. Обновите заказ.')
+  if (reservations.length!==selectedStock.length || reservations.some(x=>{
+    const item=selectedStock.find(row=>row.orderItemId===toInt(x.order_item_id,0))
+    return !item || cleanText(x.status)!==(item.dispatchPriorIssued?'fulfilled':'active')
+  })) fail('Резерв товара изменился. Обновите заказ.')
   const perItemReservation = new Map(reservations.map(r=>[toInt(r.order_item_id,0),r]))
   for (const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)
@@ -154,13 +163,13 @@ export async function dispatchSelectedCompleteOrderLines(
     fail('Уточните выдачу выбранного товара после последней проверки склада.')
   }
 
-  for (const source of new Set(selectedStock.map(x=>x.sourceType))) {
+  for (const source of new Set(selectedPhysicalStock.map(x=>x.sourceType))) {
     const open=await activeStocktakeSessionForHandover(db,source as 'warehouse'|'boutique')
     if(open)fail('Сейчас на этой точке идёт ревизия. Отправку выбранной вещи сохраните после окончания пересчёта.')
   }
 
   const groups = new Map<string,StockKey>()
-  for(const item of selectedStock) {
+  for(const item of selectedPhysicalStock) {
     const key=`${item.sourceType}:${toInt(item.variantId,0)}`
     const previous=groups.get(key)
     groups.set(key,{
@@ -198,6 +207,34 @@ export async function dispatchSelectedCompleteOrderLines(
   ]
   for(const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)!
+    if (item.dispatchPriorIssued) {
+      statements.push(db.prepare(
+        `INSERT INTO inventory_model_meta(key,value,updated_at)
+         SELECT 'human_inventory_v2','__prior_issued_dispatch_conflict__',?
+         WHERE NOT EXISTS(
+           SELECT 1 FROM order_items oi
+           JOIN inventory_reservations r ON r.order_item_id=oi.id AND r.order_id=oi.order_id
+           JOIN orders o ON o.id=oi.order_id
+           WHERE oi.id=? AND oi.order_id=? AND oi.quantity=?
+             AND oi.stock_writeoff_status='fulfilled' AND COALESCE(oi.is_workshop,0)=0
+             AND r.id=? AND r.status='fulfilled' AND r.quantity=oi.quantity
+             AND r.inventory_source=? AND r.variant_id=?
+             AND ${priorIssueEvidenceSql('oi','r')}
+             AND o.shipping_status<>'sent'
+             AND o.order_status NOT IN ('archived','deleted')
+             AND COALESCE(o.archived_at,'')=''
+             AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+               WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+             AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
+               WHERE ri.order_item_id=oi.id AND ri.quantity>0
+                 AND COALESCE(rt.status,'completed')<>'cancelled')
+             AND NOT EXISTS(SELECT 1 FROM inventory_lifecycle_events le
+               WHERE le.order_id=oi.order_id AND le.order_item_id=oi.id AND le.status='pending')
+         )`
+      ).bind(stamp,item.orderItemId,orderId,item.originalQuantity,
+        toInt(r.id,0),item.sourceType,item.variantId))
+      continue
+    }
     statements.push(db.prepare(
       `INSERT INTO inventory_model_meta(key,value,updated_at)
        SELECT 'human_inventory_v2','__selected_dispatch_conflict__',?
@@ -249,7 +286,7 @@ export async function dispatchSelectedCompleteOrderLines(
   // Split each selected stock row BEFORE fulfilling it. The original item ID
   // remains the issued item; a newly minted item ID owns the remaining hold.
   // Both rows have unambiguous full-line status for legacy Return/Exchange UI.
-  for (const item of selectedStock) {
+  for (const item of selectedPhysicalStock) {
     const remaining = item.originalQuantity - item.quantity
     if (remaining <= 0) continue
     const r = perItemReservation.get(item.orderItemId)!
@@ -308,6 +345,14 @@ export async function dispatchSelectedCompleteOrderLines(
       continue
     }
     const r=perItemReservation.get(item.orderItemId)!
+    if (item.dispatchPriorIssued) {
+      statements.push(db.prepare(
+        `INSERT INTO order_dispatch_items(
+          dispatch_id,order_item_id,source_type,variant_id,reservation_id,quantity,created_at
+        ) VALUES(${dispatchIdSql},?,?,?,?,?,?)`
+      ).bind(requestId,item.orderItemId,item.sourceType,item.variantId,toInt(r.id,0),item.quantity,stamp))
+      continue
+    }
     const group=groups.get(`${item.sourceType}:${toInt(item.variantId,0)}`)!
     const key=`${item.sourceType}:${item.variantId}`
     const next=(running.get(key)||0)-item.quantity
@@ -368,7 +413,13 @@ export async function dispatchSelectedCompleteOrderLines(
          SELECT 1 FROM order_items oi
          WHERE oi.order_id=orders.id AND oi.quantity>0
            AND ((COALESCE(oi.is_workshop,0)=0
-                 AND COALESCE(oi.stock_writeoff_status,'') NOT IN ('fulfilled','exchanged','cancelled','returned'))
+                 AND (COALESCE(oi.stock_writeoff_status,'') NOT IN ('fulfilled','exchanged','cancelled','returned')
+                   OR (oi.stock_writeoff_status='fulfilled'
+                       AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+                         WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+                       AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
+                         WHERE ri.order_item_id=oi.id AND ri.quantity>0
+                           AND COALESCE(rt.status,'completed')<>'cancelled'))))
              OR (COALESCE(oi.is_workshop,0)=1
                  AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
                    JOIN order_dispatches d ON d.id=di.dispatch_id
@@ -377,7 +428,14 @@ export async function dispatchSelectedCompleteOrderLines(
        shipping_date=CASE WHEN NOT EXISTS(
          SELECT 1 FROM order_items oi
          WHERE oi.order_id=orders.id AND oi.quantity>0
-           AND ((COALESCE(oi.is_workshop,0)=0 AND COALESCE(oi.stock_writeoff_status,'') NOT IN ('fulfilled','exchanged','cancelled','returned'))
+           AND ((COALESCE(oi.is_workshop,0)=0
+                  AND (COALESCE(oi.stock_writeoff_status,'') NOT IN ('fulfilled','exchanged','cancelled','returned')
+                   OR (oi.stock_writeoff_status='fulfilled'
+                       AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+                         WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+                       AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
+                         WHERE ri.order_item_id=oi.id AND ri.quantity>0
+                           AND COALESCE(rt.status,'completed')<>'cancelled'))))
                 OR (COALESCE(oi.is_workshop,0)=1 AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)))
        ) THEN ? ELSE NULL END,
        updated_at=? WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'`
