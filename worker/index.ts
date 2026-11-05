@@ -37,7 +37,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
-import { confirmPriorIssuedOrderShipping } from './domains/order-prior-issued-shipping.ts'
+import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
 import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
@@ -1808,6 +1808,17 @@ export default {
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
           if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки».'},{status:409});
+          const statusOnly = await correctPriorIssuedOrderShippingIfApplicable(env.DB, id, {
+            physicalOutcome: input.physicalOutcome,
+            actor: cleanText(request.headers.get('X-Access-User')) || 'Сотрудник',
+          });
+          if (statusOnly) {
+            let updatedOrder = null;
+            try { updatedOrder = await getOrder(env.DB, id) }
+            catch (error) { console.warn('Prior-issued correction readback failed', error) }
+            return json({ ...statusOnly, ...(updatedOrder ? { order: updatedOrder } : {}),
+              refreshRequired: !updatedOrder });
+          }
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
