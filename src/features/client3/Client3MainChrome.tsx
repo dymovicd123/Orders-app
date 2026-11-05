@@ -32,6 +32,7 @@ import '../../styles/192b1-warehouse-attention.css'
 import '../../styles/192c-arrival-recovery.css'
 import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
+import '../../styles/client3-order-toast.css'
 
 export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
@@ -71,9 +72,9 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   legacy:{title:'Заказы',subtitle:'Исторические записи'},
   references:{title:'Справочники',subtitle:'Бренды, характеристики часов, доставка и способы оплаты'},
 }
-export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,canWarehouse=false,children,error,success,warning}:{
+export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,canWarehouse=false,children,error,success,warning,onDismissNotice}:{
   user:User;section:WatchMainRoute;onNavigate:(v:WatchMainRoute)=>void;onLogout:()=>void;onRefresh:()=>void;
-  busy:boolean;canSales:boolean;canWarehouse?:boolean;children:ReactNode;error?:string;success?:string;warning?:string
+  busy:boolean;canSales:boolean;canWarehouse?:boolean;children:ReactNode;error?:string;success?:string;warning?:string;onDismissNotice?:()=>void
 }){
   const [mobileNavOpen,setMobileNavOpen]=useState(false)
   useEffect(()=>{
@@ -86,10 +87,17 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'
   return <main className="erp-shell client3-main-erp" data-sector={current}>
-    <div className="global-alert-stack" aria-live="assertive" aria-atomic="true">
+    <div className="global-alert-stack client3-notice-stack" aria-live="polite" aria-atomic="true">
       {error&&<div className="error app-alert global-alert" role="alert"><span>{error}</span></div>}
-      {success&&<div className="success app-alert global-alert" role="status"><span>{success}</span></div>}
-      {warning&&<div className="app-alert global-alert" role="alert"><span>{warning}</span></div>}
+      {(success||warning)&&<div className={'client3-order-toast'+(warning?' has-warning':'')} role="status">
+        <div className="client3-order-toast-text">
+          {success&&<strong>{success}</strong>}
+          {warning&&<span>{warning}</span>}
+        </div>
+        <button type="button" className="client3-order-toast-close"
+          aria-label="Закрыть уведомление" title="Закрыть"
+          onClick={onDismissNotice}>×</button>
+      </div>}
     </div>
     <aside className={`erp-sidebar ${mobileNavOpen?'is-mobile-open':''}`.trim()}>
       <div className="erp-sidebar-scroll" tabIndex={0} aria-label="Навигация и режим доступа">

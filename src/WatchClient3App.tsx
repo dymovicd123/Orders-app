@@ -94,6 +94,15 @@ export function WatchClient3App() {
   const [managerChoices,setManagerChoices] = useState<ManagerChoice[]>([])
   const [success,setSuccess] = useState('')
   const [warning,setWarning] = useState('')
+  // Completion notices are temporary. No background polling or order mutations.
+  useEffect(()=>{
+    if(!success&&!warning)return
+    const timer=window.setTimeout(()=>{
+      setSuccess('')
+      setWarning('')
+    },warning?8000:5000)
+    return ()=>window.clearTimeout(timer)
+  },[success,warning])
   const [lastOrderBrand,setLastOrderBrand]=useState<WatchBrand|null>(null)
   const [correctionPrefill,setCorrectionPrefill]=useState<{
     brand:WatchBrand;source:'office'|'showcase';watchProductId:number;watchVariantId:number;operation?:'arrival'|'count'
@@ -218,7 +227,7 @@ export function WatchClient3App() {
     setLastOrderBrand(draft.brand)
     setWarning(result.pendingReservation?(result.warning||'Резерв часов требует проверки.'): '')
     setError('')
-    goTo('orders')
+    goTo('orders',true)
   }
 
   const authenticate = async (event: FormEvent<HTMLFormElement>) => {
@@ -318,10 +327,10 @@ export function WatchClient3App() {
   const canAdmin=user.role==='admin'
   const canWarehouse=canAdmin||isWarehouseRole
   const canSeeWarehouse=canSales||canWarehouse
-  const goTo=(next:WatchSection)=>{
+  const goTo=(next:WatchSection,preserveOrderNotice=false)=>{
     if(next!=='operations')setCorrectionPrefill(null)
     setTab(next);setError('')
-    if(next==='create'){setSuccess('');setWarning('')}
+    if(!preserveOrderNotice){setSuccess('');setWarning('')}
     if(window.location.hash!=='#'+next)window.location.hash=next
   }
   const activeSection:WatchSection=
@@ -340,7 +349,8 @@ export function WatchClient3App() {
     onNavigate={goTo}
     onLogout={()=>void logout()}
     onRefresh={()=>{setCatalogVersion(x=>x+1)}}
-    error={error} success={success} warning={warning}>
+    error={error} success={success} warning={warning}
+    onDismissNotice={()=>{setSuccess('');setWarning('')}}>
     <div className="client3-main-page">
       {activeSection==='dashboard'&&brands.length>0&&
         <WatchDashboardPanel brands={brands.map(x=>x.code)}

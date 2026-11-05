@@ -1,0 +1,34 @@
+/* Client3 QA: one short-lived order notice, rather than permanent stacked banners. */
+.client3-main-erp .global-alert-stack.client3-notice-stack{
+ position:fixed;top:18px;right:22px;left:auto;bottom:auto;transform:none;
+ width:min(520px,calc(100vw - 32px));max-width:calc(100vw - 32px);
+ z-index:1100;display:grid;gap:9px;pointer-events:none;margin:0;
+}
+.client3-main-erp .global-alert-stack.client3-notice-stack > *{pointer-events:auto;margin:0}
+.client3-order-toast{
+ display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+ box-sizing:border-box;width:100%;min-width:0;padding:13px 13px 13px 16px;
+ border:1px solid #a8ddc8;border-radius:12px;background:#eefbf4;
+ color:#155e45;box-shadow:0 9px 30px rgba(18,43,64,.16);font:inherit;
+}
+.client3-order-toast.has-warning{border-color:#b9d6cb;background:#f4fbf5}
+.client3-order-toast-text{display:grid;flex:1;gap:5px;min-width:0}
+.client3-order-toast-text strong{font-size:13px;font-weight:760;line-height:1.45;color:#136247;overflow-wrap:anywhere}
+.client3-order-toast-text span{font-size:12px;line-height:1.55;color:#566f63;overflow-wrap:anywhere}
+.client3-order-toast-close{
+ display:grid;place-items:center;align-self:start;flex:0 0 30px;
+ width:30px;height:30px;line-height:1;padding:0;
+ border:1px solid transparent;border-radius:8px;background:transparent;
+ color:#537569;cursor:pointer;font:inherit;font-size:22px;
+}
+.client3-order-toast-close:hover,.client3-order-toast-close:focus-visible{
+ background:#dcefe6;color:#194d3b;outline:0;border-color:#aad2be;
+}
+@media(max-width:600px){
+ .client3-main-erp .global-alert-stack.client3-notice-stack{
+  top:10px;left:12px;right:12px;width:auto;max-width:none;
+ }
+ .client3-order-toast{padding:11px 12px;border-radius:10px}
+ .client3-order-toast-text strong{font-size:12px}
+ .client3-order-toast-text span{font-size:11px}
+}
