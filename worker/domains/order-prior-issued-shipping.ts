@@ -20,7 +20,7 @@ export async function confirmPriorIssuedOrderShipping(
 
   // The entire proof is in the UPDATE predicate, not only in a stale GET plan.
   // No stock, reservation, movement, or order_item row is ever updated here.
-  const result = await db.prepare(`
+  const update = db.prepare(`
     UPDATE orders SET shipping_status='sent', shipping_date=?, updated_at=?
     WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'
       AND COALESCE(order_status,'') NOT IN ('deleted','archived')
@@ -60,26 +60,30 @@ export async function confirmPriorIssuedOrderShipping(
             )
           )
       )
-  `).bind(shippingDate, now, orderId).run()
+  `).bind(shippingDate, now, orderId)
+  // The evidence for future status-only correction is mandatory. A failed
+  // activity insert rolls the shipping marker back in the same D1 transaction,
+  // rather than leaving an unidentifiable send that legacy undo could restock.
+  const marker = db.prepare(`
+    INSERT INTO activity_log (
+      event_type, entity_type, entity_id, order_id, external_order_id,
+      title, details, amount, created_at
+    )
+    SELECT 'order_prior_issued_shipping_confirmed', 'order', o.id, o.id,
+      o.external_id, 'Подтверждена отправка ранее выданных товаров', ?, 0, ?
+    FROM orders o
+    WHERE o.id=? AND o.shipping_status='sent' AND o.updated_at=?
+  `).bind(
+    `Отмечено отправленным без повторного списания и изменения складских резервов. Исполнитель: ${cleanText(input.actor) || 'не указан'}.`,
+    now, orderId, now,
+  )
+  const results = await db.batch([update, marker])
 
-  if (toInt(result.meta?.changes, 0) !== 1) {
+  if (toInt(results[0]?.meta?.changes, 0) !== 1 ||
+      toInt(results[1]?.meta?.changes, 0) !== 1) {
     throw new CriticalOperationConflictError(
       'Не все товары подтверждены как ранее выданные, либо заказ изменился. Обновите отправку. Повторного списания не было.',
     )
-  }
-
-  try {
-    await writeActivityLog(db, {
-      eventType: 'order_prior_issued_shipping_confirmed',
-      entityType: 'order',
-      entityId: orderId,
-      orderId,
-      title: 'Подтверждена отправка ранее выданных товаров',
-      details: `Отмечено отправленным без повторного списания и изменения складских резервов. Исполнитель: ${cleanText(input.actor) || 'не указан'}.`,
-      createdAt: now,
-    })
-  } catch (error) {
-    console.warn('Prior-issued shipping activity log failed', error)
   }
 
   return { ok: true, statusOnly: true, stockDeducted: 0 }
