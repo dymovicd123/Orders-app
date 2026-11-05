@@ -67,7 +67,7 @@ export function buildOrderShipmentPlan(order: ReadOrder, reservations: ReservedL
       || (recordedSent !== null && recordedSent >= quantity)
     const fulfilled = fulfilledById.get(orderItemId)
     const canConfirmPriorIssue = !closed && !historicallySent && !isWorkshop && !pendingReplacement
-      && stockState === 'fulfilled' && recordedSent === null
+      && stockState === 'fulfilled' && (recordedSent === null || recordedSent === 0)
       && fulfilled?.count === 1 && fulfilled.quantity === quantity && fulfilled.variantId > 0
       && fulfilled.source === cleanText(item.sourceType)
       && priorIssuedItemIds.has(orderItemId)
