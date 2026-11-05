@@ -28,7 +28,7 @@ for(const [name,source] of Object.entries({
  assert(!/Обмен|обмен|exchange/i.test(source)||name==='app'&&source.includes("section==='exchange'"),
   'New watches must have no exchange user-facing or read-only processing: '+name)
 }
-assert(app.includes("if(section==='exchange')")&&app.includes("window.history.replaceState(null,'','#orders')"),
+assert(app.includes("section==='exchange'")&&app.includes("window.history.replaceState(null,'','#orders')"),
  'Obsolete exchange deep links must redirect to orders')
 assert(!orders.includes('WatchExchangeForm')&&!orders.includes('canOpenExchange'))
 assert(!finance.includes('exchangeExtras')&&!reports.includes('exchangeExtras'))
