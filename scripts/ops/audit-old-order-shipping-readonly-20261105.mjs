@@ -454,6 +454,117 @@ for(const row of variantsResult[0].results){
  'LINES',row.lines,'ORDERS_TOUCHED',row.orders)
 }
 
+
+// Focused forensic check of the unique legacy non-sent fulfilled line without
+// handover/revision issue evidence. No order/customer identifier is printed.
+const legacySuspectSql = `WITH suspect AS (
+ SELECT o.id AS order_id, o.external_id,
+  oi.id AS order_item_id,oi.variant_id,oi.source_type,
+  oi.stock_quantity_before,oi.stock_quantity_after,
+  r.id AS reservation_id,r.reference_id AS reservation_reference,
+  r.created_at AS reservation_created_at,r.fulfilled_at,
+  r.inventory_source,r.variant_id AS reservation_variant
+ FROM orders o
+ JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
+ JOIN inventory_reservations r ON r.order_id=o.id AND r.order_item_id=oi.id
+   AND r.status='fulfilled'
+ WHERE julianday(o.created_at)<julianday('2026-11-02T09:26:53Z')
+  AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+  AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  AND COALESCE(o.archived_at,'')=''
+  AND oi.stock_writeoff_status='fulfilled'
+  AND COALESCE(oi.is_workshop,0)=0
+  AND NOT EXISTS (SELECT 1 FROM inventory_handover_reviews hr
+      WHERE hr.order_item_id=oi.id AND hr.decision='issued_before_checkpoint')
+  AND NOT EXISTS (SELECT 1 FROM activity_log a
+      WHERE a.order_id=o.id AND a.entity_type='order_item'
+       AND a.entity_id=oi.id
+       AND a.event_type IN (
+         'order_stock_issued_before_full_shipping',
+         'order_stock_handover_reconciled'))
+  AND NOT EXISTS (SELECT 1 FROM order_dispatch_items di
+      WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+)
+SELECT
+ (SELECT COUNT(*) FROM suspect) AS suspect_count,
+ (SELECT COUNT(*) FROM suspect
+   WHERE fulfilled_at IS NOT NULL) AS fulfilled_with_timestamp,
+ (SELECT COUNT(*) FROM suspect
+   WHERE stock_quantity_before IS NOT NULL AND stock_quantity_after IS NOT NULL) AS stock_snapshot_present,
+ (SELECT COUNT(*) FROM suspect
+   WHERE stock_quantity_after<stock_quantity_before) AS snapshot_decrement_recorded,
+ (SELECT COUNT(*) FROM suspect s
+   WHERE EXISTS (SELECT 1 FROM inventory_movements m
+     WHERE m.movement_type='sale' AND m.inventory_source=s.inventory_source
+       AND m.variant_id=s.reservation_variant
+       AND m.reference_id=s.reservation_reference)) AS sale_with_reservation_reference,
+ (SELECT COUNT(*) FROM suspect s
+   WHERE EXISTS (SELECT 1 FROM inventory_movements m
+     WHERE m.movement_type='sale' AND m.inventory_source=s.inventory_source
+       AND m.variant_id=s.reservation_variant
+       AND instr(COALESCE(m.comment,''),s.external_id)>0)) AS sale_with_order_in_comment,
+ (SELECT COUNT(*) FROM suspect s
+   WHERE EXISTS (SELECT 1 FROM inventory_movements m
+     WHERE m.movement_type='sale' AND m.inventory_source=s.inventory_source
+       AND m.variant_id=s.reservation_variant
+       AND s.fulfilled_at IS NOT NULL
+       AND ABS(julianday(m.created_at)-julianday(s.fulfilled_at))*86400<120)) AS sale_near_fulfilled_timestamp,
+ (SELECT COUNT(*) FROM suspect s
+   WHERE EXISTS (SELECT 1 FROM activity_log a
+      WHERE a.order_id=s.order_id AND a.event_type='order_shipping_updated')) AS legacy_shipping_activity,
+ (SELECT COUNT(*) FROM suspect s
+   WHERE EXISTS (SELECT 1 FROM activity_log a
+      WHERE a.order_id=s.order_id AND a.event_type IN (
+        'order_shipping_cancelled','order_shipping_corrected',
+        'order_shipping_updated','order_prior_issued_shipping_corrected'))) AS shipping_history_present,
+ (SELECT COUNT(*) FROM suspect s
+   WHERE EXISTS (SELECT 1 FROM inventory_handover_reviews hr
+      WHERE hr.order_item_id=s.order_item_id)) AS any_handover_review
+`;
+const legacyEventsSql=`WITH suspect AS (
+ SELECT o.id AS order_id
+ FROM orders o JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
+ WHERE julianday(o.created_at)<julianday('2026-11-02T09:26:53Z')
+  AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+  AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+  AND COALESCE(o.archived_at,'')=''
+  AND oi.stock_writeoff_status='fulfilled' AND COALESCE(oi.is_workshop,0)=0
+  AND EXISTS(SELECT 1 FROM inventory_reservations r
+    WHERE r.order_item_id=oi.id AND r.status='fulfilled')
+  AND NOT EXISTS(SELECT 1 FROM inventory_handover_reviews hr
+    WHERE hr.order_item_id=oi.id AND hr.decision='issued_before_checkpoint')
+  AND NOT EXISTS(SELECT 1 FROM activity_log a
+    WHERE a.order_id=o.id AND a.entity_type='order_item'
+      AND a.entity_id=oi.id AND a.event_type IN (
+       'order_stock_issued_before_full_shipping','order_stock_handover_reconciled'))
+  AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+    WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+)
+SELECT a.event_type,COUNT(*) AS occurrences
+FROM activity_log a JOIN suspect s ON s.order_id=a.order_id
+GROUP BY a.event_type ORDER BY occurrences DESC,a.event_type LIMIT 40`;
+function safeReadOnlyDiagnostic(query){
+ if(!/^\s*(?:SELECT|WITH)\b/i.test(query) || /;\s*\S/.test(query))throw Error('READ_ONLY_SELECT_CTE_REQUIRED')
+ const raw=execFileSync('npx',
+  ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+query],
+  {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+ const response=JSON.parse(raw)
+ if(!Array.isArray(response)||response.length!==1||response[0]?.success!==true||
+    !Array.isArray(response[0]?.results))throw Error('PRODUCTION_DIAGNOSTIC_FAILED')
+ return response[0].results
+}
+for(const row of safeReadOnlyDiagnostic(legacySuspectSql)){
+ for(const [key,value] of Object.entries(row)){
+  if(!Number.isSafeInteger(value)||value<0)throw Error('UNEXPECTED_PRODUCTION_DIAGNOSTIC_'+key)
+ }
+ console.log('LEGACY_UNATTRIBUTED_EVIDENCE',JSON.stringify(row))
+}
+for(const row of safeReadOnlyDiagnostic(legacyEventsSql)){
+ if(!/^[a-z0-9_]{1,100}$/.test(row.event_type)||
+    !Number.isSafeInteger(row.occurrences)||row.occurrences<0)throw Error('UNEXPECTED_ACTIVITY_AGGREGATE')
+ console.log('LEGACY_UNATTRIBUTED_EVENT',row.event_type,'COUNT',row.occurrences)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
