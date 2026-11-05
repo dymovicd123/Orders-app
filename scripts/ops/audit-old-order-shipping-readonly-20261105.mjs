@@ -402,6 +402,58 @@ for(const row of catalogResult[0].results){
    'LINES',row.lines,'ORDERS_TOUCHED',row.orders)
 }
 
+
+const variantCandidatesSql = `SELECT cohort, source_state, snapshot_state,
+ CASE WHEN exact_candidates=0 THEN 'no_exact_match'
+   WHEN exact_candidates=1 THEN 'unique_exact_match'
+   ELSE 'ambiguous' END AS match_state,
+ COUNT(*) AS lines, COUNT(DISTINCT order_id) AS orders
+FROM (
+ SELECT o.id AS order_id,
+ CASE WHEN julianday(o.created_at)<julianday('${cutoff}') THEN 'legacy' ELSE 'post_cutover' END AS cohort,
+ CASE WHEN COALESCE(oi.product_id,0)>0 THEN 'known_product' ELSE 'unknown_product' END AS source_state,
+ CASE WHEN TRIM(COALESCE(oi.gender_snapshot,''))<>'' AND
+   TRIM(COALESCE(oi.color_snapshot,''))<>'' AND
+   TRIM(COALESCE(oi.material_snapshot,''))<>'' AND
+   TRIM(COALESCE(oi.length_snapshot,''))<>'' AND
+   TRIM(COALESCE(oi.size_snapshot,''))<>''
+   THEN 'all_characteristics_present'
+   ELSE 'some_characteristics_missing' END AS snapshot_state,
+ (SELECT COUNT(*)
+  FROM catalog_variants v
+  WHERE v.product_id=oi.product_id AND v.is_active=1
+   AND (TRIM(COALESCE(oi.gender_snapshot,''))='' OR
+        UPPER(TRIM(COALESCE(v.gender,'')))=UPPER(TRIM(oi.gender_snapshot)))
+   AND (TRIM(COALESCE(oi.color_snapshot,''))='' OR
+        UPPER(TRIM(COALESCE(v.color,'')))=UPPER(TRIM(oi.color_snapshot)))
+   AND (TRIM(COALESCE(oi.material_snapshot,''))='' OR
+        UPPER(TRIM(COALESCE(v.material,'')))=UPPER(TRIM(oi.material_snapshot)))
+   AND (TRIM(COALESCE(oi.length_snapshot,''))='' OR
+        UPPER(TRIM(COALESCE(v.length,'')))=UPPER(TRIM(oi.length_snapshot)))
+   AND (TRIM(COALESCE(oi.size_snapshot,''))='' OR
+        UPPER(TRIM(COALESCE(v.size_label,'')))=UPPER(TRIM(oi.size_snapshot)))
+ ) AS exact_candidates
+ FROM orders o JOIN order_items oi ON oi.order_id=o.id
+ WHERE COALESCE(o.shipping_status,'not_sent')<>'sent'
+   AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+   AND COALESCE(o.archived_at,'')=''
+   AND oi.quantity>0 AND oi.stock_writeoff_status='catalog_unresolved'
+) x
+GROUP BY cohort,source_state,snapshot_state,match_state
+ORDER BY cohort,source_state,snapshot_state,match_state`
+if(!/^\s*SELECT\b/i.test(variantCandidatesSql))throw Error('VARIANT_CANDIDATES_MUST_BE_SELECT')
+const variantsRaw=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+variantCandidatesSql],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const variantsResult=JSON.parse(variantsRaw)
+if(!Array.isArray(variantsResult)||variantsResult.length!==1||
+ variantsResult[0]?.success!==true||!Array.isArray(variantsResult[0]?.results))throw Error('VARIANT_CANDIDATES_FAILED')
+for(const row of variantsResult[0].results){
+ if(!Number.isSafeInteger(row.lines)||!Number.isSafeInteger(row.orders))throw Error('VARIANT_CANDIDATES_INVALID')
+ console.log('CATALOG_UNRESOLVED_EXACT_MATCH',row.cohort,row.source_state,row.snapshot_state,row.match_state,
+ 'LINES',row.lines,'ORDERS_TOUCHED',row.orders)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
