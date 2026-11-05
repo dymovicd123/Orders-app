@@ -1,6 +1,7 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {watchNetSaleSql,watchNetDebtSql,watchReturnedUnitsForItemSql,watchReturnedValueForItemSql} from './client3-watch-commercial.ts'
+import {watchManagerReportNameSql} from './client3-watch-manager-name.ts'
 
 const fail=(message:string)=>json({ok:false,message},{status:400})
 const validDate=(x:string)=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&
@@ -44,7 +45,7 @@ export async function getClient3WatchAnalytics(
      WHERE ${salesFilter}
      GROUP BY o.order_date ORDER BY o.order_date DESC LIMIT 730`
    ).bind(...base).all(),
-   db.prepare(`SELECT COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),'НЕ УКАЗАН') AS manager,
+   db.prepare(`SELECT ${watchManagerReportNameSql} AS manager,
      COUNT(*) AS orderCount,COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalSales,
      COALESCE(SUM(o.received_amount),0) AS receivedFromOrders,
      COALESCE(SUM(o.return_amount),0) AS returnedOnOrders,
@@ -52,7 +53,7 @@ export async function getClient3WatchAnalytics(
      COALESCE(AVG(${watchNetSaleSql('o')}),0) AS avgCheck
      FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
      WHERE ${salesFilter}
-     GROUP BY o.manager_id,o.manager_snapshot_name ORDER BY totalSales DESC LIMIT 250`
+     GROUP BY o.manager_id,${watchManagerReportNameSql} ORDER BY totalSales DESC LIMIT 250`
    ).bind(...base).all(),
    db.prepare(`SELECT COALESCE(NULLIF(TRIM(p.model_name),''),oi.product_name_snapshot,'НЕ УКАЗАН') AS product,
      COALESCE(SUM(MAX(0,oi.quantity-${watchReturnedUnitsForItemSql('oi')})),0) AS quantity,
@@ -100,7 +101,7 @@ export async function getClient3WatchAnalytics(
    ).bind(...base).all(),
    db.prepare(`SELECT f.id,f.event_date AS eventDate,f.event_type AS eventType,
      f.amount_delta AS amountDelta,f.payment_method AS paymentMethod,
-     f.external_order_id AS externalOrderId,f.order_id AS orderId,o.manager_snapshot_name AS manager,
+     f.external_order_id AS externalOrderId,f.order_id AS orderId,${watchManagerReportNameSql} AS manager,
      o.order_date AS orderDate,o.created_at AS orderCreatedAt,wd.recipient_name AS customer,
      wd.city,f.comment
      FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id
@@ -163,7 +164,7 @@ export async function getClient3WatchAnalytics(
  ).bind(...base).all()
  const debtorOrders=await db.prepare(`SELECT o.id,o.external_id AS externalId,
    o.order_date AS orderDate,wd.recipient_name AS customer,wd.city,
-   o.manager_snapshot_name AS manager,${watchNetSaleSql('o')} AS totalSales,
+   ${watchManagerReportNameSql} AS manager,${watchNetSaleSql('o')} AS totalSales,
    o.received_amount AS received,${watchNetDebtSql('o')} AS debt
    FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
    WHERE wd.brand_id=? AND o.order_status NOT IN ('deleted','archived')

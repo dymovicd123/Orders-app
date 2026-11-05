@@ -2,6 +2,7 @@ import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {watchNetSaleSql,watchNetDebtSql,watchReturnedUnitsForItemSql,watchReturnedValueForItemSql}
  from './client3-watch-commercial.ts'
+import {watchManagerReportNameSql} from './client3-watch-manager-name.ts'
 
 const bad=(message:string)=>json({ok:false,message},{status:400})
 const validDate=(value:string)=>{
@@ -34,7 +35,7 @@ export async function listClient3WatchReportCityOrders(
  const [result,count]=await Promise.all([
   db.prepare(`SELECT o.id AS id,o.external_id AS externalId,
      o.order_date AS orderDate,wd.recipient_name AS customer,
-     COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),'НЕ УКАЗАН') AS manager,
+     ${watchManagerReportNameSql} AS manager,
      ${watchNetSaleSql('o')} AS totalAmount,o.total_amount AS grossTotalAmount,
      o.received_amount AS receivedAmount,
      ${watchNetDebtSql('o')} AS debtAmount,o.shipping_status AS shippingStatus,
@@ -62,13 +63,13 @@ export async function getClient3WatchReportDayDetails(
  const base=[brandId,date]
  const where=`${salesBase} AND o.order_date=?`
  const [managers,cities,products,summary]=await Promise.all([
-  db.prepare(`SELECT COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),'НЕ УКАЗАН') AS manager,
+  db.prepare(`SELECT ${watchManagerReportNameSql} AS manager,
     COUNT(*) AS orderCount,COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalSales,
     COALESCE(SUM(o.received_amount),0) AS receivedOnOrders,
     COALESCE(SUM(${watchNetDebtSql('o')}),0) AS debt
     FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
     WHERE ${where}
-    GROUP BY o.manager_id,o.manager_snapshot_name ORDER BY totalSales DESC,manager LIMIT 400`)
+    GROUP BY o.manager_id,${watchManagerReportNameSql} ORDER BY totalSales DESC,manager LIMIT 400`)
     .bind(...base).all(),
   db.prepare(`SELECT ${cityExpr} AS city,
     COUNT(*) AS orderCount,COALESCE(SUM(${watchNetSaleSql('o')}),0) AS totalSales,

@@ -1,0 +1,122 @@
+name: Client3 ORIGINAL — manager report name resolution fix
+on:
+  push:
+    branches: [release/client3-reports-manager-names-20261105]
+    paths: ['.github/workflows/client3-manager-report-names-release-20261105.yml']
+permissions: {contents: read}
+concurrency:
+  group: client3-original-manager-report-names
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      CLIENT3_WORKER: orders-app-client3-old-client
+      CLIENT3_DB: orders_db_client3_old_client
+      CLIENT3_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Ensure only original Client3 report files changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/release/client3-reports-manager-names-20261105
+          test "$(git rev-parse HEAD^)" = 5ceb7278505e71d9da47d4c56682f1d716cf42fc
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$(jq -r .name wrangler.jsonc)" = "$CLIENT3_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$CLIENT3_DB_ID"
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = "$CLIENT3_DB"
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          python3 - <<'PY'
+          import subprocess
+          allowed={
+            '.github/workflows/client3-manager-report-names-release-20261105.yml',
+            'worker/domains/client3-watch-manager-name.ts',
+            'worker/domains/client3-watch-analytics.ts',
+            'worker/domains/client3-watch-report-details.ts',
+            'scripts/client3/test-watch-manager-report-names-20261105.mjs',
+          }
+          got=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          assert got==allowed,'Unexpected or missing Client3 report files: '+repr(got.symmetric_difference(allowed))
+          assert not any(s.startswith('migrations/') or s.startswith('src/') or s in ('wrangler.jsonc','package.json','package-lock.json') for s in got)
+          print('CLIENT3_REPORTS_ISOLATED_SOURCE_GUARD_PASS')
+          PY
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Compile and test report names, order lifecycle, catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          node --experimental-strip-types scripts/client3/test-watch-manager-report-names-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-editor-delete-release-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-catalog-v6-release-20261104.mjs
+          echo CLIENT3_MANAGER_REPORT_NAME_TESTS_PASS
+      - name: Read-only original D1 manager identification and FK check
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$CLIENT3_DB_ID"
+          npx wrangler d1 execute "$CLIENT3_DB" --remote --config wrangler.jsonc --json --command="SELECT wd.brand_id AS brandId,
+            COUNT(*) AS orderCount,
+            SUM(CASE WHEN NULLIF(TRIM(o.manager_snapshot_name),'') IS NULL AND
+              (SELECT NULLIF(TRIM(m.name),'') FROM managers m WHERE m.id=o.manager_id LIMIT 1) IS NOT NULL
+              THEN 1 ELSE 0 END) AS namesRecoveredFromManagers,
+            SUM(CASE WHEN COALESCE(NULLIF(TRIM(o.manager_snapshot_name),''),
+              (SELECT NULLIF(TRIM(m.name),'') FROM managers m WHERE m.id=o.manager_id LIMIT 1)) IS NULL
+              THEN 1 ELSE 0 END) AS namesUnresolved,
+            COALESCE(SUM(o.total_amount),0) AS grossSales
+            FROM watch_order_details wd JOIN orders o ON o.id=wd.order_id
+            WHERE o.order_status NOT IN ('deleted','archived')
+              AND o.order_date>='2026-11-01' AND o.order_date<='2026-11-05'
+            GROUP BY wd.brand_id ORDER BY wd.brand_id" |
+            jq -e '.[0].results | type=="array"'
+          npx wrangler d1 execute "$CLIENT3_DB" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo CLIENT3_MANAGER_REPORT_LIVE_D1_READONLY_PASS
+      - name: Deploy only original Client3 Worker, no D1 writes or migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = "$CLIENT3_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$CLIENT3_DB_ID"
+          npx wrangler deploy --config wrangler.jsonc
+          echo CLIENT3_MANAGER_REPORT_WORKER_DEPLOY_PASS
+      - name: Verify published JS identity, protected report API and D1 integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          test -s "dist/client$asset"
+          verified=0
+          for attempt in $(seq 1 12); do
+            code="$(curl -sSL --max-time 20 -o /tmp/client3-index -w '%{http_code}' "$base/?report_fix=$GITHUB_SHA" || true)"
+            js_code="$(curl -sSL --max-time 25 -o /tmp/client3-js -w '%{http_code}' "$base$asset" || true)"
+            if test "$code" = 200 && grep -Eq 'id="root"|type="module"' /tmp/client3-index &&
+              test "$js_code" = 200 && cmp -s "dist/client$asset" /tmp/client3-js; then
+              verified=1
+              echo "CLIENT3_MANAGER_REPORT_PUBLISHED_JS_PASS attempt=$attempt asset=$asset"
+              break
+            fi
+            sleep 3
+          done
+          test "$verified" = 1
+          for path in '/api/client3/watches/analytics?brand=TAUWACH&from=2026-11-01&to=2026-11-05' '/api/client3/watches/analytics/day?brand=TAUWACH&date=2026-11-05' '/api/client3/watches/orders?brand=TAUWACH'; do
+            status="$(curl -sS --max-time 20 -o /tmp/client3-anon -w '%{http_code}' "$base$path")"
+            echo "CLIENT3_MANAGER_REPORT_PROTECTED_API $status $path"
+            test "$status" = 401 -o "$status" = 403
+          done
+          npx wrangler d1 execute "$CLIENT3_DB" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo CLIENT3_MANAGER_REPORT_RELEASE_VERIFIED
