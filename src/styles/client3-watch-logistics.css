@@ -101,12 +101,37 @@
 .watch-dispatch-correction-commit{background:#92400e!important;color:#fff!important}
 @media(max-width:680px){.watch-dispatch-correction-confirm{padding:11px}}
 
-/* Main's separate physical-return queue remains actionable from logistics. */
-.watch-logistics-receipt-notice{
-  display:grid;gap:8px;padding:11px 14px;margin:2px 0 10px;
-  border:1px solid #f0d7b3;background:#fffaf1;border-radius:9px;
-  flex-basis:100%;min-width:0
+/* Compact selectors and easier scanning for both brands. */
+.watch-logistics{max-width:none;padding:8px 0}
+.client3-logistics-brands,.client3-logistics-queues{display:flex!important;flex-wrap:wrap;gap:7px}
+.client3-logistics-brands .workshop-channel-tab,
+.client3-logistics-queues .workshop-channel-tab{
+  flex:0 1 auto!important;min-width:128px!important;width:auto!important;
+  padding:9px 12px!important;border-radius:9px!important;min-height:49px!important
 }
-.watch-logistics-receipt-notice>strong{color:#92400e;font-size:.86rem}
-.watch-logistics-receipt-notice>small{color:#76543a;line-height:1.45;font-size:.79rem}
-.watch-logistics-receipt-notice>button{justify-self:start;max-width:100%}
+.client3-logistics-brands .workshop-channel-tab span,
+.client3-logistics-queues .workshop-channel-tab span{font-size:.84rem!important}
+.client3-logistics-brands .workshop-channel-tab small,
+.client3-logistics-queues .workshop-channel-tab small{font-size:.7rem!important}
+.watch-logistics-heading{margin-bottom:10px}
+@media(max-width:700px){
+  .client3-logistics-brands .workshop-channel-tab,
+  .client3-logistics-queues .workshop-channel-tab{flex:1 1 145px!important}
+}
+
+.client3-physical-send-confirm{
+  display:flex;align-items:flex-start;gap:10px;padding:10px 13px;
+  border-radius:9px;border:1px solid #fbbf24;background:#fffbeb;
+  color:#78350f;font-size:.83rem;line-height:1.5;max-width:760px;
+}
+.client3-physical-send-confirm input[type="checkbox"]{
+  flex:none;width:18px;height:18px;margin:2px 0 0;
+}
+
+/* Physical receipt is an independent Main-like step even after a refund. */
+.watch-logistics-receipt-notice{display:grid;gap:8px;flex-basis:100%;min-width:0;
+  padding:11px 14px;border:1px solid #ead3ab;border-radius:9px;background:#fff9ee}
+.watch-logistics-receipt-notice strong{font-size:.87rem;color:#92400e}
+.watch-logistics-receipt-notice small{font-size:.78rem;color:#76543a;line-height:1.45}
+.watch-logistics-receipt-notice button{justify-self:start}
+.watch-logistics-intake-warning{color:#92400e!important;font-weight:650}

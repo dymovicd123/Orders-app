@@ -1,10 +1,13 @@
 import {json} from '../core/http.ts'
 import type {AuthUser} from '../core/types.ts'
 import {dispatchSelectedCompleteOrderLines} from './order-dispatch.ts'
+import {getOrderStockHandoverState} from './order-reservations.ts'
+import {watchCheckpointNeedsClarification} from './client3-watch-handover.ts'
+import {dispatchRetiredClient3WatchLines} from './client3-watch-retired-dispatch.ts'
 
 const fail=(code:string,message:string,status=409)=>json({ok:false,code,message},{status})
 type WatchDispatchSelection={orderItemId:number;quantity:number}
-type DispatchInput={requestId?:unknown;items?:unknown}
+type DispatchInput={requestId?:unknown;items?:unknown;confirmPhysicalStock?:unknown}
 
 /** Main's selective shipment engine owns physical movement, split rows,
  * reservation fulfilment and financial consistency. Client3 verifies brand,
@@ -81,23 +84,82 @@ export async function dispatchClient3WatchOrder(
    return fail('WATCH_DISPATCH_REQUEST_CONFLICT','Номер операции использован другим заказом.',409)
 
  const selected=chosen.map(x=>byId.get(x.orderItemId)!)
+ const priorRetired=prior?await db.prepare(`SELECT COUNT(*) AS n
+   FROM order_dispatch_items di JOIN retired_order_item_issues j
+     ON j.order_item_id=di.order_item_id AND j.quantity=di.quantity
+   WHERE di.dispatch_id=? AND di.reservation_id IS NULL AND di.movement_id IS NULL`)
+   .bind(prior.id).first<{n:number}>():null
+ const archivedReplay=Boolean(prior&&Number(priorRetired?.n||0)===chosen.length)
+ const retired=selected.filter(row=>row.stock_writeoff_status==='catalog_retired'||
+   (archivedReplay&&row.stock_writeoff_status==='retired_physically_issued'))
+ if(retired.length>0&&retired.length!==selected.length)
+   return fail('WATCH_ARCHIVED_SELECT_SEPARATELY',
+     'Обычные и архивные часы отправляются отдельными подтверждениями. Выберите одну позицию архивных часов.',409)
  if(!prior){
-   if(selected.some(x=>x.reservation_status!=='active'||
-     x.stock_writeoff_status!=='reserved'||Number(x.shipped_quantity)>0))
-     return fail('WATCH_RESERVATION_PENDING',
-       'Одна из выбранных позиций уже отправлена или ждёт поступления/резерва. Снимите выбор и обновите логистику.',409)
+   // Main's SKU-specific stocktake/stock-check checkpoint is mandatory
+   // BEFORE any real watch shipment. confirmPhysicalStock is NOT a bypass.
+   // A replay of an already committed dispatch is handled by Main above.
+   let handover
+   try{
+     handover=await getOrderStockHandoverState(db,orderId)
+   }catch{
+     return fail('WATCH_HANDOVER_CHECK_FAILED',
+       'Не удалось проверить ревизию для выбранных часов. Отправка остановлена.',409)
+   }
+   if(!handover)return fail('WATCH_HANDOVER_CHECK_FAILED',
+     'История ревизий заказа недоступна. Нельзя подтвердить отправку.',409)
+   const picked=new Set(chosen.map(x=>x.orderItemId))
+   // Fail closed when a watch line cannot be reconciled against Main's
+   // stocktake lineage; no fallback to a generic physical checkbox.
+   if(chosen.some(x=>!handover.items.some(item=>item.orderItemId===x.orderItemId)))
+     return fail('WATCH_HANDOVER_LINE_MISSING',
+       'Не удалось проверить ревизию выбранных часов. Отправка остановлена.',409)
+   const requiresReview=handover.items.filter(item=>
+     picked.has(item.orderItemId)&&watchCheckpointNeedsClarification(item)&&
+     !retired.some(row=>Number(row.id)===item.orderItemId))
+   if(requiresReview.length){
+     return json({ok:false,code:'WATCH_HANDOVER_REQUIRED',
+       message:'Ревизия прошла после даты заказа. До отправки уточните фактическую выдачу часов. Если резерв не подтверждён, сначала восстановите его по реальному остатку.',
+       orderId,brandId,reviewCount:requiresReview.length,
+       reviewItemIds:requiresReview.map(x=>x.orderItemId)}, {status:409})
+   }
+   const alreadyIssued=handover.items.filter(item=>picked.has(item.orderItemId)&&
+     item.state==='already_issued')
+   if(alreadyIssued.length)
+     return fail('WATCH_ALREADY_ISSUED_BEFORE_REVISION',
+       'Выбранные часы уже отмечены физически выданными до ревизии. Повторная отправка запрещена.',409)
+   if(selected.some(x=>Number(x.shipped_quantity)>0))
+     return fail('WATCH_ALREADY_SHIPPED','Эти часы уже отправлены. Обновите логистику.',409)
    if(selected.some(x=>String(x.engraving_text||'').trim()&&Number(x.engraving_ready)!==1))
      return fail('WATCH_ENGRAVING_NOT_READY',
-       'Одна из выбранных позиций ещё не готова после гравировки. Подтвердите готовность именно этих часов.',409)
+       'Для отправки сначала подтвердите готовность гравировки выбранных часов.',409)
+   const needsPhysicalCheck=retired.length>0||selected.some(x=>
+     x.reservation_status!=='active'||x.stock_writeoff_status!=='reserved')
+   // The user explicitly confirms physical handover in the send review.
+   // Unlike the earlier Client3-only recovery gate, do NOT demand a free
+   // accounting reserve: Main supports a bounded shipment with verified fact.
+   // The shared dispatch engine records the shortage, never invents units.
+   if(needsPhysicalCheck&&input.confirmPhysicalStock!==true)
+     return fail('WATCH_PHYSICAL_CONFIRM_REQUIRED',
+       'Подтвердите, что выбранные часы физически передаются клиенту.',409)
  }
+
  const localDate=new Date(Date.now()+5*3600*1000).toISOString().slice(0,10)
  try{
-   const result=await dispatchSelectedCompleteOrderLines(db,orderId,{
+   // Archived catalog retirement has already accounted for physical inventory.
+   // The special Client3 dispatch creates the canonical shipment ledger, but
+   // NO sale movement, NO reserved units and NO stock changes.
+   const result=retired.length
+     ?await dispatchRetiredClient3WatchLines(db,brandId,orderId,{
+       requestId,items:chosen,actor:'client3-watch:'+actor.id,dispatchDate:localDate,
+     })
+     :await dispatchSelectedCompleteOrderLines(db,orderId,{
      requestId,items:chosen,actor:'client3-watch:'+actor.id,dispatchDate:localDate,
-     watchSplitBrandId:brandId,
+     watchSplitBrandId:brandId,watchPhysicalConfirmed:input.confirmPhysicalStock===true,
    })
    if(!result?.ok)return fail('WATCH_DISPATCH_FAILED','Склад не подтвердил отправку.')
-   return json({...result,orderId,brandId,stockDispatched:true,
+   return json({...result,orderId,brandId,
+     stockDispatched:retired.length===0,retiredWithoutStockChange:retired.length>0,
      engravingUnchanged:true,selectedItems:chosen.length})
  }catch(cause){
    return fail('WATCH_DISPATCH_BLOCKED',
