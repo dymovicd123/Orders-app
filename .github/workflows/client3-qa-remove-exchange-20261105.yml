@@ -25,13 +25,13 @@ jobs:
       QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 2}
+        with: {fetch-depth: 4}
       - name: Enforce isolated Client3 QA and exact source changes
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-remove-exchange-feature-20261105
-          test "$(git rev-parse HEAD^)" = f0948dbbe68306199fcccff4bbc6ca54e54cdfdd
+          test "$(git rev-parse HEAD^)" = d5c085d5ee7e5a535151a8b214d86cbf1ffa250f
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$LIVE_DB_ID"
@@ -87,7 +87,7 @@ jobs:
             'worker/domains/client3-watch-exchange-history.ts',
             'scripts/client3/test-watch-full-exchange-engine-20261102.mjs',
           }
-          got=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          got=set(subprocess.check_output(['git','diff','--name-only','203399f1cf7c98a81339b26e191b0c65251b6a05','HEAD'],text=True).splitlines())
           assert got==allowed,'Unexpected or missing QA exchange-removal files: '+repr(got.symmetric_difference(allowed))
           assert not any(p.startswith('migrations/') or p.startswith('src/app/') or
               p in ('wrangler.jsonc','package.json','package-lock.json','worker/index.ts') for p in got)
