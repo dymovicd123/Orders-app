@@ -10,9 +10,10 @@ import {OrderInputValidationError} from './order-core.ts'
 import {OrderStockShortageError} from './order-reservations.ts'
 import type {WatchCommitLine,WatchOrderCommit} from './client3-watch-order-commit.ts'
 import {ensureManualWatchOrderSku,type ManualWatchOrderItem} from './client3-watch-order-manual.ts'
+import {findUnavailableWatchStockSelections} from './client3-watch-order-availability.ts'
 
 export type WatchCreateItem={
- watchVariantId:number;catalogVariantId?:number;quantity:number;unitPrice:number;
+ watchVariantId:number;catalogVariantId?:number;orderMode?:'stock'|'preorder'|'manual';quantity:number;unitPrice:number;
  source:WatchSource;engravingText:string;manual?:ManualWatchOrderItem
 }
 export type WatchCreateInput=WatchOrderInput&{
@@ -73,7 +74,7 @@ export async function createClient3WatchOrder(
    if(!Array.isArray(requested)||!requested.length||requested.length>20)
      return fail('WATCH_ITEMS_INVALID','Укажите от 1 до 20 позиций часов.')
    const allowedSources=new Set(['office','showcase'])
-   const checked:{line:WatchCommitLine;quantity:number;price:number;catalogPriceSnapshot:number|null;canonicalName:string}[]=[]
+   const checked:{line:WatchCommitLine;quantity:number;price:number;catalogPriceSnapshot:number|null;canonicalName:string;orderMode:'stock'|'preorder'|'manual'}[]=[]
    const inFlight=await db.prepare(
      "SELECT context_json FROM critical_operations WHERE request_id=? AND operation_type='order_create' LIMIT 1",
    ).bind(raw.requestId).first<{context_json:string}>()
@@ -90,6 +91,12 @@ export async function createClient3WatchOrder(
        !Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>1000||
        !allowedSources.has(item.source))
        return fail('WATCH_ITEM_INVALID','Позиция '+(index+1)+': выберите комплектацию, источник и количество.')
+     if(item.orderMode!==undefined&&!['stock','preorder','manual'].includes(item.orderMode))
+       return fail('WATCH_ORDER_MODE_INVALID','Неизвестный способ выбора товара.')
+     if(item.orderMode==='stock'&&item.manual)
+       return fail('WATCH_ORDER_MODE_INVALID','Часы из наличия должны ссылаться на конкретную комплектацию.',400)
+     if(item.orderMode==='manual'&&!item.manual)
+       return fail('WATCH_ORDER_MODE_INVALID','Для ручного ввода укажите характеристики.',400)
      if(typeof item.engravingText!=='string'||item.engravingText.length>500)
        return fail('WATCH_ENGRAVING_INVALID','Позиция '+(index+1)+': текст гравировки не более 500 символов.')
      const price=amount(item.unitPrice,'Цена позиции '+(index+1))
@@ -121,8 +128,23 @@ export async function createClient3WatchOrder(
        line:{watchVariantId:selected.watchVariantId,catalogProductId:productId,
          catalogVariantId:variantId,source:item.source,engravingText:item.engravingText.trim()},
        quantity:item.quantity,price,catalogPriceSnapshot:priceSnapshot,
-       canonicalName:String(row!.canonical_name),
+       canonicalName:String(row!.canonical_name),orderMode:item.orderMode||'manual',
      })
+   }
+   // A known in-stock SKU is not silently converted to an unreserved order.
+   // This read-only check is deliberately before the Main critical write.
+   // Idempotent retries may already have reserved stock: let Main replay them.
+   if(!inFlight){
+     const shortages=await findUnavailableWatchStockSelections(db,checked
+       .filter(x=>x.orderMode==='stock')
+       .map(x=>({source:x.line.source,variantId:x.line.catalogVariantId,quantity:x.quantity})))
+     if(shortages.length){
+       const first=shortages[0]
+       return fail('WATCH_STOCK_CHANGED',
+         'Доступное количество изменилось: '+(first.source==='office'?'офис':'витрина')+
+         ', осталось '+first.available+' шт., запрошено '+first.requested+
+         '. Обновите выбор или явно оформите позицию под заказ.',409)
+     }
    }
    const total=checked.reduce((sum,item)=>sum+item.quantity*item.price,0)
    if(!Number.isSafeInteger(total)||total>1_000_000_000_000)

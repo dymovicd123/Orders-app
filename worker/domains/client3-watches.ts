@@ -170,12 +170,18 @@ export async function listWatchModels(db:D1Database,actor:AuthUser,url:URL) {
       COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=v.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=v.id)),v.bracelet_color) AS braceletColor,
       MAX(ep.sale_price) AS catalogPriceSnapshot,
       COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.quantity ELSE 0 END),0) AS officePhysical,
-      COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.reserved_quantity ELSE 0 END),0) AS officeReserved,
+      MAX(COALESCE(SUM(CASE WHEN s.inventory_source='warehouse' THEN s.reserved_quantity ELSE 0 END),0),
+        COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r
+          WHERE r.variant_id=v.catalog_variant_id AND r.inventory_source='warehouse' AND r.status='active'),0)) AS officeReserved,
       COALESCE(SUM(CASE WHEN s.inventory_source='boutique' THEN s.quantity ELSE 0 END),0) AS showcasePhysical,
-      COALESCE(SUM(CASE WHEN s.inventory_source='boutique' THEN s.reserved_quantity ELSE 0 END),0) AS showcaseReserved
+      MAX(COALESCE(SUM(CASE WHEN s.inventory_source='boutique' THEN s.reserved_quantity ELSE 0 END),0),
+        COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r
+          WHERE r.variant_id=v.catalog_variant_id AND r.inventory_source='boutique' AND r.status='active'),0)) AS showcaseReserved
     FROM watch_products wp
     JOIN watch_variants v ON v.watch_product_id=wp.id AND v.is_active=1
     JOIN catalog_variants cv ON cv.id=v.catalog_variant_id AND cv.is_active=1
+    JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id AND sp.is_active=1
+    JOIN catalog_products cp ON cp.id=sp.product_id AND cp.id=wp.catalog_product_id AND cp.is_active=1
     LEFT JOIN catalog_execution_prices ep ON ep.stock_position_id=cv.stock_position_id AND ep.category=COALESCE(cv.category,'adult')
     LEFT JOIN inventory_stock s ON s.variant_id=v.catalog_variant_id
     WHERE wp.brand_id=? AND wp.is_active=1

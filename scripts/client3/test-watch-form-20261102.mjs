@@ -6,8 +6,10 @@ import { createServer } from 'vite'
 import reactPlugin from '@vitejs/plugin-react'
 const source=fs.readFileSync('src/features/client3/WatchOrderForm.tsx','utf8')
 assert(!/Размер|Длина|Обмен размера|Цех/.test(source),'Watch form must not show clothing fields')
-assert(source.includes('line.quantity>available')&&source.includes('Заказ можно сохранить;'),
-  'Like Main, an order with shortage can be saved with a visible warning; stock must not be invented')
+assert(source.includes('sourceAvailable(x,line.source)>=(allocated'),
+  'Stock mode must validate the sum of selected quantities before order save')
+assert(source.includes('kind:\'preorder\''),
+  'Shortages must remain explicitly orderable through the preorder mode')
 assert(source.includes("deliveryMethods.map"),'Delivery choices must come from current Main configuration')
 assert(source.includes('receivedAmount'),'Received money must be explicitly captured')
 assert(source.includes('requestRef'),'Create retries need a stable idempotency key')
@@ -39,17 +41,19 @@ try {
     'Менеджер и оплаты','Проверка заказа']){
     assert(html.includes(label),'Missing customer watch form field/option: '+label)
   }
-  assert(source.includes('Источник позиции *'),
-    'Each watch item must retain a selectable Office or Showcase source')
+  assert(source.includes('Источник позиции *')&&source.includes('WatchOrderSourcePicker'),
+    'Each selected watch retains Office/Showcase source and the new picker')
   assert(source.includes('Название товара *')&&source.includes('SmartPickerInput'),
-    'New orders allow Main-like free-text models, not catalogue-only selection')
+    'Manual entry remains available without an existing catalog variant')
+  assert(source.includes('watchVariantId:line.kind===')&&source.includes('orderMode:line.kind'),
+    'Existing SKU must submit its exact identity and manual mode must be explicit')
   assert(html.includes('type="datetime-local"'),'Shipping cutoff needs date AND time')
   assert(html.includes('Выберите бренд'),'Require explicit brand before item entry')
   assert(html.includes('disabled=""'),'Adding an item is unavailable before brand choice')
   assert(html.includes('type="checkbox"'),'Urgency is separate')
   assert(html.includes('type="submit"')&&html.includes('disabled'),'Empty watch selection must not save order')
-  assert(!html.includes('Источник позиции *'),
-    'A source picker appears only after choosing a brand; do not expose unscoped stock')
+  assert(!html.includes('watch-pick-model-head'),
+    'Model catalog is not exposed before brand selection')
   for(const step of ['Клиент и условия заказа','Товары заказа','Менеджер и оплаты','Проверка заказа'])
     assert(html.includes(step),'Missing Main-style order step: '+step)
   assert(!html.includes('Жилет')&&!html.includes('Шапан'),'Do not seed third-party clothing catalog')
