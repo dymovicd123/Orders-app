@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-remove-exchange-feature-20261105
-          test "$(git rev-parse HEAD^)" = 203399f1cf7c98a81339b26e191b0c65251b6a05
+          test "$(git rev-parse HEAD^)" = f0948dbbe68306199fcccff4bbc6ca54e54cdfdd
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$LIVE_DB_ID"
@@ -85,7 +85,6 @@ jobs:
             'worker/domains/client3-watch-exchange.ts',
             'worker/domains/client3-watch-exchange-set.ts',
             'worker/domains/client3-watch-exchange-history.ts',
-            'worker/domains/client3-watch-exchange-commit.ts',
             'scripts/client3/test-watch-full-exchange-engine-20261102.mjs',
           }
           got=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())

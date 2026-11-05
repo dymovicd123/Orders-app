@@ -137,11 +137,11 @@ export function WatchClient3App() {
   useEffect(() => { void refreshAuth() }, [refreshAuth])
   useEffect(()=>{
     const syncHash=()=>{
-      const section=window.location.hash.slice(1) as WatchSection
+      const section=window.location.hash.slice(1)
       if(section==='exchange'){
         setTab('orders')
         window.history.replaceState(null,'','#orders')
-      }else if(sections.includes(section))setTab(section)
+      }else if(sections.includes(section as WatchSection))setTab(section as WatchSection)
     }
     syncHash()
     window.addEventListener('hashchange',syncHash)

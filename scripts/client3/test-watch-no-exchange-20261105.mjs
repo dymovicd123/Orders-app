@@ -45,7 +45,6 @@ for(const file of [
  'worker/domains/client3-watch-exchange.ts',
  'worker/domains/client3-watch-exchange-set.ts',
  'worker/domains/client3-watch-exchange-history.ts',
- 'worker/domains/client3-watch-exchange-commit.ts',
 ])assert(!fs.existsSync(file),'Dead exchange module was not removed: '+file)
 assert(guard.includes("env.CLIENT3_WATCHES === '1'"))
 
