@@ -154,6 +154,21 @@ const fresh = seed(9508, ['reserved'],undefined,'2026-11-04T00:00:00Z')
 assert.equal(plan(9508,fresh).canConfirmIssuedOnly,false)
 assert.equal(plan(9508,fresh).selectedQuantity,1)
 
+// Production historical audit 2026-11-05: one legacy order has fulfilled stock
+// and a fulfilled reservation, but no exact early-issue/checkpoint evidence.
+// That physical status must NEVER be promoted to a verified customer shipment.
+const unknownLegacy = seed(9509,['fulfilled'],undefined,'2026-11-01T00:00:00Z',false)
+const unknownLegacyPlan = plan(9509,unknownLegacy)
+assert.equal(unknownLegacyPlan.canConfirmIssuedOnly,false,
+  'Unattributed old fulfilled reservation must not unlock customer shipment')
+assert.equal(unknownLegacyPlan.selectedQuantity,0)
+await assert.rejects(confirm(9509),/Обновите отправку/)
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9509').get().shipping_status,'not_sent')
+assert.deepEqual(readReservations(9509).map(r=>r.status),['fulfilled'])
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get(),stockBefore)
+assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c,movementsBefore)
+
+
 const view = fs.readFileSync('src/features/sections/OrdersTableSection.tsx', 'utf8')
 assert(view.includes('confirmAlreadyIssued:true'))
 assert(view.includes('Подтвердить отправку без повторного списания'))
