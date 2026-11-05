@@ -1492,12 +1492,14 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {[line.color,line.size,line.material,line.length].filter(Boolean).join(' · ')}
                                 {line.color||line.size||line.material||line.length ? ' · ' : ''}
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
-                                {' · '}{line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
+                                {' · '}{line.dispatchPriorIssued
+                                  ? 'Выдан ранее · подтвердить отправку без списания'
+                                  : line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
                               </small>
                             </div>
                             {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
                               aria-label={`Количество ${line.productName}`}
-                              disabled={dispatchDraft.submitting||line.sourceType==='workshop'} value={value}
+                              disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued} value={value}
                               style={{width:72,padding:6}}
                               onChange={event=>{const quantity=clampDispatchQuantity(event.target.value,line.readyQuantity,false)
                                 setDispatchDraft(d=>d?{...d,error:'',selected:{...d.selected,
