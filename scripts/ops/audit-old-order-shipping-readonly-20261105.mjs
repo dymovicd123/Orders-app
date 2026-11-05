@@ -360,6 +360,48 @@ for(const row of unattributedResult[0].results){
  console.log('UNATTRIBUTED_OLD_FULFILLED_PROVENANCE',JSON.stringify(row))
 }
 
+
+const catalogSql = `SELECT cohort, status, product_link, variant_link,
+ COUNT(*) AS lines, COUNT(DISTINCT order_id) AS orders
+FROM (
+ SELECT o.id AS order_id,
+  CASE WHEN julianday(o.created_at)<julianday('${cutoff}') THEN 'legacy'
+    ELSE 'post_cutover' END AS cohort,
+  COALESCE(NULLIF(oi.stock_writeoff_status,''),'unknown') AS status,
+  CASE WHEN COALESCE(oi.product_id,0)=0 THEN 'missing_id'
+    WHEN EXISTS(SELECT 1 FROM catalog_products p WHERE p.id=oi.product_id AND p.is_active=1)
+      THEN 'active'
+    WHEN EXISTS(SELECT 1 FROM catalog_products p WHERE p.id=oi.product_id)
+      THEN 'retired'
+    ELSE 'broken_id' END AS product_link,
+  CASE WHEN COALESCE(oi.variant_id,0)=0 THEN 'missing_id'
+    WHEN EXISTS(SELECT 1 FROM catalog_variants v WHERE v.id=oi.variant_id AND v.is_active=1)
+      THEN 'active'
+    WHEN EXISTS(SELECT 1 FROM catalog_variants v WHERE v.id=oi.variant_id)
+      THEN 'retired'
+    ELSE 'broken_id' END AS variant_link
+ FROM orders o JOIN order_items oi ON oi.order_id=o.id
+ WHERE oi.quantity>0 AND COALESCE(o.shipping_status,'not_sent')<>'sent'
+   AND COALESCE(o.order_status,'') NOT IN ('deleted','archived')
+   AND COALESCE(o.archived_at,'')=''
+   AND oi.stock_writeoff_status IN (
+     'catalog_unresolved','catalog_retired','pending_reservation','reservation_released'
+   )
+) x GROUP BY cohort,status,product_link,variant_link
+ORDER BY cohort,status,product_link,variant_link`
+if(!/^\s*SELECT\b/i.test(catalogSql))throw Error('CATALOG_TRIAGE_MUST_BE_SELECT')
+const catalogRaw=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+catalogSql],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const catalogResult=JSON.parse(catalogRaw)
+if(!Array.isArray(catalogResult)||catalogResult.length!==1||
+ catalogResult[0]?.success!==true||!Array.isArray(catalogResult[0]?.results))throw Error('CATALOG_TRIAGE_FAILED')
+for(const row of catalogResult[0].results){
+ if(!Number.isSafeInteger(row.lines)||!Number.isSafeInteger(row.orders))throw Error('CATALOG_TRIAGE_RESULT_INVALID')
+ console.log('CATALOG_TRIAGE',row.cohort,row.status,row.product_link,row.variant_link,
+   'LINES',row.lines,'ORDERS_TOUCHED',row.orders)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
