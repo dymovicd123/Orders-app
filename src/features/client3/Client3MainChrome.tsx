@@ -34,7 +34,7 @@ import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 import '../../styles/client3-order-toast.css'
 
-export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'finance'|'staff'|'accounts'|'legacy'|'references'
+export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'finance'|'staff'|'accounts'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'dashboard',module:'dashboard',label:'Инфопанель'},
@@ -68,7 +68,6 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   finance:{title:'Финансы',subtitle:'Движение денег по брендам'},
   staff:{title:'Команда',subtitle:'Сотрудники и доступ к брендам'},
   accounts:{title:'Команда',subtitle:'Сотрудники и доступ к брендам'},
-  legacy:{title:'Заказы',subtitle:'Исторические записи'},
   references:{title:'Справочники',subtitle:'Бренды, характеристики часов, доставка и способы оплаты'},
 }
 export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,busy,canSales,canWarehouse=false,children,error,success,warning,onDismissNotice}:{
@@ -81,7 +80,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
     return ()=>document.body.classList.remove('mobile-nav-open')
   },[mobileNavOpen])
   const isAdmin=user.role==='admin'
-  const current=section==='create'||section==='returns'||section==='legacy'?'orders':
+  const current=section==='create'||section==='returns'?'orders':
     section==='catalog'||section==='operations'||section==='revision'||section==='history'||section==='statistics'?'warehouse':section==='accounts'?'staff':section
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'

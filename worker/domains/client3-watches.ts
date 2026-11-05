@@ -16,7 +16,6 @@ import {getWatchSharedCash,setupWatchSharedCash,writeWatchSharedCash,setWatchSha
 import {listClient3WatchTeam,saveClient3WatchEmployee,setClient3WatchEmployeeActive,listClient3WatchTimesheet,saveClient3WatchTimesheet,listClient3WatchTeamSalary,listClient3WatchTeamActivity} from './client3-watch-team-main.ts'
 import {listClient3WatchPlans,saveClient3WatchPlan,deleteClient3WatchPlan,listClient3WatchLeads,saveClient3WatchLead,deleteClient3WatchLead} from './client3-watch-plans-leads.ts'
 import {updateClient3WatchCatalogPrice} from './client3-watch-pricing.ts'
-import {listLegacyClient3Orders} from './client3-watch-legacy.ts'
 import {countClient3WatchStock,countClient3WatchStockBatch} from './client3-watch-stocktake.ts'
 import {getClient3WatchRevision,startClient3WatchRevision,changeClient3WatchRevision} from './client3-watch-revision-session.ts'
 import {applyClient3WatchBulkOperation} from './client3-watch-bulk.ts'
@@ -698,7 +697,6 @@ export async function routeClient3Watches(
     if(scope.error)return scope.error
     return dispatchClient3WatchOrder(db,actor,scope.row!.id,Number(sendMatch[1]),input)
   }
-  if(url.pathname==='/api/client3/watches/legacy-orders'&&request.method==='GET')return listLegacyClient3Orders(db,actor)
   if(url.pathname==='/api/client3/watches/plans'&&request.method==='GET'){
     const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
     if(scope.error)return scope.error
