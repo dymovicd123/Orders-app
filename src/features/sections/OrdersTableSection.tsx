@@ -1493,7 +1493,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {line.color||line.size||line.material||line.length ? ' · ' : ''}
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
                                 {' · '}{line.dispatchPriorIssued
-                                  ? 'Выдан ранее · подтвердить отправку без списания'
+                                  ? 'По учёту уже выдан · отправка без повторного списания'
                                   : line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
                               </small>
                             </div>
@@ -1509,7 +1509,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         {(dispatchDraft.plan?.lines||[]).length===0 ? <p>В заказе нет товаров для отправки.</p> : null}
                         {dispatchDraft.plan?.canConfirmIssuedOnly ? (
                           <div style={{marginTop:16}}>
-                            <p>Все товары уже выданы со склада. Их не нужно списывать повторно. Подтвердите только отправку клиенту.</p>
+                            <p>По учётным записям товары ранее выдали со склада или отметили выданными при ревизии. Это само по себе не подтверждает отправку клиенту. Если товары действительно отправлены, отметьте отправку здесь; повторного списания не будет.</p>
                             <button className="primary" type="button"
                               disabled={dispatchDraft.submitting}
                               onClick={confirmIssuedOnlyDispatch}>

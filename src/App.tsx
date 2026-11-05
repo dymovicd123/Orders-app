@@ -6980,7 +6980,7 @@ function removeDebtPayment(index: number) {
     if (action === 'issue_now') {
       confirmText = `Выдать клиенту сейчас: «${item.productName}» × ${item.quantity} (${sourceName})?\n\nСистема зафиксирует выдачу ${item.quantity} шт. и обновит остаток. Если по учёту товара окажется меньше, система отдельно попросит подтвердить только выдаваемые вещи. Сам заказ останется «Не отправлен», пока остальные товары не готовы.`
     } else if (action === 'issued_before_checkpoint') {
-      confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} клиент уже получил «${item.productName}»?\n\nЕсли да, физический остаток не изменится и повторного списания не будет.`
+      confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} клиент уже получил «${item.productName}»?\n\nЭто уточнение факта по словам сотрудника для складского учёта, а не подтверждение отправки всего заказа. Резерв закроется, но физический остаток повторно не уменьшится. Отправку клиенту отмечают отдельно.`
     } else {
       confirmText = `На момент ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} «${item.productName}» ещё находился в точке?\n\nЕсли да, резерв останется и товар спишется только при фактической выдаче.`
     }
@@ -7056,7 +7056,7 @@ function removeDebtPayment(index: number) {
       if (action === 'issue_now') {
         setMessage(`«${item.productName}» выдан клиенту. При окончательной отправке заказа этот товар второй раз не спишется.`)
       } else if (action === 'issued_before_checkpoint') {
-        setMessage(`«${item.productName}»: подтверждено, что товар уже был у клиента. Остаток не изменён, повторного списания не будет.`)
+        setMessage(`«${item.productName}»: сохранён ответ о выдаче до проверки. Резерв закрыт, физический остаток повторно не изменён. Отправка заказа отдельно не подтверждена.`)
       } else {
         setMessage(`«${item.productName}»: подтверждено, что во время ${item.checkpointKind === 'revision' ? 'ревизии' : 'сверки'} ${checkpointDate} товар ещё находился у вас.`)
       }
@@ -8626,7 +8626,7 @@ function removeDebtPayment(index: number) {
                   {stockHandoverData?.orderDate ? <span>Заказ от {handoverCheckpointDateLabel(stockHandoverData.orderDate)}</span> : null}
                   {stockHandoverData?.orderCreatedAt ? <span>Внесён в систему {handoverDateTimeLabel(stockHandoverData.orderCreatedAt)}</span> : null}
                 </div>
-                <p>Для старых заказов после ревизии сначала уточните, где была вещь в день пересчёта. Это не новая ревизия: ответ касается только выбранного заказа. Остатки других товаров не меняются.</p>
+                <p>Уточнение после ревизии исправляет учёт резерва на основании ответа сотрудника. Оно не устанавливает статус «Отправлен» и не доказывает доставку клиенту. Остатки других товаров не меняются.</p>
               </div>
               <button className="secondary compact" type="button" onClick={closeOrderStockHandover} disabled={stockHandoverActionItemId !== null}>Закрыть</button>
             </div>
@@ -8670,8 +8670,8 @@ function removeDebtPayment(index: number) {
 
                         {item.state === 'already_issued' ? (
                           <div className="order-stock-handover-result is-done">
-                            <strong>Уже выдано клиенту.</strong>
-                            <span>{item.reviewDecision === 'issued_before_checkpoint' ? `Подтверждено, что товар был у клиента до ${checkpointWord} ${handoverCheckpointDateLabel(item.reviewedCheckpointAt || item.checkpointAt)}. Физический остаток второй раз не уменьшался.` : 'При окончательной отправке заказа этот товар второй раз не спишется.'}</span>
+                            <strong>По учёту выдача уже отмечена.</strong>
+                            <span>{item.reviewDecision === 'issued_before_checkpoint' ? `Сотрудник отметил выдачу до ${checkpointWord} ${handoverCheckpointDateLabel(item.reviewedCheckpointAt || item.checkpointAt)}. Резерв закрыт, физический остаток второй раз не уменьшался. Это не подтверждение отправки заказа.` : 'При окончательной отправке заказа этот товар второй раз не спишется.'}</span>
                           </div>
                         ) : item.state === 'handover_review' ? (
                           <div className="order-stock-handover-legacy-choice">
@@ -8679,7 +8679,7 @@ function removeDebtPayment(index: number) {
                               <strong>К моменту {checkpointWord} {checkpointDate} товар уже был у клиента?</strong>
                               <span>{item.reviewReason === 'late_entry' ? 'Заказ внесли в систему после проверки за более раннюю дату.' : 'После оформления заказа была физическая проверка. Уточните, где находилась вещь в тот день.'}</span>
                               {item.itemCreatedAt ? <span>Позиция в учёте с {handoverDateTimeLabel(item.itemCreatedAt)}.</span> : null}
-                              <span>Выбирайте по факту, а не по статусу в программе. Если вещь выдали до проверки, резерв закроется без повторного списания. Если на момент проверки вещь ещё была на месте, резерв сохранится до подтверждения отправки.</span>
+                              <span>Отмечайте только то, что известно по факту. Ответ «выдали до проверки» закрывает резерв без повторного списания, но НЕ отмечает заказ отправленным. Если вещь была на месте, резерв сохраняется до отправки.</span>
                             </div>
                             <div className="order-stock-handover-choice-grid">
                               <button
@@ -8688,7 +8688,7 @@ function removeDebtPayment(index: number) {
                                 disabled={stockHandoverActionItemId !== null}
                                 onClick={() => void runOrderStockHandoverAction(item, 'issued_before_checkpoint')}
                               >
-                                <strong>Да, выдали до проверки</strong>
+                                <strong>Да, клиент получил до проверки</strong>
                                 <span>Закрыть резерв, не уменьшать остаток повторно</span>
                               </button>
                               <button
