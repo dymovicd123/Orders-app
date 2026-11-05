@@ -1,0 +1,36 @@
+name: Client3 order edit/delete schema preflight (read-only)
+on:
+  push:
+    branches: [release/client3-orders-editor-delete-20261105]
+    paths: ['.github/workflows/client3-orders-schema-preflight-20261105.yml']
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Check original Client3 D1 schema and FK only, no writes
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='admin_order_delete_sagas') sagas,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='admin_order_delete_saga_steps') saga_steps,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='critical_operations') critical_operations,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='watch_variant_attributes_v6') v6,
+            (SELECT COUNT(*) FROM pragma_table_info('payments') WHERE name='payment_kind') payment_kind,
+            (SELECT COUNT(*) FROM pragma_table_info('orders') WHERE name='manager_snapshot_name') manager_snapshot,
+            (SELECT COUNT(*) FROM orders) order_count" | tee /tmp/client3-schema.json
+          npx wrangler d1 execute orders_db_client3_old_client --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          echo CLIENT3_EDIT_DELETE_SCHEMA_PREFLIGHT_READONLY_PASS
