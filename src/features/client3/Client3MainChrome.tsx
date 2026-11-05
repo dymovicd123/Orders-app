@@ -34,7 +34,7 @@ import '../../styles/195-kaspi-orders.css'
 import '../../styles/client3-main-chrome.css'
 import '../../styles/client3-order-toast.css'
 
-export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+export type WatchMainRoute='dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'returns'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'finance'|'staff'|'accounts'|'legacy'|'references'
 type User={id:number;role:string;employeeRole?:string;displayName?:string;login?:string}
 const nav=[
   {route:'dashboard',module:'dashboard',label:'Инфопанель'},
@@ -54,17 +54,16 @@ const titles:Record<WatchMainRoute,{title:string;subtitle:string}>={
   reports:{title:'Отчёты',subtitle:'Оплаты, менеджеры, часы, города и долги'},
   plan:{title:'План',subtitle:'Денежные планы отдела и менеджеров — без KPI'},
   leads:{title:'Лиды',subtitle:'Журналы лидов и Call Centre'},
-  orders:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
+  orders:{title:'Заказы',subtitle:'Список, создание и возвраты'},
   clients:{title:'Клиенты',subtitle:'Покупатели, история заказов и долги'},
-  create:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
-  returns:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
+  create:{title:'Заказы',subtitle:'Список, создание и возвраты'},
+  returns:{title:'Заказы',subtitle:'Список, создание и возвраты'},
   logistics:{title:'Логистика',subtitle:'Гравировка, готовность и сроки отправки'},
   warehouse:{title:'Склад',subtitle:'Остатки, операции и товары'},
   operations:{title:'Склад',subtitle:'Остатки, операции и товары'},
   revision:{title:'Склад',subtitle:'Ревизия: проверка количества и сохранение результатов'},
   history:{title:'Склад',subtitle:'История складских движений'},
   statistics:{title:'Склад',subtitle:'Статистика продаж часов по комплектациям'},
-  exchange:{title:'Заказы',subtitle:'Список, создание, возвраты и обмены'},
   catalog:{title:'Склад',subtitle:'Остатки, операции и товары'},
   finance:{title:'Финансы',subtitle:'Движение денег по брендам'},
   staff:{title:'Команда',subtitle:'Сотрудники и доступ к брендам'},
@@ -82,7 +81,7 @@ export function Client3MainChrome({user,section,onNavigate,onLogout,onRefresh,bu
     return ()=>document.body.classList.remove('mobile-nav-open')
   },[mobileNavOpen])
   const isAdmin=user.role==='admin'
-  const current=section==='create'||section==='returns'||section==='exchange'||section==='legacy'?'orders':
+  const current=section==='create'||section==='returns'||section==='legacy'?'orders':
     section==='catalog'||section==='operations'||section==='revision'||section==='history'||section==='statistics'?'warehouse':section==='accounts'?'staff':section
   const meta=titles[section]
   const display=user.displayName||'Сотрудник'

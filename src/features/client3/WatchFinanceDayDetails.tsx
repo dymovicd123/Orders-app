@@ -11,8 +11,7 @@ type Method={method:string;incoming:number;outgoing:number;net:number}
 type Ledger={ok:boolean;message?:string;rows:Row[];totals:Totals;methods:Method[];hasMore:boolean}
 const operation:Record<string,string>={
  order_payment:'Оплата заказа',debt_close:'Закрытие долга',order_extra:'Доплата',
- exchange_extra:'Доплата за обмен',order_refund:'Возврат денег',
- exchange_refund:'Возврат при обмене',payment_correction:'Исправление оплаты',
+ order_refund:'Возврат денег',payment_correction:'Исправление оплаты',
 }
 function recorded(value:string|null){
  if(!value)return 'Время не сохранено'

@@ -52,7 +52,7 @@ export async function previewClient3AdminOrderDelete(
    return json({ok:true,brandId,orderId,mainPreview:{...preview,reasons,canStartChain:preview.canStartChain&&!hasDispatch},preview:{
      externalId:preview.externalId,totalAmount:Number(order.total_amount||0),
      receivedAmount:preview.receivedAmount,returnedAmount:preview.returnAmount,
-     activeReturns:preview.activeReturns.length,activeExchanges:preview.activeExchanges.length,
+     activeReturns:preview.activeReturns.length,
      issuedItems:preview.issuedItemCount,paymentCount:preview.paymentCount,
      reasons,explanations:preview.explanations,canDelete:safe,
      canStartChain:preview.canStartChain&&!hasDispatch,canPreparePhysicalCorrection:preview.canPreparePhysicalCorrection&&!hasDispatch,
@@ -96,7 +96,7 @@ export async function deleteClient3AdminOrder(
 
 /** Client3 brand-scoped gateway for Main's persistent, step-by-step delete saga.
  * This is never a bulk SQL deletion. Each call can cancel at most one dependent
- * Return/Exchange; Main rechecks its own current snapshot and journal. */
+ * Returns; Main rechecks its own current snapshot and journal. */
 export async function client3AdminDeleteChain(
  db:D1Database,actor:AuthUser,brandId:number,orderId:number,
  method:'GET'|'POST',input:{requestId?:unknown;expectedSnapshot?:unknown;physicalOutcome?:unknown}={},
@@ -185,13 +185,12 @@ export async function reassignClient3AdminOrderManager(
    return error('WATCH_MANAGER_EDIT_LIFECYCLE','После отправки ответственного исправляют отдельной сверкой.',409)
  const [operations,prices]=await Promise.all([
    db.prepare(`SELECT
-     (SELECT COUNT(*) FROM returns WHERE order_id=? AND status<>'cancelled') AS returns_count,
-     (SELECT COUNT(*) FROM exchanges WHERE order_id=? AND status<>'cancelled') AS exchanges_count`)
-       .bind(orderId,orderId).first<{returns_count:number;exchanges_count:number}>(),
+     (SELECT COUNT(*) FROM returns WHERE order_id=? AND status<>'cancelled') AS returns_count`)
+       .bind(orderId).first<{returns_count:number}>(),
    db.prepare(`SELECT COALESCE(SUM(line_total),0) AS total
      FROM order_items WHERE order_id=? AND quantity>0`).bind(orderId).first<{total:number}>(),
  ])
- if(Number(operations?.returns_count||0)+Number(operations?.exchanges_count||0)>0||
+ if(Number(operations?.returns_count||0)>0||
    Number(prices?.total)!==Number(order.total_amount))
    return error('WATCH_MANAGER_EDIT_HISTORY','История заказа требует сверки перед переносом менеджера.',409)
  try{

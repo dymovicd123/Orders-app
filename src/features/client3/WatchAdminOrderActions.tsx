@@ -83,7 +83,7 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
    const changedMethod=method.trim().toLocaleUpperCase('ru-RU')!==original.method.toLocaleUpperCase('ru-RU')
    if(!changedOther&&!changedMethod){setError('Изменений нет.');return}
    if(changedOther&&(linkedOperations||original.kind==='extra')){
-     setError('После обмена или возврата, а также для доплаты обмена, отдельно разрешено исправить только способ оплаты.');return
+     setError('После возврата допускается отдельно исправить только способ оплаты.');return
    }
    const url='/api/client3/watches/orders/'+orderId+
      (changedOther?'/recorded-payment':'/payment-method')
@@ -129,7 +129,7 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
    {mode==='payment'&&<form className="watch-admin-action-form" onSubmit={e=>void savePayment(e)}>
      <strong>Редактирование проведённой оплаты · Main</strong>
      <p>{linkedOperations
-       ?'В заказе есть возвраты или обмены: отдельно исправляется только способ оплаты. Изменение финансовой цепочки выполняется через соответствующую операцию.'
+       ?'В заказе есть возвраты: отдельно исправляется только способ оплаты. Изменение финансовой цепочки выполняется через операцию возврата.'
        :'Администратор может исправить дату, сумму, способ, назначение и комментарий проведённой оплаты. Изменения проверяются финансовым ядром Main; новые оплаты оформляются отдельно.'}</p>
      <label>Проведённая оплата
        <select required value={chosenPayment} onChange={e=>selectPayment(payments.find(x=>x.id===Number(e.target.value)))}>
@@ -160,7 +160,7 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
            onChange={e=>setPaymentDraft(p=>({...p,kind:e.target.value}))}>
            <option value="primary">Первичная оплата</option>
            <option value="debt_close">Закрытие долга</option>
-           {paymentDraft.kind==='extra'&&<option value="extra">Доплата за обмен (только способ)</option>}
+           {paymentDraft.kind==='extra'&&<option value="extra">Дополнительная оплата (ранее проведена)</option>}
          </select>
        </label>
        <label className="watch-admin-payment-comment">Комментарий

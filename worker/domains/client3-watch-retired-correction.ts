@@ -25,15 +25,8 @@ export async function cancelRetiredWatchDispatch(db:D1Database,brandId:number,or
      j.quantity AS journal_qty,j.retired_variant_id,
      (SELECT COUNT(*) FROM return_items ri JOIN returns r ON r.id=ri.return_id
        WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled') AS returns,
-     (SELECT COUNT(*) FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
-       WHERE ei.order_item_id=oi.id AND ei.role='old'
-         AND COALESCE(e.status,'completed')<>'cancelled') AS old_exchanges,
      (SELECT COUNT(*) FROM order_dispatch_items di2 WHERE di2.order_item_id=oi.id
-       AND di2.id<>di.id AND di2.quantity>COALESCE(di2.cancelled_quantity,0)) AS other_dispatch,
-     (SELECT le.id FROM inventory_lifecycle_events le
-       WHERE le.order_id=oi.order_id AND le.order_item_id=oi.id
-         AND le.operation_type='exchange' AND le.event_type='exchange_new_out'
-         AND le.status='applied' AND le.movement_id IS NULL LIMIT 1) AS replacement_event
+       AND di2.id<>di.id AND di2.quantity>COALESCE(di2.cancelled_quantity,0)) AS other_dispatch
    FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
    JOIN order_items oi ON oi.id=di.order_item_id AND oi.order_id=d.order_id
    JOIN watch_order_details wd ON wd.order_id=d.order_id
@@ -48,9 +41,9 @@ export async function cancelRetiredWatchDispatch(db:D1Database,brandId:number,or
     toInt(line.variant_id,0)!==toInt(line.retired_variant_id,0)||
     toInt(line.journal_qty,0)!==toInt(line.quantity,0)||
     line.stock_writeoff_status!=='retired_physically_issued'||
-    toInt(line.returns,0)>0||toInt(line.old_exchanges,0)>0||
+    toInt(line.returns,0)>0||
     toInt(line.other_dispatch,0)>0)
-   stop('Архивная отправка изменилась или участвует в возврате/обмене. Исправление остановлено.')
+   stop('Архивная отправка изменилась или участвует в возврате. Исправление остановлено.')
  const stamp=new Date().toISOString()
  const last=await db.prepare(`SELECT MAX(d.dispatch_date) AS date
    FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
@@ -68,9 +61,6 @@ export async function cancelRetiredWatchDispatch(db:D1Database,brandId:number,or
          AND di.quantity=oi.quantity AND oi.stock_writeoff_status='retired_physically_issued'
          AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
            WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
-         AND NOT EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
-           WHERE ei.order_item_id=oi.id AND ei.role='old'
-             AND COALESCE(e.status,'completed')<>'cancelled')
          AND EXISTS(SELECT 1 FROM retired_order_item_issues j WHERE j.order_item_id=oi.id
            AND j.retired_variant_id=oi.variant_id AND j.quantity=oi.quantity)
      )`).bind(stamp,id,orderId),
@@ -92,12 +82,6 @@ export async function cancelRetiredWatchDispatch(db:D1Database,brandId:number,or
      cancelled_at=?,cancel_actor=? WHERE id=?`)
      .bind(stamp,cleanText(input.actor),toInt(line.dispatch_id,0)),
  ]
- if(line.replacement_event)statements.push(db.prepare(`
-   UPDATE inventory_lifecycle_events SET status='pending',pending_reason='awaiting_dispatch',
-     applied_at=NULL,movement_id=NULL,resolution_comment=?,updated_at=?
-   WHERE id=? AND order_id=? AND order_item_id=? AND status='applied'
-     AND movement_id IS NULL`).bind('Исправлена отправка архивной замены без восстановления остатка',
-       stamp,toInt(line.replacement_event,0),orderId,toInt(line.order_item_id,0)))
  statements.push(db.prepare(retiredWatchShippingProjectionSql)
    .bind(last?.date||stamp.slice(0,10),stamp,orderId))
  try{await db.batch(statements)}catch(e){

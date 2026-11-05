@@ -141,12 +141,10 @@ export async function getClient3WatchAnalytics(
        THEN f.amount_delta ELSE 0 END),0) AS orderPayments,
      COALESCE(SUM(CASE WHEN f.amount_delta>0 AND f.event_type IN ('debt_close','order_extra')
        THEN f.amount_delta ELSE 0 END),0) AS debtClosures,
-     COALESCE(SUM(CASE WHEN f.amount_delta>0 AND f.event_type='exchange_extra'
-       THEN f.amount_delta ELSE 0 END),0) AS exchangeExtras,
      COALESCE(SUM(CASE WHEN f.amount_delta>0 THEN f.amount_delta ELSE 0 END),0) AS grossInflow,
-     COALESCE(-SUM(CASE WHEN f.amount_delta<0 AND f.event_type IN ('order_refund','exchange_refund')
+     COALESCE(-SUM(CASE WHEN f.amount_delta<0 AND f.event_type='order_refund'
        THEN f.amount_delta ELSE 0 END),0) AS refunds,
-     COALESCE(-SUM(CASE WHEN f.amount_delta<0 AND f.event_type NOT IN ('order_refund','exchange_refund')
+     COALESCE(-SUM(CASE WHEN f.amount_delta<0 AND f.event_type<>'order_refund'
        THEN f.amount_delta ELSE 0 END),0) AS otherOutflow,
      COALESCE(SUM(f.amount_delta),0) AS netMovement
      FROM financial_events f JOIN watch_order_details wd ON wd.order_id=f.order_id

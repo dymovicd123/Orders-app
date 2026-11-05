@@ -15,8 +15,6 @@ sql.exec([
 'CREATE TABLE payments(id INTEGER PRIMARY KEY,order_id INTEGER,payment_date TEXT,method TEXT,amount INTEGER,payment_kind TEXT);',
 'CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,status TEXT);',
 'CREATE TABLE return_items(id INTEGER PRIMARY KEY,return_id INTEGER,order_item_id INTEGER,quantity INTEGER,amount INTEGER DEFAULT 0,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
-'CREATE TABLE exchange_items(id INTEGER PRIMARY KEY,exchange_id INTEGER,order_item_id INTEGER,quantity INTEGER,role TEXT,physical_tracking INTEGER DEFAULT 0,physical_received_at TEXT);',
-'CREATE TABLE exchanges(id INTEGER PRIMARY KEY,order_id INTEGER,new_order_item_id INTEGER,refund_return_id INTEGER,status TEXT);',
 'CREATE TABLE order_dispatches(id INTEGER PRIMARY KEY,order_id INTEGER);',
 'CREATE TABLE order_dispatch_items(id INTEGER PRIMARY KEY,dispatch_id INTEGER,order_item_id INTEGER,quantity INTEGER,cancelled_quantity INTEGER);',
 'CREATE TABLE inventory_stock(id INTEGER PRIMARY KEY);',
@@ -48,7 +46,6 @@ sql.exec(`CREATE TABLE customers(id INTEGER PRIMARY KEY,display_name TEXT,phone_
  UPDATE order_items SET line_total=unit_price*quantity;`)
 sql.exec('ALTER TABLE payments ADD COLUMN comment TEXT')
 sql.exec('ALTER TABLE returns ADD COLUMN return_date TEXT')
-sql.exec('ALTER TABLE exchanges ADD COLUMN exchange_date TEXT')
 sql.exec('ALTER TABLE financial_events ADD COLUMN created_at TEXT')
 sql.exec(`CREATE TABLE IF NOT EXISTS watch_engraving_item_readiness (
  order_item_id INTEGER PRIMARY KEY,engraving_text TEXT NOT NULL
@@ -170,8 +167,6 @@ const historicalNotSent=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026
 const unissuedWatch=JSON.parse(historicalNotSent.rows[0].itemLines)[0]
 assert.equal(unissuedWatch.returnableQuantity,0,
  'An old order-wide sent marker alone cannot prove actual customer possession')
-assert.equal(unissuedWatch.exchangeableQuantity,1,
- 'Unissued watch may still be exchanged without physical intake')
 const pct=await query(alice,'brand=TAUWACH&q=%25')
 assert.equal(pct.rows.length,0,'Wildcard input may not expand beyond literal matches')
 const underscore=await query(alice,'brand=TAUWACH&q=_')
@@ -224,26 +219,5 @@ assert.deepEqual((await oldAdmin.json()).rows,[],'All fixture orders have watch 
 const oldManager=await routeClient3Watches(db,new Request(oldUrl),oldUrl,alice)
 assert.equal(oldManager.status,403)
 
-// Exchange Set V2 can create two replacements, neither of which need be
-// in the legacy exchanges.new_order_item_id pointer. The pending status must
-// depend on the actual new exchange_items links and dispatch quantities.
-sql.exec("INSERT INTO order_items(id,order_id,quantity,product_name_snapshot,unit_price,source_type,stock_writeoff_status,line_total) VALUES(104,3,1,'NEW WATCH A',35000,'warehouse','reserved',35000)")
-sql.exec("INSERT INTO order_items(id,order_id,quantity,product_name_snapshot,unit_price,source_type,stock_writeoff_status,line_total) VALUES(105,3,1,'NEW WATCH B',35000,'warehouse','reserved',35000)")
-sql.exec("INSERT INTO exchanges(id,order_id,new_order_item_id,status) VALUES(80,3,NULL,'completed')")
-sql.exec("INSERT INTO exchange_items(id,exchange_id,order_item_id,quantity,role) VALUES(81,80,104,1,'new'),(82,80,105,1,'new')")
-const pendingReplacement=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
-assert.equal(pendingReplacement.rows[0].pendingReplacement,1,
-  'Every unsent replacement in Main Exchange Set V2 must trigger the Client3 logistics action')
-assert.equal(pendingReplacement.rows[0].shippingStatus,'sent',
-  'Legacy sent marker does not hide replacement obligations')
-sql.exec("INSERT INTO order_dispatches(id,order_id) VALUES(90,3)")
-sql.exec("INSERT INTO order_dispatch_items VALUES(91,90,104,1,0)")
-const partiallySentReplacement=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
-assert.equal(partiallySentReplacement.rows[0].pendingReplacement,1,
-  'Sending the first replacement must not conceal the second')
-sql.exec("INSERT INTO order_dispatch_items VALUES(92,90,105,1,0)")
-const fullySentReplacement=await query(alice,'brand=TAUWACH&from=2026-10-01&to=2026-10-31')
-assert.equal(fullySentReplacement.rows[0].pendingReplacement,0,
-  'Pending Exchange Set replacement clears only after all replacements are shipped')
 sql.close()
 console.log('CLIENT3_WATCH_ORDERS_READ_PASS: scoped manager ledger, brand totals, date validation, pagination, search')

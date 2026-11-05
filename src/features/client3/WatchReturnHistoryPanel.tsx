@@ -9,7 +9,7 @@ type Item={
 }
 type Entry={
  id:number;date:string;amount:number;commercialGoodsValue:number;method:string;status:string;comment:string;
- parentExchangeId:number|null;items:string
+ items:string
 }
 type HistoryResponse={ok:boolean;rows:Entry[];message?:string}
 const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
@@ -73,7 +73,6 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
    {loading?<p>Загружаю историю…</p>:rows.length===0?<p>Возвратов по этому заказу нет.</p>:
      <div className="watch-return-history-list">{rows.map(row=>{
        const items=decodeItems(row.items)
-       const linked=Number(row.parentExchangeId||0)>0
        const cancelled=row.status==='cancelled'
        return <article className="watch-return-history-entry" key={row.id}>
          <header><div><strong>Возврат №{row.id}</strong><small>{row.date}</small></div>
@@ -82,8 +81,7 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
            {cancelled?'Отменённый коммерческий зачёт товара: ':'Уменьшение стоимости продажи: '}
            {money(row.commercialGoodsValue)}
          </small>}
-         <div className="watch-return-history-status">{cancelled?'Отменён':linked?
-           'Связан с обменом №'+row.parentExchangeId:'Действующий возврат'}</div>
+         <div className="watch-return-history-status">{cancelled?'Отменён':'Действующий возврат'}</div>
          {row.comment&&<p>{row.comment}</p>}
          {items.length>0?<div className="watch-return-history-items">
            {items.map(item=><div key={item.id}>
@@ -100,8 +98,7 @@ export function WatchReturnHistoryPanel({brand,orderId,onDone,onClose}:{
                'Без ожидания физической приёмки'}</small>
            </div>)}
          </div>:<small>Возврат только денег</small>}
-         {linked&&!cancelled&&<small>Отмена этого возврата отдельно запрещена. Управляйте цепочкой обмена.</small>}
-         {!cancelled&&!linked&&(selected===row.id?
+         {!cancelled&&(selected===row.id?
            <div className="watch-return-history-confirm">
              <label>Причина отмены
                <textarea rows={2} maxLength={500} value={reason} onChange={e=>{setReason(e.target.value);setConfirmed(false)}}/>

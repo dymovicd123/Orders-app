@@ -2,12 +2,12 @@ import {useEffect,useRef,useState} from 'react'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-admin-delete-chain.css'
 
-type Step={type:'return'|'exchange';id:number;order:number;reason:string;requiresManualReview:boolean}
+type Step={type:'return';id:number;order:number;reason:string;requiresManualReview:boolean}
 type Progress={requestId:string;status:string;nextStep:number;totalSteps:number;lastError?:string}
 type MainPreview={
  externalId:string;canAttemptDelete:boolean;canStartChain:boolean;
  canPreparePhysicalCorrection:boolean;requiresPhysicalFact:boolean;
- activeExchanges:number[];activeReturns:number[];issuedQuantity:number;
+ activeReturns:number[];issuedQuantity:number;
  paymentCount:number;receivedAmount:number;returnAmount:number;
  chainPlan:{snapshotFingerprint:string;steps:Step[];manualReviewRequired:boolean;
    blockers:string[];allOperationsAccountedFor:boolean};
@@ -143,15 +143,15 @@ export function WatchAdminDeleteChainPanel({brand,orderId,externalId,onDone,onCl
     <div><small>Долг</small><strong>{money(preview.impact?.debtAmount||0)}</strong></div>
     <div><small>Аннулирование оплат</small><strong>{money(preview.impact?.paymentReversal||0)}</strong></div>
     <div><small>Аннулирование возвратов</small><strong>{money(preview.impact?.refundReversal||0)}</strong></div>
-    <div><small>Обменов / возвратов</small>
-     <strong>{preview.activeExchanges.length} / {preview.activeReturns.length}</strong></div>
+    <div><small>Возвратов</small>
+     <strong>{preview.activeReturns.length}</strong></div>
     <div><small>Учётная выдача</small><strong>{preview.issuedQuantity} шт.</strong></div>
    </div>
    {preview.explanations?.map((s,i)=><p key={i} className="watch-admin-delete-info">{s}</p>)}
    {preview.chainPlan?.steps?.length>0&&<section className="watch-admin-delete-steps">
     <strong>Порядок отмены операций</strong>
     <ol>{preview.chainPlan.steps.map(s=><li key={s.type+':'+s.id}>
-     {s.type==='exchange'?'Обмен':'Возврат'} №{s.id} — {s.reason}
+     Возврат №{s.id} — {s.reason}
      {s.requiresManualReview&&<b> · требуется ручная проверка</b>}
     </li>)}</ol>
    </section>}

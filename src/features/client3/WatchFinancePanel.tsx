@@ -23,14 +23,13 @@ const moneyDate=(value:unknown)=>{
 }
 const operationLabel=(kind:unknown)=>({
  order_payment:'Оплата заказа',debt_close:'Закрытие долга',order_extra:'Доплата по заказу',
- exchange_extra:'Доплата по обмену',order_refund:'Возврат клиенту',
- exchange_refund:'Возврат при обмене',payment_correction:'Корректировка оплаты',
+ order_refund:'Возврат клиенту',payment_correction:'Корректировка оплаты',
 } as Record<string,string>)[String(kind||'')]||String(kind||'Денежное событие')
 const formats:{id:Mode;label:string;hint:string}[]=[
  {id:'summary',label:'Сводка',hint:'Чёткие итоги'},
  {id:'payments',label:'Операции',hint:'По дате операции'},
  {id:'debts',label:'Долги',hint:'Текущие и закрытые'},
- {id:'returns',label:'Возвраты / обмены',hint:'По дате операции'},
+ {id:'returns',label:'Возвраты',hint:'По дате операции'},
  {id:'cash',label:'Касса',hint:'Наличные сейчас'},
  {id:'methods',label:'Способы оплаты',hint:'Справочник оплат'},
 ]
@@ -195,8 +194,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
    finally{setCashBusy(false)}
  }
  const moneyRows=data?.events||[]
- const refunds=moneyRows.filter(row=>Number(row.amountDelta||0)<0)
- const exchanges=moneyRows.filter(row=>/exchange/i.test(String(row.eventType||'')))
+ const refunds=moneyRows.filter(row=>String(row.eventType)==='order_refund'&&Number(row.amountDelta||0)<0)
  const outstanding=data?.currentDebt.currentDebt||0
  const kinds=data?.kinds||[]
  const typeMoney=(kind:string,flow:'incoming'|'outgoing')=>
@@ -204,10 +202,8 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
      .reduce((total,row)=>total+Number(row[flow]||0),0)
  const orderPayments=typeMoney('order_payment','incoming')
  const debtPayments=typeMoney('debt_close','incoming')+typeMoney('order_extra','incoming')
- const exchangePayments=typeMoney('exchange_extra','incoming')
  const regularReturns=typeMoney('order_refund','outgoing')
- const exchangeReturns=typeMoney('exchange_refund','outgoing')
- const otherOutflow=Math.max(0,Number(data?.income.outgoing||0)-regularReturns-exchangeReturns)
+ const otherOutflow=Math.max(0,Number(data?.income.outgoing||0)-regularReturns)
  const auditTotal=Number(data?.income.incoming||0)
  const methodsTotal=(data?.methods||[]).reduce((n,row)=>n+Number(row.incoming||0),0)
  const kindsTotal=kinds.reduce((n,row)=>n+Number(row.incoming||0),0)
@@ -296,15 +292,13 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
            <div className="finance-truth-lines">
              <div><span>Оплаты заказов</span><strong>{watchMoney(orderPayments)}</strong></div>
              <div><span>Закрытие долгов</span><strong>{watchMoney(debtPayments)}</strong></div>
-             <div><span>Доплаты по обменам</span><strong>{watchMoney(exchangePayments)}</strong></div>
            </div>
          </article>
          <article className="finance-truth-card is-outflow">
            <div className="finance-truth-card-head"><span>Вернули клиентам</span><small>по дате возврата</small></div>
-           <div className="finance-truth-main">{watchMoney(regularReturns+exchangeReturns)}</div>
+           <div className="finance-truth-main">{watchMoney(regularReturns)}</div>
            <div className="finance-truth-lines">
-             <div><span>Обычные возвраты</span><strong>{watchMoney(regularReturns)}</strong></div>
-             <div><span>Возвраты при обменах</span><strong>{watchMoney(exchangeReturns)}</strong></div>
+             <div><span>Возвраты клиентам</span><strong>{watchMoney(regularReturns)}</strong></div>
              {otherOutflow>0&&<div><span>Другие списания</span><strong>{watchMoney(otherOutflow)}</strong></div>}
            </div>
          </article>
@@ -515,27 +509,24 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
 
    {mode==='returns'&&<div className="finance-truth-content">
      <section className="mini-panel">
-       <div className="mini-panel-head"><div><h3>Возвраты и обмены</h3>
+       <div className="mini-panel-head"><div><h3>Возвраты</h3>
          <p className="mini-panel-note">Деньги учитываются по дате возврата или доплаты. Физическое получение часов учитывается на складе отдельно.</p>
        </div></div>
        <div className="summary-grid compact-summary">
-         <div className="summary-card danger-card"><span>Обычные возвраты</span><strong>{watchMoney(regularReturns)}</strong></div>
-         <div className="summary-card danger-card"><span>Возвраты при обменах</span><strong>{watchMoney(exchangeReturns)}</strong></div>
-         <div className="summary-card"><span>Доплаты при обменах</span><strong>{watchMoney(exchangePayments)}</strong></div>
+         <div className="summary-card danger-card"><span>Возвраты клиентам</span><strong>{watchMoney(regularReturns)}</strong></div>
          <div className="summary-card"><span>Другие списания</span><strong>{watchMoney(otherOutflow)}</strong></div>
        </div>
      </section>
      <section className="mini-panel">
-       <div className="mini-panel-head"><div><h3>Денежная история возвратов и обменов</h3>
-         <p className="mini-panel-note">Операции с отрицательной суммой — деньги, вернувшиеся клиенту. Положительные доплаты при обменах показаны отдельно.</p></div>
-         <span className="soft-badge">{refunds.length+exchanges.filter(x=>Number(x.amountDelta)>=0).length} загруженных событий</span>
+       <div className="mini-panel-head"><div><h3>Денежная история возвратов</h3>
+         <p className="mini-panel-note">Здесь показаны фактические денежные возвраты клиентам по дате операции.</p></div>
+         <span className="soft-badge">{refunds.length} загруженных событий</span>
        </div>
-       <LinkedTableScroll ariaLabel="Возвраты и обмены"><table className="data-table strict-report-table">
+       <LinkedTableScroll ariaLabel="Возвраты"><table className="data-table strict-report-table">
          <thead><tr><th>Дата события</th><th>Заказ</th><th>Клиент / менеджер</th>
            <th>Денежное событие</th><th>Способ</th><th>Комментарий</th>
            <th className="num">Сумма</th><th>Действие</th></tr></thead>
-         <tbody>{moneyRows.filter(row=>Number(row.amountDelta||0)<0||
-             /exchange/i.test(String(row.eventType||''))).map(row=>
+         <tbody>{refunds.map(row=>
            <tr key={String(row.id)}>
              <td>{moneyDate(row.eventDate)}</td><td>{String(row.externalOrderId||'—')}</td>
              <td>{String(row.customer||'—')}<small className="mini-panel-note">{String(row.manager||'—')}</small></td>
@@ -686,7 +677,7 @@ export function WatchFinancePanel({brands,isAdmin=false,onOpenReferences,onOpenO
    </section>}
    {mode==='methods'&&<section className="mini-panel finance-methods-panel finance-tab-content">
      <div className="mini-panel-head"><div><h3>Способы оплаты</h3>
-       <p className="mini-panel-note">Единый справочник для заказов, закрытия долгов и обменов двух брендов. Изменять может только администратор. Касса общая, но финансовые отчёты разделены.</p>
+       <p className="mini-panel-note">Единый справочник для заказов, закрытия долгов и возвратов двух брендов. Изменять может только администратор. Касса общая, но финансовые отчёты разделены.</p>
      </div><button className="secondary compact" type="button" disabled={paymentBusy}
        onClick={()=>setPaymentReload(n=>n+1)}>{paymentBusy?'Загружаем…':'Обновить'}</button></div>
      {paymentError&&<p role="alert" className="app-alert error">{paymentError}</p>}

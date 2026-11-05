@@ -36,7 +36,7 @@ type BrandResponse = { ok: boolean; brands: Array<{ code: WatchBrand; name: stri
 type ModelResponse = { ok: boolean; models: WatchOrderChoice[]; message?: string }
 type ManagerChoice = {brand: WatchBrand;id:number;name:string}
 type ManagerResponse = {ok:boolean;managers:Array<{id:number;name:string}>;message?:string}
-type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'returns'|'exchange'|'finance'|'staff'|'accounts'|'legacy'|'references'
+type WatchSection = 'dashboard'|'reports'|'plan'|'leads'|'clients'|'orders'|'create'|'logistics'|'warehouse'|'operations'|'revision'|'history'|'statistics'|'catalog'|'returns'|'finance'|'staff'|'accounts'|'legacy'|'references'
 const sectionMeta:Record<WatchSection,{title:string;description:string;area:string}>={
   dashboard:{title:'Инфопанель',description:'Продажи, деньги и внимание к срокам логистики.',area:'Обзор'},
   reports:{title:'Отчёты',description:'Брендовые отчёты Main по оплатам, товарам, городам и менеджерам.',area:'Финансы'},
@@ -48,12 +48,11 @@ const sectionMeta:Record<WatchSection,{title:string;description:string;area:stri
   logistics:{title:'Логистика',description:'Гравировка, сроки исполнения и подготовка к отправке.',area:'Рабочие процессы'},
   warehouse:{title:'Склад',description:'Реальные остатки, резервы и складские операции.',area:'Товары и склад'},
   catalog:{title:'Каталог товаров',description:'Модели, комплектации и каталожные цены.',area:'Товары и склад'},
-  exchange:{title:'Обмен часов',description:'Полная замена одной позиции без изменения цены.',area:'Продажи'},
   operations:{title:'Операции склада',description:'Приход, списание, перемещение и пересчёт.',area:'Товары и склад'},
   revision:{title:'Ревизия',description:'Полная и выборочная проверка часов с сохранением прогресса.',area:'Товары и склад'},
   history:{title:'История склада',description:'Реальные движения товаров по брендам и точкам.',area:'Товары и склад'},
   statistics:{title:'Статистика склада',description:'Продажи по моделям, комплектациям и фактическим ценам.',area:'Товары и склад'},
-  returns:{title:'Приём возвратов',description:'Физическое поступление часов после возврата или обмена.',area:'Рабочие процессы'},
+  returns:{title:'Приём возвратов',description:'Физическое поступление часов после возврата.',area:'Рабочие процессы'},
   finance:{title:'Финансы',description:'Движение денежных средств и итоги продаж по брендам.',area:'Финансы'},
   staff:{title:'Команда',description:'Сотрудники, табель, доступ, планы и отчёты как в Main.',area:'Администрирование'},
   accounts:{title:'Учётные записи',description:'Доступ сотрудников и управление администраторами.',area:'Администрирование'},
@@ -139,7 +138,10 @@ export function WatchClient3App() {
   useEffect(()=>{
     const syncHash=()=>{
       const section=window.location.hash.slice(1) as WatchSection
-      if(sections.includes(section))setTab(section)
+      if(section==='exchange'){
+        setTab('orders')
+        window.history.replaceState(null,'','#orders')
+      }else if(sections.includes(section))setTab(section)
     }
     syncHash()
     window.addEventListener('hashchange',syncHash)
@@ -335,11 +337,11 @@ export function WatchClient3App() {
   }
   const activeSection:WatchSection=
     (!canAdmin&&['legacy','accounts','staff'].includes(tab))||
-    (!canSales&&['dashboard','reports','plan','leads','clients','orders','create','finance','returns','exchange'].includes(tab))||
+    (!canSales&&['dashboard','reports','plan','leads','clients','orders','create','finance','returns'].includes(tab))||
     (!canSeeWarehouse&&['warehouse','operations','revision','history','statistics','catalog','references'].includes(tab))
       ? (isWarehouseRole?'warehouse':'logistics'):tab
   const orderTab=activeSection==='create'?'create':activeSection==='returns'?'returns':
-    activeSection==='exchange'?'exchange':activeSection==='legacy'?'activity':'list'
+    activeSection==='legacy'?'activity':'list'
   const viewModels=(brand&&models)||[]
   return <Client3MainChrome
     user={user}
@@ -367,21 +369,20 @@ export function WatchClient3App() {
           }}/>}
       {activeSection==='clients'&&brands.length>0&&<WatchClientsPanel brands={brands.map(x=>x.code)}
         onOpenOrder={order=>{setReportOrderFocus(order);setLastOrderBrand(order.brand);goTo('orders')}}/>}
-      {['orders','create','returns','exchange','legacy'].includes(activeSection)&&<>
+      {['orders','create','returns','legacy'].includes(activeSection)&&<>
         <OrdersHeaderSection ctx={{
           orderPanel:orderTab,
           orderPanelOptions:orderPanelOptions.filter(panel=>
-            ['list','create','returns','exchange'].includes(panel.kind)||
+            ['list','create','returns'].includes(panel.kind)||
             (canAdmin&&panel.kind==='activity'))
-            .map(panel=>panel.kind==='exchange'?{...panel,label:'Обмен'}:
-              panel.kind==='returns'?{...panel,label:'Возвраты'}:
+            .map(panel=>panel.kind==='returns'?{...panel,label:'Возвраты'}:
               panel.kind==='activity'?{...panel,label:'Исторические заказы'}:panel),
           returnHistorySummary:{pendingPhysicalQuantity:0},
           exchangeHistorySummary:{pendingPhysicalQuantity:0},
           sectorStyle:()=>({}),
           setEditorOpen:()=>{},
           setOrderPanel:(panel:string)=>goTo(panel==='create'?'create':
-            panel==='returns'?'returns':panel==='exchange'?'exchange':
+            panel==='returns'?'returns':
             panel==='activity'?'legacy':'orders'),
         }}/>
         {activeSection==='orders'?(brands.length?
@@ -391,8 +392,8 @@ export function WatchClient3App() {
             allowedBrands={brands.map(x=>x.code)}
             isAdmin={canAdmin}
             onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}
-            onOpenWorkflow={(kind,order)=>{setReportOrderFocus(order);setLastOrderBrand(order.brand);
-              goTo(kind==='returns'?'returns':'exchange')}}/>:
+            onOpenWorkflow={(_,order)=>{setReportOrderFocus(order);setLastOrderBrand(order.brand);
+              goTo('returns')}}/>:
           <article className="card wide">Бренды ещё не загружены или доступ не назначен.</article>):
         activeSection==='create'?
           <section className="watch-shell-create-page">
@@ -405,7 +406,7 @@ export function WatchClient3App() {
           </section>:
         activeSection==='returns'?<>
           <article className="card wide"><div className="card-label">Возвраты</div>
-            <div className="card-meta">Для оформления возврата выберите исходный заказ во вкладке «Все заказы». Ниже находится очередь физической приёмки возвратов и старых часов после обмена.</div>
+            <div className="card-meta">Для оформления возврата выберите исходный заказ во вкладке «Все заказы». Ниже находится очередь физической приёмки возвращённых часов, включая ранее оформленные операции.</div>
             <button type="button" className="secondary compact" onClick={()=>goTo('orders')}>Открыть заказы</button></article>
           {brands.length>0&&<WatchOrdersPanel workflow="returns"
             key={'return-orders-'+catalogVersion+'-'+(reportOrderFocus?.orderId||0)}
@@ -415,17 +416,6 @@ export function WatchClient3App() {
             onOpenOrders={()=>goTo('orders')}/>}
           {brands.length&&<WatchReturnsPanel key={'returns-'+catalogVersion+'-'+brand}
             brands={brands.map(x=>x.code)} initialBrand={reportOrderFocus?.brand||brand||undefined}/>}
-        </>:
-        activeSection==='exchange'?<>
-          <article className="card wide"><div className="card-label">Обмены</div>
-            <div className="card-meta">Выберите заказ и нажмите «Обменять часы». Обмен доступен и для ещё неотправленных позиций, и для часов у клиента. Физический приём требуется только для фактически выданных часов.</div></article>
-          {brands.length&&<WatchOrdersPanel workflow="exchange"
-            key={'exchange-'+catalogVersion+'-'+(reportOrderFocus?.orderId||0)}
-            initialBrand={reportOrderFocus?.brand||lastOrderBrand||undefined}
-            initialFocusedOrder={reportOrderFocus||undefined}
-            allowedBrands={brands.map(x=>x.code)}
-            isAdmin={canAdmin} onOpenOrders={()=>goTo('orders')}
-            onOpenLogistics={selected=>{setBrand(selected);goTo('logistics')}}/>}
         </>:
         canAdmin?<WatchLegacyOrdersPanel/>:null}
       </>}

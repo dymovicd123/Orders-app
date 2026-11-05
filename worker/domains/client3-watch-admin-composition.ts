@@ -83,14 +83,13 @@ export async function rewriteClient3AdminWatchItems(
  }
  const linked=await db.prepare(`SELECT
    (SELECT COUNT(*) FROM returns WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled') AS returnCount,
-   (SELECT COUNT(*) FROM exchanges WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled') AS exchangeCount,
    (SELECT COUNT(*) FROM inventory_reservations WHERE order_id=? AND status='fulfilled') AS handovers,
    (SELECT COUNT(*) FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
      WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)) AS sentCount
- `).bind(orderId,orderId,orderId,orderId).first<Record<string,number>>()
- if(Number(linked?.returnCount||0)+Number(linked?.exchangeCount||0)+
+ `).bind(orderId,orderId,orderId).first<Record<string,number>>()
+ if(Number(linked?.returnCount||0)+
    Number(linked?.handovers||0)+Number(linked?.sentCount||0)>0)
-   return fail('WATCH_REWRITE_LIFECYCLE','Есть отправленные товары, возвраты или обмены. Изменение состава заблокировано.',409)
+   return fail('WATCH_REWRITE_LIFECYCLE','Есть отправленные товары или возвраты. Изменение состава заблокировано.',409)
  if(existing.reduce((sum,row)=>sum+Number(row.quantity)*Number(row.unitPrice),0)!==
     Number(belongs.total_amount))
    return fail('WATCH_REWRITE_MONEY','Итог заказа не совпадает с действующим составом. Нужна сверка.',409)

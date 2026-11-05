@@ -23,14 +23,6 @@ export const WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL = `COALESCE((
     AND ri.physical_tracking=1 AND ri.physical_received_at IS NULL
 ),0)`
 
-export const WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL = `COALESCE((
-  SELECT SUM(ei.quantity)
-  FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
-  WHERE ei.order_item_id=oi.id AND ei.role='old'
-    AND COALESCE(e.status,'completed')<>'cancelled'
-    AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
-),0)`
-
 // Before the dispatch ledger existed, Main recorded a confirmed physical
 // handover as fulfilled. This is not a reservation or an order-wide status.
 export const WATCH_ITEM_ISSUED_SQL = `(CASE

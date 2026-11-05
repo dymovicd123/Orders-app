@@ -10,8 +10,7 @@
  * order_item unit price as a legacy fallback, without moving any money.
  *
  * Every SQL expression requires orders alias "o" unless passed an explicit
- * alias. The same source is used for orders, Main exchange settlement and
- * Main-style watch reports.
+ * alias. The same source is used for orders and Main-style watch reports.
  */
 export const watchCommercialReturnCreditSql=(orderAlias='o')=>`COALESCE((
  SELECT SUM(CASE WHEN COALESCE(ri.amount,0)>0 THEN ri.amount
@@ -21,18 +20,12 @@ export const watchCommercialReturnCreditSql=(orderAlias='o')=>`COALESCE((
  JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=r.order_id
  WHERE r.order_id=${orderAlias}.id
    AND COALESCE(r.status,'completed')<>'cancelled'
-   AND NOT EXISTS(
-     SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id
-       AND COALESCE(ex.status,'completed')<>'cancelled'
-   )
 ),0)`
 
 export const watchReturnedUnitsForItemSql=(itemAlias='oi')=>`COALESCE((
  SELECT SUM(ri.quantity) FROM return_items ri
  JOIN returns r ON r.id=ri.return_id
  WHERE ri.order_item_id=${itemAlias}.id AND COALESCE(r.status,'completed')<>'cancelled'
-   AND NOT EXISTS(SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id
-     AND COALESCE(ex.status,'completed')<>'cancelled')
 ),0)`
 
 export const watchReturnedValueForItemSql=(itemAlias='oi')=>`COALESCE((
@@ -40,8 +33,6 @@ export const watchReturnedValueForItemSql=(itemAlias='oi')=>`COALESCE((
    ELSE COALESCE(ri.quantity,0)*COALESCE(${itemAlias}.unit_price,0) END)
  FROM return_items ri JOIN returns r ON r.id=ri.return_id
  WHERE ri.order_item_id=${itemAlias}.id AND COALESCE(r.status,'completed')<>'cancelled'
-   AND NOT EXISTS(SELECT 1 FROM exchanges ex WHERE ex.refund_return_id=r.id
-     AND COALESCE(ex.status,'completed')<>'cancelled')
 ),0)`
 
 export const watchNetSaleSql=(orderAlias='o')=>

@@ -35,7 +35,6 @@ export type WatchLogisticsRow = {
   shippedQuantity: number
   returnedQuantity: number
   pendingReturnQuantity: number
-  pendingExchangeReceiptQuantity: number
   dispatchItemId: number | null
   itemSource: 'warehouse' | 'boutique' | null
   modelName: string | null

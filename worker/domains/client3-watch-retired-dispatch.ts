@@ -9,15 +9,14 @@ type RetiredLine={
  ready_text:string|null;brand_id:number;retirement_id:number|null;
  reservation_id:number|null;reservation_quantity:number|null;reservation_status:string|null;
  reservation_reason:string|null;
- retirement_count:number;open_returns:number;open_old_exchanges:number;shipped:number;
+ retirement_count:number;open_returns:number;shipped:number;
  invalid_stock_rows:number;
- replacement_id:number|null;replacement_event_id:number|null;replacement_quantity:number|null
 }
 export const retiredWatchShippingProjectionSql=`UPDATE orders SET
  shipping_status=CASE WHEN NOT EXISTS(
    SELECT 1 FROM order_items oi WHERE oi.order_id=orders.id AND oi.quantity>0
      AND (COALESCE(oi.stock_writeoff_status,'') NOT IN
-       ('fulfilled','exchanged','cancelled','returned','retired_physically_issued')
+       ('fulfilled','cancelled','returned','retired_physically_issued')
        OR (oi.stock_writeoff_status='retired_physically_issued' AND NOT EXISTS(
          SELECT 1 FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
          WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id
@@ -27,7 +26,7 @@ export const retiredWatchShippingProjectionSql=`UPDATE orders SET
  shipping_date=CASE WHEN NOT EXISTS(
    SELECT 1 FROM order_items oi WHERE oi.order_id=orders.id AND oi.quantity>0
      AND (COALESCE(oi.stock_writeoff_status,'') NOT IN
-       ('fulfilled','exchanged','cancelled','returned','retired_physically_issued')
+       ('fulfilled','cancelled','returned','retired_physically_issued')
        OR (oi.stock_writeoff_status='retired_physically_issued' AND NOT EXISTS(
          SELECT 1 FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
          WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id
@@ -90,14 +89,9 @@ export async function dispatchRetiredClient3WatchLines(
     (SELECT COUNT(*) FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
        WHERE ri.order_item_id=oi.id AND ri.quantity>0
          AND COALESCE(rt.status,'completed')<>'cancelled') AS open_returns,
-    (SELECT COUNT(*) FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
-       WHERE ei.order_item_id=oi.id AND ei.role='old'
-         AND COALESCE(ex.status,'completed')<>'cancelled') AS open_old_exchanges,
     (SELECT COALESCE(SUM(di.quantity-COALESCE(di.cancelled_quantity,0)),0)
        FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
-       WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id) AS shipped,
-    le.operation_id AS replacement_id,le.id AS replacement_event_id,
-    le.quantity AS replacement_quantity
+       WHERE di.order_item_id=oi.id AND d.order_id=oi.order_id) AS shipped
   FROM order_items oi
   JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
   JOIN watch_variants v ON v.id=wi.watch_variant_id AND v.catalog_variant_id=oi.variant_id
@@ -110,17 +104,13 @@ export async function dispatchRetiredClient3WatchLines(
     AND op.status='completed' AND op.entity_type='product' AND op.product_id=cp.id
   LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
   LEFT JOIN watch_engraving_item_readiness ready ON ready.order_item_id=oi.id
-  LEFT JOIN inventory_lifecycle_events le ON le.order_item_id=oi.id
-    AND le.order_id=oi.order_id AND le.operation_type='exchange'
-    AND le.event_type='exchange_new_out' AND le.status='pending'
-    AND le.pending_reason='awaiting_dispatch'
   WHERE oi.order_id=? AND oi.id IN (${input.items.map(()=>'?').join(',')})
    AND oi.quantity>0 AND oi.is_workshop=0
   ORDER BY oi.id`)
    .bind(orderId,...input.items.map(x=>x.orderItemId)).all<RetiredLine>()
  const byId=new Map<number,RetiredLine>()
  for(const r of rows.results||[]){
-   if(byId.has(Number(r.id)))conflict('У архивной позиции несколько резервов или записей обмена. Требуется ручная проверка.')
+   if(byId.has(Number(r.id)))conflict('У архивной позиции несколько резервов. Требуется ручная проверка.')
    byId.set(Number(r.id),r)
  }
  if(byId.size!==input.items.length)conflict('Архивная позиция или её журнал удаления не найдены. Проверьте историю.')
@@ -130,19 +120,15 @@ export async function dispatchRetiredClient3WatchLines(
       !['warehouse','boutique'].includes(line.source_type)||line.retirement_count!==1||
       !line.retirement_id||line.reservation_status!=='released'||
       line.reservation_quantity!==line.quantity||line.reservation_reason!=='catalog_retired'||
-      Number(line.invalid_stock_rows)!==0||Number(line.open_returns)!==0||Number(line.open_old_exchanges)!==0||
+      Number(line.invalid_stock_rows)!==0||Number(line.open_returns)!==0||
       Number(line.shipped)!==0)
      conflict('Состояние архивных часов, резерва или связанных операций изменилось. Проверьте заказ.')
    if(item.quantity>line.quantity)conflict('Нельзя отправить больше архивных часов, чем осталось в заказе.')
    if(line.engraving_text?.trim()&&line.ready_text!==line.engraving_text)
      conflict('Гравировка этих часов ещё не подтверждена.')
-   if(line.replacement_id&&(
-      item.quantity!==line.quantity||
-      line.replacement_quantity!==line.quantity))
-     conflict('Архивную замену по обмену можно отправить только всей позицией.')
    return {...item,line}
  })
- if(String(order.shipping_status)==='sent'&&prepared.some(x=>!x.line.replacement_id))
+ if(String(order.shipping_status)==='sent')
    conflict('Ранее завершённый заказ нельзя повторно отправить.')
  const stamp=new Date().toISOString(),date=cleanText(input.dispatchDate)||stamp.slice(0,10)
  const statements:D1PreparedStatement[]=[
@@ -251,15 +237,7 @@ export async function dispatchRetiredClient3WatchLines(
          AND oi.stock_writeoff_status='retired_physically_issued'`)
        .bind(stamp,line.id,requestId,orderId,item.quantity),
    )
-   if(line.replacement_event_id){
-     statements.push(db.prepare(`UPDATE inventory_lifecycle_events
-       SET status='applied',pending_reason=NULL,applied_at=?,updated_at=?,
-         movement_id=NULL,resolution_comment=?
-       WHERE id=? AND order_id=? AND order_item_id=? AND status='pending'
-         AND pending_reason='awaiting_dispatch' AND quantity=?`)
-       .bind(stamp,stamp,'Архивные часы переданы клиенту без повторного складского списания',
-         line.replacement_event_id,orderId,line.id,item.quantity))
-   }
+
  }
  // Assert every concrete dispatched line AND remaining split record before
  // committing the atomic D1 batch. Zero-row INSERT...SELECT is not success.

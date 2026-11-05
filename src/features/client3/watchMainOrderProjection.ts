@@ -4,8 +4,8 @@ import type {OrderRecord} from '../../app/types'
 
 /**
  * Client3 watch orders reuse Main's authoritative read-only UI projections.
- * Never derive a "returned order" or "exchanged order" terminal status.
- * Returns, exchanges, money, logistics and per-item shipment are separate facts.
+ * Do not derive terminal status from returns. Returns, payments,
+ * logistics and per-item shipments remain independent facts.
  */
 export type WatchMainItem = {
   id:number;quantity:number;source:string;stockWriteoffStatus:string;
@@ -14,7 +14,7 @@ export type WatchMainItem = {
 export type WatchMainOrder = {
   orderStatus:string;shippingStatus:string;totalAmount:number;receivedAmount:number;
   returnAmount:number;debtAmount:number;netSaleAmount?:number;committedReturnCount?:number;
-  committedExchangeCount?:number;committedItemReturnQuantity?:number;
+  committedItemReturnQuantity?:number;
   itemLines:string
 }
 export const parseWatchMainLines=(raw:string):WatchMainItem[]=>{
@@ -50,7 +50,7 @@ export function projectWatchOrderLikeMain(order:WatchMainOrder,isAdmin=false){
     debt_amount:order.debtAmount,
     return_amount:order.returnAmount,
     committed_return_count:Number(order.committedReturnCount||0),
-    committed_exchange_count:Number(order.committedExchangeCount||0),
+    committed_exchange_count:0,
     has_committed_item_return:Number(order.committedItemReturnQuantity||0)>0,
     items,
   } as unknown as OrderRecord

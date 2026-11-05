@@ -21,7 +21,7 @@ for(const phrase of ['watch-main-edit-workspace','deletingOrder?<section','watch
  assert(orders.includes(phrase),'Main-style order edit/delete must be visible: '+phrase)
 }
 for(const phrase of ['Оплаты, менеджер и удаление','Реквизиты','Записанная цена',
- 'Состав товаров','Отменить возврат','Отменить обмены']){
+ 'Состав товаров','Отменить возврат']){
  assert(editor.includes(phrase),'Editor missing '+phrase)
 }
 assert(admin.includes('WatchAdminDeleteChainPanel')&&!admin.includes('setAck('))
@@ -42,10 +42,10 @@ for(const token of ['client3AdminDeleteChain(db','client3AdminDeletePhysicalConf
  'correctClient3AdminRecordedPayment(db']){
  assert(router.includes(token),'Order route unconnected: '+token)
 }
-assert(ordersRead.includes('committedReturnCount')&&ordersRead.includes('committedExchangeCount'),
+assert(ordersRead.includes('committedReturnCount')&&!ordersRead.includes('committedExchangeCount'),
  'Order history totals must be available to role editor')
-assert(app.includes('workflow="returns"')&&app.includes('workflow="exchange"'),
- 'Both return and exchange order selection must use explicit workflow mode')
+assert(app.includes('workflow="returns"')&&!app.includes('workflow="exchange"'),
+ 'Only return order selection is available')
 assert(orders.includes('<WatchDebtPaymentForm')&&orders.includes("setDebtOrderId"),
  'Existing in-order debt closure must remain accessible')
 const server=await createServer({
@@ -67,7 +67,7 @@ try{
   shippingStatus:'not_sent',orderStatus:'active',deliveryAddress:'Улица 7',
   postalCode:'050000',urgent:0,shippingDeadlineAt:'2026-11-06T12:00:00Z',
   totalAmount:10000,receivedAmount:0,debtAmount:10000,returnAmount:0,
-  committedReturnCount:1,committedExchangeCount:1,paymentLines:'[]',
+  committedReturnCount:1,paymentLines:'[]',
   itemLines:JSON.stringify([{id:11,productName:'ARYSTAN',quantity:1,
    unitPrice:10000,lineTotal:10000,source:'warehouse',
    catalogPriceSnapshot:10000,engravingText:''}])
@@ -76,7 +76,7 @@ try{
   brand:'TAUWACH',order,isAdmin:true,onDone:()=>{},onCancel:()=>{},
  }))
  assert(adminView.includes('Оплаты, менеджер и удаление'))
- assert(adminView.includes('Отменить обмены'))
+ assert(!adminView.includes('Отменить обмены'))
  const managerView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:false,onDone:()=>{},onCancel:()=>{},
  }))

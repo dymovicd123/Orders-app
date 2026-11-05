@@ -158,35 +158,28 @@ export async function receiveClient3WatchReturn(
  const destination=input.destination
  if(!['warehouse','boutique','no_stock'].includes(String(destination)))
    return fail('WATCH_RECEIPT_DEST_INVALID','Выберите офис, витрину или без возврата в остаток.',400)
- const operationType=input.operationType==='exchange'?'exchange':'return'
- const match=await db.prepare(
-   operationType==='exchange'?`SELECT ei.id FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
-    JOIN watch_order_details wd ON wd.order_id=e.order_id
-    JOIN order_items oi ON oi.id=ei.order_item_id AND oi.order_id=wd.order_id
-    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
-    WHERE ei.id=? AND e.id=? AND e.order_id=? AND wd.brand_id=?
-      AND ei.role='old' AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1`:
-   `SELECT ri.id FROM return_items ri JOIN returns r ON r.id=ri.return_id
-    JOIN watch_order_details wd ON wd.order_id=r.order_id
-    JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=wd.order_id
-    JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
-    WHERE ri.id=? AND r.id=? AND r.order_id=? AND wd.brand_id=?
-      AND COALESCE(r.status,'completed')<>'cancelled' LIMIT 1`,
- ).bind(returnItemId,returnId,orderId,brandId).first<{id:number}>()
+ if(input.operationType!==undefined&&input.operationType!=='return')
+   return fail('WATCH_EXCHANGE_REMOVED','Обмены в Client3 отключены.',404)
+ const match=await db.prepare(`SELECT ri.id FROM return_items ri JOIN returns r ON r.id=ri.return_id
+   JOIN watch_order_details wd ON wd.order_id=r.order_id
+   JOIN order_items oi ON oi.id=ri.order_item_id AND oi.order_id=wd.order_id
+   JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+   WHERE ri.id=? AND r.id=? AND r.order_id=? AND wd.brand_id=?
+     AND COALESCE(r.status,'completed')<>'cancelled' LIMIT 1`)
+   .bind(returnItemId,returnId,orderId,brandId).first<{id:number}>()
  if(!match)return fail('WATCH_RECEIPT_NOT_FOUND','Часы не принадлежат возврату этого бренда.',404)
  if(destination!=='no_stock'){
    const retired=await db.prepare(`SELECT cv.is_active AS active
-     FROM order_items oi JOIN catalog_variants cv ON cv.id=oi.variant_id
-     WHERE oi.id=(SELECT CASE WHEN ?='exchange'
-       THEN (SELECT ei.order_item_id FROM exchange_items ei WHERE ei.id=? AND ei.exchange_id=?)
-       ELSE (SELECT ri.order_item_id FROM return_items ri WHERE ri.id=? AND ri.return_id=?) END)`)
-     .bind(operationType,returnItemId,returnId,returnItemId,returnId).first<{active:number}>()
+     FROM return_items ri JOIN order_items oi ON oi.id=ri.order_item_id
+     JOIN catalog_variants cv ON cv.id=oi.variant_id
+     WHERE ri.id=? AND ri.return_id=?`)
+     .bind(returnItemId,returnId).first<{active:number}>()
    if(retired?.active===0)return fail('WATCH_RETIRED_RECEIPT_STOCK_BLOCKED',
      'Архивные часы нельзя зачислять в удалённый SKU. Выберите приём без добавления в остаток.',409)
  }
  try {
    const result=await receiveReturnedItem(db,{
-     requestId:input.requestId as string,operationType,
+     requestId:input.requestId as string,operationType:'return',
      operationId:returnId,operationItemId:returnItemId,
      destination:destination as 'warehouse'|'boutique'|'no_stock',
    })
@@ -217,24 +210,7 @@ export async function listPendingClient3WatchReturns(db:D1Database,actor:AuthUse
    JOIN watch_products wp ON wp.id=wv.watch_product_id
    WHERE wd.brand_id=? AND COALESCE(r.status,'completed')<>'cancelled'
      AND ri.physical_tracking=1 AND ri.physical_received_at IS NULL
-   UNION ALL
-   SELECT 'exchange' AS operationType,ei.id AS returnItemId,ei.exchange_id AS returnId,e.order_id AS orderId,
-     o.external_id AS externalOrderId,ei.quantity,e.exchange_date AS returnDate,
-     wp.model_name AS modelName,wv.gender,
-     COALESCE(COALESCE((SELECT a6.movement FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.movement FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.movement) AS movement,
-     COALESCE(COALESCE((SELECT a6.bracelet_material FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_material FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_material) AS braceletMaterial,
-     COALESCE(COALESCE((SELECT a6.dial_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.dial_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.dial_color) AS dialColor,
-     COALESCE(COALESCE((SELECT a6.bracelet_color FROM watch_variant_attributes_v6 a6 WHERE a6.watch_variant_id=wv.id),(SELECT a.bracelet_color FROM watch_variant_attributes_v5 a WHERE a.watch_variant_id=wv.id)),wv.bracelet_color) AS braceletColor
-   FROM exchange_items ei
-   JOIN exchanges e ON e.id=ei.exchange_id
-   JOIN orders o ON o.id=e.order_id
-   JOIN watch_order_details wd ON wd.order_id=e.order_id
-   JOIN watch_order_item_details wi ON wi.order_item_id=ei.order_item_id
-   JOIN watch_variants wv ON wv.id=wi.watch_variant_id
-   JOIN watch_products wp ON wp.id=wv.watch_product_id
-   WHERE wd.brand_id=? AND ei.role='old' AND COALESCE(e.status,'completed')<>'cancelled'
-     AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
    ORDER BY returnDate DESC,returnItemId DESC LIMIT 100
- `).bind(brandId,brandId).all<Record<string,unknown>>()
+ `).bind(brandId).all<Record<string,unknown>>()
  return json({ok:true,brandId,rows:data.results||[]})
 }

@@ -121,7 +121,7 @@ export function WatchAdminCompositionEditor({
  return <form className="watch-admin-composition" onSubmit={e=>void submit(e)}>
    <p className="watch-corrections-hint">
      Состав редактируется по правилам Main. Прежние позиции остаются в истории,
-     резервы пересчитываются. Отправленные товары, возвраты и обмены блокируют изменение.
+     резервы пересчитываются. Отправленные товары и возвраты блокируют изменение.
      Выбор существующего SKU не обязателен: новые характеристики можно вводить свободно.
    </p>
    {items.map((item,index)=><section key={item.key} className="watch-admin-composition-line">

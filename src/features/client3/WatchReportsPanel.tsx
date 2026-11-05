@@ -254,15 +254,15 @@ export function WatchReportsPanel({brands,onOpenOrder}:{brands:readonly WatchBra
      <section className="strict-report-section">
        <div className="strict-section-head"><h3>Сверка поступлений и возвратов</h3>
          <span className="soft-badge">по реальным денежным событиям</span></div>
-       <p className="strict-report-note">Поступления разделены по источнику: оплата заказа, закрытие долга, доплата за обмен и другие операции. Возвраты не смешиваются с корректировками.</p>
+       <p className="strict-report-note">Поступления разделены по источнику: оплата заказа, закрытие долга и другие операции. Возвраты не смешиваются с корректировками.</p>
        <LinkedTableScroll ariaLabel="Финансовая сверка по способам оплаты">
          <table className="data-table strict-report-table">
            <thead><tr><th>Способ оплаты</th><th>Оплата заказа</th><th>Закрытие долга и доплаты</th>
-             <th>Доплаты за обмен</th><th>Всего поступило</th><th>Возвраты</th>
+             <th>Всего поступило</th><th>Возвраты</th>
              <th>Другие списания</th><th>Чистое движение</th></tr></thead>
            <tbody>{data.reconciliation.map((row,i)=><tr key={i}>
              <td>{s(row,'method')}</td>
-             {['orderPayments','debtClosures','exchangeExtras','grossInflow','refunds','otherOutflow','netMovement'].map(key=>
+             {['orderPayments','debtClosures','grossInflow','refunds','otherOutflow','netMovement'].map(key=>
                <td className="num" key={key}>{watchMoney(n(row,key))}</td>)}
            </tr>)}</tbody>
          </table>

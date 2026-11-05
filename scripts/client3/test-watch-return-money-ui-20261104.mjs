@@ -10,7 +10,6 @@ const server=await createServer({
 })
 try{
  const {WatchReturnForm}=await server.ssrLoadModule('/src/features/client3/WatchReturnForm.tsx')
- const {WatchExchangeHistoryPanel}=await server.ssrLoadModule('/src/features/client3/WatchExchangeHistoryPanel.tsx')
  const order={
    orderId:91,externalId:'WATCH-PARTIAL-91',shippingStatus:'not_sent',
    lineCount:2,receivedAmount:30000,returnAmount:0,
@@ -39,31 +38,5 @@ try{
   'Partial return default cannot silently refund the whole payment')
  assert(view.includes('возвращённые часы уменьшают стоимость оставшейся продажи'),
   'Explain Client3 commercial credit while Main historical amount stays immutable')
- const {WatchExchangeForm,watchExchangeQuantityForState}=await server.ssrLoadModule(
-   '/src/features/client3/WatchExchangeForm.tsx')
- const unissued={id:3,productName:'ALTYN ZAMAN',quantity:1,returnableQuantity:0,
-   exchangeableQuantity:1,shipped:0,shippedQuantity:0,returnedQuantity:0,
-   stockWriteoffStatus:'reserved',unitPrice:25000,lineTotal:25000,catalogPriceSnapshot:30000,
-   gender:'male',movement:'quartz',braceletMaterial:'steel',dialColor:'silver',braceletColor:''}
- assert.equal(watchExchangeQuantityForState(unissued,'not_issued'),1,
-   'A watch still in the office is exchangeable without pretending it was sent')
- assert.equal(watchExchangeQuantityForState(unissued,'pending'),0,
-   'Unissued watches cannot enter the physical return intake queue')
- const issued={...unissued,shipped:1,shippedQuantity:1,returnableQuantity:1,
-   stockWriteoffStatus:'fulfilled'}
- assert.equal(watchExchangeQuantityForState(issued,'not_issued'),0,
-   'An issued watch cannot be exchanged as if it were still on the shelf')
- assert.equal(watchExchangeQuantityForState(issued,'pending'),1)
- const exchangeCreate=renderToStaticMarkup(React.createElement(WatchExchangeForm,{
-   brand:'TAUWACH',order:{...order,receivedAmount:0,returnAmount:0,totalAmount:25000,
-     itemLines:JSON.stringify([unissued])},onDone:()=>{},onCancel:()=>{},
- }))
- assert(exchangeCreate.includes('доступно к обмену 1 шт.'),
-   'Unissued watch must be selectable for exchange')
- assert(exchangeCreate.includes('ещё не отправляли: 1 шт.'))
- const exchangeView=renderToStaticMarkup(React.createElement(WatchExchangeHistoryPanel,{
-   brand:'TAUWACH',orderId:91,onClose:()=>{},onDone:()=>{},
- }))
- assert(exchangeView.includes('История обменов'))
- console.log('CLIENT3_PARTIAL_REFUND_UI_PASS: price-based default, full money ceiling, explicit debt semantics and Main exchange history')
+ console.log('CLIENT3_PARTIAL_REFUND_UI_PASS: price-based default, full money ceiling, explicit debt semantics and no exchange form')
 }finally{await server.close()}

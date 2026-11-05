@@ -127,15 +127,14 @@ export async function correctClient3AdminRecordedPayment(
  if(!changedOther&&!changedMethod)return json({ok:true,unchanged:true,orderId,paymentId:x.paymentId})
  if(changedOther){
    if(x.expectedPaymentKind==='extra'||x.paymentKind==='extra')
-     return fail('WATCH_PAYMENT_EDIT_EXCHANGE_EXTRA',
-       'Доплата обмена сохраняет сумму, дату и назначение. Их исправляют через сам обмен.',409)
+     return fail('WATCH_PAYMENT_EDIT_EXTRA',
+       'Дополнительная оплата с особым назначением требует отдельной финансовой корректировки.',409)
    const downstream=await db.prepare(`SELECT
-     (SELECT COUNT(*) FROM exchanges WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled') AS exchanges_count,
      (SELECT COUNT(*) FROM returns WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled') AS returns_count`)
-     .bind(orderId,orderId).first<{exchanges_count:number;returns_count:number}>()
-   if(Number(downstream?.exchanges_count||0)+Number(downstream?.returns_count||0)>0)
+     .bind(orderId).first<{returns_count:number}>()
+   if(Number(downstream?.returns_count||0)>0)
      return fail('WATCH_PAYMENT_EDIT_LINKED',
-       'После возврата или обмена сумму, дату и назначение оплаты нельзя переписывать отдельно. Сначала исправьте соответствующую операцию.',409)
+       'После возврата сумму, дату и назначение оплаты нельзя переписывать отдельно. Сначала исправьте соответствующую операцию.',409)
  }
  try{
    const paymentCorrection={

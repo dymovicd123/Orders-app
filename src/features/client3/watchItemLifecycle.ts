@@ -7,7 +7,6 @@ export type WatchPhysicalItem={
   shippedQuantity?:number|null
   returnedQuantity?:number|null
   pendingReturnQuantity?:number|null
-  pendingExchangeReceiptQuantity?:number|null
   stockWriteoffStatus?:string|null
 }
 
@@ -26,7 +25,7 @@ export const watchItemAwaitingDispatch=(item:WatchPhysicalItem)=>
   Math.max(0,count(item.quantity)-watchIssuedQuantity(item))
 
 export const watchItemAwaitingReceipt=(item:WatchPhysicalItem)=>
-  count(item.pendingReturnQuantity)+count(item.pendingExchangeReceiptQuantity)
+  count(item.pendingReturnQuantity)
 
 export const watchItemReturnSummary=(item:WatchPhysicalItem)=>{
   const returned=count(item.returnedQuantity)

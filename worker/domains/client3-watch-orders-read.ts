@@ -2,7 +2,7 @@ import { json } from '../core/http.ts'
 import type { AuthUser } from '../core/types.ts'
 import {fetchOrderStockHandoverRows} from './order-reservations.ts'
 import {WATCH_ITEM_SHIPPED_SQL,WATCH_ITEM_RETURNED_SQL,WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL,
-  WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL,WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
+  WATCH_ITEM_RETURNABLE_SQL} from './client3-watch-item-projection.ts'
 import {watchCommercialReturnCreditSql,watchNetSaleSql,watchNetDebtSql,
   watchNetPaidSql,watchCustomerOverpaymentSql} from './client3-watch-commercial.ts'
 
@@ -44,7 +44,7 @@ export async function listClient3WatchOrders(
       qLike,qLike,qLike,qLike] as const
     // Physical truth outranks an old order-wide shipping marker. A fully
     // issued-before-stocktake order belongs with issued orders; a previously
-    // sent order with an unshipped exchange replacement belongs with active ones.
+    // sent order with pending physical issuance remains operationally active.
     const noUnissuedItems=`NOT EXISTS (
       SELECT 1 FROM order_items pending
       WHERE pending.order_id=o.id AND pending.quantity>0
@@ -86,24 +86,14 @@ export async function listClient3WatchOrders(
         ${watchCustomerOverpaymentSql('o')} AS overpaymentAmount,
         (SELECT COUNT(*) FROM returns r WHERE r.order_id=o.id
           AND COALESCE(r.status,'completed')<>'cancelled'
-          AND NOT EXISTS (SELECT 1 FROM exchanges e
-             WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
         ) AS committedReturnCount,
-        (SELECT COUNT(*) FROM exchanges e WHERE e.order_id=o.id
-          AND COALESCE(e.status,'completed')<>'cancelled'
-        ) AS committedExchangeCount,
         (SELECT COALESCE(SUM(ri.quantity),0) FROM return_items ri
           JOIN returns r ON r.id=ri.return_id
           WHERE r.order_id=o.id AND COALESCE(r.status,'completed')<>'cancelled'
-          AND NOT EXISTS (SELECT 1 FROM exchanges e
-             WHERE e.refund_return_id=r.id AND COALESCE(e.status,'completed')<>'cancelled')
         ) AS committedItemReturnQuantity,
         (SELECT r.return_date FROM returns r WHERE r.order_id=o.id
           AND COALESCE(r.status,'completed')<>'cancelled'
           ORDER BY r.id DESC LIMIT 1) AS latestReturnDate,
-        (SELECT e.exchange_date FROM exchanges e WHERE e.order_id=o.id
-          AND COALESCE(e.status,'completed')<>'cancelled'
-          ORDER BY e.id DESC LIMIT 1) AS latestExchangeDate,
         wd.recipient_name AS recipientName,wd.recipient_phone AS recipientPhone,
         wd.city,wd.delivery_method AS deliveryMethod,
         COALESCE(o.customer_name_override,c.display_name,'') AS canonicalCustomerName,
@@ -133,9 +123,7 @@ export async function listClient3WatchOrders(
           'shippedQuantity',${WATCH_ITEM_SHIPPED_SQL},
           'returnedQuantity',${WATCH_ITEM_RETURNED_SQL},
           'pendingReturnQuantity',${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL},
-          'pendingExchangeReceiptQuantity',${WATCH_ITEM_PENDING_EXCHANGE_RECEIPT_SQL},
           'returnableQuantity',${WATCH_ITEM_RETURNABLE_SQL},
-          'exchangeableQuantity',MAX(0,oi.quantity-${WATCH_ITEM_RETURNED_SQL}),
           'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
@@ -158,24 +146,7 @@ export async function listClient3WatchOrders(
             oi.quantity>0
             OR EXISTS (SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
               WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
-            OR EXISTS (SELECT 1 FROM exchange_items ei JOIN exchanges e ON e.id=ei.exchange_id
-              WHERE ei.order_item_id=oi.id AND ei.role='old'
-                AND COALESCE(e.status,'completed')<>'cancelled')
           )) AS itemLines,
-        EXISTS (
-          SELECT 1 FROM exchange_items ei
-          JOIN exchanges e ON e.id=ei.exchange_id AND e.order_id=o.id
-          JOIN order_items repl ON repl.id=ei.order_item_id
-          WHERE ei.role='new' AND COALESCE(e.status,'completed')<>'cancelled'
-            AND repl.quantity>0 AND
-            COALESCE(repl.stock_writeoff_status,'')<>'fulfilled'
-            AND COALESCE((
-              SELECT SUM(MAX(0,di.quantity-COALESCE(di.cancelled_quantity,0)))
-              FROM order_dispatch_items di
-              JOIN order_dispatches d ON d.id=di.dispatch_id AND d.order_id=o.id
-              WHERE di.order_item_id=repl.id
-            ),0)<repl.quantity
-        ) AS pendingReplacement,
         (SELECT oi.id FROM order_items oi WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS firstItemId,
         (SELECT wi.watch_variant_id FROM order_items oi JOIN watch_order_item_details wi ON wi.order_item_id=oi.id WHERE oi.order_id=o.id AND oi.quantity>0 ORDER BY oi.id DESC LIMIT 1) AS activeWatchVariantId,
         (SELECT ${WATCH_ITEM_RETURNABLE_SQL} FROM order_items oi

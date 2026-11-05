@@ -11,8 +11,8 @@ type OldDispatch={
   reservation_status:string|null;reservation_qty:number|null;reservation_variant:number|null
   reservation_source:string|null;movement_type:string|null;movement_variant:number|null
   movement_source:string|null;movement_quantity:number|null;retirement_id:number|null
-  stock_quantity:number|null;stock_reserved:number|null;replacement_event:number|null
-  other_issues:number;returns_count:number;exchange_old_count:number
+  stock_quantity:number|null;stock_reserved:number|null
+  other_issues:number;returns_count:number
 }
 
 /** An ordinary shipment was recorded while the SKU was active, then Main
@@ -48,20 +48,10 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
      m.movement_type,m.variant_id AS movement_variant,
      m.inventory_source AS movement_source,m.quantity_delta AS movement_quantity,
      rv.retirement_id,s.quantity AS stock_quantity,s.reserved_quantity AS stock_reserved,
-     (SELECT le.id FROM inventory_lifecycle_events le
-        JOIN exchanges ex ON ex.id=le.operation_id AND ex.order_id=oi.order_id
-       WHERE le.order_item_id=oi.id AND le.operation_type='exchange'
-         AND le.event_type='exchange_new_out' AND le.status='applied'
-         AND le.movement_id=di.movement_id
-         AND COALESCE(ex.status,'completed')<>'cancelled'
-       ORDER BY le.id DESC LIMIT 1) AS replacement_event,
      (SELECT COUNT(*) FROM order_dispatch_items other WHERE other.order_item_id=oi.id
         AND other.id<>di.id AND other.quantity>COALESCE(other.cancelled_quantity,0)) AS other_issues,
      (SELECT COUNT(*) FROM return_items ri JOIN returns ret ON ret.id=ri.return_id
-       WHERE ri.order_item_id=oi.id AND ri.quantity>0 AND COALESCE(ret.status,'completed')<>'cancelled') AS returns_count,
-     (SELECT COUNT(*) FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
-       WHERE ei.order_item_id=oi.id AND ei.role='old'
-         AND COALESCE(ex.status,'completed')<>'cancelled') AS exchange_old_count
+       WHERE ri.order_item_id=oi.id AND ri.quantity>0 AND COALESCE(ret.status,'completed')<>'cancelled') AS returns_count
    FROM order_dispatch_items di
    JOIN order_dispatches d ON d.id=di.dispatch_id
    JOIN orders o ON o.id=d.order_id
@@ -93,18 +83,8 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
    line.movement_quantity==null||line.movement_quantity>0||
    line.retirement_id==null||line.stock_quantity==null||line.stock_reserved==null||
    Number(line.stock_quantity)!==0||Number(line.stock_reserved)!==0||
-   line.other_issues>0||line.returns_count>0||line.exchange_old_count>0)
+   line.other_issues>0||line.returns_count>0)
    stop('Архивная отправка имеет неоднозначную историю или связанные операции. Исправление остановлено.')
- const conflicts=await db.prepare(`
-   SELECT COUNT(*) AS n FROM inventory_lifecycle_events le
-   JOIN exchanges ex ON ex.id=le.operation_id
-   WHERE le.order_item_id=? AND le.operation_type='exchange'
-     AND le.status='applied' AND COALESCE(ex.status,'completed')<>'cancelled'
-     AND (le.id<>? OR le.event_type<>'exchange_new_out' OR le.movement_id<>?)`)
-   .bind(line.order_item_id,toInt(line.replacement_event,0),line.movement_id)
-   .first<{n:number}>()
- if(Number(conflicts?.n||0)>0)
-   stop('У отправленных часов есть другие действующие обмены. Сначала разберите цепочку обмена.')
  const stamp=new Date().toISOString()
  const newest=await db.prepare(`SELECT MAX(d.dispatch_date) AS date
    FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
@@ -138,8 +118,6 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
              AND other.status IN ('active','unresolved','fulfilled'))
          AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns r ON r.id=ri.return_id
            WHERE ri.order_item_id=oi.id AND COALESCE(r.status,'completed')<>'cancelled')
-         AND NOT EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
-           WHERE ei.order_item_id=oi.id AND ei.role='old' AND COALESCE(ex.status,'completed')<>'cancelled')
          AND NOT EXISTS(SELECT 1 FROM order_dispatch_items other
            WHERE other.order_item_id=oi.id AND other.id<>di.id
              AND other.quantity>COALESCE(other.cancelled_quantity,0))
@@ -174,14 +152,6 @@ export async function correctPreRetirementWatchDispatch(db:D1Database,brandId:nu
        cancelled_at=?,cancel_actor=? WHERE id=?`)
      .bind(stamp,actor,line.dispatch_id)
  ]
- if(line.replacement_event){
-   statements.push(db.prepare(`UPDATE inventory_lifecycle_events SET
-      status='pending',pending_reason='awaiting_dispatch',applied_at=NULL,
-      movement_id=NULL,resolution_comment=?,updated_at=?
-      WHERE id=? AND order_id=? AND order_item_id=? AND status='applied' AND movement_id=?`)
-     .bind('Ошибка отправки исправлена после удаления SKU; склад не восстановлен',
-       stamp,line.replacement_event,orderId,line.order_item_id,line.movement_id))
- }
  statements.push(
    db.prepare(`INSERT INTO inventory_model_meta(key,value,updated_at)
      SELECT 'human_inventory_v2','__watch_pre_retire_cancel_postcondition__',?

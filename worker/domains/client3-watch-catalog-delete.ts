@@ -37,24 +37,18 @@ async function target(db:D1Database,brandId:number,input:Input){
  }
  return {kind,model,items}
 }
-/** Client3 watches may wait for physical Return/Exchange intake without any
+/** Client3 watches may wait for physical return intake without any
  * Main lifecycle event. That queue is authoritative for pending physical items. */
 async function pendingPhysicalIntake(db:D1Database,items:Item[]):Promise<number>{
  const ids=[...new Set(items.map(x=>x.catalog_variant_id).filter((x):x is number=>!!x))]
  if(!ids.length)return 0
  const ph=ids.map(()=>'?').join(',')
- const row=await db.prepare(`SELECT
-  (SELECT COUNT(*) FROM return_items ri JOIN returns r ON r.id=ri.return_id
+ const row=await db.prepare(`SELECT COUNT(*) AS n FROM return_items ri JOIN returns r ON r.id=ri.return_id
    JOIN order_items oi ON oi.id=ri.order_item_id
    WHERE oi.variant_id IN (${ph}) AND ri.physical_tracking=1
      AND ri.physical_received_at IS NULL
-     AND COALESCE(r.status,'completed')<>'cancelled')+
-  (SELECT COUNT(*) FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
-   JOIN order_items oi ON oi.id=ei.order_item_id
-   WHERE oi.variant_id IN (${ph}) AND ei.role='old'
-     AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
-     AND COALESCE(ex.status,'completed')<>'cancelled') AS n`)
-  .bind(...ids,...ids).first<{n:number}>()
+     AND COALESCE(r.status,'completed')<>'cancelled'`)
+   .bind(...ids).first<{n:number}>()
  return Number(row?.n||0)
 }
 async function scopedMetrics(db:D1Database,items:Item[]){
@@ -83,7 +77,7 @@ async function blockers(db:D1Database,items:Item[]){
   catch(cause){errors.push(cause instanceof Error?cause.message:'Есть незавершённая операция.')}
  }
  const pending=await pendingPhysicalIntake(db,items)
- if(pending)errors.push('Ожидается физический возврат или обмен: '+pending+' поз.')
+ if(pending)errors.push('Ожидается физический возврат: '+pending+' поз.')
  return [...new Set(errors)]
 }
 
@@ -104,8 +98,8 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
    ...(main.pendingLifecycle?['Есть незавершённая приёмка или возврат.']:[]),
    ...(main.activeWorkshopTaskCount?['Есть незавершённая задача.']:[]),
    ...(main.inactiveOperationalVariantCount?['У ранее удалённой позиции остался живой резерв/остаток.']:[]),
-   ...(pending?['Ожидается физический возврат или обмен: '+pending+' поз.']:[])
- ]:(pending?['Ожидается физический возврат или обмен: '+pending+' поз.']:[]))
+   ...(pending?['Ожидается физический возврат: '+pending+' поз.']:[])
+ ]:(pending?['Ожидается физический возврат: '+pending+' поз.']:[]))
  :await blockers(db,scope.items)
  const historicalItems=scope.kind==='product'
   ?await db.prepare(`SELECT COUNT(*) AS qty FROM order_items oi
@@ -123,7 +117,7 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
    ?await db.prepare(`SELECT COUNT(*) AS n FROM inventory_lifecycle_events ev
      JOIN catalog_variants cv ON cv.id=ev.variant_id
      WHERE cv.product_id=? AND ev.status='applied'
-       AND ev.operation_type IN ('return','exchange')
+       AND ev.operation_type='return'
        AND ev.movement_id IS NOT NULL`)
      .bind(scope.model.catalog_product_id).first<{n:number}>()
    :null
@@ -133,7 +127,7 @@ export async function previewClient3WatchDelete(db:D1Database,actor:AuthUser,bra
    physicalQuantity:physical,activeReservations:reserved,
    openOrders:main?.openOrderItemCount??metrics?.openOrders??0,
    pendingPhysicalIntakeCount:pending,historicalOrderItems:Number(historicalItems?.qty||0),
-   appliedPhysicalReturnExchangeCount:Number(earlierAppliedPhysical?.n||0),
+   appliedPhysicalReturnCount:Number(earlierAppliedPhysical?.n||0),
    inventoryWillBeRemoved:scope.kind==='product'&&physical!==0,
    reservationsWillBeReleased:scope.kind==='product'&&reserved!==0,
    physicalAndReservationsPreserved:scope.kind!=='product',
@@ -255,11 +249,6 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
         JOIN order_items oi ON oi.id=ri.order_item_id
         WHERE oi.variant_id=v.catalog_variant_id AND ri.physical_tracking=1
           AND ri.physical_received_at IS NULL AND COALESCE(r.status,'completed')<>'cancelled')
-      OR EXISTS(SELECT 1 FROM exchange_items ei JOIN exchanges ex ON ex.id=ei.exchange_id
-        JOIN order_items oi ON oi.id=ei.order_item_id
-        WHERE oi.variant_id=v.catalog_variant_id AND ei.role='old'
-          AND ei.physical_tracking=1 AND ei.physical_received_at IS NULL
-          AND COALESCE(ex.status,'completed')<>'cancelled')
       OR (v.catalog_variant_id IS NOT NULL AND NOT EXISTS(
         SELECT 1 FROM catalog_variants cv
         JOIN catalog_stock_positions sp ON sp.id=cv.stock_position_id
@@ -312,7 +301,7 @@ export async function deleteClient3WatchCatalog(db:D1Database,actor:AuthUser,bra
 
 
 /** Read-only archive. All records remain in the original watch and canonical
- * identity tables, so order lines, exchange history and stock movements keep
+ * identity tables, so order lines, return history and stock movements keep
  * their original IDs. No migration and no physical inventory mutation. */
 export async function listClient3WatchRetiredCatalog(
  db:D1Database,actor:AuthUser,brandId:number,url:URL,

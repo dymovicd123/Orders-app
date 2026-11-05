@@ -7,7 +7,7 @@ type DeleteInput={kind:Kind;watchProductId:number;watchVariantId?:number;
 type Preview={ok:boolean;message?:string;modelName?:string;count:number;
   canDelete:boolean;blockers?:string[];alreadyDeleted?:boolean;
   physicalQuantity?:number;activeReservations?:number;openOrders?:number;
-  historicalOrderItems?:number;appliedPhysicalReturnExchangeCount?:number;inventoryWillBeRemoved?:boolean;
+  historicalOrderItems?:number;appliedPhysicalReturnCount?:number;inventoryWillBeRemoved?:boolean;
   reservationsWillBeReleased?:boolean}
 export function WatchCatalogDeleteAction({brand,kind,watchProductId,watchVariantId,movement,
   braceletMaterial,label,onDeleted}:{
@@ -89,10 +89,10 @@ export function WatchCatalogDeleteAction({brand,kind,watchProductId,watchVariant
               <p>При удалении товара складские резервы будут освобождены, но позиции останутся в заказах и логистике. Гравировку можно будет отметить готовой, а отправку — подтвердить в логистике после явного подтверждения физической передачи.</p>
               <p>В этом случае отправка фиксируется в журнале заказа <strong>без повторного складского списания и без восстановления удалённого SKU</strong>. Частичная отправка сохраняет оставшиеся часы отдельной позицией. Возврат в остаток удалённого SKU запрещён: полученные часы принимаются без зачисления в архивный склад.</p>
             </div>}
-          {kind==='product'&&Number(preview.appliedPhysicalReturnExchangeCount||0)>0&&
+          {kind==='product'&&Number(preview.appliedPhysicalReturnCount||0)>0&&
             <div className="catalog-retirement-modal-error" role="alert">
-              <strong>Есть {preview.appliedPhysicalReturnExchangeCount} ранее применённых складских движений возвратов или обменов.</strong>
-              <p>История этих движений сохранится. При последующей отмене возврата или обмена Main отменит связанные денежные и коммерческие последствия, но <strong>не будет повторно менять закрытый складской остаток</strong>. Для этого система проверит завершённое удаление и нулевой архивный остаток. Если записи неполные или остатки расходятся, отмена остановится до сверки.</p>
+              <strong>Есть {preview.appliedPhysicalReturnCount} ранее применённых складских движений возвратов.</strong>
+              <p>История этих движений сохранится. При последующей отмене возврата Main отменит связанные денежные и коммерческие последствия, но <strong>не будет повторно менять закрытый складской остаток</strong>. Для этого система проверит завершённое удаление и нулевой архивный остаток. Если записи неполные или остатки расходятся, отмена остановится до сверки.</p>
             </div>}
           <p>Удалённые SKU не возвращаются автоматически в каталог. Повторное использование часов требует отдельной действующей комплектации и учётного прихода.</p>
           {preview.blockers?.length?<div className="catalog-retirement-modal-error" role="alert">

@@ -22,8 +22,6 @@ export async function listClient3WatchReturnHistory(
        ELSE COALESCE(ri.quantity,0)*COALESCE(oi.unit_price,0) END)
        FROM return_items ri JOIN order_items oi ON oi.id=ri.order_item_id
        WHERE ri.return_id=r.id),0) AS commercialGoodsValue,
-     (SELECT e.id FROM exchanges e WHERE e.refund_return_id=r.id
-       AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1) AS parentExchangeId,
      (SELECT COALESCE(json_group_array(json_object(
        'id',ri.id,'orderItemId',ri.order_item_id,'quantity',ri.quantity,
        'modelName',COALESCE(wp.model_name,oi.product_name_snapshot,'Часы'),
@@ -66,11 +64,6 @@ export async function cancelClient3WatchReturn(
    WHERE r.id=? AND r.order_id=? AND wd.brand_id=? LIMIT 1`)
    .bind(returnId,orderId,brandId).first<{id:number;status:string|null}>()
  if(!own)return fail('WATCH_RETURN_NOT_FOUND','Возврат не принадлежит этому заказу и бренду.',404)
- const exchange=await db.prepare(`SELECT e.id FROM exchanges e
-   WHERE e.refund_return_id=? AND COALESCE(e.status,'completed')<>'cancelled' LIMIT 1`)
-   .bind(returnId).first<{id:number}>()
- if(exchange)return fail('WATCH_RETURN_EXCHANGE_LINKED',
-   'Этот денежный возврат связан с обменом. Отменять нужно сам обмен с учётом его цепочки.',409)
  try{
    const result=await cancelReturn(db,returnId,{
      requestId:input.requestId,comment:reason,
