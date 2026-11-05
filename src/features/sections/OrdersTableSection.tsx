@@ -554,7 +554,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             {!retainedOnly && !archived && !projection.deleted ? (
                               <button className="secondary compact" type="button"
                                 disabled={savingOrder} onClick={event=>{event.stopPropagation();openDispatchDraft(order)}}>
-                                {order.shipping_status==='sent' ? 'Отправки' : 'Отправить товары'}
+                                {shipmentDisplay.state==='sent' ? 'Отправки' : 'Отправить товары'}
                               </button>
                             ) : null}
                             {projection.canCorrectShipping && !(order.items||[]).some((item:any)=>item.shipmentSentQuantity!=null) ? (
