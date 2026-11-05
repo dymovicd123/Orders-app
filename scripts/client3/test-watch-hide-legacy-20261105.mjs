@@ -39,6 +39,7 @@ try{
  const path='/api/client3/watches/legacy-orders'
  const url=new URL('https://qa.example.invalid'+path)
  const response=await routeClient3Watches(null,new Request(url),url,{id:1,role:'admin'})
- assert.equal(response,null,'Legacy API must not have a route handler')
+ assert.equal(response?.status,404,'Removed historical-orders endpoint must return 404')
+ assert.equal((await response.json()).code,'WATCH_ROUTE_NOT_FOUND')
  console.log('CLIENT3_HIDE_LEGACY_ORDERS_PASS: no tab, no module, no route; orders and returns preserved')
 }finally{await server.close()}

@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-hide-legacy-before-release-20261105
-          test "$(git rev-parse HEAD^)" = e5ebc67046e190e56ec63a15d69aa8675092aa54
+          test "$(git rev-parse HEAD^)" = 87c5bf31f0bb5c452795ad57db5df8d9f5ca379c
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$LIVE_DB_ID"
@@ -43,11 +43,6 @@ jobs:
           python3 - <<'PY'
           import subprocess
           allowed={
-            'src/WatchClient3App.tsx',
-            'src/features/client3/Client3MainChrome.tsx',
-            'worker/domains/client3-watches.ts',
-            'src/features/client3/WatchLegacyOrdersPanel.tsx',
-            'worker/domains/client3-watch-legacy.ts',
             'scripts/client3/test-watch-hide-legacy-20261105.mjs',
             '.github/workflows/client3-qa-hide-legacy-20261105.yml',
           }
