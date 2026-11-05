@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { buildOrderShipmentPlan } from '../worker/domains/order-shipment-plan.ts'
-import { confirmPriorIssuedOrderShipping } from '../worker/domains/order-prior-issued-shipping.ts'
+import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from '../worker/domains/order-prior-issued-shipping.ts'
 import { projectOrderShipmentDisplay } from '../src/app/orderShipmentProjection.ts'
 
 const sql = new DatabaseSync(':memory:')
@@ -68,6 +68,20 @@ assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_s
 assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c, movementsBefore)
 assert.deepEqual(readReservations(9501).map(row => row.status), ['fulfilled', 'fulfilled'])
 await assert.rejects(confirm(9501), /Обновите отправку/)
+const corrected = await correctPriorIssuedOrderShippingIfApplicable(db, 9501, {
+  actor: 'QA', physicalOutcome: 'not_issued',
+})
+assert.equal(corrected.statusOnly, true)
+assert.equal(corrected.restoredPhysicalQuantity, 0)
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9501').get().shipping_status, 'not_sent')
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get(), stockBefore)
+assert.deepEqual(readReservations(9501).map(row => row.status), ['fulfilled', 'fulfilled'])
+await assert.rejects(correctPriorIssuedOrderShippingIfApplicable(db, 9501, {
+  actor: 'QA', physicalOutcome: 'not_issued',
+}), /изменился/)
+await confirm(9501)
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9501').get().shipping_status, 'sent')
+assert.deepEqual(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9041').get(), stockBefore)
 
 const mixed = seed(9502, ['fulfilled', 'reserved'])
 assert.equal(plan(9502, mixed).canConfirmIssuedOnly, false)
