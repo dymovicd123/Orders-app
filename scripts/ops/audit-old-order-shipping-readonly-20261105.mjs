@@ -131,7 +131,7 @@ FROM (
     AND COALESCE(o.archived_at,'')=''
 ) q GROUP BY cohort,item_state,reservation_state
 ORDER BY cohort,item_state,reservation_state`
-if (!/^\\s*SELECT\\b/i.test(diagnostics) || /;\\s*\\S/.test(diagnostics)) {
+if (!/^\s*SELECT\b/i.test(diagnostics) || /;\s*\S/.test(diagnostics)) {
   throw new Error('DIAGNOSTIC_MUST_BE_SELECT')
 }
 const rawDiagnostic=execFileSync('npx',
