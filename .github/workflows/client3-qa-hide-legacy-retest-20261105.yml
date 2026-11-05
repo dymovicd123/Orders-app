@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-hide-legacy-retest-20261105
-          test "$(git rev-parse HEAD^)" = 841e23d3deed4e93b813978d4d66787c4126c8f8
+          test "$(git rev-parse HEAD^)" = 4f469c56c6f2a446983de50a7457cc7350461e8d
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$LIVE_DB_ID"
