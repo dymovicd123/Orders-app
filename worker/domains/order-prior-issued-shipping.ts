@@ -1,6 +1,7 @@
 import { cleanText, toInt } from '../core/text.ts'
 import { writeActivityLog } from './activity.ts'
 import { CriticalOperationConflictError } from './critical.ts'
+import { priorIssueEvidenceSql, SELECTIVE_DISPATCH_CUTOVER_AT } from './order-prior-issued-origin.ts'
 
 /**
  * Old "Выдать готовые товары" operations may have already consumed stock,
@@ -23,6 +24,7 @@ export async function confirmPriorIssuedOrderShipping(
   const update = db.prepare(`
     UPDATE orders SET shipping_status='sent', shipping_date=?, updated_at=?
     WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'
+      AND julianday(created_at)<julianday('${SELECTIVE_DISPATCH_CUTOVER_AT}')
       AND COALESCE(order_status,'') NOT IN ('deleted','archived')
       AND COALESCE(archived_at,'')=''
       AND EXISTS (
@@ -44,7 +46,9 @@ export async function confirmPriorIssuedOrderShipping(
             OR COALESCE(oi.stock_writeoff_status,'')<>'fulfilled'
             OR (SELECT COUNT(*) FROM inventory_reservations r
                 WHERE r.order_id=oi.order_id AND r.order_item_id=oi.id
-                  AND r.status='fulfilled' AND r.quantity=oi.quantity)<>1
+                  AND r.status='fulfilled' AND r.quantity=oi.quantity
+                  AND r.variant_id>0 AND r.inventory_source=oi.source_type
+                  AND ${priorIssueEvidenceSql('oi','r')})<>1
             OR EXISTS (SELECT 1 FROM inventory_reservations r
                 WHERE r.order_item_id=oi.id AND r.status='active')
             OR EXISTS (
