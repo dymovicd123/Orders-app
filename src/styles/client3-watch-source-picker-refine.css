@@ -7,6 +7,7 @@
 .main-watch-create .watch-pick-search input{box-sizing:border-box;flex:1;min-width:0;width:100%;min-height:36px;margin:0;padding:4px 0;border:0;outline:0;box-shadow:none;background:transparent;white-space:nowrap;font-size:13px}
 .main-watch-create .watch-pick-search svg{flex:0 0 18px}
 .main-watch-create .watch-pick-filter{position:relative;display:block;flex:0 0 143px;min-width:0;height:42px}
+.main-watch-create .watch-pick-filter:last-child{flex-basis:176px}
 .main-watch-create .watch-pick-filter select{box-sizing:border-box;height:42px;width:100%;padding:9px 29px 9px 11px;font-size:13px;line-height:1.2}
 .main-watch-create .watch-pick-filter .sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .main-watch-create .watch-pick-layout{grid-template-columns:minmax(0,2fr) minmax(310px,.87fr);gap:18px}
@@ -29,4 +30,4 @@
 .main-watch-create .watch-pick-cart-item.compact .cart-status{font-size:11px;margin:0}
 .main-watch-create .watch-pick-cart-item.compact .watch-pick-confirm-warning{display:grid;gap:5px}
 @media(max-width:1180px){.main-watch-create .watch-pick-layout{grid-template-columns:minmax(0,1fr)}.main-watch-create .watch-pick-cart-shell{max-height:none;overflow:visible;position:static}.main-watch-create .watch-pick-manual-cta{margin-left:0}}
-@media(max-width:680px){.main-watch-create .watch-pick-top{align-items:stretch}.main-watch-create .watch-pick-manual-cta{width:100%}.main-watch-create .watch-pick-search{flex:1 1 100%;max-width:none}.main-watch-create .watch-pick-filter{flex:1 1 110px}.main-watch-create .watch-pick-models{grid-template-columns:minmax(0,1fr)}.main-watch-create .watch-pick-cart-quick{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media(max-width:680px){.main-watch-create .watch-pick-filter:last-child{flex:1 1 160px}.main-watch-create .watch-pick-top{align-items:stretch}.main-watch-create .watch-pick-manual-cta{width:100%}.main-watch-create .watch-pick-search{flex:1 1 100%;max-width:none}.main-watch-create .watch-pick-filter{flex:1 1 110px}.main-watch-create .watch-pick-models{grid-template-columns:minmax(0,1fr)}.main-watch-create .watch-pick-cart-quick{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
