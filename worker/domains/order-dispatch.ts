@@ -2,6 +2,7 @@ import { cleanText, normalizeSourceType, toInt } from '../core/text.ts'
 import { getOrder } from './orders-write.ts'
 import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
 import { priorIssueEvidenceSql, readPriorIssuedItemIds } from './order-prior-issued-origin.ts'
+import { recordedExchangeShipmentSql } from './order-exchange-shipment-origin.ts'
 import { CriticalOperationConflictError } from './critical.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
 
@@ -419,7 +420,8 @@ export async function dispatchSelectedCompleteOrderLines(
                          WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
                        AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
                          WHERE ri.order_item_id=oi.id AND ri.quantity>0
-                           AND COALESCE(rt.status,'completed')<>'cancelled'))))
+                           AND COALESCE(rt.status,'completed')<>'cancelled')
+                         AND NOT ${recordedExchangeShipmentSql('oi')})))
              OR (COALESCE(oi.is_workshop,0)=1
                  AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
                    JOIN order_dispatches d ON d.id=di.dispatch_id
@@ -435,7 +437,8 @@ export async function dispatchSelectedCompleteOrderLines(
                          WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
                        AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
                          WHERE ri.order_item_id=oi.id AND ri.quantity>0
-                           AND COALESCE(rt.status,'completed')<>'cancelled'))))
+                           AND COALESCE(rt.status,'completed')<>'cancelled')
+                         AND NOT ${recordedExchangeShipmentSql('oi')})))
                 OR (COALESCE(oi.is_workshop,0)=1 AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)))
        ) THEN ? ELSE NULL END,
        updated_at=? WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'`
