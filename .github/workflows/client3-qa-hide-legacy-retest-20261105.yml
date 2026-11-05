@@ -1,0 +1,145 @@
+name: Client3 QA ONLY — hide historical orders and verify all QA fixes
+on:
+  push:
+    branches: [client3/qa-hide-legacy-retest-20261105]
+    paths: ['.github/workflows/client3-qa-hide-legacy-retest-20261105.yml']
+permissions:
+  contents: read
+concurrency:
+  group: client3-qa-remove-exchange-20261105
+  cancel-in-progress: false
+jobs:
+  verify-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      LIVE_WORKER: orders-app-client3-old-client
+      LIVE_DB: orders_db_client3_old_client
+      LIVE_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      QA_WORKER: orders-app-client3-qa-20261103
+      QA_DB: orders_db_client3_qa_41698114208
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 4}
+      - name: Enforce isolated Client3 QA and exact source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/qa-hide-legacy-retest-20261105
+          test "$(git rev-parse HEAD^)" = 841e23d3deed4e93b813978d4d66787c4126c8f8
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$QA_DB_ID" != "$LIVE_DB_ID"
+          test "$QA_WORKER" != "$LIVE_WORKER"
+          test "$(jq -r .name wrangler.jsonc)" = "$LIVE_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$LIVE_DB_ID"
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          python3 - <<'PY'
+          import subprocess
+          allowed={
+            '.github/workflows/client3-qa-hide-legacy-retest-20261105.yml',
+          }
+          got=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
+          assert got==allowed,'Unexpected or missing QA exchange-removal files: '+repr(got.symmetric_difference(allowed))
+          assert not any(p.startswith('migrations/') or p.startswith('src/app/') or
+              p in ('wrangler.jsonc','package.json','package-lock.json','worker/index.ts') for p in got)
+          print('CLIENT3_QA_LEGACY_REMOVAL_SOURCE_GUARD_PASS')
+          PY
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          data=json.loads(Path('wrangler.jsonc').read_text())
+          assert data['name']==os.environ['LIVE_WORKER']
+          assert data['d1_databases'][0]['database_id']==os.environ['LIVE_DB_ID']
+          data['name']=os.environ['QA_WORKER']
+          data['d1_databases'][0]['database_name']=os.environ['QA_DB']
+          data['d1_databases'][0]['database_id']=os.environ['QA_DB_ID']
+          data['vars']['CLIENT3_QA_COPY']='1'
+          Path('wrangler.client3-qa.jsonc').write_text(json.dumps(data,ensure_ascii=False,indent=2))
+          PY
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.client3-qa.jsonc
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Build and regression-test returns, orders, stock, finance, logistics
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          node --experimental-strip-types scripts/client3/test-watch-hide-legacy-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-transient-notice-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-no-exchange-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-orders-read-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-return-money-ui-20261104.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-editor-delete-release-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-order-commit-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-source-first-order-20261105.mjs
+          node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
+          node --experimental-strip-types scripts/client3/test-watch-handover-after-revision-20261103.mjs
+          node --experimental-strip-types scripts/client3/test-watch-catalog-v6-release-20261104.mjs
+          node --experimental-strip-types scripts/client3/test-watch-manager-report-names-20261105.mjs
+          echo CLIENT3_QA_HIDE_LEGACY_REGRESSION_PASS
+      - name: Read-only QA D1 no-exchange verification, FK and business counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM exchanges) exchange_count,
+            (SELECT COUNT(*) FROM exchange_items) exchange_items_count,
+            (SELECT COUNT(*) FROM inventory_lifecycle_events WHERE operation_type='exchange') lifecycle_count,
+            (SELECT COUNT(*) FROM financial_events WHERE event_type LIKE 'exchange_%') exchange_money_count,
+            (SELECT COUNT(*) FROM orders) order_count,
+            (SELECT COUNT(*) FROM returns) return_count,
+            (SELECT COUNT(*) FROM order_items) order_items_count,
+            (SELECT COUNT(*) FROM payments) payment_count" |
+            tee /tmp/client3-qa-exchange-preflight.json |
+            jq -e '.[0].results[0] | select(.exchange_count==0 and .exchange_items_count==0 and .lifecycle_count==0 and .exchange_money_count==0)'
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          echo CLIENT3_QA_NO_EXCHANGE_DB_PREFLIGHT_PASS
+      - name: Deploy ONLY isolated QA Worker — no migrations, no D1 writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          npx wrangler deploy --config wrangler.client3-qa.jsonc
+          echo CLIENT3_QA_HIDE_LEGACY_DEPLOY_PASS
+      - name: Verify published exact JS, protected APIs and unchanged D1
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          test -s "dist/client$asset"
+          matched=0
+          for attempt in $(seq 1 12); do
+            hc="$(curl -sSL --max-time 20 -o /tmp/qa-home -w '%{http_code}' "$base/?no_exchange=$GITHUB_SHA" || true)"
+            jc="$(curl -sSL --max-time 25 -o /tmp/qa-js -w '%{http_code}' "$base$asset" || true)"
+            if test "$hc" = 200 && grep -Eq 'id="root"|type="module"' /tmp/qa-home &&
+              test "$jc" = 200 && cmp -s "dist/client$asset" /tmp/qa-js; then
+              matched=1
+              echo "CLIENT3_QA_HIDE_LEGACY_ASSET_MATCH_PASS attempt=$attempt"
+              break
+            fi
+            sleep 3
+          done
+          test "$matched" = 1
+          for path in '/api/client3/watches/orders/1/exchange' '/api/client3/watches/orders/1/exchange-set' '/api/client3/watches/orders/1/exchanges/history' '/api/client3/watches/orders?brand=TAUWACH'; do
+            code="$(curl -sS --max-time 20 -o /tmp/qa-anon -w '%{http_code}' "$base$path")"
+            echo "CLIENT3_QA_ANONYMOUS_HTTP $code $path"
+            test "$code" = 401 -o "$code" = 403
+          done
+          npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results|length==0'
+          echo CLIENT3_QA_HIDE_LEGACY_RELEASE_VERIFIED
