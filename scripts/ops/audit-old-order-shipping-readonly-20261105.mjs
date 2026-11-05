@@ -149,6 +149,65 @@ for(const row of diagnosticResponse[0].results) {
  console.log('UNSENT_STATE',row.cohort,row.item_state,row.reservation_state,'ITEMS',row.items,'ORDERS_TOUCHED',row.orders)
 }
 
+
+const sentDiagnostics=diagnostics.replace(
+  "COALESCE(o.shipping_status,'not_sent')<>'sent'",
+  "COALESCE(o.shipping_status,'not_sent')='sent'",
+)
+if(sentDiagnostics===diagnostics)throw new Error('SENT_DIAGNOSTIC_NOT_RESTRICTED')
+const rawSent=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+sentDiagnostics],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const parsedSent=JSON.parse(rawSent)
+if(!Array.isArray(parsedSent)||parsedSent.length!==1||
+ parsedSent[0]?.success!==true||!Array.isArray(parsedSent[0]?.results)){
+ throw new Error('SENT_DIAGNOSTIC_INVALID')
+}
+for(const row of parsedSent[0].results) {
+ if(!Number.isSafeInteger(row.items)||!Number.isSafeInteger(row.orders))throw Error('SENT_AGGREGATE_INVALID')
+ console.log('SENT_STATE',row.cohort,row.item_state,row.reservation_state,'ITEMS',row.items,'ORDERS_TOUCHED',row.orders)
+}
+
+// Targeted, no client name, phone, address, price, manager, or order-item ID.
+const targetSql=`SELECT
+  COALESCE(o.shipping_status,'not_sent') AS shipping_state,
+  COUNT(oi.id) AS lines,
+  SUM(CASE WHEN oi.stock_writeoff_status='fulfilled' THEN 1 ELSE 0 END) AS fulfilled_lines,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM order_dispatch_items di
+    WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity
+  ) THEN 1 ELSE 0 END) AS active_dispatch_lines,
+  SUM(CASE WHEN EXISTS(
+    SELECT 1 FROM inventory_reservations r
+    WHERE r.order_item_id=oi.id AND r.status='fulfilled' AND r.quantity=oi.quantity
+      AND (EXISTS(
+        SELECT 1 FROM inventory_handover_reviews hr WHERE hr.reservation_id=r.id
+          AND hr.order_item_id=oi.id AND hr.decision='issued_before_checkpoint'
+      ) OR EXISTS(
+        SELECT 1 FROM activity_log a WHERE a.order_id=o.id AND a.entity_type='order_item'
+          AND a.entity_id=oi.id
+          AND a.event_type IN ('order_stock_issued_before_full_shipping','order_stock_handover_reconciled')
+          AND julianday(a.created_at)>=julianday(r.created_at)
+      ))
+  ) THEN 1 ELSE 0 END) AS proven_prior_issued_lines
+FROM orders o
+JOIN order_items oi ON oi.order_id=o.id AND oi.quantity>0
+WHERE o.external_id='ORD-20261104091902-61F1772C'
+GROUP BY o.shipping_status`
+if(!/^\s*SELECT\b/i.test(targetSql))throw Error('TARGET_MUST_BE_SELECT')
+const rawTarget=execFileSync('npx',
+ ['wrangler','d1','execute',db,'--remote','--config','wrangler.jsonc','--json','--command='+targetSql],
+ {encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024,stdio:['ignore','pipe','pipe']})
+const targetResponse=JSON.parse(rawTarget)
+if(!Array.isArray(targetResponse)||targetResponse.length!==1||
+  targetResponse[0]?.success!==true||!Array.isArray(targetResponse[0]?.results))throw Error('TARGET_QUERY_FAILED')
+for(const row of targetResponse[0].results) {
+ if(!Number.isSafeInteger(row.lines))throw Error('TARGET_RESPONSE_INVALID')
+ console.log('TARGET_FROM_USER_SCREENSHOT','SHIPPING',row.shipping_state,'LINES',row.lines,
+ 'FULFILLED',row.fulfilled_lines,'DISPATCHED',row.active_dispatch_lines,
+ 'PRIOR_ISSUE_EVIDENCE',row.proven_prior_issued_lines)
+}
+
 console.log('HISTORICAL_SHIPPING_READ_ONLY_AUDIT_END_NO_WRITES')
 // Totals in ORDERS_TOUCHED are overlapping across line categories. Do not sum them
 // to claim the number of unique historical orders. A physical stock issue alone
