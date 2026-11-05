@@ -18,7 +18,22 @@ const stmt = (query, bindings = []) => ({
     return { meta: { changes: Number(result.changes) } }
   },
 })
-const db = { prepare: query => stmt(query) }
+const db = {
+  prepare: query => stmt(query),
+  async batch(statements) {
+    sql.exec('SAVEPOINT prior_issue_atomic')
+    try {
+      const result = []
+      for (const statement of statements) result.push(await statement.run())
+      sql.exec('RELEASE prior_issue_atomic')
+      return result
+    } catch (error) {
+      sql.exec('ROLLBACK TO SAVEPOINT prior_issue_atomic')
+      sql.exec('RELEASE prior_issue_atomic')
+      throw error
+    }
+  },
+}
 sql.prepare("INSERT OR IGNORE INTO managers(id,name) VALUES (1,'Prior issue tester')").run()
 sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES (9021,'PRIOR ISSUE TEST','adult',1)").run()
 sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(9031,9021,'МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1)").run()
@@ -59,6 +74,14 @@ assert.equal(draft.canConfirmIssuedOnly, true)
 assert.equal(draft.selectedQuantity, 0)
 assert.equal(draft.lines.filter(row => row.reason === 'Уже выдан').length, 2)
 assert.equal(projectOrderShipmentDisplay({ shipping_status: 'not_sent', items }).state, 'not_sent')
+// Failed activity logging must roll back the shipping marker atomically.
+const activityTrigger = `CREATE TRIGGER reject_prior_issue_log BEFORE INSERT ON activity_log
+  WHEN NEW.event_type='order_prior_issued_shipping_confirmed'
+  BEGIN SELECT RAISE(ABORT,'fixture activity storage unavailable'); END`
+sql.exec(activityTrigger)
+await assert.rejects(confirm(9501), /fixture activity storage unavailable/)
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9501').get().shipping_status,'not_sent')
+sql.exec('DROP TRIGGER reject_prior_issue_log')
 const result = await confirm(9501)
 assert.equal(result.statusOnly, true)
 assert.equal(result.stockDeducted, 0)
