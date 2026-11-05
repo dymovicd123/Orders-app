@@ -414,9 +414,12 @@ export async function dispatchSelectedCompleteOrderLines(
          WHERE oi.order_id=orders.id AND oi.quantity>0
            AND ((COALESCE(oi.is_workshop,0)=0
                  AND (COALESCE(oi.stock_writeoff_status,'') NOT IN ('fulfilled','exchanged','cancelled','returned')
-                   OR (oi.stock_writeoff_status='fulfilled' AND NOT EXISTS(
-                     SELECT 1 FROM order_dispatch_items di
-                     WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity))))
+                   OR (oi.stock_writeoff_status='fulfilled'
+                       AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+                         WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+                       AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
+                         WHERE ri.order_item_id=oi.id AND ri.quantity>0
+                           AND COALESCE(rt.status,'completed')<>'cancelled'))))
              OR (COALESCE(oi.is_workshop,0)=1
                  AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
                    JOIN order_dispatches d ON d.id=di.dispatch_id
@@ -427,9 +430,12 @@ export async function dispatchSelectedCompleteOrderLines(
          WHERE oi.order_id=orders.id AND oi.quantity>0
            AND ((COALESCE(oi.is_workshop,0)=0
                   AND (COALESCE(oi.stock_writeoff_status,'') NOT IN ('fulfilled','exchanged','cancelled','returned')
-                   OR (oi.stock_writeoff_status='fulfilled' AND NOT EXISTS(
-                     SELECT 1 FROM order_dispatch_items di
-                     WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity))))
+                   OR (oi.stock_writeoff_status='fulfilled'
+                       AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di
+                         WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)
+                       AND NOT EXISTS(SELECT 1 FROM return_items ri JOIN returns rt ON rt.id=ri.return_id
+                         WHERE ri.order_item_id=oi.id AND ri.quantity>0
+                           AND COALESCE(rt.status,'completed')<>'cancelled'))))
                 OR (COALESCE(oi.is_workshop,0)=1 AND NOT EXISTS(SELECT 1 FROM order_dispatch_items di WHERE di.order_item_id=oi.id AND di.cancelled_quantity<di.quantity)))
        ) THEN ? ELSE NULL END,
        updated_at=? WHERE id=? AND COALESCE(shipping_status,'not_sent')<>'sent'`
