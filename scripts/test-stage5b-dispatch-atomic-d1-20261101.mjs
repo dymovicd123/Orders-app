@@ -336,6 +336,71 @@ const readyAgain=await import('../worker/domains/orders-write.ts').then(m=>m.get
 const againPlan=buildOrderShipmentPlan(readyAgain,newReservations,await readPriorIssuedItemIds(db,9912))
 assert.equal(againPlan.lines.find(x=>x.orderItemId===9913).selectable,true)
 
+
+// A historical order may still be order-wide "not_sent" even though its NEW
+// replacement was explicitly marked "sent" during an Exchange. The applied
+// Exchange lifecycle is shipment evidence, not an invitation to write stock twice.
+sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(9937,'EXCHANGE DIRECT SENT','adult',1)").run()
+sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,is_active) VALUES(9936,9937,'ЖЕН','БЕЖ','СТАНДАРТ','СТАНДАРТ','46',1)").run()
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES(9938,'warehouse',9937,9936,'EXCHANGE DIRECT SENT',7,1)").run()
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9930,'ORD-EXCHANGE-APPLIED-NOT-SENT','2026-11-01',1,'active','warehouse','ready','not_sent','2026-11-01T08:00:00Z','2026-11-01T08:00:00Z')").run()
+for (const [id,status] of [[9931,'fulfilled'],[9932,'reserved']]) {
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,9930,9937,9936,'EXCHANGE DIRECT SENT',1,5000,5000,0,'warehouse',?,'2026-11-01T08:00:00Z')").run(id,status)
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,reference_type,reference_id,created_at,fulfilled_at,updated_at) VALUES(9930,?,'warehouse',9937,9936,1,?,'exchange_new','9933','2026-11-01T08:00:00Z',?,'2026-11-01T08:00:00Z')").run(id,status==='fulfilled'?'fulfilled':'active',status==='fulfilled'?'2026-11-01T08:05:00Z':null)
+}
+sql.prepare("INSERT INTO exchanges(id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,new_source_type,financial_action,financial_amount,status,created_at) VALUES(9933,9930,'2026-11-01',NULL,0,NULL,'warehouse','none',0,'completed','2026-11-01T08:00:00Z')").run()
+sql.prepare("INSERT INTO exchange_items(exchange_id,role,order_item_id,product_name_snapshot,quantity,inventory_source,created_at) VALUES(9933,'new',9931,'EXCHANGE DIRECT SENT',1,'warehouse','2026-11-01T08:00:00Z')").run()
+const directMovement=sql.prepare("INSERT INTO inventory_movements(inventory_source,movement_type,product_id,variant_id,product_name_snapshot,quantity_delta,quantity_after,reference_type,reference_id,created_at) VALUES('warehouse','sale',9937,9936,'EXCHANGE DIRECT SENT',-1,7,'exchange_new','9933','2026-11-01T08:05:00Z')").run().lastInsertRowid
+sql.prepare("INSERT INTO inventory_lifecycle_events(id,event_key,operation_type,operation_id,order_id,order_item_id,event_type,direction,inventory_source,quantity,product_id,variant_id,product_name_snapshot,status,applied_at,movement_id,created_at,updated_at) VALUES(9934,'exchange:9933:new:1','exchange',9933,9930,9931,'exchange_new_out','out','warehouse',1,9937,9936,'EXCHANGE DIRECT SENT','applied','2026-11-01T08:05:00Z',?,'2026-11-01T08:00:00Z','2026-11-01T08:05:00Z')").run(directMovement)
+
+const {projectOrderShipmentDisplay}=await import('../src/app/orderShipmentProjection.ts')
+const directOrder=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9930))
+const directLine=directOrder.items.find(i=>i.id===9931)
+assert.equal(directOrder.shipping_status,'not_sent')
+assert.equal(directLine.shipmentSentQuantity,1,'Applied Exchange must be visible as an item shipment')
+assert.equal(projectOrderShipmentDisplay(directOrder).lines.find(x=>x.quantity===1).state,'sent')
+assert.equal(projectOrderShipmentDisplay(directOrder).state,'partial')
+const directReservations=sql.prepare('SELECT order_item_id,quantity,status,variant_id,inventory_source FROM inventory_reservations WHERE order_id=9930').all()
+const directPlan=buildOrderShipmentPlan(directOrder,directReservations)
+assert.equal(directPlan.lines.find(x=>x.orderItemId===9931).selectable,false)
+assert.equal(directPlan.lines.find(x=>x.orderItemId===9931).reason,'Уже отправлен')
+assert.equal(directPlan.lines.find(x=>x.orderItemId===9932).selectable,true)
+const directBefore=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9938').get()
+await assert.rejects(dispatchSelectedCompleteOrderLines(db,9930,{
+ requestId:'stage5b-exchange-direct-no-repeat-01',items:[{orderItemId:9931,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-01',
+}),/не готов|Товар изменился|не больше доступного/)
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9938').get()},{...directBefore})
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=9936").get().n,1)
+
+const directSiblingDispatch=await dispatchSelectedCompleteOrderLines(db,9930,{
+ requestId:'stage5b-exchange-direct-other-line-02',items:[{orderItemId:9932,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-01',
+})
+assert.equal(directSiblingDispatch.ok,true)
+assert.equal(sql.prepare("SELECT shipping_status FROM orders WHERE id=9930").get().shipping_status,'sent',
+ 'Completing the other line must recognize the already shipped Exchange replacement')
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9938').get()},{quantity:6,reserved_quantity:0})
+assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM inventory_movements WHERE variant_id=9936").get().n,2,
+ 'Only the newly dispatched sibling creates a new stock movement')
+const directSiblingDispatchItem=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(directSiblingDispatch.dispatchId).id
+await cancelExactOrderDispatchItem(db,9930,{
+ dispatchItemId:directSiblingDispatchItem,requestId:'stage5b-exchange-direct-other-undo-03',
+ actor:'QA',reason:'Correction',
+})
+const directAfterUndo=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9930))
+assert.equal(directAfterUndo.shipping_status,'not_sent')
+assert.equal(directAfterUndo.items.find(i=>i.id===9931).shipmentSentQuantity,1,
+ 'Canceling a different dispatch must not revoke the earlier Exchange shipment')
+assert.equal(projectOrderShipmentDisplay(directAfterUndo).state,'partial')
+
+sql.prepare("UPDATE exchanges SET status='cancelled' WHERE id=9933").run()
+const cancelledExchange=await import('../worker/domains/orders-write.ts').then(m=>m.getOrder(db,9930))
+assert.equal(cancelledExchange.items.find(i=>i.id===9931).shipmentSentQuantity,null,
+ 'A cancelled Exchange cannot provide historical shipment evidence')
+assert.equal(projectOrderShipmentDisplay(cancelledExchange).lines[0].state,'not_sent')
+console.log('STAGE5B_APPLIED_EXCHANGE_SHIPMENT_COMPAT_NO_DOUBLE_STOCK_PASS')
+
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
 console.log('STAGE5B_NEW_ORDER_PREISSUED_NORMAL_DISPATCH_NO_DOUBLE_STOCK_PASS')
