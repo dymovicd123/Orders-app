@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/release/client3-logistics-main-parity-20261105
-          test "$(git rev-parse HEAD^)" = d822eac5944752328a48315b2f525c282a72c289
+          test "$(git rev-parse HEAD^)" = 077c4f40787024759b56b05a80441d7b1fcf6f47
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$(jq -r .name wrangler.jsonc)" = "$REAL_WORKER"
@@ -36,7 +36,7 @@ jobs:
           python3 - <<'PY'
           import subprocess
           allowed={
-            'worker/domains/order-shipment-plan.ts',
+            'src/WatchClient3App.tsx',
             '.github/workflows/client3-logistics-main-parity-release-20261105.yml',
           }
           actual=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
