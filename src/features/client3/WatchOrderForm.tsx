@@ -1,10 +1,11 @@
 import {useMemo,useRef,useState,type FormEvent} from 'react'
-import {SmartPickerInput} from '../../components/inputs/SmartPickerInput'
+import {WatchOrderLineEditor} from './WatchOrderLineEditor'
 import {WatchOrderSourcePicker,sourceAvailable,stockKey,watchLabels} from './WatchOrderSourcePicker'
 import '../../styles/client3-watch-source-picker.css'
 import '../../styles/188f-stock-trust.css'
 import '../../styles/client3-watch-main-create.css'
 import '../../styles/client3-watch-order.css'
+import '../../styles/client3-watch-source-picker-refine.css'
 import {
  WATCH_OPTIONS,WATCH_PAYMENTS,validateWatchOrderInput,
  type WatchBrand,type WatchSource,type WatchPaymentMethod,
@@ -17,9 +18,9 @@ export type WatchOrderChoice={
  officePhysical:number;officeReserved:number;showcasePhysical:number;showcaseReserved:number;
  catalogPriceSnapshot?:number|null
 }
-type ManualFields={modelName:string;gender:'male'|'female';movement:string;
+export type ManualFields={modelName:string;gender:'male'|'female';movement:string;
  braceletMaterial:string;dialColor:string;braceletColor:string}
-type DraftLine={id:string;kind:'stock'|'preorder'|'manual';watchVariantId:number;catalogVariantId:number;source:WatchSource;quantity:number;
+export type DraftLine={id:string;kind:'stock'|'preorder'|'manual';watchVariantId:number;catalogVariantId:number;source:WatchSource;quantity:number;
  unitPrice:string;engravingText:string;manual:ManualFields}
 export type WatchOrderDraftPayload=ReturnType<typeof validateWatchOrderInput>&{
  orderDate:string;shippingDeadlineLocal:string;requestId:string;receivedAmount:number;
@@ -62,6 +63,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  const [brand,setBrand]=useState<WatchBrand|''>('')
  const [source,setSource]=useState<WatchSource>('office')
  const [lines,setLines]=useState<DraftLine[]>([])
+ const [editingId,setEditingId]=useState<string|null>(null)
  const [payments,setPayments]=useState<Array<{method:string;amount:string}>>([
    {method:paymentMethods[0]||'KASPI GOLD',amount:'0'},
  ])
@@ -126,7 +128,16 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        braceletMaterial:choice.braceletMaterial,dialColor:choice.dialColor,braceletColor:choice.braceletColor||''},
    }
    setLines(current=>current.length>=20?current:[...current,item])
+   if(item.unitPrice==='')setEditingId(item.id)
  }
+ const addManual=(selectedSource:WatchSource)=>{
+   if(lines.length>=20)return
+   const item=newLine(selectedSource)
+   setLines(current=>current.length>=20?current:[...current,item])
+   setEditingId(item.id)
+ }
+ const editLine=lines.find(x=>x.id===editingId)
+ const editChoice=editLine?scoped.find(x=>x.watchVariantId===editLine.watchVariantId&&x.catalogVariantId===editLine.catalogVariantId):undefined
  const lineTotal=(line:DraftLine)=>line.unitPrice.trim()!==''?line.quantity*Number(line.unitPrice):0
  const total=lines.reduce((sum,line)=>sum+(Number.isFinite(lineTotal(line))?lineTotal(line):0),0)
  const received=payments.reduce((sum,row)=>sum+(Number(row.amount)||0),0)
@@ -153,7 +164,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    recipientName.trim()&&recipientPhone.trim()&&city.trim()&&address.trim()&&postalCode.trim()&&
    deliveryMethod.trim()&&shippingDeadlineLocal&&/^\d{4}-\d{2}-\d{2}$/.test(orderDate)&&orderDate<=businessToday()&&!busy)
  const reset=()=>{
-   setBrand('');setSource('office');setLines([]);setManagerId(0)
+   setBrand('');setSource('office');setLines([]);setEditingId(null);setManagerId(0)
    setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0'}])
    setRecipientName('');setRecipientPhone('');setCity('');setOtherCity(false);setAddress('');setPostalCode('')
    setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false);setOrderDate(businessToday())
@@ -204,7 +215,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    onSubmit={event=>void submit(event)}>
    <div className="create-hero">
      <div><div className="card-label">Новый заказ</div>
-       <div className="card-meta">Введите товар и характеристики. Наличие на складе не ограничивает регистрацию заказа.</div></div>
+       <div className="card-meta">Выберите часы из наличия или введите новую комплектацию. Отсутствие товара не блокирует заказ.</div></div>
      <div className="orders-workspace-kpis create-kpis">
        <div><span>Товаров</span><strong>{lines.reduce((n,x)=>n+(Number.isFinite(x.quantity)?Math.max(0,x.quantity):0),0)}</strong></div>
        <div><span>Оплат</span><strong>{payments.filter(x=>Number(x.amount)>0).length}</strong></div>
@@ -219,7 +230,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
      <div className="main-watch-create-grid">
        <label>Бренд *
          <select required value={brand} onChange={e=>{
-           setBrand(e.target.value as WatchBrand);setSource('office');setLines([]);setManagerId(0);setError('')
+           setBrand(e.target.value as WatchBrand);setSource('office');setLines([]);setEditingId(null);setManagerId(0);setError('')
          }}>
            <option value="">Выберите бренд</option>
            {allowedBrands.map(x=><option value={x} key={x}>{x}</option>)}
@@ -280,114 +291,94 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
      <div className="order-step-head">
        <div className="order-step-index">2</div>
        <div><h3>Товары заказа</h3>
-         <p>Выберите часы из остатков или оформите под заказ. Характеристики подставляются автоматически.</p>
+         <p>Выберите готовую комплектацию или укажите свои характеристики. Отсутствующий товар можно оформить без остатка.</p>
        </div>
      </div>
      {!brand?<div className="main-watch-create-placeholder">Сначала выберите бренд. После этого откроется каталог выбранного бренда.</div>:
        <div className="watch-pick-layout">
          <WatchOrderSourcePicker brand={brand} source={source} onSourceChange={setSource}
            catalog={scoped} allocated={allocated} onAdd={addExisting}
-           onManual={selectedSource=>setLines(all=>all.length>=20?all:[...all,newLine(selectedSource)])}/>
+           onManual={addManual}/>
          <aside className="watch-pick-cart-shell" aria-label="Выбранные товары заказа">
            <div className="watch-pick-cart-title"><strong>Состав заказа</strong>
              <span>{lines.length} из 20 позиций</span></div>
-           {!lines.length?<div className="watch-pick-cart-empty">Выберите комплектацию слева или добавьте товар вручную.</div>:
-             <div className="watch-pick-cart">
-               {lines.map((line,index)=>{
-                 const chosen=matches[index]
-                 const available=chosen?sourceAvailable(chosen,line.source):0
-                 const quantityReserved=allocated.get(stockKey(line.source,line.watchVariantId))||0
-                 const shortage=line.kind==='stock'&&quantityReserved>available
-                 return <article className="watch-pick-cart-item" key={line.id}>
-                   <div className="watch-pick-cart-row">
-                     <div><span className={'order-kind'+(line.kind==='preorder'?' waiting':line.kind==='manual'?' custom':'')}>
-                       {line.kind==='stock'?'Из наличия':line.kind==='preorder'?'Ожидание товара':'Ручной ввод'}</span>
-                       <h4 style={{marginTop:8}}>{line.kind==='manual'
-                         ?line.manual.modelName||'Новая модель':chosen?.modelName||'Комплектация недоступна'}</h4>
-                       {line.kind!=='manual'&&chosen&&<p className="cart-sub">{watchLabels(chosen).join(' · ')}</p>}
-                     </div>
-                     <button type="button" className="cart-remove" title="Убрать позицию" aria-label="Убрать позицию"
-                       onClick={()=>setLines(old=>old.filter(x=>x.id!==line.id))}>Удалить</button>
-                   </div>
-                   {line.kind==='manual'&&<div className="cart-manual">
-                     <label className="wide">Название товара *
-                       <SmartPickerInput value={line.manual.modelName} options={suggestions.models}
-                         placeholder="Модель часов" onChange={value=>update(line.id,{manual:{...line.manual,modelName:value}})}/>
-                     </label>
-                     <label>Пол *
-                       <select value={line.manual.gender}
-                         onChange={e=>update(line.id,{manual:{...line.manual,gender:e.target.value as 'male'|'female'}})}>
-                         {WATCH_OPTIONS.genders.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-                       </select>
-                     </label>
-                     <label>Механизм *
-                       <SmartPickerInput value={readable(WATCH_OPTIONS.movements,line.manual.movement)}
-                         options={suggestions.movements} placeholder="Кварцевый, механический…"
-                         onChange={value=>update(line.id,{manual:{...line.manual,movement:canonical(WATCH_OPTIONS.movements,value)}})}/>
-                     </label>
-                     <label>Материал браслета *
-                       <SmartPickerInput value={readable(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial)}
-                         options={suggestions.bracelets} placeholder="Сталь, кожа, каучук…"
-                         onChange={value=>{
-                           const braceletMaterial=canonical(WATCH_OPTIONS.braceletMaterials,value)
-                           update(line.id,{manual:{...line.manual,braceletMaterial,
-                             braceletColor:braceletMaterial==='leather'?line.manual.braceletColor:''}})
-                         }}/>
-                     </label>
-                     <label>Цвет циферблата *
-                       <SmartPickerInput value={readable(WATCH_OPTIONS.dialColors,line.manual.dialColor)}
-                         options={suggestions.dials} placeholder="Цвет"
-                         onChange={value=>update(line.id,{manual:{...line.manual,dialColor:canonical(WATCH_OPTIONS.dialColors,value)}})}/>
-                     </label>
-                     {canonical(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial)==='leather'&&
-                       <label className="wide">Цвет кожаного ремешка *
-                         <SmartPickerInput value={line.manual.braceletColor}
-                           options={suggestions.leatherColors} placeholder="Цвет ремешка"
-                           onChange={value=>update(line.id,{manual:{...line.manual,braceletColor:value}})}/>
-                       </label>}
-                   </div>}
-                   <div className="cart-edit-grid">
-                     <label>Источник позиции *
-                       <select value={line.source} onChange={e=>update(line.id,{source:e.target.value as WatchSource})}>
-                         {WATCH_OPTIONS.sources.map(x=><option key={x.value} value={x.value}>{x.label}</option>)}
-                       </select>
-                     </label>
-                     <label>Количество *
-                       <input type="number" min={1} max={1000} required value={line.quantity}
-                         onChange={e=>update(line.id,{quantity:Number(e.target.value)})}/>
-                     </label>
-                     <label>Каталожная цена
-                       <output>{chosen?.catalogPriceSnapshot==null?'Не задана':
-                         chosen.catalogPriceSnapshot.toLocaleString('ru-RU')+' ₸'}</output>
-                     </label>
-                     <label>Цена продажи, ₸ *
-                       <input type="text" inputMode="numeric" pattern="[0-9]*" required
-                         value={line.unitPrice} onChange={e=>{
-                           if(/^\d{0,10}$/.test(e.target.value))update(line.id,{unitPrice:e.target.value})
-                         }}/>
-                     </label>
-                     <label className="wide">Комментарий логисту / гравировка
-                       <textarea rows={2} maxLength={500} value={line.engravingText}
-                         onChange={e=>update(line.id,{engravingText:e.target.value})}
-                         placeholder="Текст гравировки и пожелания клиента"/>
-                     </label>
-                   </div>
-                   {line.kind==='stock'&&!shortage&&<p className="cart-status">Источник подтверждён: свободно {available} шт. До сохранения остаток может измениться.</p>}
-                   {shortage&&<div className="watch-pick-confirm-warning">
-                     Недостаточно свободных часов: доступно {available} шт. для {quantityReserved} шт. в этом заказе.
-                     <button type="button" className="cart-availability-action" onClick={()=>update(line.id,{kind:'preorder'})}>
-                       Оформить эту позицию под заказ
-                     </button>
-                   </div>}
-                   {line.kind==='preorder'&&<p className="cart-status warning">Заказ будет оформлен без подтверждённого резерва, если нужных часов нет. Отправка возможна после поступления.</p>}
-                   {line.kind==='manual'&&<p className="cart-status">Система проверит характеристики через резолвер: существующий SKU будет использован повторно, новую комплектацию зарегистрирует без фиктивного прихода.</p>}
-                 </article>
-               })}
-             </div>}
+           {!lines.length?<div className="watch-pick-cart-empty">
+             Добавьте часы слева. Количество и цену можно изменить в составе заказа.
+           </div>:<div className="watch-pick-cart">
+             {lines.map((line,index)=>{
+               const chosen=matches[index]
+               const available=chosen?sourceAvailable(chosen,line.source):0
+               const quantityReserved=allocated.get(stockKey(line.source,line.watchVariantId))||0
+               const shortage=line.kind==='stock'&&quantityReserved>available
+               const name=line.kind==='manual'?line.manual.modelName.trim()||'Новая комплектация':
+                 chosen?.modelName||'Комплектация недоступна'
+               const status=line.kind==='stock'?'Из наличия':
+                 line.kind==='preorder'?'Без остатка':'Свои характеристики'
+               return <article className="watch-pick-cart-item compact" key={line.id}>
+                 <div className="watch-pick-cart-row">
+                   <span className={'order-kind'+(line.kind==='preorder'?' waiting':line.kind==='manual'?' custom':'')}>
+                     {status}
+                   </span>
+                   <button type="button" className="cart-remove" title="Удалить позицию"
+                     onClick={()=>{setLines(old=>old.filter(x=>x.id!==line.id));if(editingId===line.id)setEditingId(null)}}>
+                     Удалить
+                   </button>
+                 </div>
+                 <div className="watch-pick-cart-identity">
+                   <strong>{name}</strong>
+                   <p className="cart-sub">{line.kind==='manual'
+                     ?[readable(WATCH_OPTIONS.genders,line.manual.gender),
+                       readable(WATCH_OPTIONS.movements,line.manual.movement),
+                       readable(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),
+                       readable(WATCH_OPTIONS.dialColors,line.manual.dialColor),
+                       ...(line.manual.braceletColor?[line.manual.braceletColor]:[])].filter(Boolean).join(' · ')
+                     :chosen?watchLabels(chosen).join(' · '):'Проверьте комплектацию'}
+                   </p>
+                   <span className="watch-pick-readonly-source">{line.source==='office'?'Офис':'Витрина'}</span>
+                 </div>
+                 <div className="watch-pick-cart-quick">
+                   <label>Количество
+                     <input type="number" min={1} max={1000} value={line.quantity}
+                       onChange={e=>update(line.id,{quantity:Number(e.target.value)})}/>
+                   </label>
+                   <label>Цена продажи, ₸
+                     <input type="text" inputMode="numeric" pattern="[0-9]*"
+                       placeholder="Указать цену" value={line.unitPrice}
+                       onChange={e=>{if(/^\d{0,10}$/.test(e.target.value))update(line.id,{unitPrice:e.target.value})}}/>
+                   </label>
+                 </div>
+                 <div className="watch-pick-cart-details-row">
+                   <button type="button" className="watch-pick-edit-action" onClick={()=>setEditingId(line.id)}>
+                     {line.kind==='manual'?'Изменить характеристики и гравировку':'Гравировка и детали'}
+                   </button>
+                   {line.unitPrice.trim()!==''&&<strong>{lineTotal(line).toLocaleString('ru-RU')} ₸</strong>}
+                 </div>
+                 {line.engravingText&&<p className="watch-pick-comment-preview">{line.engravingText}</p>}
+                 {shortage&&<div className="watch-pick-confirm-warning">
+                   Свободно {available} шт.; выбрано {quantityReserved} шт.
+                   <button type="button" className="cart-availability-action"
+                     onClick={()=>update(line.id,{kind:'preorder'})}>
+                     Оставить без подтверждённого резерва
+                   </button>
+                 </div>}
+                 {line.kind==='preorder'&&<p className="cart-status warning">
+                   Нет свободного остатка в выбранном источнике. Ожидает поступления или резервирования.
+                 </p>}
+                 {line.kind==='manual'&&!line.manual.modelName.trim()&&
+                   <p className="cart-status warning">Укажите модель и характеристики кнопкой выше.</p>}
+               </article>
+             })}
+           </div>}
            <div className="watch-pick-cart-total"><span>Сумма товаров</span>
              <strong>{total.toLocaleString('ru-RU')} ₸</strong></div>
-           {lines.length>=20&&<p className="cart-status warning">Достигнут лимит в 20 позиций для одного заказа.</p>}
+           {lines.length>=20&&<p className="cart-status warning">Достигнут лимит в 20 позиций.</p>}
          </aside>
+         {editLine&&<WatchOrderLineEditor
+           line={editLine} choice={editChoice} suggestions={suggestions}
+           available={editChoice?sourceAvailable(editChoice,editLine.source):0}
+           allocated={allocated.get(stockKey(editLine.source,editLine.watchVariantId))||0}
+           onUpdate={patch=>update(editLine.id,patch)} onClose={()=>setEditingId(null)}/>}
+
        </div>}
    </section>
    <section className="order-step-card">
@@ -451,7 +442,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
                  ?[readable(WATCH_OPTIONS.movements,line.manual.movement),readable(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),readable(WATCH_OPTIONS.dialColors,line.manual.dialColor)].join(' · ')
                  :match?watchLabels(match).join(' · '):''}
              </span>
-             <b>{line.source==='office'?'Офис':'Витрина'} · ×{line.quantity} · {line.kind==='stock'?'Из наличия':'Под заказ'}</b>
+             <b>{line.source==='office'?'Офис':'Витрина'} · ×{line.quantity} · {line.kind==='stock'?'Из наличия':line.kind==='preorder'?'Без остатка':'Свои характеристики'}</b>
            </div>
          })}
        </div>

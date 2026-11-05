@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import reactPlugin from '@vitejs/plugin-react'
 const source=fs.readFileSync('src/features/client3/WatchOrderForm.tsx','utf8')
+const editor=fs.readFileSync('src/features/client3/WatchOrderLineEditor.tsx','utf8')
 assert(!/Размер|Длина|Обмен размера|Цех/.test(source),'Watch form must not show clothing fields')
 assert(source.includes('sourceAvailable(x,line.source)>=(allocated'),
   'Stock mode must validate the sum of selected quantities before order save')
@@ -41,10 +42,11 @@ try {
     'Менеджер и оплаты','Проверка заказа']){
     assert(html.includes(label),'Missing customer watch form field/option: '+label)
   }
-  assert(source.includes('Источник позиции *')&&source.includes('WatchOrderSourcePicker'),
-    'Each selected watch retains Office/Showcase source and the new picker')
-  assert(source.includes('Название товара *')&&source.includes('SmartPickerInput'),
-    'Manual entry remains available without an existing catalog variant')
+  assert(source.includes('watch-pick-readonly-source')&&source.includes('WatchOrderSourcePicker'),
+    'Each chosen watch retains its original source without another source dropdown')
+  assert(!source.includes('<select value={line.source}'),'No duplicate source editor in the cart')
+  assert(editor.includes('Название модели *')&&editor.includes('SmartPickerInput'),
+    'Manual watch variant characteristics stay editable in the full-size dialog')
   assert(source.includes('watchVariantId:line.kind===')&&source.includes('orderMode:line.kind'),
     'Existing SKU must submit its exact identity and manual mode must be explicit')
   assert(html.includes('type="datetime-local"'),'Shipping cutoff needs date AND time')
