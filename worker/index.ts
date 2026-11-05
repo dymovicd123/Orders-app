@@ -37,6 +37,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
+import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
 import { cancelExactOrderDispatchItem } from './domains/order-dispatch-cancel.ts'
 import { createReferenceValue, deleteReferenceValue, getReferenceData, getReferenceValueCounts, listReferenceValues, normalizeReferenceKind, updateReferenceValue } from './domains/references.ts'
@@ -1807,6 +1808,17 @@ export default {
         const input = await readJson<{ physicalOutcome?: unknown }>(request);
         try {
           if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'Выберите нужную отправленную вещь в списке «Отправки».'},{status:409});
+          const statusOnly = await correctPriorIssuedOrderShippingIfApplicable(env.DB, id, {
+            physicalOutcome: input.physicalOutcome,
+            actor: cleanText(request.headers.get('X-Access-User')) || 'Сотрудник',
+          });
+          if (statusOnly) {
+            let updatedOrder = null;
+            try { updatedOrder = await getOrder(env.DB, id) }
+            catch (error) { console.warn('Prior-issued correction readback failed', error) }
+            return json({ ...statusOnly, ...(updatedOrder ? { order: updatedOrder } : {}),
+              refreshRequired: !updatedOrder });
+          }
           const result = await correctMistakenOrderHandoverWithCurrentExchange(env.DB, id, {
             physicalOutcome: input.physicalOutcome,
             actor: cleanText(request.headers.get('X-Access-User')) || normalizeAccessRole(request.headers.get('X-Access-Role')),
@@ -1899,7 +1911,7 @@ export default {
         if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
         const activeReservations = await env.DB.prepare(
           `SELECT order_item_id, quantity, status, variant_id
-           FROM inventory_reservations WHERE order_id = ? AND status = 'active'
+           FROM inventory_reservations WHERE order_id = ? AND status IN ('active','fulfilled')
            ORDER BY order_item_id ASC, id ASC`
         ).bind(orderId).all<Record<string,unknown>>();
         return json(buildOrderShipmentPlan(
@@ -1912,7 +1924,7 @@ export default {
       if (orderShippingMatch && request.method === 'PATCH') {
         const id = toInt(orderShippingMatch[1], 0);
         if (await orderHasNewDispatchHistory(id)) return json({ok:false,message:'В этом заказе уже есть отдельные отправки. Выберите оставшиеся товары через «Отправить товары».'},{status:409});
-        const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown }>(request);
+        const input = await readJson<{ shippingStatus?: unknown; shippingDate?: unknown; stockConfirmations?: unknown; confirmAlreadyIssued?: unknown }>(request);
         const existing = await env.DB.prepare(
           `SELECT id, external_id, manager_id, order_status, archived_at, shipping_status, shipping_date
            FROM orders WHERE id = ?`
@@ -1939,6 +1951,31 @@ export default {
             refreshRequired: !alreadySentOrder,
             inventoryDelivery: { fulfilled: 0, unresolved: 0 },
           });
+        }
+        if (input.confirmAlreadyIssued === true) {
+          try {
+            const confirmed = await confirmPriorIssuedOrderShipping(env.DB, id, {
+              shippingDate: cleanText(input.shippingDate),
+              actor: cleanText(request.headers.get('X-Access-User')) || 'Сотрудник',
+            });
+            let updatedOrder = null;
+            try {
+              updatedOrder = await getOrder(env.DB, id);
+            } catch (error) {
+              console.warn('Prior-issued shipping readback failed', error);
+            }
+            return json({
+              ...confirmed,
+              ...(updatedOrder ? { order: updatedOrder } : {}),
+              refreshRequired: !updatedOrder,
+            });
+          } catch (error) {
+            const publicError = publicApiError(error);
+            return json({
+              ok: false, ...(publicError.code ? { code: publicError.code } : {}),
+              message: publicError.message,
+            }, { status: publicError.status });
+          }
         }
         const workshop = await orderWorkshopPendingForShipping(env.DB, id);
         if (workshop.pending) {

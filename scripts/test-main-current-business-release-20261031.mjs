@@ -25,6 +25,7 @@ const tests=[
  'scripts/test-main-stage24-found-catalog-navigation-20261101.mjs',
  'scripts/test-storage-background-alert-scope-20261101.mjs',
  'scripts/test-stage5-client-quantity-replay-20261102.mjs',
+ 'scripts/test-main-prior-issued-shipping-20261105.mjs',
  'scripts/test-stage5b-dispatch-atomic-d1-20261101.mjs',
  'scripts/test-stage5b-http-routes-20261101.mjs',
  'scripts/test-old-order-post-stocktake-handover-r1.mjs',

@@ -57,8 +57,10 @@ export function projectOrderShipmentDisplay(
     } else {
       const stockState = String(item.stockWriteoffStatus || '').trim().toLowerCase()
       if (confirmedStockIssue.has(stockState)) {
-        state = 'sent'
-        sentQuantity = quantity
+        // A stock issue is not proof of customer shipment. The order-level
+        // marker or a non-cancelled dispatch ledger row must confirm that.
+        state = stockState === 'fulfilled' ? 'not_sent' : 'unknown'
+        sentQuantity = stockState === 'fulfilled' ? 0 : null
       } else if (knownNotIssued.has(stockState)) {
         state = 'not_sent'
         sentQuantity = 0
