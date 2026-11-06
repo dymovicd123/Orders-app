@@ -1896,6 +1896,14 @@ export async function updateOrderCritical(
         throw new CriticalOperationConflictError('Товар уже был физически выдан / отправлен. Состав такого заказа нельзя переписывать или удалять напрямую — используйте возврат, обмен или складскую корректировку.');
       }
       if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (itemContentChanged || deletingOrder)) {
+        if (!options.watchRewrite) {
+          const issuedBeforeFullShipping = await db.prepare(
+            `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
+          ).bind(id).first<{ count: number }>();
+          if (toInt(issuedBeforeFullShipping?.count, 0) > 0) {
+            throw new CriticalOperationConflictError('Часть товаров этого заказа уже передана клиенту. Состав заказа нельзя менять или удалять напрямую.');
+          }
+        } else {
         // A partial dispatch is not authority to rewrite issued rows. Client3
         // can edit other rows only when every already-issued SKU is preserved
         // identically, including price, source, engraving and historical snapshot.
@@ -1947,6 +1955,7 @@ export async function updateOrderCritical(
               throw new CriticalOperationConflictError('Отправленная позиция или её подтверждённое движение изменились. Сначала исправьте конкретную отправку; переписывать этот товар нельзя.');
             }
           }
+        }
         }
       }
       const nextItems = requestedItems || existingItemsForEdit;
