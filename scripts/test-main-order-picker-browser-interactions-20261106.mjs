@@ -26,12 +26,13 @@ const variants=[
 const entry=[
  "import React from 'react'",
  "import {createRoot} from 'react-dom/client'",
+ "import {flushSync} from 'react-dom'",
  "import {MainOrderSourcePicker} from './src/features/orders/MainOrderSourcePicker.tsx'",
  'window.__picked=[]',
  'const props={initialVariants:'+JSON.stringify(variants)+',initialSelectedId:1,allocated:new Map(),',
  'onPick:(choice,source,insufficient)=>window.__picked.push({variantId:choice.variantId,source,insufficient}),',
  'onManual:()=>window.__picked.push({manual:true})}',
- "createRoot(document.getElementById('mount')).render(React.createElement(MainOrderSourcePicker,props))",
+ "flushSync(()=>createRoot(document.getElementById('mount')).render(React.createElement(MainOrderSourcePicker,props)))",
 ].join('\n')
 const built=await build({
  stdin:{contents:entry,loader:'jsx',resolveDir:process.cwd(),sourcefile:'source-picker-test.jsx'},
