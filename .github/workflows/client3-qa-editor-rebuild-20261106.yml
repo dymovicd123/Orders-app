@@ -8,6 +8,7 @@ on:
       - 'src/features/client3/WatchOrderCorrections.tsx'
       - 'src/features/client3/WatchOrdersPanel.tsx'
       - 'src/styles/client3-watch-unified-editor.css'
+      - 'worker/domains/client3-watch-orders-read.ts'
       - 'scripts/client3/test-watch-editor-rebuild-20261106.mjs'
       - 'scripts/client3/test-watch-editor-timesheet-payment-20261106.mjs'
       - 'scripts/client3/test-watch-order-editor-delete-release-20261105.mjs'
