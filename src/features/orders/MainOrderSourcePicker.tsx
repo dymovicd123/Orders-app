@@ -25,7 +25,7 @@ const money=(n:number)=>n.toLocaleString('ru-RU')+' ₸'
 /** Source-first browsing inspired by Client3, adapted to Main's warehouse/boutique/workshop. */
 export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants}:Props){
  const [source,setSource]=useState<SourceKey>('warehouse')
- const [intent,setIntent]=useState<'stock'|'all'>('stock')
+ const [intent,setIntent]=useState<'stock'|'all'>('all')
  const [query,setQuery]=useState('')
  const [gender,setGender]=useState('')
  const [material,setMaterial]=useState('')
