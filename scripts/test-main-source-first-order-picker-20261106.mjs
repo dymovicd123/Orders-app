@@ -31,12 +31,17 @@ try{
  }
  sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(99110,99120,'warehouse',99100,99101,10,'active','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
  sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(99111,99121,'warehouse',99100,99101,5,'fulfilled','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,category,gender,color,material,length,size_label,is_active) VALUES(99102,99100,'adult','ЖЕН','КРАСНЫЙ','АТЛАС','КОРОТКИЙ','48',1)").run()
+ sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES('warehouse',99100,99102,'ТЕСТОВЫЙ ШАПАН',-2,1)").run()
+ sql.prepare("INSERT INTO order_items(id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status) VALUES(99122,99110,'ТЕСТОВЫЙ ШАПАН',1,0,0,0,'warehouse','reserved')").run()
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(99110,99122,'warehouse',99100,99102,1,'active','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
  const result=await listOrderSourcePicker(db)
  assert.equal(result.ok,true)
  const row=result.variants.find(x=>x.variantId===99101)
  assert(row,'Active catalog variant must be offered')
  assert.deepEqual(row.warehouse,{physical:30,reserved:10,cachedReserved:9,free:20})
  assert.deepEqual(row.boutique,{physical:0,reserved:0,cachedReserved:0,free:0})
+ assert.deepEqual(result.variants.find(x=>x.variantId===99102)?.warehouse,{physical:-2,reserved:1,cachedReserved:1,free:0},'Do not conceal negative physical stock or overbooked active reservations')
  const original=normalizeOrderItems([{productName:'ТЕСТОВЫЙ ШАПАН',color:'СИНИЙ',size:'44',
    gender:'ЖЕН',material:'АТЛАС',length:'КОРОТКИЙ',quantity:1,sourceType:'warehouse',catalogVariantId:99101}], 'warehouse')
  const pinned=await hydratePickedOrderItems(db,original)
