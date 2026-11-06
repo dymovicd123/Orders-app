@@ -7,11 +7,11 @@ type Payment={id:number;method:string;amount:number;date:string;kind:string;comm
 const money=(x:number)=>Number(x||0).toLocaleString('ru-RU')+' ₸'
 type Props={
  brand:WatchBrand;orderId:number;externalId:string;managerId:number;paymentLines:string;
- orderDate:string;linkedOperations:boolean;
+ orderDate:string;linkedOperations:boolean;view?:'all'|'manager'|'payment'|'delete';
  onDone:()=>void
 }
 /** Main's verified delete preview, never a one-click destructive button. */
-export function WatchAdminOrderActions({brand,orderId,externalId,managerId,paymentLines,orderDate,linkedOperations,onDone}:Props){
+export function WatchAdminOrderActions({brand,orderId,externalId,managerId,paymentLines,orderDate,linkedOperations,view='all',onDone}:Props){
  const payments:Payment[]=(()=>{try{return JSON.parse(paymentLines||'[]') as Payment[]}catch{return []}})()
  const [mode,setMode]=useState<'manager'|'delete'|'payment'|null>(null)
  const [managers,setManagers]=useState<Manager[]>([])
@@ -100,17 +100,17 @@ export function WatchAdminOrderActions({brand,orderId,externalId,managerId,payme
  }
  return <section className="watch-admin-actions">
    <div className="watch-admin-actions-buttons">
-     <button type="button" className="secondary compact" disabled={busy}
+     {(view==='all'||view==='manager')&&<button type="button" className="secondary compact" disabled={busy}
        onClick={()=>{setMode(mode==='manager'?null:'manager');setError('')}}>
        Сменить менеджера
-     </button>
-     {payments.length>0&&<button type="button" className="secondary compact" disabled={busy}
+     </button>}
+     {(view==='all'||view==='payment')&&payments.length>0&&<button type="button" className="secondary compact" disabled={busy}
        onClick={()=>{
          setMode(mode==='payment'?null:'payment');setError('');
          selectPayment(payments[0])
        }}>Редактировать проведённые оплаты</button>}
-     <button type="button" className="secondary compact watch-admin-delete-trigger" disabled={busy}
-       onClick={()=>{setMode('delete');setError('')}}>Удалить заказ</button>
+     {(view==='all'||view==='delete')&&<button type="button" className="secondary compact watch-admin-delete-trigger" disabled={busy}
+       onClick={()=>{setMode('delete');setError('')}}>Удалить заказ</button>}
    </div>
    {mode==='manager'&&<form className="watch-admin-action-form" onSubmit={e=>void setManager(e)}>
      <strong>Ответственный за заказ {externalId}</strong>
