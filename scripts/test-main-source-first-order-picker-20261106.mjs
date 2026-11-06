@@ -73,7 +73,7 @@ try{
   assert.equal(freeAfterDraft(row,'boutique',new Map()),0)
   const html=renderToStaticMarkup(React.createElement(MainOrderSourcePicker,
     {initialVariants:[row],allocated:new Map(),onPick:()=>{},onManual:()=>{}}))
-  for(const term of ['Склад','Бутик','Свободные','Весь каталог','Индивидуальный заказ в цех','ТЕСТОВЫЙ ШАПАН']){
+  for(const term of ['Склад','Бутик','Со свободным остатком','Весь каталог','Индивидуальный заказ в цех','ТЕСТОВЫЙ ШАПАН','Название товара']){
    assert(html.includes(term),'Missing picker UI '+term)
   }
  }finally{await server.close()}
