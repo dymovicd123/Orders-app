@@ -78,8 +78,8 @@ try{
  assert(adminView.includes('Менеджер, проведённые оплаты и удаление заказа'))
  assert(!adminView.includes('Отменить обмены'))
  assert(!adminView.includes('watch-corrections-tabs'),'Admin editor must not be fragmented into tabs')
- assert(adminView.includes('watch-edit-metadata')&&adminView.includes('watch-edit-watch')&&adminView.includes('watch-edit-prices'))
- assert(adminView.includes('Сохранить реквизиты')&&adminView.includes('Сохранить доставку и гравировку')&&adminView.includes('Сохранить цены'))
+ assert(adminView.includes('Клиент и доставка')&&adminView.includes('Отправка')&&adminView.includes('Товары и цены'))
+ assert(adminView.includes('Сохранить изменения')&&!adminView.includes('Сохранить реквизиты'))
  assert(adminView.includes('Менеджер, проведённые оплаты и удаление заказа')&&adminView.includes('Изменить состав'))
  const managerView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:false,onDone:()=>{},onCancel:()=>{},
