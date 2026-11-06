@@ -2,6 +2,7 @@ import type * as React from 'react'
 
 export type OrderItem = {
   productName: string
+  catalogVariantId?: number
   audienceType?: 'ВЗРОСЛЫЙ' | 'ДЕТСКИЙ'
   gender?: string
   color?: string
