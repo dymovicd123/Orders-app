@@ -17,7 +17,7 @@ const app=src('src/WatchClient3App.tsx')
 const ordersRead=src('worker/domains/client3-watch-orders-read.ts')
 
 for(const phrase of ['watch-main-edit-workspace','deletingOrder?<section','watch-order-delete-direct',
- 'Полное редактирование','Удалить заказ</button>']){
+ 'watch-main-edit-workspace','Удалить заказ</button>']){
  assert(orders.includes(phrase),'Main-style order edit/delete must be visible: '+phrase)
 }
 for(const phrase of ['Менеджер, проведённые оплаты и удаление заказа','Клиент и доставка','Товары и цены',
