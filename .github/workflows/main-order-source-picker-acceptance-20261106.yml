@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
       - name: Source-first SKU/read-only reservation acceptance
         run: node scripts/test-main-source-first-order-picker-20261106.mjs
-      - name: Chrome visual acceptance - 97 readable catalog rows
+      - name: Chrome visual acceptance - 12 model tiles and 6 SKU cards
         run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
       - name: Keep screenshot from real browser
         if: always()
