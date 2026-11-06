@@ -63,13 +63,10 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  const fixedBrand:WatchBrand|''=!isAdmin&&allowedBrands.length===1?allowedBrands[0]:''
  const [brand,setBrand]=useState<WatchBrand|''>(fixedBrand)
  useEffect(()=>{
-   if(isAdmin)return
-   setBrand(previous=>{
-     if(previous===fixedBrand)return previous
-     setSource('office');setLines([]);setEditingId(null);setError('')
-     return fixedBrand
-   })
- },[fixedBrand,isAdmin])
+   if(isAdmin||brand===fixedBrand)return
+   setBrand(fixedBrand)
+   setSource('office');setLines([]);setEditingId(null);setError('')
+ },[fixedBrand,isAdmin,brand])
  const [source,setSource]=useState<WatchSource>('office')
  const [lines,setLines]=useState<DraftLine[]>([])
  const [editingId,setEditingId]=useState<string|null>(null)
