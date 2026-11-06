@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Chrome-verified UX refresh: 2-column product grid, 12 models/page, 6 SKU cards, characteristic filters.
+# Read-only catalog UX: name autocomplete, stock-first list, grouped execution/color/size, negative-stock warnings.
 on:
   push:
     branches:
