@@ -34,12 +34,26 @@ try{
    {...props,itemLines:JSON.stringify([item])}))
  assert(normal.includes('Заменить')&&normal.includes('Добавить товар'))
  assert(normal.includes('Проверить и сохранить состав'))
- const issued=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,
-   {...props,itemLines:JSON.stringify([{...item,hasFulfilledReservation:1}])}))
- assert(issued.includes('Состав защищён от перезаписи'))
+
+ const issued=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,{
+   ...props,itemLines:JSON.stringify([{...item,hasFulfilledReservation:1}]),shippingStatus:'sent'
+ }))
+ assert(issued.includes('Заказ полностью отправлен'))
  assert(!issued.includes('Проверить и сохранить состав'))
- const returned=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,
-   {...props,itemLines:JSON.stringify([item]),linkedReturns:1}))
- assert(returned.includes('Состав защищён от перезаписи'))
+ const partial=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,{
+   ...props,shippingStatus:'partially_sent',itemLines:JSON.stringify([
+     {...item,hasFulfilledReservation:1,shippedQuantity:1},
+     {...item,id:12,watchVariantId:22,productName:'AL TYN',hasFulfilledReservation:0},
+   ])
+ }))
+ assert(partial.includes('Часть часов уже отправлена'))
+ assert(partial.includes('Проверить и сохранить состав'))
+ assert.equal((partial.match(/Заменить часы/g)||[]).length,1,
+   'Only unshipped row can be changed')
+ const returned=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,{
+   ...props,itemLines:JSON.stringify([item]),linkedReturns:1
+ }))
+ assert(returned.includes('В заказе есть действующие возвраты'))
+ assert(!returned.includes('Проверить и сохранить состав'))
  console.log('CLIENT3_ORDER_EDITOR_REBUILD_PASS')
 }finally{await vite.close()}
