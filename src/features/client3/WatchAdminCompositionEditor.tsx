@@ -265,3 +265,4 @@ export function WatchAdminCompositionEditor({
      allocated={allocated.get(stockKey(currentEdit.source,currentEdit.watchVariantId))||0}
      onUpdate={patch=>update(currentEdit.id,patch)} onClose={()=>setEditingId(null)}/>}
  </form>
+}
