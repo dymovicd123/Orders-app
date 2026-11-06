@@ -57,6 +57,15 @@ jobs:
       - run: npm ci
       - name: Source-first SKU and warehouse reservation regression
         run: node scripts/test-main-source-first-order-picker-20261106.mjs
+      - name: Real Chrome visual regression - 97 readable rows
+        run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
+      - name: Upload browser screenshot of catalog
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-picker-branch2-browser-screenshot
+          path: artifacts/main-order-picker-visual.png
+          if-no-files-found: ignore
       - name: Full application build and main business release gates
         run: |
           npm run build
