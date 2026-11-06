@@ -216,7 +216,7 @@ export function WatchAdminCompositionEditor({
            <strong>Состав заказа</strong><span>{lines.length} из 20 позиций</span>
          </div>
          <div className="watch-pick-cart">
-           {lines.map((line,index)=>{
+           {lines.map(line=>{
              const match=catalog.find(x=>x.watchVariantId===line.watchVariantId)
              const name=line.kind==='manual'?line.manual.modelName:match?.modelName||line.manual.modelName
              const details=line.kind==='manual'?
