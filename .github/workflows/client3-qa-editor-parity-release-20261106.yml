@@ -1,0 +1,101 @@
+# QA editor final field-validation rerun; no Main or live Client3 changes.
+name: Client3 QA ONLY - creation parity order editor release
+on:
+  push:
+    branches: [client3/qa-editor-create-parity-20261106]
+    paths: ['.github/workflows/client3-qa-editor-parity-release-20261106.yml']
+permissions:
+  contents: read
+concurrency:
+  group: client3-qa-editor-parity-release
+  cancel-in-progress: false
+jobs:
+  verify-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      QA_WORKER: orders-app-client3-qa-20261103
+      QA_DB: orders_db_client3_qa_41698114208
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Enforce QA-only source and destination
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/client3/qa-editor-create-parity-20261106
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          wr=json.loads(Path('wrangler.jsonc').read_text())
+          assert wr['name']=='orders-app-client3-old-client'
+          assert wr['d1_databases'][0]['database_id']=='0717f239-6d81-4837-8586-777d94e22c53'
+          assert wr['d1_databases'][0]['migrations_dir']=='migrations/client3-watch'
+          assert str(wr['vars']['CLIENT3_WATCHES'])=='1'
+          changed=set(subprocess.check_output(['git','diff','--name-only',
+             '97a88ccff2a38ccd8e39326604beb644080369ff','HEAD'],text=True).splitlines())
+          permitted={
+             'src/features/client3/WatchAdminCompositionEditor.tsx',
+             'src/features/client3/WatchOrderCorrections.tsx',
+             'src/features/client3/WatchAdminOrderActions.tsx',
+             'src/styles/client3-watch-unified-editor.css',
+             'worker/domains/orders-write.ts',
+             'worker/domains/client3-watch-admin-composition.ts',
+             'worker/domains/client3-watch-edit-attach.ts',
+             'scripts/client3/test-watch-editor-rebuild-20261106.mjs',
+             'scripts/client3/test-watch-order-editor-delete-release-20261105.mjs',
+             'scripts/client3/test-watch-editor-brand-sku-20261106.mjs',
+             '.github/workflows/client3-qa-editor-parity-check-20261106.yml',
+             '.github/workflows/client3-qa-editor-parity-release-20261106.yml',
+          }
+          assert changed<=permitted,'Unexpected changes: '+str(changed-permitted)
+          assert 'src/features/client3/WatchOrderCorrections.tsx' in changed
+          assert not any(x.startswith('migrations/') for x in changed)
+          wr['name']=os.environ['QA_WORKER']
+          wr['d1_databases'][0]['database_name']=os.environ['QA_DB']
+          wr['d1_databases'][0]['database_id']=os.environ['QA_DB_ID']
+          wr['vars']['CLIENT3_QA_COPY']='1'
+          Path('wrangler.client3-qa.jsonc').write_text(json.dumps(wr,ensure_ascii=False,indent=2))
+          PY
+          test "$(jq -r .name wrangler.client3-qa.jsonc)" = "$QA_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.client3-qa.jsonc)" = "$QA_DB_ID"
+          ! grep -Eq 'orders_db_prod|orders_db_branch2' wrangler.client3-qa.jsonc
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - name: Build and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          for test in test-watch-editor-brand-sku-20261106 test-watch-editor-rebuild-20261106 test-watch-editor-timesheet-payment-20261106 test-watch-order-editor-delete-release-20261105 test-watch-source-first-order-20261105 test-watch-order-commit-20261102 test-watch-logistics-20261102; do
+            node --experimental-strip-types "scripts/client3/$test.mjs"
+          done
+      - name: Read-only QA D1 integrity
+        run: npx wrangler d1 execute "$QA_DB" --remote --config wrangler.client3-qa.jsonc --json --command="PRAGMA foreign_key_check" | jq -e '.[0].results|length==0'
+      - name: Deploy isolated QA Worker (no migrations)
+        run: npx wrangler deploy --config wrangler.client3-qa.jsonc
+      - name: Confirm published frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-qa-20261103.orders-clothes.workers.dev
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          ready=0
+          for attempt in $(seq 1 12); do
+            code="$(curl -sSL --max-time 20 -o /tmp/qa-js -w '%{http_code}' "$base$asset" || true)"
+            if test "$code" = 200 && cmp -s "dist/client$asset" /tmp/qa-js; then ready=1; break; fi
+            sleep 3
+          done
+          test "$ready" = 1
+          code="$(curl -sS --max-time 20 -o /tmp/anon -w '%{http_code}' "$base/api/client3/watches/orders?brand=TAUWACH")"
+          test "$code" = 401 -o "$code" = 403
+          echo CLIENT3_QA_EDITOR_CREATE_PARITY_RELEASE_VERIFIED
