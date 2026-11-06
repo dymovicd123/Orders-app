@@ -189,9 +189,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
                     </div>
                   </div>
-                  <button className="secondary compact" type="button" onClick={startManual}>
-                    + Индивидуальный заказ для цеха
-                  </button>
+                  
                 </div>
                 <MainOrderSourcePicker allocated={allocated} onPick={chooseVariant} onManual={startManual}/>
                 <div className="stack">
@@ -366,11 +364,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     )
                   ))}
                 </div>
-                <div className="order-add-item-bottom">
-                  <button className="secondary compact" type="button" onClick={startManual}>
-                    + Индивидуальный заказ для цеха
-                  </button>
-                </div>
+                
               </section>
     
               <section className="order-step-card">
