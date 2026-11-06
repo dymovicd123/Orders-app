@@ -30,6 +30,15 @@ jobs:
       - run: npm ci
       - name: Source-first SKU/read-only reservation acceptance
         run: node scripts/test-main-source-first-order-picker-20261106.mjs
+      - name: Chrome visual acceptance - 97 readable catalog rows
+        run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
+      - name: Keep screenshot from real browser
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-order-source-picker-visual
+          path: artifacts/main-order-picker-visual.png
+          if-no-files-found: ignore
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
