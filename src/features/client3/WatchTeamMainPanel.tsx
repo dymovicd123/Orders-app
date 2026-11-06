@@ -265,7 +265,7 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
                setDraft(d=>d?{...d,login:suggestLogin(d.name,employees)}:d)}}
              placeholder="Например: АСЕЛЬ"/></label>
            <label>Роль<select value={draft.role} onChange={e=>setDraft({...draft,role:e.target.value,
-             brands:e.target.value==='Логист'?[]:draft.brands})}>
+             brands:e.target.value==='Логист'?[]:e.target.value==='Менеджер'&&draft.brands.length!==1?[]:draft.brands})}>
              {['Менеджер','Логист','Завсклад','Админ'].map(role=>
                <option value={role} key={role}>{role}</option>)}
            </select></label>
@@ -286,13 +286,17 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
              </span>
            </label>
            {draft.role==='Логист'?<p className="span-2 mini-panel-note">
-             Логист работает с заказами и отправками TAUWACH и WACHIZEN одновременно. Назначать бренды не нужно.
-           </p>:<label className="span-2">Бренды
+             Логист работает с заказами и отправками обоих брендов без персонального назначения.
+           </p>:<label className="span-2">{draft.role==='Менеджер'?'Бренд менеджера':'Бренды'}
              <span className="team-brand-choices">{WATCH_BRANDS.map(brand=><label key={brand}>
-               <input type="checkbox" checked={draft.brands.includes(brand)}
+               {draft.role==='Менеджер'?<input type="radio" name="new-manager-brand"
+                 checked={draft.brands.length===1&&draft.brands[0]===brand}
+                 onChange={()=>setDraft({...draft,brands:[brand]})}/>:
+                <input type="checkbox" checked={draft.brands.includes(brand)}
                  onChange={e=>setDraft({...draft,brands:e.target.checked?
-                   [...draft.brands,brand]:draft.brands.filter(v=>v!==brand)})}/>
+                   [...draft.brands,brand]:draft.brands.filter(v=>v!==brand)})}/>}
                {brand}</label>)}</span>
+             {draft.role==='Менеджер'&&<small>Каждый менеджер продаёт только один бренд.</small>}
            </label>}
            <label className="span-2">Комментарий<input value={draft.comment} maxLength={500}
              onChange={e=>setDraft({...draft,comment:e.target.value})}/></label>
@@ -351,9 +355,13 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
                <small>Логистика · без привязки</small></div>:
              brandEditor===person.id?
              <div className="team-brand-edit">
-               {WATCH_BRANDS.map(b=><label key={b}><input type="checkbox"
-                 checked={brandDraft.includes(b)} onChange={e=>setBrandDraft(v=>
-                   e.target.checked?[...v,b]:v.filter(x=>x!==b))}/>{b}</label>)}
+               {WATCH_BRANDS.map(b=><label key={b}>
+                 {person.role==='Менеджер'?<input type="radio" name={'manager-brand-'+person.id}
+                   checked={brandDraft.length===1&&brandDraft[0]===b}
+                   onChange={()=>setBrandDraft([b])}/>:
+                  <input type="checkbox" checked={brandDraft.includes(b)}
+                   onChange={e=>setBrandDraft(v=>e.target.checked?[...v,b]:v.filter(x=>x!==b))}/>}
+                 {b}</label>)}
                <button type="button" className="primary compact" disabled={saving}
                  onClick={()=>void saveBrands(person)}>Сохранить</button>
                <button type="button" className="secondary compact" onClick={()=>setBrandEditor(null)}>Отмена</button>
