@@ -12,9 +12,9 @@
 .main-order-picker-filters input{flex:1 1 230px;max-width:370px;min-width:160px}
 .main-order-picker-filters select{flex:0 1 166px;min-width:130px}
 .main-order-picker-meta{font-size:12px;color:#627990}
-.main-order-picker-groups{display:grid;gap:9px;max-height:550px;overflow-y:auto;overscroll-behavior:contain}
-.main-order-picker-product{border:1px solid #d8e3ef;background:white;border-radius:11px;overflow:hidden}
-.main-order-picker-product-head{width:100%;display:flex;align-items:center;gap:10px;text-align:left;background:transparent;border:0;padding:13px 15px;color:inherit;cursor:pointer;font:inherit}
+.main-order-picker-groups{display:flex;flex-direction:column;align-items:stretch;gap:9px;max-height:550px;overflow-y:auto;overscroll-behavior:contain;min-height:0}
+.main-order-picker-product{flex:0 0 auto;min-height:64px;border:1px solid #d8e3ef;background:white;border-radius:11px;overflow:hidden}
+.main-order-picker-product-head{width:100%;min-height:62px;display:flex;align-items:center;gap:10px;text-align:left;background:transparent;border:0;padding:13px 15px;color:#233a55;cursor:pointer;font:inherit;opacity:1;visibility:visible}
 .main-order-picker-product-head:hover{background:#f5f9ff}
 .main-order-picker-product-name{display:grid;gap:3px;flex:1;min-width:0}
 .main-order-picker-product-name strong{font-size:14px;overflow-wrap:anywhere}
@@ -47,3 +47,7 @@
 .main-picked-order-fields .workshop-urgent-editor{display:flex;align-items:center;gap:9px}
 @media(max-width:900px){.main-order-picker-manual{margin-left:0}.main-order-picker-variant{flex-direction:column;align-items:stretch}.main-order-picker-actions{justify-content:flex-start}.main-picked-order-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.main-order-picker{padding:11px}.main-order-picker-product-head{flex-wrap:wrap}.main-order-picker-filters input{max-width:none}.main-order-picker-product-stat{margin-left:auto}.main-picked-order-fields{grid-template-columns:minmax(0,1fr)}}
+
+/* The catalog contains many groups. Never let a capped scroll viewport compress its child rows. */
+.main-order-picker-product-name strong{display:block;color:#233a55;opacity:1;visibility:visible}
+.main-order-picker-product-name small{display:block;color:#687f9c}
