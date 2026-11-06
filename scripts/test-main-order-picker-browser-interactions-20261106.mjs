@@ -41,13 +41,14 @@ const built=await build({
 })
 const js=built.outputFiles.find(x=>x.path.endsWith('.js'))
 assert(js,'Bundled mount script missing')
+fs.writeFileSync(path.join(dir,'picker-bundle.js'),js.text)
 const css=fs.readFileSync('src/styles/main-order-source-picker.css','utf8')
 const test=[
  'const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));',
  '(async()=>{try{',
  'await sleep(400);',
  'const available=document.querySelector(".main-order-size");',
- 'if(!available)throw Error("Available size was not rendered; root="+document.getElementById("mount").innerHTML.slice(0,300));',
+ 'if(!available)throw Error("Available size was not rendered; root="+document.getElementById("mount").innerHTML.slice(0,300)+"; runtime="+document.body.dataset.pickerRuntimeError);',
  'available.click();await sleep(100);',
  'const select=document.querySelector(".main-order-pick-selection-actions .primary");',
  'if(!select)throw Error("Choosing a size did not reveal the add-to-order action");',
@@ -80,7 +81,7 @@ const test=[
 ].join('\n')
 fs.writeFileSync(html,
  '<!doctype html><html lang="ru"><meta charset="UTF-8"><style>body{font-family:Arial;background:#f7faff;color:#20405f;padding:10px}'+css+
- '</style><body><div id="mount"></div><script>'+js.text+'</script><script>'+test+'</script></body></html>')
+ '</style><body><div id="mount"></div><script>window.onerror=(m)=>document.body.setAttribute("data-picker-runtime-error",String(m))</script><script src="picker-bundle.js"></script><script>'+test+'</script></body></html>')
 const run=spawnSync(chrome,[
  '--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage',
  '--window-size=1350,900','--virtual-time-budget=5000','--dump-dom','file://'+html
