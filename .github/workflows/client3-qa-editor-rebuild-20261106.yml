@@ -1,0 +1,33 @@
+name: Client3 QA order editor rebuild checks
+on:
+  push:
+    branches: [client3/qa-order-editor-rebuild-20261106]
+    paths:
+      - '.github/workflows/client3-qa-editor-rebuild-20261106.yml'
+      - 'src/features/client3/WatchAdminCompositionEditor.tsx'
+      - 'src/features/client3/WatchOrderCorrections.tsx'
+      - 'src/features/client3/WatchOrdersPanel.tsx'
+      - 'src/styles/client3-watch-unified-editor.css'
+      - 'scripts/client3/test-watch-editor-rebuild-20261106.mjs'
+      - 'scripts/client3/test-watch-editor-timesheet-payment-20261106.mjs'
+      - 'scripts/client3/test-watch-order-editor-delete-release-20261105.mjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node --experimental-strip-types scripts/client3/test-watch-editor-rebuild-20261106.mjs
+      - run: node --experimental-strip-types scripts/client3/test-watch-editor-timesheet-payment-20261106.mjs
+      - run: node --experimental-strip-types scripts/client3/test-watch-order-editor-delete-release-20261105.mjs
+      - run: node --experimental-strip-types scripts/client3/test-watch-source-first-order-20261105.mjs
+      - run: node --experimental-strip-types scripts/client3/test-watch-order-commit-20261102.mjs
+      - run: node --experimental-strip-types scripts/client3/test-watch-logistics-20261102.mjs
