@@ -10,6 +10,21 @@ export type WatchRewriteLine={
  unitPrice:number;engravingText:string
 }
 export type WatchOrderRewrite={brandId:number;lines:WatchRewriteLine[]}
+
+/** Watch SKU IDs, not display names, determine whether physical reservations change. */
+export function watchRewriteChangesCanonicalSku(
+ previous:ReadonlyArray<Record<string,unknown>>,
+ lines:ReadonlyArray<WatchRewriteLine>,
+):boolean{
+ if(previous.length!==lines.length)return true
+ return lines.some((line,index)=>{
+   const old=previous[index]
+   return !old||Number(old.id||0)!==Number(line.orderItemId||0)||
+     Number(old.variantId||0)!==line.catalogVariantId||
+     Number(old.productId||0)!==line.catalogProductId
+ })
+}
+
 export async function attachClient3WatchRewrite(
  db:D1Database,orderId:number,requestId:string,rewrite:WatchOrderRewrite,
  preservedIndexes:number[],preservedIds:number[],
