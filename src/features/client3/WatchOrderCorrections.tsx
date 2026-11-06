@@ -160,15 +160,15 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        <section className="watch-editor-card">
          <div className="watch-editor-section-title"><h3>Клиент и доставка</h3></div>
          <div className="watch-editor-grid">
-           <label>Клиент<input required maxLength={200} value={next.customerName}
+           <label>Клиент<input maxLength={200} value={next.customerName}
              onChange={e=>update('customerName',e.target.value)} /></label>
-           <label>Телефон<input required maxLength={100} type="tel" value={next.customerPhone}
+           <label>Телефон<input maxLength={100} type="tel" value={next.customerPhone}
              onChange={e=>update('customerPhone',e.target.value)}/></label>
-           <label>Город<input required maxLength={100} value={next.city}
+           <label>Город<input maxLength={100} value={next.city}
              onChange={e=>update('city',e.target.value)}/></label>
-           <label>Способ доставки<input required maxLength={120} value={next.deliveryType}
+           <label>Способ доставки<input maxLength={120} value={next.deliveryType}
              onChange={e=>update('deliveryType',e.target.value)}/></label>
-           {isAdmin&&<label>Дата заказа<input required type="date" value={next.orderDate}
+           {isAdmin&&<label>Дата заказа<input type="date" value={next.orderDate}
              onChange={e=>update('orderDate',e.target.value)}/></label>}
            <label className="watch-editor-wide">Комментарий к заказу
              <input maxLength={500} value={next.comment}
@@ -179,12 +179,12 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
          <div className="watch-editor-section-title"><h3>Отправка</h3></div>
          <div className="watch-editor-grid">
            <label className="watch-editor-wide">Адрес доставки
-             <input required maxLength={500} value={watch.deliveryAddress}
+             <input maxLength={500} value={watch.deliveryAddress}
                onChange={e=>changeWatch({deliveryAddress:e.target.value})}/></label>
-           <label>Индекс<input required maxLength={20} value={watch.postalCode}
+           <label>Индекс<input maxLength={20} value={watch.postalCode}
              onChange={e=>changeWatch({postalCode:e.target.value})}/></label>
            <label>Отправить до (Алматы)
-             <input required type="datetime-local" value={localDate(watch.shippingDeadlineAt)}
+             <input type="datetime-local" value={localDate(watch.shippingDeadlineAt)}
                onChange={e=>changeWatch({shippingDeadlineAt:toUtc(e.target.value)})}/></label>
            <label className="watch-editor-checkbox">
              <input type="checkbox" checked={watch.urgent}
@@ -210,7 +210,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
                  Number(x.returnedQuantity||0)>0?'Возвращено: '+x.returnedQuantity:'Не отправлен'}</small></div>
              <div className="watch-editor-product-fields">
                <label>Цена за 1 шт., ₸<input type="number" min={0} max={1000000000} step={1}
-                 required value={prices[x.id]??''}
+                 value={prices[x.id]??''}
                  onChange={e=>{setPrices(prev=>({...prev,[x.id]:e.target.value}));setError('')}}/></label>
                <span className="watch-editor-line-total">{money(x.quantity*(Number(prices[x.id])||0))}</span>
                {isAdmin&&<label className="watch-editor-engraving">Гравировка / комментарий логисту
