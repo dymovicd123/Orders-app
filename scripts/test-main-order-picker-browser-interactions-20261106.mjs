@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import {spawnSync} from 'node:child_process'
+import {spawn,spawnSync} from 'node:child_process'
 import {build} from 'esbuild'
 
 const chrome=process.env.CHROME_BIN||'/usr/bin/google-chrome'
@@ -82,10 +82,15 @@ const test=[
 fs.writeFileSync(html,
  '<!doctype html><html lang="ru"><meta charset="UTF-8"><style>body{font-family:Arial;background:#f7faff;color:#20405f;padding:10px}'+css+
  '</style><body><div id="mount"></div><script>window.onerror=(m)=>document.body.setAttribute("data-picker-runtime-error",String(m))</script><script src="picker-bundle.js"></script><script>'+test+'</script></body></html>')
-const run=spawnSync(chrome,[
+const httpServer=spawn('python3',['-m','http.server','38921','--bind','127.0.0.1','--directory',dir],{stdio:'ignore'})
+await new Promise(resolve=>setTimeout(resolve,700))
+let run
+try{
+ run=spawnSync(chrome,[
  '--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage',
- '--window-size=1350,900','--virtual-time-budget=5000','--dump-dom','file://'+html
+ '--window-size=1350,900','--virtual-time-budget=5000','--dump-dom','http://127.0.0.1:38921/interactive.html'
 ],{encoding:'utf8',timeout:45000,maxBuffer:20*1024*1024})
+}finally{httpServer.kill()}
 assert.equal(run.status,0,'Chrome exited unexpectedly: '+String(run.stderr).slice(-1200))
 const match=run.stdout.match(/data-picker-interactive-error="([^"]*)"/)
 if(!/data-picker-interactive-pass="yes"/.test(run.stdout))console.log('INTERACTION_BROWSER_DOM_TAIL',run.stdout.slice(-3500))
