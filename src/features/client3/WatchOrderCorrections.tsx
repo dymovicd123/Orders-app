@@ -1,4 +1,4 @@
-import {useRef,useState,type FormEvent} from 'react'
+import {useEffect,useRef,useState,type FormEvent} from 'react'
 import '../../styles/client3-watch-unified-editor.css'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {WatchAdminCompositionEditor} from './WatchAdminCompositionEditor'
@@ -12,7 +12,7 @@ export type WatchCorrectionOrder={
  orderComment:string;shippingStatus:string;orderStatus:string;
  deliveryAddress:string;postalCode:string;urgent:number;shippingDeadlineAt:string;
  totalAmount:number;receivedAmount:number;debtAmount:number;returnAmount:number;
- managerId:number;paymentLines:string;committedReturnCount:number;
+ managerId:number;managerName?:string|null;paymentLines:string;committedReturnCount:number;
  itemLines:string
 }
 type Item={
@@ -67,6 +67,19 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const [savedSections,setSavedSections]=useState(0)
+ const [referenceOptions,setReferenceOptions]=useState<{cities:string[];deliveries:string[]}>({cities:[],deliveries:[]})
+ useEffect(()=>{
+   const controller=new AbortController()
+   void fetch('/api/client3/watches/references',{credentials:'include',cache:'no-store',
+     signal:controller.signal}).then(async response=>{
+       const data=await response.json() as {ok?:boolean;rows?:Array<{kind:string;value:string}>}
+       if(!response.ok||!data.ok||controller.signal.aborted)return
+       const values=(kind:string)=>(data.rows||[]).filter(x=>x.kind===kind).map(x=>x.value)
+       setReferenceOptions({cities:values('cities'),deliveries:values('deliveryMethods')})
+     }).catch(()=>{})
+   return ()=>controller.abort()
+ },[])
+
  const pending=useRef<Partial<Record<Section,{fingerprint:string;id:string}>>>({})
  const metadataDirty=JSON.stringify(next)!==JSON.stringify(expected)
  const watchDirty=isAdmin&&JSON.stringify(watch)!==JSON.stringify(expectedWatch)
@@ -140,121 +153,194 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  }
  if(composing)return <section className="watch-corrections watch-editor-unified">
    <header className="watch-editor-header">
-     <div><small>Заказ {order.externalId}</small><h2>Изменение состава</h2></div>
-     <button type="button" className="watch-editor-back" onClick={()=>setComposing(false)}>Назад к редактору</button>
+     <div><small>Заказ {order.externalId} · Бренд {brand}</small><h2>Изменение состава</h2>
+       <p>Выбор комплектаций и остатков доступен только из склада бренда {brand}.</p></div>
+     <button type="button" className="watch-editor-back" onClick={()=>setComposing(false)}>К редактированию заказа</button>
    </header>
    <WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
      itemLines={order.itemLines} receivedAmount={order.receivedAmount}
      linkedReturns={order.committedReturnCount}
      onDone={onDone} onCancel={()=>setComposing(false)}/>
  </section>
- return <section className="watch-corrections watch-editor-unified" aria-label={'Исправление заказа '+order.externalId}>
-   <header className="watch-editor-header">
+ const currentAmount=items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0)
+ const paymentEntries:(Array<{id:number;date:string;method:string;amount:number;kind:string}>)=(()=>{
+   try{const raw=JSON.parse(order.paymentLines||'[]')
+     return Array.isArray(raw)?raw.filter(x=>x&&Number(x.id)>0):[]
+   }catch{return []}
+ })()
+ const cityOptions=[...new Set([...referenceOptions.cities,next.city].filter(Boolean))]
+ const deliveryOptions=[...new Set([...referenceOptions.deliveries,next.deliveryType].filter(Boolean))]
+ const back=()=>{
+   if(dirty&&!window.confirm('Есть несохранённые изменения. Выйти без сохранения?'))return
+   onCancel()
+ }
+ return <section className="watch-corrections watch-editor-unified watch-editor-parity" aria-label={'Исправление заказа '+order.externalId}>
+   <header className="watch-editor-header create-hero">
      <div>
-       <small>Редактирование заказа · {brand}</small>
+       <small>РЕДАКТИРОВАНИЕ ЗАКАЗА</small>
        <h2>{order.externalId}</h2>
-       <p>{order.shippingStatus==='sent'?'Отправлен':order.shippingStatus==='partially_sent'?'Частично отправлен':'Заказ в работе'} · Изменяйте необходимые поля.</p>
+       <p>Бренд {brand} · {order.shippingStatus==='sent'?'Отправлен':
+          order.shippingStatus==='partially_sent'?'Частично отправлен':'Заказ в работе'}</p>
      </div>
-     <button type="button" className="watch-editor-back" onClick={onCancel} disabled={busy}>Назад к заказам</button>
+     <button type="button" className="watch-editor-back" onClick={back} disabled={busy}>Назад к заказам</button>
    </header>
    {error&&<p className="watch-orders-error" role="alert">{error}</p>}
-   <form noValidate className="watch-editor-main-form" onSubmit={event=>void save(event)}>
-     <div className="watch-editor-sections">
-       <section className="watch-editor-card">
-         <div className="watch-editor-section-title"><h3>Клиент и доставка</h3></div>
-         <div className="watch-editor-grid">
-           <label>Клиент<input maxLength={200} value={next.customerName}
-             onChange={e=>update('customerName',e.target.value)} /></label>
-           <label>Телефон<input maxLength={100} type="tel" value={next.customerPhone}
-             onChange={e=>update('customerPhone',e.target.value)}/></label>
-           <label>Город<input maxLength={100} value={next.city}
-             onChange={e=>update('city',e.target.value)}/></label>
-           <label>Способ доставки<input maxLength={120} value={next.deliveryType}
-             onChange={e=>update('deliveryType',e.target.value)}/></label>
-           {isAdmin&&<label>Дата заказа<input type="date" value={next.orderDate}
-             onChange={e=>update('orderDate',e.target.value)}/></label>}
-           <label className="watch-editor-wide">Комментарий к заказу
-             <input maxLength={500} value={next.comment}
-               onChange={e=>update('comment',e.target.value)}/></label>
+   <form id="watch-client3-order-edit-form" noValidate className="watch-editor-main-form main-watch-create"
+     onSubmit={event=>void save(event)}>
+     <section className="watch-editor-step-card order-step-card">
+       <div className="order-step-head">
+         <div className="order-step-index">1</div>
+         <div><h3>Клиент и условия заказа</h3>
+           <p>Реквизиты, доставка, адрес и крайний срок отправки.</p>
          </div>
-       </section>
-       {isAdmin&&<section className="watch-editor-card">
-         <div className="watch-editor-section-title"><h3>Отправка</h3></div>
-         <div className="watch-editor-grid">
-           <label className="watch-editor-wide">Адрес доставки
-             <input maxLength={500} value={watch.deliveryAddress}
-               onChange={e=>changeWatch({deliveryAddress:e.target.value})}/></label>
-           <label>Индекс<input maxLength={20} value={watch.postalCode}
-             onChange={e=>changeWatch({postalCode:e.target.value})}/></label>
+       </div>
+       <div className="watch-editor-step-grid">
+         <label>Бренд
+           <input readOnly value={brand} aria-label="Бренд заказа — изменить нельзя"/>
+           <small>Остатки и каталог других брендов недоступны.</small>
+         </label>
+         {isAdmin&&<label>Дата заказа
+           <input type="date" value={next.orderDate} onChange={e=>update('orderDate',e.target.value)}/>
+         </label>}
+         <label>ФИО получателя
+           <input maxLength={200} value={next.customerName} onChange={e=>update('customerName',e.target.value)}/>
+         </label>
+         <label>Телефон
+           <input maxLength={100} type="tel" value={next.customerPhone}
+             onChange={e=>update('customerPhone',e.target.value)}/>
+         </label>
+         <label>Город
+           <select value={next.city} onChange={e=>update('city',e.target.value)}>
+             <option value="">Выберите город</option>
+             {cityOptions.map(x=><option key={x} value={x}>{x}</option>)}
+           </select>
+         </label>
+         <label>Доставка
+           <select value={next.deliveryType} onChange={e=>update('deliveryType',e.target.value)}>
+             <option value="">Выберите доставку</option>
+             {deliveryOptions.map(x=><option key={x} value={x}>{x}</option>)}
+           </select>
+         </label>
+         {isAdmin&&<>
+           <label>Индекс
+             <input maxLength={20} value={watch.postalCode}
+               onChange={e=>changeWatch({postalCode:e.target.value})}/>
+           </label>
            <label>Отправить до (Алматы)
              <input type="datetime-local" value={localDate(watch.shippingDeadlineAt)}
-               onChange={e=>changeWatch({shippingDeadlineAt:toUtc(e.target.value)})}/></label>
-           <label className="watch-editor-checkbox">
+               onChange={e=>changeWatch({shippingDeadlineAt:toUtc(e.target.value)})}/>
+           </label>
+           <label className="watch-editor-step-wide">Адрес
+             <textarea maxLength={500} rows={2} value={watch.deliveryAddress}
+               onChange={e=>changeWatch({deliveryAddress:e.target.value})}/>
+           </label>
+           <label className="watch-editor-urgent">
              <input type="checkbox" checked={watch.urgent}
-               onChange={e=>changeWatch({urgent:e.target.checked})}/> Срочный заказ</label>
+               onChange={e=>changeWatch({urgent:e.target.checked})}/> Срочный заказ
+           </label>
+         </>}
+         <label className="watch-editor-step-wide">Комментарий к заказу
+           <textarea rows={2} maxLength={500} value={next.comment}
+             onChange={e=>update('comment',e.target.value)}/>
+         </label>
+       </div>
+     </section>
+     <section className="watch-editor-step-card order-step-card">
+       <div className="order-step-head">
+         <div className="order-step-index">2</div>
+         <div><h3>Товары заказа</h3>
+           <p>Характеристики, цена и гравировка каждой позиции.</p>
          </div>
-       </section>}
-       <section className="watch-editor-card watch-editor-products">
-         <div className="watch-editor-section-title">
-           <div><h3>Товары и цены</h3><p>Цена и гравировка находятся рядом с товаром.</p></div>
-           {isAdmin&&<button type="button" className="watch-editor-change-items" disabled={busy}
-             onClick={()=>{
-               if(dirty&&!window.confirm('Есть несохранённые изменения. Перейти к составу без сохранения?'))return
-               setComposing(true)
-             }}>Изменить состав</button>}
-         </div>
-         <div className="watch-editor-product-list">
-           {items.map(x=><article key={x.id} className="watch-editor-product">
-             <div className="watch-editor-product-top"><div>
+         {isAdmin&&<button type="button" className="watch-editor-change-items"
+           disabled={busy} onClick={()=>{
+             if(dirty&&!window.confirm('Есть несохранённые изменения. Перейти к составу без сохранения?'))return
+             setComposing(true)
+           }}>Изменить состав</button>}
+       </div>
+       <div className="watch-editor-product-list">
+         {items.map((x,index)=><article key={x.id} className="watch-editor-product watch-editor-item-line">
+           <div className="watch-editor-product-top">
+             <div><small>Позиция {index+1} · {label(x.source)} · {brand}</small>
                <strong>{x.productName||'Часы'} · {x.quantity} шт.</strong>
-               <p>{label(x.source)} · {[x.gender==='female'?'Женские':x.gender==='male'?'Мужские':'',
+               <p>{[x.gender==='female'?'Женские':x.gender==='male'?'Мужские':'',
                  x.movement,x.braceletMaterial,x.dialColor,x.braceletColor].filter(Boolean).join(' · ')}</p>
-             </div><small>{Number(x.shippedQuantity||0)>0?'Отправлено: '+x.shippedQuantity:
-                 Number(x.returnedQuantity||0)>0?'Возвращено: '+x.returnedQuantity:'Не отправлен'}</small></div>
-             <div className="watch-editor-product-fields">
-               <label>Цена за 1 шт., ₸<input type="number" min={0} max={1000000000} step={1}
-                 value={prices[x.id]??''}
-                 onChange={e=>{setPrices(prev=>({...prev,[x.id]:e.target.value}));setError('')}}/></label>
-               <span className="watch-editor-line-total">{money(x.quantity*(Number(prices[x.id])||0))}</span>
-               {isAdmin&&<label className="watch-editor-engraving">Гравировка / комментарий логисту
-                 <input maxLength={500} value={watch.items.find(y=>y.orderItemId===x.id)?.engravingText||''}
-                   onChange={e=>setWatch(prev=>({...prev,items:prev.items.map(y=>
-                     y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/></label>}
              </div>
-           </article>)}
-         </div>
-       </section>
-       <section className="watch-editor-card watch-editor-financial">
-         <div className="watch-editor-section-title"><h3>Оплаты</h3>
-          </div>
-         <div className="watch-editor-totals">
-           <span>Сумма заказа <strong>{money(items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0))}</strong></span>
-           <span>Оплачено <strong>{money(order.receivedAmount)}</strong></span>
-           <span>Долг <strong>{money(Math.max(0,items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0)-order.receivedAmount))}</strong></span>
-         </div>
-         <p className="watch-editor-footnote">Проведённые платежи и возвраты не изменяются при исправлении цены.{order.committedReturnCount>0?' После возвратов итог и долг дополнительно проверяются по финансовой истории.':''}</p>
-       </section>
-     </div>
-     <div className="watch-editor-savebar">
-       <div>{dirty?<span>Есть несохранённые изменения</span>:<span>Изменений нет</span>}
-         {savedSections>0&&<small>Сохранено разделов: {savedSections}</small>}</div>
-       <div className="watch-editor-save-actions">
-         <button type="button" className="watch-editor-back" onClick={onCancel} disabled={busy}>Отмена</button>
-         <button type="submit" className="primary" disabled={busy||!dirty}>
-           {busy?'Сохранение…':'Сохранить изменения'}</button>
+             <span className="watch-editor-item-status">
+               {Number(x.shippedQuantity||0)>0?'Отправлено: '+x.shippedQuantity:
+                 Number(x.returnedQuantity||0)>0?'Возвращено: '+x.returnedQuantity:'Не отправлен'}
+             </span>
+           </div>
+           <div className="watch-editor-product-fields">
+             <label>Цена продажи, ₸
+               <input type="number" min={0} max={1000000000} step={1}
+                 value={prices[x.id]??''} onChange={e=>{setPrices(prev=>({...prev,[x.id]:e.target.value}));setError('')}}/>
+             </label>
+             <span className="watch-editor-line-total">{money(x.quantity*(Number(prices[x.id])||0))}</span>
+             {isAdmin&&<label className="watch-editor-engraving">Гравировка / комментарий логисту
+               <input maxLength={500}
+                 value={watch.items.find(y=>y.orderItemId===x.id)?.engravingText||''}
+                 onChange={e=>setWatch(prev=>({...prev,items:prev.items.map(y=>
+                   y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/>
+             </label>}
+           </div>
+         </article>)}
+       </div>
+     </section>
+   </form>
+   <section className="watch-editor-step-card order-step-card watch-editor-finance-step">
+     <div className="order-step-head">
+       <div className="order-step-index">3</div>
+       <div><h3>Менеджер и оплаты</h3>
+         <p>Проведённые оплаты сохраняют отдельную финансовую историю.</p>
        </div>
      </div>
-   </form>
-   {isAdmin&&<details className="watch-editor-extra">
-     <summary>Менеджер, проведённые оплаты и удаление заказа</summary>
-     <WatchAdminOrderActions brand={brand} orderId={order.orderId} externalId={order.externalId}
+     <div className="watch-editor-finance-grid">
+       <div className="watch-editor-manager-panel">
+         <small>Ответственный менеджер</small>
+         <strong>{order.managerName||'Менеджер №'+order.managerId}</strong>
+         {isAdmin&&<WatchAdminOrderActions view="manager" brand={brand}
+           orderId={order.orderId} externalId={order.externalId} managerId={order.managerId}
+           paymentLines={order.paymentLines} orderDate={order.orderDate}
+           linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>}
+       </div>
+       <div className="watch-editor-payments-panel">
+         <div className="watch-editor-payments-title"><strong>Проведённые оплаты</strong>
+           <small>{paymentEntries.length} записей</small></div>
+         {paymentEntries.length?paymentEntries.map(x=><div key={x.id} className="watch-editor-payment-line">
+           <span>{x.date} · {x.method}</span><strong>{money(x.amount)}</strong>
+         </div>):<p className="watch-editor-no-payments">Проведённых оплат нет.</p>}
+         {isAdmin&&<WatchAdminOrderActions view="payment" brand={brand}
+           orderId={order.orderId} externalId={order.externalId} managerId={order.managerId}
+           paymentLines={order.paymentLines} orderDate={order.orderDate}
+           linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>}
+       </div>
+     </div>
+     <div className="watch-editor-totals">
+       <span>Стоимость активных товаров <strong>{money(currentAmount)}</strong></span>
+       <span>По оплатам <strong>{money(order.receivedAmount)}</strong></span>
+       <span>Расчётный остаток <strong>{money(Math.max(0,currentAmount-order.receivedAmount))}</strong></span>
+     </div>
+     {order.committedReturnCount>0&&<p className="watch-editor-footnote">
+       В заказе есть возвраты. Финансовый итог проверяется по истории проведённых операций.
+     </p>}
+   </section>
+   <div className="watch-editor-savebar">
+     <div>{dirty?<strong>Есть несохранённые изменения</strong>:<span>Изменений нет</span>}
+       {savedSections>0&&<small>Сохранено разделов: {savedSections}</small>}</div>
+     <div className="watch-editor-save-actions">
+       <button type="button" className="watch-editor-back" onClick={back} disabled={busy}>Отмена</button>
+       <button type="submit" form="watch-client3-order-edit-form" className="primary" disabled={busy||!dirty}>
+         {busy?'Сохранение…':'Сохранить изменения'}</button>
+     </div>
+   </div>
+   {(isAdmin||order.committedReturnCount>0)&&<details className="watch-editor-extra">
+     <summary>Дополнительные действия и история</summary>
+     {order.committedReturnCount>0&&<WatchReturnHistoryPanel brand={brand}
+       orderId={order.orderId} onClose={back} onDone={onDone}/>}
+     {isAdmin&&<WatchAdminOrderActions view="delete" brand={brand}
+       orderId={order.orderId} externalId={order.externalId}
        managerId={order.managerId} paymentLines={order.paymentLines} orderDate={order.orderDate}
-       linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>
-   </details>}
-   {order.committedReturnCount>0&&<details className="watch-editor-extra">
-     <summary>История возвратов ({order.committedReturnCount})</summary>
-     <WatchReturnHistoryPanel brand={brand} orderId={order.orderId}
-       onClose={onCancel} onDone={onDone}/>
+       linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>}
    </details>}
  </section>
 }
