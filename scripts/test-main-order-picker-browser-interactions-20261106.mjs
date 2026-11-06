@@ -44,9 +44,9 @@ const css=fs.readFileSync('src/styles/main-order-source-picker.css','utf8')
 const test=[
  'const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));',
  '(async()=>{try{',
- 'await sleep(100);',
+ 'await sleep(400);',
  'const available=document.querySelector(".main-order-size");',
- 'if(!available)throw Error("Available size was not rendered");',
+ 'if(!available)throw Error("Available size was not rendered; root="+document.getElementById("mount").innerHTML.slice(0,300));',
  'available.click();await sleep(100);',
  'const select=document.querySelector(".main-order-pick-selection-actions .primary");',
  'if(!select)throw Error("Choosing a size did not reveal the add-to-order action");',
@@ -86,6 +86,7 @@ const run=spawnSync(chrome,[
 ],{encoding:'utf8',timeout:45000,maxBuffer:20*1024*1024})
 assert.equal(run.status,0,'Chrome exited unexpectedly: '+String(run.stderr).slice(-1200))
 const match=run.stdout.match(/data-picker-interactive-error="([^"]*)"/)
+if(!/data-picker-interactive-pass="yes"/.test(run.stdout))console.log('INTERACTION_BROWSER_DOM_TAIL',run.stdout.slice(-3500))
 assert.match(run.stdout,/data-picker-interactive-pass="yes"/,
  'Browser React interactions failed: '+(match?.[1]||'Unknown UI failure'))
 console.log('MAIN_PICKER_BROWSER_INTERACTION_PASS: select active SKU, autocomplete zero-stock model, choose stock shortage and workshop with no mutation')
