@@ -21,9 +21,9 @@ for(const x of [
  'paymentDate:row.paymentDate===undefined?orderDate:row.paymentDate'
 ])assert(serverCreate.includes(x),'Explicit payment dates must be checked and sent through Main: '+x)
 assert(serverCreate.includes("date>today"),'Future payments must be rejected')
-for(const x of ["submit(event,'metadata')","submit(event,'watch')","submit(event,'prices')",
- 'watch-editor-unified','Изменить состав товаров','WatchAdminOrderActions',
- 'WatchAdminCompositionEditor'
+for(const x of ["await send('metadata'","await send('watch'","await send('prices'",
+ 'watch-editor-unified','Изменить состав','WatchAdminOrderActions',
+ 'WatchAdminCompositionEditor','Сохранить изменения'
 ])assert(editor.includes(x),'Unified editor is missing '+x)
 assert(!editor.includes('watch-corrections-tabs'))
 assert(parent.includes('<WatchTimesheetWorkspace')&&!parent.includes('team-timesheet-days'))
