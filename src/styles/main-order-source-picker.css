@@ -109,3 +109,5 @@
  .main-order-pick-selection-actions button{flex:1}
  .main-picked-order-fields{grid-template-columns:1fr}
 }
+
+.main-order-pick-selection-summary small.main-order-stock-warning{color:#a45b25;font-weight:750;line-height:1.4}
