@@ -45,7 +45,7 @@ try{
   {id:2,name:'АЙДАР БОМБЕР',variants:[],free:0,physical:0,reserved:0},
   {id:3,name:'АБАЙ ШАПАН',variants:[],free:0,physical:0,reserved:0},
  ],'ай')
- assert.deepEqual(suggestions.map(x=>x.name),['АЙДАЙ ЖИЛЕТ','АЙДАР БОМБЕР'])
+ assert.deepEqual(suggestions.map(x=>x.name),['АЙДАЙ ЖИЛЕТ','АЙДАР БОМБЕР','АБАЙ ШАПАН'])
  const main=renderToStaticMarkup(React.createElement(MainOrderSourcePicker,{
    initialVariants:variants,initialSelectedId:1,allocated:new Map(),onPick:()=>{},onManual:()=>{},
  }))
