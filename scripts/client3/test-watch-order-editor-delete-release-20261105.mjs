@@ -85,7 +85,7 @@ try{
   brand:'TAUWACH',order,isAdmin:false,onDone:()=>{},onCancel:()=>{},
  }))
  assert(!managerView.includes('Менеджер, проведённые оплаты и удаление заказа'))
- assert(!managerView.includes('watch-edit-watch'),'Manager cannot access logistics correction')
+ assert(!managerView.includes('Гравировка / комментарий логисту'),'Manager cannot access logistics correction')
  assert(!managerView.includes('Изменить состав'),'Manager cannot change composition')
  console.log('CLIENT3_RELEASE_ORDER_EDITOR_DELETE_ROLE_SCOPE_PASS')
 }finally{
