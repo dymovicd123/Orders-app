@@ -283,8 +283,6 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                             value={item.sourceType || 'warehouse'}
                             onChange={(event) => updateCreateItem(index, 'sourceType', event.target.value)}
                           >
-                            <option value="warehouse">Склад</option>
-                            <option value="boutique">Бутик</option>
                             <option value="workshop">Цех</option>
                           </select>
                         </label>
