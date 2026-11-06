@@ -136,46 +136,114 @@ export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants
     <p>Проверьте другой источник, посмотрите весь каталог или создайте индивидуальную позицию для цеха.</p>
     <button type="button" className="secondary compact" onClick={()=>setIntent('all')}>Весь каталог</button>
   </div>}
-  {!loading&&!error&&<div className="main-order-picker-groups">
-    {groups.map(group=><section className="main-order-picker-product" key={group.id}>
-      <button type="button" className="main-order-picker-product-head"
-        aria-expanded={open===group.id} onClick={()=>setOpen(old=>old===group.id?null:group.id)}>
-        <span className="main-order-picker-product-name"><strong>{group.name}</strong><small>{group.lines.length} вариантов</small></span>
-        <span className="main-order-picker-product-stat">{group.free} шт. свободно</span>
-        <span className="main-order-picker-chevron">{open===group.id?'Свернуть −':'Выбрать +'}</span>
-      </button>
-      {open===group.id&&<div className="main-order-picker-variants">
-        {group.lines.map(choice=>{
-          const balance=choice[source]
-          const free=freeAfterDraft(choice,source,allocated)
-          const selected=allocated.get(pickerKey(source,choice.variantId))||0
-          return <div className="main-order-picker-variant" key={choice.variantId}>
-            <div className="main-order-picker-variant-details">
-              <strong>{labels(choice).join(' · ')||'Без характеристик'}</strong>
-              <span className={free>0?'main-order-picker-free':'main-order-picker-zero'}>
-                {balance.free} из {balance.physical} свободно по системе
-                {selected>0?` · ${selected} выбрано в этот заказ`:''}
-              </span>
-              <small>{balance.reserved>0?`${balance.reserved} шт. занято резервами`:'Резервов нет'}
-                {balance.cachedReserved!==balance.reserved?' · В учёте резервов есть расхождение':''}
-                {choice.salePrice===null?' · Цена не задана':' · '+money(choice.salePrice)}
-              </small>
-              {free===0&&<small className="main-order-picker-shortage">
-                Свободного остатка нет. Можно оформить из источника с отметкой нехватки или передать этот вариант в цех.
-              </small>}
-            </div>
-            <div className="main-order-picker-actions">
-              <button type="button" className={free>0?'primary compact':'secondary compact'}
-                onClick={()=>onPick(choice,source,free<1)}>
-                {free>0?'+ В заказ':'Оформить из источника'}
+  {!loading&&!error&&groups.length>0&&<>
+    <div className="main-order-picker-catalog">
+      {gridRows.map((pair,index)=><Fragment key={'row-'+safePage+'-'+index}>
+        <div className="main-order-picker-model-row">
+          {pair.map(group=><button type="button" key={group.id}
+            className={'main-order-picker-model'+(selectedId===group.id?' selected':'')}
+            aria-expanded={selectedId===group.id}
+            onClick={()=>chooseModel(group.id)}>
+            <span className="main-order-picker-model-mark" aria-hidden="true">{group.name.trim().slice(0,1)}</span>
+            <span className="main-order-picker-model-main">
+              <strong>{group.name}</strong>
+              <small>{group.lines.length} вариантов{group.price===null?'':' · от '+money(group.price)}</small>
+            </span>
+            <span className="main-order-picker-model-right">
+              <span className={'main-order-picker-product-stat'+(group.free===0?' empty':'')}>{group.free} свободно</span>
+              <span className="main-order-picker-chevron">{selectedId===group.id?'Свернуть −':'Выбрать +'}</span>
+            </span>
+          </button>)}
+        </div>
+        {selectedGroup&&pair.some(group=>group.id===selectedGroup.id)&&
+          <div className="main-order-picker-detail" data-picker-product-detail={selectedGroup.id}>
+            <div className="main-order-picker-detail-head">
+              <div>
+                <strong>Характеристики · {selectedGroup.name}</strong>
+                <span>{selectedGroup.lines.length} вариантов · {selectedGroup.free} шт. свободно по системе</span>
+              </div>
+              <button type="button" className="main-order-picker-close" onClick={()=>setSelectedId(null)}>
+                Закрыть <span aria-hidden="true">×</span>
               </button>
-              <button type="button" className="secondary compact"
-                onClick={()=>onPick(choice,'workshop',false)}>В цех</button>
             </div>
-          </div>
-        })}
-      </div>}
-    </section>)}
-  </div>}
+            <div className="main-order-picker-facets" aria-label="Уточнить характеристики">
+              {facetKeys.map(key=>facetOptions&&facetOptions[key].length>1&&
+                <label key={key}>
+                  <span>{facetNames[key]}</span>
+                  <select aria-label={facetNames[key]} value={facets[key]}
+                    onChange={e=>setFacet(key,e.target.value)}>
+                    <option value="">Все {facetNames[key].toLocaleLowerCase('ru-RU')}</option>
+                    {facetOptions[key].map(value=><option value={value} key={value}>{value}</option>)}
+                  </select>
+                </label>
+              )}
+              {facetKeys.some(key=>Boolean(facets[key]))&&
+                <button type="button" className="main-order-picker-clear"
+                  onClick={()=>{setFacets(emptyFacets());setVariantPage(0)}}>Сбросить фильтры</button>}
+            </div>
+            <div className="main-order-picker-detail-count" aria-live="polite">
+              <span>Подходящих вариантов: <strong>{matched.length}</strong></span>
+              {matched.length>VARIANT_PAGE_SIZE&&<span>
+                Показаны {safeVariantPage*VARIANT_PAGE_SIZE+1}–{Math.min((safeVariantPage+1)*VARIANT_PAGE_SIZE,matched.length)}
+              </span>}
+            </div>
+            {!matched.length&&<p className="main-order-picker-no-variants">Таких характеристик вместе нет. Измените фильтры.</p>}
+            <div className="main-order-picker-variants-grid">
+              {visibleVariants.map(choice=>{
+                const balance=choice[source]
+                const free=freeAfterDraft(choice,source,allocated)
+                const selected=allocated.get(pickerKey(source,choice.variantId))||0
+                return <article className="main-order-picker-variant" key={choice.variantId}>
+                  <div className="main-order-picker-variant-top">
+                    <strong>{[choice.gender,choice.color].filter(Boolean).join(' · ')||'Вариант каталога'}</strong>
+                    <span className={free>0?'main-order-picker-free':'main-order-picker-zero'}>{free>0?free+' свободно':'Нет свободных'}</span>
+                  </div>
+                  <div className="main-order-picker-variant-tags">
+                    {choice.material&&<span>{choice.material}</span>}
+                    {choice.length&&<span>{choice.length}</span>}
+                    {choice.size&&<span>Размер {choice.size}</span>}
+                  </div>
+                  <div className="main-order-picker-variant-stocks">
+                    <span>{balance.free} из {balance.physical} свободно · {balance.reserved} в резерве</span>
+                    {selected>0&&<small>В этот заказ добавлено: {selected}</small>}
+                    {balance.cachedReserved!==balance.reserved&&<small>В учёте резервов есть расхождение</small>}
+                    <strong>{choice.salePrice===null?'Цена не задана':money(choice.salePrice)}</strong>
+                  </div>
+                  <div className="main-order-picker-actions">
+                    <button type="button" className={free>0?'primary compact':'secondary compact'}
+                      onClick={()=>onPick(choice,source,free<1)}>
+                      {free>0?'+ В заказ':'Из источника'}
+                    </button>
+                    <button type="button" className="secondary compact"
+                      onClick={()=>onPick(choice,'workshop',false)}>В цех</button>
+                  </div>
+                </article>
+              })}
+            </div>
+            {matched.length>VARIANT_PAGE_SIZE&&<div className="main-order-picker-pagination">
+              <button type="button" className="secondary compact" disabled={safeVariantPage===0}
+                onClick={()=>setVariantPage(p=>Math.max(0,p-1))}>Назад</button>
+              <span>{safeVariantPage+1} / {variantPages}</span>
+              <button type="button" className="secondary compact" disabled={safeVariantPage>=variantPages-1}
+                onClick={()=>setVariantPage(p=>Math.min(variantPages-1,p+1))}>Далее</button>
+            </div>}
+            <small className="main-order-picker-detail-note">
+              Если свободного остатка нет, товар всё равно можно оформить из источника или направить в цех. Остаток при выборе не меняется.
+            </small>
+          </div>}
+      </Fragment>)}
+    </div>
+    {groups.length>PRODUCT_PAGE_SIZE&&<div className="main-order-picker-pagination main-order-picker-products-pages">
+      <button type="button" className="secondary compact" disabled={safePage===0}
+        onClick={()=>{setProductPage(p=>Math.max(0,p-1));setSelectedId(null);setFacets(emptyFacets());setVariantPage(0)}}>
+        Предыдущие
+      </button>
+      <span>Страница {safePage+1} из {totalPages} · {groups.length} товаров</span>
+      <button type="button" className="secondary compact" disabled={safePage>=totalPages-1}
+        onClick={()=>{setProductPage(p=>Math.min(totalPages-1,p+1));setSelectedId(null);setFacets(emptyFacets());setVariantPage(0)}}>
+        Следующие
+      </button>
+    </div>}
+  </>}
  </div>
 }
