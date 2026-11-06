@@ -1771,8 +1771,24 @@ export async function updateOrderCritical(
         );
       }
 
-      const itemContentChanged = Boolean(requestedItems && !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems));
-      const rewriteItems = Boolean(requestedItems && !sameNormalizedOrderItemsExceptPriceForEdit(existingItemsForEdit, requestedItems));
+      // Watch variants can have identical Main display snapshots but different
+      // canonical SKU IDs. Never silently treat such a swap as a price-only edit.
+      const watchSkuChanged = Boolean(options.watchRewrite && (
+        options.watchRewrite.lines.length !== ((existingAny.items || []) as Array<Record<string, unknown>>).length ||
+        options.watchRewrite.lines.some((line, index) => {
+          const old = ((existingAny.items || []) as Array<Record<string, unknown>>)[index];
+          return !old ||
+            toInt(old.id, 0) !== toInt(line.orderItemId, 0) ||
+            toInt(old.variantId, 0) !== line.catalogVariantId ||
+            toInt(old.productId, 0) !== line.catalogProductId;
+        })
+      ));
+      const itemContentChanged = Boolean(requestedItems && (
+        !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems) || watchSkuChanged
+      ));
+      const rewriteItems = Boolean(requestedItems && (
+        !sameNormalizedOrderItemsExceptPriceForEdit(existingItemsForEdit, requestedItems) || watchSkuChanged
+      ));
       if (itemContentReplacementRequested && !rewriteItems) {
         throw new CriticalOperationConflictError('Состав не изменился. Для исправления только цены используйте отдельную коррекцию цены продажи.');
       }
