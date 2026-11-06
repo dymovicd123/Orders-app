@@ -36,7 +36,7 @@ const entry=[
 ].join('\n')
 const built=await build({
  stdin:{contents:entry,loader:'jsx',resolveDir:process.cwd(),sourcefile:'source-picker-test.jsx'},
- bundle:true,write:false,outdir:dir,format:'iife',platform:'browser',target:'chrome120',
+ bundle:true,write:false,outdir:dir,format:'iife',platform:'browser',target:'chrome120',jsx:'automatic',jsxImportSource:'react',
  logLevel:'error',
 })
 const js=built.outputFiles.find(x=>x.path.endsWith('.js'))
