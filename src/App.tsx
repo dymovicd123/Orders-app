@@ -4374,6 +4374,7 @@ function App() {
         comment: createDraft.comment,
         items: createDraft.items.map((item) => ({
           productName: item.productName,
+          catalogVariantId: item.catalogVariantId || undefined,
           audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
           gender: item.gender || null,
           color: item.color,
