@@ -59,12 +59,14 @@ export async function createClient3WatchOrder(
    const managerId=actor.role==='admin'?Number(raw.managerId||actor.managerId||0):Number(actor.managerId||0)
    if(!Number.isSafeInteger(managerId)||managerId<1)
      return fail('WATCH_MANAGER_REQUIRED','Выберите менеджера.')
-   const assignment=await db.prepare(`SELECT 1 AS ok FROM watch_manager_brands mb
-     JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
-     WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1`)
-     .bind(managerId,brandId).first<{ok:number}>()
-   if(!assignment)return fail('WATCH_MANAGER_BRAND_FORBIDDEN',
-     'Менеджер не назначен выбранному бренду.',403)
+   const assignment=await db.prepare(`SELECT COUNT(*) AS total,
+     COALESCE(SUM(CASE WHEN mb.brand_id=? THEN 1 ELSE 0 END),0) AS matches
+     FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+     WHERE mb.manager_id=?`)
+     .bind(brandId,managerId).first<{total:number;matches:number}>()
+   if(Number(assignment?.total)!==1||Number(assignment?.matches)!==1)
+     return fail('WATCH_MANAGER_BRAND_FORBIDDEN',
+       'Менеджер должен быть закреплён ровно за одним брендом, совпадающим с заказом.',403)
 
    const requested:WatchCreateItem[]=raw.items===undefined?[{
      watchVariantId:raw.watchVariantId??0,catalogVariantId:raw.catalogVariantId,
