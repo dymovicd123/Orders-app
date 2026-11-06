@@ -1,4 +1,4 @@
-import {useMemo,useRef,useState,type FormEvent} from 'react'
+import {useEffect,useMemo,useRef,useState,type FormEvent} from 'react'
 import {WatchOrderLineEditor} from './WatchOrderLineEditor'
 import {WatchOrderSourcePicker,sourceAvailable,stockKey,watchLabels} from './WatchOrderSourcePicker'
 import '../../styles/client3-watch-source-picker.css'
@@ -60,7 +60,16 @@ const newLine=(source:WatchSource='office'):DraftLine=>({
  */
 export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  deliveryMethods,paymentMethods=WATCH_PAYMENTS,references,onSave}:Props){
- const [brand,setBrand]=useState<WatchBrand|''>('')
+ const fixedBrand:WatchBrand|''=!isAdmin&&allowedBrands.length===1?allowedBrands[0]:''
+ const [brand,setBrand]=useState<WatchBrand|''>(fixedBrand)
+ useEffect(()=>{
+   if(isAdmin)return
+   setBrand(previous=>{
+     if(previous===fixedBrand)return previous
+     setSource('office');setLines([]);setEditingId(null);setError('')
+     return fixedBrand
+   })
+ },[fixedBrand,isAdmin])
  const [source,setSource]=useState<WatchSource>('office')
  const [lines,setLines]=useState<DraftLine[]>([])
  const [editingId,setEditingId]=useState<string|null>(null)
@@ -166,7 +175,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    recipientName.trim()&&recipientPhone.trim()&&city.trim()&&address.trim()&&postalCode.trim()&&
    deliveryMethod.trim()&&shippingDeadlineLocal&&/^\d{4}-\d{2}-\d{2}$/.test(orderDate)&&orderDate<=businessToday()&&!busy)
  const reset=()=>{
-   setBrand('');setSource('office');setLines([]);setEditingId(null);setManagerId(0)
+   setBrand(fixedBrand);setSource('office');setLines([]);setEditingId(null);setManagerId(0)
    setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0',paymentDate:businessToday(),dateCustomized:false}])
    setRecipientName('');setRecipientPhone('');setCity('');setOtherCity(false);setAddress('');setPostalCode('')
    setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false);setOrderDate(businessToday())
@@ -227,17 +236,19 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    <section className="order-step-card">
      <div className="order-step-head"><div className="order-step-index">1</div>
        <div><h3>Клиент и условия заказа</h3>
-         <p>Выберите бренд. Контакты, доставка и крайний срок передаются логистике.</p></div>
+         <p>{isAdmin?'Выберите бренд. Контакты и крайний срок передаются логистике.':'Бренд закреплён за менеджером. Контакты и крайний срок передаются логистике.'}</p></div>
      </div>
      <div className="main-watch-create-grid">
-       <label>Бренд *
+       {isAdmin?<label>Бренд *
          <select required value={brand} onChange={e=>{
            setBrand(e.target.value as WatchBrand);setSource('office');setLines([]);setEditingId(null);setManagerId(0);setError('')
          }}>
            <option value="">Выберите бренд</option>
            {allowedBrands.map(x=><option value={x} key={x}>{x}</option>)}
          </select>
-       </label>
+       </label>:<label>Мой бренд
+         <input value={fixedBrand} readOnly aria-label="Закреплённый бренд менеджера"/>
+       </label>}
        <label>Дата заказа *
          <input required type="date" value={orderDate} max={businessToday()}
            onChange={e=>{const date=e.target.value;setOrderDate(date);
