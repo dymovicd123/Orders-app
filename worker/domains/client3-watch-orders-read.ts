@@ -127,6 +127,10 @@ export async function listClient3WatchOrders(
           'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
+           'hasFulfilledReservation',CASE WHEN EXISTS(
+             SELECT 1 FROM inventory_reservations fulfill
+             WHERE fulfill.order_item_id=oi.id AND fulfill.status='fulfilled'
+           ) THEN 1 ELSE 0 END,
           'shipped',CASE WHEN ${WATCH_ITEM_SHIPPED_SQL}>0 THEN 1 ELSE 0 END,
           'engravingText',COALESCE(wi2.engraving_text,''),
           'engravingReady',CASE WHEN TRIM(COALESCE(wi2.engraving_text,''))='' THEN 1
