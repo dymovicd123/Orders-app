@@ -85,3 +85,50 @@ export async function listOrderSourcePicker(db:D1Database){
   })
   return {ok:true,variants}
 }
+
+
+/**
+ * A selected SKU is an immutable identity, not editable free text.
+ * Re-read the exact active catalog record before any price, stock, customer,
+ * payment or order mutation. New orders never create variants here.
+ */
+export async function hydratePickedOrderItems(
+  db:D1Database,items:ReturnType<typeof import('./order-core.ts').normalizeOrderItems>,
+){
+  const identities=new Map<number,Record<string,unknown>>()
+  for(const item of items){
+    const variantId=Math.max(0,toInt(item.catalogVariantId,0))
+    if(!variantId)continue
+    let record=identities.get(variantId)
+    if(!record){
+      record=await db.prepare(`SELECT v.id AS variant_id,v.product_id,
+            p.name AS product_name,COALESCE(NULLIF(v.category,''),p.category,'adult') AS category,
+            v.gender,v.color,v.material,v.length,v.size_label AS size
+          FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+          WHERE v.id=? AND v.is_active=1 AND p.is_active=1
+          LIMIT 1`).bind(variantId).first<Record<string,unknown>>()||undefined
+      if(!record)throw new Error('Выбранный вариант товара больше не активен. Обновите список товаров.')
+      identities.set(variantId,record)
+    }
+    const canonicalProduct=cleanText(record.product_name).toLocaleUpperCase('ru-RU')
+    const canonicalColor=cleanText(record.color).toLocaleUpperCase('ru-RU')
+    const canonicalSize=cleanText(record.size).toLocaleUpperCase('ru-RU')
+    // A picked item is not allowed to preserve silently changed draft identity.
+    if(item.productName!==canonicalProduct
+      || cleanText(item.color).toLocaleUpperCase('ru-RU')!==canonicalColor
+      || cleanText(item.size).toLocaleUpperCase('ru-RU')!==canonicalSize){
+      throw new Error('Характеристики выбранного товара изменились в каталоге. Обновите выбор товара.')
+    }
+    item.productName=canonicalProduct
+    item.category=cleanText(record.category)==='child'?'child':'adult'
+    item.audienceType=item.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ'
+    item.gender=cleanText(record.gender).toLocaleUpperCase('ru-RU')
+    item.color=canonicalColor
+    item.material=cleanText(record.material).toLocaleUpperCase('ru-RU')
+    item.length=cleanText(record.length).toLocaleUpperCase('ru-RU')
+    item.size=cleanText(record.size)
+    // Workshop lines keep their identity but are never stock reservations.
+    // Main's existing manual workshop path remains unchanged.
+  }
+  return items
+}
