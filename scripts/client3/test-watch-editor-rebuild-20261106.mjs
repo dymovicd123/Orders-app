@@ -18,6 +18,8 @@ assert(composition.includes('onAdd={choose}')&&composition.includes('onManual={a
 assert(composition.includes('hasFulfilledReservation'))
 assert(projection.includes("'hasFulfilledReservation'"))
 assert(core.includes('releaseOrderReservationsV2')&&core.includes('preservedRewriteItemIds'))
+assert(core.includes('watchSkuChanged')&&core.includes('line.catalogVariantId'))
+assert(composition.includes("models.brand!==brand"))
 
 const vite=await createServer({configFile:false,plugins:[react()],appType:'custom',
  server:{middlewareMode:true},logLevel:'error'})
@@ -31,13 +33,13 @@ try{
  const normal=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,
    {...props,itemLines:JSON.stringify([item])}))
  assert(normal.includes('Заменить')&&normal.includes('Добавить товар'))
- assert(normal.includes('Подтвердить изменение состава'))
+ assert(normal.includes('Проверить и сохранить состав'))
  const issued=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,
    {...props,itemLines:JSON.stringify([{...item,hasFulfilledReservation:1}])}))
- assert(issued.includes('Автоматическая перезапись состава могла бы'))
- assert(!issued.includes('Подтвердить изменение состава'))
+ assert(issued.includes('Состав защищён от перезаписи'))
+ assert(!issued.includes('Проверить и сохранить состав'))
  const returned=renderToStaticMarkup(React.createElement(WatchAdminCompositionEditor,
    {...props,itemLines:JSON.stringify([item]),linkedReturns:1}))
- assert(returned.includes('Автоматическая перезапись состава могла бы'))
+ assert(returned.includes('Состав защищён от перезаписи'))
  console.log('CLIENT3_ORDER_EDITOR_REBUILD_PASS')
 }finally{await vite.close()}
