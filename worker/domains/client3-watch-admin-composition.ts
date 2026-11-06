@@ -64,12 +64,16 @@ export async function rewriteClient3AdminWatchItems(
  const relations=await db.prepare(`SELECT oi.id AS orderItemId,wi.watch_variant_id AS watchVariantId,
      oi.quantity,oi.unit_price AS unitPrice,oi.source_type AS source,
      wi.engraving_text AS engravingText,oi.catalog_price_snapshot AS catalogPriceSnapshot,
-     oi.product_id AS catalogProductId,oi.variant_id AS catalogVariantId
+     oi.product_id AS catalogProductId,oi.variant_id AS catalogVariantId,
+     wp.brand_id AS watchBrandId
      FROM order_items oi LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+     LEFT JOIN watch_variants wv ON wv.id=wi.watch_variant_id
+     LEFT JOIN watch_products wp ON wp.id=wv.watch_product_id
      WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).bind(orderId)
      .all<Record<string,unknown>>()
  const existing=relations.results||[]
- if(existing.length!==raw.expected.length||existing.some(row=>!row.watchVariantId))
+ if(existing.length!==raw.expected.length||existing.some(row=>
+   !row.watchVariantId||Number(row.watchBrandId)!==brandId))
    return fail('WATCH_REWRITE_STALE','Состав часов изменился. Обновите карточку.',409)
  const expected=raw.expected
  for(let i=0;i<existing.length;i++){
