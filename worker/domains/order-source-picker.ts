@@ -120,6 +120,7 @@ export async function hydratePickedOrderItems(
       throw new Error('Характеристики выбранного товара изменились в каталоге. Обновите выбор товара.')
     }
     item.productName=canonicalProduct
+    item.catalogProductId=toInt(record.product_id,0)
     item.category=cleanText(record.category)==='child'?'child':'adult'
     item.audienceType=item.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ'
     item.gender=cleanText(record.gender).toLocaleUpperCase('ru-RU')
