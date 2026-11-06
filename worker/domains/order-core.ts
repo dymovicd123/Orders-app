@@ -92,6 +92,7 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
       return {
         productName: upperText(item?.productName),
         catalogVariantId: Math.max(0,toInt(item?.catalogVariantId,0)),
+        catalogProductId: 0,
         category,
         audienceType: category === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
         gender: upperText(item?.gender),
