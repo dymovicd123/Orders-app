@@ -147,9 +147,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         </div>
       </section>}
     {workflow==='orders'&&<div className="watch-orders-filters">
-      <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
+      {isAdmin&&allowedBrands.length>1?<label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
         {allowedBrands.map(code=><option key={code} value={code}>{code}</option>)}
-      </select></label>
+      </select></label>:<span className="watch-orders-fixed-brand">Бренд: <strong>{brand}</strong></span>}
       <label>Месяц<input type="month" value={month} onChange={e=>{setMonth(e.target.value);setPage(0)}}/></label>
       <label>Отправка
         <select value={shipping} onChange={e=>{setShipping(e.target.value as typeof shipping);setPage(0)}}>
