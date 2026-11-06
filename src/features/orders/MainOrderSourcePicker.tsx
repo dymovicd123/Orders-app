@@ -300,12 +300,12 @@ export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants
     </div>
     {groups.length>PRODUCT_PAGE_SIZE&&<div className="main-order-picker-pagination main-order-picker-products-pages">
       <button type="button" className="secondary compact" disabled={safePage===0}
-        onClick={()=>{setProductPage(p=>Math.max(0,p-1));setSelectedId(null);setFacets(emptyFacets());setVariantPage(0)}}>
+        onClick={()=>{setProductPage(p=>Math.max(0,p-1));setSelectedId(null);setExecutionKey('');setColor('');setVariantPage(0)}}>
         Предыдущие
       </button>
       <span>Страница {safePage+1} из {totalPages} · {groups.length} товаров</span>
       <button type="button" className="secondary compact" disabled={safePage>=totalPages-1}
-        onClick={()=>{setProductPage(p=>Math.min(totalPages-1,p+1));setSelectedId(null);setFacets(emptyFacets());setVariantPage(0)}}>
+        onClick={()=>{setProductPage(p=>Math.min(totalPages-1,p+1));setSelectedId(null);setExecutionKey('');setColor('');setVariantPage(0)}}>
         Следующие
       </button>
     </div>}
