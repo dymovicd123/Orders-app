@@ -147,9 +147,9 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         </div>
       </section>}
     {workflow==='orders'&&<div className="watch-orders-filters">
-      <label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
+      {isAdmin&&allowedBrands.length>1?<label>Бренд<select value={brand} onChange={e=>{setBrand(e.target.value as WatchBrand);setPage(0)}}>
         {allowedBrands.map(code=><option key={code} value={code}>{code}</option>)}
-      </select></label>
+      </select></label>:<span className="watch-orders-fixed-brand">Бренд: <strong>{brand}</strong></span>}
       <label>Месяц<input type="month" value={month} onChange={e=>{setMonth(e.target.value);setPage(0)}}/></label>
       <label>Отправка
         <select value={shipping} onChange={e=>{setShipping(e.target.value as typeof shipping);setPage(0)}}>
@@ -183,11 +183,6 @@ export function WatchOrdersPanel({allowedBrands,initialBrand,initialFocusedOrder
         onClose={()=>setDeleteOrderId(null)}
         onDone={()=>{setDeleteOrderId(null);setRefresh(v=>v+1)}}/>
     </section>:editingOrder?<section className="watch-main-edit-workspace" aria-label={'Редактирование заказа '+editingOrder.externalId}>
-      <header className="watch-main-edit-workspace-head">
-        <div><h3>Редактирование заказа {editingOrder.externalId}</h3>
-          <p>{isAdmin?'Полный набор действий администратора Main':'Исправление реквизитов, цены и отмена операций по правилам Main'}. Отправка — только в логистике.</p></div>
-        <button type="button" className="secondary back-action" onClick={()=>setEditOrderId(null)}>Назад к заказам</button>
-      </header>
       <WatchOrderCorrections key={'edit-'+editingOrder.orderId} brand={brand} order={editingOrder} isAdmin={isAdmin}
         onCancel={()=>setEditOrderId(null)} onDone={()=>{setEditOrderId(null);setRefresh(v=>v+1)}}/>
     </section>:<>

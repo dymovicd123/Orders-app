@@ -60,9 +60,15 @@ async function canViewBrand(db:D1Database,actor:AuthUser,brandId:number,mode:'lo
     (mode==='warehouse'&&actor.employeeRole==='Завсклад'))return true
   if(mode==='sales'&&['Логист','Упаковщик','Завсклад'].includes(actor.employeeRole||''))return false
   if(!actor.managerId)return false
-  const row=await db.prepare('SELECT 1 AS ok FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.manager_id=? AND mb.brand_id=? LIMIT 1')
-    .bind(actor.managerId,brandId).first<{ok:number}>()
-  return Boolean(row?.ok)
+  // A sales manager has one brand only. Never silently pick a brand when an
+  // older account has multiple memberships: the administrator must correct it.
+  const row=await db.prepare(`SELECT COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN mb.brand_id=? THEN 1 ELSE 0 END),0) AS matches
+    FROM watch_manager_brands mb
+    JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+    WHERE mb.manager_id=?`)
+    .bind(brandId,actor.managerId).first<{total:number;matches:number}>()
+  return Number(row?.total)===1&&Number(row?.matches)===1
 }
 async function scopedBrand(db:D1Database,actor:AuthUser,input:unknown,mode:'sales'|'logistics'|'warehouse') {
   let code:WatchBrand
@@ -72,7 +78,20 @@ async function scopedBrand(db:D1Database,actor:AuthUser,input:unknown,mode:'sale
   return {row}
 }
 
+async function managerSingleBrandError(db:D1Database,actor:AuthUser):Promise<Response|null>{
+  if(actor.role==='admin'||staffCanSeeAllLogistics(actor)||
+    actor.employeeRole==='Завсклад'||!actor.managerId)return null
+  const row=await db.prepare(`SELECT COUNT(*) AS count FROM watch_manager_brands mb
+    JOIN managers m ON m.id=mb.manager_id AND m.is_active=1
+    WHERE mb.manager_id=?`).bind(actor.managerId).first<{count:number}>()
+  if(Number(row?.count)===1)return null
+  return json({ok:false,code:'WATCH_MANAGER_BRAND_ASSIGNMENT',
+    message:'У менеджера должен быть ровно один бренд. Администратор должен исправить назначение в разделе «Команда».'},{status:409})
+}
+
 export async function listWatchBrands(db:D1Database,actor:AuthUser) {
+  const invalid=await managerSingleBrandError(db,actor)
+  if(invalid)return invalid
   const rows=await db.prepare(`
     SELECT b.code,b.name FROM watch_brands b
     WHERE b.is_active=1 AND (?=1 OR EXISTS (
@@ -87,7 +106,7 @@ export async function listWatchManagers(db:D1Database,actor:AuthUser,url:URL) {
   const scope=await scopedBrand(db,actor,url.searchParams.get('brand'),'sales')
   if(scope.error)return scope.error
   const rows=await db.prepare(
-    'SELECT m.id,m.name FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=? AND COALESCE(m.role,\'Менеджер\') NOT IN (\'Логист\',\'Упаковщик\') ORDER BY m.name COLLATE NOCASE,m.id',
+    'SELECT m.id,m.name FROM watch_manager_brands mb JOIN managers m ON m.id=mb.manager_id AND m.is_active=1 WHERE mb.brand_id=? AND COALESCE(m.role,\'Менеджер\') NOT IN (\'Логист\',\'Упаковщик\') AND (COALESCE(m.role,\'Менеджер\')<>\'Менеджер\' OR (SELECT COUNT(*) FROM watch_manager_brands same WHERE same.manager_id=m.id)=1) ORDER BY m.name COLLATE NOCASE,m.id',
   ).bind(scope.row!.id).all<{id:number;name:string}>()
   return json({ok:true,brand:scope.row!.code,managers:actor.role==='admin'?rows.results||[]:
     (rows.results||[]).filter(x=>x.id===actor.managerId)})
@@ -98,9 +117,9 @@ export async function listWatchStaff(db:D1Database,actor:AuthUser) {
   const rows=await db.prepare(
     'SELECT m.id,m.name,m.role,m.is_active,b.code AS brand FROM managers m LEFT JOIN watch_manager_brands mb ON mb.manager_id=m.id LEFT JOIN watch_brands b ON b.id=mb.brand_id WHERE m.is_active=1 ORDER BY m.name COLLATE NOCASE,m.id,b.code',
   ).all<{id:number;name:string;role:string;is_active:number;brand:WatchBrand|null}>()
-  const grouped=new Map<number,{id:number;name:string;brands:WatchBrand[]}>()
+  const grouped=new Map<number,{id:number;name:string;role:string;brands:WatchBrand[]}>()
   for(const row of rows.results||[]) {
-    if(!grouped.has(row.id))grouped.set(row.id,{id:row.id,name:row.name,brands:[]})
+    if(!grouped.has(row.id))grouped.set(row.id,{id:row.id,name:row.name,role:row.role||'Менеджер',brands:[]})
     if(row.brand&&!['Логист','Упаковщик'].includes(row.role||''))grouped.get(row.id)!.brands.push(row.brand)
   }
   return json({ok:true,staff:Array.from(grouped.values())})
@@ -133,6 +152,8 @@ export async function assignWatchManagerBrands(
   if(!manager)return json({ok:false,code:'WATCH_MANAGER_NOT_FOUND'},{status:404})
   if(['Логист','Упаковщик'].includes(manager.role||'')&&next.length)
     return BAD('Логист работает с обоими брендами без персональных назначений.')
+  if((manager.role||'Менеджер')==='Менеджер'&&next.length!==1)
+    return BAD('Менеджеру назначается ровно один бренд: TAUWACH или WACHIZEN.')
   const rows=await db.prepare(
     'SELECT b.code FROM watch_manager_brands mb JOIN watch_brands b ON b.id=mb.brand_id WHERE mb.manager_id=? ORDER BY b.code',
   ).bind(managerId).all<{code:WatchBrand}>()

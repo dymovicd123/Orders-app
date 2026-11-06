@@ -177,8 +177,10 @@ export async function reassignClient3AdminOrderManager(
    return error('WATCH_MANAGER_EDIT_STALE','Ответственный уже изменился. Обновите заказ.',409)
  const manager=await db.prepare(`SELECT m.id,m.name FROM managers m
    JOIN watch_manager_brands mb ON mb.manager_id=m.id
-   WHERE m.id=? AND m.is_active=1 AND mb.brand_id=?`).bind(target,brandId)
-   .first<{id:number;name:string}>()
+   WHERE m.id=? AND m.is_active=1 AND mb.brand_id=?
+     AND (COALESCE(m.role,'Менеджер')<>'Менеджер'
+       OR (SELECT COUNT(*) FROM watch_manager_brands b WHERE b.manager_id=m.id)=1)`)
+   .bind(target,brandId).first<{id:number;name:string}>()
  if(!manager)return error('WATCH_MANAGER_EDIT_BRAND_DENIED','Менеджер не назначен выбранному бренду.',403)
  if(expected===target)return json({ok:true,unchanged:true,orderId})
  if(order.order_status!=='active'||order.shipping_status==='sent'||await issued(db,orderId)>0)

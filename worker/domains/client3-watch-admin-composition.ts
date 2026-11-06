@@ -64,12 +64,16 @@ export async function rewriteClient3AdminWatchItems(
  const relations=await db.prepare(`SELECT oi.id AS orderItemId,wi.watch_variant_id AS watchVariantId,
      oi.quantity,oi.unit_price AS unitPrice,oi.source_type AS source,
      wi.engraving_text AS engravingText,oi.catalog_price_snapshot AS catalogPriceSnapshot,
-     oi.product_id AS catalogProductId,oi.variant_id AS catalogVariantId
+     oi.product_id AS catalogProductId,oi.variant_id AS catalogVariantId,
+     wp.brand_id AS watchBrandId
      FROM order_items oi LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+     LEFT JOIN watch_variants wv ON wv.id=wi.watch_variant_id
+     LEFT JOIN watch_products wp ON wp.id=wv.watch_product_id
      WHERE oi.order_id=? AND oi.quantity>0 ORDER BY oi.id`).bind(orderId)
      .all<Record<string,unknown>>()
  const existing=relations.results||[]
- if(existing.length!==raw.expected.length||existing.some(row=>!row.watchVariantId))
+ if(existing.length!==raw.expected.length||existing.some(row=>
+   !row.watchVariantId||Number(row.watchBrandId)!==brandId))
    return fail('WATCH_REWRITE_STALE','Состав часов изменился. Обновите карточку.',409)
  const expected=raw.expected
  for(let i=0;i<existing.length;i++){
@@ -83,13 +87,32 @@ export async function rewriteClient3AdminWatchItems(
  }
  const linked=await db.prepare(`SELECT
    (SELECT COUNT(*) FROM returns WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled') AS returnCount,
-   (SELECT COUNT(*) FROM inventory_reservations WHERE order_id=? AND status='fulfilled') AS handovers,
-   (SELECT COUNT(*) FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id
-     WHERE d.order_id=? AND di.quantity>COALESCE(di.cancelled_quantity,0)) AS sentCount
- `).bind(orderId,orderId,orderId).first<Record<string,number>>()
- if(Number(linked?.returnCount||0)+
-   Number(linked?.handovers||0)+Number(linked?.sentCount||0)>0)
-   return fail('WATCH_REWRITE_LIFECYCLE','Есть отправленные товары или возвраты. Изменение состава заблокировано.',409)
+   (SELECT COUNT(*) FROM exchanges WHERE order_id=? AND COALESCE(status,'completed')<>'cancelled') AS exchangeCount
+ `).bind(orderId,orderId).first<Record<string,number>>()
+ if(Number(linked?.returnCount||0)>0||Number(linked?.exchangeCount||0)>0)
+   return fail('WATCH_REWRITE_RETURNS','В заказе есть возвраты. Изменение состава требует отдельного финансового оформления, чтобы не переписать их историю.',409)
+ // Partially shipped orders may edit ONLY untouched positions. Exact shipped
+ // rows stay in the same order, with their SKU, money and engraving unchanged.
+ const issued=await db.prepare(`SELECT DISTINCT oi.id AS orderItemId
+   FROM order_items oi WHERE oi.order_id=? AND oi.quantity>0 AND (
+     oi.stock_writeoff_status='fulfilled'
+     OR EXISTS(SELECT 1 FROM inventory_reservations r
+       WHERE r.order_item_id=oi.id AND r.status='fulfilled')
+     OR EXISTS(SELECT 1 FROM order_dispatch_items di JOIN order_dispatches d
+       ON d.id=di.dispatch_id AND d.order_id=oi.order_id
+       WHERE di.order_item_id=oi.id AND di.quantity>COALESCE(di.cancelled_quantity,0))
+   )`).bind(orderId).all<{orderItemId:number}>()
+ for(const guarded of issued.results||[]){
+   const old=existing.find(row=>Number(row.orderItemId)===Number(guarded.orderItemId))
+   const next=raw.items.find(row=>Number(row.orderItemId)===Number(guarded.orderItemId))
+   if(!old||!next||next.manual||
+     Number(next.watchVariantId)!==Number(old.watchVariantId)||
+     next.source!==(old.source==='warehouse'?'office':'showcase')||
+     next.quantity!==Number(old.quantity)||next.unitPrice!==Number(old.unitPrice)||
+     next.engravingText!==String(old.engravingText||''))
+     return fail('WATCH_REWRITE_ISSUED_PROTECTED',
+       'Отправленную позицию нельзя менять напрямую. Исправьте ошибочную отправку или оформите возврат; остальные неотправленные позиции доступны.',409)
+ }
  if(existing.reduce((sum,row)=>sum+Number(row.quantity)*Number(row.unitPrice),0)!==
     Number(belongs.total_amount))
    return fail('WATCH_REWRITE_MONEY','Итог заказа не совпадает с действующим составом. Нужна сверка.',409)

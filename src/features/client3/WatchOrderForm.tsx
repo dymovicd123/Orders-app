@@ -1,4 +1,4 @@
-import {useMemo,useRef,useState,type FormEvent} from 'react'
+import {useEffect,useMemo,useRef,useState,type FormEvent} from 'react'
 import {WatchOrderLineEditor} from './WatchOrderLineEditor'
 import {WatchOrderSourcePicker,sourceAvailable,stockKey,watchLabels} from './WatchOrderSourcePicker'
 import '../../styles/client3-watch-source-picker.css'
@@ -60,12 +60,18 @@ const newLine=(source:WatchSource='office'):DraftLine=>({
  */
 export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
  deliveryMethods,paymentMethods=WATCH_PAYMENTS,references,onSave}:Props){
- const [brand,setBrand]=useState<WatchBrand|''>('')
+ const fixedBrand:WatchBrand|''=!isAdmin&&allowedBrands.length===1?allowedBrands[0]:''
+ const [brand,setBrand]=useState<WatchBrand|''>(fixedBrand)
+ useEffect(()=>{
+   if(isAdmin||brand===fixedBrand)return
+   setBrand(fixedBrand)
+   setSource('office');setLines([]);setEditingId(null);setError('')
+ },[fixedBrand,isAdmin,brand])
  const [source,setSource]=useState<WatchSource>('office')
  const [lines,setLines]=useState<DraftLine[]>([])
  const [editingId,setEditingId]=useState<string|null>(null)
- const [payments,setPayments]=useState<Array<{method:string;amount:string}>>([
-   {method:paymentMethods[0]||'KASPI GOLD',amount:'0'},
+ const [payments,setPayments]=useState<Array<{method:string;amount:string;paymentDate:string;dateCustomized:boolean}>>([
+   {method:paymentMethods[0]||'KASPI GOLD',amount:'0',paymentDate:businessToday(),dateCustomized:false},
  ])
  const [managerId,setManagerId]=useState(0)
  const [recipientName,setRecipientName]=useState('')
@@ -157,15 +163,17 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    sourceAvailable(x,line.source)>=(allocated.get(stockKey(line.source,line.watchVariantId))||0))))
  const validPayments=payments.length>=1&&payments.length<=8&&payments.every((row,index)=>
    paymentMethods.includes(row.method)&&row.amount.trim()!==''&&
-   Number.isSafeInteger(Number(row.amount))&&Number(row.amount)>=(index===0?0:1))
+   Number.isSafeInteger(Number(row.amount))&&Number(row.amount)>=(index===0?0:1)&&
+   /^\d{4}-\d{2}-\d{2}$/.test(row.paymentDate)&&row.paymentDate<=businessToday()&&
+   row.paymentDate>='2020-01-01'&&(index!==0||row.paymentDate===orderDate))
  const canSave=Boolean(brand&&allowedBrands.includes(brand as WatchBrand)&&validLines&&
    Number.isSafeInteger(total)&&Number.isSafeInteger(received)&&received<=total&&
    validPayments&&(!isAdmin||staff.some(x=>x.id===managerId))&&
    recipientName.trim()&&recipientPhone.trim()&&city.trim()&&address.trim()&&postalCode.trim()&&
    deliveryMethod.trim()&&shippingDeadlineLocal&&/^\d{4}-\d{2}-\d{2}$/.test(orderDate)&&orderDate<=businessToday()&&!busy)
  const reset=()=>{
-   setBrand('');setSource('office');setLines([]);setEditingId(null);setManagerId(0)
-   setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0'}])
+   setBrand(fixedBrand);setSource('office');setLines([]);setEditingId(null);setManagerId(0)
+   setPayments([{method:paymentMethods[0]||'KASPI GOLD',amount:'0',paymentDate:businessToday(),dateCustomized:false}])
    setRecipientName('');setRecipientPhone('');setCity('');setOtherCity(false);setAddress('');setPostalCode('')
    setDeliveryMethod(deliveryMethods[0]||'');setShippingDeadlineLocal('');setUrgent(false);setOrderDate(businessToday())
    setError('');requestRef.current=null
@@ -200,7 +208,7 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
        quantity:first.quantity,unitPrice:first.unitPrice,engravingText:first.engravingText,
        catalogPriceSnapshot:matches[0]?.catalogPriceSnapshot??null,
        receivedAmount:received,payments:payments.filter(x=>Number(x.amount)>0)
-         .map(x=>({method:x.method,amount:Number(x.amount)})),
+         .map(x=>({method:x.method,amount:Number(x.amount),paymentDate:x.paymentDate})),
        ...(isAdmin?{managerId}:{}),
      }
      const fingerprint=JSON.stringify(payload)
@@ -225,20 +233,24 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
    <section className="order-step-card">
      <div className="order-step-head"><div className="order-step-index">1</div>
        <div><h3>Клиент и условия заказа</h3>
-         <p>Выберите бренд. Контакты, доставка и крайний срок передаются логистике.</p></div>
+         <p>{isAdmin?'Выберите бренд. Контакты и крайний срок передаются логистике.':'Бренд закреплён за менеджером. Контакты и крайний срок передаются логистике.'}</p></div>
      </div>
      <div className="main-watch-create-grid">
-       <label>Бренд *
+       {isAdmin?<label>Бренд *
          <select required value={brand} onChange={e=>{
            setBrand(e.target.value as WatchBrand);setSource('office');setLines([]);setEditingId(null);setManagerId(0);setError('')
          }}>
            <option value="">Выберите бренд</option>
            {allowedBrands.map(x=><option value={x} key={x}>{x}</option>)}
          </select>
-       </label>
+       </label>:<label>Мой бренд
+         <input value={fixedBrand} readOnly aria-label="Закреплённый бренд менеджера"/>
+       </label>}
        <label>Дата заказа *
          <input required type="date" value={orderDate} max={businessToday()}
-           onChange={e=>setOrderDate(e.target.value)}/>
+           onChange={e=>{const date=e.target.value;setOrderDate(date);
+             setPayments(rows=>rows.map((p,i)=>i===0||!p.dateCustomized
+               ?{...p,paymentDate:date}:p))}}/>
          
        </label>
        <label>ФИО получателя *
@@ -411,11 +423,19 @@ export function WatchOrderForm({allowedBrands,catalog,managers=[],isAdmin=false,
              value={row.amount}
              onChange={e=>setPayments(all=>all.map((x,i)=>i===index?{...x,amount:e.target.value}:x))}/>
          </label>
+         <label>Дата оплаты *
+           <input type="date" required min="2020-01-01" max={businessToday()}
+             value={row.paymentDate} readOnly={index===0}
+             onChange={e=>setPayments(all=>all.map((x,i)=>i===index
+               ?{...x,paymentDate:e.target.value,dateCustomized:true}:x))}/>
+           <small>{index===0?'Совпадает с датой заказа автоматически':
+             row.dateCustomized?'Дата указана вручную':'Подставлена дата заказа'}</small>
+         </label>
        </div>
      </div>)}
      <div className="actions">
        <button type="button" className="secondary" disabled={payments.length>=8}
-         onClick={()=>setPayments(all=>[...all,{method:paymentMethods[0]||'KASPI GOLD',amount:''}])}>
+         onClick={()=>setPayments(all=>[...all,{method:paymentMethods[0]||'KASPI GOLD',amount:'',paymentDate:orderDate,dateCustomized:false}])}>
          + Добавить оплату
        </button>
        <strong>Получено {received.toLocaleString('ru-RU')} ₸ · Долг {debt.toLocaleString('ru-RU')} ₸</strong>

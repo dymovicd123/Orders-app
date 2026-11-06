@@ -121,12 +121,21 @@ export async function listClient3WatchOrders(
           'productName',COALESCE(wp2.model_name,oi.product_name_snapshot),
           'quantity',oi.quantity,
           'shippedQuantity',${WATCH_ITEM_SHIPPED_SQL},
+          'dispatchItemId',(SELECT di2.id FROM order_dispatch_items di2
+            JOIN order_dispatches d2 ON d2.id=di2.dispatch_id
+            WHERE di2.order_item_id=oi.id AND d2.order_id=o.id
+              AND di2.quantity>COALESCE(di2.cancelled_quantity,0)
+            ORDER BY di2.id DESC LIMIT 1),
           'returnedQuantity',${WATCH_ITEM_RETURNED_SQL},
           'pendingReturnQuantity',${WATCH_ITEM_PENDING_RETURN_RECEIPT_SQL},
           'returnableQuantity',${WATCH_ITEM_RETURNABLE_SQL},
           'unitPrice',oi.unit_price,
           'lineTotal',oi.line_total,'catalogPriceSnapshot',oi.catalog_price_snapshot,
           'source',oi.source_type,'stockWriteoffStatus',COALESCE(oi.stock_writeoff_status,''),
+           'hasFulfilledReservation',CASE WHEN EXISTS(
+             SELECT 1 FROM inventory_reservations fulfill
+             WHERE fulfill.order_item_id=oi.id AND fulfill.status='fulfilled'
+           ) THEN 1 ELSE 0 END,
           'shipped',CASE WHEN ${WATCH_ITEM_SHIPPED_SQL}>0 THEN 1 ELSE 0 END,
           'engravingText',COALESCE(wi2.engraving_text,''),
           'engravingReady',CASE WHEN TRIM(COALESCE(wi2.engraving_text,''))='' THEN 1

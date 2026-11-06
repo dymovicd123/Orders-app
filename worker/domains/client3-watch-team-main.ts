@@ -88,6 +88,13 @@ export async function saveClient3WatchEmployee(db:D1Database,actor:AuthUser,inpu
  const today=new Date(Date.now()+5*3600_000).toISOString().slice(0,10)
  if(birthDate&&(!validDate(birthDate)||birthDate>today))return bad('Проверьте дату рождения.')
  const color=normalizeManagerColor(input.colorKey,id||0)
+ // A manager cannot be assigned both stock/catalog namespaces.
+ if(role==='Менеджер'&&id>0){
+  const memberships=await db.prepare('SELECT COUNT(*) AS n FROM watch_manager_brands WHERE manager_id=?')
+    .bind(id).first<{n:number}>()
+  if(Number(memberships?.n)!==1)
+    return bad('У менеджера должен быть ровно один бренд. Сначала исправьте назначение в разделе «Команда».')
+ }
  const now=new Date().toISOString()
  if(id){
   const existed=await db.prepare('SELECT id,is_active FROM managers WHERE id=?').bind(id).first()
@@ -111,8 +118,8 @@ export async function saveClient3WatchEmployee(db:D1Database,actor:AuthUser,inpu
  const brands=role==='Логист'?[]:[...new Set(rawBrands.filter((v):v is string=>typeof v==='string'))]
  if(brands.length>2||brands.some(v=>v!=='TAUWACH'&&v!=='WACHIZEN'))
    return bad('Выберите корректные бренды: TAUWACH или WACHIZEN.')
- if(withAccess&&role==='Менеджер'&&!brands.length)
-   return bad('Для менеджера с доступом назначьте хотя бы один бренд.')
+ if(role==='Менеджер'&&brands.length!==1)
+   return bad('Каждый менеджер продаёт только один бренд. Выберите TAUWACH или WACHIZEN.')
  let login='',passwordHash=''
  if(withAccess){
    login=normalizeAuthLogin(input.login)
