@@ -98,6 +98,9 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
      !Number.isFinite(Date.parse(watch.shippingDeadlineAt)))){
      setError('Проверьте адрес, индекс и время отправки.');return
    }
+   if(metadataDirty&&!/^\d{4}-\d{2}-\d{2}$/.test(next.orderDate)){
+     setError('Укажите правильную дату заказа.');return
+   }
    if(priceDirty&&changedPrices.some(x=>
      !Number.isSafeInteger(Number(prices[x.id]))||Number(prices[x.id])<0||
      prices[x.id].trim()==='')){
@@ -155,7 +158,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
      <button type="button" className="watch-editor-back" onClick={onCancel} disabled={busy}>Назад к заказам</button>
    </header>
    {error&&<p className="watch-orders-error" role="alert">{error}</p>}
-   <form className="watch-editor-main-form" onSubmit={event=>void save(event)}>
+   <form noValidate className="watch-editor-main-form" onSubmit={event=>void save(event)}>
      <div className="watch-editor-sections">
        <section className="watch-editor-card">
          <div className="watch-editor-section-title"><h3>Клиент и доставка</h3></div>
@@ -229,7 +232,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
            <span>Оплачено <strong>{money(order.receivedAmount)}</strong></span>
            <span>Долг <strong>{money(Math.max(0,items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0)-order.receivedAmount))}</strong></span>
          </div>
-         <p className="watch-editor-footnote">Проведённые платежи и возвраты не изменяются при исправлении цены.</p>
+         <p className="watch-editor-footnote">Проведённые платежи и возвраты не изменяются при исправлении цены.{order.committedReturnCount>0?' После возвратов итог и долг дополнительно проверяются по финансовой истории.':''}</p>
        </section>
      </div>
      <div className="watch-editor-savebar">
