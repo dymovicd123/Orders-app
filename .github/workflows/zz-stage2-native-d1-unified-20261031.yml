@@ -1,0 +1,267 @@
+name: "Stages 1+2 unified native D1 acceptance (NO DEPLOY)"
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/zz-stage2-native-d1-unified-20261031.yml'
+      - 'scripts/test-stage2-unified-native-http-20261031.mjs'
+  push:
+    branches: [test/branch2-unified-stage1-stage2-native-20261031]
+    paths:
+      - '.github/workflows/zz-stage2-native-d1-unified-20261031.yml'
+      - 'scripts/test-stage2-unified-native-http-20261031.mjs'
+      - 'src/App.tsx'
+      - 'scripts/test-branch2-critical-native-d1-metadata-20261031.mjs'
+      - 'worker/domains/critical.ts'
+      - 'worker/domains/orders-write.ts'
+      - 'worker/domains/order-reservations.ts'
+
+permissions:
+  contents: read
+jobs:
+  d1-real:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      # Deliberate: NEVER provide Cloudflare credentials to this isolated test.
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24, cache: npm}
+      - name: Reproducible dependencies and current Worker/client build
+        run: |
+          npm ci
+          npm run build
+      - name: Strict local-only D1 database migration and canonical schema smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_HEAD_REF:-}" = "test/branch2-unified-stage1-stage2-native-20261031" || test "$GITHUB_REF" = "refs/heads/test/branch2-unified-stage1-stage2-native-20261031"
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+          test -z "${CLOUDFLARE_ACCOUNT_ID:-}"
+          test -d migrations
+          grep -Fq '"database_name": "orders_db_branch2_mirror_20261027"' wrangler.jsonc
+          state="$RUNNER_TEMP/branch2-reservation-disposable-d1-$GITHUB_RUN_ID"
+          mkdir -p "$state"
+          echo "LOCAL_STATE=$state" >> "$GITHUB_ENV"
+          # Historical SQL migrations include PRAGMA foreign_keys=ON/OFF,
+          # which the native D1 authorizer rejects (SQLITE_AUTH). Remove only
+          # those no-op-for-D1 PRAGMA lines in an EPHEMERAL fixture copy;
+          # NEVER edit checked-in migrations or Branch2 D1.
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs'
+          import path from 'node:path'
+          const source=readFileSync('wrangler.jsonc','utf8')
+          const token='"database_id": "0904a573-21ff-44d8-93b0-c9200f771702"'
+          if(!source.includes(token))throw Error('Branch2 D1 binding changed; stop')
+          mkdirSync('.d1-acceptance-migrations',{recursive:true})
+          let drops=0,temporaryTables=0,legacyManagerShadow=0
+          for(const file of readdirSync('migrations').filter(x=>/^[0-9].*\.sql$/.test(x))){
+            const original=readFileSync(path.join('migrations',file),'utf8')
+            const sanitized=original
+              .replace(/^\s*PRAGMA\s+foreign_keys\s*=\s*(?:ON|OFF)\s*;\s*$/gmi,()=>{drops++;return ''})
+              // D1 disallows CREATE TEMP TABLE (SQLITE_AUTH); fixture-only staging.
+              .replace(/\bCREATE\s+TEMP(?:ORARY)?\s+TABLE\b/gi,()=>{temporaryTables++;return 'CREATE TABLE'})
+              // Historical 0035 needs PRAGMA foreign_keys=OFF during managers
+              // rebuild. Native D1 authorizer rejects that toggle, so SQLite
+              // automatically redirects FK references to the OLD table.
+              // Preserve that shadow table only in this synthetic fixture to
+              // let the isolated auth bootstrap run; no production SQL altered.
+              // Do NOT use this fixture to certify managerial FK migrations.
+              .replace(/DROP TABLE managers_step126_old\s*;/gi,()=>{legacyManagerShadow++;return '-- Local D1 test only: keep FK-compatible manager shadow'})
+            writeFileSync(path.join('.d1-acceptance-migrations',file),sanitized)
+          }
+          if(drops<3||temporaryTables<1||legacyManagerShadow!==1)throw Error('Unexpected ephemeral SQL fixture compatibility needs')
+          const config=source.replace(token,token+',\n     "migrations_dir": ".d1-acceptance-migrations"')
+            .replace('"assets": {','"assets": {\n    "directory": "./dist/client",')
+          writeFileSync('.d1-acceptance-config.jsonc',config)
+          console.log('NATIVE_D1_EPHEMERAL_MIGRATION_AUTHORIZE_COMPAT',JSON.stringify({drops,temporaryTables,legacyManagerShadow}))
+          NODE
+          npx wrangler d1 migrations apply orders_db_branch2_mirror_20261027 --local --config .d1-acceptance-config.jsonc --persist-to="$state" > "$RUNNER_TEMP/d1-migrations.log" 2>&1 || {
+            tail -n 80 "$RUNNER_TEMP/d1-migrations.log"
+            exit 1
+          }
+          # Historical migrations may be older than the live deployed D1 schema.
+          # Test-only compatibility already documented by the in-memory HTTP fixture:
+          # do NOT apply this ALTER to checked-in migrations or any remote D1.
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM pragma_table_info('orders') WHERE name='manager_snapshot_name'" --json > "$RUNNER_TEMP/order-columns.json"
+          has_snapshot="$(node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs'
+          const result=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/order-columns.json','utf8'))
+          const rows=Array.isArray(result)?result.flatMap(x=>x.results||[]):(result.results||[])
+          console.log(rows.some(row=>row.name==='manager_snapshot_name')?'yes':'no')
+          NODE
+          )"
+          echo "BRANCH2_NATIVE_D1_HISTORIC_MIGRATION_MANAGER_SNAPSHOT_COLUMN=$has_snapshot"
+          # Synthetic-only FK introspection before order creation; no writes.
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT 'orders' AS subject,\"table\" AS parent,\"from\" AS child_column,\"to\" AS parent_column FROM pragma_foreign_key_list('orders') UNION ALL SELECT 'order_items',\"table\",\"from\",\"to\" FROM pragma_foreign_key_list('order_items')" --json > "$RUNNER_TEMP/synthetic-fks.json"
+          cat "$RUNNER_TEMP/synthetic-fks.json"
+
+          if test "$has_snapshot" = no; then
+            npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="ALTER TABLE orders ADD COLUMN manager_snapshot_name TEXT"
+            echo "BRANCH2_NATIVE_D1_FIXTURE_ONLY_MANAGER_SNAPSHOT_ADAPTER_APPLIED"
+          fi
+          npx wrangler d1 execute orders_db_branch2_mirror_20261027 --local --persist-to="$state" --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('inventory_stock','inventory_reservations','inventory_movements','catalog_variants','inventory_stock_checks') ORDER BY name" --json > "$RUNNER_TEMP/local-d1-check.json"
+          # Fixture-only manager: historical orders FK points to managers_step126_old.
+          # Mirror a synthetic manager into BOTH local tables before workerd boots.
+          STATE_DIR="$state" node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readdirSync} from 'node:fs'
+          import path from 'node:path'
+          import {DatabaseSync} from 'node:sqlite'
+          let seeded=0
+          const root=process.env.STATE_DIR
+          for(const rel of readdirSync(root,{recursive:true}).map(String).filter(x=>/\.sqlite$/.test(x))){
+            const db=new DatabaseSync(path.join(root,rel))
+            const tables=new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(x=>x.name))
+            if(!tables.has('orders')||!tables.has('managers_step126_old')){db.close();continue}
+            const refs=db.prepare('SELECT "table" AS parent FROM pragma_foreign_key_list(\'orders\') WHERE "from"=\'manager_id\'').all()
+            assert.deepEqual(refs.map(x=>x.parent),['managers_step126_old'])
+            db.exec('BEGIN IMMEDIATE')
+            try{
+              db.prepare("INSERT INTO managers(id,name,role,phone,salary_base,comment,color_key,hired_at,birth_date,dismissed_at,is_active,created_at,updated_at) VALUES(9000,'CI NATIVE RESERVATION MANAGER','Менеджер',NULL,0,NULL,'#475569','2026-10-31',NULL,NULL,1,'2026-10-31T00:00:00Z','2026-10-31T00:00:00Z')").run()
+              const baseCols=new Set(db.prepare('PRAGMA table_info(managers)').all().map(x=>x.name))
+              const common=db.prepare('PRAGMA table_info(managers_step126_old)').all().map(x=>x.name).filter(x=>baseCols.has(x))
+              assert(common.includes('id')&&common.includes('name'))
+              const keys=common.map(x=>'"'+x.replaceAll('"','""')+'"').join(',')
+              db.prepare('INSERT INTO managers_step126_old('+keys+') SELECT '+keys+' FROM managers WHERE id=9000').run()
+              assert.equal(db.prepare('SELECT COUNT(*) AS n FROM managers_step126_old WHERE id=9000').get().n,1)
+              db.exec('COMMIT')
+              seeded++
+              console.log('CI_LOCAL_LEGACY_MANAGER_FK_FIXTURE_PASS',JSON.stringify({id:9000,mirroredColumns:common.length}))
+            }catch(e){db.exec('ROLLBACK');throw e}
+            finally{db.close()}
+          }
+          assert.equal(seeded,1,'Exactly one disposable native D1 must receive the synthetic manager')
+          NODE
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readFileSync } from 'node:fs'
+          const raw=readFileSync(process.env.RUNNER_TEMP+'/local-d1-check.json','utf8').trim()
+          const v=JSON.parse(raw)
+          const rows=Array.isArray(v)?v.flatMap(x=>x.results||[]):(v.results||[])
+          const expected=['catalog_variants','inventory_movements','inventory_reservations','inventory_stock','inventory_stock_checks']
+          assert.deepEqual(rows.map(x=>x.name),expected)
+          console.log('BRANCH2_LOCAL_CLOUDFLARE_D1_SCHEMA_PASS',JSON.stringify({tables:rows.length,remoteCredentials:false}))
+          NODE
+      - name: Native workerd HTTP requests and persisted D1 readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler dev --config .d1-acceptance-config.jsonc --local --persist-to="$LOCAL_STATE" --ip 127.0.0.1 --port 8798 --var ADMIN_MODE_LOGIN:admin --var ADMIN_MODE_PASSWORD:synthetic-bootstrap-ui-2026 > "$RUNNER_TEMP/b2-native-workerd.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 'http://127.0.0.1:8798/' || true)"
+            if test "$code" = 200; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" -ne 1; then tail -n 100 "$RUNNER_TEMP/b2-native-workerd.log"; exit 1; fi
+          node scripts/test-stage2-unified-native-http-20261031.mjs || { tail -n 140 "$RUNNER_TEMP/b2-native-workerd.log"; exit 1; }
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          trap - EXIT
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readdirSync} from 'node:fs'
+          import path from 'node:path'
+          import {DatabaseSync} from 'node:sqlite'
+          const root=process.env.LOCAL_STATE
+          const files=readdirSync(root,{recursive:true}).map(String).filter(x=>/\.sqlite$/.test(x))
+          assert(files.length>0)
+          let found=0
+          for(const rel of files){
+            const db=new DatabaseSync(path.join(root,rel),{readOnly:true})
+            if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='order_items'").get()){db.close();continue}
+            const stock=db.prepare(`SELECT s.inventory_source,v.size_label,s.quantity,s.reserved_quantity
+              FROM inventory_stock s JOIN catalog_variants v ON v.id=s.variant_id
+              JOIN catalog_products p ON p.id=v.product_id
+              WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
+              ORDER BY s.inventory_source,v.size_label`).all()
+            if(!stock.length){db.close();continue}
+            found++
+            assert.deepEqual(stock.map(x=>[x.inventory_source,x.size_label,Number(x.quantity),Number(x.reserved_quantity)]),
+              [['boutique','46',1,0],['boutique','48',0,1],['warehouse','46',4,2],['warehouse','48',0,0]])
+            const moves=db.prepare(`SELECT inventory_source,movement_type,quantity_delta,reference_type
+              FROM inventory_movements WHERE product_name_snapshot='CI STAGE2 ARRIVAL ATOMIC CANONICAL'
+              ORDER BY id`).all()
+            assert.equal(moves.length,10,'One D1 movement per actual physical action, no replay duplicates')
+            const count=(type)=>moves.filter(x=>x.reference_type===type).length
+            assert.equal(count('manual'),6,'Three arrivals, two corrections, one writeoff')
+            assert.equal(count('transfer_out'),1)
+            assert.equal(count('transfer_in'),1)
+            assert.equal(count('quick_stocktake'),1)
+            assert.equal(count('stocktake'),1)
+            assert.equal(moves.reduce((sum,x)=>sum+Number(x.quantity_delta),0),5,
+              'Physical movement total must reconcile with four ending positions')
+            const checks=db.prepare(`SELECT check_type,variant_id,expected_quantity,counted_quantity
+              FROM inventory_stock_checks
+              WHERE variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')`).all()
+            assert(checks.some(x=>x.check_type==='manual_set'&&Number(x.expected_quantity)===1&&Number(x.counted_quantity)===3),
+              'Real correction checkpoint missing')
+            assert(checks.some(x=>x.check_type==='quick_stocktake'&&Number(x.expected_quantity)===2&&Number(x.counted_quantity)===4),
+              'Quick physical check missing')
+            assert(checks.some(x=>x.check_type==='full_stocktake'&&Number(x.counted_quantity)===1),
+              'Full revision checkpoint missing')
+            const reservations=db.prepare(`SELECT r.inventory_source,r.variant_id,r.status,r.quantity,
+              o.external_id FROM inventory_reservations r JOIN orders o ON o.id=r.order_id
+              WHERE r.variant_id IN (SELECT v.id FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+                WHERE p.name='CI STAGE2 ARRIVAL ATOMIC CANONICAL')
+              ORDER BY r.id`).all()
+            const active=reservations.filter(x=>x.status==='active')
+            assert.equal(active.length,3,'Three independent orders must have exactly three active obligations after source switch')
+            assert.equal(active.filter(x=>x.inventory_source==='boutique').length,1)
+            assert.equal(active.filter(x=>x.inventory_source==='warehouse').length,2)
+            assert.equal(reservations.filter(x=>x.status==='fulfilled').length,0)
+            assert.equal(Number(stock.find(x=>x.inventory_source==='boutique'&&x.size_label==='48').reserved_quantity),1)
+            assert.equal(Number(stock.find(x=>x.inventory_source==='warehouse'&&x.size_label==='46').reserved_quantity),2)
+            const b=db.prepare(`SELECT oi.variant_id,oi.source_type,r.status,r.inventory_source
+                FROM orders o JOIN order_items oi ON oi.order_id=o.id
+                LEFT JOIN inventory_reservations r ON r.order_item_id=oi.id
+                WHERE o.id=2 ORDER BY r.id`).all()
+            assert.equal(b.filter(x=>x.status==='active'&&x.source_type==='warehouse'&&x.inventory_source==='warehouse').length,1,
+              'Replaced order must own one active warehouse reserve, never duplicate Boutique reserve')
+
+            assert(checks.some(x=>x.check_type==='manual_set'&&Number(x.expected_quantity)===1
+              &&Number(x.counted_quantity)===0),'Physical correction under reservation missing')
+            console.log('BRANCH2_STAGE2_UNIFIED_NATIVE_D1_READBACK_PASS',JSON.stringify({
+              stock,movementCount:moves.length,checkCount:checks.length,
+              reservations:reservations.map(x=>({source:x.inventory_source,status:x.status,quantity:x.quantity})),
+              replayDelta:0
+            }))
+            const retiredRows=db.prepare(`SELECT p.id AS product_id,v.id AS variant_id,v.is_active,
+              s.inventory_source,COALESCE(s.quantity,0) AS quantity
+              FROM catalog_products p JOIN catalog_variants v ON v.product_id=p.id
+              LEFT JOIN inventory_stock s ON s.variant_id=v.id
+              WHERE p.name='CI STAGE2 RETIRED RECOVERY' ORDER BY v.id`).all()
+            assert.equal(retiredRows.length,2,'Recovery must create exactly one NEW generation; historical SKU remains')
+            assert.deepEqual(retiredRows.map(x=>[Number(x.is_active),Number(x.quantity)]),[[0,0],[1,1]],
+              'Retired historical SKU must have zero stock; new active SKU receives one physical piece')
+            const restore=db.prepare(`SELECT rr.status,rr.restored_variant_count
+              FROM catalog_retirement_restores rr JOIN catalog_retirement_operations op ON op.id=rr.retirement_id
+              JOIN catalog_products p ON p.id=op.product_id
+              WHERE p.name='CI STAGE2 RETIRED RECOVERY'`).all()
+            assert.equal(restore.length,1,'Repeat restore must not create another restore operation')
+            assert.equal(restore[0].status,'completed')
+            const retiredMoves=db.prepare(`SELECT COUNT(*) AS n FROM inventory_movements
+              WHERE product_name_snapshot='CI STAGE2 RETIRED RECOVERY'`).get()
+            assert.equal(Number(retiredMoves.n),1,'Recovered receipt and replay must only create one movement')
+            console.log('BRANCH2_STAGE2_RETIRED_ARRIVAL_RECOVERY_D1_PASS',JSON.stringify({retiredRows,restore:restore[0],movements:1}))
+            const unresolved=db.prepare(`SELECT s.id,s.variant_id,s.quantity,s.reserved_quantity
+              FROM inventory_stock s JOIN catalog_products p ON p.id=s.product_id
+              WHERE p.name='CI STAGE2 FOUND UNKNOWN'`).all()
+            assert.equal(unresolved.length,1)
+            assert.equal(unresolved[0].variant_id,null,'Cannot assign a barcode without an exact active SKU')
+            assert.equal(Number(unresolved[0].quantity),1)
+            assert.equal(Number(unresolved[0].reserved_quantity),0)
+            console.log('BRANCH2_STAGE2_FOUND_UNIDENTIFIED_NATIVE_D1_PASS',JSON.stringify(unresolved[0]))
+            db.close()
+          }
+          assert.equal(found,1,'One and only one isolated D1 backing database must contain synthetic results')
+          NODE
+          echo BRANCH2_STAGE2_UNIFIED_NATIVE_ACCEPTANCE_PASS

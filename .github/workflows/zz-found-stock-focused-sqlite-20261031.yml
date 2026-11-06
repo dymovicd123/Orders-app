@@ -1,0 +1,31 @@
+name: "Found physical item identity — focused SQLite (NO DEPLOY)"
+on:
+  pull_request:
+    branches: [branch2]
+    paths:
+      - 'scripts/test-found-unidentified-stock-focused-20261031.mjs'
+      - '.github/workflows/zz-found-stock-focused-sqlite-20261031.yml'
+      - 'worker/domains/inventory-stocktake.ts'
+permissions:
+  contents: read
+jobs:
+  focused-found-stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install pinned dependencies without deploy
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Only unresolved found-stock physical identity scenarios
+        run: |
+          node scripts/test-found-unidentified-stock-focused-20261031.mjs
+          node scripts/test-arrival-save-reliability.mjs
