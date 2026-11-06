@@ -1,4 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import {useState} from 'react'
+import {MainOrderSourcePicker,pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
+import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
 import '../../styles/188f-stock-trust.css'
 type SectionContext = Record<string, any>
 
@@ -37,6 +40,46 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     updateCreateItem,
     updateCreatePayment,
   } = ctx
+
+  const [manualMode,setManualMode]=useState(false)
+  const allocated=new Map<string,number>()
+  for(const item of createDraft.items){
+    if(!item.catalogVariantId||item.sourceType==='workshop')continue
+    const source=item.sourceType==='boutique'?'boutique':'warehouse'
+    const key=pickerKey(source,item.catalogVariantId)
+    allocated.set(key,(allocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
+  }
+  const startManual=()=>{
+    setManualMode(true)
+    const hasEmpty=createDraft.items.some((item:any)=>!item.catalogVariantId&&!String(item.productName||'').trim())
+    if(!hasEmpty)addCreateItem()
+    setCreateDraft((current:any)=>({
+      ...current,
+      items:current.items.map((item:any,index:number,items:any[])=>{
+        const firstEmpty=items.findIndex(x=>!x.catalogVariantId&&!String(x.productName||'').trim())
+        return index===firstEmpty?{...item,sourceType:'workshop'}:item
+      }),
+    }))
+  }
+  const chooseVariant=(choice:OrderPickerChoice,source:SourceKey|'workshop',insufficient:boolean)=>{
+    setManualMode(false)
+    const item={
+      productName:choice.productName,catalogVariantId:choice.variantId,
+      audienceType:choice.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ',
+      gender:choice.gender,color:choice.color,material:choice.material,
+      length:choice.length,size:choice.size,
+      sourceType:source,quantity:1,
+      unitPrice:choice.salePrice===null?undefined:choice.salePrice,
+      catalogPriceSnapshot:choice.salePrice,priceOrigin:choice.salePrice===null?'missing':'catalog',
+      priceNeedsConfirmation:false,
+      shortageAcknowledged:source!=='workshop'&&insufficient,
+      workshopComment:'',workshopUrgent:false,workshopDueDate:'',workshopDueTime:'',
+    }
+    setCreateDraft((current:any)=>({
+      ...current,
+      items:[...current.items.filter((x:any)=>x.catalogVariantId||String(x.productName||'').trim()),item],
+    }))
+  }
 
   return (
     <article className="card wide sector-orders" id="create" style={{ ...sectorStyle('orders'), ...orderPanelStyle('create') }}>
@@ -143,12 +186,14 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
                     </div>
                   </div>
-                  <button className="primary compact" type="button" onClick={addCreateItem}>
-                    + Добавить товар
+                  <button className="secondary compact" type="button" onClick={startManual}>
+                    + Индивидуальный заказ для цеха
                   </button>
                 </div>
+                <MainOrderSourcePicker allocated={allocated} onPick={chooseVariant} onManual={startManual}/>
                 <div className="stack">
                   {createDraft.items.map((item, index) => (
+                    !item.catalogVariantId && !String(item.productName||'').trim() && !manualMode ? null : (
                     <div className="mini-item order-line-card" key={`create-item-${index}`}>
                       <div className="mini-item-head">
                         <div className="mini-item-head-main">
@@ -161,6 +206,9 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                           Удалить
                         </button>
                       </div>
+                      {item.catalogVariantId ? (
+                        <MainPickedOrderLine item={item} index={index} update={updateCreateItem} formatMoney={formatMoney}/>
+                      ) : (
                       <div className="subgrid order-item-grid">
                         <label className="wide-field">
                           <span>Товар</span>
@@ -311,13 +359,15 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                           </>
                         ) : null}
                       </div>
-                      {renderOrderSourceAvailability(item, `create-item-${index}`, index)}
+                      )}
+                      {!item.catalogVariantId?renderOrderSourceAvailability(item, `create-item-${index}`, index):null}
                     </div>
+                    )
                   ))}
                 </div>
                 <div className="order-add-item-bottom">
-                  <button className="primary compact" type="button" onClick={addCreateItem}>
-                    + Добавить товар
+                  <button className="secondary compact" type="button" onClick={startManual}>
+                    + Индивидуальный заказ для цеха
                   </button>
                 </div>
               </section>
