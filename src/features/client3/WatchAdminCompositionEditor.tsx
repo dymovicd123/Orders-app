@@ -11,7 +11,7 @@ type Existing={
  braceletMaterial:string;dialColor:string;braceletColor:string;quantity:number;
  unitPrice:number;source:string;engravingText:string;catalogPriceSnapshot:number|null;
  shippedQuantity?:number;returnedQuantity?:number;pendingReturnQuantity?:number;
- stockWriteoffStatus?:string
+ stockWriteoffStatus?:string;hasFulfilledReservation?:number
 }
 type Line=DraftLine&{orderItemId:number|null}
 const parse=(raw:string):Existing[]=>{
@@ -46,11 +46,11 @@ const fresh=(source:WatchSource):Line=>({
  dialColor:'black',braceletColor:''},
 })
 type Props={
- brand:WatchBrand;orderId:number;itemLines:string;receivedAmount:number;
+ brand:WatchBrand;orderId:number;itemLines:string;receivedAmount:number;linkedReturns?:number;
  onDone:()=>void;onCancel:()=>void
 }
 export function WatchAdminCompositionEditor({
- brand,orderId,itemLines,receivedAmount,onDone,onCancel,
+ brand,orderId,itemLines,receivedAmount,linkedReturns=0,onDone,onCancel,
 }:Props){
  const original=useMemo(()=>parse(itemLines),[itemLines])
  const [lines,setLines]=useState<Line[]>(()=>original.map(fromExisting))
@@ -145,8 +145,8 @@ export function WatchAdminCompositionEditor({
    return sum+(previous&&previous.watchVariantId===line.watchVariantId&&
      sourceOf(previous.source)===line.source&&previous.quantity===line.quantity?0:1)
  },0)+original.filter(x=>!lines.some(line=>line.orderItemId===x.id)).length
- const hasLifecycle=original.some(x=>Number(x.shippedQuantity||0)>0||
-   Number(x.returnedQuantity||0)>0||Number(x.pendingReturnQuantity||0)>0||
+ const hasLifecycle=linkedReturns>0||original.some(x=>Number(x.shippedQuantity||0)>0||
+   Number(x.returnedQuantity||0)>0||Number(x.pendingReturnQuantity||0)>0||Number(x.hasFulfilledReservation||0)>0||
    ['fulfilled','written_off','negative'].includes(x.stockWriteoffStatus||''))
  const send=async(event:FormEvent<HTMLFormElement>)=>{
    event.preventDefault()
