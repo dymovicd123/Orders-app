@@ -22,8 +22,15 @@ try{
  sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(99100,'ТЕСТОВЫЙ ШАПАН','adult',1)").run()
  sql.prepare("INSERT INTO catalog_variants(id,product_id,category,gender,color,material,length,size_label,is_active) VALUES(99101,99100,'adult','ЖЕН','СИНИЙ','АТЛАС','КОРОТКИЙ','44',1)").run()
  sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES('warehouse',99100,99101,'ТЕСТОВЫЙ ШАПАН',30,9)").run()
- sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(1,1,'warehouse',99100,99101,10,'active','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
- sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(2,2,'warehouse',99100,99101,5,'fulfilled','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
+ sql.prepare("INSERT INTO managers(id,name) VALUES(99199,'Source picker QA')").run()
+ for(const id of [99110,99111]){
+  sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,source_type,order_status,created_at,updated_at) VALUES(?,?,'2026-11-06',99199,'warehouse','active','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run(id,'QA-PICK-'+id)
+ }
+ for(const [id,orderId] of [[99120,99110],[99121,99111]]){
+  sql.prepare("INSERT INTO order_items(id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status) VALUES(?,?,'ТЕСТОВЫЙ ШАПАН',10,0,0,0,'warehouse','reserved')").run(id,orderId)
+ }
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(99110,99120,'warehouse',99100,99101,10,'active','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
+ sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(99111,99121,'warehouse',99100,99101,5,'fulfilled','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
  const result=await listOrderSourcePicker(db)
  assert.equal(result.ok,true)
  const row=result.variants.find(x=>x.variantId===99101)
