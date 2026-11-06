@@ -16,6 +16,8 @@ type Props={
  onManual:()=>void
  initialVariants?:OrderPickerChoice[]
  initialSelectedId?:number
+ initialIntent?:'stock'|'all'
+ initialQuery?:string
 }
 type Model={id:number;name:string;variants:OrderPickerChoice[];free:number;physical:number;reserved:number}
 type Execution=ReturnType<typeof buildStockBrowseLayout<OrderPickerChoice>>[number]
@@ -41,10 +43,10 @@ export function groupPickerExecutions(lines:OrderPickerChoice[]):Execution[]{
  return buildStockBrowseLayout(lines)
 }
 
-export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants,initialSelectedId}:Props){
+export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants,initialSelectedId,initialIntent,initialQuery}:Props){
  const [source,setSource]=useState<SourceKey>('warehouse')
- const [intent,setIntent]=useState<'stock'|'all'>('stock')
- const [query,setQuery]=useState('')
+ const [intent,setIntent]=useState<'stock'|'all'>(initialIntent??'stock')
+ const [query,setQuery]=useState(initialQuery??'')
  const [searchOpen,setSearchOpen]=useState(false)
  const [suggestionIndex,setSuggestionIndex]=useState(0)
  const [selectedId,setSelectedId]=useState<number|null>(initialSelectedId??null)
