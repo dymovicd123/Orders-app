@@ -14,6 +14,7 @@ type Props={
  onPick:(choice:OrderPickerChoice,source:SourceKey|'workshop',insufficient:boolean)=>void
  onManual:()=>void
  initialVariants?:OrderPickerChoice[]
+ initialSelectedId?:number
 }
 export const pickerKey=(source:SourceKey,id:number)=>source+':'+id
 export const freeAfterDraft=(choice:OrderPickerChoice,source:SourceKey,allocated:ReadonlyMap<string,number>)=>
@@ -34,13 +35,13 @@ export const filterOrderPickerVariants=(items:readonly OrderPickerChoice[],filte
  items.filter(x=>facetKeys.every(key=>!filters[key]||clean(x[key])===clean(filters[key])))
 
 /** Source-first browsing inspired by Client3, adapted to Main's warehouse/boutique/workshop. */
-export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants}:Props){
+export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants,initialSelectedId}:Props){
  const [source,setSource]=useState<SourceKey>('warehouse')
  const [intent,setIntent]=useState<'stock'|'all'>('all')
  const [query,setQuery]=useState('')
  const [gender,setGender]=useState('')
  const [material,setMaterial]=useState('')
- const [selectedId,setSelectedId]=useState<number|null>(null)
+ const [selectedId,setSelectedId]=useState<number|null>(initialSelectedId??null)
  const [facets,setFacets]=useState<Facets>(emptyFacets)
  const [productPage,setProductPage]=useState(0)
  const [variantPage,setVariantPage]=useState(0)
