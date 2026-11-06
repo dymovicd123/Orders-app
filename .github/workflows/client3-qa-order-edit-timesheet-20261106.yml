@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/client3/qa-order-edit-timesheet-20261106
-          test "$(git rev-parse HEAD^)" = c68d6ed3741d66b7f8ebeb8cd3bba42d3e0d5cd2
+          test "$(git rev-parse HEAD^)" = 14db788bd558c898c5fcd4280f618efb8cd71be1
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test "$QA_DB_ID" != "$LIVE_DB_ID"
@@ -43,15 +43,7 @@ jobs:
           python3 - <<'PY'
           import subprocess
           allowed={
-            'src/features/client3/WatchOrderForm.tsx',
-            'worker/domains/client3-watch-create.ts',
             'src/features/client3/WatchOrderCorrections.tsx',
-            'src/styles/client3-watch-unified-editor.css',
-            'src/features/client3/WatchTeamMainPanel.tsx',
-            'src/features/client3/WatchTimesheetWorkspace.tsx',
-            'src/styles/client3-watch-timesheet-workspace.css',
-            'scripts/client3/test-watch-order-editor-delete-release-20261105.mjs',
-            'scripts/client3/test-watch-editor-timesheet-payment-20261106.mjs',
             '.github/workflows/client3-qa-order-edit-timesheet-20261106.yml',
           }
           got=set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())
