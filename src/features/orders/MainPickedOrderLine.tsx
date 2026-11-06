@@ -15,7 +15,8 @@ export function MainPickedOrderLine({item,index,update,formatMoney}:Props){
     <small>{[item.audienceType,item.gender,item.color,item.material,item.length,item.size].filter(Boolean).join(' · ')}</small>
     <small>Источник: {source} · вариант каталога #{item.catalogVariantId}. Характеристики закреплены за выбранным товаром.</small>
     {workshop&&<small>Для цеха сохранён конкретный вариант. Физический остаток склада не резервируется.</small>}
-    {!workshop&&item.shortageAcknowledged&&<small>Свободного остатка не хватает: заказ будет сохранён с требованием складского уточнения. Наличие не увеличивается автоматически.</small>}
+    {!workshop&&Number.isFinite(item.physicalAtPick)&&<small>При выборе: {item.availableAtPick} из {item.physicalAtPick} свободно, {item.reservedAtPick} в резервах.</small>}
+    {!workshop&&(item.shortageAcknowledged||Number(item.quantity||0)>Number(item.availableAtPick??Number.POSITIVE_INFINITY))&&<small>По показанным остаткам свободного количества недостаточно. Заказ сохранится с требованием уточнения склада; наличие не увеличивается автоматически.</small>}
   </div>
   <div className="main-picked-order-fields">
     <label>Количество
