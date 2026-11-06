@@ -1,7 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { persistWatchOrderCommit, type WatchOrderCommit } from './client3-watch-order-commit.ts'
-import { attachClient3WatchRewrite, type WatchOrderRewrite } from './client3-watch-edit-attach.ts'
+import { attachClient3WatchRewrite, watchRewriteChangesCanonicalSku, type WatchOrderRewrite } from './client3-watch-edit-attach.ts'
 import { cleanText, isArchivedOrder, normalizeDate, normalizeOrderStatus, normalizePhone, normalizeShippingStatus, normalizeSourceType, normalizeWorkshopStatus, toInt, upperText } from '../core/text.ts'
 import { resolveConsolidatedOrderWriteVariant } from './catalog-merged-identity.ts'
 import { findExchangeNewPriceLink, findPartialV2OldPriceLink } from './exchange-price-history.ts'
@@ -1773,15 +1773,9 @@ export async function updateOrderCritical(
 
       // Watch variants can have identical Main display snapshots but different
       // canonical SKU IDs. Never silently treat such a swap as a price-only edit.
-      const watchSkuChanged = Boolean(options.watchRewrite && (
-        options.watchRewrite.lines.length !== ((existingAny.items || []) as Array<Record<string, unknown>>).length ||
-        options.watchRewrite.lines.some((line, index) => {
-          const old = ((existingAny.items || []) as Array<Record<string, unknown>>)[index];
-          return !old ||
-            toInt(old.id, 0) !== toInt(line.orderItemId, 0) ||
-            toInt(old.variantId, 0) !== line.catalogVariantId ||
-            toInt(old.productId, 0) !== line.catalogProductId;
-        })
+      const watchSkuChanged = Boolean(options.watchRewrite && watchRewriteChangesCanonicalSku(
+        (existingAny.items || []) as Array<Record<string, unknown>>,
+        options.watchRewrite.lines,
       ));
       const itemContentChanged = Boolean(requestedItems && (
         !sameNormalizedOrderItemsForEdit(existingItemsForEdit, requestedItems) || watchSkuChanged
