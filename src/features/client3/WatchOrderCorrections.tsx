@@ -157,6 +157,37 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        ' Вернитесь к заказу и откройте его заново перед повтором.':reason)
    }finally{setBusy(false)}
  }
+ const correctDispatch=async(item:Item)=>{
+   const dispatchItemId=Number(item.dispatchItemId||0)
+   if(!isAdmin||!Number.isSafeInteger(dispatchItemId)||dispatchItemId<1||correcting||
+     !correctionConfirmed||correctionReason.trim().length<8||dirty){
+     setError(dirty?'Сначала сохраните изменения реквизитов и цен.':
+       'Для исправления отправки нужна причина от 8 символов и подтверждение факта ошибки.')
+     return
+   }
+   const reason=correctionReason.trim()
+   const prior=correctionRequests.current[dispatchItemId]
+   if(!prior||prior.reason!==reason)
+     correctionRequests.current[dispatchItemId]={reason,requestId:'watch-editor-correct-'+crypto.randomUUID()}
+   setCorrecting(true);setError('')
+   try{
+     const response=await fetch('/api/client3/watches/orders/'+order.orderId+'/dispatch-correction',{
+       method:'POST',credentials:'include',cache:'no-store',
+       headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({brand,dispatchItemId,
+         requestId:correctionRequests.current[dispatchItemId].requestId,reason}),
+     })
+     const data=await response.json() as {ok?:boolean;message?:string;needsStockCheck?:boolean;
+       physicalRestoredQuantity?:number}
+     if(!response.ok||!data.ok)throw Error(data.message||'Исправление отправки отклонено.')
+     delete correctionRequests.current[dispatchItemId]
+     setCorrectionItem(null)
+     setCorrectionResult(data.needsStockCheck
+       ?'Запись отправки исправлена. Автоматического пополнения склада не было: проверьте реальный остаток до следующей отправки.'
+       :'Запись отправки исправлена. Складская операция учтена по проверенному журналу. Откройте заказ заново, выберите правильные часы и оформите отправку в логистике.')
+   }catch(cause){setError(cause instanceof Error?cause.message:'Не удалось исправить отправку.')}
+   finally{setCorrecting(false)}
+ }
  if(composing)return <section className="watch-corrections watch-editor-unified">
    <header className="watch-editor-header">
      <div><small>Заказ {order.externalId} · Бренд {brand}</small><h2>Изменение состава</h2>
