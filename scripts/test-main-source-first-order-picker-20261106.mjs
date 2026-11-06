@@ -59,6 +59,7 @@ try{
  const app=fs.readFileSync('src/App.tsx','utf8')
  const worker=fs.readFileSync('worker/domains/orders-write.ts','utf8')
  assert(source.includes('MainOrderSourcePicker')&&source.includes('MainPickedOrderLine'))
+ assert(!source.includes('type="button" onClick={startManual}'),'Manual workshop button must occur once in picker only')
  assert(app.includes('catalogVariantId: item.catalogVariantId || undefined'))
  assert(worker.includes('await hydratePickedOrderItems'))
  assert(worker.includes('item.catalogVariantId>0'))
