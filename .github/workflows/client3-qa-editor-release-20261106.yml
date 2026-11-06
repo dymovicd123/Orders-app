@@ -1,3 +1,4 @@
+# QA editor final field-validation rerun; no Main or live Client3 changes.
 name: Client3 QA ONLY - order editor rebuild release
 on:
   push:
