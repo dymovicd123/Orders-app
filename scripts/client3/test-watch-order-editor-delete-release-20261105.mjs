@@ -20,8 +20,8 @@ for(const phrase of ['watch-main-edit-workspace','deletingOrder?<section','watch
  'watch-main-edit-workspace','Удалить заказ</button>']){
  assert(orders.includes(phrase),'Main-style order edit/delete must be visible: '+phrase)
 }
-for(const phrase of ['Менеджер, проведённые оплаты и удаление заказа','Клиент и доставка','Товары и цены',
- 'Изменить состав','Отправка','Гравировка / комментарий логисту']){
+for(const phrase of ['Менеджер и оплаты','Клиент и условия заказа','Товары заказа',
+ 'Изменить состав','Отправить до (Алматы)','Гравировка / комментарий логисту']){
  assert(editor.includes(phrase),'Editor missing '+phrase)
 }
 assert(admin.includes('WatchAdminDeleteChainPanel')&&!admin.includes('setAck('))
@@ -75,16 +75,16 @@ try{
  const adminView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:true,onDone:()=>{},onCancel:()=>{},
  }))
- assert(adminView.includes('Менеджер, проведённые оплаты и удаление заказа'))
+ assert(adminView.includes('Менеджер и оплаты'))
  assert(!adminView.includes('Отменить обмены'))
  assert(!adminView.includes('watch-corrections-tabs'),'Admin editor must not be fragmented into tabs')
- assert(adminView.includes('Клиент и доставка')&&adminView.includes('Отправка')&&adminView.includes('Товары и цены'))
+ assert(adminView.includes('Клиент и условия заказа')&&adminView.includes('Отправить до (Алматы)')&&adminView.includes('Товары заказа'))
  assert(adminView.includes('Сохранить изменения')&&!adminView.includes('Сохранить реквизиты'))
- assert(adminView.includes('Менеджер, проведённые оплаты и удаление заказа')&&adminView.includes('Изменить состав'))
+ assert(adminView.includes('Менеджер и оплаты')&&adminView.includes('Изменить состав'))
  const managerView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:false,onDone:()=>{},onCancel:()=>{},
  }))
- assert(!managerView.includes('Менеджер, проведённые оплаты и удаление заказа'))
+ assert(!managerView.includes('Менеджер и оплаты'))
  assert(!managerView.includes('Гравировка / комментарий логисту'),'Manager cannot access logistics correction')
  assert(!managerView.includes('Изменить состав'),'Manager cannot change composition')
  console.log('CLIENT3_RELEASE_ORDER_EDITOR_DELETE_ROLE_SCOPE_PASS')
