@@ -255,9 +255,9 @@ export function WatchAdminCompositionEditor({
    <div className="watch-editor-composition-footer">
      <span><small>Новая сумма</small><strong>{money(total)}</strong>
        <small>{preview>0?'Изменено позиций: '+preview:'Состав без изменений'}</small></span>
-     <button type="submit" className="primary" disabled={busy||loading||hasLifecycle||Boolean(chooser)||Boolean(editingId)||preview===0}>
+     {!hasLifecycle&&<button type="submit" className="primary" disabled={busy||loading||Boolean(chooser)||Boolean(editingId)||preview===0}>
        {busy?'Сохранение…':'Подтвердить изменение состава'}
-     </button>
+     </button>}
    </div>
    {currentEdit&&<WatchOrderLineEditor line={currentEdit} choice={currentChoice}
      suggestions={references}
