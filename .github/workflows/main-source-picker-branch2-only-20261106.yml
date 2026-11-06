@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Read-only catalog UX: name autocomplete, stock-first list, grouped execution/color/size, negative-stock warnings.
+# Restored Client3-style model cards with name autocomplete and compact execution/color grouped SKUs.
 on:
   push:
     branches:
