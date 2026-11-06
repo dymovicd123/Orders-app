@@ -1,4 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
+# Browser-verified fix: full-height catalog rows, unique workshop entry control.
 on:
   push:
     branches:
