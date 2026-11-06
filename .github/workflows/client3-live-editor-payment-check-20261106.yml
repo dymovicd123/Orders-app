@@ -1,0 +1,78 @@
+name: Client3 live editor payment selective checks
+on:
+  push:
+    branches: [release/client3-editor-payment-20261106]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Verify selective release does not contain timesheet or Main changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/release/client3-editor-payment-20261106
+          test "$(jq -r .name wrangler.jsonc)" = orders-app-client3-old-client
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = 0717f239-6d81-4837-8586-777d94e22c53
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          test "$(git rev-parse c68d6ed3741d66b7f8ebeb8cd3bba42d3e0d5cd2:src/features/client3/WatchTimesheetWorkspace.tsx 2>/dev/null || true)" = ""
+          test ! -e src/features/client3/WatchTimesheetWorkspace.tsx
+          test ! -e src/styles/client3-watch-timesheet-workspace.css
+          grep -q team-timesheet-days src/features/client3/WatchTeamMainPanel.tsx
+          ! grep -q WatchTimesheetWorkspace src/features/client3/WatchTeamMainPanel.tsx
+          python3 - <<'PY'
+          import subprocess
+          base='c68d6ed3741d66b7f8ebeb8cd3bba42d3e0d5cd2'
+          changed=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          allowed={
+           'src/features/client3/WatchAdminCompositionEditor.tsx',
+           'src/features/client3/WatchAdminOrderActions.tsx',
+           'src/features/client3/WatchBrandAccessPanel.tsx',
+           'src/features/client3/WatchOrderCorrections.tsx',
+           'src/features/client3/WatchOrderForm.tsx',
+           'src/features/client3/WatchOrdersPanel.tsx',
+           'src/features/client3/WatchTeamMainPanel.tsx',
+           'src/styles/client3-watch-unified-editor.css',
+           'worker/domains/client3-watch-admin-composition.ts',
+           'worker/domains/client3-watch-admin-order.ts',
+           'worker/domains/client3-watch-create.ts',
+           'worker/domains/client3-watch-edit-attach.ts',
+           'worker/domains/client3-watch-orders-read.ts',
+           'worker/domains/client3-watch-team-main.ts',
+           'worker/domains/client3-watches.ts',
+           'worker/domains/orders-write.ts',
+           'scripts/client3/test-watch-editor-brand-sku-20261106.mjs',
+           'scripts/client3/test-watch-editor-issued-correction-20261106.mjs',
+           'scripts/client3/test-watch-editor-rebuild-20261106.mjs',
+           'scripts/client3/test-watch-manager-single-brand-20261106.mjs',
+           'scripts/client3/test-watch-order-editor-delete-release-20261105.mjs',
+           'scripts/client3/test-watch-payment-date-release-20261106.mjs',
+           '.github/workflows/client3-live-editor-payment-check-20261106.yml',
+           '.github/workflows/client3-live-editor-payment-release-20261106.yml',
+          }
+          assert changed<=allowed,'Unauthorized changed files: '+repr(changed-allowed)
+          assert 'src/features/client3/WatchOrderCorrections.tsx' in changed
+          assert 'src/features/client3/WatchOrderForm.tsx' in changed
+          assert not any('timesheet' in x.lower() or x.startswith('migrations/') for x in changed)
+          for path in ['wrangler.jsonc','worker/index.ts','package.json','package-lock.json','src/WatchClient3App.tsx']:
+           assert path not in changed,path
+          print('CLIENT3_LIVE_EDITOR_PAYMENT_EXACT_SCOPED_DIFF_PASS')
+          PY
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - run: npm ci
+      - run: npm run build
+      - name: Focused order, payments, stock and team regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in test-watch-payment-date-release-20261106 test-watch-manager-single-brand-20261106 test-watch-editor-issued-correction-20261106 test-watch-editor-brand-sku-20261106 test-watch-editor-rebuild-20261106 test-watch-order-editor-delete-release-20261105 test-watch-order-commit-20261102 test-watch-logistics-20261102 test-watch-source-first-order-20261105 test-watch-returns-ledger-20261104 test-watch-return-money-ui-20261104 test-watch-hide-legacy-20261105 test-watch-no-exchange-20261105 test-watch-form-20261102 test-watch-orders-read-20261102; do
+            if test -f "scripts/client3/$name.mjs"; then
+              node --experimental-strip-types "scripts/client3/$name.mjs"
+            fi
+          done
+          echo CLIENT3_LIVE_EDITOR_PAYMENT_REGRESSIONS_PASS
