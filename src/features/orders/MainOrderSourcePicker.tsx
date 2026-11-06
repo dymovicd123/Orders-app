@@ -274,6 +274,8 @@ export function MainOrderSourcePicker({allocated,onPick,onManual,initialVariants
              <small>{selectedVariant.material} · {selectedVariant.length} · {selectedVariant.gender}</small>
              <span>{selectedVariant[source].free} из {selectedVariant[source].physical} свободно · {selectedVariant[source].reserved} в резерве
                {selectedVariant.salePrice!==null?' · '+money(selectedVariant.salePrice):''}</span>
+             {(selectedVariant[source].physical<0||selectedVariant[source].reserved>selectedVariant[source].physical)&&
+               <small className="main-order-stock-warning">По системе остаток или резервы требуют сверки. Заказ можно оформить, но наличие не подтверждено.</small>}
              {selectedVariant[source].cachedReserved!==selectedVariant[source].reserved&&
                <small>В учёте резервов есть расхождение</small>}
            </div>
