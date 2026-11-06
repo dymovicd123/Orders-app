@@ -46,11 +46,11 @@ const fresh=(source:WatchSource):Line=>({
  dialColor:'black',braceletColor:''},
 })
 type Props={
- brand:WatchBrand;orderId:number;itemLines:string;receivedAmount:number;linkedReturns?:number;
+ brand:WatchBrand;orderId:number;itemLines:string;receivedAmount:number;linkedReturns?:number;shippingStatus?:string;
  onDone:()=>void;onCancel:()=>void
 }
 export function WatchAdminCompositionEditor({
- brand,orderId,itemLines,receivedAmount,linkedReturns=0,onDone,onCancel,
+ brand,orderId,itemLines,receivedAmount,linkedReturns=0,shippingStatus='',onDone,onCancel,
 }:Props){
  const original=useMemo(()=>parse(itemLines),[itemLines])
  const [lines,setLines]=useState<Line[]>(()=>original.map(fromExisting))
@@ -146,14 +146,23 @@ export function WatchAdminCompositionEditor({
    return sum+(previous&&previous.watchVariantId===line.watchVariantId&&
      sourceOf(previous.source)===line.source&&previous.quantity===line.quantity?0:1)
  },0)+original.filter(x=>!lines.some(line=>line.orderItemId===x.id)).length
- const hasLifecycle=linkedReturns>0||original.some(x=>Number(x.shippedQuantity||0)>0||
-   Number(x.returnedQuantity||0)>0||Number(x.pendingReturnQuantity||0)>0||Number(x.hasFulfilledReservation||0)>0||
-   ['fulfilled','written_off','negative'].includes(x.stockWriteoffStatus||''))
+ const protectedItem=(x:Existing)=>Number(x.shippedQuantity||0)>0||
+   Number(x.returnedQuantity||0)>0||Number(x.pendingReturnQuantity||0)>0||
+   Number(x.hasFulfilledReservation||0)>0||x.stockWriteoffStatus==='fulfilled'
+ const protectedIds=new Set(original.filter(protectedItem).map(x=>x.id))
+ const hasLifecycle=linkedReturns>0||shippingStatus==='sent'
+ const hasPartialDispatch=protectedIds.size>0&&!hasLifecycle
  const send=async(event:FormEvent<HTMLFormElement>)=>{
    event.preventDefault()
    if(busy||loading)return
    if(!lines.length||lines.length>20){setError('В заказе должно быть от 1 до 20 товаров.');return}
-   if(hasLifecycle){setError('У заказа есть отправка, выдача или возврат. Изменение состава заблокировано для защиты склада.');return}
+   if(hasLifecycle){setError('Полностью отправленный заказ или заказ с возвратами нельзя переписывать. Исправьте ошибочную отправку либо используйте возврат.');return}
+   if(original.some(x=>protectedIds.has(x.id)&&!lines.some(line=>line.orderItemId===x.id&&
+     line.kind!=='manual'&&line.watchVariantId===x.watchVariantId&&
+     line.source===sourceOf(x.source)&&line.quantity===x.quantity&&
+     Number(line.unitPrice)===x.unitPrice&&line.engravingText===x.engravingText))){
+     setError('Отправленные позиции защищены. Меняйте только неотправленные товары.');return
+   }
    if(!lines.every(x=>x.manual.modelName.trim()&&x.quantity>=1&&Number.isSafeInteger(x.quantity)&&
      x.quantity<=1000&&x.unitPrice.trim()!==''&&Number.isSafeInteger(Number(x.unitPrice))&&
      Number(x.unitPrice)>=0&&(x.kind==='manual'||x.watchVariantId>0))){
@@ -230,12 +239,13 @@ export function WatchAdminCompositionEditor({
                 read(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),
                 read(WATCH_OPTIONS.dialColors,line.manual.dialColor),line.manual.braceletColor].filter(Boolean)
              const isTarget=chooser===line.id
+             const isProtected=Boolean(line.orderItemId&&protectedIds.has(line.orderItemId))
              return <article className={'watch-pick-cart-item compact watch-editor-cart-line'+(isTarget?' is-replacing':'')} key={line.id}>
                <div className="watch-pick-cart-row">
                  <span className={'order-kind'+(line.kind==='preorder'?' waiting':line.kind==='manual'?' custom':'')}>
                    {line.kind==='manual'?'Свои характеристики':line.kind==='preorder'?'Без остатка':'Из каталога'}
                  </span>
-                 {!hasLifecycle&&<button type="button" className="cart-remove" disabled={busy||lines.length<=1}
+                 {!hasLifecycle&&!isProtected&&<button type="button" className="cart-remove" disabled={busy||lines.length<=1}
                    onClick={()=>{setLines(all=>all.filter(x=>x.id!==line.id));if(chooser===line.id)setChooser('add');request.current=null}}>
                    Удалить
                  </button>}
@@ -244,19 +254,20 @@ export function WatchAdminCompositionEditor({
                  <strong>{name||'Новая комплектация'}</strong>
                  <p className="cart-sub">{details.join(' · ')}</p>
                  <span className="watch-pick-readonly-source">{line.source==='office'?'Офис':'Витрина'} · {brand}</span>
+                 {isProtected&&<span className="watch-editor-issue-protected">Отправлено / выдано — защищено</span>}
                </div>
                <div className="watch-pick-cart-quick">
                  <label>Количество
-                   <input type="number" min={1} max={1000} disabled={busy||hasLifecycle}
+                   <input type="number" min={1} max={1000} disabled={busy||hasLifecycle||isProtected}
                      value={line.quantity} onChange={e=>update(line.id,{quantity:Number(e.target.value)})}/>
                  </label>
                  <label>Цена продажи, ₸
-                   <input type="number" min={0} max={1000000000} disabled={busy||hasLifecycle}
+                   <input type="number" min={0} max={1000000000} disabled={busy||hasLifecycle||isProtected}
                      value={line.unitPrice} onChange={e=>update(line.id,{unitPrice:e.target.value})}/>
                  </label>
                </div>
                <div className="watch-pick-cart-details-row">
-                 {!hasLifecycle&&<div className="watch-editor-cart-actions">
+                 {!hasLifecycle&&!isProtected&&<div className="watch-editor-cart-actions">
                    <button type="button" className="watch-pick-edit-action"
                      onClick={()=>startChoose(line.id)} disabled={busy}>
                      {isTarget?'Выбираем замену…':'Заменить часы'}
