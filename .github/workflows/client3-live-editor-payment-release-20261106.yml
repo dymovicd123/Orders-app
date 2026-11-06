@@ -1,0 +1,142 @@
+name: Client3 ORIGINAL editor payment release
+on:
+  push:
+    branches: [release/client3-editor-payment-20261106]
+    paths: ['.github/workflows/client3-live-editor-payment-release-20261106.yml']
+permissions:
+  contents: read
+concurrency:
+  group: client3-original-editor-payment-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      LIVE_DB: orders_db_client3_old_client
+      LIVE_DB_ID: 0717f239-6d81-4837-8586-777d94e22c53
+      LIVE_WORKER: orders-app-client3-old-client
+      QA_DB_ID: fbe857ed-1dd5-41ee-8cb6-37f1c0cff7f8
+      QA_WORKER: orders-app-client3-qa-20261103
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Exact original Client3 only release isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/release/client3-editor-payment-20261106
+          test "$(git rev-parse HEAD^)" = d1965d1cfc59a40dc6cb24a42799882b8178165c
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test "$LIVE_DB_ID" != "$QA_DB_ID"
+          test "$LIVE_WORKER" != "$QA_WORKER"
+          test "$(jq -r .name wrangler.jsonc)" = "$LIVE_WORKER"
+          test "$(jq -r .d1_databases[0].database_name wrangler.jsonc)" = "$LIVE_DB"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$LIVE_DB_ID"
+          test "$(jq -r .d1_databases[0].migrations_dir wrangler.jsonc)" = migrations/client3-watch
+          test "$(jq -r .vars.CLIENT3_WATCHES wrangler.jsonc)" = 1
+          test "$(jq -r .vars.CLIENT3_INSTALLATION wrangler.jsonc)" = 1
+          test ! -e src/features/client3/WatchTimesheetWorkspace.tsx
+          test ! -e src/styles/client3-watch-timesheet-workspace.css
+          grep -q team-timesheet-days src/features/client3/WatchTeamMainPanel.tsx
+          ! grep -q WatchTimesheetWorkspace src/features/client3/WatchTeamMainPanel.tsx
+          python3 - <<'PY'
+          import subprocess
+          base='c68d6ed3741d66b7f8ebeb8cd3bba42d3e0d5cd2'
+          paths=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          allowed={
+            'src/features/client3/WatchAdminCompositionEditor.tsx',
+            'src/features/client3/WatchAdminOrderActions.tsx',
+            'src/features/client3/WatchBrandAccessPanel.tsx',
+            'src/features/client3/WatchOrderCorrections.tsx',
+            'src/features/client3/WatchOrderForm.tsx',
+            'src/features/client3/WatchOrdersPanel.tsx',
+            'src/features/client3/WatchTeamMainPanel.tsx',
+            'src/styles/client3-watch-unified-editor.css',
+            'worker/domains/client3-watch-admin-composition.ts',
+            'worker/domains/client3-watch-admin-order.ts',
+            'worker/domains/client3-watch-create.ts',
+            'worker/domains/client3-watch-edit-attach.ts',
+            'worker/domains/client3-watch-orders-read.ts',
+            'worker/domains/client3-watch-team-main.ts',
+            'worker/domains/client3-watches.ts',
+            'worker/domains/orders-write.ts',
+            'scripts/client3/test-watch-editor-brand-sku-20261106.mjs',
+            'scripts/client3/test-watch-editor-issued-correction-20261106.mjs',
+            'scripts/client3/test-watch-editor-rebuild-20261106.mjs',
+            'scripts/client3/test-watch-manager-single-brand-20261106.mjs',
+            'scripts/client3/test-watch-order-editor-delete-release-20261105.mjs',
+            'scripts/client3/test-watch-payment-date-release-20261106.mjs',
+            '.github/workflows/client3-live-editor-payment-check-20261106.yml',
+            '.github/workflows/client3-live-editor-payment-release-20261106.yml',
+          }
+          assert paths<=allowed,repr(paths-allowed)
+          assert not any('timesheet' in p.lower() or p.startswith('migrations/') for p in paths)
+          for critical in ['wrangler.jsonc','worker/index.ts','package.json','package-lock.json','src/WatchClient3App.tsx']:
+            assert critical not in paths,critical
+          assert set(subprocess.check_output(['git','diff','--name-only','HEAD^','HEAD'],text=True).splitlines())=={
+            '.github/workflows/client3-live-editor-payment-release-20261106.yml'}
+          print('CLIENT3_EDITOR_PAYMENT_EXACT_ISOLATION_PASS')
+          PY
+      - uses: actions/setup-node@v4
+        with: {node-version: '24',cache: npm}
+      - name: Build and run regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          for name in test-watch-payment-date-release-20261106 test-watch-manager-single-brand-20261106 test-watch-editor-issued-correction-20261106 test-watch-editor-brand-sku-20261106 test-watch-editor-rebuild-20261106 test-watch-order-editor-delete-release-20261105 test-watch-order-commit-20261102 test-watch-logistics-20261102 test-watch-source-first-order-20261105 test-watch-return-money-ui-20261104 test-watch-hide-legacy-20261105 test-watch-no-exchange-20261105 test-watch-form-20261102 test-watch-orders-read-20261102; do
+            node --experimental-strip-types "scripts/client3/$name.mjs"
+          done
+          echo CLIENT3_EDITOR_PAYMENT_LIVE_REGRESSION_PASS
+      - name: Read-only original Client3 D1 preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$LIVE_DB" --remote --config wrangler.jsonc --json --command="SELECT
+            (SELECT COUNT(*) FROM watch_brands) AS brands,
+            (SELECT COUNT(*) FROM orders) AS orders_count,
+            (SELECT COUNT(*) FROM payments) AS payments_count,
+            (SELECT COUNT(*) FROM returns) AS returns_count,
+            (SELECT COUNT(*) FROM (SELECT m.id FROM managers m JOIN watch_manager_brands mb ON mb.manager_id=m.id
+              WHERE m.role='Менеджер' AND m.is_active=1 GROUP BY m.id HAVING COUNT(*)>1)) AS dual_brand_managers" |
+            jq -e '.[0].results[0] | select(.brands>=2 and .dual_brand_managers==0)'
+          npx wrangler d1 execute "$LIVE_DB" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo CLIENT3_LIVE_D1_READ_ONLY_PREFLIGHT_PASS
+      - name: Deploy ONLY original Client3 Worker without migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .name wrangler.jsonc)" = "$LIVE_WORKER"
+          test "$(jq -r .d1_databases[0].database_id wrangler.jsonc)" = "$LIVE_DB_ID"
+          npx wrangler deploy --config wrangler.jsonc
+          echo CLIENT3_LIVE_EDITOR_PAYMENT_DEPLOY_PASS
+      - name: Check published asset, anonymous protection and D1 integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://orders-app-client3-old-client.orders-clothes.workers.dev
+          asset="$(grep -Eo 'src="/assets/[^"]+\.js"' dist/client/index.html | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          verified=0
+          for attempt in $(seq 1 12); do
+            status="$(curl -sSL --max-time 20 -o /tmp/client3-live-page -w '%{http_code}' "$base/?release=$GITHUB_SHA" || true)"
+            js="$(curl -sSL --max-time 25 -o /tmp/client3-live-asset -w '%{http_code}' "$base$asset" || true)"
+            if test "$status" = 200 && test "$js" = 200 && cmp -s "dist/client$asset" /tmp/client3-live-asset; then verified=1; break; fi
+            sleep 3
+          done
+          test "$verified" = 1
+          for path in '/api/client3/watches/orders?brand=TAUWACH' '/api/client3/watches/models?brand=WACHIZEN'; do
+            status="$(curl -sS --max-time 20 -o /tmp/client3-anon -w '%{http_code}' "$base$path")"
+            test "$status" = 401 -o "$status" = 403
+          done
+          npx wrangler d1 execute "$LIVE_DB" --remote --config wrangler.jsonc --json --command="PRAGMA foreign_key_check" |
+            jq -e '.[0].results | length==0'
+          echo CLIENT3_LIVE_EDITOR_PAYMENT_PUBLISHED_VERIFIED
