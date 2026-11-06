@@ -1,0 +1,55 @@
+/* Client3 QA: unified order editor. Independent form submissions retain Main's validations. */
+.watch-editor-unified{max-width:1210px;margin:0 auto;display:grid;gap:18px;min-width:0}
+.watch-editor-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;padding:5px 0 13px;border-bottom:1px solid #dbe6f3}
+.watch-editor-header h2{font-size:20px;line-height:1.25;margin:4px 0 8px;overflow-wrap:anywhere}
+.watch-editor-header p{font-size:13px;color:#62758c;line-height:1.6;margin:0;max-width:650px}
+.watch-editor-kicker{font-size:11px;font-weight:800;letter-spacing:.065em;text-transform:uppercase;color:#5477a4}
+.watch-editor-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.watch-editor-card{box-sizing:border-box;border:1px solid #d7e3f1;border-radius:14px;background:#fff;box-shadow:0 2px 8px #244f8a0a;min-width:0;padding:19px}
+.watch-editor-card form{display:grid;gap:15px}
+.watch-editor-section-head{display:flex;align-items:start;justify-content:space-between;gap:10px;border-bottom:1px solid #edf1f7;padding-bottom:13px;margin-bottom:15px}
+.watch-editor-section-head h3{font-size:17px;font-weight:800;margin:0 0 5px;color:#1c314c}
+.watch-editor-section-head p{font-size:12px;line-height:1.5;color:#6f8195;margin:0}
+.watch-editor-card .watch-corrections-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.watch-editor-card .watch-corrections-grid>label{min-width:0;display:grid;gap:6px;align-content:start;font-size:12px;color:#3e5573;font-weight:700}
+.watch-editor-card .watch-corrections-grid>label input:not([type=checkbox]),
+.watch-editor-card .watch-corrections-grid>label textarea,
+.watch-editor-card .watch-corrections-item input,
+.watch-editor-card .watch-corrections-item textarea{box-sizing:border-box;min-width:0;width:100%;padding:10px 12px;border:1px solid #cbdced;border-radius:9px;font:inherit;font-size:14px;color:#172d46;min-height:42px;background:#fff}
+.watch-editor-card .watch-corrections-wide{grid-column:1/-1}
+.watch-editor-card textarea{resize:vertical;line-height:1.55}
+.watch-editor-card .watch-corrections-grid .watch-corrections-checkbox{display:flex;align-items:center;gap:10px;flex-direction:row}
+.watch-editor-card .watch-corrections-checkbox input{width:18px;height:18px}
+.watch-editor-card .watch-corrections-hint{font-size:12px;line-height:1.6;border-left:3px solid #bed0ee;background:#f5f8fe;padding:10px 12px;margin:0;color:#59718e;border-radius:5px}
+.watch-editor-card .watch-corrections-lines{display:grid;gap:10px}
+.watch-editor-card .watch-corrections-item{display:grid;gap:8px;padding:12px 13px;border:1px solid #e2eaf4;border-radius:10px;background:#fafcff}
+.watch-editor-card .watch-corrections-item>span:first-child{display:grid;gap:4px}
+.watch-editor-card .watch-corrections-item small{color:#697e95;font-size:12px}
+.watch-editor-card .watch-corrections-item>span:last-child{display:grid;gap:6px;font-size:12px;color:#536b83}
+.watch-editor-card .watch-corrections-item textarea{min-height:95px}
+.watch-editor-card .watch-corrections-item input{max-width:260px}
+.watch-editor-form-actions{display:flex;justify-content:flex-end;border-top:1px solid #edf1f7;padding-top:12px;margin-top:2px}
+.watch-editor-form-actions button{min-height:42px}
+.watch-editor-actions{grid-column:1/-1}
+.watch-editor-actions .watch-admin-actions-buttons{display:flex;flex-wrap:wrap;gap:10px}
+.watch-editor-actions .watch-admin-actions-buttons button{min-height:40px}
+.watch-editor-actions .watch-admin-action-form{display:grid;gap:12px;max-width:760px;margin-top:15px;padding:16px;background:#f8faff;border:1px solid #dce7f4;border-radius:11px}
+.watch-editor-actions .watch-admin-action-form>label{display:grid;gap:7px}
+.watch-editor-actions .watch-admin-action-form input,.watch-editor-actions .watch-admin-action-form select,
+.watch-editor-actions .watch-admin-action-form textarea{width:100%;min-width:0;box-sizing:border-box;padding:9px 11px;min-height:41px;border:1px solid #c6d8eb;border-radius:8px;background:#fff}
+.watch-editor-actions .watch-admin-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.watch-editor-actions .watch-admin-payment-grid>label{display:grid;gap:6px;min-width:0}
+.watch-editor-actions .watch-admin-payment-grid .watch-admin-payment-comment{grid-column:1/-1}
+.watch-editor-disclosure{grid-column:1/-1;padding:0}
+.watch-editor-disclosure>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:19px;list-style:none;cursor:pointer}
+.watch-editor-disclosure>summary::-webkit-details-marker{display:none}
+.watch-editor-disclosure>summary>span:first-child{display:grid;gap:6px}
+.watch-editor-disclosure>summary strong{font-size:16px;color:#1e3652}
+.watch-editor-disclosure>summary small{font-size:12px;color:#76869a}
+.watch-editor-expand{font-size:12px;color:#1b55c5;font-weight:800}
+.watch-editor-disclosure[open] .watch-editor-expand{font-size:0}
+.watch-editor-disclosure[open] .watch-editor-expand:after{content:'Свернуть';font-size:12px}
+.watch-editor-disclosure-content{border-top:1px solid #e2eaf4;padding:18px}
+.watch-editor-unified .watch-orders-error{padding:12px 15px;background:#fff0ed;border:1px solid #f5baa9;border-radius:9px;grid-column:1/-1}
+@media(max-width:960px){.watch-editor-sections{grid-template-columns:minmax(0,1fr)}.watch-editor-actions,.watch-editor-disclosure{grid-column:1}}
+@media(max-width:540px){.watch-editor-card{padding:13px}.watch-editor-card .watch-corrections-grid,.watch-editor-actions .watch-admin-payment-grid{grid-template-columns:minmax(0,1fr)}.watch-editor-card .watch-corrections-wide,.watch-editor-actions .watch-admin-payment-grid .watch-admin-payment-comment{grid-column:1}.watch-editor-card .watch-corrections-item input{max-width:none}.watch-editor-header h2{font-size:16px}.watch-editor-form-actions button{width:100%}}

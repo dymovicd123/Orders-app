@@ -19,7 +19,7 @@ export type WatchCreateItem={
 export type WatchCreateInput=WatchOrderInput&{
  items?:WatchCreateItem[]
  watchVariantId?:number;catalogVariantId?:number;quantity?:number;unitPrice?:number;
- receivedAmount?:number;payments?:Array<{method:WatchPaymentMethod;amount:number}>
+ receivedAmount?:number;payments?:Array<{method:WatchPaymentMethod;amount:number;paymentDate?:string}>
  engravingText?:string;requestId:string;managerId?:number;orderDate?:string
 }
 const fail=(code:string,message:string,status=400)=>json({ok:false,code,message},{status})
@@ -162,10 +162,19 @@ export async function createClient3WatchOrder(
    if(!methods.has(input.paymentMethod))
      return fail('WATCH_PAYMENT_METHOD_INVALID','Способ оплаты отсутствует в справочнике.')
    let received=0
-   for(const row of entries){
+   for(const [index,row] of entries.entries()){
      if(!row||!methods.has(row.method)||typeof row.amount!=='number'||
        !Number.isSafeInteger(row.amount)||row.amount<=0)
        return fail('WATCH_PAYMENT_INVALID','Укажите способ и положительную сумму каждой оплаты.')
+     const date=row.paymentDate===undefined?orderDate:row.paymentDate
+     if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||
+       date<'2020-01-01'||date>today||
+       !Number.isFinite(Date.parse(date+'T00:00:00Z'))||
+       new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)
+       return fail('WATCH_PAYMENT_DATE_INVALID','Проверьте дату оплаты.')
+     if(index===0&&date!==orderDate)
+       return fail('WATCH_PRIMARY_PAYMENT_DATE_MISMATCH',
+         'Первая оплата должна иметь дату заказа. Обновите дату оплаты.',400)
      received+=row.amount
      if(!Number.isSafeInteger(received))return fail('WATCH_PAYMENT_INVALID','Сумма оплат слишком велика.')
    }
@@ -199,6 +208,7 @@ export async function createClient3WatchOrder(
        audienceType:'ВЗРОСЛЫЙ',shortageAcknowledged:true,
      })),
      payments:entries.map((row,index)=>({method:row.method,amount:row.amount,
+       paymentDate:row.paymentDate===undefined?orderDate:row.paymentDate,
        paymentKind:index===0?'primary' as const:'extra' as const})),
    }
    // Main's critical operation owns all reserves, money and canonical order items.

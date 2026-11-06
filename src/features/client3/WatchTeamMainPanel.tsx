@@ -1,8 +1,9 @@
-import {useEffect,useMemo,useRef,useState,type FormEvent} from 'react'
+import {useEffect,useRef,useState,type FormEvent} from 'react'
 import {WATCH_BRANDS,type WatchBrand} from '../../../shared/client3/watch-domain'
 import {watchMoney,watchPeriod} from './useWatchAnalytics'
 import {LinkedTableScroll} from '../../components/tables/LinkedTableScroll'
 import {WatchUserAccessPanel} from './WatchUserAccessPanel'
+import {WatchTimesheetWorkspace} from './WatchTimesheetWorkspace'
 import '../../styles/client3-watch-staff.css'
 import '../../styles/client3-main-team.css'
 
@@ -201,11 +202,6 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
   }catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить доступ.')}
   finally{setSaving(false)}
  }
- const days=useMemo(()=>{
-  const [y,m]=timesheetMonth.split('-').map(Number)
-  const total=new Date(Date.UTC(y,m,0)).getUTCDate()
-  return Array.from({length:total},(_,i)=>timesheetMonth+'-'+String(i+1).padStart(2,'0'))
- },[timesheetMonth])
  const saveTimesheet=async(clear:boolean)=>{
   if(!selectedDays.length||(!clear&&!selectedManagers.length))return
   setSaving(true);setError('');setNotice('')
@@ -392,43 +388,15 @@ export function WatchTeamMainPanel({initialMode='employees'}:{initialMode?:View}
        </table>
      </LinkedTableScroll>
    </>}
-   {mode==='timesheet'&&<section className="mini-panel team-timesheet-section">
-     <div className="mini-panel-head"><div><h3>Табель · {timesheetMonth}</h3>
-       <p className="mini-panel-note">Рабочие дни и время окончания — как в Main. Можно выбрать несколько дат и сотрудников за одно сохранение.</p></div></div>
-     <label>Месяц<input type="month" value={timesheetMonth} onChange={e=>{
-       setTimesheetMonth(e.target.value);setSelectedDays([])
-     }}/></label>
-     <div className="team-timesheet-days" role="group" aria-label="Выбор дней">
-       {days.map(d=>{
-         const marked=timesheet?.entries?.some(e=>e.date===d)
-         return <button key={d} type="button"
-           className={'secondary compact '+(selectedDays.includes(d)?'is-active':'')+(marked?' has-entry':'')}
-           aria-pressed={selectedDays.includes(d)}
-           onClick={()=>setSelectedDays(v=>v.includes(d)?v.filter(x=>x!==d):[...v,d])}>
-           {Number(d.slice(8))}</button>
-       })}
-     </div>
-     <div className="team-timesheet-people">{(timesheet?.employees||[]).map(m=>
-       <label key={m.id} className="checkbox-row"><input type="checkbox"
-         checked={selectedManagers.includes(m.id)} onChange={e=>setSelectedManagers(v=>
-           e.target.checked?[...v,m.id]:v.filter(x=>x!==m.id))}/>{m.name}</label>)}</div>
-     <div className="form-grid compact-form">
-       <label>Работал до<input type="time" value={workUntil} onChange={e=>setWorkUntil(e.target.value)}/></label>
-       <label>Комментарий<input value={timeComment} onChange={e=>setTimeComment(e.target.value)}/></label>
-     </div>
-     <div className="button-row">
-       <button type="button" className="primary" disabled={saving||!selectedDays.length||!selectedManagers.length}
-         onClick={()=>void saveTimesheet(false)}>Сохранить табель</button>
-       <button type="button" className="secondary danger-outline" disabled={saving||!selectedDays.length}
-         onClick={()=>{if(window.confirm('Очистить выбранные даты табеля?'))void saveTimesheet(true)}}>Очистить выбранные даты</button>
-     </div>
-     <LinkedTableScroll ariaLabel="История табеля месяца"><table className="data-table">
-       <thead><tr><th>Дата</th><th>Сотрудник</th><th>До</th><th>Комментарий</th></tr></thead>
-       <tbody>{(timesheet?.entries||[]).map(e=><tr key={e.id}><td>{fmt(e.date)}</td>
-         <td>{timesheet?.employees.find(m=>m.id===e.managerId)?.name||'—'}</td>
-         <td>{e.workUntil||'—'}</td><td>{e.comment||'—'}</td></tr>)}</tbody>
-     </table></LinkedTableScroll>
-   </section>}
+   {mode==='timesheet'&&<WatchTimesheetWorkspace
+     month={timesheetMonth} onMonthChange={next=>{setTimesheetMonth(next);setSelectedDays([])}}
+     employees={timesheet?.employees||[]} entries={timesheet?.entries||[]}
+     selectedDays={selectedDays} setSelectedDays={setSelectedDays}
+     selectedManagers={selectedManagers} setSelectedManagers={setSelectedManagers}
+     workUntil={workUntil} setWorkUntil={setWorkUntil}
+     comment={timeComment} setComment={setTimeComment} saving={saving}
+     onSave={()=>void saveTimesheet(false)}
+     onClear={()=>{if(window.confirm('Очистить выбранные даты табеля?'))void saveTimesheet(true)}}/>}
    {['plan','salary','activity'].includes(mode)&&<div className="report-filter-row">
      {mode==='plan'&&<label>Бренд<select value={reportBrand}
        onChange={e=>setReportBrand(e.target.value as WatchBrand)}>

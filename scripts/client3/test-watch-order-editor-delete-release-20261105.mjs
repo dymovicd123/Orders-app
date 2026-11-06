@@ -20,8 +20,8 @@ for(const phrase of ['watch-main-edit-workspace','deletingOrder?<section','watch
  'Полное редактирование','Удалить заказ</button>']){
  assert(orders.includes(phrase),'Main-style order edit/delete must be visible: '+phrase)
 }
-for(const phrase of ['Оплаты, менеджер и удаление','Реквизиты','Записанная цена',
- 'Состав товаров','Отменить возврат']){
+for(const phrase of ['Менеджер, оплаты и удаление','Клиент и реквизиты','Цена продажи',
+ 'Изменить состав товаров','Возвраты и их отмена','Доставка и гравировка']){
  assert(editor.includes(phrase),'Editor missing '+phrase)
 }
 assert(admin.includes('WatchAdminDeleteChainPanel')&&!admin.includes('setAck('))
@@ -75,12 +75,18 @@ try{
  const adminView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:true,onDone:()=>{},onCancel:()=>{},
  }))
- assert(adminView.includes('Оплаты, менеджер и удаление'))
+ assert(adminView.includes('Менеджер, оплаты и удаление'))
  assert(!adminView.includes('Отменить обмены'))
+ assert(!adminView.includes('watch-corrections-tabs'),'Admin editor must not be fragmented into tabs')
+ assert(adminView.includes('watch-edit-metadata')&&adminView.includes('watch-edit-watch')&&adminView.includes('watch-edit-prices'))
+ assert(adminView.includes('Сохранить реквизиты')&&adminView.includes('Сохранить доставку и гравировку')&&adminView.includes('Сохранить цены'))
+ assert(adminView.includes('Менеджер, оплаты и удаление')&&adminView.includes('Изменить состав товаров'))
+ assert(!managerView.includes('watch-edit-watch'),'Manager cannot access logistics correction')
+ assert(!managerView.includes('Изменить состав товаров'),'Manager cannot change composition')
  const managerView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:false,onDone:()=>{},onCancel:()=>{},
  }))
- assert(!managerView.includes('Оплаты, менеджер и удаление'))
+ assert(!managerView.includes('Менеджер, оплаты и удаление'))
  console.log('CLIENT3_RELEASE_ORDER_EDITOR_DELETE_ROLE_SCOPE_PASS')
 }finally{
  await server.close()

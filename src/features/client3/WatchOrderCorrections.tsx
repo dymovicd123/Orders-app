@@ -1,4 +1,5 @@
 import {useRef,useState,type FormEvent} from 'react'
+import '../../styles/client3-watch-unified-editor.css'
 import type {WatchBrand} from '../../../shared/client3/watch-domain'
 import {WatchAdminCompositionEditor} from './WatchAdminCompositionEditor'
 import {WatchAdminOrderActions} from './WatchAdminOrderActions'
@@ -51,7 +52,7 @@ const fromOrder=(order:WatchCorrectionOrder):AdminWatch=>({
 export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Props){
  const expected=initial(order)
  const items=lines(order.itemLines)
- const [mode,setMode]=useState<'metadata'|'prices'|'watch'|'composition'|'admin'|'returns'>('metadata')
+
  const [next,setNext]=useState<Metadata>(expected)
  const [prices,setPrices]=useState<Record<number,string>>(
    Object.fromEntries(items.map(x=>[x.id,String(x.unitPrice)])))
@@ -60,11 +61,10 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  const [busy,setBusy]=useState(false)
  const pending=useRef<{fingerprint:string;id:string}|null>(null)
  const update=(field:keyof Metadata,value:string)=>setNext(v=>({...v,[field]:value}))
- const submit=async(e:FormEvent<HTMLFormElement>)=>{
+ const submit=async(e:FormEvent<HTMLFormElement>,section:'metadata'|'prices'|'watch')=>{
    e.preventDefault();if(busy)return
-   if(mode==='returns'||mode==='admin'||mode==='composition')return
    const body:Record<string,unknown>={brand}
-   if(mode==='metadata'){
+   if(section==='metadata'){
      if(JSON.stringify(expected)===JSON.stringify(next)){
        setError('Изменений нет.');return
      }
@@ -80,7 +80,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
        debtAmount:order.debtAmount,returnAmount:order.returnAmount,
        shippingStatus:order.shippingStatus,orderStatus:order.orderStatus,
      }
-   }else if(mode==='watch'){
+   }else if(section==='watch'){
      if(!isAdmin){setError('Только администратор может исправлять данные логистики.');return}
      const expectedWatch=fromOrder(order)
      if(JSON.stringify(expectedWatch)===JSON.stringify(watch)){
@@ -104,12 +104,12 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
      }
      body.changes=changes
    }
-   const fingerprint=JSON.stringify({mode,body})
+   const fingerprint=JSON.stringify({section,body})
    if(pending.current?.fingerprint!==fingerprint)
      pending.current={fingerprint,id:'watch-correct-'+crypto.randomUUID()}
    setBusy(true);setError('')
    try{
-     const result=await fetch(path(order.orderId,mode),{
+     const result=await fetch(path(order.orderId,section),{
        method:'PATCH',credentials:'include',cache:'no-store',
        headers:{'Content-Type':'application/json'},
        body:JSON.stringify({...body,requestId:pending.current.id}),
@@ -120,39 +120,21 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
    }catch(err){setError(err instanceof Error?err.message:'Не удалось исправить заказ.')}
    finally{setBusy(false)}
  }
- return <section className="watch-corrections" aria-label={'Исправление заказа '+order.externalId}>
-   <div className="watch-corrections-title">
-     <strong>Исправить заказ {order.externalId}</strong>
-     <small>{isAdmin?'Полное редактирование администратора':'Действия менеджера'} · операции и история Main; отправка только через Логистику</small>
-   </div>
-   <div className="watch-corrections-tabs">
-     <button type="button" className={mode==='metadata'?'primary':'secondary'}
-       onClick={()=>{setMode('metadata');setError('')}}>Реквизиты</button>
-     <button type="button" className={mode==='prices'?'primary':'secondary'}
-       onClick={()=>{setMode('prices');setError('')}}>Записанная цена</button>
-     {isAdmin&&<button type="button" className={mode==='watch'?'primary':'secondary'}
-       onClick={()=>{setMode('watch');setError('')}}>Данные часов и логистики</button>}
-     {isAdmin&&<button type="button" className={mode==='composition'?'primary':'secondary'}
-       onClick={()=>{setMode('composition');setError('')}}>Состав товаров</button>}
-     {isAdmin&&<button type="button" className={mode==='admin'?'primary':'secondary'}
-       onClick={()=>{setMode('admin');setError('')}}>Оплаты, менеджер и удаление</button>}
-     {order.committedReturnCount>0&&<button type="button" className={mode==='returns'?'primary':'secondary'}
-       onClick={()=>{setMode('returns');setError('')}}>Отменить возврат</button>}
-   </div>
-   {mode==='returns'?<WatchReturnHistoryPanel brand={brand} orderId={order.orderId}
-     onClose={()=>setMode('metadata')} onDone={onDone}/>:
-    mode==='admin'&&isAdmin?<WatchAdminOrderActions brand={brand}
-     orderId={order.orderId} externalId={order.externalId}
-     managerId={order.managerId} paymentLines={order.paymentLines}
-     orderDate={order.orderDate}
-     linkedOperations={Number(order.committedReturnCount||0)>0}
-     onDone={onDone}/>:
-    mode==='composition'&&isAdmin
-     ?<WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
-       itemLines={order.itemLines} receivedAmount={order.receivedAmount}
-       onDone={onDone} onCancel={onCancel}/>
-     :<form onSubmit={e=>void submit(e)}>
-     {mode==='metadata'?<>
+ return <section className="watch-corrections watch-editor-unified" aria-label={'Исправление заказа '+order.externalId}>
+   <header className="watch-editor-header">
+     <div><div className="watch-editor-kicker">Редактирование заказа</div>
+       <h2>{order.externalId}</h2>
+       <p>Всё на одной странице. Каждое изменение сохраняется отдельно с проверкой прав и финансовой истории.</p>
+     </div>
+     <button type="button" className="secondary" onClick={onCancel}>Назад к заказу</button>
+   </header>
+   {error&&<p className="watch-orders-error" role="alert">{error}</p>}
+   <div className="watch-editor-sections">
+     
+     <section className="watch-editor-card" id="watch-edit-metadata">
+       <div className="watch-editor-section-head"><div><h3>Клиент и реквизиты</h3><p>Контакты, дата заказа, город и способ доставки</p></div></div>
+       <form onSubmit={event=>void submit(event,'metadata')}>
+         
        <p className="watch-corrections-hint">Исправление контактов, города, доставки и комментария не меняет
          состав, остатки, отправку или оплаты.</p>
        <div className="watch-corrections-grid">
@@ -175,7 +157,18 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
            <textarea maxLength={500} rows={2} value={next.comment}
              onChange={e=>update('comment',e.target.value)}/></label>
        </div>
-     </>:mode==='watch'&&isAdmin?<>
+
+         <div className="watch-editor-form-actions">
+           <button className="primary" type="submit" disabled={busy}>
+             Сохранить реквизиты</button>
+         </div>
+       </form>
+     </section>
+     {isAdmin&&
+     <section className="watch-editor-card" id="watch-edit-watch">
+       <div className="watch-editor-section-head"><div><h3>Доставка и гравировка</h3><p>Адрес, отправка и пожелания по каждому изделию</p></div></div>
+       <form onSubmit={event=>void submit(event,'watch')}>
+         
        <p className="watch-corrections-hint">Администратор может исправить доставку,
          срочность, срок отправки и гравировку до фактической отправки.
          Если гравировка отмечена готовой, текст нельзя переписывать.</p>
@@ -204,7 +197,18 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
                y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/>
          </label>)}
        </div>
-     </>:<>
+
+         <div className="watch-editor-form-actions">
+           <button className="primary" type="submit" disabled={busy}>
+             Сохранить доставку и гравировку</button>
+         </div>
+       </form>
+     </section>}
+     
+     <section className="watch-editor-card" id="watch-edit-prices">
+       <div className="watch-editor-section-head"><div><h3>Цена продажи</h3><p>Цены товаров и автоматический пересчёт суммы</p></div></div>
+       <form onSubmit={event=>void submit(event,'prices')}>
+         
        <p className="watch-corrections-hint">Исправляется только записанная цена продажи.
          Сумма заказа и долг пересчитываются механизмом Main. Отправка и склад не меняются.</p>
        <div className="watch-corrections-lines">
@@ -218,13 +222,39 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
          </label>)}
        </div>
        {!items.length&&<p>Нет активных товарных позиций для исправления.</p>}
-     </>}
-     {error&&<p className="watch-orders-error" role="alert">{error}</p>}
-     <div className="watch-corrections-actions">
-       <button className="primary" type="submit" disabled={busy||mode==='prices'&&!items.length}>
-         {busy?'Сохранение…':'Сохранить исправление'}</button>
-       <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Отмена</button>
-     </div>
-   </form>}
+
+         <div className="watch-editor-form-actions">
+           <button className="primary" type="submit" disabled={busy||!items.length}>
+             Сохранить цены</button>
+         </div>
+       </form>
+     </section>
+     {isAdmin&&<section className="watch-editor-card watch-editor-actions">
+       <div className="watch-editor-section-head"><div><h3>Менеджер, оплаты и удаление</h3>
+         <p>Дополнительные действия — без переключения между вкладками</p></div></div>
+       <WatchAdminOrderActions brand={brand} orderId={order.orderId} externalId={order.externalId}
+         managerId={order.managerId} paymentLines={order.paymentLines} orderDate={order.orderDate}
+         linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>
+     </section>}
+     {isAdmin&&<details className="watch-editor-card watch-editor-disclosure">
+       <summary><span><strong>Изменить состав товаров</strong>
+         <small>Добавление и удаление часов с проверкой остатков</small></span>
+         <span className="watch-editor-expand" aria-hidden="true">Развернуть</span></summary>
+       <div className="watch-editor-disclosure-content">
+         <WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
+           itemLines={order.itemLines} receivedAmount={order.receivedAmount}
+           onDone={onDone} onCancel={onCancel}/>
+       </div>
+     </details>}
+     {order.committedReturnCount>0&&<details className="watch-editor-card watch-editor-disclosure">
+       <summary><span><strong>Возвраты и их отмена</strong>
+         <small>Проверка связанной операции</small></span>
+         <span className="watch-editor-expand" aria-hidden="true">Развернуть</span></summary>
+       <div className="watch-editor-disclosure-content">
+         <WatchReturnHistoryPanel brand={brand} orderId={order.orderId} onClose={onCancel} onDone={onDone}/>
+       </div>
+     </details>}
+   </div>
  </section>
+}
 }

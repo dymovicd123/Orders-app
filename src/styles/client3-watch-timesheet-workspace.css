@@ -1,0 +1,67 @@
+/* Client3 QA — calendar-first timesheet, adapted from the Main team's calendar. */
+.client3-team-main .watch-ts{display:grid;gap:18px;min-width:0;border:1px solid #dbe6f1;border-radius:16px;padding:20px;background:#fff}
+.client3-team-main .watch-ts-header{display:flex;align-items:start;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.client3-team-main .watch-ts-header h3{font-size:19px;margin:0 0 6px;color:#20334e}
+.client3-team-main .watch-ts-header p{font-size:13px;color:#687c92;margin:0;line-height:1.5}
+.client3-team-main .watch-ts-month-controls{display:flex;align-items:end;gap:7px}
+.client3-team-main .watch-ts-month-controls>button{min-width:34px;min-height:39px;padding:5px 9px;font-size:19px}
+.client3-team-main .watch-ts-month-label{display:grid;gap:4px;font-size:11px;color:#63778e;font-weight:750}
+.client3-team-main .watch-ts-month-label input{box-sizing:border-box;min-width:166px;min-height:39px;border:1px solid #cfdeec;border-radius:9px;background:#fff;padding:7px 10px;font:inherit;font-size:13px}
+.client3-team-main .watch-ts-facts{display:flex;gap:8px;flex-wrap:wrap}
+.client3-team-main .watch-ts-facts>div{display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #e0e9f4;border-radius:10px;background:#f7faff}
+.client3-team-main .watch-ts-facts strong{font-size:17px;color:#194aa6}
+.client3-team-main .watch-ts-facts span{color:#6c7d91;font-size:12px}
+.client3-team-main .watch-ts-workspace{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(290px,.86fr);align-items:start;gap:18px}
+.client3-team-main .watch-ts-calendar-area{display:grid;gap:12px;min-width:0}
+.client3-team-main .watch-ts-calendar-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.client3-team-main .watch-ts-calendar-actions>strong{font-size:14px;color:#2b3f5a}
+.client3-team-main .watch-ts-presets{display:flex;flex-wrap:wrap;gap:5px}
+.client3-team-main .watch-ts-presets button,.client3-team-main .watch-ts-editor-row button{border:1px solid #d0dff0;border-radius:7px;padding:6px 9px;background:#fff;color:#315a8f;cursor:pointer;font:inherit;font-size:11px;font-weight:750}
+.client3-team-main .watch-ts-presets button:hover,.client3-team-main .watch-ts-editor-row button:hover{border-color:#8daee0;background:#eff5ff}
+.client3-team-main .watch-ts-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.client3-team-main .watch-ts-weekday{text-align:center;color:#6a7e97;font-size:11px;font-weight:800;padding:7px 3px}
+.client3-team-main .watch-ts-day{box-sizing:border-box;display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:left;min-height:94px;width:100%;padding:9px;border:1px solid #e0e8f2;border-radius:9px;background:#fff;color:#203b59;cursor:pointer;font:inherit;overflow:hidden}
+.client3-team-main .watch-ts-day:hover{border-color:#6794df;background:#f8fbff}
+.client3-team-main .watch-ts-day.weekend{background:#f9fbfd}
+.client3-team-main .watch-ts-day.scheduled{border-color:#c6dce1}
+.client3-team-main .watch-ts-day.selected{border-color:#2c62d6;background:#eaf2ff;box-shadow:inset 0 0 0 1px #2c62d6}
+.client3-team-main .watch-ts-day-heading{display:flex;align-items:center;justify-content:space-between;gap:3px}
+.client3-team-main .watch-ts-day-heading strong{font-size:13px;font-weight:800}
+.client3-team-main .watch-ts-check{background:#205ad4;color:#fff;border-radius:50%;width:17px;height:17px;display:grid;place-items:center;font-size:10px}
+.client3-team-main .watch-ts-assignments{display:grid;gap:4px;min-width:0}
+.client3-team-main .watch-ts-assignment{display:flex;align-items:center;flex-wrap:wrap;gap:3px 5px;padding:4px 5px;border-radius:6px;background:#e8f7f1;color:#235d4b;font-size:10px;line-height:1.25;overflow-wrap:anywhere}
+.client3-team-main .watch-ts-assignment>span:nth-child(2){min-width:0;overflow-wrap:anywhere}
+.client3-team-main .watch-ts-assignment em{font-style:normal;color:#477263;font-size:10px}
+.client3-team-main .watch-ts-dot{width:6px;height:6px;border-radius:50%;background:#299974;flex:0 0 6px}
+.client3-team-main .watch-ts-free{font-size:10px;color:#9aabbd}
+.client3-team-main .watch-ts-blank{background:#f7f9fc;border-radius:8px}
+.client3-team-main .watch-ts-legend{display:flex;gap:15px;flex-wrap:wrap;font-size:11px;color:#718399}
+.client3-team-main .watch-ts-legend span{display:inline-flex;align-items:center;gap:6px}
+.client3-team-main .watch-ts-legend i{display:inline-block;width:12px;height:12px;border:1px solid #a4caba;border-radius:4px;background:#e8f7f1}
+.client3-team-main .watch-ts-legend i.watch-ts-legend-chosen{background:#eaf2ff;border-color:#2c62d6}
+.client3-team-main .watch-ts-editor{box-sizing:border-box;display:grid;gap:14px;padding:17px;background:#f7faff;border:1px solid #dce7f5;border-radius:13px;min-width:0}
+.client3-team-main .watch-ts-editor h4{font-size:16px;margin:0;color:#1e3754}
+.client3-team-main .watch-ts-selection{font-size:13px;margin:0;color:#5f728a}
+.client3-team-main .watch-ts-editor-block{display:grid;gap:9px}
+.client3-team-main .watch-ts-editor-row{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.client3-team-main .watch-ts-editor-row strong{font-size:12px;color:#415973}
+.client3-team-main .watch-ts-editor-row>div{display:flex;gap:5px}
+.client3-team-main .watch-ts-people{display:flex;flex-wrap:wrap;gap:7px}
+.client3-team-main .watch-ts-person{display:flex;align-items:center;gap:7px;border:1px solid #cbdced;border-radius:9px;padding:7px 9px;background:#fff;cursor:pointer;font:inherit;font-size:12px;font-weight:700;text-align:left;color:#405972}
+.client3-team-main .watch-ts-person.selected{background:#eaf2ff;border-color:#5b8ad8;color:#1549a9}
+.client3-team-main .watch-ts-person-check{display:grid;place-items:center;flex:0 0 17px;width:17px;height:17px;border:1px solid #a4b9d1;border-radius:5px;color:#6c85a1;font-size:11px}
+.client3-team-main .watch-ts-person.selected .watch-ts-person-check{background:#245ed5;border-color:#245ed5;color:#fff}
+.client3-team-main .watch-ts-editor-fields{display:grid;gap:12px}
+.client3-team-main .watch-ts-editor-fields label{display:grid;gap:7px;min-width:0;font-size:12px;font-weight:750;color:#485f7a}
+.client3-team-main .watch-ts-editor-fields input,.client3-team-main .watch-ts-editor-fields textarea{box-sizing:border-box;width:100%;min-width:0;padding:9px 11px;min-height:42px;border:1px solid #c6d7ea;border-radius:9px;background:#fff;font:inherit;font-size:13px;color:#1b344f}
+.client3-team-main .watch-ts-editor-fields textarea{resize:vertical;line-height:1.5}
+.client3-team-main .watch-ts-editor-actions{display:grid;gap:8px}
+.client3-team-main .watch-ts-editor-actions button{min-height:40px}
+.client3-team-main .watch-ts-editor-note{color:#7a8b9e;font-size:11px;line-height:1.5}
+.client3-team-main .watch-ts-history{border-top:1px solid #e1eaf4;padding-top:13px}
+.client3-team-main .watch-ts-history summary{font-size:12px;font-weight:750;color:#2860bd;cursor:pointer}
+.client3-team-main .watch-ts-history-rows{display:grid;gap:5px;margin-top:11px;max-height:390px;overflow-y:auto}
+.client3-team-main .watch-ts-history-row{display:grid;grid-template-columns:65px minmax(115px,1fr) 100px minmax(140px,1.6fr);gap:8px;align-items:center;border:1px solid #e2eaf4;border-radius:8px;padding:8px 11px;font-size:11px;color:#5f738a}
+.client3-team-main .watch-ts-history-row strong{color:#203852}
+@media(max-width:1200px){.client3-team-main .watch-ts-workspace{grid-template-columns:minmax(0,1fr)}.client3-team-main .watch-ts-editor{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.client3-team-main .watch-ts-editor h4,.client3-team-main .watch-ts-selection,.client3-team-main .watch-ts-editor-note{grid-column:1/-1}}
+@media(max-width:640px){.client3-team-main .watch-ts{padding:12px}.client3-team-main .watch-ts-day{min-height:64px;padding:5px}.client3-team-main .watch-ts-calendar{gap:3px}.client3-team-main .watch-ts-assignment{font-size:9px;padding:3px}.client3-team-main .watch-ts-day-heading strong{font-size:11px}.client3-team-main .watch-ts-editor{grid-template-columns:minmax(0,1fr)}.client3-team-main .watch-ts-editor h4,.client3-team-main .watch-ts-selection,.client3-team-main .watch-ts-editor-note{grid-column:1}.client3-team-main .watch-ts-history-row{grid-template-columns:62px minmax(0,1fr)}.client3-team-main .watch-ts-history-row>span:nth-child(4){grid-column:1/-1}.client3-team-main .watch-ts-month-controls{width:100%;justify-content:space-between}.client3-team-main .watch-ts-month-label{flex:1}.client3-team-main .watch-ts-month-label input{width:100%;min-width:0}}
