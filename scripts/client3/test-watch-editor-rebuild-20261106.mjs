@@ -18,7 +18,7 @@ assert(composition.includes('onAdd={choose}')&&composition.includes('onManual={a
 assert(composition.includes('hasFulfilledReservation'))
 assert(projection.includes("'hasFulfilledReservation'"))
 assert(core.includes('releaseOrderReservationsV2')&&core.includes('preservedRewriteItemIds'))
-assert(core.includes('watchSkuChanged')&&core.includes('line.catalogVariantId'))
+assert(core.includes('watchSkuChanged')&&core.includes('watchRewriteChangesCanonicalSku'))
 assert(composition.includes("models.brand!==brand"))
 
 const vite=await createServer({configFile:false,plugins:[react()],appType:'custom',
