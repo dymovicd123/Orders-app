@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Browser-verified fix: full-height catalog rows, unique workshop entry control.
+# Chrome-verified UX refresh: 2-column product grid, 12 models/page, 6 SKU cards, characteristic filters.
 on:
   push:
     branches:
@@ -58,7 +58,7 @@ jobs:
       - run: npm ci
       - name: Source-first SKU and warehouse reservation regression
         run: node scripts/test-main-source-first-order-picker-20261106.mjs
-      - name: Real Chrome visual regression - 97 readable rows
+      - name: Real Chrome visual regression - 12 models and 6 SKU cards
         run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
       - name: Upload browser screenshot of catalog
         if: always()
