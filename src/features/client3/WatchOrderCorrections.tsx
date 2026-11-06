@@ -15,245 +15,239 @@ export type WatchCorrectionOrder={
  managerId:number;paymentLines:string;committedReturnCount:number;
  itemLines:string
 }
-type Line={id:number;productName:string;quantity:number;unitPrice:number;
- lineTotal:number;catalogPriceSnapshot:number|null;source:string;engravingText:string}
-type Props={brand:WatchBrand;order:WatchCorrectionOrder;isAdmin:boolean;onDone:()=>void;onCancel:()=>void}
-type Metadata={orderDate:string;customerName:string;customerPhone:string;city:string;deliveryType:string;comment:string}
-const initial=(o:WatchCorrectionOrder):Metadata=>({
- orderDate:o.orderDate,
- customerName:o.canonicalCustomerName||o.recipientName,
- customerPhone:o.canonicalCustomerPhone||o.recipientPhone,
- city:o.canonicalCity||o.city,
- deliveryType:o.canonicalDeliveryType||o.deliveryMethod,
- comment:o.orderComment||'',
-})
-const lines=(raw:string):Line[]=>{
- try{const x=JSON.parse(raw) as Line[];return Array.isArray(x)?x.filter(x=>x.id>0&&x.quantity>0):[]}catch{return []}
+type Item={
+ id:number;productName:string;gender?:string;movement?:string;braceletMaterial?:string;
+ dialColor?:string;braceletColor?:string;quantity:number;unitPrice:number;
+ lineTotal:number;catalogPriceSnapshot:number|null;source:string;engravingText:string;
+ shippedQuantity?:number;returnedQuantity?:number;stockWriteoffStatus?:string
 }
-const num=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
-const path=(id:number,mode:'metadata'|'prices'|'watch'|'composition')=>'/api/client3/watches/orders/'+id+'/'+
-  (mode==='watch'?'watch-details':mode)
-type AdminWatch={deliveryAddress:string;postalCode:string;urgent:boolean;
- shippingDeadlineAt:string;items:Array<{orderItemId:number;engravingText:string}>}
-const toLocal=(iso:string)=>{
- const parsed=Date.parse(iso||'')
- return Number.isFinite(parsed)?new Date(parsed+5*3600000).toISOString().slice(0,16):''
+type Props={brand:WatchBrand;order:WatchCorrectionOrder;isAdmin:boolean;
+ onDone:()=>void;onCancel:()=>void}
+type Metadata={orderDate:string;customerName:string;customerPhone:string;city:string;
+ deliveryType:string;comment:string}
+type WatchDetails={deliveryAddress:string;postalCode:string;urgent:boolean;shippingDeadlineAt:string;
+ items:Array<{orderItemId:number;engravingText:string}>}
+type Section='metadata'|'watch'|'prices'
+const money=(n:number)=>Number(n||0).toLocaleString('ru-RU')+' ₸'
+const parse=(raw:string):Item[]=>{
+ try{
+   const x=JSON.parse(raw) as Item[]
+   return Array.isArray(x)?x.filter(line=>line.id>0&&line.quantity>0):[]
+ }catch{return []}
 }
-const toUTC=(local:string)=>local&&Number.isFinite(Date.parse(local+'+05:00'))
- ?new Date(local+'+05:00').toISOString():''
-const fromOrder=(order:WatchCorrectionOrder):AdminWatch=>({
- deliveryAddress:order.deliveryAddress||'',postalCode:order.postalCode||'',
- urgent:order.urgent===1,shippingDeadlineAt:order.shippingDeadlineAt,
- items:lines(order.itemLines).map(x=>({orderItemId:x.id,engravingText:x.engravingText||''})),
+const initialMetadata=(o:WatchCorrectionOrder):Metadata=>({
+ orderDate:o.orderDate,customerName:o.canonicalCustomerName||o.recipientName,
+ customerPhone:o.canonicalCustomerPhone||o.recipientPhone,city:o.canonicalCity||o.city,
+ deliveryType:o.canonicalDeliveryType||o.deliveryMethod,comment:o.orderComment||'',
 })
-/** Exactly Main's two narrow correction modes. Does NOT send a full order payload.
- * The server validates both the original state and role independently.
- */
-export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Props){
- const expected=initial(order)
- const items=lines(order.itemLines)
+const initialWatch=(o:WatchCorrectionOrder,items:Item[]):WatchDetails=>({
+ deliveryAddress:o.deliveryAddress||'',postalCode:o.postalCode||'',
+ urgent:o.urgent===1,shippingDeadlineAt:o.shippingDeadlineAt,
+ items:items.map(x=>({orderItemId:x.id,engravingText:x.engravingText||''})),
+})
+const localDate=(iso:string)=>{
+ const value=Date.parse(iso||'')
+ return Number.isFinite(value)?new Date(value+5*3600000).toISOString().slice(0,16):''
+}
+const toUtc=(value:string)=>value&&Number.isFinite(Date.parse(value+'+05:00'))
+ ?new Date(value+'+05:00').toISOString():''
+const label=(source:string)=>source==='boutique'?'Витрина':'Офис'
+const path=(id:number,part:Section)=>'/api/client3/watches/orders/'+id+'/'+
+ (part==='watch'?'watch-details':part)
 
+export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Props){
+ const items=parse(order.itemLines)
+ const expected=initialMetadata(order)
+ const expectedWatch=initialWatch(order,items)
  const [next,setNext]=useState<Metadata>(expected)
+ const [watch,setWatch]=useState<WatchDetails>(expectedWatch)
  const [prices,setPrices]=useState<Record<number,string>>(
    Object.fromEntries(items.map(x=>[x.id,String(x.unitPrice)])))
- const [watch,setWatch]=useState<AdminWatch>(fromOrder(order))
- const [error,setError]=useState('')
+ const [composing,setComposing]=useState(false)
  const [busy,setBusy]=useState(false)
- const pending=useRef<{fingerprint:string;id:string}|null>(null)
- const update=(field:keyof Metadata,value:string)=>setNext(v=>({...v,[field]:value}))
- const submit=async(e:FormEvent<HTMLFormElement>,section:'metadata'|'prices'|'watch')=>{
-   e.preventDefault();if(busy)return
-   const body:Record<string,unknown>={brand}
-   if(section==='metadata'){
-     if(JSON.stringify(expected)===JSON.stringify(next)){
-       setError('Изменений нет.');return
+ const [error,setError]=useState('')
+ const [savedSections,setSavedSections]=useState(0)
+ const pending=useRef<Partial<Record<Section,{fingerprint:string;id:string}>>>({})
+ const metadataDirty=JSON.stringify(next)!==JSON.stringify(expected)
+ const watchDirty=isAdmin&&JSON.stringify(watch)!==JSON.stringify(expectedWatch)
+ const changedPrices=items.filter(x=>Number(prices[x.id])!==x.unitPrice)
+ const priceDirty=changedPrices.length>0
+ const dirty=metadataDirty||watchDirty||priceDirty
+ const update=(key:keyof Metadata,value:string)=>{setNext(prev=>({...prev,[key]:value}));setError('')}
+ const changeWatch=(patch:Partial<WatchDetails>)=>{setWatch(prev=>({...prev,...patch}));setError('')}
+ const send=async(part:Section,body:Record<string,unknown>)=>{
+   const fingerprint=JSON.stringify(body)
+   if(pending.current[part]?.fingerprint!==fingerprint)
+     pending.current[part]={fingerprint,id:'watch-correct-'+crypto.randomUUID()}
+   const response=await fetch(path(order.orderId,part),{
+     method:'PATCH',credentials:'include',cache:'no-store',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({...body,requestId:pending.current[part]!.id}),
+   })
+   const result=await response.json() as {ok?:boolean;message?:string}
+   if(!response.ok||!result.ok)throw Error(result.message||'Изменение не принято.')
+ }
+ const save=async(event:FormEvent<HTMLFormElement>)=>{
+   event.preventDefault()
+   if(busy||!dirty)return
+   if(metadataDirty&&(!next.customerName.trim()||!next.customerPhone.trim()||
+     !next.city.trim()||!next.deliveryType.trim())){
+     setError('Укажите клиента, телефон, город и доставку.');return
+   }
+   if(watchDirty&&(!watch.deliveryAddress.trim()||!watch.postalCode.trim()||
+     !Number.isFinite(Date.parse(watch.shippingDeadlineAt)))){
+     setError('Проверьте адрес, индекс и время отправки.');return
+   }
+   if(priceDirty&&changedPrices.some(x=>
+     !Number.isSafeInteger(Number(prices[x.id]))||Number(prices[x.id])<0||
+     prices[x.id].trim()==='')){
+     setError('Цена должна быть целым числом от 0 ₸.');return
+   }
+   setError('');setSavedSections(0);setBusy(true)
+   let saved=0
+   try{
+     // These endpoints have separate atomic checks and historical journals.
+     // Never falsely represent a multi-endpoint save as one DB transaction.
+     if(metadataDirty){
+       await send('metadata',{brand,expected,next,expectedState:{
+         totalAmount:order.totalAmount,receivedAmount:order.receivedAmount,
+         debtAmount:order.debtAmount,returnAmount:order.returnAmount,
+         shippingStatus:order.shippingStatus,orderStatus:order.orderStatus,
+       }})
+       saved++;setSavedSections(saved)
      }
-     if(!next.customerName.trim()||!next.customerPhone.trim()||!next.city.trim()||!next.deliveryType.trim()){
-       setError('ФИО, телефон, город и способ доставки обязательны.');return
+     if(watchDirty){
+       await send('watch',{brand,expected:expectedWatch,next:watch})
+       saved++;setSavedSections(saved)
      }
-     if(!isAdmin&&next.orderDate!==expected.orderDate){
-       setError('Изменять дату заказа может только администратор.');return
-     }
-     body.expected=expected;body.next=next
-     body.expectedState={
-       totalAmount:order.totalAmount,receivedAmount:order.receivedAmount,
-       debtAmount:order.debtAmount,returnAmount:order.returnAmount,
-       shippingStatus:order.shippingStatus,orderStatus:order.orderStatus,
-     }
-   }else if(section==='watch'){
-     if(!isAdmin){setError('Только администратор может исправлять данные логистики.');return}
-     const expectedWatch=fromOrder(order)
-     if(JSON.stringify(expectedWatch)===JSON.stringify(watch)){
-       setError('Изменений нет.');return
-     }
-     if(!watch.deliveryAddress.trim()||!watch.postalCode.trim()||
-       !Number.isFinite(Date.parse(watch.shippingDeadlineAt))){
-       setError('Проверьте адрес, индекс и точное время отправки.');return
-     }
-     body.expected=expectedWatch;body.next=watch
-   }else{
-     const changes=items.filter(x=>Number(prices[x.id])!==x.unitPrice)
-       .map(x=>({
+     if(priceDirty){
+       await send('prices',{brand,changes:changedPrices.map(x=>({
          orderItemId:x.id,unitPrice:Number(prices[x.id]),
          expectedUnitPrice:x.unitPrice,expectedQuantity:x.quantity,
          expectedLineTotal:x.lineTotal,expectedCatalogPriceSnapshot:x.catalogPriceSnapshot,
-       }))
-     if(!changes.length){setError('Цены не изменены.');return}
-     if(changes.some(x=>!Number.isSafeInteger(x.unitPrice)||x.unitPrice<0)){
-       setError('Цена должна быть целым числом от 0 ₸.');return
+       }))})
+       saved++;setSavedSections(saved)
      }
-     body.changes=changes
-   }
-   const fingerprint=JSON.stringify({section,body})
-   if(pending.current?.fingerprint!==fingerprint)
-     pending.current={fingerprint,id:'watch-correct-'+crypto.randomUUID()}
-   setBusy(true);setError('')
-   try{
-     const result=await fetch(path(order.orderId,section),{
-       method:'PATCH',credentials:'include',cache:'no-store',
-       headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({...body,requestId:pending.current.id}),
-     })
-     const value=await result.json() as {ok?:boolean;message?:string}
-     if(!result.ok||!value.ok)throw new Error(value.message||'Исправление не принято.')
      onDone()
-   }catch(err){setError(err instanceof Error?err.message:'Не удалось исправить заказ.')}
-   finally{setBusy(false)}
+   }catch(cause){
+     const reason=cause instanceof Error?cause.message:'Изменение не принято.'
+     setError(saved>0?'Сохранено разделов: '+saved+'. Остальное не сохранено: '+reason+
+       ' Вернитесь к заказу и откройте его заново перед повтором.':reason)
+   }finally{setBusy(false)}
  }
+ if(composing)return <section className="watch-corrections watch-editor-unified">
+   <header className="watch-editor-header">
+     <div><small>Заказ {order.externalId}</small><h2>Изменение состава</h2></div>
+     <button type="button" className="watch-editor-back" onClick={()=>setComposing(false)}>Назад к редактору</button>
+   </header>
+   <WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
+     itemLines={order.itemLines} receivedAmount={order.receivedAmount}
+     onDone={onDone} onCancel={()=>setComposing(false)}/>
+ </section>
  return <section className="watch-corrections watch-editor-unified" aria-label={'Исправление заказа '+order.externalId}>
    <header className="watch-editor-header">
-     <div><div className="watch-editor-kicker">Редактирование заказа</div>
+     <div>
+       <small>Редактирование заказа · {brand}</small>
        <h2>{order.externalId}</h2>
-       <p>Всё на одной странице. Каждое изменение сохраняется отдельно с проверкой прав и финансовой истории.</p>
+       <p>{order.shippingStatus==='sent'?'Отправлен':order.shippingStatus==='partially_sent'?'Частично отправлен':'Заказ в работе'} · Изменяйте необходимые поля.</p>
      </div>
-     <button type="button" className="secondary" onClick={onCancel}>Назад к заказу</button>
+     <button type="button" className="watch-editor-back" onClick={onCancel} disabled={busy}>Назад к заказам</button>
    </header>
    {error&&<p className="watch-orders-error" role="alert">{error}</p>}
-   <div className="watch-editor-sections">
-     
-     <section className="watch-editor-card" id="watch-edit-metadata">
-       <div className="watch-editor-section-head"><div><h3>Клиент и реквизиты</h3><p>Контакты, дата заказа, город и способ доставки</p></div></div>
-       <form onSubmit={event=>void submit(event,'metadata')}>
-         
-       <p className="watch-corrections-hint">Исправление контактов, города, доставки и комментария не меняет
-         состав, остатки, отправку или оплаты.</p>
-       <div className="watch-corrections-grid">
-         <label>ФИО клиента
-           <input required maxLength={200} value={next.customerName}
-             onChange={e=>update('customerName',e.target.value)}/></label>
-         <label>Телефон
-           <input required maxLength={100} type="tel" value={next.customerPhone}
+   <form className="watch-editor-main-form" onSubmit={event=>void save(event)}>
+     <div className="watch-editor-sections">
+       <section className="watch-editor-card">
+         <div className="watch-editor-section-title"><h3>Клиент и доставка</h3></div>
+         <div className="watch-editor-grid">
+           <label>Клиент<input required maxLength={200} value={next.customerName}
+             onChange={e=>update('customerName',e.target.value)} /></label>
+           <label>Телефон<input required maxLength={100} type="tel" value={next.customerPhone}
              onChange={e=>update('customerPhone',e.target.value)}/></label>
-         <label>Город
-           <input required maxLength={100} value={next.city}
+           <label>Город<input required maxLength={100} value={next.city}
              onChange={e=>update('city',e.target.value)}/></label>
-         <label>Способ доставки
-           <input required maxLength={120} value={next.deliveryType}
+           <label>Способ доставки<input required maxLength={120} value={next.deliveryType}
              onChange={e=>update('deliveryType',e.target.value)}/></label>
-         {isAdmin&&<label>Дата заказа
-           <input type="date" required value={next.orderDate}
+           {isAdmin&&<label>Дата заказа<input required type="date" value={next.orderDate}
              onChange={e=>update('orderDate',e.target.value)}/></label>}
-         <label className="watch-corrections-wide">Комментарий к заказу
-           <textarea maxLength={500} rows={2} value={next.comment}
-             onChange={e=>update('comment',e.target.value)}/></label>
-       </div>
-
-         <div className="watch-editor-form-actions">
-           <button className="primary" type="submit" disabled={busy}>
-             Сохранить реквизиты</button>
+           <label className="watch-editor-wide">Комментарий к заказу
+             <input maxLength={500} value={next.comment}
+               onChange={e=>update('comment',e.target.value)}/></label>
          </div>
-       </form>
-     </section>
-     {isAdmin&&
-     <section className="watch-editor-card" id="watch-edit-watch">
-       <div className="watch-editor-section-head"><div><h3>Доставка и гравировка</h3><p>Адрес, отправка и пожелания по каждому изделию</p></div></div>
-       <form onSubmit={event=>void submit(event,'watch')}>
-         
-       <p className="watch-corrections-hint">Администратор может исправить доставку,
-         срочность, срок отправки и гравировку до фактической отправки.
-         Если гравировка отмечена готовой, текст нельзя переписывать.</p>
-       <div className="watch-corrections-grid">
-         <label className="watch-corrections-wide">Полный адрес доставки *
-           <textarea rows={2} required maxLength={500} value={watch.deliveryAddress}
-             onChange={e=>setWatch(prev=>({...prev,deliveryAddress:e.target.value}))}/></label>
-         <label>Почтовый индекс *
-           <input required maxLength={20} value={watch.postalCode}
-             onChange={e=>setWatch(prev=>({...prev,postalCode:e.target.value}))}/></label>
-         <label>Отправить до (Алматы) *
-           <input type="datetime-local" required value={toLocal(watch.shippingDeadlineAt)}
-             onChange={e=>setWatch(prev=>({...prev,shippingDeadlineAt:toUTC(e.target.value)}))}/></label>
-         <label className="watch-corrections-wide watch-corrections-checkbox">
-           <input type="checkbox" checked={watch.urgent}
-             onChange={e=>setWatch(prev=>({...prev,urgent:e.target.checked}))}/>
-           Срочный заказ</label>
-       </div>
-       <div className="watch-corrections-lines">
-         {items.map(x=><label key={x.id} className="watch-corrections-item">
-           <span><strong>{x.productName||'Часы'} · {x.quantity} шт.</strong>
-             <small>Комментарий логисту / гравировка для этой позиции</small></span>
-           <textarea maxLength={500} rows={2}
-             value={watch.items.find(y=>y.orderItemId===x.id)?.engravingText||''}
-             onChange={e=>setWatch(prev=>({...prev,items:prev.items.map(y=>
-               y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/>
-         </label>)}
-       </div>
-
-         <div className="watch-editor-form-actions">
-           <button className="primary" type="submit" disabled={busy}>
-             Сохранить доставку и гравировку</button>
+       </section>
+       {isAdmin&&<section className="watch-editor-card">
+         <div className="watch-editor-section-title"><h3>Отправка</h3></div>
+         <div className="watch-editor-grid">
+           <label className="watch-editor-wide">Адрес доставки
+             <input required maxLength={500} value={watch.deliveryAddress}
+               onChange={e=>changeWatch({deliveryAddress:e.target.value})}/></label>
+           <label>Индекс<input required maxLength={20} value={watch.postalCode}
+             onChange={e=>changeWatch({postalCode:e.target.value})}/></label>
+           <label>Отправить до (Алматы)
+             <input required type="datetime-local" value={localDate(watch.shippingDeadlineAt)}
+               onChange={e=>changeWatch({shippingDeadlineAt:toUtc(e.target.value)})}/></label>
+           <label className="watch-editor-checkbox">
+             <input type="checkbox" checked={watch.urgent}
+               onChange={e=>changeWatch({urgent:e.target.checked})}/> Срочный заказ</label>
          </div>
-       </form>
-     </section>}
-     
-     <section className="watch-editor-card" id="watch-edit-prices">
-       <div className="watch-editor-section-head"><div><h3>Цена продажи</h3><p>Цены товаров и автоматический пересчёт суммы</p></div></div>
-       <form onSubmit={event=>void submit(event,'prices')}>
-         
-       <p className="watch-corrections-hint">Исправляется только записанная цена продажи.
-         Сумма заказа и долг пересчитываются механизмом Main. Отправка и склад не меняются.</p>
-       <div className="watch-corrections-lines">
-         {items.map(x=><label key={x.id} className="watch-corrections-item">
-           <span><strong>{x.productName||'Часы'} · {x.quantity} шт.</strong>
-             <small>{x.source==='boutique'?'Витрина':'Офис'} · было {num(x.unitPrice)} / шт.</small></span>
-           <span>Новая цена за 1 шт., ₸
-             <input required type="number" min={0} max={1000000000} step={1}
-               value={prices[x.id]??''}
-               onChange={e=>setPrices(p=>({...p,[x.id]:e.target.value}))}/></span>
-         </label>)}
-       </div>
-       {!items.length&&<p>Нет активных товарных позиций для исправления.</p>}
-
-         <div className="watch-editor-form-actions">
-           <button className="primary" type="submit" disabled={busy||!items.length}>
-             Сохранить цены</button>
+       </section>}
+       <section className="watch-editor-card watch-editor-products">
+         <div className="watch-editor-section-title">
+           <div><h3>Товары и цены</h3><p>Цена и гравировка находятся рядом с товаром.</p></div>
+           {isAdmin&&<button type="button" className="watch-editor-change-items" disabled={busy}
+             onClick={()=>setComposing(true)}>Изменить состав</button>}
          </div>
-       </form>
-     </section>
-     {isAdmin&&<section className="watch-editor-card watch-editor-actions">
-       <div className="watch-editor-section-head"><div><h3>Менеджер, оплаты и удаление</h3>
-         <p>Дополнительные действия — без переключения между вкладками</p></div></div>
-       <WatchAdminOrderActions brand={brand} orderId={order.orderId} externalId={order.externalId}
-         managerId={order.managerId} paymentLines={order.paymentLines} orderDate={order.orderDate}
-         linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>
-     </section>}
-     {isAdmin&&<details className="watch-editor-card watch-editor-disclosure">
-       <summary><span><strong>Изменить состав товаров</strong>
-         <small>Добавление и удаление часов с проверкой остатков</small></span>
-         <span className="watch-editor-expand" aria-hidden="true">Развернуть</span></summary>
-       <div className="watch-editor-disclosure-content">
-         <WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
-           itemLines={order.itemLines} receivedAmount={order.receivedAmount}
-           onDone={onDone} onCancel={onCancel}/>
+         <div className="watch-editor-product-list">
+           {items.map(x=><article key={x.id} className="watch-editor-product">
+             <div className="watch-editor-product-top"><div>
+               <strong>{x.productName||'Часы'} · {x.quantity} шт.</strong>
+               <p>{label(x.source)} · {[x.gender==='female'?'Женские':x.gender==='male'?'Мужские':'',
+                 x.movement,x.braceletMaterial,x.dialColor,x.braceletColor].filter(Boolean).join(' · ')}</p>
+             </div><small>{Number(x.shippedQuantity||0)>0?'Отправлено: '+x.shippedQuantity:
+                 Number(x.returnedQuantity||0)>0?'Возвращено: '+x.returnedQuantity:'Не отправлен'}</small></div>
+             <div className="watch-editor-product-fields">
+               <label>Цена за 1 шт., ₸<input type="number" min={0} max={1000000000} step={1}
+                 required value={prices[x.id]??''}
+                 onChange={e=>{setPrices(prev=>({...prev,[x.id]:e.target.value}));setError('')}}/></label>
+               <span className="watch-editor-line-total">{money(x.quantity*(Number(prices[x.id])||0))}</span>
+               {isAdmin&&<label className="watch-editor-engraving">Гравировка / комментарий логисту
+                 <input maxLength={500} value={watch.items.find(y=>y.orderItemId===x.id)?.engravingText||''}
+                   onChange={e=>setWatch(prev=>({...prev,items:prev.items.map(y=>
+                     y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/></label>}
+             </div>
+           </article>)}
+         </div>
+       </section>
+       <section className="watch-editor-card watch-editor-financial">
+         <div className="watch-editor-section-title"><h3>Оплаты</h3>
+          </div>
+         <div className="watch-editor-totals">
+           <span>Сумма заказа <strong>{money(items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0))}</strong></span>
+           <span>Оплачено <strong>{money(order.receivedAmount)}</strong></span>
+           <span>Долг <strong>{money(Math.max(0,items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0)-order.receivedAmount))}</strong></span>
+         </div>
+         <p className="watch-editor-footnote">Проведённые платежи и возвраты не изменяются при исправлении цены.</p>
+       </section>
+     </div>
+     <div className="watch-editor-savebar">
+       <div>{dirty?<span>Есть несохранённые изменения</span>:<span>Изменений нет</span>}
+         {savedSections>0&&<small>Сохранено разделов: {savedSections}</small>}</div>
+       <div className="watch-editor-save-actions">
+         <button type="button" className="watch-editor-back" onClick={onCancel} disabled={busy}>Отмена</button>
+         <button type="submit" className="primary" disabled={busy||!dirty}>
+           {busy?'Сохранение…':'Сохранить изменения'}</button>
        </div>
-     </details>}
-     {order.committedReturnCount>0&&<details className="watch-editor-card watch-editor-disclosure">
-       <summary><span><strong>Возвраты и их отмена</strong>
-         <small>Проверка связанной операции</small></span>
-         <span className="watch-editor-expand" aria-hidden="true">Развернуть</span></summary>
-       <div className="watch-editor-disclosure-content">
-         <WatchReturnHistoryPanel brand={brand} orderId={order.orderId} onClose={onCancel} onDone={onDone}/>
-       </div>
-     </details>}
-   </div>
+     </div>
+   </form>
+   {isAdmin&&<details className="watch-editor-extra">
+     <summary>Менеджер, проведённые оплаты и удаление заказа</summary>
+     <WatchAdminOrderActions brand={brand} orderId={order.orderId} externalId={order.externalId}
+       managerId={order.managerId} paymentLines={order.paymentLines} orderDate={order.orderDate}
+       linkedOperations={Number(order.committedReturnCount||0)>0} onDone={onDone}/>
+   </details>}
+   {order.committedReturnCount>0&&<details className="watch-editor-extra">
+     <summary>История возвратов ({order.committedReturnCount})</summary>
+     <WatchReturnHistoryPanel brand={brand} orderId={order.orderId}
+       onClose={onCancel} onDone={onDone}/>
+   </details>}
  </section>
 }
