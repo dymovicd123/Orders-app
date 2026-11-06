@@ -1,6 +1,8 @@
 import {useEffect,useMemo,useRef,useState,type FormEvent} from 'react'
 import {WatchOrderSourcePicker,sourceAvailable,stockKey,watchLabels} from './WatchOrderSourcePicker'
 import {WatchOrderLineEditor} from './WatchOrderLineEditor'
+import '../../styles/client3-watch-source-picker.css'
+import '../../styles/client3-watch-source-picker-refine.css'
 import type {DraftLine,ManualFields,WatchOrderChoice} from './WatchOrderForm'
 import {WATCH_OPTIONS,type WatchBrand,type WatchSource} from '../../../shared/client3/watch-domain'
 
