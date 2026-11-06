@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { WATCH_BRANDS, type WatchBrand } from '../../../shared/client3/watch-domain'
 import '../../styles/client3-watch-staff.css'
 
-type Staff={id:number;name:string;brands:WatchBrand[]}
+type Staff={id:number;name:string;role:string;brands:WatchBrand[]}
 type StaffResponse={ok:boolean;staff:Staff[];message?:string}
 type WriteResponse={ok:boolean;message?:string}
 const sorted=(brands:readonly WatchBrand[])=>[...new Set(brands)].sort()
@@ -41,7 +41,8 @@ export function WatchBrandAccessPanel() {
     setNotice('')
     setDrafts(current=>{
       const list=current[id]||[]
-      return {...current,[id]:sorted(checked?[...list,brand]:list.filter(x=>x!==brand))}
+      const single=staff.some(person=>person.id===id&&person.role==='Менеджер')
+       return {...current,[id]:single?(checked?[brand]:[]):sorted(checked?[...list,brand]:list.filter(x=>x!==brand))}
     })
   }
   const save=useCallback(async(row:Staff)=>{
@@ -82,7 +83,9 @@ export function WatchBrandAccessPanel() {
             <strong>{person.name}</strong>
             <div className="watch-staff-choices">
               {WATCH_BRANDS.map(brand=><label key={brand}>
-                <input type="checkbox" checked={after.includes(brand)}
+                <input type={person.role==='Менеджер'?'radio':'checkbox'}
+                   name={person.role==='Менеджер'?'manager-brand-'+person.id:undefined}
+                   checked={after.includes(brand)}
                   disabled={busyId!==null}
                   onChange={event=>toggle(person.id,brand,event.target.checked)}/>
                 {brand}
