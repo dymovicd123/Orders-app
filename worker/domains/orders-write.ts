@@ -1896,11 +1896,57 @@ export async function updateOrderCritical(
         throw new CriticalOperationConflictError('Товар уже был физически выдан / отправлен. Состав такого заказа нельзя переписывать или удалять напрямую — используйте возврат, обмен или складскую корректировку.');
       }
       if (humanInventoryModelEnabled && existingShippingStatus !== 'sent' && (itemContentChanged || deletingOrder)) {
-        const issuedBeforeFullShipping = await db.prepare(
-          `SELECT COUNT(*) AS count FROM inventory_reservations WHERE order_id = ? AND status = 'fulfilled'`
-        ).bind(id).first<{ count: number }>();
-        if (toInt(issuedBeforeFullShipping?.count, 0) > 0) {
-          throw new CriticalOperationConflictError('Часть товаров этого заказа уже передана клиенту. Состав заказа нельзя менять или удалять напрямую. Для замены товара используйте «Обмен», для возврата — «Возврат».');
+        // A partial dispatch is not authority to rewrite issued rows. Client3
+        // can edit other rows only when every already-issued SKU is preserved
+        // identically, including price, source, engraving and historical snapshot.
+        const protectedRows = await db.prepare(`SELECT oi.id AS order_item_id,
+            oi.product_id,oi.variant_id,oi.quantity,oi.unit_price,
+            oi.catalog_price_snapshot,oi.source_type,
+            wi.watch_variant_id,COALESCE(wi.engraving_text,'') AS engraving_text
+          FROM order_items oi
+          LEFT JOIN watch_order_item_details wi ON wi.order_item_id=oi.id
+          WHERE oi.order_id=? AND oi.quantity>0 AND (
+            oi.stock_writeoff_status='fulfilled'
+            OR EXISTS(SELECT 1 FROM inventory_reservations ir
+              WHERE ir.order_item_id=oi.id AND ir.status='fulfilled')
+            OR EXISTS(SELECT 1 FROM order_dispatch_items di JOIN order_dispatches d
+              ON d.id=di.dispatch_id AND d.order_id=oi.order_id
+              WHERE di.order_item_id=oi.id AND di.quantity>COALESCE(di.cancelled_quantity,0))
+          )`).bind(id).all<Record<string, unknown>>();
+        if ((protectedRows.results || []).length) {
+          if (deletingOrder || !options.watchRewrite || !replacementItems || !requestedItems) {
+            throw new CriticalOperationConflictError('В заказе уже есть выданные или отправленные товары. Для изменения состава требуется безопасная коррекция по конкретным позициям.');
+          }
+          for (const old of protectedRows.results || []) {
+            const oldId = toInt(old.order_item_id,0);
+            const index = replacementItems.findIndex(item=>toInt(item?.orderItemId,0)===oldId);
+            const proposed = index>=0 ? options.watchRewrite.lines[index] : null;
+            const nextItem = index>=0 ? requestedItems[index] : null;
+            const previous = ((existingAny.items || []) as Array<Record<string,unknown>>)
+              .find(item=>toInt(item.id,0)===oldId);
+            const held = await db.prepare(`SELECT id FROM inventory_reservations
+              WHERE order_item_id=? AND status='fulfilled'
+                AND variant_id=? AND inventory_source=? AND quantity=? LIMIT 1`)
+              .bind(oldId,old.variant_id,old.source_type,old.quantity).first<{id:number}>();
+            if (!previous || !held?.id || !proposed || !nextItem ||
+              proposed.orderItemId!==oldId ||
+              proposed.watchVariantId!==toInt(old.watch_variant_id,0) ||
+              proposed.catalogVariantId!==toInt(old.variant_id,0) ||
+              proposed.catalogProductId!==toInt(old.product_id,0) ||
+              proposed.source!==(cleanText(old.source_type)==='boutique'?'showcase':'office') ||
+              proposed.quantity!==toInt(old.quantity,0) ||
+              proposed.unitPrice!==toInt(old.unit_price,0) ||
+              proposed.engravingText!==cleanText(old.engraving_text) ||
+              toInt(nextItem.quantity,0)!==toInt(old.quantity,0) ||
+              toInt(nextItem.unitPrice,0)!==toInt(old.unit_price,0) ||
+              (old.catalog_price_snapshot==null?null:toInt(old.catalog_price_snapshot,0)) !==
+                (replacementItems[index].catalogPriceSnapshot==null?null:
+                  toInt(replacementItems[index].catalogPriceSnapshot,0)) ||
+              !sameNormalizedOrderItemsForEdit(
+                normalizeOrderItems([previous as any],nextSource),[nextItem])) {
+              throw new CriticalOperationConflictError('Отправленная позиция или её подтверждённое движение изменились. Сначала исправьте конкретную отправку; переписывать этот товар нельзя.');
+            }
+          }
         }
       }
       const nextItems = requestedItems || existingItemsForEdit;
@@ -2166,7 +2212,7 @@ export async function updateOrderCritical(
             `SELECT status, variant_id, inventory_source, quantity
              FROM inventory_reservations WHERE order_item_id = ? LIMIT 1`
           ).bind(oldId).first<Record<string, unknown>>();
-          if (!hold || !['active', 'unresolved'].includes(cleanText(hold.status))
+          if (!hold || !['active', 'unresolved', ...(options.watchRewrite?['fulfilled']:[])].includes(cleanText(hold.status))
               || toInt(hold.variant_id, 0) !== existingVariantId
               || normalizeSourceType(hold.inventory_source) !== newNormalized[0].inventorySource
               || toInt(hold.quantity, 0) !== newNormalized[0].quantity) continue;
