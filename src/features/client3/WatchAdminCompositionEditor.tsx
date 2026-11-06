@@ -60,7 +60,7 @@ export function WatchAdminCompositionEditor({
      models:[],movements:[],bracelets:[],dials:[],leatherColors:[],
    })
  const [loading,setLoading]=useState(true)
- const [chooser,setChooser]=useState<string|null>(null)
+ const [chooser,setChooser]=useState<string|null>('add')
  const [source,setSource]=useState<WatchSource>('office')
  const [editingId,setEditingId]=useState<string|null>(null)
  const [busy,setBusy]=useState(false)
@@ -71,7 +71,7 @@ export function WatchAdminCompositionEditor({
    const get=async(url:string)=>{
      const response=await fetch(url,{credentials:'include',signal:controller.signal,cache:'no-store'})
      const result=await response.json() as {ok?:boolean;message?:string;models?:WatchOrderChoice[];
-       rows?:Array<{kind:string;value:string}>}
+       rows?:Array<{kind:string;value:string}>;brand?:WatchBrand}
      if(!response.ok||result.ok===false)throw Error(result.message||'Каталог недоступен')
      return result
    }
@@ -80,6 +80,7 @@ export function WatchAdminCompositionEditor({
      get('/api/client3/watches/references'),
    ]).then(([models,refs])=>{
      if(controller.signal.aborted)return
+     if(models.brand!==brand)throw Error('Каталог другого бренда не может использоваться для этого заказа.')
      const all=(models.models||[]).map(item=>({...item,brand}))
      setCatalog(all)
      const values=(kind:string)=>(refs.rows||[]).filter(row=>row.kind===kind).map(row=>row.value)
@@ -121,7 +122,7 @@ export function WatchAdminCompositionEditor({
        braceletColor:selected.braceletColor||''},
    }
    setLines(old=>current?old.map(x=>x.id===current.id?draft:x):[...old,draft])
-   setChooser(null);request.current=null;setError('')
+   setChooser('add');request.current=null;setError('')
  }
  const addManual=(selectedSource:WatchSource)=>{
    if(!chooser)return
@@ -130,7 +131,7 @@ export function WatchAdminCompositionEditor({
      ...current,kind:'manual',watchVariantId:0,catalogVariantId:0,source:selectedSource,
    }:fresh(selectedSource)
    setLines(old=>current?old.map(x=>x.id===current.id?draft:x):[...old,draft])
-   setChooser(null);setEditingId(draft.id);request.current=null;setError('')
+   setChooser('add');setEditingId(draft.id);request.current=null;setError('')
  }
  const startChoose=(id:string)=>{
    const current=lines.find(x=>x.id===id)
@@ -186,77 +187,111 @@ export function WatchAdminCompositionEditor({
    }catch(cause){setError(cause instanceof Error?cause.message:'Заказ изменился. Обновите редактор.')}
    finally{setBusy(false)}
  }
- return <form className="watch-editor-composition" onSubmit={event=>void send(event)}>
-   <div className="watch-editor-section-title">
-     <div><h3>Состав заказа</h3><p>Выберите товар из наличия либо создайте нужную комплектацию.</p></div>
-     <button type="button" className="secondary compact" onClick={onCancel} disabled={busy}>Вернуться</button>
-   </div>
-   {hasLifecycle&&<p className="watch-editor-warning" role="alert">
-     В заказе уже есть выдача, отправка или возврат. Автоматическая перезапись состава могла бы
-     создать ложный остаток. Изменить такие товары можно только через отдельную операцию
-     с подтверждённым фактическим движением.
-   </p>}
-   {error&&<p className="watch-orders-error" role="alert">{error}</p>}
-   <div className="watch-editor-product-list">
-     {lines.map((line,index)=>{
-       const match=catalog.find(x=>x.watchVariantId===line.watchVariantId)
-       const title=line.kind==='manual'?line.manual.modelName:match?.modelName||line.manual.modelName
-       const details=line.kind==='manual'?
-         [read(WATCH_OPTIONS.genders,line.manual.gender),
-           read(WATCH_OPTIONS.movements,line.manual.movement),
-           read(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),
-           read(WATCH_OPTIONS.dialColors,line.manual.dialColor),line.manual.braceletColor].filter(Boolean):
-         match?watchLabels(match):[
-           read(WATCH_OPTIONS.genders,line.manual.gender),
-           read(WATCH_OPTIONS.movements,line.manual.movement),
-           read(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),
-           read(WATCH_OPTIONS.dialColors,line.manual.dialColor),line.manual.braceletColor].filter(Boolean)
-       return <article className="watch-editor-product" key={line.id}>
-         <div className="watch-editor-product-top">
-           <div><small>Позиция {index+1} · {line.source==='office'?'Офис':'Витрина'}</small>
-             <strong>{title||'Новая комплектация'}</strong>
-             <p>{details.join(' · ')}</p></div>
-           {!hasLifecycle&&<div className="watch-editor-product-actions">
-             <button type="button" onClick={()=>startChoose(line.id)} disabled={busy}>Заменить</button>
-             <button type="button" onClick={()=>{
-               update(line.id,{kind:'manual',watchVariantId:0,catalogVariantId:0})
-               setEditingId(line.id)
-             }} disabled={busy}>Характеристики</button>
-             <button type="button" className="danger-link" disabled={busy||lines.length===1}
-               onClick={()=>{setLines(current=>current.filter(x=>x.id!==line.id));request.current=null}}>Удалить</button>
-           </div>}
-         </div>
-         <div className="watch-editor-product-fields">
-           <label>Количество<input type="number" min={1} max={1000} value={line.quantity}
-             disabled={busy||hasLifecycle} onChange={e=>update(line.id,{quantity:Number(e.target.value)})}/></label>
-           <label>Цена, ₸<input type="number" min={0} max={1000000000}
-             value={line.unitPrice} disabled={busy||hasLifecycle}
-             onChange={e=>update(line.id,{unitPrice:e.target.value})}/></label>
-           <label className="watch-editor-engraving">Гравировка / логисту
-             <input value={line.engravingText} maxLength={500} disabled={busy||hasLifecycle}
-               onChange={e=>update(line.id,{engravingText:e.target.value})}/></label>
-         </div>
-       </article>
-     })}
-   </div>
-   {!hasLifecycle&&<>
-     <button type="button" className="watch-editor-add-product" disabled={busy||lines.length>=20}
-       onClick={()=>{setChooser('add');setSource('office')}}>+ Добавить товар</button>
-     {chooser&&<div className="watch-editor-chooser">
-       <div className="watch-editor-chooser-head">
-         <strong>{chooser==='add'?'Добавить товар':'Выбрать замену'}</strong>
-         <button type="button" onClick={()=>setChooser(null)}>Закрыть</button>
+ return <form className="main-watch-create watch-editor-composition" onSubmit={event=>void send(event)}>
+   <section className="order-step-card watch-edit-composition-card">
+     <div className="order-step-head watch-editor-compose-heading">
+       <div className="order-step-index">2</div>
+       <div><h3>Товары заказа</h3>
+         <p>Выберите из наличия или укажите комплектацию вручную — как при создании заказа.</p>
        </div>
-       {loading?<p>Загрузка склада…</p>:
-         <WatchOrderSourcePicker brand={brand} source={source} onSourceChange={setSource}
-           catalog={catalog} allocated={allocated} onAdd={choose} onManual={addManual}/>}
-     </div>}
-   </>}
+       <span className="watch-editor-locked-brand">Бренд: <strong>{brand}</strong></span>
+     </div>
+     {error&&<p className="watch-orders-error" role="alert">{error}</p>}
+     {hasLifecycle&&<p className="watch-editor-warning" role="alert">
+       В заказе уже есть выдача, отправка или возврат. Состав защищён от перезаписи:
+       нельзя возвращать на склад товары, которые фактически не вернулись.
+     </p>}
+     <div className={'watch-pick-layout watch-editor-picker-layout'+(hasLifecycle?' watch-editor-picker-locked':'')}>
+       {!hasLifecycle&&<div className="watch-editor-picker-browse" aria-label={'Каталог бренда '+brand}>
+         <div className="watch-editor-picker-note">
+           <strong>{chooser&&chooser!=='add'?'Выберите замену для выбранной позиции':'Выберите часы, чтобы добавить в заказ'}</strong>
+           {chooser&&chooser!=='add'&&<button type="button" onClick={()=>setChooser('add')}>Отменить замену</button>}
+         </div>
+         {loading?<div className="watch-pick-empty">Загружаем каталог бренда {brand}…</div>:
+           <WatchOrderSourcePicker brand={brand} source={source} onSourceChange={setSource}
+             catalog={catalog} allocated={allocated} onAdd={choose} onManual={addManual}/>}
+       </div>}
+       <aside className="watch-pick-cart-shell watch-editor-cart" aria-label="Текущий состав заказа">
+         <div className="watch-pick-cart-title">
+           <strong>Состав заказа</strong><span>{lines.length} из 20 позиций</span>
+         </div>
+         <div className="watch-pick-cart">
+           {lines.map((line,index)=>{
+             const match=catalog.find(x=>x.watchVariantId===line.watchVariantId)
+             const name=line.kind==='manual'?line.manual.modelName:match?.modelName||line.manual.modelName
+             const details=line.kind==='manual'?
+               [read(WATCH_OPTIONS.genders,line.manual.gender),
+                read(WATCH_OPTIONS.movements,line.manual.movement),
+                read(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),
+                read(WATCH_OPTIONS.dialColors,line.manual.dialColor),line.manual.braceletColor].filter(Boolean):
+               match?watchLabels(match):[
+                read(WATCH_OPTIONS.genders,line.manual.gender),
+                read(WATCH_OPTIONS.movements,line.manual.movement),
+                read(WATCH_OPTIONS.braceletMaterials,line.manual.braceletMaterial),
+                read(WATCH_OPTIONS.dialColors,line.manual.dialColor),line.manual.braceletColor].filter(Boolean)
+             const isTarget=chooser===line.id
+             return <article className={'watch-pick-cart-item compact watch-editor-cart-line'+(isTarget?' is-replacing':'')} key={line.id}>
+               <div className="watch-pick-cart-row">
+                 <span className={'order-kind'+(line.kind==='preorder'?' waiting':line.kind==='manual'?' custom':'')}>
+                   {line.kind==='manual'?'Свои характеристики':line.kind==='preorder'?'Без остатка':'Из каталога'}
+                 </span>
+                 {!hasLifecycle&&<button type="button" className="cart-remove" disabled={busy||lines.length<=1}
+                   onClick={()=>{setLines(all=>all.filter(x=>x.id!==line.id));if(chooser===line.id)setChooser('add');request.current=null}}>
+                   Удалить
+                 </button>}
+               </div>
+               <div className="watch-pick-cart-identity">
+                 <strong>{name||'Новая комплектация'}</strong>
+                 <p className="cart-sub">{details.join(' · ')}</p>
+                 <span className="watch-pick-readonly-source">{line.source==='office'?'Офис':'Витрина'} · {brand}</span>
+               </div>
+               <div className="watch-pick-cart-quick">
+                 <label>Количество
+                   <input type="number" min={1} max={1000} disabled={busy||hasLifecycle}
+                     value={line.quantity} onChange={e=>update(line.id,{quantity:Number(e.target.value)})}/>
+                 </label>
+                 <label>Цена продажи, ₸
+                   <input type="number" min={0} max={1000000000} disabled={busy||hasLifecycle}
+                     value={line.unitPrice} onChange={e=>update(line.id,{unitPrice:e.target.value})}/>
+                 </label>
+               </div>
+               <div className="watch-pick-cart-details-row">
+                 {!hasLifecycle&&<div className="watch-editor-cart-actions">
+                   <button type="button" className="watch-pick-edit-action"
+                     onClick={()=>startChoose(line.id)} disabled={busy}>
+                     {isTarget?'Выбираем замену…':'Заменить часы'}
+                   </button>
+                   <button type="button" className="watch-pick-edit-action" disabled={busy}
+                     onClick={()=>{update(line.id,{kind:'manual',watchVariantId:0,catalogVariantId:0});setEditingId(line.id)}}>
+                     Характеристики / гравировка
+                   </button>
+                 </div>}
+                 <strong>{money(line.quantity*(Number(line.unitPrice)||0))}</strong>
+               </div>
+               {line.engravingText&&<p className="watch-pick-comment-preview">{line.engravingText}</p>}
+               {line.kind==='stock'&&match&&sourceAvailable(match,line.source)<line.quantity&&
+                 <p className="watch-pick-confirm-warning">Свободно сейчас: {sourceAvailable(match,line.source)} шт.
+                   Проверьте резерв и фактическое наличие до сохранения.</p>}
+             </article>
+           })}
+         </div>
+         {!hasLifecycle&&<button type="button" className="watch-editor-add-product" disabled={busy||lines.length>=20}
+           onClick={()=>setChooser('add')}>+ Добавить товар из каталога</button>}
+         <div className="watch-pick-cart-total">
+           <span>Новая сумма заказа</span><strong>{money(total)}</strong>
+         </div>
+         <div className="watch-editor-compose-finance">
+           <span>Уже оплачено: {money(receivedAmount)}</span>
+           <span>{preview>0?'Изменено позиций: '+preview:'Состав пока без изменений'}</span>
+         </div>
+       </aside>
+     </div>
+   </section>
    <div className="watch-editor-composition-footer">
-     <span><small>Новая сумма</small><strong>{money(total)}</strong>
-       <small>{preview>0?'Изменено позиций: '+preview:'Состав без изменений'}</small></span>
-     {!hasLifecycle&&<button type="submit" className="primary" disabled={busy||loading||Boolean(chooser)||Boolean(editingId)||preview===0}>
-       {busy?'Сохранение…':'Подтвердить изменение состава'}
+     <button type="button" className="watch-editor-back" onClick={onCancel} disabled={busy}>Назад к заказу</button>
+     {!hasLifecycle&&<button type="submit" className="primary"
+       disabled={busy||loading||Boolean(editingId)||preview===0||total<receivedAmount}>
+       {busy?'Сохранение…':'Проверить и сохранить состав'}
      </button>}
    </div>
    {currentEdit&&<WatchOrderLineEditor line={currentEdit} choice={currentChoice}
