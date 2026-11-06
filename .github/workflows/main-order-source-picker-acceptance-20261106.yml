@@ -1,0 +1,36 @@
+name: Main source-first order picker acceptance
+on:
+  push:
+    branches:
+      - feature/main-source-first-order-picker-20261106
+  pull_request:
+    paths:
+      - src/features/orders/MainOrderSourcePicker.tsx
+      - src/features/orders/MainPickedOrderLine.tsx
+      - src/features/sections/CreateOrderSection.tsx
+      - src/styles/main-order-source-picker.css
+      - worker/domains/order-source-picker.ts
+      - worker/domains/orders-write.ts
+      - worker/domains/order-core.ts
+      - worker/core/types.ts
+      - worker/index.ts
+      - src/App.tsx
+permissions:
+  contents: read
+jobs:
+  source-first-order-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Source-first SKU/read-only reservation acceptance
+        run: node scripts/test-main-source-first-order-picker-20261106.mjs
+      - name: Type check and frontend build
+        run: npm run build
+      - name: Existing main business release suite
+        run: npm run release:check
