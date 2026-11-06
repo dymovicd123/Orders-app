@@ -84,7 +84,10 @@ try{
  const managerView=renderToStaticMarkup(React.createElement(WatchOrderCorrections,{
   brand:'TAUWACH',order,isAdmin:false,onDone:()=>{},onCancel:()=>{},
  }))
- assert(!managerView.includes('Менеджер и оплаты'))
+ assert(managerView.includes('Менеджер и оплаты'))
+ assert(!managerView.includes('Сменить менеджера'))
+ assert(!managerView.includes('Редактировать проведённые оплаты'))
+ assert(!managerView.includes('Удалить заказ'))
  assert(!managerView.includes('Гравировка / комментарий логисту'),'Manager cannot access logistics correction')
  assert(!managerView.includes('Изменить состав'),'Manager cannot change composition')
  console.log('CLIENT3_RELEASE_ORDER_EDITOR_DELETE_ROLE_SCOPE_PASS')
