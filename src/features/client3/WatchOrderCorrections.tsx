@@ -222,6 +222,10 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
      <button type="button" className="watch-editor-back" onClick={back} disabled={busy}>Назад к заказам</button>
    </header>
    {error&&<p className="watch-orders-error" role="alert">{error}</p>}
+   {correctionResult&&<div className="watch-editor-correction-result" role="status">
+     <p>{correctionResult}</p>
+     <button type="button" className="primary" onClick={onDone}>Обновить заказ и продолжить</button>
+   </div>}
    <form id="watch-client3-order-edit-form" noValidate className="watch-editor-main-form main-watch-create"
      onSubmit={event=>void save(event)}>
      <section className="watch-editor-step-card order-step-card">
@@ -320,6 +324,40 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
                    y.orderItemId===x.id?{...y,engravingText:e.target.value}:y)}))}/>
              </label>}
            </div>
+           {isAdmin&&Number(x.shippedQuantity||0)>0&&Number(x.returnedQuantity||0)===0&&
+             Number(x.dispatchItemId||0)>0&&<div className="watch-editor-dispatch-correction">
+               <button type="button" className="watch-editor-dispatch-trigger" disabled={correcting||Boolean(correctionResult)}
+                 onClick={()=>{setCorrectionItem(correctionItem===x.id?null:x.id);
+                   setCorrectionReason('');setCorrectionConfirmed(false);setError('')}}>
+                 Исправить ошибочную запись отправки
+               </button>
+               {correctionItem===x.id&&<div className="watch-editor-dispatch-form">
+                 <strong>Исправление отправки · позиция {index+1}</strong>
+                 <p>Только если отправку этих часов записали ошибочно. Это не возврат от клиента:
+                   если именно эти часы действительно передали клиенту, оформите возврат.
+                   Складские остатки исправляются только по проверенному журналу.</p>
+                 <label>Причина ошибки
+                   <textarea rows={2} maxLength={300} value={correctionReason}
+                     onChange={e=>setCorrectionReason(e.target.value)}/>
+                 </label>
+                 <label className="watch-editor-dispatch-ack">
+                   <input type="checkbox" checked={correctionConfirmed}
+                     onChange={e=>setCorrectionConfirmed(e.target.checked)}/>
+                   Подтверждаю ошибку в записи отправки, а не физический возврат часов
+                 </label>
+                 <div className="watch-editor-dispatch-actions">
+                   <button type="button" className="watch-editor-back"
+                     onClick={()=>setCorrectionItem(null)}>Отмена</button>
+                   <button type="button" className="primary"
+                     disabled={correcting||dirty||!correctionConfirmed||correctionReason.trim().length<8}
+                     onClick={()=>void correctDispatch(x)}>
+                     {correcting?'Проверка…':'Исправить запись отправки'}
+                   </button>
+                 </div>
+               </div>}
+             </div>}
+           {isAdmin&&Number(x.shippedQuantity||0)>0&&!Number(x.dispatchItemId||0)&&
+             <p className="watch-editor-footnote">Для этих часов нет записи отправки, которую можно безопасно исправить автоматически. Нужна сверка склада.</p>}
          </article>)}
        </div>
      </section>
