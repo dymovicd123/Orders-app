@@ -33,6 +33,7 @@ export type OrderInput = {
   comment?: string;
   items?: Array<{
     productName?: string;
+    catalogVariantId?: number;
     gender?: string;
     color?: string;
     material?: string;
