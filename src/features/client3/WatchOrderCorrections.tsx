@@ -142,6 +142,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
    </header>
    <WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
      itemLines={order.itemLines} receivedAmount={order.receivedAmount}
+     linkedReturns={order.committedReturnCount}
      onDone={onDone} onCancel={()=>setComposing(false)}/>
  </section>
  return <section className="watch-corrections watch-editor-unified" aria-label={'Исправление заказа '+order.externalId}>
@@ -194,7 +195,10 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
          <div className="watch-editor-section-title">
            <div><h3>Товары и цены</h3><p>Цена и гравировка находятся рядом с товаром.</p></div>
            {isAdmin&&<button type="button" className="watch-editor-change-items" disabled={busy}
-             onClick={()=>setComposing(true)}>Изменить состав</button>}
+             onClick={()=>{
+               if(dirty&&!window.confirm('Есть несохранённые изменения. Перейти к составу без сохранения?'))return
+               setComposing(true)
+             }}>Изменить состав</button>}
          </div>
          <div className="watch-editor-product-list">
            {items.map(x=><article key={x.id} className="watch-editor-product">
