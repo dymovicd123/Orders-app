@@ -60,6 +60,8 @@ jobs:
         run: node scripts/test-main-source-first-order-picker-20261106.mjs
       - name: Real Chrome visual regression - 12 models and 6 SKU cards
         run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
+      - name: Interactive Chrome clicks and search-suggestion acceptance
+        run: node scripts/test-main-order-picker-browser-interactions-20261106.mjs
       - name: Upload browser screenshot of catalog
         if: always()
         uses: actions/upload-artifact@v4
