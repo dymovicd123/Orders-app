@@ -19,7 +19,7 @@ type Item={
  id:number;productName:string;gender?:string;movement?:string;braceletMaterial?:string;
  dialColor?:string;braceletColor?:string;quantity:number;unitPrice:number;
  lineTotal:number;catalogPriceSnapshot:number|null;source:string;engravingText:string;
- shippedQuantity?:number;returnedQuantity?:number;stockWriteoffStatus?:string
+ shippedQuantity?:number;returnedQuantity?:number;stockWriteoffStatus?:string;dispatchItemId?:number|null
 }
 type Props={brand:WatchBrand;order:WatchCorrectionOrder;isAdmin:boolean;
  onDone:()=>void;onCancel:()=>void}
@@ -67,6 +67,12 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
  const [savedSections,setSavedSections]=useState(0)
+ const [correctionItem,setCorrectionItem]=useState<number|null>(null)
+ const [correctionReason,setCorrectionReason]=useState('')
+ const [correctionConfirmed,setCorrectionConfirmed]=useState(false)
+ const [correcting,setCorrecting]=useState(false)
+ const [correctionResult,setCorrectionResult]=useState('')
+ const correctionRequests=useRef<Record<number,{reason:string;requestId:string}>>({})
  const [referenceOptions,setReferenceOptions]=useState<{cities:string[];deliveries:string[]}>({cities:[],deliveries:[]})
  useEffect(()=>{
    const controller=new AbortController()
@@ -159,7 +165,7 @@ export function WatchOrderCorrections({brand,order,isAdmin,onDone,onCancel}:Prop
    </header>
    <WatchAdminCompositionEditor brand={brand} orderId={order.orderId}
      itemLines={order.itemLines} receivedAmount={order.receivedAmount}
-     linkedReturns={order.committedReturnCount}
+     linkedReturns={order.committedReturnCount} shippingStatus={order.shippingStatus}
      onDone={onDone} onCancel={()=>setComposing(false)}/>
  </section>
  const currentAmount=items.reduce((sum,x)=>sum+x.quantity*(Number(prices[x.id])||0),0)
