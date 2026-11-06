@@ -207,9 +207,13 @@ export function WatchAdminCompositionEditor({
      </div>
      {error&&<p className="watch-orders-error" role="alert">{error}</p>}
      {hasLifecycle&&<p className="watch-editor-warning" role="alert">
-       В заказе уже есть выдача, отправка или возврат. Состав защищён от перезаписи:
-       нельзя возвращать на склад товары, которые фактически не вернулись.
-     </p>}
+        {linkedReturns>0?'В заказе есть действующие возвраты. Изменение состава требует отдельной финансовой операции.':
+         'Заказ полностью отправлен. Чтобы исправить ошибочную отправку, вернитесь к товару в заказе.'}
+      </p>}
+      {hasPartialDispatch&&<p className="watch-editor-warning" role="status">
+        Часть часов уже отправлена или выдана. Эти позиции защищены от изменения; можно
+        редактировать только неотправленные товары, не затрагивая складскую историю отправленных.
+      </p>}
      <div className={'watch-pick-layout watch-editor-picker-layout'+(hasLifecycle?' watch-editor-picker-locked':'')}>
        {!hasLifecycle&&<div className="watch-editor-picker-browse" aria-label={'Каталог бренда '+brand}>
          <div className="watch-editor-picker-note">
