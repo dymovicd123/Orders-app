@@ -20,8 +20,8 @@ for(const phrase of ['watch-main-edit-workspace','deletingOrder?<section','watch
  'Полное редактирование','Удалить заказ</button>']){
  assert(orders.includes(phrase),'Main-style order edit/delete must be visible: '+phrase)
 }
-for(const phrase of ['Менеджер, оплаты и удаление','Клиент и реквизиты','Цена продажи',
- 'Изменить состав товаров','Возвраты и их отмена','Доставка и гравировка']){
+for(const phrase of ['Менеджер, проведённые оплаты и удаление заказа','Клиент и доставка','Товары и цены',
+ 'Изменить состав','Отправка','Гравировка / комментарий логисту']){
  assert(editor.includes(phrase),'Editor missing '+phrase)
 }
 assert(admin.includes('WatchAdminDeleteChainPanel')&&!admin.includes('setAck('))
