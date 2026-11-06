@@ -38,8 +38,8 @@ export async function listOrderSourcePicker(db:D1Database){
        ORDER BY p.name,v.color,v.size_label,v.id
        LIMIT 10001`).all<Record<string,unknown>>(),
     db.prepare(`SELECT inventory_source,variant_id,
-           SUM(MAX(0,quantity)) AS physical,
-           SUM(MAX(0,COALESCE(reserved_quantity,0))) AS cached_reserved
+           SUM(quantity) AS physical,
+           SUM(COALESCE(reserved_quantity,0)) AS cached_reserved
          FROM inventory_stock
          WHERE inventory_source IN ('warehouse','boutique') AND variant_id>0
          GROUP BY inventory_source,variant_id`).all<Record<string,unknown>>(),
@@ -56,8 +56,8 @@ export async function listOrderSourcePicker(db:D1Database){
     const source=cleanText(row.inventory_source),id=toInt(row.variant_id,0)
     if(!id)continue
     const value=totals.get(key(source,id))||{physical:0,reserved:0,cachedReserved:0}
-    value.physical+=Math.max(0,toInt(row.physical,0))
-    value.cachedReserved+=Math.max(0,toInt(row.cached_reserved,0))
+    value.physical+=toInt(row.physical,0)
+    value.cachedReserved+=toInt(row.cached_reserved,0)
     totals.set(key(source,id),value)
   }
   for(const row of reserveRows.results||[]){
