@@ -163,7 +163,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
  const duplicates=chosen?variants.filter(choice=>choice.productId===chosen.productId&&
   groupsKey(choice)===groupsKey(chosen)&&choice.size===chosen.size).length>1:false
  const blocked=chosen&&!chosen.size?'В каталоге у варианта не указан размер или возраст. Уточните карточку товара.'
-  :duplicates?'Несколько SKU имеют одинаковые характеристики. Уточните карточку или маркировку.':''
+  :duplicates?'Найдено несколько одинаково описанных товаров. Попросите администратора уточнить карточки.':''
  const available=chosen&&source!=='workshop'&&source?availability(chosen,source):0
  const shortage=source&&source!=='workshop'&&chosen?Math.max(0,Number(quantity||0)-available):0
  const reset=()=>{
@@ -243,7 +243,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
     </label>
    </div>
    <div className="main-sale-row"><strong>Реальные сочетания</strong><span>{filtered.length} вариантов</span></div>
-   {!sortedGroups.length&&<div className="main-sale-empty">Такого сочетания в каталоге нет. Измените цвет или размер. Нулевые остатки не скрыты.</div>}
+   {!sortedGroups.length&&<div className="main-sale-empty">Товара с такими характеристиками не найдено. Попробуйте другой цвет или размер. Товары без остатка тоже показаны.</div>}
    <div className="main-sale-combinations">
     {shownGroups.map(group=><article className="main-sale-combination" key={groupsKey(group[0])}>
      <div className="main-sale-combination-heading">
