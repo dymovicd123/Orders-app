@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
 import {MainClothingSourcePicker} from '../orders/MainClothingSourcePicker'
 import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
-import {MainWorkshopOrderModal,type WorkshopOrderFields,type ManualSource} from '../orders/MainWorkshopOrderModal'
+import {MainWorkshopOrderModal,type WorkshopOrderFields,type ManualSource,type ManualOrderPreset} from '../orders/MainWorkshopOrderModal'
 import '../../styles/188f-stock-trust.css'
 type SectionContext = Record<string, any>
 
@@ -45,7 +45,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
 
   const [workshopOpen,setWorkshopOpen]=useState(false)
   const [manualSource,setManualSource]=useState<ManualSource>('workshop')
-  const [manualPreset,setManualPreset]=useState<Partial<WorkshopOrderFields>|null>(null)
+  const [manualPreset,setManualPreset]=useState<ManualOrderPreset|null>(null)
   const [workshopEditing,setWorkshopEditing]=useState<number|null>(null)
   const [notice,setNotice]=useState<{message:string;id:number}|null>(null)
   useEffect(()=>{
@@ -65,7 +65,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     const key=pickerKey(source,item.catalogVariantId)
     allocated.set(key,(allocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
   }
-  const startManual=(origin:ManualSource='workshop',preset?:Partial<WorkshopOrderFields>)=>{
+  const startManual=(origin:ManualSource='workshop',preset?:ManualOrderPreset)=>{
     setEditingIndex(null);setManualSource(origin);setManualPreset(preset||null)
     setWorkshopEditing(null);setWorkshopOpen(true)
   }
@@ -218,7 +218,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <div className="order-step-index">2</div>
                     <div>
                       <h3>Товары в заказе</h3>
-                      <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
+                      <p>Укажите количество и цену, по которой клиент купил товар. Предложенную цену можно изменить.</p>
                     </div>
                   </div>
                   
@@ -253,7 +253,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         ].filter(Boolean).join(' · ')}
                       </p>
                       {!item.catalogVariantId&&item.sourceType!=='workshop'&&
-                        <p className="main-basket-catalog-note">Введено вручную · поиск точного SKU во всём каталоге при сохранении; новые варианты не создаются</p>}
+                        <p className="main-basket-catalog-note">Указано вручную. При сохранении проверим, есть ли такой товар в системе. Если нет, понадобится уточнить наличие.</p>}
                       {item.workshopUrgent&&<span className="main-basket-urgent">Срочно · {item.workshopDueDate||'срок не указан'}</span>}
                       <div className="main-basket-price">
                         <span>{Number(item.quantity)||1} шт. × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</span>
