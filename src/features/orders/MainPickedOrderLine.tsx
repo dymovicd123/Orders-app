@@ -13,10 +13,10 @@ export function MainPickedOrderLine({item,index,update,formatMoney}:Props){
   <div className="main-picked-order-identity">
     <strong>{item.productName}</strong>
     <small>{[item.audienceType,item.gender,item.color,item.material,item.length,item.size].filter(Boolean).join(' · ')}</small>
-    <small>Источник: {source} · вариант каталога #{item.catalogVariantId}. Характеристики закреплены за выбранным товаром.</small>
-    {workshop&&<small>Для цеха сохранён конкретный вариант. Физический остаток склада не резервируется.</small>}
-    {!workshop&&Number.isFinite(item.physicalAtPick)&&<small>При выборе: {item.availableAtPick} из {item.physicalAtPick} свободно, {item.reservedAtPick} в резервах.</small>}
-    {!workshop&&(item.shortageAcknowledged||Number(item.quantity||0)>Number(item.availableAtPick??Number.POSITIVE_INFINITY))&&<small>По показанным остаткам свободного количества недостаточно. Заказ сохранится с требованием уточнения склада; наличие не увеличивается автоматически.</small>}
+    <small>Откуда товар: {source}. Выбранные характеристики сохранены в заказе.</small>
+    {workshop&&<small>Товар будет изготовлен в цехе. Остатки склада не меняются.</small>}
+    {!workshop&&Number.isFinite(item.physicalAtPick)&&<small>На момент выбора: доступно {item.availableAtPick} шт. Всего {item.physicalAtPick} шт., из них {item.reservedAtPick} шт. уже заказано.</small>}
+    {!workshop&&(item.shortageAcknowledged||Number(item.quantity||0)>Number(item.availableAtPick??Number.POSITIVE_INFINITY))&&<small>На складе может не хватить товара. Проверьте наличие перед выдачей клиенту.</small>}
   </div>
   <div className="main-picked-order-fields">
     <label>Количество
