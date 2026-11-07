@@ -1,6 +1,12 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
 # Branch2 only: final exchange exact-variant picker and stock/shipment acceptance; no Main, no D1 mutations.
 on:
+  pull_request:
+    types: [synchronize]
+    branches:
+      - main
+    paths:
+      - .github/workflows/main-source-picker-branch2-only-20261106.yml
   push:
     branches:
       - feature/main-source-first-order-picker-20261106
@@ -38,7 +44,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   qa-branch2-only:
-    if: github.ref == 'refs/heads/feature/main-source-first-order-picker-20261106' && startsWith(github.event.head_commit.message, 'qa(branch2-picker):')
+    if: >-
+      (github.event_name == 'pull_request'
+       && github.event.pull_request.number == 794
+       && github.event.pull_request.head.ref == 'feature/main-source-first-order-picker-20261106'
+       && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name == 'push'
+       && github.ref == 'refs/heads/feature/main-source-first-order-picker-20261106'
+       && startsWith(github.event.head_commit.message, 'qa(branch2-picker):'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -51,6 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -60,7 +74,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/feature/main-source-first-order-picker-20261106'
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            test "$GITHUB_HEAD_REF" = 'feature/main-source-first-order-picker-20261106'
+            test "$GITHUB_BASE_REF" = 'main'
+            jq -e '.pull_request.number == 794
+              and .pull_request.head.ref == "feature/main-source-first-order-picker-20261106"
+              and .pull_request.head.repo.full_name == .repository.full_name' "$GITHUB_EVENT_PATH"
+          else
+            test "$GITHUB_REF" = 'refs/heads/feature/main-source-first-order-picker-20261106'
+          fi
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
