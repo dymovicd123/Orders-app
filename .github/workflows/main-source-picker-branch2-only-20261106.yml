@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Final isolated Branch2 gate: product-first order, safe edit cancel, and unchanged Main/data.
+# Clothing picker: source-only models, material/color/size groups; deploy exclusively to isolated Branch2 Worker.
 on:
   push:
     branches:
@@ -71,6 +71,8 @@ jobs:
           if-no-files-found: ignore
       - name: New model-first sale picker - SSR and Chrome interactions
         run: node scripts/test-main-sale-picker-20261107.mjs
+      - name: Client3-style clothing - source scope and real Chrome flows
+        run: node scripts/test-main-clothing-source-picker-20261107.mjs
       - name: Full application build and main business release gates
         run: |
           npm run build
