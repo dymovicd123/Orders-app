@@ -6,6 +6,15 @@ on:
       - feature/main-source-first-order-picker-20261106
     paths:
       - .github/workflows/main-source-picker-branch2-only-20261106.yml
+      - src/features/orders/MainClothingSourcePicker.tsx
+      - src/features/orders/MainWorkshopOrderModal.tsx
+      - src/features/orders/MainManualChoiceInput.tsx
+      - src/features/orders/MainPickedOrderLine.tsx
+      - src/features/orders/MainSalePicker.tsx
+      - src/features/sections/CreateOrderSection.tsx
+      - src/styles/main-clothing-source-picker.css
+      - src/styles/main-sale-picker.css
+      - scripts/test-main-order-ux-review-20261107.mjs
 permissions:
   contents: read
 concurrency:
