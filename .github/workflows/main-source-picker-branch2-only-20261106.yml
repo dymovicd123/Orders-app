@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 retest: Workshop identity respects unique SKU index; no guesswork and test-worker isolation.
+# Branch2 UX fix: clickable suggestions and manual variants inside model/material, guarded isolated deployment.
 on:
   push:
     branches:
