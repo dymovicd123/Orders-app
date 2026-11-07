@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 UX review: dynamic urgency-field browser retest and strict test-worker-only deployment.
+# Branch2 UX review final: no empty checkout summary lines, reviewed modal/filters, guarded test-only deploy.
 on:
   push:
     branches:
