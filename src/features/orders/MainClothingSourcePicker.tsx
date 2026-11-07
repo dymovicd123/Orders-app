@@ -9,7 +9,7 @@ type SaleFields={quantity:number;unitPrice:number;comment:string;urgent:boolean;
 type Props={
  allocated:ReadonlyMap<string,number>
  onCommit:(choice:OrderPickerChoice,source:Origin,fields:SaleFields,insufficient:boolean)=>void
- onManual:(source:Origin)=>void
+ onManual:(source:Origin,preset?:Partial<{productName:string;audienceType:string;gender:string;color:string;material:string;length:string;size:string}>)=>void
  editing?:{index:number;item:OrderItem}|null
  onCancelEdit?:()=>void
  onPendingChange?:(pending:boolean)=>void
@@ -189,6 +189,24 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   setError('')
  },[editing?.index,editing?.item?.catalogVariantId,variants])
 
+ const openManualForModel=(model:Model)=>{
+  discardSelection()
+  const rows=selectedMaterial===null?model.rows:materialRows
+  const unique=(get:(row:OrderPickerChoice)=>string)=>{
+    const values=[...new Set(rows.map(get).filter(Boolean))]
+    return values.length===1?values[0]:''
+  }
+  onManual(source,{
+    productName:model.name,
+    audienceType:unique(row=>row.category)==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ',
+    material:selectedMaterial!==null?(rows[0]?.material||selectedMaterial):'',
+    color:filterColor,
+    size:filterSize,
+    gender:filterGender||unique(row=>row.gender),
+    length:filterLength||unique(row=>row.length),
+  })
+ }
+
  const save=(event:FormEvent)=>{
   event.preventDefault()
   if(!selected||blocked)return
@@ -232,16 +250,15 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
     </label>
     <small>{matchingModels.length} моделей</small>
    </div>
-   <div className="clothing-source-missing-actions">
-    <button type="button" onClick={()=>{discardSelection();onManual(source)}} className="clothing-source-manual-fallback">
-      Не нашли нужный товар? Вписать вручную в {source==='warehouse'?'Склад':'Бутик'}
-    </button>
-   </div>
    {showAll&&<p className="clothing-source-alert">Показан также каталог вне {source==='warehouse'?'Склада':'Бутика'}. Выбранный источник не меняется автоматически.</p>}
    {!matchingModels.length&&<div className="clothing-source-empty">
-    <strong>{query?'Ничего не найдено':'В этом источнике не числятся варианты каталога'}</strong>
-    <span>Проверьте название или откройте весь каталог.</span>
-   </div>}
+    <strong>{query?'Не нашли эту модель':'В этом источнике нет моделей каталога'}</strong>
+    <span>Можно открыть весь каталог или вручную указать отсутствующую модель.</span>
+    <button type="button" className="clothing-source-manual-fallback"
+     onClick={()=>{discardSelection();onManual(source,{productName:query.trim()})}}>
+      + Вписать модель вручную в {stockName(source)}
+    </button>
+   </div>
    <div className="clothing-source-model-grid">
     {Array.from({length:Math.ceil(visibleModels.length/2)},(_,n)=>{
      const pair=visibleModels.slice(n*2,n*2+2)
@@ -273,7 +290,16 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
          </button>
         })}
        </div>:materials.length===1?<div className="clothing-source-single-material">Материал: <strong>{material(model.rows[0].material)}</strong></div>:null}
-       {selectedMaterial===null&&<p className="clothing-source-info">Нажмите на материал, чтобы увидеть цвета и размеры.</p>}
+       <div className="clothing-source-own-variant">
+        <div>
+         <strong>{selectedMaterial===null?'Не нашли нужный материал?':'Нет нужного цвета, длины или размера?'}</strong>
+         <small>Свой вариант этой модели · {stockName(source)} · без перехода в Цех</small>
+        </div>
+        <button type="button" onClick={()=>openManualForModel(model)}>
+         + Свой вариант
+        </button>
+       </div>
+       {selectedMaterial===null&&<p className="clothing-source-info">Выберите материал или добавьте свой вариант этой модели.</p>}
        {selectedMaterial!==null&&<>
         {materialRows.length>12&&<div className="clothing-source-refinements" aria-label="Фильтры внутри материала">
           <div className="clothing-source-refinement-head"><strong>Уточнить вариант</strong>
