@@ -120,5 +120,28 @@ try{
  assert.equal(wrong.status,400,'Mismatched pinned SKU must be a controlled client error '+JSON.stringify(wrong.body))
  assert.equal(itemCount(),before,'Wrong size must not create an order')
  assert.equal(reservations().length,3,'Wrong size must not create reservation')
- console.log('EXACT_SIZE_HTTP_ORDER_PASS: persisted STANDARD, zero, no-size; source/stock/active reserves; retry and mismatch safety')
+ // Incomplete workshop descriptions are real tasks, never implicit STANDARD
+ // material/length variants, and never stock reservations.
+ const variantCount=Number(sql.prepare("SELECT COUNT(*) AS n FROM catalog_variants WHERE product_id=98502").get().n)
+ const standardWorkshop=make(98511,'СТАНДАРТ','qa-workshop-omitted-material-length')
+ standardWorkshop.items[0]={
+  ...standardWorkshop.items[0],catalogVariantId:undefined,sourceType:'workshop',
+  material:'',length:'',workshopComment:'Пошить по уточнению клиента',
+  workshopUrgent:false
+ }
+ const taskReply=await post(standardWorkshop)
+ assert([200,201].includes(taskReply.status),'Workshop order should save descriptive task '+JSON.stringify(taskReply.body))
+ const task=sql.prepare("SELECT product_id,variant_id,material_snapshot,length_snapshot,size_snapshot FROM workshop_tasks WHERE order_id=?").get(taskReply.body.orderId)
+ assert.equal(task?.product_id,98502,'Workshop known model should still link')
+ assert.equal(task?.variant_id,null,'Omitted material/length must not auto-link STANDARD SKU')
+ assert.equal(task?.material_snapshot,null,'Do not invent Workshop material')
+ assert.equal(task?.length_snapshot,null,'Do not invent Workshop length')
+ assert.equal(task?.size_snapshot,'СТАНДАРТ','Explicitly selected size must remain literal')
+ assert.equal(Number(sql.prepare("SELECT COUNT(*) AS n FROM catalog_variants WHERE product_id=98502").get().n),variantCount,
+  'Workshop task may not add catalog SKU')
+ assert.equal(reservations().length,3,'Workshop task may not reserve physical stock')
+ const taskItem=sql.prepare("SELECT variant_id,is_workshop FROM order_items WHERE order_id=?").get(taskReply.body.orderId)
+ assert.equal(taskItem.variant_id,null)
+ assert.equal(taskItem.is_workshop,1)
+ console.log('EXACT_SIZE_HTTP_ORDER_PASS: persisted STANDARD, zero, no-size and safe incomplete Workshop tasks, no invented SKU or stock writes')
 }finally{sql.close()}
