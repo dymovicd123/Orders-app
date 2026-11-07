@@ -3,6 +3,7 @@ import type * as React from 'react'
 export type OrderItem = {
   productName: string
   catalogVariantId?: number
+  manualCatalogEntry?: boolean
   availableAtPick?: number
   physicalAtPick?: number
   reservedAtPick?: number
