@@ -11,3 +11,6 @@
 .editor-itemized-info strong{display:block;font-size:15px;overflow-wrap:anywhere}
 .editor-itemized-info small{display:block;color:#667f9e;line-height:1.5;font-size:12px}
 @media(max-width:950px){.itemized-editor-layout{grid-template-columns:minmax(0,1fr)!important}}
+
+.editor-columns-itemized{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.editor-columns-itemized>.mini-panel{min-width:0}
