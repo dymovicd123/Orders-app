@@ -22,6 +22,8 @@ export function MainManualChoiceInput({label,value,onChange,options=[],placehold
   return found.slice(0,60)
  },[value,options,fullList])
  const shown=matches.slice(0,fullList?60:12)
+ const unknownValue=Boolean(value.trim()&&options.length&&
+  !options.some(option=>normalize(option)===normalize(value)))
  const choose=(name:string)=>{onChange(name);setOpen(false);setActive(-1);setFullList(false)}
  const onKeys=(event:KeyboardEvent<HTMLInputElement>)=>{
   if(event.key==='Escape'){setOpen(false);setFullList(false);return}
@@ -65,6 +67,9 @@ export function MainManualChoiceInput({label,value,onChange,options=[],placehold
       onClick={()=>setFullList(true)}>Показать другие варианты</button>}
     <small>Можно выбрать из списка или вписать своё значение</small>
    </div>}
+   {unknownValue&&<small className="main-manual-unrecognized">
+    Нового значения нет в подсказках. Заказ можно оформить на уточнение, но каталог не пополнится автоматически.
+   </small>}
   </div>
  </div>
 }
