@@ -1,6 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import {useState} from 'react'
-import {MainOrderSourcePicker,pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
+import {pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
+import {MainSalePicker} from '../orders/MainSalePicker'
 import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
 import '../../styles/188f-stock-trust.css'
 type SectionContext = Record<string, any>
@@ -42,6 +43,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   const [manualMode,setManualMode]=useState(false)
+  const [editingIndex,setEditingIndex]=useState<number|null>(null)
   const allocated=new Map<string,number>()
   for(const item of createDraft.items){
     if(!item.catalogVariantId||item.sourceType==='workshop')continue
@@ -50,6 +52,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     allocated.set(key,(allocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
   }
   const startManual=()=>{
+    setEditingIndex(null)
     setManualMode(true)
     const hasEmpty=createDraft.items.some((item:any)=>!item.catalogVariantId&&!String(item.productName||'').trim())
     if(!hasEmpty)addCreateItem()
@@ -61,27 +64,38 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
       }),
     }))
   }
-  const chooseVariant=(choice:OrderPickerChoice,source:SourceKey|'workshop',insufficient:boolean)=>{
+  const chooseVariant=(choice:OrderPickerChoice,source:SourceKey|'workshop',fields:any,insufficient:boolean)=>{
     setManualMode(false)
+    const previous=editingIndex===null?null:createDraft.items[editingIndex]
+    const own=previous&&Number(previous.catalogVariantId)===choice.variantId&&previous.sourceType===source
+      ?Math.max(0,Number(previous.quantity)||0):0
+    const already=source==='workshop'?0:allocated.get(pickerKey(source,choice.variantId))||0
+    const available=source==='workshop'?0:Math.max(0,choice[source].free-already+own)
     const item={
+      ...(previous||{}),
       productName:choice.productName,catalogVariantId:choice.variantId,
       audienceType:choice.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ',
       gender:choice.gender,color:choice.color,material:choice.material,
       length:choice.length,size:choice.size,
-      sourceType:source,quantity:1,
-      availableAtPick:source==='workshop'?undefined:choice[source].free,
+      sourceType:source,quantity:fields.quantity,
+      availableAtPick:source==='workshop'?undefined:available,
       physicalAtPick:source==='workshop'?undefined:choice[source].physical,
       reservedAtPick:source==='workshop'?undefined:choice[source].reserved,
-      unitPrice:choice.salePrice===null?undefined:choice.salePrice,
-      catalogPriceSnapshot:choice.salePrice,priceOrigin:choice.salePrice===null?'missing':'catalog',
+      unitPrice:fields.unitPrice,
+      catalogPriceSnapshot:choice.salePrice,
+      priceOrigin:choice.salePrice===null?'manual':fields.unitPrice===choice.salePrice?'catalog':'manual',
       priceNeedsConfirmation:false,
-      shortageAcknowledged:source!=='workshop'&&insufficient,
-      workshopComment:'',workshopUrgent:false,workshopDueDate:'',workshopDueTime:'',
+      shortageAcknowledged:source!=='workshop'&&(insufficient||fields.quantity>available),
+      workshopComment:fields.comment||'',workshopUrgent:fields.urgent||false,
+      workshopDueDate:fields.dueDate||'',workshopDueTime:fields.dueTime||'',
     }
     setCreateDraft((current:any)=>({
       ...current,
-      items:[...current.items.filter((x:any)=>x.catalogVariantId||String(x.productName||'').trim()),item],
+      items:editingIndex!==null&&current.items[editingIndex]
+        ?current.items.map((existing:any,index:number)=>index===editingIndex?item:existing)
+        :[...current.items.filter((existing:any)=>existing.catalogVariantId||String(existing.productName||'').trim()),item],
     }))
+    setEditingIndex(null)
   }
 
   return (
@@ -191,11 +205,37 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   </div>
                   
                 </div>
-                <MainOrderSourcePicker allocated={allocated} onPick={chooseVariant} onManual={startManual}/>
-                <div className="stack">
+                <div className="main-sale-workspace">
+                  <div className="main-sale-picker-pane">
+                    <MainSalePicker allocated={allocated} onCommit={chooseVariant} onManual={startManual}
+                      editing={editingIndex===null?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
+                      onCancelEdit={()=>setEditingIndex(null)}/>
+                  </div>
+                  <aside className="main-sale-basket" aria-label="Состав заказа">
+                    <div className="main-sale-basket-head">
+                      <h3>В заказе</h3>
+                      <span>{createDraft.items.filter((item:any)=>item.catalogVariantId||String(item.productName||'').trim()).length} поз.</span>
+                    </div>
+                    {!createDraft.items.some((item:any)=>item.catalogVariantId||String(item.productName||'').trim())&&!manualMode&&
+                      <p className="main-sale-basket-empty">Пока нет товаров. Выбранные позиции появятся здесь.</p>}
                   {createDraft.items.map((item, index) => (
                     !item.catalogVariantId && !String(item.productName||'').trim() && !manualMode ? null : (
-                    <div className="mini-item order-line-card" key={`create-item-${index}`}>
+                    <div className="main-sale-basket-entry" key={`create-item-${index}`}>
+                      <div className="main-sale-row">
+                        <strong>{formatOrderItemTitle(item)||'Индивидуальное изделие'}</strong>
+                        <small>{sourceLabel(item.sourceType||'workshop')}</small>
+                      </div>
+                      <p>{formatOrderItemDetails(item)}</p>
+                      <div className="main-sale-row">
+                        <strong>{Number(item.quantity||0)} × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</strong>
+                        <strong>{item.unitPrice==null?'—':formatMoney(Number(item.unitPrice||0)*Number(item.quantity||0))}</strong>
+                      </div>
+                      <div className="main-sale-row">
+                        {item.catalogVariantId&&<button className="secondary compact" type="button" onClick={()=>setEditingIndex(index)}>Изменить вариант</button>}
+                        <button className="ghost danger compact" type="button" onClick={()=>{removeCreateItem(index);setEditingIndex(null)}}>Убрать</button>
+                      </div>
+                      <details open={!item.catalogVariantId}>
+                        <summary>Количество, цена и подробности</summary>
                       <div className="mini-item-head">
                         <div className="mini-item-head-main">
                           <strong>Позиция {index + 1}</strong>
@@ -203,9 +243,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                             {formatOrderItemTitle(item) || 'Заполните товар и характеристики'}
                           </span>
                         </div>
-                        <button className="ghost danger compact" type="button" onClick={() => removeCreateItem(index)}>
-                          Удалить
-                        </button>
+
                       </div>
                       {item.catalogVariantId ? (
                         <MainPickedOrderLine item={item} index={index} update={updateCreateItem} formatMoney={formatMoney}/>
@@ -360,9 +398,14 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       </div>
                       )}
                       {!item.catalogVariantId?renderOrderSourceAvailability(item, `create-item-${index}`, index):null}
+                      </details>
                     </div>
                     )
                   ))}
+                  <div className="main-sale-basket-total"><span>Итого</span>
+                    <strong>{formatMoney(Number(createTotals.totalAmount)||0)}</strong>
+                  </div>
+                  </aside>
                 </div>
                 
               </section>
