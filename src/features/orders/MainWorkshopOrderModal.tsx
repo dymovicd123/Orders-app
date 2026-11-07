@@ -81,7 +81,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
     <div><small>{initial?'Редактирование позиции':quickChange?'Другой вариант той же модели':isWorkshop?'Новая позиция Цеха':'Нет в показанных вариантах'}</small>
      <h2 id={titleId}>{quickChange?'Другой '+(quickChange==='size'?'размер':'цвет'):initial?'Изменить '+sourceTitle(mode).toLowerCase():sourceTitle(mode)}</h2>
      <p>{isWorkshop?'Оформите товар для изготовления. Он появится в заказе только после сохранения.':
-      quickChange?'Другие характеристики уже заполнены по выбранному товару. Укажите '+(quickChange==='size'?'нужный размер.':'нужный цвет.'):'Укажите проданный вариант вручную. Источник останется '+(mode==='warehouse'?'Складом.':'Бутиком.')}</p></div>
+      quickChange?'Другие характеристики уже заполнены по выбранному товару. Укажите '+(quickChange==='size'?'нужный размер.':'нужный цвет.'):'Укажите характеристики проданного товара. Он будет оформлен из '+(mode==='warehouse'?'Склада.':'Бутика.')}</p></div>
     <button type="button" className="main-workshop-close" onClick={onClose} aria-label="Закрыть окно">×</button>
    </header>
    <form onSubmit={save} className="main-workshop-form">
