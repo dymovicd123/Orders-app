@@ -10,7 +10,7 @@ import React from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
 
 const app=fs.readFileSync('src/features/sections/CreateOrderSection.tsx','utf8')
-assert(app.includes('<MainSalePicker'),'New sale UI must actually be rendered in Main order creator')
+assert(app.includes('<MainClothingSourcePicker'),'New sale UI must actually be rendered in Main order creator')
 assert(app.includes('onCommit={chooseVariant}'),'Chosen variant must reach the existing order draft')
 assert(app.includes('setEditingIndex(index)'),'User must be able to replace a line in place')
 assert(app.includes('createOrderFromDraft'),'Existing server save flow must be preserved')
