@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 adaptive filters and current unified warehouse-operation tests; obsolete text assertions excluded.
+# Branch2 only: guided size/color order entry, manager-friendly copy, full Chrome and warehouse checks.
 on:
   push:
     branches:
