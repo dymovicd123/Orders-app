@@ -35,14 +35,19 @@ export function MainManualChoiceInput({label,value,onChange,options=[],placehold
   }
  }
  const toggle=()=>{setOpen(current=>!current);setFullList(true);setActive(-1)}
- return <div className="main-workshop-field">
+ return <div className="main-workshop-field" onBlur={event=>{
+  if(!event.currentTarget.contains(event.relatedTarget as Node|null)){
+   setOpen(false);setFullList(false);setActive(-1)
+  }
+ }}>
   <label htmlFor={id}>{label}{required?' *':''}</label>
   <div className="main-manual-lookup">
    <div className="main-manual-input-line">
     <input id={id} ref={inputRef} value={value} placeholder={placeholder}
      autoComplete="off" role="combobox" aria-autocomplete="list" aria-controls={listId}
      aria-expanded={open&&shown.length>0}
-     onFocus={()=>{setOpen(true);setFullList(false);setActive(-1)}}
+     onFocus={()=>setActive(-1)}
+     onClick={()=>{setOpen(true);setFullList(true)}}
      onKeyDown={onKeys} onChange={event=>{
       onChange(event.target.value);setOpen(true);setFullList(false);setActive(-1)
      }}/>
