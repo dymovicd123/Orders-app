@@ -135,7 +135,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 <div className="main-sale-workspace">
                   <div className="main-sale-picker-pane">
                     <MainSalePicker allocated={allocated} onCommit={chooseVariant} onManual={startManual}
-                      editing={editingIndex===null?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
+                      editing={editingIndex===null||!createDraft.items[editingIndex]?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
                       onCancelEdit={()=>setEditingIndex(null)}/>
                   </div>
                   <aside className="main-sale-basket" aria-label="Состав заказа">
@@ -519,7 +519,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   >
                     {orderBusy ? 'Создаю...' : 'Сохранить заказ'}
                   </button>
-                  <button className="secondary" type="button" onClick={resetCreateOrderDraft}>
+                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setManualMode(false);resetCreateOrderDraft()}}>
                     Очистить форму
                   </button>
                   <button className="secondary back-action" type="button" onClick={() => setOrderPanel('list')} disabled={orderBusy}>
