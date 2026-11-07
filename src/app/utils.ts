@@ -993,6 +993,8 @@ export function createEditorDraft(order: OrderRecord): EditorDraft {
     items: order.items.length
         ? order.items.map((item) => ({
           orderItemId: Number(item.id || 0) || undefined,
+          catalogVariantId: Number(item.variantId || 0) || undefined,
+          manualCatalogEntry: !Number(item.variantId || 0),
           productName: item.productName,
           audienceType: item.audienceType
             ? (normalizeSuggestion(item.audienceType).includes('ДЕТ') ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ')
