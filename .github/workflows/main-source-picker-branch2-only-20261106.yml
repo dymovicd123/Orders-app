@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Validated Client3-style clothing picker: repeat full typecheck and isolated Branch2 deployment.
+# Branch2 UX review: restored customer-first form, separated workshop modal, inline filters, cart cleanup.
 on:
   push:
     branches:
@@ -73,6 +73,8 @@ jobs:
         run: node scripts/test-main-sale-picker-20261107.mjs
       - name: Client3-style clothing - source scope and real Chrome flows
         run: node scripts/test-main-clothing-source-picker-20261107.mjs
+      - name: UX review - filtered materials and modal workshop browser acceptance
+        run: node scripts/test-main-order-ux-review-20261107.mjs
       - name: Full application build and main business release gates
         run: |
           npm run build
