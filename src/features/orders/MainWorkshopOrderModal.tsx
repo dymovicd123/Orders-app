@@ -100,8 +100,8 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
         <span>{[
          item.audienceType==='ДЕТСКИЙ'?'Детский':'Взрослый',
          item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender,
-         item.material==='СТАНДАРТ'?'Обычный материал':item.material,
-         item.length==='СТАНДАРТ'?'Обычная длина':item.length,
+         item.material==='СТАНДАРТ'?'':item.material,
+         item.length==='СТАНДАРТ'?'':item.length,
          quickChange==='size'?item.color:'Размер '+item.size,
         ].filter(Boolean).join(' · ')}</span>
        </div>
