@@ -1,0 +1,96 @@
+/* Clothing order picker: familiar model tiles; source -> model -> material -> color / size. */
+.clothing-source-picker{display:grid;gap:14px;font:inherit;color:#173553}
+.clothing-source-picker *{box-sizing:border-box}
+.clothing-source-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.clothing-source-tabs{display:inline-flex;gap:4px;padding:4px;border:1px solid #d4e0f0;border-radius:11px;background:#f0f5fc}
+.clothing-source-tabs button{min-width:95px;min-height:37px;border:0;border-radius:8px;background:transparent;color:#506c8a;font:inherit;font-size:13px;font-weight:750;cursor:pointer}
+.clothing-source-tabs button.is-active{background:#fff;color:#1a50a9;box-shadow:0 1px 5px #a9b6c660}
+.clothing-source-reload,.clothing-source-detail-title>button,.clothing-source-link{border:0;background:none;color:#245eb3;font-size:12px;font-weight:650;cursor:pointer;padding:5px}
+.clothing-source-reload:hover,.clothing-source-detail-title>button:hover,.clothing-source-link:hover{text-decoration:underline}
+.clothing-source-head{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap}
+.clothing-source-head h3{margin:0 0 2px;color:#163658;font-size:18px;font-weight:800}
+.clothing-source-head small{font-size:12px;color:#67809b}
+.clothing-source-manual{padding:8px 10px;min-height:34px;border-radius:9px;background:#fff;border:1px solid #cbd9ea;color:#245cb0;font-size:12px;font-weight:720;cursor:pointer}
+.clothing-source-manual:hover{border-color:#7cabe7;background:#f4f8ff}
+.clothing-source-search{display:flex;align-items:center;gap:13px}
+.clothing-source-search-label{display:flex;align-items:center;gap:8px;max-width:500px;flex:1;min-width:0;border:1px solid #bfcfe4;border-radius:9px;padding:0 9px;background:white}
+.clothing-source-search-label:focus-within{outline:2px solid #8aaeed;outline-offset:0}
+.clothing-source-search-icon{color:#6285b3;font-size:20px}
+.clothing-source-search-label input{border:0!important;outline:0!important;box-shadow:none!important;background:transparent;width:100%;min-width:0;height:40px;padding:5px 0;color:#213d5a;font:inherit;font-size:13px}
+.clothing-source-search>small{flex:none;color:#6b839b;font-size:12px}
+.clothing-source-info{margin:0;color:#547391;padding:11px;background:#f5f8fd;border-radius:8px;font-size:13px}
+.clothing-source-alert{margin:0;background:#fff6e8;color:#805a27;padding:9px 10px;border-radius:8px;font-size:12px}
+.clothing-source-alert button{color:inherit;text-decoration:underline;border:0;background:none;cursor:pointer}
+.clothing-source-error{color:#a3303b;font-weight:700;margin:0;font-size:12px}
+.clothing-source-empty{display:grid;gap:5px;padding:18px 14px;background:#f6f8fd;border:1px dashed #d0dcec;border-radius:10px;font-size:13px}
+.clothing-source-empty strong{color:#2d4966}
+.clothing-source-empty span{color:#68809b}
+.clothing-source-model-grid{display:grid;gap:9px;min-width:0}
+.clothing-source-model-row{display:grid;gap:8px;min-width:0}
+.clothing-source-model-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.clothing-source-model{min-width:0;display:flex;align-items:center;gap:10px;min-height:78px;padding:11px 12px;text-align:left;background:#fff;border:1px solid #d9e4f1;border-radius:11px;color:#183a5b;cursor:pointer;box-shadow:0 2px 7px #2145780a}
+.clothing-source-model:hover{border-color:#85abe8;background:#fbfdff}
+.clothing-source-model.is-open{border-color:#6696ea;background:#f3f7ff;box-shadow:0 0 0 1px #afc8f5}
+.clothing-source-model-mark{width:39px;height:41px;flex:none;display:grid;place-items:center;border-radius:9px;background:#eaf1fb;color:#446c9b;font-size:18px;font-weight:900}
+.clothing-source-model-body{min-width:0;display:grid;gap:5px;flex:1}
+.clothing-source-model-body strong{font-size:13px;line-height:1.25;font-weight:850;overflow-wrap:anywhere;color:#1a3857}
+.clothing-source-model-body small{font-size:11px;color:#6b829e}
+.clothing-source-model-right{flex:none;display:grid;justify-items:end;gap:6px;white-space:nowrap}
+.clothing-source-model-right small{padding:4px 6px;background:#eef8f0;color:#28764c;border-radius:6px;font-size:10px;font-weight:750}
+.clothing-source-model-right span{color:#235eb6;font-weight:740;font-size:11px}
+.clothing-source-detail{display:grid;gap:12px;border:1px solid #bcd2ef;background:#f9fbff;border-radius:11px;padding:14px;min-width:0}
+.clothing-source-detail-title{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.clothing-source-detail-title h4{margin:0;font-size:15px;color:#1e4774}
+.clothing-source-detail-title small{font-size:12px;color:#6c8199}
+.clothing-source-materials{display:flex;gap:8px;flex-wrap:wrap}
+.clothing-source-materials button{display:grid;justify-items:start;gap:3px;min-width:135px;max-width:230px;min-height:56px;background:#fff;border:1px solid #cfdef0;border-radius:9px;padding:9px 13px;color:#35536e;cursor:pointer;text-align:left}
+.clothing-source-materials button:hover{border-color:#83a9e8}
+.clothing-source-materials button.is-active{background:#eaf2ff;border-color:#6198ef;color:#1457a8}
+.clothing-source-materials strong{font-size:13px;overflow-wrap:anywhere}
+.clothing-source-materials small{font-size:11px;color:#66819b}
+.clothing-source-single-material{color:#687f98;font-size:12px;padding:6px 0}
+.clothing-source-single-material strong{color:#2b4969}
+.clothing-source-color-list{display:grid;gap:10px}
+.clothing-source-color{display:grid;gap:9px;padding:12px;border-radius:10px;border:1px solid #dce6f3;background:#fff}
+.clothing-source-color-title{display:flex;align-items:center;gap:8px;border-bottom:1px solid #e8eef6;padding-bottom:8px}
+.clothing-source-color-title strong{color:#1a405f;font-weight:850;font-size:13px;flex:1}
+.clothing-source-color-title small{color:#7790aa;font-size:11px}
+.clothing-source-tone{width:15px;height:15px;display:inline-block;border-radius:50%;border:1px solid #9eacbd;flex:none}
+.clothing-source-size-row{display:grid;gap:6px;padding:4px 0 9px}
+.clothing-source-size-row+.clothing-source-size-row{border-top:1px solid #e5edf5;padding-top:10px}
+.clothing-source-size-name strong{color:#324d6c;font-size:12px;font-weight:750}
+.clothing-source-sizes{display:flex;align-items:stretch;flex-wrap:wrap;gap:6px}
+.clothing-source-size{display:grid;gap:2px;min-width:54px;min-height:54px;padding:7px 9px;background:#fff;border:1px solid #c8d8eb;border-radius:8px;color:#193c68;cursor:pointer;text-align:center;align-content:center}
+.clothing-source-size strong{font-size:14px;line-height:1.1;font-weight:820}
+.clothing-source-size small{font-size:10px;color:#267448;line-height:1.25;white-space:nowrap}
+.clothing-source-size.is-zero small{color:#8f7767}
+.clothing-source-size.is-zero{border-color:#dfe4ea;background:#fcfdff}
+.clothing-source-size:hover:not(:disabled){border-color:#4e87dc;background:#eff5ff}
+.clothing-source-size.is-selected{border-color:#1761ca;background:#e9f2ff;box-shadow:0 0 0 1px #1761ca}
+.clothing-source-size:disabled{opacity:.48;cursor:not-allowed}
+.clothing-source-hint{font-size:11px;color:#687f96}
+.clothing-source-inline{display:grid;gap:10px;border:1px solid #a9c3e9;background:#edf4ff;border-radius:10px;padding:12px;max-width:100%}
+.clothing-source-picked{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.clothing-source-picked>div{display:grid;gap:4px}
+.clothing-source-picked strong{font-size:12px;color:#1d467b;overflow-wrap:anywhere}
+.clothing-source-picked small{font-size:11px;color:#68819e}
+.clothing-source-picked button{border:0;background:transparent;color:#52759e;font-size:19px;cursor:pointer;line-height:1}
+.clothing-source-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.clothing-source-fields label,.clothing-source-workshop>label{display:grid;gap:5px;font-size:12px;color:#3b5879;font-weight:700;min-width:0}
+.clothing-source-fields input,.clothing-source-workshop textarea{width:100%;min-width:0;min-height:38px;padding:7px 9px;border:1px solid #b8cce6;border-radius:7px;font:inherit;font-size:13px;background:#fff;color:#243f5b}
+.clothing-source-fulfillment{display:flex;gap:15px;align-items:center;flex-wrap:wrap;font-size:12px}
+.clothing-source-fulfillment label{display:inline-flex;gap:5px;align-items:center;cursor:pointer;font-weight:700;color:#3e5772}
+.clothing-source-fulfillment input{accent-color:#276bcb}
+.clothing-source-workshop{display:grid;gap:8px}
+.clothing-source-workshop textarea{min-height:65px;resize:vertical}
+.clothing-source-workshop .clothing-source-urgent{display:flex;flex-direction:row;gap:7px;align-items:center}
+.clothing-source-stock-facts{font-size:11px;color:#506984}
+.clothing-source-stock-facts summary{color:#285fb2;cursor:pointer}
+.clothing-source-stock-facts p{margin:6px 0}
+.clothing-source-add{justify-self:start;min-width:135px;min-height:40px;border:0;border-radius:8px;background:#2360d2;color:#fff;font-weight:800;font-size:13px;padding:8px 17px;cursor:pointer}
+.clothing-source-add:hover{background:#154da9}
+.clothing-source-show-more{padding:10px 12px;border:1px solid #d6e2f2;border-radius:8px;background:#fff;color:#245fb7;font-size:12px;font-weight:750;cursor:pointer}
+.clothing-source-bottom{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;padding:8px 0;border-top:1px solid #e4eaf2}
+@media(max-width:960px){.clothing-source-model-pair{grid-template-columns:minmax(0,1fr)}.clothing-source-model{min-height:62px}.clothing-source-model-right small{font-size:10px}}
+@media(max-width:760px){.clothing-source-model-pair{grid-template-columns:repeat(2,minmax(0,1fr))}.clothing-source-detail{padding:10px}}
+@media(max-width:570px){.clothing-source-model-pair{grid-template-columns:minmax(0,1fr)}.clothing-source-model{min-height:60px}.clothing-source-model-mark{width:34px;height:34px}.clothing-source-top{align-items:start}.clothing-source-head{align-items:flex-start}.clothing-source-materials button{min-width:0;flex:1 1 140px}.clothing-source-color{padding:9px}.clothing-source-sizes{gap:5px}.clothing-source-size{min-width:50px}}
