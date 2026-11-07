@@ -1,5 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
+import {useState} from 'react'
 import { projectOrderOperationalState } from '../../app/orderOperationalProjection'
+import {ItemizedOrderEditorWorkspace} from '../orders/ItemizedOrderEditorWorkspace'
 type SectionContext = Record<string, any>
 
 export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
@@ -42,6 +44,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
     updateEditorPayment,
   } = ctx
 
+  const [itemPickerBlocking,setItemPickerBlocking]=useState(false)
+  const [editorPickerRevision,setEditorPickerRevision]=useState(0)
   const projection = selectedOrder ? projectOrderOperationalState(selectedOrder, { isAdmin }) : null
   const itemizedMode = selectedOrder?.pricing_mode === 'itemized_v1'
   const editedItemizedTotal = itemizedMode && editorDraft
@@ -184,7 +188,7 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       <small>КАСПИ МАГАЗИН автоматически относит заказ в раздел Kaspi. Это не создаёт оплату само по себе.</small>
                     </label>
                     {itemizedMode ? (
-                      <div className="field-block">
+                      <div className="field-block editor-itemized-info">
                         <span>Итого заказа</span>
                         <strong>{formatMoney(editedItemizedTotal)}</strong>
                         <small>Пересчитывается автоматически из количества и цены продажи по позициям.</small>
@@ -202,14 +206,14 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                       </label>
                     )}
                     {projection?.hasWorkshopItems ? (
-                      <div className="field-block">
+                      <div className="field-block editor-itemized-info">
                         <span>Цех</span>
                         <strong>{projection.workshopLabel || 'Цех: нет активной работы'}</strong>
                         <small>Состояние меняется по конкретным позициям в разделе «Цех».</small>
                       </div>
                     ) : null}
                     {itemizedMode ? (
-                      <div className="field-block">
+                      <div className="field-block editor-itemized-info">
                         <span>Статус</span>
                         <strong>{projection?.lifecycleLabel || 'Активен'}</strong>
                         <small>Жизненный цикл меняется только отдельными штатными действиями.</small>
@@ -238,8 +242,21 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                     </label>
                   </div>
     
-                  <div className="editor-columns">
-                    <section className="mini-panel">
+                  {itemizedMode&&<ItemizedOrderEditorWorkspace
+                    key={selectedOrder.id+'-'+editorPickerRevision}
+                    orderId={selectedOrder.id}
+                    draft={editorDraft}
+                    setDraft={setEditorDraft}
+                    updateItem={updateEditorItem}
+                    removeItem={removeEditorItem}
+                    saving={savingOrder}
+                    formatMoney={formatMoney}
+                    sourceLabel={sourceLabel}
+                    suggestions={suggestionValues}
+                    onBlockedChange={setItemPickerBlocking}
+                  />}
+                  <div className={'editor-columns'+(itemizedMode?' editor-columns-itemized':'')}>
+                    {!itemizedMode&&<section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Товары</h3>
                         <button className="secondary compact" type="button" onClick={addEditorItem} disabled={savingOrder}>
@@ -423,8 +440,8 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                           </div>
                         ))}
                       </div>
-                    </section>
-    
+                    </section>}
+
                     <section className="mini-panel">
                       <div className="mini-panel-head">
                         <h3>Оплаты</h3>
@@ -526,10 +543,10 @@ export function OrderEditorSection({ ctx }: { ctx: SectionContext }) {
                   </div>
     
                   <div className="actions form-bottom-actions">
-                    <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder}>
+                    <button className="primary" type="button" onClick={saveSelectedOrder} disabled={savingOrder||Boolean(itemizedMode&&itemPickerBlocking)}>
                       {savingOrder ? 'Сохраняю...' : 'Сохранить изменения'}
                     </button>
-                    <button className="secondary" type="button" onClick={() => selectedOrder && setEditorDraft(createEditorDraft(selectedOrder))} disabled={savingOrder}>
+                    <button className="secondary" type="button" onClick={() => { if(selectedOrder) setEditorDraft(createEditorDraft(selectedOrder));setEditorPickerRevision(v=>v+1);setItemPickerBlocking(false) }} disabled={savingOrder}>
                       Сбросить форму
                     </button>
                     <button className="secondary back-action" type="button" onClick={closeOrderEditor} disabled={savingOrder}>
