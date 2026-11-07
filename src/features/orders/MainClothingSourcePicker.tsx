@@ -2,6 +2,7 @@ import {useEffect,useMemo,useState,type FormEvent} from 'react'
 import type {OrderItem} from '../../app/types'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from './MainOrderSourcePicker'
 import {parseSaleSearch,foldSaleName} from './MainSalePicker'
+import type {ManualOrderPreset} from './MainWorkshopOrderModal'
 import '../../styles/main-clothing-source-picker.css'
 
 type Origin=SourceKey|'workshop'
@@ -9,7 +10,7 @@ type SaleFields={quantity:number;unitPrice:number;comment:string;urgent:boolean;
 type Props={
  allocated:ReadonlyMap<string,number>
  onCommit:(choice:OrderPickerChoice,source:Origin,fields:SaleFields,insufficient:boolean)=>void
- onManual:(source:Origin,preset?:Partial<{productName:string;audienceType:string;gender:string;color:string;material:string;length:string;size:string}>)=>void
+ onManual:(source:Origin,preset?:ManualOrderPreset)=>void
  editing?:{index:number;item:OrderItem}|null
  onCancelEdit?:()=>void
  onPendingChange?:(pending:boolean)=>void
@@ -207,7 +208,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const available=selected?sourceFree(selected,source,allocated,draftItem):0
  const missing=selected?!listed(selected,source):false
  const conflict=selected?variants.filter(item=>item.productId===selected.productId&&marker(item)===marker(selected)).length>1:false
- const blocked=conflict?'Несколько SKU имеют неразличимые характеристики. Уточните вариант в каталоге.':''
+ const blocked=conflict?'Есть несколько одинаково описанных товаров. Попросите администратора проверить карточки.':''
  const shortage=selected&&itemSource!=='workshop'?Math.max(0,Number(quantity||0)-available):0
 
  const clearFilters=()=>{setFilterColor('');setFilterSize('');setFilterGender('');setFilterLength('')}
@@ -279,6 +280,25 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   })
  }
 
+ const openManualForVariant=(row:OrderPickerChoice,change:'size'|'color')=>{
+  discardSelection()
+  const hasDetails=Boolean(row.productName&&row.gender&&row.color&&row.material&&row.length&&
+   (change==='size'||row.size))
+  onManual(source,{
+   productName:row.productName,
+   audienceType:row.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ',
+   gender:row.gender,
+   color:change==='color'?'':row.color,
+   material:row.material,
+   length:row.length,
+   size:change==='size'?'':noSize(row.size)?'БЕЗ РАЗМЕРА':row.size,
+   quantity:1,
+   unitPrice:row.salePrice??undefined,
+   quickChange:hasDetails?change:undefined,
+   previousValue:change==='size'?row.size:row.color,
+  })
+ }
+
  const save=(event:FormEvent)=>{
   event.preventDefault()
   if(!selected||blocked)return
@@ -322,7 +342,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
     </label>
     <small>{matchingModels.length} моделей</small>
    </div>
-   {showAll&&<p className="clothing-source-alert">Показан также каталог вне {source==='warehouse'?'Склада':'Бутика'}. Выбранный источник не меняется автоматически.</p>}
+   {showAll&&<p className="clothing-source-alert">Здесь показаны также товары из других мест. Вы добавляете товар из {source==='warehouse'?'Склада':'Бутика'}; если его там нет, потребуется проверить наличие.</p>}
    {!matchingModels.length&&<div className="clothing-source-empty">
     <strong>{query?'Не нашли эту модель':'В этом источнике нет моделей каталога'}</strong>
     <span>Можно открыть весь каталог или вручную указать отсутствующую модель.</span>
@@ -365,7 +385,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
        <div className="clothing-source-own-variant">
         <div>
          <strong>{selectedMaterial===null?'Не нашли нужный материал?':'Нет нужного цвета, длины или размера?'}</strong>
-         <small>Свой вариант этой модели · {stockName(source)} · без перехода в Цех</small>
+         <small>Укажите недостающие характеристики. Товар останется в {source==='warehouse'?'Складе':'Бутике'}.</small>
         </div>
         <button type="button" onClick={()=>openManualForModel(model)}>
          + Свой вариант
@@ -434,15 +454,22 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
                <strong>{formatClothingSize(item,variants)}</strong><small>{bad?'Сверить':free===0?'0 шт.':free+' шт.'}</small>
               </button>
              })}</div>
-             {items.some(item=>noSize(item.size))&&<small className="clothing-source-hint">«Без размера» — отдельная позиция каталога; её SKU сохраняется без изменений.</small>}
+             {!editing&&<button type="button" className="clothing-source-quick-link"
+              onClick={()=>openManualForVariant(first,'size')}>+ Другой размер{first.category==='child'?' / возраст':''}</button>}
+             {items.some(item=>noSize(item.size))&&<small className="clothing-source-hint">«Без размера» — это отдельный вариант товара. Выбирайте его только если такой вариант продан.</small>}
              {selected&&items.some(item=>item.variantId===selected.variantId)&&<form className="clothing-source-inline" onSubmit={save}>
               <div className="clothing-source-picked">
                <div><strong>{fullName(selected,variants)}</strong>
-                {editing&&<small>Изменение существующей позиции · данные заказа будут сохранены</small>}</div>
+                {editing&&<small>Сейчас вы меняете этот товар в заказе.</small>}</div>
                <button type="button" onClick={discardSelection} aria-label="Отменить выбор">×</button>
               </div>
               {blocked&&<p className="clothing-source-alert" role="alert">{blocked}</p>}
               {!blocked&&<>
+               {!editing&&<div className="clothing-source-quick-actions">
+                <span>Нужен такой же товар, но с другим размером или цветом?</span>
+                <button type="button" onClick={()=>openManualForVariant(selected,'size')}>Другой размер</button>
+                <button type="button" onClick={()=>openManualForVariant(selected,'color')}>Другой цвет</button>
+               </div>}
                {missing&&itemSource!=='workshop'&&<p className="clothing-source-alert">Товар не числится в {source==='warehouse'?'Складе':'Бутике'}. Можно оформить только с уточнением.</p>}
                <div className="clothing-source-fields">
                 <label>Количество<input type="number" min="1" step="1" value={quantity} onChange={event=>setQuantity(event.target.value)}/></label>
