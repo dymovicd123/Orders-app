@@ -108,7 +108,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
  const chosen=variants.find(choice=>choice.variantId===chosenId)||null
 
  useEffect(()=>{
-  if(!editing)return
+  if(!editing?.item)return
   const choice=variants.find(value=>value.variantId===Number(editing.item.catalogVariantId))
   if(!choice)return
   setModelId(choice.productId);setChosenId(choice.variantId);setSize('')
@@ -120,7 +120,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
   setDueDate(text(editing.item.workshopDueDate||''))
   setDueTime(text(editing.item.workshopDueTime||''))
   setFormError('')
- },[editing?.index,editing?.item.catalogVariantId,variants])
+ },[editing?.index,editing?.item?.catalogVariantId,variants])
 
  const searchMatches=models.filter(model=>{
   const words=foldSaleName(model.name).split(' ')
