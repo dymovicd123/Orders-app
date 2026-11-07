@@ -170,7 +170,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const selectedMaterial=materials.length===1?materials[0]:activeMaterial
  const materialRows=selectedMaterial===null?[]:chosenGroup.filter(row=>norm(row.material)===selectedMaterial)
  const materialColors=[...new Set(materialRows.map(row=>row.color))].sort(sortName)
- const materialSizes=[...new Set(materialRows.map(row=>row.size))].sort(sortName)
+ const materialSizes=[...new Set(materialRows.map(row=>noSize(row.size)?EMPTY_SIZE_FILTER:row.size))].sort(sortName)
  const materialGenders=[...new Set(materialRows.map(row=>row.gender))].sort(sortName)
  const materialLengths=[...new Set(materialRows.map(row=>row.length))].sort(sortName)
  const shownRows=materialRows.filter(row=>
@@ -249,7 +249,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
     audienceType:unique(row=>row.category)==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ',
     material:selectedMaterial!==null?(rows[0]?.material||selectedMaterial):'',
     color:filterColor,
-    size:filterSize,
+    size:filterSize===EMPTY_SIZE_FILTER?'БЕЗ РАЗМЕРА':filterSize,
     gender:filterGender||unique(row=>row.gender),
     length:filterLength||unique(row=>row.length),
   })
@@ -362,9 +362,9 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
               <select aria-label="Фильтр по размеру" value={filterSize} onChange={event=>{setFilterSize(event.target.value);setColorLimit(6);discardSelection()}}>
                 <option value="">Все размеры</option>
                 {materialSizes.map(value=>{
-                  const row=materialRows.find(item=>item.size===value)!
-                  return <option value={value||EMPTY_SIZE_FILTER} key={value||EMPTY_SIZE_FILTER}>
-                    {formatClothingSize(row,variants)}
+                  const row=materialRows.find(item=>(noSize(item.size)?EMPTY_SIZE_FILTER:item.size)===value)!
+                  return <option value={value} key={value}>
+                    {value===EMPTY_SIZE_FILTER?'Без размера':formatClothingSize(row,variants)}
                   </option>
                 })}
               </select></label>}
