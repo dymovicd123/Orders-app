@@ -4375,6 +4375,7 @@ function App() {
         items: createDraft.items.map((item) => ({
           productName: item.productName,
           catalogVariantId: item.catalogVariantId || undefined,
+          manualCatalogEntry: Boolean(item.manualCatalogEntry),
           audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
           gender: item.gender || null,
           color: item.color,
