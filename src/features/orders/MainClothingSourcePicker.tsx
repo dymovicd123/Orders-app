@@ -14,6 +14,7 @@ type Props={
  editing?:{index:number;item:OrderItem}|null
  onCancelEdit?:()=>void
  onPendingChange?:(pending:boolean)=>void
+ onVariantsLoaded?:(rows:OrderPickerChoice[])=>void
  initialVariants?:OrderPickerChoice[]
 }
 type Model={id:number;name:string;rows:OrderPickerChoice[]}
@@ -130,7 +131,7 @@ export function sourceColorGroups(variants:readonly OrderPickerChoice[]){
   .map(([name,rows]):ColorGroup=>({name,rows}))
 }
 
-export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,onCancelEdit,onPendingChange,initialVariants}:Props){
+export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,onCancelEdit,onPendingChange,onVariantsLoaded,initialVariants}:Props){
  const [source,setSource]=useState<SourceKey>('warehouse')
  const [showAll,setShowAll]=useState(false)
  const [variants,setVariants]=useState<OrderPickerChoice[]>(initialVariants||[])
@@ -172,6 +173,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   return ()=>controller.abort()
  },[initialVariants,refresh])
 
+ useEffect(()=>{onVariantsLoaded?.(variants)},[variants,onVariantsLoaded])
  const models=useMemo(()=>sourceModelCatalog(variants,source,showAll),[variants,source,showAll])
  const allColors=useMemo(()=>[...new Set(variants.map(row=>row.color).filter(Boolean))],[variants])
  const search=useMemo(()=>parseClothingSearch(query,allColors),[query,allColors])
