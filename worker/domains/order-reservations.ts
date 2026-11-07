@@ -356,7 +356,7 @@ export async function inspectOrderRetiredCatalogIdentityV2(
 export async function resolveCatalogProductAndVariantV2(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
-  options: { allowRetiredRecreate?: boolean; timestamp?: string } = {},
+  options: { allowRetiredRecreate?: boolean; timestamp?: string; createMissing?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (!await isCatalogIdentityV3Enabled(db)) return await resolveCatalogProductAndVariantV2Flat(db, item);
   const inputKey = catalogOrderInputKey(item);
@@ -461,6 +461,18 @@ export async function resolveCatalogProductAndVariantV2(
     || (rawSize && !size)
   ) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
+  }
+
+  // Runtime orders/exchanges/reconciliation may recognize existing catalog SKUs
+  // but must not create a new execution or variant implicitly. Explicit catalog
+  // and stocktake creation continue through their dedicated controlled endpoints.
+  if (options.createMissing === false) {
+    return {
+      productId: toInt(product.id, 0) || null,
+      variantId: null,
+      matchStatus: existingExecution?.id ? 'unresolved_variant' : 'unresolved_execution',
+      inputKey,
+    };
   }
 
   // Only now may known facts create a previously unseen execution/combination.
@@ -569,11 +581,12 @@ export async function resolveCatalogProductAndVariant(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
   timestamp: string,
-  options: { allowRetiredRecreate?: boolean } = {},
+  options: { allowRetiredRecreate?: boolean; createMissing?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db)) {
     return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });
   }
+  if (options.createMissing === false) return await resolveCatalogProductAndVariantV2Flat(db, item);
   return await resolveCatalogProductAndVariantLegacy(db, item, timestamp);
 }
 
