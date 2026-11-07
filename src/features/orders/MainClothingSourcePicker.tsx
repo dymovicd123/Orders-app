@@ -35,12 +35,6 @@ const listed=(value:OrderPickerChoice,source:SourceKey)=>{
 }
 const sortName=(a:string,b:string)=>a.localeCompare(b,'ru',{numeric:true})
 const sortSize=(a:OrderPickerChoice,b:OrderPickerChoice)=>sortName(a.size,b.size)
-const colorTones:Record<string,string>={
- 'БЕЛЫЙ':'#fcfcfc','ЧЕРНЫЙ':'#292e37','БЕЖЕВЫЙ':'#d5bb93','СВЕТЛО-БЕЖЕВЫЙ':'#e6d3b9',
- 'ОРАНЖЕВЫЙ':'#d78a43','БОРДОВЫЙ':'#813b56','МОКРЫЙ АСФАЛЬТ':'#68717e',
- 'ХАКИ':'#78845f','КОФЕ':'#987154','ШОКОЛАД':'#6e493b','СИНИЙ':'#5276a6',
- 'ТЕМНО-СИНИЙ':'#344f78','ГОЛУБОЙ':'#96bddd','ЗЕЛЕНЫЙ':'#58946a'
-}
 export function sourceModelCatalog(variants:readonly OrderPickerChoice[],source:SourceKey,showAll:boolean){
  const index=new Map<number,Model>()
  for(const item of variants){
@@ -78,6 +72,10 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const [openId,setOpenId]=useState<number|null>(null)
  const [activeMaterial,setActiveMaterial]=useState<string|null>(null)
  const [colorLimit,setColorLimit]=useState(6)
+ const [filterColor,setFilterColor]=useState('')
+ const [filterSize,setFilterSize]=useState('')
+ const [filterGender,setFilterGender]=useState('')
+ const [filterLength,setFilterLength]=useState('')
  const [modelLimit,setModelLimit]=useState(20)
  const [pickedId,setPickedId]=useState<number|null>(null)
  const [itemSource,setItemSource]=useState<Origin>('warehouse')
@@ -123,7 +121,14 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   .sort((a,b)=>sortName(a,b))
  const selectedMaterial=materials.length===1?materials[0]:activeMaterial
  const materialRows=selectedMaterial===null?[]:chosenGroup.filter(row=>norm(row.material)===selectedMaterial)
- const colorGroups=sourceColorGroups(materialRows)
+ const materialColors=[...new Set(materialRows.map(row=>row.color))].sort(sortName)
+ const materialSizes=[...new Set(materialRows.map(row=>row.size))].sort(sortName)
+ const materialGenders=[...new Set(materialRows.map(row=>row.gender))].sort(sortName)
+ const materialLengths=[...new Set(materialRows.map(row=>row.length))].sort(sortName)
+ const shownRows=materialRows.filter(row=>
+  (!filterColor||row.color===filterColor)&&(!filterSize||row.size===filterSize)&&
+  (!filterGender||row.gender===filterGender)&&(!filterLength||row.length===filterLength))
+ const colorGroups=sourceColorGroups(shownRows)
  const visibleColors=colorGroups.slice(0,colorLimit)
  const draftItem=editing?.item||null
  const available=selected?sourceFree(selected,source,allocated,draftItem):0
@@ -133,22 +138,23 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   conflict?'Несколько SKU имеют одинаковые характеристики. Сначала уточните вариант в каталоге.':''
  const shortage=selected&&itemSource!=='workshop'?Math.max(0,Number(quantity||0)-available):0
 
+ const clearFilters=()=>{setFilterColor('');setFilterSize('');setFilterGender('');setFilterLength('')}
  const discardSelection=()=>{
   setPickedId(null);setPrice('');setQuantity('1');setComment('');setUrgent(false)
   setDueDate('');setDueTime('');setError('');setItemSource(source)
  }
  const changeSource=(next:SourceKey)=>{
   setSource(next);setShowAll(false);setModelLimit(20);setColorLimit(6)
-  setActiveMaterial(null);setError('');discardSelection()
+  setActiveMaterial(null);clearFilters();setError('');discardSelection()
   // Leave the opened model in place, if it exists at the new source.
  }
  const toggleAll=()=>{
-  setShowAll(value=>!value);setActiveMaterial(null);setColorLimit(6);discardSelection()
+  setShowAll(value=>!value);setActiveMaterial(null);clearFilters();setColorLimit(6);discardSelection()
  }
  const selectModel=(id:number)=>{
   if(openId===id){setOpenId(null);setActiveMaterial(null)}
   else {
-   setOpenId(id);setActiveMaterial(null);setColorLimit(6)
+   setOpenId(id);setActiveMaterial(null);clearFilters();setColorLimit(6)
    const model=models.find(item=>item.id===id)
    const queryMatches=model?.rows.filter(row=>
     (!search.color||row.color===search.color)&&(!search.size||row.size===search.size))||[]
@@ -175,7 +181,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   if(!item)return
   const place:SourceKey=editing.item.sourceType==='boutique'?'boutique':'warehouse'
   setSource(place);setShowAll(!listed(item,place));setOpenId(item.productId)
-  setActiveMaterial(norm(item.material));setColorLimit(30)
+  setActiveMaterial(norm(item.material));clearFilters();setColorLimit(30)
   setPickedId(item.variantId);setItemSource(editing.item.sourceType as Origin)
   setQuantity(String(editing.item.quantity||1));setPrice(editing.item.unitPrice==null?'':String(editing.item.unitPrice))
   setComment(String(editing.item.workshopComment||''));setUrgent(Boolean(editing.item.workshopUrgent))
@@ -210,7 +216,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
    <div><h3>Выберите проданную вещь</h3>
     <small>{showAll?'Весь каталог, источник остаётся '+stockName(source):'Позиции '+(source==='warehouse'?'Склада':'Бутика')+', включая нулевой остаток'}</small>
    </div>
-   <button className="clothing-source-manual" type="button" onClick={()=>{discardSelection();onManual()}}>+ Индивидуальное изделие</button>
+   <button className="clothing-source-manual" type="button" onClick={()=>{discardSelection();onManual()}}>+ Товар в цех</button>
   </div>
   {loading&&<p className="clothing-source-info">Загрузка товаров…</p>}
   {loadError&&<p className="clothing-source-alert" role="alert">{loadError} <button type="button" onClick={()=>setRefresh(x=>x+1)}>Повторить</button></p>}
@@ -219,7 +225,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
     <label className="clothing-source-search-label">
      <span className="clothing-source-search-icon" aria-hidden="true">⌕</span>
      <input type="search" aria-label="Поиск модели" placeholder="Название модели, например Баян" value={query}
-      onChange={event=>{setQuery(event.target.value);setModelLimit(20);setOpenId(null);discardSelection()}}/>
+      onChange={event=>{setQuery(event.target.value);setModelLimit(20);setOpenId(null);clearFilters();discardSelection()}}/>
     </label>
     <small>{matchingModels.length} моделей</small>
    </div>
@@ -254,13 +260,42 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
          const rows=model.rows.filter(value=>norm(value.material)===key)
          return <button type="button" key={key} aria-pressed={selectedMaterial===key}
           className={selectedMaterial===key?'is-active':''}
-          onClick={()=>{setActiveMaterial(key);setColorLimit(6);discardSelection()}}>
+          onClick={()=>{setActiveMaterial(key);clearFilters();setColorLimit(6);discardSelection()}}>
           <strong>{material(rows[0].material)}</strong><small>{rows.length} вариантов</small>
          </button>
         })}
        </div>:materials.length===1?<div className="clothing-source-single-material">Материал: <strong>{material(model.rows[0].material)}</strong></div>:null}
        {selectedMaterial===null&&<p className="clothing-source-info">Нажмите на материал, чтобы увидеть цвета и размеры.</p>}
        {selectedMaterial!==null&&<>
+        {materialRows.length>12&&<div className="clothing-source-refinements" aria-label="Фильтры внутри материала">
+          <div className="clothing-source-refinement-head"><strong>Уточнить вариант</strong>
+            <span>Показано {shownRows.length} из {materialRows.length}</span></div>
+          <div className="clothing-source-refinement-controls">
+            {materialColors.length>1&&<label>Цвет
+              <select aria-label="Фильтр по цвету" value={filterColor} onChange={event=>{setFilterColor(event.target.value);setColorLimit(6);discardSelection()}}>
+                <option value="">Все цвета</option>
+                {materialColors.map(value=><option value={value} key={value}>{value||'Без цвета'}</option>)}
+              </select></label>}
+            {materialSizes.length>1&&<label>Размер
+              <select aria-label="Фильтр по размеру" value={filterSize} onChange={event=>{setFilterSize(event.target.value);setColorLimit(6);discardSelection()}}>
+                <option value="">Все размеры</option>
+                {materialSizes.map(value=><option value={value} key={value}>{value||'Без размера'}</option>)}
+              </select></label>}
+            {materialGenders.length>1&&<label>Пол
+              <select aria-label="Фильтр по полу" value={filterGender} onChange={event=>{setFilterGender(event.target.value);setColorLimit(6);discardSelection()}}>
+                <option value="">Любой</option>
+                {materialGenders.map(value=><option value={value} key={value}>{gender(value)}</option>)}
+              </select></label>}
+            {materialLengths.length>1&&<label>Длина
+              <select aria-label="Фильтр по длине" value={filterLength} onChange={event=>{setFilterLength(event.target.value);setColorLimit(6);discardSelection()}}>
+                <option value="">Любая</option>
+                {materialLengths.map(value=><option value={value} key={value}>{length(value)}</option>)}
+              </select></label>}
+            {(filterColor||filterSize||filterGender||filterLength)&&
+              <button className="clothing-source-link" type="button" onClick={()=>{clearFilters();setColorLimit(6);discardSelection()}}>Сбросить</button>}
+          </div>
+        </div>}
+        {shownRows.length===0&&<div className="clothing-source-empty">Нет вариантов с этими характеристиками. Измените фильтры.</div>}
         <div className="clothing-source-color-list">
          {visibleColors.map(group=>{
           const lines=new Map<string,OrderPickerChoice[]>()
@@ -270,7 +305,6 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
           }
           return <div className="clothing-source-color" key={group.name}>
            <div className="clothing-source-color-title">
-            <span className="clothing-source-tone" style={{background:colorTones[norm(group.name)]||'#d8e0e9'}} aria-hidden="true"/>
             <strong>{group.name}</strong>
             <small>{group.rows.length} вариантов</small>
            </div>
