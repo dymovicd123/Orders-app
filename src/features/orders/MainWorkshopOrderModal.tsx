@@ -12,23 +12,25 @@ export type WorkshopOrderFields={
 type Props={
  onSave:(item:WorkshopOrderFields)=>void;onClose:()=>void;source?:ManualSource
  initial?:Partial<WorkshopOrderFields>|null
+ preset?:Partial<WorkshopOrderFields>|null
  suggestions?:{products?:readonly string[];colors?:readonly string[];materials?:readonly string[];lengths?:readonly string[];sizes?:readonly string[];childAges?:readonly string[]}
 }
 const clean=(value:unknown)=>String(value??'')
 const sourceTitle=(source:ManualSource)=>source==='warehouse'?'Товар со Склада':source==='boutique'?'Товар из Бутика':'Товар в цех'
 
-export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial,suggestions}:Props){
+export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial,preset,suggestions}:Props){
  const titleId=useId()
  const first=useRef<HTMLInputElement>(null)
+ const defaults=initial||preset
  const mode=initial?.sourceType||source
  const isWorkshop=mode==='workshop'
  const [item,setItem]=useState({
-  productName:clean(initial?.productName),audienceType:clean(initial?.audienceType)||'ВЗРОСЛЫЙ',
-  gender:clean(initial?.gender),color:clean(initial?.color),material:clean(initial?.material),
-  length:clean(initial?.length),size:clean(initial?.size),
-  quantity:clean(initial?.quantity??1),unitPrice:initial?.unitPrice==null?'':clean(initial.unitPrice),
-  workshopComment:clean(initial?.workshopComment),workshopUrgent:!!initial?.workshopUrgent,
-  workshopDueDate:clean(initial?.workshopDueDate),workshopDueTime:clean(initial?.workshopDueTime),
+  productName:clean(defaults?.productName),audienceType:clean(defaults?.audienceType)||'ВЗРОСЛЫЙ',
+  gender:clean(defaults?.gender),color:clean(defaults?.color),material:clean(defaults?.material),
+  length:clean(defaults?.length),size:clean(defaults?.size),
+  quantity:clean(defaults?.quantity??1),unitPrice:defaults?.unitPrice==null?'':clean(defaults.unitPrice),
+  workshopComment:clean(defaults?.workshopComment),workshopUrgent:!!defaults?.workshopUrgent,
+  workshopDueDate:clean(defaults?.workshopDueDate),workshopDueTime:clean(defaults?.workshopDueTime),
  })
  const [error,setError]=useState('')
  const set=(key:keyof typeof item,value:string|boolean)=>{setItem(previous=>({...previous,[key]:value}));setError('')}
