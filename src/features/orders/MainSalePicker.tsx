@@ -25,7 +25,7 @@ type Props={
 const text=(value:unknown)=>String(value??'')
 const letters:Record<string,string>={'ё':'е','қ':'к','ө':'о','ұ':'у','ү':'у','ә':'а','і':'и','ң':'н','ғ':'г','һ':'х'}
 export const foldSaleName=(value:string)=>text(value).toLocaleLowerCase('ru-RU')
- .replace(/[ёқөұүәіңғһ]/g,character=>letters[character]||character)
+ .replace(/[ёқөұүәіңғһі]/g,character=>letters[character]||character)
  .replace(/[^\p{L}\p{N}]+/gu,' ').trim()
 const money=(value:number)=>value.toLocaleString('ru-RU')+' ₸'
 const audience=(choice:OrderPickerChoice)=>choice.category==='child'?'Детский':'Взрослый'
