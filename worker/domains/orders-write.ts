@@ -422,7 +422,7 @@ export async function insertOrderContent(
 
   for (const [itemIndex, item] of items.entries()) {
     const initiallyResolved = preResolvedCatalog?.[itemIndex]
-      || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
+      || ((item.isWorkshop || item.manualCatalogEntry) ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
     // An order may be validated minutes before the source SKU is consolidated.
     // Resolve only the audited exact-SKU lineage here, immediately before the
     // order-item INSERT. Never resurrect the retired variant or guess another SKU.
@@ -775,7 +775,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           } else {
             preResolvedCatalog.push(item.catalogVariantId>0
               ? {productId:item.catalogProductId,variantId:item.catalogVariantId}
-              : item.isWorkshop
+              : (item.isWorkshop || item.manualCatalogEntry)
                 ? await resolveWorkshopCatalogProductOnly(db, item)
                 : await resolveCatalogProductAndVariant(db, item, cleanText(existingOrder.created_at) || requestedAt));
           }
@@ -980,7 +980,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
           const allowRetiredRecreate = !item.isWorkshop && confirmedRetiredKeys.has(catalogOrderInputKey(item));
           const resolved = item.catalogVariantId>0
             ? { productId:item.catalogProductId,variantId:item.catalogVariantId }
-            : item.isWorkshop
+            : (item.isWorkshop || item.manualCatalogEntry)
               ? await resolveWorkshopCatalogProductOnly(db, item)
               : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
           preResolvedCatalog.push(resolved);
@@ -1911,7 +1911,7 @@ export async function updateOrderCritical(
         rewritePreResolvedCatalog = [];
         const observedByVariant = new Map<string, number>();
         for (const item of nextItems) {
-          const resolved = item.isWorkshop
+          const resolved = item.isWorkshop || item.manualCatalogEntry
             ? await resolveWorkshopCatalogProductOnly(db, item)
             : await resolveCatalogProductAndVariant(db, item, timestamp);
           rewritePreResolvedCatalog.push({ productId: resolved.productId, variantId: resolved.variantId });
