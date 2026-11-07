@@ -88,7 +88,7 @@ export function ExchangeReplacementSelector({item,allocated,onApply,onClose,sugg
    catalogVariants={choices}
    suggestions={suggestions}
    onSave={saveManual}
-   onClose={()=>setModal(null)}
+   onClose={()=>{setModal(null);setPickerRevision(n=>n+1);setPending(false)}}
   />}
  </section>
 }
