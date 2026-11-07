@@ -601,7 +601,10 @@ export async function resolveWorkshopCatalogProductOnly(
   const wantedMaterial = canonicalStockPositionValue(item.material);
   const wantedLength = canonicalStockPositionValue(item.length);
   const wantedSize = normalizeCatalogCombinationSize(item.size);
-  if (!wantedGender || !wantedColor || !wantedSize) return productOnly;
+  // Explicitly entered "БЕЗ РАЗМЕРА" is a positive user choice, not an
+  // omitted size. Only that choice may match an existing dimensionless SKU.
+  const intentionallyNoSize = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(upperText(item.size));
+  if (!wantedGender || !wantedColor || (!wantedSize && !intentionallyNoSize)) return productOnly;
 
   const candidates = await db.prepare(
     `SELECT v.id, v.gender, v.color, v.material, v.length, v.size_label
