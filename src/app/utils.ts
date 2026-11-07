@@ -553,7 +553,11 @@ export function formatOrderItemDetails(item: Pick<OrderItem, 'audienceType' | 'g
   const normalizedGender = gender === 'МУЖ' || gender === 'ЖЕН' ? gender : ''
   const normalizedType = audienceType === 'ДЕТСКИЙ' || gender === 'ДЕТСКИЙ' ? 'ДЕТСКИЙ' : ''
 
-  return [normalizedType, normalizedGender, item.color, item.material, item.length, item.size]
+  const material = normalizeSuggestion(item.material) === 'СТАНДАРТ' ? '' : item.material
+  const length = normalizeSuggestion(item.length) === 'СТАНДАРТ' ? 'Обычная длина' : item.length
+  const sizeValue = normalizeSuggestion(item.size)
+  const size = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(sizeValue) ? 'Без размера' : item.size
+  return [normalizedType, normalizedGender, item.color, material, length, size]
     .map((value) => String(value ?? '').trim())
     .filter(Boolean)
     .join(' · ')
