@@ -90,7 +90,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     const available=source==='workshop'?0:Math.max(0,choice[source].free-already+own)
     const item={
       ...(previous||{}),
-      productName:choice.productName,catalogVariantId:choice.variantId,
+      productName:choice.productName,catalogVariantId:choice.variantId,manualCatalogEntry:false,
       audienceType:choice.category==='child'?'ДЕТСКИЙ':'ВЗРОСЛЫЙ',
       gender:choice.gender,color:choice.color,material:choice.material,
       length:choice.length,size:choice.size,
@@ -253,7 +253,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         ].filter(Boolean).join(' · ')}
                       </p>
                       {!item.catalogVariantId&&item.sourceType!=='workshop'&&
-                        <p className="main-basket-catalog-note">Введено вручную · каталог и остаток будут проверены при сохранении</p>}
+                        <p className="main-basket-catalog-note">Введено вручную · поиск точного SKU во всём каталоге при сохранении; новые варианты не создаются</p>}
                       {item.workshopUrgent&&<span className="main-basket-urgent">Срочно · {item.workshopDueDate||'срок не указан'}</span>}
                       <div className="main-basket-price">
                         <span>{Number(item.quantity)||1} шт. × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</span>
