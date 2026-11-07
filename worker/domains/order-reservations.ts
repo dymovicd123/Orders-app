@@ -585,7 +585,42 @@ export async function resolveWorkshopCatalogProductOnly(
   const inputKey = catalogOrderInputKey(item);
   const product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number } | null;
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
-  return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'matched', inputKey };
+  const productId = toInt(product.id, 0);
+  const productOnly = { productId, variantId: null, matchStatus: 'unresolved_variant' as const, inputKey };
+
+  // Workshop must NEVER manufacture a catalog variant just because a manager
+  // described an item. Link a pre-existing exact SKU only when every distinctive
+  // attribute is supplied and the match is unique. Otherwise keep the product
+  // link and the manager's untouched description for Workshop.
+  if (![item.gender, item.color, item.material, item.length, item.size].every(value => cleanText(value))) {
+    return productOnly;
+  }
+  const category = normalizeAudienceCategory(item.category, item.size);
+  const wantedGender = normalizeCatalogCombinationGender(item.gender);
+  const wantedColor = normalizeCatalogCombinationColor(item.color);
+  const wantedMaterial = canonicalStockPositionValue(item.material);
+  const wantedLength = canonicalStockPositionValue(item.length);
+  const wantedSize = normalizeCatalogCombinationSize(item.size);
+  if (!wantedGender || !wantedColor || !wantedSize) return productOnly;
+
+  const candidates = await db.prepare(
+    `SELECT v.id, v.gender, v.color, v.material, v.length, v.size_label
+       FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+       WHERE v.product_id=? AND v.is_active=1 AND p.is_active=1
+         AND COALESCE(v.category,p.category,'adult')=?
+       ORDER BY v.id ASC`
+  ).bind(productId, category).all<{
+    id: number; gender: string; color: string; material: string; length: string; size_label: string;
+  }>();
+  const matching = (candidates.results || []).filter(row =>
+    normalizeCatalogCombinationGender(row.gender) === wantedGender
+    && normalizeCatalogCombinationColor(row.color) === wantedColor
+    && canonicalStockPositionValue(row.material) === wantedMaterial
+    && canonicalStockPositionValue(row.length) === wantedLength
+    && normalizeCatalogCombinationSize(row.size_label) === wantedSize
+  );
+  if (matching.length !== 1) return productOnly;
+  return { productId, variantId: toInt(matching[0].id, 0) || null, matchStatus: 'matched', inputKey };
 }
 
 
