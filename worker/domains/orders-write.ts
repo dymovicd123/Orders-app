@@ -422,7 +422,7 @@ export async function insertOrderContent(
 
   for (const [itemIndex, item] of items.entries()) {
     const initiallyResolved = preResolvedCatalog?.[itemIndex]
-      || ((item.isWorkshop || item.manualCatalogEntry) ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
+      || ((item.isWorkshop || item.manualCatalogEntry) ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp, { createMissing: false }));
     // An order may be validated minutes before the source SKU is consolidated.
     // Resolve only the audited exact-SKU lineage here, immediately before the
     // order-item INSERT. Never resurrect the retired variant or guess another SKU.
@@ -777,7 +777,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
               ? {productId:item.catalogProductId,variantId:item.catalogVariantId}
               : (item.isWorkshop || item.manualCatalogEntry)
                 ? await resolveWorkshopCatalogProductOnly(db, item)
-                : await resolveCatalogProductAndVariant(db, item, cleanText(existingOrder.created_at) || requestedAt));
+                : await resolveCatalogProductAndVariant(db, item, cleanText(existingOrder.created_at) || requestedAt, { createMissing: false }));
           }
         }
 
@@ -982,7 +982,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
             ? { productId:item.catalogProductId,variantId:item.catalogVariantId }
             : (item.isWorkshop || item.manualCatalogEntry)
               ? await resolveWorkshopCatalogProductOnly(db, item)
-              : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
+              : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate, createMissing: false });
           preResolvedCatalog.push(resolved);
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
@@ -1913,7 +1913,7 @@ export async function updateOrderCritical(
         for (const item of nextItems) {
           const resolved = item.isWorkshop || item.manualCatalogEntry
             ? await resolveWorkshopCatalogProductOnly(db, item)
-            : await resolveCatalogProductAndVariant(db, item, timestamp);
+            : await resolveCatalogProductAndVariant(db, item, timestamp, { createMissing: false });
           rewritePreResolvedCatalog.push({ productId: resolved.productId, variantId: resolved.variantId });
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
