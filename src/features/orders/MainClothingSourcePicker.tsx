@@ -258,7 +258,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
      onClick={()=>{discardSelection();onManual(source,{productName:query.trim()})}}>
       + Вписать модель вручную в {stockName(source)}
     </button>
-   </div>
+   </div>}
    <div className="clothing-source-model-grid">
     {Array.from({length:Math.ceil(visibleModels.length/2)},(_,n)=>{
      const pair=visibleModels.slice(n*2,n*2+2)
