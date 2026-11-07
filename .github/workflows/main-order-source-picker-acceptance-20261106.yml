@@ -41,6 +41,8 @@ jobs:
           name: main-order-source-picker-visual
           path: artifacts/main-order-picker-visual.png
           if-no-files-found: ignore
+      - name: Guided size/color Chrome acceptance and manager-friendly order copy
+        run: node scripts/test-main-order-ux-review-20261107.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
