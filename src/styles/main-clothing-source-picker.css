@@ -132,3 +132,12 @@
 .clothing-source-quick-actions span{font-size:12px;color:#4d6a8b;flex:1 1 210px}
 .clothing-source-quick-actions button{padding:7px 10px;border:1px solid #91b6e8;border-radius:8px;background:white;color:#1b5aa8;cursor:pointer;font:inherit;font-size:12px;font-weight:700}
 .clothing-source-quick-actions button:hover{background:#f6faff;border-color:#377bd0}
+
+.clothing-source-comparison{display:grid;gap:9px;padding:12px;border:1px solid #b8d0ec;border-radius:9px;background:#f0f6ff}
+.clothing-source-comparison>strong{font-size:13px;color:#244e7e}
+.clothing-source-comparison-options{display:flex;gap:7px;flex-wrap:wrap}
+.clothing-source-comparison-options button{display:grid;gap:4px;text-align:left;flex:1 1 145px;padding:10px;border-radius:8px;border:1px solid #bacde4;background:#fff;color:#244768;cursor:pointer;font:inherit;font-size:12px}
+.clothing-source-comparison-options button:hover{background:#f7fbff;border-color:#4d84c9}
+.clothing-source-comparison-options button strong{font-size:13px}
+.clothing-source-comparison-options button span{font-size:11px}
+.clothing-source-comparison-options button small{color:#4f718f}
