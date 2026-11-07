@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 only: guided size/color order entry, manager-friendly copy, full Chrome and warehouse checks.
+# Branch2 only: Work QA794 F1-F7 corrections, full Chrome and warehouse integrity checks.
 on:
   push:
     branches:
@@ -15,6 +15,14 @@ on:
       - src/styles/main-clothing-source-picker.css
       - src/styles/main-sale-picker.css
       - scripts/test-main-order-ux-review-20261107.mjs
+      - scripts/test-branch2-order-qa794-report-fixes.mjs
+      - src/App.tsx
+      - src/app/types.ts
+      - src/app/utils.ts
+      - src/app/controllers/useOperationalViewModel.ts
+      - src/features/sections/OrdersTableSection.tsx
+      - src/features/orders/manualOrderCatalogPreview.ts
+      - worker/domains/orders-read.ts
 permissions:
   contents: read
 concurrency:
@@ -96,6 +104,8 @@ jobs:
         run: node scripts/test-main-arrival-standard-link-20261107.mjs
       - name: Adaptive color and size filters - actual Chrome interactions
         run: node scripts/test-main-adaptive-clothing-filters-20261107.mjs
+      - name: Work QA794 manual acceptance defects F1-F7 Chrome regression
+        run: node scripts/test-branch2-order-qa794-report-fixes.mjs
       - name: Warehouse targeted integrity - arrival, write-off, transfer, correction, stocktake
         shell: bash
         run: |
