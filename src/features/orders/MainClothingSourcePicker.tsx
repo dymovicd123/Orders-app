@@ -20,29 +20,64 @@ type ColorGroup={name:string;rows:OrderPickerChoice[]}
 const stockName=(source:SourceKey)=>source==='warehouse'?'Склад':'Бутик'
 const money=(value:number)=>value.toLocaleString('ru-RU')+' ₸'
 const norm=(value:unknown)=>String(value??'').trim().toLocaleUpperCase('ru-RU')
-const marker=(value:OrderPickerChoice)=>[value.category,value.gender,value.material,value.color,value.length,value.size].map(norm).join('¦')
+const noSize=(value:unknown)=>['','БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(norm(value))
+const sizeIdentity=(value:unknown)=>noSize(value)?'@NO_SIZE':norm(value)
+const marker=(value:OrderPickerChoice)=>[
+ value.category,value.gender,value.material,value.color,value.length,sizeIdentity(value.size)
+].map(norm).join('¦')
+const EMPTY_SIZE_FILTER='@EMPTY_CATALOG_SIZE'
 const gender=(value:string)=>norm(value)==='ЖЕН'?'Женский':norm(value)==='МУЖ'?'Мужской':value||'Пол не указан'
 const length=(value:string)=>!value?'Длина не указана':norm(value)==='СТАНДАРТ'?'Обычная длина':value
 const material=(value:string)=>!value?'Материал не указан':norm(value)==='СТАНДАРТ'?'Стандарт':value
-const age=(value:OrderPickerChoice)=>value.category==='child'?'Возраст':'Размер'
 export function formatClothingSize(value:OrderPickerChoice,allVariants:readonly OrderPickerChoice[]){
- // Legacy catalog sometimes stores a truly size-less adult SKU as '0'.
- // Display it humanly only when there is no competing real size for this
- // exact model/execution/color/gender. Keep the actual SKU and size='0' for saving.
- if(value.category==='adult'&&norm(value.size)==='0'){
+ const actual=norm(value.size)
+ // Actual SKU sizes are not converted in the payload: in particular literal
+ // СТАНДАРТ is a size, different from default material/length or from no-size.
+ if(actual==='СТАНДАРТ')return 'Стандарт'
+ if(noSize(actual))return 'Без размера'
+ // Legacy adult size 0 can be displayed humanly only if its exact execution,
+ // color and sex has NO competing catalog size. Its actual size remains "0".
+ if(value.category==='adult'&&actual==='0'){
   const sameExecution=allVariants.filter(row=>row.productId===value.productId
-    &&row.category===value.category&&norm(row.gender)===norm(value.gender)
-    &&norm(row.color)===norm(value.color)&&norm(row.material)===norm(value.material)
-    &&norm(row.length)===norm(value.length))
+   &&row.category===value.category&&norm(row.gender)===norm(value.gender)
+   &&norm(row.color)===norm(value.color)&&norm(row.material)===norm(value.material)
+   &&norm(row.length)===norm(value.length))
   if(sameExecution.length>0&&sameExecution.every(row=>norm(row.size)==='0'))return 'Без размера'
  }
- return value.size||'—'
+ return value.size
 }
 const fullName=(value:OrderPickerChoice,variants:readonly OrderPickerChoice[])=>[
  value.productName,material(value.material),value.color||'Цвет не указан',
  gender(value.gender),length(value.length),
- formatClothingSize(value,variants)==='Без размера'?'Без размера':age(value)+' '+(value.size||'не указан')
+ (value.category==='child'?'Возраст ':'Размер ')+formatClothingSize(value,variants)
 ].join(' · ')
+
+// Queries can specify an exact STANDARD size without confusing it with
+// material or length. Unqualified "стандарт" narrows to any such characteristic.
+export function parseClothingSearch(query:string,colors:readonly string[]){
+ let text=foldSaleName(query)
+ let sizeMode:'no_size'|'standard'|'loose_standard'|'regular'='regular'
+ if(/\bбез размера\b/.test(text)){
+  text=text.replace(/\bбез размера\b/g,' ').trim()
+  sizeMode='no_size'
+ }else if(/\bразмер стандарт\b/.test(text)){
+  text=text.replace(/\bразмер стандарт\b/g,' ').trim()
+  sizeMode='standard'
+ }else if(/\bстандарт\b/.test(text)){
+  text=text.replace(/\bстандарт\b/g,' ').trim()
+  sizeMode='loose_standard'
+ }
+ const parsed=parseSaleSearch(text,colors)
+ return {...parsed,sizeMode}
+}
+export function matchesClothingSize(row:OrderPickerChoice,search:ReturnType<typeof parseClothingSearch>,variants:readonly OrderPickerChoice[]){
+ if(search.sizeMode==='no_size')return noSize(row.size)||
+  (norm(row.size)==='0'&&formatClothingSize(row,variants)==='Без размера')
+ if(search.sizeMode==='standard')return norm(row.size)==='СТАНДАРТ'
+ if(search.sizeMode==='loose_standard')return norm(row.size)==='СТАНДАРТ'
+  ||norm(row.length)==='СТАНДАРТ'||norm(row.material)==='СТАНДАРТ'
+ return !search.size||norm(row.size)===norm(search.size)&&(!search.isChild||row.category==='child')
+}
 const listed=(value:OrderPickerChoice,source:SourceKey)=>{
  const data=value[source]
  return data.listed===true||(data.listed===undefined&&(data.physical!==0||data.reserved!==0||data.cachedReserved!==0))
@@ -119,13 +154,12 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
 
  const models=useMemo(()=>sourceModelCatalog(variants,source,showAll),[variants,source,showAll])
  const allColors=useMemo(()=>[...new Set(variants.map(row=>row.color).filter(Boolean))],[variants])
- const search=useMemo(()=>parseSaleSearch(query,allColors),[query,allColors])
+ const search=useMemo(()=>parseClothingSearch(query,allColors),[query,allColors])
  const matchingModels=models.filter(model=>{
   const words=foldSaleName(model.name).split(' ')
   return search.modelTokens.every(token=>words.some(word=>word.startsWith(token)))&&
-   (!search.size&&!search.color||model.rows.some(row=>
-    (!search.size||row.size===search.size&&(!search.isChild||row.category==='child'))&&
-    (!search.color||row.color===search.color)))
+   (!search.size&&search.sizeMode==='regular'&&!search.color||model.rows.some(row=>
+    matchesClothingSize(row,search,variants)&&(!search.color||row.color===search.color)))
  })
  const visibleModels=matchingModels.slice(0,modelLimit)
  const activeModel=models.find(model=>model.id===openId)||null
@@ -140,7 +174,8 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const materialGenders=[...new Set(materialRows.map(row=>row.gender))].sort(sortName)
  const materialLengths=[...new Set(materialRows.map(row=>row.length))].sort(sortName)
  const shownRows=materialRows.filter(row=>
-  (!filterColor||row.color===filterColor)&&(!filterSize||row.size===filterSize)&&
+  (!filterColor||row.color===filterColor)
+  &&(!filterSize||(filterSize===EMPTY_SIZE_FILTER?noSize(row.size):row.size===filterSize))&&
   (!filterGender||row.gender===filterGender)&&(!filterLength||row.length===filterLength))
  const colorGroups=sourceColorGroups(shownRows)
  const visibleColors=colorGroups.slice(0,colorLimit)
@@ -148,8 +183,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const available=selected?sourceFree(selected,source,allocated,draftItem):0
  const missing=selected?!listed(selected,source):false
  const conflict=selected?variants.filter(item=>item.productId===selected.productId&&marker(item)===marker(selected)).length>1:false
- const blocked=selected&&!selected.size?'Не указан размер или возраст. Сверьте карточку товара.':
-  conflict?'Несколько SKU имеют одинаковые характеристики. Сначала уточните вариант в каталоге.':''
+ const blocked=conflict?'Несколько SKU имеют неразличимые характеристики. Уточните вариант в каталоге.':''
  const shortage=selected&&itemSource!=='workshop'?Math.max(0,Number(quantity||0)-available):0
 
  const clearFilters=()=>{setFilterColor('');setFilterSize('');setFilterGender('');setFilterLength('')}
@@ -171,7 +205,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
    setOpenId(id);setActiveMaterial(null);clearFilters();setColorLimit(6)
    const model=models.find(item=>item.id===id)
    const queryMatches=model?.rows.filter(row=>
-    (!search.color||row.color===search.color)&&(!search.size||row.size===search.size))||[]
+    (!search.color||row.color===search.color)&&matchesClothingSize(row,search,variants))||[]
    const found=[...new Set(queryMatches.map(item=>norm(item.material)))]
    if((search.color||search.size)&&found.length===1)setActiveMaterial(found[0])
   }
@@ -327,7 +361,12 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
             {materialSizes.length>1&&<label>Размер
               <select aria-label="Фильтр по размеру" value={filterSize} onChange={event=>{setFilterSize(event.target.value);setColorLimit(6);discardSelection()}}>
                 <option value="">Все размеры</option>
-                {materialSizes.map(value=><option value={value} key={value}>{value||'Без размера'}</option>)}
+                {materialSizes.map(value=>{
+                  const row=materialRows.find(item=>item.size===value)!
+                  return <option value={value||EMPTY_SIZE_FILTER} key={value||EMPTY_SIZE_FILTER}>
+                    {formatClothingSize(row,variants)}
+                  </option>
+                })}
               </select></label>}
             {materialGenders.length>1&&<label>Пол
               <select aria-label="Фильтр по полу" value={filterGender} onChange={event=>{setFilterGender(event.target.value);setColorLimit(6);discardSelection()}}>
@@ -363,7 +402,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
              <div className="clothing-source-size-name"><strong>{lineLabel}</strong></div>
              <div className="clothing-source-sizes">{items.slice().sort(sortSize).map(item=>{
               const free=sourceFree(item,source,allocated,draftItem)
-              const bad=!item.size||group.rows.filter(v=>marker(v)===marker(item)).length>1
+              const bad=group.rows.filter(v=>marker(v)===marker(item)).length>1
               return <button type="button" key={item.variantId} disabled={bad}
                aria-label={fullName(item,variants)+(bad?' · требуется уточнение':' · '+free+' свободно')}
                aria-pressed={pickedId===item.variantId} onClick={()=>selectVariant(item)}
@@ -371,7 +410,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
                <strong>{formatClothingSize(item,variants)}</strong><small>{bad?'Сверить':free===0?'0 шт.':free+' шт.'}</small>
               </button>
              })}</div>
-             {items.some(item=>!item.size)&&<small className="clothing-source-hint">Записи без размера требуют уточнения каталога.</small>}
+             {items.some(item=>noSize(item.size))&&<small className="clothing-source-hint">«Без размера» — отдельная позиция каталога; её SKU сохраняется без изменений.</small>}
              {selected&&items.some(item=>item.variantId===selected.variantId)&&<form className="clothing-source-inline" onSubmit={save}>
               <div className="clothing-source-picked">
                <div><strong>{fullName(selected,variants)}</strong>
