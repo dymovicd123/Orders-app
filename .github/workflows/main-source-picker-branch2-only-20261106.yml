@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 exact size identities: STANDARD, zero, genuinely blank SKU, search narrowing and browser acceptance.
+# Branch2 size acceptance: Cyrillic token matching, Kazakh і folding and exact STANDARD/0/no-size SKUs.
 on:
   push:
     branches:
