@@ -1,7 +1,7 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
 import {useState} from 'react'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
-import {MainSalePicker} from '../orders/MainSalePicker'
+import {MainClothingSourcePicker} from '../orders/MainClothingSourcePicker'
 import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
 import '../../styles/188f-stock-trust.css'
 type SectionContext = Record<string, any>
@@ -136,7 +136,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 </div>
                 <div className="main-sale-workspace">
                   <div className="main-sale-picker-pane">
-                    <MainSalePicker key={pickerRevision} allocated={allocated} onCommit={chooseVariant} onManual={startManual}
+                    <MainClothingSourcePicker key={pickerRevision} allocated={allocated} onCommit={chooseVariant} onManual={startManual}
                       onPendingChange={setPickerPending}
                       editing={editingIndex===null||!createDraft.items[editingIndex]?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
                       onCancelEdit={()=>setEditingIndex(null)}/>
