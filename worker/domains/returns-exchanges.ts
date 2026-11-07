@@ -1618,7 +1618,7 @@ export async function createExchange(
   // This prevents a normal "not enough on the shelf" case from leaving a half-created exchange.
   let preResolvedNewCatalog: { productId: number | null; variantId: number | null } | null = null;
   if (!toInt(criticalOperation.row.target_id, 0) && humanInventoryModelEnabled && !newItem.isWorkshop) {
-    const resolved = await resolveCatalogProductAndVariantV2(db, newItem);
+    const resolved = await resolveCatalogProductAndVariantV2(db, newItem, { createMissing: false });
     preResolvedNewCatalog = { productId: resolved.productId, variantId: resolved.variantId };
     if (resolved.variantId) {
       const stock = await db.prepare(
@@ -3874,7 +3874,7 @@ export async function createExchangeSetV2(db: D1Database, input: ExchangeSetInpu
         if (shipmentState !== 'sent' && shipmentState !== 'pending') {
           throw new CriticalOperationConflictError(`Новая позиция ${index + 1}: укажите, отправлен ли товар клиенту.`)
         }
-        const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem)
+        const resolved = await resolveCatalogProductAndVariantV2(db, effectiveItem, { createMissing: false })
         const variantId = toInt(resolved.variantId, 0) || null
         const productId = toInt(resolved.productId, 0) || null
         const inventorySource: SourceType = effectiveItem.sourceType === 'boutique' ? 'boutique' : 'warehouse'
