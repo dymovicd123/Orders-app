@@ -44,6 +44,8 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
 
   const [manualMode,setManualMode]=useState(false)
   const [editingIndex,setEditingIndex]=useState<number|null>(null)
+  const [pickerPending,setPickerPending]=useState(false)
+  const [pickerRevision,setPickerRevision]=useState(0)
   const allocated=new Map<string,number>()
   for(const item of createDraft.items){
     if(!item.catalogVariantId||item.sourceType==='workshop')continue
@@ -134,7 +136,8 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 </div>
                 <div className="main-sale-workspace">
                   <div className="main-sale-picker-pane">
-                    <MainSalePicker allocated={allocated} onCommit={chooseVariant} onManual={startManual}
+                    <MainSalePicker key={pickerRevision} allocated={allocated} onCommit={chooseVariant} onManual={startManual}
+                      onPendingChange={setPickerPending}
                       editing={editingIndex===null||!createDraft.items[editingIndex]?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
                       onCancelEdit={()=>setEditingIndex(null)}/>
                   </div>
@@ -333,6 +336,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     <strong>{formatMoney(Number(createTotals.totalAmount)||0)}</strong>
                   </div>
                   <button type="button" className="primary" style={{width:'100%'}}
+                    disabled={editingIndex!==null||pickerPending}
                     onClick={()=>document.getElementById('sale-client-details')?.scrollIntoView({behavior:'smooth',block:'start'})}>
                     К клиенту и оплате
                   </button>
@@ -514,12 +518,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   <button
                     className="primary"
                     onClick={createOrderFromDraft}
-                    disabled={orderBusy || !Number(createDraft.managerId || 0)}
+                    disabled={orderBusy || !Number(createDraft.managerId || 0) || editingIndex!==null || pickerPending}
                     title={!Number(createDraft.managerId || 0) ? 'Сначала выберите менеджера' : undefined}
                   >
                     {orderBusy ? 'Создаю...' : 'Сохранить заказ'}
                   </button>
-                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setManualMode(false);resetCreateOrderDraft()}}>
+                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setPickerPending(false);setPickerRevision(x=>x+1);setManualMode(false);resetCreateOrderDraft()}}>
                     Очистить форму
                   </button>
                   <button className="secondary back-action" type="button" onClick={() => setOrderPanel('list')} disabled={orderBusy}>
