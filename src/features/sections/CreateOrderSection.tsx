@@ -248,6 +248,8 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                           (String(item.audienceType).toUpperCase()==='ДЕТСКИЙ'?'Возраст ':'Размер ')+(item.size||'не указан'),
                         ].filter(Boolean).join(' · ')}
                       </p>
+                      {!item.catalogVariantId&&item.sourceType!=='workshop'&&
+                        <p className="main-basket-catalog-note">Введено вручную · каталог и остаток будут проверены при сохранении</p>}
                       {item.workshopUrgent&&<span className="main-basket-urgent">Срочно · {item.workshopDueDate||'срок не указан'}</span>}
                       <div className="main-basket-price">
                         <span>{Number(item.quantity)||1} шт. × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</span>
