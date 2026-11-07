@@ -245,9 +245,10 @@ const summary = useMemo(() => {
 
   const selectedOrder = useMemo(() => {
     if (!selectedOrderId) return null
+    // A freshly fetched full order must win over an incomplete list preview.
+    if (editorOrderOverride?.id === selectedOrderId) return editorOrderOverride
     const fromList = orders.find((order) => order.id === selectedOrderId)
     if (fromList) return fromList
-    if (editorOrderOverride?.id === selectedOrderId) return editorOrderOverride
     return null
   }, [orders, selectedOrderId, editorOrderOverride])
 
