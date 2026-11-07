@@ -127,3 +127,11 @@
 .main-manual-options small{border-top:1px solid #e7eef7;padding:7px 9px 3px;color:#6b819a;font-size:11px}
 .main-workshop-source-notice{background:#f0f6ff;color:#2e5178;border:1px solid #c8ddf3;border-radius:9px;padding:11px 13px;margin:0;font-size:12px;line-height:1.6}
 .main-workshop-source-notice strong{color:#174c89}
+
+.main-manual-input-line{display:flex;align-items:center;min-height:39px;background:#fff;border:1px solid #c7d6e9;border-radius:8px;overflow:hidden}
+.main-manual-input-line:focus-within{outline:2px solid #8eaff1;outline-offset:1px}
+.main-workshop-field .main-manual-input-line input{flex:1;min-width:0;border:0;outline:none!important;box-shadow:none!important}
+.main-manual-arrow{border:0;border-left:1px solid #e0e9f4;color:#416b9d;background:#f7faff;min-height:37px;width:35px;font-size:21px;cursor:pointer}
+.main-manual-arrow:hover{background:#e6f0fd}
+.main-manual-no-match{padding:10px;color:#67809a;font-size:12px;margin:0}
+.main-manual-options .main-manual-show-all{border-top:1px solid #e7eef7;color:#1e5cac;text-align:center}
