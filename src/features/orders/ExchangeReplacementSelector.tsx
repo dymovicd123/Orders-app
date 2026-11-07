@@ -1,6 +1,6 @@
 import {useState} from 'react'
 import type {EditorItem} from '../../app/types'
-import {pickerKey,type OrderPickerChoice,type SourceKey} from './MainOrderSourcePicker'
+import type {OrderPickerChoice} from './MainOrderSourcePicker'
 import {MainClothingSourcePicker} from './MainClothingSourcePicker'
 import {MainWorkshopOrderModal,type ManualOrderPreset,type ManualSource,type WorkshopOrderFields} from './MainWorkshopOrderModal'
 import '../../styles/exchange-replacement-picker.css'
@@ -13,7 +13,6 @@ type Props={
  onClose:()=>void
  suggestions:any
 }
-const selectedSource=(item:EditorItem):SourceKey=>item.sourceType==='boutique'?'boutique':'warehouse'
 
 export function ExchangeReplacementSelector({item,allocated,onApply,onClose,suggestions}:Props){
  const [modal,setModal]=useState<{source:ManualSource;preset:ManualOrderPreset|null;initial:boolean}|null>(null)
@@ -51,6 +50,7 @@ export function ExchangeReplacementSelector({item,allocated,onApply,onClose,sugg
  }
  const saveManual=(value:WorkshopOrderFields)=>{
   onApply({...value,
+   audienceType:value.audienceType==='ДЕТСКИЙ'?'ДЕТСКИЙ' as const:'ВЗРОСЛЫЙ' as const,
    catalogVariantId:undefined,manualCatalogEntry:true,
    shipmentState:undefined,stockObservationEnabled:false,
    observedPhysicalQuantity:null,serverShortage:undefined})
