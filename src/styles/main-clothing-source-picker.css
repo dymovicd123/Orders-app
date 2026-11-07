@@ -125,3 +125,10 @@
 
 .clothing-source-size.is-nosize{min-width:93px}
 .clothing-source-size.is-nosize strong{font-size:11px;line-height:1.25}
+
+.clothing-source-quick-link{justify-self:start;border:0;background:none;color:#245eb3;cursor:pointer;font:inherit;font-size:12px;font-weight:700;padding:6px 0;text-align:left}
+.clothing-source-quick-link:hover{text-decoration:underline}
+.clothing-source-quick-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;border-bottom:1px solid #d8e6f6;padding:0 0 9px}
+.clothing-source-quick-actions span{font-size:12px;color:#4d6a8b;flex:1 1 210px}
+.clothing-source-quick-actions button{padding:7px 10px;border:1px solid #91b6e8;border-radius:8px;background:white;color:#1b5aa8;cursor:pointer;font:inherit;font-size:12px;font-weight:700}
+.clothing-source-quick-actions button:hover{background:#f6faff;border-color:#377bd0}
