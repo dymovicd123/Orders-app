@@ -9,7 +9,7 @@ type SaleFields={quantity:number;unitPrice:number;comment:string;urgent:boolean;
 type Props={
  allocated:ReadonlyMap<string,number>
  onCommit:(choice:OrderPickerChoice,source:Origin,fields:SaleFields,insufficient:boolean)=>void
- onManual:()=>void
+ onManual:(source:Origin)=>void
  editing?:{index:number;item:OrderItem}|null
  onCancelEdit?:()=>void
  onPendingChange?:(pending:boolean)=>void
@@ -209,6 +209,10 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
     {(['warehouse','boutique'] as SourceKey[]).map(key=>
      <button type="button" key={key} className={source===key?'is-active':''}
       aria-pressed={source===key} onClick={()=>changeSource(key)}>{stockName(key)}</button>)}
+    <button type="button" className="clothing-source-workshop-tab"
+      onClick={()=>{discardSelection();onManual('workshop')}} aria-label="Товар в цех">
+      <strong>Цех</strong><small>Товар в цех</small>
+    </button>
    </div>
    <button className="clothing-source-reload" type="button" onClick={()=>setRefresh(value=>value+1)}>Обновить остатки</button>
   </div>
@@ -216,8 +220,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
    <div><h3>Выберите проданную вещь</h3>
     <small>{showAll?'Весь каталог, источник остаётся '+stockName(source):'Позиции '+(source==='warehouse'?'Склада':'Бутика')+', включая нулевой остаток'}</small>
    </div>
-   <button className="clothing-source-manual" type="button" onClick={()=>{discardSelection();onManual()}}>+ Товар в цех</button>
-  </div>
+   </div>
   {loading&&<p className="clothing-source-info">Загрузка товаров…</p>}
   {loadError&&<p className="clothing-source-alert" role="alert">{loadError} <button type="button" onClick={()=>setRefresh(x=>x+1)}>Повторить</button></p>}
   {!loading&&!loadError&&<>
@@ -228,6 +231,11 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
       onChange={event=>{setQuery(event.target.value);setModelLimit(20);setOpenId(null);clearFilters();discardSelection()}}/>
     </label>
     <small>{matchingModels.length} моделей</small>
+   </div>
+   <div className="clothing-source-missing-actions">
+    <button type="button" onClick={()=>{discardSelection();onManual(source)}} className="clothing-source-manual-fallback">
+      Не нашли нужный товар? Вписать вручную в {source==='warehouse'?'Склад':'Бутик'}
+    </button>
    </div>
    {showAll&&<p className="clothing-source-alert">Показан также каталог вне {source==='warehouse'?'Склада':'Бутика'}. Выбранный источник не меняется автоматически.</p>}
    {!matchingModels.length&&<div className="clothing-source-empty">
