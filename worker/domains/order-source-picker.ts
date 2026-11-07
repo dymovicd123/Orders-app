@@ -111,13 +111,21 @@ export async function hydratePickedOrderItems(
       if(!record)throw new Error('Выбранный вариант товара больше не активен. Обновите список товаров.')
       identities.set(variantId,record)
     }
-    const canonicalProduct=cleanText(record.product_name).toLocaleUpperCase('ru-RU')
-    const canonicalColor=cleanText(record.color).toLocaleUpperCase('ru-RU')
-    const canonicalSize=cleanText(record.size).toLocaleUpperCase('ru-RU')
-    // A picked item is not allowed to preserve silently changed draft identity.
+    const upper=(value:unknown)=>cleanText(value).toLocaleUpperCase('ru-RU')
+    const canonicalProduct=upper(record.product_name)
+    const canonicalColor=upper(record.color)
+    const canonicalSize=upper(record.size)
+    const execution=(value:unknown)=>upper(value)||'СТАНДАРТ'
+    // The picked SKU is authoritative, but ALL visible attributes must still agree.
+    // A mismatch of length/material/sex must never be silently rewritten to a
+    // different garment during checkout. Zero size remains the literal catalog ID.
     if(item.productName!==canonicalProduct
-      || cleanText(item.color).toLocaleUpperCase('ru-RU')!==canonicalColor
-      || cleanText(item.size).toLocaleUpperCase('ru-RU')!==canonicalSize){
+      || item.category!==(cleanText(record.category)==='child'?'child':'adult')
+      || upper(item.gender)!==upper(record.gender)
+      || upper(item.color)!==canonicalColor
+      || execution(item.material)!==execution(record.material)
+      || execution(item.length)!==execution(record.length)
+      || upper(item.size)!==canonicalSize){
       throw new Error('Характеристики выбранного товара изменились в каталоге. Обновите выбор товара.')
     }
     item.productName=canonicalProduct
