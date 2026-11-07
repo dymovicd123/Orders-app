@@ -15,6 +15,12 @@ assert(app.includes('onCommit={chooseVariant}'),'Chosen variant must reach the e
 assert(app.includes('setEditingIndex(index)'),'User must be able to replace a line in place')
 assert(app.includes('createOrderFromDraft'),'Existing server save flow must be preserved')
 assert(app.includes('createDraft.payments.map'),'Multiple existing payments must be preserved')
+assert(app.indexOf('Товары в заказе')<app.indexOf('Клиент и условия заказа'),
+ 'Product selection must precede customer and payment details')
+assert(app.includes('onPendingChange={setPickerPending}'),
+ 'Incomplete variant editor must signal checkout blocking')
+assert(app.includes('editingIndex!==null || pickerPending'),
+ 'Order cannot be saved while variant replacement is unfinished')
 
 const server=await createServer({configFile:false,plugins:[react()],appType:'custom',
  server:{middlewareMode:true},logLevel:'error'})
