@@ -160,7 +160,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  }
  const selectVariant=(row:OrderPickerChoice)=>{
   if(pickedId===row.variantId){discardSelection();return}
-  setPickedId(row.variantId);setItemSource(editing?.item?.sourceType as Origin||source)
+  setPickedId(row.variantId);setItemSource(editing?.item?.sourceType==='workshop'?'workshop':source)
   setQuantity(editing?String(editing.item.quantity||1):'1')
   setPrice(editing&&editing.item.unitPrice!=null?String(editing.item.unitPrice):row.salePrice==null?'':String(row.salePrice))
   setComment(String(editing?.item?.workshopComment||''))
@@ -211,7 +211,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
    <div><h3>Выберите проданную вещь</h3>
     <small>{showAll?'Весь каталог, источник остаётся '+stockName(source):'Позиции '+(source==='warehouse'?'Склада':'Бутика')+', включая нулевой остаток'}</small>
    </div>
-   <button className="clothing-source-manual" type="button" onClick={onManual}>+ Индивидуальное изделие</button>
+   <button className="clothing-source-manual" type="button" onClick={()=>{discardSelection();onManual()}}>+ Индивидуальное изделие</button>
   </div>
   {loading&&<p className="clothing-source-info">Загрузка товаров…</p>}
   {loadError&&<p className="clothing-source-alert" role="alert">{loadError} <button type="button" onClick={()=>setRefresh(x=>x+1)}>Повторить</button></p>}
