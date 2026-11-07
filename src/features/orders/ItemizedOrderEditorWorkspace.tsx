@@ -121,6 +121,7 @@ export function ItemizedOrderEditorWorkspace({orderId,draft,setDraft,updateItem,
    if(target!==null&&!previous)return current
    const next:EditorItem={
     ...previous,...item,
+    audienceType:item.audienceType==='ДЕТСКИЙ'?'ДЕТСКИЙ' as const:'ВЗРОСЛЫЙ' as const,
     orderItemId:previous?.orderItemId,
     catalogVariantId:undefined,
     manualCatalogEntry:true,
@@ -191,7 +192,7 @@ export function ItemizedOrderEditorWorkspace({orderId,draft,setDraft,updateItem,
      </p>
      {!item.catalogVariantId&&item.sourceType!=='workshop'&&<p className="main-basket-catalog-note">
       {catalogChoices.length===0?'Проверим вариант при сохранении.':
-       findExactExistingManualVariant(item,catalogChoices)
+       findExactExistingManualVariant({productName:item.productName,audienceType:String(item.audienceType||'ВЗРОСЛЫЙ'),gender:String(item.gender||''),color:String(item.color||''),material:String(item.material||'СТАНДАРТ'),length:String(item.length||'СТАНДАРТ'),size:String(item.size||'')},catalogChoices)
        ?'Такой вариант уже есть в каталоге; наличие в выбранном месте нужно проверить.'
        :'Точный вариант пока не найден. Потребуется уточнение.'}
      </p>}
