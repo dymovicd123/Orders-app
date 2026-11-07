@@ -147,6 +147,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
      </fieldset>
      <fieldset className="main-workshop-section">
       <legend>2. Количество и цена</legend>
+      {quickChange&&preset?.unitPrice!=null&&<small className="main-workshop-hint">Цена подставлена по выбранному товару. Проверьте, подходит ли она для нового варианта.</small>}
       <div className="main-workshop-grid">
        <label className="main-workshop-field">Количество *
         <input type="number" min="1" step="1" value={item.quantity} onChange={e=>set('quantity',e.target.value)}/>
