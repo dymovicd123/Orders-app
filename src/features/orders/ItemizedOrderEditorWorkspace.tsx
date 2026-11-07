@@ -168,6 +168,7 @@ export function ItemizedOrderEditorWorkspace({orderId,draft,setDraft,updateItem,
      onVariantsLoaded={setCatalogChoices}
      onPendingChange={setPickerPending}
      editing={editingIndex===null||!editing?null:{index:editingIndex,item:editing}}
+     allowManualWhileEditing
      onCancelEdit={cancelEdit}
     />
    </div>
