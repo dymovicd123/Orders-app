@@ -25,9 +25,23 @@ const gender=(value:string)=>norm(value)==='ЖЕН'?'Женский':norm(value)
 const length=(value:string)=>!value?'Длина не указана':norm(value)==='СТАНДАРТ'?'Обычная длина':value
 const material=(value:string)=>!value?'Материал не указан':norm(value)==='СТАНДАРТ'?'Стандарт':value
 const age=(value:OrderPickerChoice)=>value.category==='child'?'Возраст':'Размер'
-const fullName=(value:OrderPickerChoice)=>[
+export function formatClothingSize(value:OrderPickerChoice,allVariants:readonly OrderPickerChoice[]){
+ // Legacy catalog sometimes stores a truly size-less adult SKU as '0'.
+ // Display it humanly only when there is no competing real size for this
+ // exact model/execution/color/gender. Keep the actual SKU and size='0' for saving.
+ if(value.category==='adult'&&norm(value.size)==='0'){
+  const sameExecution=allVariants.filter(row=>row.productId===value.productId
+    &&row.category===value.category&&norm(row.gender)===norm(value.gender)
+    &&norm(row.color)===norm(value.color)&&norm(row.material)===norm(value.material)
+    &&norm(row.length)===norm(value.length))
+  if(sameExecution.length>0&&sameExecution.every(row=>norm(row.size)==='0'))return 'Без размера'
+ }
+ return value.size||'—'
+}
+const fullName=(value:OrderPickerChoice,variants:readonly OrderPickerChoice[])=>[
  value.productName,material(value.material),value.color||'Цвет не указан',
- gender(value.gender),length(value.length),age(value)+' '+(value.size||'не указан')
+ gender(value.gender),length(value.length),
+ formatClothingSize(value,variants)==='Без размера'?'Без размера':age(value)+' '+(value.size||'не указан')
 ].join(' · ')
 const listed=(value:OrderPickerChoice,source:SourceKey)=>{
  const data=value[source]
@@ -351,16 +365,16 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
               const free=sourceFree(item,source,allocated,draftItem)
               const bad=!item.size||group.rows.filter(v=>marker(v)===marker(item)).length>1
               return <button type="button" key={item.variantId} disabled={bad}
-               aria-label={fullName(item)+(bad?' · требуется уточнение':' · '+free+' свободно')}
+               aria-label={fullName(item,variants)+(bad?' · требуется уточнение':' · '+free+' свободно')}
                aria-pressed={pickedId===item.variantId} onClick={()=>selectVariant(item)}
-               className={'clothing-source-size'+(pickedId===item.variantId?' is-selected':'')+(free===0?' is-zero':'')}>
-               <strong>{item.size||'—'}</strong><small>{bad?'Сверить':free===0?'0 шт.':free+' шт.'}</small>
+               className={'clothing-source-size'+(formatClothingSize(item,variants)==='Без размера'?' is-nosize':'')+(pickedId===item.variantId?' is-selected':'')+(free===0?' is-zero':'')}>
+               <strong>{formatClothingSize(item,variants)}</strong><small>{bad?'Сверить':free===0?'0 шт.':free+' шт.'}</small>
               </button>
              })}</div>
              {items.some(item=>!item.size)&&<small className="clothing-source-hint">Записи без размера требуют уточнения каталога.</small>}
              {selected&&items.some(item=>item.variantId===selected.variantId)&&<form className="clothing-source-inline" onSubmit={save}>
               <div className="clothing-source-picked">
-               <div><strong>{fullName(selected)}</strong>
+               <div><strong>{fullName(selected,variants)}</strong>
                 {editing&&<small>Изменение существующей позиции · данные заказа будут сохранены</small>}</div>
                <button type="button" onClick={discardSelection} aria-label="Отменить выбор">×</button>
               </div>
