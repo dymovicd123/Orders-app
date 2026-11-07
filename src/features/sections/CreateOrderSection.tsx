@@ -1,8 +1,9 @@
 // @ts-nocheck -- view extracted from the legacy monolith; typed view-models are the next refactor stage.
-import {useState} from 'react'
+import {useEffect,useState} from 'react'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
 import {MainClothingSourcePicker} from '../orders/MainClothingSourcePicker'
 import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
+import {MainWorkshopOrderModal,type WorkshopOrderFields} from '../orders/MainWorkshopOrderModal'
 import '../../styles/188f-stock-trust.css'
 type SectionContext = Record<string, any>
 
@@ -42,7 +43,16 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     updateCreatePayment,
   } = ctx
 
-  const [manualMode,setManualMode]=useState(false)
+  const [workshopOpen,setWorkshopOpen]=useState(false)
+  const [workshopEditing,setWorkshopEditing]=useState<number|null>(null)
+  const [notice,setNotice]=useState<{message:string;id:number}|null>(null)
+  useEffect(()=>{
+    if(!notice)return
+    const timer=setTimeout(()=>setNotice(null),2200)
+    return ()=>clearTimeout(timer)
+  },[notice])
+  const notify=(message:string)=>setNotice({message,id:Date.now()})
+  const actualItems=createDraft.items.filter((item:any)=>item.catalogVariantId||String(item.productName||'').trim())
   const [editingIndex,setEditingIndex]=useState<number|null>(null)
   const [pickerPending,setPickerPending]=useState(false)
   const [pickerRevision,setPickerRevision]=useState(0)
@@ -53,21 +63,19 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     const key=pickerKey(source,item.catalogVariantId)
     allocated.set(key,(allocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
   }
-  const startManual=()=>{
-    setEditingIndex(null)
-    setManualMode(true)
-    const hasEmpty=createDraft.items.some((item:any)=>!item.catalogVariantId&&!String(item.productName||'').trim())
-    if(!hasEmpty)addCreateItem()
+  const startManual=()=>{setEditingIndex(null);setWorkshopEditing(null);setWorkshopOpen(true)}
+  const editManual=(index:number)=>{setEditingIndex(null);setWorkshopEditing(index);setWorkshopOpen(true)}
+  const saveWorkshop=(item:WorkshopOrderFields)=>{
     setCreateDraft((current:any)=>({
       ...current,
-      items:current.items.map((item:any,index:number,items:any[])=>{
-        const firstEmpty=items.findIndex(x=>!x.catalogVariantId&&!String(x.productName||'').trim())
-        return index===firstEmpty?{...item,sourceType:'workshop'}:item
-      }),
+      items:workshopEditing!==null&&current.items[workshopEditing]
+        ?current.items.map((old:any,index:number)=>index===workshopEditing?{...old,...item}:old)
+        :[...current.items.filter((old:any)=>old.catalogVariantId||String(old.productName||'').trim()),item],
     }))
+    notify(workshopEditing===null?'Товар в цех добавлен в заказ':'Товар в цех изменён')
+    setWorkshopOpen(false);setWorkshopEditing(null)
   }
   const chooseVariant=(choice:OrderPickerChoice,source:SourceKey|'workshop',fields:any,insufficient:boolean)=>{
-    setManualMode(false)
     const previous=editingIndex===null?null:createDraft.items[editingIndex]
     const own=previous&&Number(previous.catalogVariantId)===choice.variantId&&previous.sourceType===source
       ?Math.max(0,Number(previous.quantity)||0):0
@@ -97,6 +105,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
         ?current.items.map((existing:any,index:number)=>index===editingIndex?item:existing)
         :[...current.items.filter((existing:any)=>existing.catalogVariantId||String(existing.productName||'').trim()),item],
     }))
+    notify(editingIndex===null?'Товар добавлен в заказ':'Позиция обновлена')
     setEditingIndex(null)
   }
 
@@ -105,12 +114,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               <div className="create-hero">
                 <div>
                   <div className="card-label">Новый заказ</div>
-                  <div className="card-meta">Сначала выберите проданную одежду, затем укажите данные клиента и оплаты.</div>
+                  <div className="card-meta">Сначала заполните детали заказа, затем добавьте товары и оплаты.</div>
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
                   <div>
                     <span>Товаров</span>
-                    <strong>{createDraft.items.length}</strong>
+                    <strong>{actualItems.length}</strong>
                   </div>
                   <div>
                     <span>Оплат</span>
@@ -123,231 +132,9 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 </div>
               </div>
     
-              <section className="order-step-card">
-                <div className="order-step-head order-step-head-split">
-                  <div className="order-step-head-main">
-                    <div className="order-step-index">1</div>
-                    <div>
-                      <h3>Товары в заказе</h3>
-                      <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
-                    </div>
-                  </div>
-                  
-                </div>
-                <div className="main-sale-workspace">
-                  <div className="main-sale-picker-pane">
-                    <MainClothingSourcePicker key={pickerRevision} allocated={allocated} onCommit={chooseVariant} onManual={startManual}
-                      onPendingChange={setPickerPending}
-                      editing={editingIndex===null||!createDraft.items[editingIndex]?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
-                      onCancelEdit={()=>setEditingIndex(null)}/>
-                  </div>
-                  <aside className="main-sale-basket" aria-label="Состав заказа">
-                    <div className="main-sale-basket-head">
-                      <h3>В заказе</h3>
-                      <span>{createDraft.items.filter((item:any)=>item.catalogVariantId||String(item.productName||'').trim()).length} поз.</span>
-                    </div>
-                    {!createDraft.items.some((item:any)=>item.catalogVariantId||String(item.productName||'').trim())&&!manualMode&&
-                      <p className="main-sale-basket-empty">Пока нет товаров. Выбранные позиции появятся здесь.</p>}
-                  {createDraft.items.map((item, index) => (
-                    !item.catalogVariantId && !String(item.productName||'').trim() && !manualMode ? null : (
-                    <div className="main-sale-basket-entry" key={`create-item-${index}`}>
-                      <div className="main-sale-row">
-                        <strong>{formatOrderItemTitle(item)||'Индивидуальное изделие'}</strong>
-                        <small>{sourceLabel(item.sourceType||'workshop')}</small>
-                      </div>
-                      <p>{formatOrderItemDetails(item)}</p>
-                      <div className="main-sale-row">
-                        <strong>{Number(item.quantity||0)} × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</strong>
-                        <strong>{item.unitPrice==null?'—':formatMoney(Number(item.unitPrice||0)*Number(item.quantity||0))}</strong>
-                      </div>
-                      <div className="main-sale-row">
-                        {item.catalogVariantId&&<button className="secondary compact" type="button" onClick={()=>setEditingIndex(index)}>Изменить вариант</button>}
-                        <button className="ghost danger compact" type="button" onClick={()=>{removeCreateItem(index);setEditingIndex(null)}}>Убрать</button>
-                      </div>
-                      <details open={!item.catalogVariantId}>
-                        <summary>Количество, цена и подробности</summary>
-                      <div className="mini-item-head">
-                        <div className="mini-item-head-main">
-                          <strong>Позиция {index + 1}</strong>
-                          <span className="mini-item-summary">
-                            {formatOrderItemTitle(item) || 'Заполните товар и характеристики'}
-                          </span>
-                        </div>
-
-                      </div>
-                      {item.catalogVariantId ? (
-                        <MainPickedOrderLine item={item} index={index} update={updateCreateItem} formatMoney={formatMoney}/>
-                      ) : (
-                      <div className="subgrid order-item-grid">
-                        <label className="wide-field">
-                          <span>Товар</span>
-                          <SmartPickerInput
-                            value={item.productName}
-                            onChange={(value) => updateCreateItem(index, 'productName', value)}
-                            onPick={(value) => applyCreateProductPick(index, value)}
-                            placeholder="Начните вводить товар"
-                            options={suggestionValues.products}
-                          />
-                        </label>
-                        <div className="field-block">
-                          <span>Тип</span>
-                          <ChoicePills
-                            value={normalizeAudienceTypeValue(item.audienceType)}
-                            onChange={(value) => updateCreateItem(index, 'audienceType', value)}
-                            options={[
-                              { value: 'ВЗРОСЛЫЙ', label: 'Взрослый' },
-                              { value: 'ДЕТСКИЙ', label: 'Детский' },
-                            ]}
-                          />
-                        </div>
-                        <label>
-                          <span>{normalizeAudienceTypeValue(item.audienceType) === 'ДЕТСКИЙ' ? 'Возраст' : 'Размер'}</span>
-                          {renderOrderSizeSelect(item, index, updateCreateItem, 'create')}
-                        </label>
-                        <div className="field-block">
-                          <span>Пол</span>
-                          <ChoicePills
-                            value={item.gender || ''}
-                            onChange={(value) => updateCreateItem(index, 'gender', value)}
-                            options={[
-                              { value: '', label: 'Не указан' },
-                              { value: 'ЖЕН', label: 'Жен' },
-                              { value: 'МУЖ', label: 'Муж' },
-                            ]}
-                          />
-                        </div>
-                        <label>
-                          <span>Цвет</span>
-                          <SmartPickerInput
-                            value={item.color || ''}
-                            onChange={(value) => updateCreateItem(index, 'color', value)}
-                            placeholder="Цвет"
-                            options={suggestionValues.colors}
-                          />
-                        </label>
-                        <label>
-                          <span>Материал</span>
-                          <SmartPickerInput
-                            value={item.material || ''}
-                            onChange={(value) => updateCreateItem(index, 'material', value)}
-                            placeholder="Материал"
-                            options={suggestionValues.materials}
-                          />
-                        </label>
-                        <label>
-                          <span>Длина</span>
-                          <SmartPickerInput
-                            value={item.length || ''}
-                            onChange={(value) => updateCreateItem(index, 'length', value)}
-                            placeholder="Длина"
-                            options={suggestionValues.lengths}
-                          />
-                        </label>
-                        <label>
-                          <span>Источник</span>
-                          <select
-                            value={item.sourceType || 'warehouse'}
-                            onChange={(event) => updateCreateItem(index, 'sourceType', event.target.value)}
-                          >
-                            <option value="workshop">Цех</option>
-                          </select>
-                        </label>
-                        <label>
-                          <span>Кол-во</span>
-                          <FriendlyNumberInput
-                            type="number"
-                            min="1"
-                            value={item.quantity ?? 1}
-                            onChange={(event) => updateCreateItem(index, 'quantity', Number(event.target.value))}
-                          />
-                        </label>
-                        <div className="field-block">
-                          <span>Цена по каталогу</span>
-                          <strong>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? formatMoney(item.catalogPriceSnapshot) : 'Нет цены'}</strong>
-                          <small>{item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? 'Рекомендованная цена для текущих характеристик.' : 'Введите цену продажи вручную.'}</small>
-                        </div>
-                        <label>
-                          <span>Цена продажи <b className="required-mark">*</b></span>
-                          <FriendlyNumberInput
-                            type="number"
-                            min="0"
-                            value={item.unitPrice ?? ''}
-                            onChange={(event) => updateCreateItem(index, 'unitPrice', event.target.value)}
-                            placeholder="Введите итоговую цену"
-                          />
-                          <small>Укажите цену, по которой товар реально продаётся. Если по каталогу 115 000, а клиенту продаёте за 105 000, укажите 105 000. Можно указать 0.</small>
-                        </label>
-                        <div className="field-block">
-                          <span>Сумма позиции</span>
-                          <strong>{item.unitPrice === undefined || item.unitPrice === null || String(item.unitPrice).trim() === '' ? '—' : formatMoney(Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)))}</strong>
-                        </div>
-                        {item.priceOrigin === 'manual' && item.catalogPriceSnapshot !== null && item.catalogPriceSnapshot !== undefined ? (
-                          <small className="wide-field">Цена продажи введена вручную. При изменении товара, материала, длины или типа рекомендация Каталога обновится, а ваша цена останется без дополнительного подтверждения.</small>
-                        ) : null}
-                        {normalizeSuggestion(item.sourceType) === 'WORKSHOP' && Number(item.quantity || 0) > 0 ? (
-                          <>
-                            <label className="wide-field">
-                              <span>Комментарий для цеха</span>
-                              <input
-                                value={item.workshopComment || ''}
-                                onChange={(event) => updateCreateItem(index, 'workshopComment', event.target.value)}
-                                placeholder="Что передать в цех по этой позиции"
-                              />
-                              <small>Комментарий не делает позицию срочной. Срочность выбирается отдельно ниже.</small>
-                            </label>
-                            <label className="workshop-urgent-editor">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(item.workshopUrgent)}
-                                onChange={(event) => updateCreateItem(index, 'workshopUrgent', event.target.checked)}
-                              />
-                              <span>Срочно для цеха</span>
-                            </label>
-                            {item.workshopUrgent ? (
-                              <>
-                                <label>
-                                  <span>Нужно до</span>
-                                  <input
-                                    type="date"
-                                    value={item.workshopDueDate || ''}
-                                    onChange={(event) => updateCreateItem(index, 'workshopDueDate', event.target.value)}
-                                  />
-                                </label>
-                                <label>
-                                  <span>Время</span>
-                                  <input
-                                    type="time"
-                                    value={item.workshopDueTime || ''}
-                                    onChange={(event) => updateCreateItem(index, 'workshopDueTime', event.target.value)}
-                                  />
-                                </label>
-                              </>
-                            ) : null}
-                          </>
-                        ) : null}
-                      </div>
-                      )}
-                      {!item.catalogVariantId?renderOrderSourceAvailability(item, `create-item-${index}`, index):null}
-                      </details>
-                    </div>
-                    )
-                  ))}
-                  <div className="main-sale-basket-total"><span>Итого</span>
-                    <strong>{formatMoney(Number(createTotals.totalAmount)||0)}</strong>
-                  </div>
-                  <button type="button" className="primary" style={{width:'100%'}}
-                    disabled={editingIndex!==null||pickerPending}
-                    onClick={()=>document.getElementById('sale-client-details')?.scrollIntoView({behavior:'smooth',block:'start'})}>
-                    К клиенту и оплате
-                  </button>
-                  </aside>
-                </div>
-                
-              </section>
-    
               <section className="order-step-card" id="sale-client-details">
                 <div className="order-step-head">
-                  <div className="order-step-index">2</div>
+                  <div className="order-step-index">1</div>
                   <div>
                     <h3>Клиент и условия заказа</h3>
                     <p>Основные данные заказа. Итоговая цена теперь складывается из цен товарных позиций.</p>
@@ -421,6 +208,78 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               <section className="order-step-card">
                 <div className="order-step-head order-step-head-split">
                   <div className="order-step-head-main">
+                    <div className="order-step-index">2</div>
+                    <div>
+                      <h3>Товары в заказе</h3>
+                      <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
+                    </div>
+                  </div>
+                  
+                </div>
+                <div className="main-sale-workspace">
+                  <div className="main-sale-picker-pane">
+                    <MainClothingSourcePicker key={pickerRevision} allocated={allocated} onCommit={chooseVariant} onManual={startManual}
+                      onPendingChange={setPickerPending}
+                      editing={editingIndex===null||!createDraft.items[editingIndex]?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
+                      onCancelEdit={()=>setEditingIndex(null)}/>
+                  </div>
+                  <aside className="main-sale-basket" aria-label="Состав заказа">
+                    <div className="main-sale-basket-head">
+                      <h3>В заказе</h3>
+                      <span>{actualItems.length} поз.</span>
+                    </div>
+                    {actualItems.length===0&&
+                      <p className="main-sale-basket-empty">Пока нет товаров. Выбранные позиции появятся здесь.</p>}
+                  {createDraft.items.map((item:any,index:number)=>(
+                    !item.catalogVariantId&&!String(item.productName||'').trim()?null:
+                    <div className="main-sale-basket-entry" key={`basket-item-${index}`}>
+                      <div className="main-basket-title">
+                        <strong>{String(item.productName||'').trim()}</strong>
+                        <span className={`main-basket-source source-${item.sourceType||'workshop'}`}>{sourceLabel(item.sourceType||'workshop')}</span>
+                      </div>
+                      <p className="main-basket-details">
+                        {[
+                          item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender||'',
+                          item.material||'',item.color||'',
+                          item.length&&String(item.length).toUpperCase()!=='СТАНДАРТ'?item.length:'Обычная длина',
+                          (String(item.audienceType).toUpperCase()==='ДЕТСКИЙ'?'Возраст ':'Размер ')+(item.size||'не указан'),
+                        ].filter(Boolean).join(' · ')}
+                      </p>
+                      {item.workshopUrgent&&<span className="main-basket-urgent">Срочно · {item.workshopDueDate||'срок не указан'}</span>}
+                      <div className="main-basket-price">
+                        <span>{Number(item.quantity)||1} шт. × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</span>
+                        <strong>{item.unitPrice==null?'—':formatMoney(Number(item.unitPrice||0)*Number(item.quantity||0))}</strong>
+                      </div>
+                      {item.workshopComment&&item.sourceType==='workshop'&&<p className="main-basket-comment">Цеху: {item.workshopComment}</p>}
+                      <div className="main-basket-actions">
+                        <button type="button" className="secondary compact" onClick={()=>{
+                          if(item.catalogVariantId)setEditingIndex(index)
+                          else editManual(index)
+                        }}>{item.catalogVariantId?'Изменить товар':'Изменить для Цеха'}</button>
+                        <button type="button" className="ghost danger compact" onClick={()=>{removeCreateItem(index);setEditingIndex(null)}}>Убрать</button>
+                      </div>
+                      {item.catalogVariantId&&<details className="main-basket-editor">
+                        <summary>Изменить количество и цену</summary>
+                        <MainPickedOrderLine item={item} index={index} update={updateCreateItem} formatMoney={formatMoney}/>
+                      </details>}
+                    </div>
+                  ))}
+                  <div className="main-sale-basket-total"><span>Итого</span>
+                    <strong>{formatMoney(Number(createTotals.totalAmount)||0)}</strong>
+                  </div>
+                  <button type="button" className="primary" style={{width:'100%'}}
+                    disabled={editingIndex!==null||pickerPending}
+                    onClick={()=>document.getElementById('sale-payments')?.scrollIntoView({behavior:'smooth',block:'start'})}>
+                    Перейти к оплатам
+                  </button>
+                  </aside>
+                </div>
+                
+              </section>
+    
+              <section className="order-step-card" id="sale-payments">
+                <div className="order-step-head order-step-head-split">
+                  <div className="order-step-head-main">
                     <div className="order-step-index">3</div>
                     <div>
                       <h3>Оплаты</h3>
@@ -475,7 +334,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                     </div>
                     <div>
                       <span>Позиции</span>
-                      <strong>{createDraft.items.length}</strong>
+                      <strong>{actualItems.length}</strong>
                     </div>
                   </div>
                 </div>
@@ -483,7 +342,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 <div className="order-create-item-summary">
                   <div className="order-create-item-summary-head">
                     <strong>Состав заказа</strong>
-                    <span>{createDraft.items.length} поз. · {createDraft.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)} шт.</span>
+                    <span>{actualItems.length} поз. · {createDraft.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)} шт.</span>
                   </div>
                   <div className="order-create-item-summary-list">
                     {createDraft.items.map((item, index) => (
@@ -518,12 +377,12 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   <button
                     className="primary"
                     onClick={createOrderFromDraft}
-                    disabled={orderBusy || !Number(createDraft.managerId || 0) || editingIndex!==null || pickerPending}
+                    disabled={orderBusy || !Number(createDraft.managerId || 0) || editingIndex!==null || pickerPending || workshopOpen}
                     title={!Number(createDraft.managerId || 0) ? 'Сначала выберите менеджера' : undefined}
                   >
                     {orderBusy ? 'Создаю...' : 'Сохранить заказ'}
                   </button>
-                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setPickerPending(false);setPickerRevision(x=>x+1);setManualMode(false);resetCreateOrderDraft()}}>
+                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setPickerPending(false);setPickerRevision(x=>x+1);setWorkshopOpen(false);setWorkshopEditing(null);setNotice(null);resetCreateOrderDraft()}}>
                     Очистить форму
                   </button>
                   <button className="secondary back-action" type="button" onClick={() => setOrderPanel('list')} disabled={orderBusy}>
@@ -531,6 +390,14 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   </button>
                 </div>
               </section>
+              {workshopOpen&&<MainWorkshopOrderModal
+                initial={workshopEditing===null?null:createDraft.items[workshopEditing]}
+                suggestions={suggestionValues}
+                onClose={()=>{setWorkshopOpen(false);setWorkshopEditing(null)}}
+                onSave={saveWorkshop}/>}
+              {notice&&<div className="main-sale-toast" role="status" aria-live="polite" key={notice.id}>
+                <span aria-hidden="true">✓</span>{notice.message}
+              </div>}
             </article>
   )
 }
