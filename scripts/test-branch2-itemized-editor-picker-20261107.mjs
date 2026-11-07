@@ -65,7 +65,7 @@ const browser=[
  "const qty=document.querySelector('.main-sale-basket-entry .main-picked-order-fields input[type=number]');",
  "setValue(qty,'3');await pause(160);if(Number(window.__draft.items[0].quantity)!==3)throw Error('Quantity edit failed');",
  "await hit(pressText('.main-sale-basket-entry .main-basket-actions button','Указать вручную'));",
- "const modal=document.querySelector('[role=dialog]');if(!modal||!modal.textContent.includes('БАЯН СҰЛУ ШАПАН'))throw Error('Manual edit missing existing model');",
+ "const modal=document.querySelector('[role=dialog]');if(!modal||![...modal.querySelectorAll('input')].some(x=>x.value==='БАЯН СҰЛУ ШАПАН'))throw Error('Manual edit missing existing model');",
  "await hit(pressText('[role=dialog] button','Отмена'));",
  "if(window.__draft.items[0].catalogVariantId!==103||window.__draft.items.length!==2)throw Error('Cancel changed draft');",
  "if(window.__fetches.some(x=>x.includes('/api/orders/2202')))throw Error('Editor invoked an order mutation during draft editing');",
