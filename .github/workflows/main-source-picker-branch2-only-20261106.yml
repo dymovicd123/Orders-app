@@ -83,6 +83,8 @@ jobs:
         run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
       - name: No implicit SKU creation across orders exchanges and catalog queue
         run: node scripts/test-main-implicit-sku-guard-20261107.mjs
+      - name: Arrival hidden STANDARD material length canonical SKU and new item creation
+        run: node scripts/test-main-arrival-standard-link-20261107.mjs
       - name: Full application build and main business release gates
         run: |
           npm run build
