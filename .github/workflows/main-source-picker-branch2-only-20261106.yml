@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 workshop safety: no inferred STANDARD for omitted material/length; intentional no-size SKU matching only.
+# Branch2 QA Workshop safety: preserve omitted facts, exact read-only SKU linking and HTTP task creation.
 on:
   push:
     branches:
