@@ -103,3 +103,14 @@
 .clothing-source-refinement-controls select{min-height:37px;width:100%;border-radius:8px;padding:6px 9px;background:#fff;border:1px solid #bed1ea;font-size:12px;font-weight:600;color:#26496f}
 .clothing-source-refinement-controls .clothing-source-link{min-height:37px;padding:7px}
 @media(max-width:570px){.clothing-source-refinement-controls label{flex:1 1 calc(50% - 8px);min-width:0}}
+
+/* The Workshop is an equally discoverable source action, not a hidden secondary link. */
+.clothing-source-workshop-tab{display:grid;align-content:center;justify-items:center;gap:2px;min-width:112px!important;min-height:43px!important;border:1px solid #b8d0f2!important;border-radius:8px!important;background:#e4efff!important;color:#1654ad!important;cursor:pointer}
+.clothing-source-workshop-tab strong{font-size:13px;font-weight:850}
+.clothing-source-workshop-tab small{font-size:10px;font-weight:600;color:#376da9}
+.clothing-source-workshop-tab:hover{background:#d9e9ff!important;border-color:#6393d9!important}
+.clothing-source-tabs button:not(.clothing-source-workshop-tab){min-height:43px}
+.clothing-source-missing-actions{display:flex;justify-content:flex-start;align-items:center;margin-top:-4px}
+.clothing-source-manual-fallback{display:inline-flex;align-items:center;border:1px dashed #a8c5e8;border-radius:8px;background:#f7fbff;color:#245fad;padding:8px 12px;font-size:12px;font-weight:730;cursor:pointer;text-align:left}
+.clothing-source-manual-fallback:hover{background:#eaf3ff;border-style:solid}
+@media(max-width:570px){.clothing-source-tabs{flex-wrap:wrap;width:100%}.clothing-source-tabs>button{flex:1 1 95px}.clothing-source-workshop-tab{min-width:95px!important}.clothing-source-reload{margin-left:auto}}
