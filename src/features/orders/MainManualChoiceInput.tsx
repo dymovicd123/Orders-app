@@ -34,8 +34,8 @@ export function MainManualChoiceInput({label,value,onChange,options=[],placehold
    <input id={id} ref={inputRef} value={value} placeholder={placeholder}
     autoComplete="off" role="combobox" aria-autocomplete="list"
     aria-controls={listId} aria-expanded={open&&matches.length>0}
-    onFocus={()=>{setOpen(true);setActive(-1)}} onBlur={()=>setOpen(false)}
-    onKeyDown={onKeys} onChange={event=>{onChange(event.target.value);setOpen(true);setActive(-1)}}/>
+    onFocus={()=>{setOpen(Boolean(value.trim()));setActive(-1)}} onBlur={()=>setOpen(false)}
+    onKeyDown={onKeys} onChange={event=>{onChange(event.target.value);setOpen(Boolean(event.target.value.trim()));setActive(-1)}}/>
    {open&&matches.length>0&&<div className="main-manual-options" id={listId} role="listbox">
     {matches.map((name,index)=><button type="button" role="option"
      aria-selected={index===active} className={index===active?'is-current':''}
