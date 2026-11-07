@@ -88,6 +88,7 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
       const unitPrice = Math.max(0, toInt(item?.unitPrice, 0));
       const lineTotal = quantity * unitPrice;
       const itemSource = normalizeOrderItemSourceType(item?.sourceType || fallbackSource, fallbackSource);
+      const isWorkshop = itemSource === 'workshop';
       const category = normalizeAudienceCategory(item?.audienceType, item?.size);
       return {
         productName: upperText(item?.productName),
@@ -97,15 +98,18 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
         audienceType: category === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
         gender: upperText(item?.gender),
         color: upperText(item?.color),
-        material: canonicalStockPositionValue(item?.material),
-        length: canonicalStockPositionValue(item?.length),
+        // Workshop descriptions must retain missing facts as missing. The
+        // Warehouse/Boutique canonical fallback to СТАНДАРТ is NOT evidence
+        // that a manager selected standard Workshop material or length.
+        material: isWorkshop ? upperText(item?.material) : canonicalStockPositionValue(item?.material),
+        length: isWorkshop ? upperText(item?.length) : canonicalStockPositionValue(item?.length),
         size: cleanText(item?.size),
         quantity,
         unitPrice,
         lineTotal,
         sourceType: itemSource,
         inventorySource: itemSource === 'boutique' ? 'boutique' : 'warehouse' as SourceType,
-        isWorkshop: itemSource === 'workshop',
+        isWorkshop,
         workshopComment: cleanText(item?.workshopComment),
         workshopUrgent: Boolean(item?.workshopUrgent),
         workshopDueDate: cleanText(item?.workshopDueDate) ? normalizeDate(item?.workshopDueDate) : '',
