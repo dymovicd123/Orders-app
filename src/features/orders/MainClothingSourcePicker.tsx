@@ -384,11 +384,11 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
        </div>:materials.length===1?<div className="clothing-source-single-material">Материал: <strong>{material(model.rows[0].material)}</strong></div>:null}
        <div className="clothing-source-own-variant">
         <div>
-         <strong>{selectedMaterial===null?'Не нашли нужный материал?':'Нет нужного цвета, длины или размера?'}</strong>
-         <small>Укажите недостающие характеристики. Товар останется в {source==='warehouse'?'Складе':'Бутике'}.</small>
+         <strong>{selectedMaterial===null?'Нет нужного материала?':'Не нашли подходящий вариант?'}</strong>
+         <small>Для другого размера используйте кнопку ниже. Для другого цвета сначала выберите размер похожего товара.</small>
         </div>
         <button type="button" onClick={()=>openManualForModel(model)}>
-         + Свой вариант
+         Указать вручную
         </button>
        </div>
        {selectedMaterial===null&&<p className="clothing-source-info">Выберите материал или добавьте свой вариант этой модели.</p>}
