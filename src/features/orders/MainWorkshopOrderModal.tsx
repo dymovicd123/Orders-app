@@ -153,7 +153,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
        {catalogVariants.length===0?'Наличие подходящего товара проверим при сохранении.':
         catalogMatch
          ?(mode==='warehouse'?catalogMatch.warehouse.free:catalogMatch.boutique.free)>0
-          ?'Такой вариант уже есть. Доступно в '+(mode==='warehouse'?'Складе: ':'Бутике: ')+catalogMatch[mode].free+' шт.'
+          ?'Такой вариант уже есть. Доступно в '+(mode==='warehouse'?'Складе: ':'Бутике: ')+(mode==='warehouse'?catalogMatch.warehouse.free:catalogMatch.boutique.free)+' шт.'
           :'Такой вариант уже есть, но свободного остатка в '+(mode==='warehouse'?'Складе':'Бутике')+' сейчас нет. Потребуется уточнить наличие.'
          :'Такого точного варианта пока не нашли. Заказ можно сохранить для уточнения; новый товар на складе не появится.'}
       </p>}
