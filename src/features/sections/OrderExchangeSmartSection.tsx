@@ -464,7 +464,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 return (
                   <div className="exchange-new-card" key={entry.draftKey}>
                     <div className="exchange-new-card-head">
-                      <div><span>Товар {index + 1}</span><strong>{item.productName || 'Выберите товар'}</strong></div>
+                      <div><strong>Новая вещь {index + 1}</strong></div>
                       <button className="ghost danger compact" type="button" onClick={() => {
                         if(activeReplacementKey===entry.draftKey)setActiveReplacementKey(null)
                         removeExchangeSetNewItem(index)
