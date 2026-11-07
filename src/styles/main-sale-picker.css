@@ -144,3 +144,5 @@
 .main-workshop-quick-base span{font-size:12px;color:#4d6681;line-height:1.5;overflow-wrap:anywhere}
 .main-workshop-expand{justify-self:start;padding:6px 0;border:0;background:transparent;color:#225bb0;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .main-workshop-expand:hover{text-decoration:underline}
+
+.main-workshop-match{margin:0;padding:9px 11px;border:1px solid #c3d9e9;border-radius:8px;background:#f3f9ff;color:#2b567d;font-size:12px;line-height:1.5}
