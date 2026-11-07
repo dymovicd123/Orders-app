@@ -143,5 +143,47 @@ try{
  const taskItem=sql.prepare("SELECT variant_id,is_workshop FROM order_items WHERE order_id=?").get(taskReply.body.orderId)
  assert.equal(taskItem.variant_id,null)
  assert.equal(taskItem.is_workshop,1)
+ // Manual source entry must reuse an existing active SKU from the FULL catalog,
+ // even when that SKU has never existed in the requested source's inventory_stock.
+ const countVariants=()=>Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_variants WHERE product_id=98502').get().n)
+ const countProducts=()=>Number(sql.prepare("SELECT COUNT(*) AS n FROM catalog_products WHERE name='QA SIZE PONCHO'").get().n)
+ const initialVariants=countVariants()
+ const manual=(requestId,attrs={})=>{
+  const payload=make(undefined,'СТАНДАРТ',requestId)
+  payload.items[0]={...payload.items[0],catalogVariantId:undefined,
+   manualCatalogEntry:true,sourceType:'warehouse',shortageAcknowledged:true,...attrs}
+  return payload
+ }
+ const reused=await post(manual('qa-manual-existing-outside-source'))
+ assert([200,201].includes(reused.status),'Manual exact outside-source SKU should be linked: '+JSON.stringify(reused.body))
+ const reusedItem=sql.prepare('SELECT variant_id,source_type FROM order_items WHERE order_id=?').get(reused.body.orderId)
+ assert.equal(reusedItem.variant_id,98511,'Manual source entry did not reuse active catalog variant outside source')
+ assert.equal(reusedItem.source_type,'warehouse','Manual entry changed manager-selected source')
+ const warehouseRow=sql.prepare("SELECT quantity FROM inventory_stock WHERE variant_id=98511 AND inventory_source='warehouse'").get()
+ assert.equal(warehouseRow?.quantity,0,'Missing source inventory must never be fabricated with physical stock')
+ const linkedReserve=sql.prepare('SELECT variant_id,inventory_source FROM inventory_reservations WHERE order_id=?').get(reused.body.orderId)
+ assert.equal(linkedReserve?.variant_id,98511)
+ assert.equal(linkedReserve?.inventory_source,'warehouse')
+ assert.equal(countVariants(),initialVariants,'Existing SKU match must never duplicate catalog variant')
+ const missing=await post(manual('qa-manual-unseen-combination',{size:'54'}))
+ assert([200,201].includes(missing.status),'Unknown variant may be ordered for catalog clarification: '+JSON.stringify(missing.body))
+ const missingItem=sql.prepare('SELECT product_id,variant_id,source_type FROM order_items WHERE order_id=?').get(missing.body.orderId)
+ assert.equal(missingItem.product_id,98502,'Recognized model must remain linked')
+ assert.equal(missingItem.variant_id,null,'Unknown manual characteristics must not spawn a SKU')
+ assert.equal(missingItem.source_type,'warehouse')
+ assert.equal(countVariants(),initialVariants,'Known-fact combination must not silently create a SKU')
+ const pending=sql.prepare('SELECT status FROM inventory_reservations WHERE order_id=?').get(missing.body.orderId)
+ assert.equal(pending?.status,'unresolved','New manual description must not silently reserve an invented SKU')
+ const incomplete=await post(manual('qa-manual-incomplete',{material:''}))
+ assert.equal(incomplete.status,400,'Direct HTTP cannot bypass required manual garment fields')
+ assert.equal(countVariants(),initialVariants)
+ const noColorSource=manual('qa-manual-no-color-not-guessed',{color:'БЕЗ ЦВЕТА',size:'БЕЗ РАЗМЕРА'})
+ const noColorResult=await post(noColorSource)
+ assert([200,201].includes(noColorResult.status),'Explicit no-color and no-size must be allowed')
+ const noColorItem=sql.prepare('SELECT variant_id FROM order_items WHERE order_id=?').get(noColorResult.body.orderId)
+ assert.equal(noColorItem.variant_id,null,'No-color must not select a beige SKU')
+ assert.equal(countProducts(),1)
+ assert.equal(countVariants(),initialVariants)
+ console.log('MANUAL_ALL_SOURCE_HTTP_PASS: external-source SKU reused; new variation unresolved; no-color explicit; direct-HTTP required fields')
  console.log('EXACT_SIZE_HTTP_ORDER_PASS: persisted STANDARD, zero, no-size and safe incomplete Workshop tasks, no invented SKU or stock writes')
 }finally{sql.close()}
