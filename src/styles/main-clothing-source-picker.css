@@ -114,3 +114,11 @@
 .clothing-source-manual-fallback{display:inline-flex;align-items:center;border:1px dashed #a8c5e8;border-radius:8px;background:#f7fbff;color:#245fad;padding:8px 12px;font-size:12px;font-weight:730;cursor:pointer;text-align:left}
 .clothing-source-manual-fallback:hover{background:#eaf3ff;border-style:solid}
 @media(max-width:570px){.clothing-source-tabs{flex-wrap:wrap;width:100%}.clothing-source-tabs>button{flex:1 1 95px}.clothing-source-workshop-tab{min-width:95px!important}.clothing-source-reload{margin-left:auto}}
+
+.clothing-source-own-variant{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border:1px dashed #b8cbe5;background:#f3f8ff;border-radius:10px}
+.clothing-source-own-variant>div{display:grid;gap:3px}
+.clothing-source-own-variant strong{color:#245383;font-size:12px}
+.clothing-source-own-variant small{color:#66809d;font-size:11px}
+.clothing-source-own-variant>button{min-height:37px;border:1px solid #88b1e3;border-radius:8px;background:#fff;color:#1b5fb5;font-weight:800;font-size:12px;padding:8px 12px;cursor:pointer}
+.clothing-source-own-variant>button:hover{border-color:#347fda;background:#e9f3ff}
+@media(max-width:560px){.clothing-source-own-variant>button{width:100%}}
