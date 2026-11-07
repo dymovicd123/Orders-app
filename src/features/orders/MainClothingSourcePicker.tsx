@@ -174,9 +174,11 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const materialGenders=[...new Set(materialRows.map(row=>row.gender))].sort(sortName)
  const materialLengths=[...new Set(materialRows.map(row=>row.length))].sort(sortName)
  const shownRows=materialRows.filter(row=>
-  (!filterColor||row.color===filterColor)
-  &&(!filterSize||(filterSize===EMPTY_SIZE_FILTER?noSize(row.size):row.size===filterSize))&&
-  (!filterGender||row.gender===filterGender)&&(!filterLength||row.length===filterLength))
+  matchesClothingSize(row,search,variants)
+  &&(!search.color||row.color===search.color)
+  &&(!filterColor||row.color===filterColor)
+  &&(!filterSize||(filterSize===EMPTY_SIZE_FILTER?noSize(row.size):row.size===filterSize))
+  &&(!filterGender||row.gender===filterGender)&&(!filterLength||row.length===filterLength))
  const colorGroups=sourceColorGroups(shownRows)
  const visibleColors=colorGroups.slice(0,colorLimit)
  const draftItem=editing?.item||null
