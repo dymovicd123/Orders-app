@@ -102,6 +102,23 @@ export function sourceFree(item:OrderPickerChoice,source:SourceKey,allocated:Rea
   ?Math.max(0,Number(editing.quantity)||0):0
  return Math.max(0,item[source].free-draft+own)
 }
+export function clothingRefinementPlan(rows:readonly OrderPickerChoice[]){
+ const count=(get:(row:OrderPickerChoice)=>string)=>new Set(rows.map(get)).size
+ const colors=count(row=>norm(row.color))
+ const sizes=count(row=>sizeIdentity(row.size))
+ const genders=count(row=>norm(row.gender))
+ const lengths=count(row=>norm(row.length))
+ const dense=rows.length>12
+ // Offer a filter whenever ONE attribute makes browsing hard, not just
+ // when there are many SKU combinations. 7 colors among 9 SKUs needs a
+ // color picker; 9 sizes among 11 SKUs needs a size picker.
+ const color=colors>=5||(dense&&colors>=3)
+ const size=sizes>=7||(dense&&sizes>=3)
+ const gender=genders>1&&(dense||genders>2)
+ const length=lengths>1&&(dense||lengths>2)
+ return {color,size,gender,length,visible:color||size||gender||length,
+  colors,sizes,genders,lengths}
+}
 export function sourceColorGroups(variants:readonly OrderPickerChoice[]){
  const byColor=new Map<string,OrderPickerChoice[]>()
  for(const item of variants){
@@ -175,6 +192,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const materialSizes=[...new Set(materialRows.map(row=>noSize(row.size)?EMPTY_SIZE_FILTER:row.size))].sort(sortName)
  const materialGenders=[...new Set(materialRows.map(row=>row.gender))].sort(sortName)
  const materialLengths=[...new Set(materialRows.map(row=>row.length))].sort(sortName)
+ const refinements=clothingRefinementPlan(materialRows)
  const shownRows=materialRows.filter(row=>
   matchesClothingSize(row,search,variants)
   &&(!search.color||row.color===search.color)
@@ -182,7 +200,9 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   &&(!filterSize||(filterSize===EMPTY_SIZE_FILTER?noSize(row.size):row.size===filterSize))
   &&(!filterGender||row.gender===filterGender)&&(!filterLength||row.length===filterLength))
  const colorGroups=sourceColorGroups(shownRows)
- const visibleColors=colorGroups.slice(0,colorLimit)
+ // Small color palettes are all visible immediately. Larger ones still
+ // expose every color through the selector, with progressive card browsing.
+ const visibleColors=colorGroups.length<=10?colorGroups:colorGroups.slice(0,colorLimit)
  const draftItem=editing?.item||null
  const available=selected?sourceFree(selected,source,allocated,draftItem):0
  const missing=selected?!listed(selected,source):false
@@ -353,16 +373,16 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
        </div>
        {selectedMaterial===null&&<p className="clothing-source-info">Выберите материал или добавьте свой вариант этой модели.</p>}
        {selectedMaterial!==null&&<>
-        {materialRows.length>12&&<div className="clothing-source-refinements" aria-label="Фильтры внутри материала">
+        {refinements.visible&&<div className="clothing-source-refinements" aria-label="Фильтры внутри материала">
           <div className="clothing-source-refinement-head"><strong>Уточнить вариант</strong>
             <span>Показано {shownRows.length} из {materialRows.length}</span></div>
           <div className="clothing-source-refinement-controls">
-            {materialColors.length>1&&<label>Цвет
+            {refinements.color&&<label>Цвет
               <select aria-label="Фильтр по цвету" value={filterColor} onChange={event=>{setFilterColor(event.target.value);setColorLimit(6);discardSelection()}}>
                 <option value="">Все цвета</option>
                 {materialColors.map(value=><option value={value} key={value}>{value||'Без цвета'}</option>)}
               </select></label>}
-            {materialSizes.length>1&&<label>Размер
+            {refinements.size&&<label>Размер
               <select aria-label="Фильтр по размеру" value={filterSize} onChange={event=>{setFilterSize(event.target.value);setColorLimit(6);discardSelection()}}>
                 <option value="">Все размеры</option>
                 {materialSizes.map(value=>{
@@ -372,12 +392,12 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
                   </option>
                 })}
               </select></label>}
-            {materialGenders.length>1&&<label>Пол
+            {refinements.gender&&<label>Пол
               <select aria-label="Фильтр по полу" value={filterGender} onChange={event=>{setFilterGender(event.target.value);setColorLimit(6);discardSelection()}}>
                 <option value="">Любой</option>
                 {materialGenders.map(value=><option value={value} key={value}>{gender(value)}</option>)}
               </select></label>}
-            {materialLengths.length>1&&<label>Длина
+            {refinements.length&&<label>Длина
               <select aria-label="Фильтр по длине" value={filterLength} onChange={event=>{setFilterLength(event.target.value);setColorLimit(6);discardSelection()}}>
                 <option value="">Любая</option>
                 {materialLengths.map(value=><option value={value} key={value}>{length(value)}</option>)}
