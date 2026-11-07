@@ -1,0 +1,16 @@
+.exchange-replacement-picker-holder{margin:12px 0 16px;min-width:0;scroll-margin-top:20px}
+.exchange-replacement-selector{display:grid;gap:14px;padding:14px;background:#f8fbff;border:1px solid #b6cee8;border-radius:12px;min-width:0}
+.exchange-replacement-selector-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.exchange-replacement-selector-head>div{display:grid;gap:5px;flex:1 1 230px}
+.exchange-replacement-selector-head strong{color:#174879;font-size:15px}
+.exchange-replacement-selector-head small{font-size:12px;line-height:1.5;color:#536d8c}
+.exchange-replacement-selector>.clothing-source-picker{min-width:0}
+.exchange-replacement-current{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;background:#eef5fc;border-radius:8px;padding:10px 12px;color:#355b83;font-size:12px}
+.exchange-replacement-current span{overflow-wrap:anywhere}
+.exchange-replacement-pending{margin:0;color:#725119;font-size:12px}
+.exchange-new-identity{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:12px;background:#f2f7ff;border:1px solid #d6e5f5;border-radius:9px}
+.exchange-new-identity-description{display:grid;gap:5px;flex:1 1 240px;min-width:0}
+.exchange-new-identity-description strong{font-size:14px;color:#254b70;overflow-wrap:anywhere}
+.exchange-new-identity-description span{font-size:12px;color:#4c6786;line-height:1.5}
+.exchange-new-identity>.primary{white-space:normal}
+@media(max-width:750px){.exchange-replacement-selector{padding:9px}.exchange-replacement-selector-head,.exchange-new-identity{align-items:stretch}}
