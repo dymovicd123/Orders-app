@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 SKU integrity: validate all attributes and label legacy no-size 0; isolated QA deployment only.
+# Branch2 QA retest: isolated collar fixture, full SKU identity and no-size 0 presentation.
 on:
   push:
     branches:
