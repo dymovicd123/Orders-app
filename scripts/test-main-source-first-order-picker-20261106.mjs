@@ -88,6 +88,46 @@ try{
    color:'ГОЛУБОЙ',material:'ДЖИНСА',length:'СТАНДАРТ',size:'БЕЗ РАЗМЕРА',
    quantity:1,sourceType:'boutique',catalogVariantId:99151}],'warehouse')
  await assert.rejects(hydratePickedOrderItems(db,wrongNoSize),/Характеристики выбранного товара изменились/)
+
+ // Existing catalog's literal size STANDARD is an actual size, not a
+ // fallback for absent sizes, zero size, material or standard length.
+ sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(99160,'QA ЭТНО ПОНЧО','adult',1)").run()
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,category,gender,color,material,length,size_label,is_active) VALUES(99161,99160,'adult','ЖЕН','ЧЕРНЫЙ','КАШЕМИР','СТАНДАРТ','СТАНДАРТ',1)").run()
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,category,gender,color,material,length,size_label,is_active) VALUES(99162,99160,'adult','ЖЕН','ЧЕРНЫЙ','КАШЕМИР','СТАНДАРТ','',1)").run()
+ sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES('boutique',99160,99161,'QA ЭТНО ПОНЧО',4,0)").run()
+ sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES('boutique',99160,99162,'QA ЭТНО ПОНЧО',1,0)").run()
+ const options=(await listOrderSourcePicker(db)).variants
+ const standardOption=options.find(x=>x.variantId===99161)
+ const noSizeOption=options.find(x=>x.variantId===99162)
+ assert.equal(standardOption.size,'СТАНДАРТ')
+ assert.equal(noSizeOption.size,'')
+ assert.equal(standardOption.boutique.free,4)
+ assert.equal(noSizeOption.boutique.free,1)
+ const exactStandard=normalizeOrderItems([{productName:'QA ЭТНО ПОНЧО',audienceType:'ВЗРОСЛЫЙ',
+  gender:'ЖЕН',color:'ЧЕРНЫЙ',material:'КАШЕМИР',length:'СТАНДАРТ',size:'СТАНДАРТ',
+  sourceType:'boutique',quantity:2,catalogVariantId:99161}],'warehouse')
+ const pinnedStandard=await hydratePickedOrderItems(db,exactStandard)
+ assert.equal(pinnedStandard[0].catalogVariantId,99161)
+ assert.equal(pinnedStandard[0].size,'СТАНДАРТ')
+ assert.equal(pinnedStandard[0].inventorySource,'boutique')
+ const exactEmpty=normalizeOrderItems([{productName:'QA ЭТНО ПОНЧО',audienceType:'ВЗРОСЛЫЙ',
+  gender:'ЖЕН',color:'ЧЕРНЫЙ',material:'КАШЕМИР',length:'СТАНДАРТ',size:'',
+  sourceType:'boutique',quantity:1,catalogVariantId:99162}],'warehouse')
+ const pinnedEmpty=await hydratePickedOrderItems(db,exactEmpty)
+ assert.equal(pinnedEmpty[0].catalogVariantId,99162)
+ assert.equal(pinnedEmpty[0].size,'')
+ const swappedStandard=normalizeOrderItems([{productName:'QA ЭТНО ПОНЧО',audienceType:'ВЗРОСЛЫЙ',
+  gender:'ЖЕН',color:'ЧЕРНЫЙ',material:'КАШЕМИР',length:'СТАНДАРТ',size:'БЕЗ РАЗМЕРА',
+  sourceType:'boutique',quantity:1,catalogVariantId:99161}],'warehouse')
+ await assert.rejects(hydratePickedOrderItems(db,swappedStandard),
+  /Характеристики выбранного товара изменились/,
+  'Never let no-size text use STANDARD SKU')
+ const swappedEmpty=normalizeOrderItems([{productName:'QA ЭТНО ПОНЧО',audienceType:'ВЗРОСЛЫЙ',
+  gender:'ЖЕН',color:'ЧЕРНЫЙ',material:'КАШЕМИР',length:'СТАНДАРТ',size:'СТАНДАРТ',
+  sourceType:'boutique',quantity:1,catalogVariantId:99162}],'warehouse')
+ await assert.rejects(hydratePickedOrderItems(db,swappedEmpty),
+  /Характеристики выбранного товара изменились/,
+  'Never silently use empty-size SKU for STANDARD item')
  sql.prepare("UPDATE catalog_variants SET is_active=0 WHERE id=99101").run()
  await assert.rejects(hydratePickedOrderItems(db,original),/больше не активен/)
 
