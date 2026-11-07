@@ -596,15 +596,25 @@ export async function resolveWorkshopCatalogProductOnly(
     return productOnly;
   }
   const category = normalizeAudienceCategory(item.category, item.size);
-  const wantedGender = normalizeCatalogCombinationGender(item.gender);
-  const wantedColor = normalizeCatalogCombinationColor(item.color);
-  const wantedMaterial = canonicalStockPositionValue(item.material);
-  const wantedLength = canonicalStockPositionValue(item.length);
-  const wantedSize = normalizeCatalogCombinationSize(item.size);
-  // Explicitly entered "БЕЗ РАЗМЕРА" is a positive user choice, not an
-  // omitted size. Only that choice may match an existing dimensionless SKU.
+  const noGender = upperText(item.gender) === 'БЕЗ ПОЛА';
+  const wantedGender = noGender ? '' : normalizeCatalogCombinationGender(item.gender);
+  // Aliases are admin-managed. They are used only to find an existing active
+  // SKU across ALL sources; this path never inserts master catalog records.
+  const wantedColor = normalizeCatalogCombinationColor(
+    await resolveCatalogValueAlias(db,'color',normalizeCatalogCombinationColor(item.color))
+  );
+  const wantedMaterial = canonicalStockPositionValue(
+    await resolveCatalogValueAlias(db,'material',canonicalStockPositionValue(item.material))
+  );
+  const wantedLength = canonicalStockPositionValue(
+    await resolveCatalogValueAlias(db,'length',canonicalStockPositionValue(item.length))
+  );
+  const wantedSize = normalizeCatalogCombinationSize(
+    await resolveCatalogValueAlias(db,category==='child'?'child_age':'size',normalizeCatalogCombinationSize(item.size))
+  );
+  // A literal 0 and a literal СТАНДАРТ are not no-size. No-size must be chosen.
   const intentionallyNoSize = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(upperText(item.size));
-  if (!wantedGender || !wantedColor || (!wantedSize && !intentionallyNoSize)) return productOnly;
+  if ((!wantedGender && !noGender) || !wantedColor || (!wantedSize && !intentionallyNoSize)) return productOnly;
 
   const candidates = await db.prepare(
     `SELECT v.id, v.gender, v.color, v.material, v.length, v.size_label
