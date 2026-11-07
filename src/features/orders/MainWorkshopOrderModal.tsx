@@ -34,7 +34,7 @@ export function MainWorkshopOrderModal({onSave,onClose,initial,suggestions}:Prop
   const before=document.body.style.overflow
   document.body.style.overflow='hidden'
   return ()=>{document.removeEventListener('keydown',onKey);document.body.style.overflow=before}
- },[onClose])
+ },[])
  const save=(event:FormEvent)=>{
   event.preventDefault()
   const qty=Number(item.quantity),price=Number(item.unitPrice)
