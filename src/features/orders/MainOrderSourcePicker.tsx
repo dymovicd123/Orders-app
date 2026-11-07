@@ -2,7 +2,7 @@ import {Fragment,useEffect,useMemo,useState,type KeyboardEvent} from 'react'
 import '../../styles/main-order-source-picker.css'
 
 export type SourceKey='warehouse'|'boutique'
-export type StockCount={physical:number;reserved:number;free:number;cachedReserved:number}
+export type StockCount={physical:number;reserved:number;free:number;cachedReserved:number;listed?:boolean}
 export type OrderPickerChoice={
  variantId:number;productId:number;productName:string;category:string;gender:string;
  color:string;material:string;length:string;size:string;salePrice:number|null;
