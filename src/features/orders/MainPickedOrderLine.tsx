@@ -12,7 +12,14 @@ export function MainPickedOrderLine({item,index,update,formatMoney}:Props){
  return <div className="main-picked-order-line" data-exact-catalog-variant={item.catalogVariantId}>
   <div className="main-picked-order-identity">
     <strong>{item.productName}</strong>
-    <small>{[item.audienceType,item.gender,item.color,item.material,item.length,item.size].filter(Boolean).join(' · ')}</small>
+    <small>{[
+     item.audienceType==='ДЕТСКИЙ'?'Детский':'',
+     item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender,
+     item.color==='БЕЗ ЦВЕТА'?'Без цвета':item.color,
+     item.material==='СТАНДАРТ'?'':item.material,
+     item.length==='СТАНДАРТ'?'Обычная длина':item.length,
+     ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(String(item.size||'').toUpperCase())?'Без размера':item.size,
+    ].filter(Boolean).join(' · ')}</small>
     <small>Откуда товар: {source}. Выбранные характеристики сохранены в заказе.</small>
     {workshop&&<small>Товар будет изготовлен в цехе. Остатки склада не меняются.</small>}
     {!workshop&&Number.isFinite(item.physicalAtPick)&&<small>На момент выбора: доступно {item.availableAtPick} шт. Всего {item.physicalAtPick} шт., из них {item.reservedAtPick} шт. уже заказано.</small>}
