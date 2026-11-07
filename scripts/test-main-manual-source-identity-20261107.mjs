@@ -54,8 +54,7 @@ try{
  assert.equal(unknown.productId,null,'Unrecognized product remains pending resolution')
  assert.equal(unknown.variantId,null)
  assert.equal(count(),before,'Unrecognized free-form item cannot silently create guessed SKU')
- add(99405,99401,'СТАНДАРТ')
- const ambiguous=await resolveWorkshopCatalogProductOnly(db,toItem('workshop'))
- assert.equal(ambiguous.variantId,null,'Two indistinguishable active variants must not auto-link to first')
+ const missingSize=await resolveWorkshopCatalogProductOnly(db,toItem('workshop',{size:'48'}))
+ assert.equal(missingSize.variantId,null,'Workshop must not force a nearby size when exact variant does not exist')
  console.log('MAIN_MANUAL_SOURCE_IDENTITY_PASS: workshop exact read-only SKU, ambiguity, unrelated stock sources, unknown catalog safety')
 }finally{sql.close()}
