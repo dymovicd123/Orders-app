@@ -70,7 +70,7 @@ const built=await build({stdin:{contents:entry,loader:'jsx',resolveDir:process.c
  jsx:'automatic',jsxImportSource:'react',logLevel:'error'})
 fs.writeFileSync(path.join(dir,'bundle.js'),built.outputFiles.find(x=>x.path.endsWith('.js')).text)
 const css=fs.readFileSync('src/styles/main-sale-picker.css','utf8')
-const test=String.raw\`
+const test=String.raw`
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const input=(el,value)=>{const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
  setter.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));};
@@ -106,7 +106,7 @@ const input=(el,value)=>{const setter=Object.getOwnPropertyDescriptor(HTMLInputE
  document.body.dataset.salePass='yes';
 }catch(error){document.body.dataset.salePass='no';document.body.dataset.saleError=String(error.message)}
 })();
-\`;
+`;
 fs.writeFileSync(htmlFile,'<!doctype html><html lang="ru"><meta charset="utf-8"><style>body{font:14px Arial;padding:15px}'+css+
  '</style><div id="mount"></div><script src="/bundle.js"></script><script>'+test+'</script>')
 const http=spawn('python3',['-m','http.server','38927','--bind','127.0.0.1','--directory',dir],{stdio:'ignore'})
