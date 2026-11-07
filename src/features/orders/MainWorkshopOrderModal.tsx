@@ -1,4 +1,6 @@
-import {useEffect,useId,useRef,useState,type FormEvent} from 'react'
+import {useEffect,useId,useMemo,useRef,useState,type FormEvent} from 'react'
+import type {OrderPickerChoice} from './MainOrderSourcePicker'
+import {findExactExistingManualVariant} from './manualOrderCatalogPreview'
 import {MainManualChoiceInput} from './MainManualChoiceInput'
 import '../../styles/main-sale-picker.css'
 
@@ -14,12 +16,13 @@ type Props={
  onSave:(item:WorkshopOrderFields)=>void;onClose:()=>void;source?:ManualSource
  initial?:Partial<WorkshopOrderFields>|null
  preset?:ManualOrderPreset|null
+ catalogVariants?:readonly OrderPickerChoice[]
  suggestions?:{products?:readonly string[];colors?:readonly string[];materials?:readonly string[];lengths?:readonly string[];sizes?:readonly string[];childAges?:readonly string[]}
 }
 const clean=(value:unknown)=>String(value??'')
 const sourceTitle=(source:ManualSource)=>source==='warehouse'?'Товар со Склада':source==='boutique'?'Товар из Бутика':'Товар в цех'
 
-export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial,preset,suggestions}:Props){
+export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial,preset,suggestions,catalogVariants=[]}:Props){
  const titleId=useId()
  const first=useRef<HTMLInputElement>(null)
  const defaults=initial||preset
@@ -36,6 +39,8 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
  const [error,setError]=useState('')
  const quickChange=!initial&&!isWorkshop?preset?.quickChange:null
  const [editAll,setEditAll]=useState(false)
+ const filled=Boolean(item.productName.trim()&&item.audienceType&&item.gender&&item.color.trim()&&item.material.trim()&&item.length.trim()&&item.size.trim())
+ const catalogMatch=useMemo(()=>filled?findExactExistingManualVariant(item,catalogVariants):null,[item,filled,catalogVariants])
  const set=(key:keyof typeof item,value:string|boolean)=>{setItem(previous=>({...previous,[key]:value}));setError('')}
  useEffect(()=>{
   first.current?.focus()
@@ -144,6 +149,14 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
       <small className="main-workshop-hint">{quickChange&&!editAll
        ?'Если нужного варианта пока нет, его можно добавить в заказ для проверки. На склад он автоматически не поступит.'
        :'Выбирайте «Без цвета» или «Без размера» только если это действительно характеристика проданного товара. Если нужного значения нет, впишите его — наличие потребуется проверить.'}</small>
+      {!isWorkshop&&filled&&<p className="main-workshop-match" aria-live="polite">
+       {catalogVariants.length===0?'Наличие подходящего товара проверим при сохранении.':
+        catalogMatch
+         ?catalogMatch[mode].free>0
+          ?'Такой вариант уже есть. Доступно в '+(mode==='warehouse'?'Складе: ':'Бутике: ')+catalogMatch[mode].free+' шт.'
+          :'Такой вариант уже есть, но свободного остатка в '+(mode==='warehouse'?'Складе':'Бутике')+' сейчас нет. Потребуется уточнить наличие.'
+         :'Такого точного варианта пока не нашли. Заказ можно сохранить для уточнения; новый товар на складе не появится.'}
+      </p>}
      </fieldset>
      <fieldset className="main-workshop-section">
       <legend>2. Количество и цена</legend>
