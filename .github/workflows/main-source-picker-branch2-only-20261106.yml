@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 QA Workshop safety: preserve omitted facts, exact read-only SKU linking and HTTP task creation.
+# Branch2 catalog safety: mandatory explicit custom fields, exact global SKU reuse, no auto-created SKU.
 on:
   push:
     branches:
