@@ -356,7 +356,7 @@ export async function inspectOrderRetiredCatalogIdentityV2(
 export async function resolveCatalogProductAndVariantV2(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
-  options: { allowRetiredRecreate?: boolean; timestamp?: string } = {},
+  options: { allowRetiredRecreate?: boolean; timestamp?: string; createMissing?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (!await isCatalogIdentityV3Enabled(db)) return await resolveCatalogProductAndVariantV2Flat(db, item);
   const inputKey = catalogOrderInputKey(item);
@@ -461,6 +461,18 @@ export async function resolveCatalogProductAndVariantV2(
     || (rawSize && !size)
   ) {
     return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'unresolved_attribute', inputKey };
+  }
+
+  // Runtime orders/exchanges/reconciliation may recognize existing catalog SKUs
+  // but must not create a new execution or variant implicitly. Explicit catalog
+  // and stocktake creation continue through their dedicated controlled endpoints.
+  if (options.createMissing === false) {
+    return {
+      productId: toInt(product.id, 0) || null,
+      variantId: null,
+      matchStatus: existingExecution?.id ? 'unresolved_variant' : 'unresolved_execution',
+      inputKey,
+    };
   }
 
   // Only now may known facts create a previously unseen execution/combination.
@@ -569,11 +581,12 @@ export async function resolveCatalogProductAndVariant(
   db: D1Database,
   item: ReturnType<typeof normalizeOrderItems>[number],
   timestamp: string,
-  options: { allowRetiredRecreate?: boolean } = {},
+  options: { allowRetiredRecreate?: boolean; createMissing?: boolean } = {},
 ): Promise<ResolvedOrderCatalogReference> {
   if (await isCatalogIdentityV3Enabled(db) || await isHumanInventoryModelEnabled(db)) {
     return await resolveCatalogProductAndVariantV2(db, item, { ...options, timestamp });
   }
+  if (options.createMissing === false) return await resolveCatalogProductAndVariantV2Flat(db, item);
   return await resolveCatalogProductAndVariantLegacy(db, item, timestamp);
 }
 
@@ -585,7 +598,55 @@ export async function resolveWorkshopCatalogProductOnly(
   const inputKey = catalogOrderInputKey(item);
   const product = await findCatalogProductByIdentity(db, item.productName, 0, { activeOnly: true }) as { id: number } | null;
   if (!product?.id) return { productId: null, variantId: null, matchStatus: 'unresolved_product', inputKey };
-  return { productId: toInt(product.id, 0) || null, variantId: null, matchStatus: 'matched', inputKey };
+  const productId = toInt(product.id, 0);
+  const productOnly = { productId, variantId: null, matchStatus: 'unresolved_variant' as const, inputKey };
+
+  // Workshop must NEVER manufacture a catalog variant just because a manager
+  // described an item. Link a pre-existing exact SKU only when every distinctive
+  // attribute is supplied and the match is unique. Otherwise keep the product
+  // link and the manager's untouched description for Workshop.
+  if (![item.gender, item.color, item.material, item.length, item.size].every(value => cleanText(value))) {
+    return productOnly;
+  }
+  const category = normalizeAudienceCategory(item.category, item.size);
+  const noGender = upperText(item.gender) === 'БЕЗ ПОЛА';
+  const wantedGender = noGender ? '' : normalizeCatalogCombinationGender(item.gender);
+  // Aliases are admin-managed. They are used only to find an existing active
+  // SKU across ALL sources; this path never inserts master catalog records.
+  const wantedColor = normalizeCatalogCombinationColor(
+    await resolveCatalogValueAlias(db,'color',normalizeCatalogCombinationColor(item.color))
+  );
+  const wantedMaterial = canonicalStockPositionValue(
+    await resolveCatalogValueAlias(db,'material',canonicalStockPositionValue(item.material))
+  );
+  const wantedLength = canonicalStockPositionValue(
+    await resolveCatalogValueAlias(db,'length',canonicalStockPositionValue(item.length))
+  );
+  const wantedSize = normalizeCatalogCombinationSize(
+    await resolveCatalogValueAlias(db,category==='child'?'child_age':'size',normalizeCatalogCombinationSize(item.size))
+  );
+  // A literal 0 and a literal СТАНДАРТ are not no-size. No-size must be chosen.
+  const intentionallyNoSize = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(upperText(item.size));
+  if ((!wantedGender && !noGender) || !wantedColor || (!wantedSize && !intentionallyNoSize)) return productOnly;
+
+  const candidates = await db.prepare(
+    `SELECT v.id, v.gender, v.color, v.material, v.length, v.size_label
+       FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
+       WHERE v.product_id=? AND v.is_active=1 AND p.is_active=1
+         AND COALESCE(v.category,p.category,'adult')=?
+       ORDER BY v.id ASC`
+  ).bind(productId, category).all<{
+    id: number; gender: string; color: string; material: string; length: string; size_label: string;
+  }>();
+  const matching = (candidates.results || []).filter(row =>
+    normalizeCatalogCombinationGender(row.gender) === wantedGender
+    && normalizeCatalogCombinationColor(row.color) === wantedColor
+    && canonicalStockPositionValue(row.material) === wantedMaterial
+    && canonicalStockPositionValue(row.length) === wantedLength
+    && normalizeCatalogCombinationSize(row.size_label) === wantedSize
+  );
+  if (matching.length !== 1) return productOnly;
+  return { productId, variantId: toInt(matching[0].id, 0) || null, matchStatus: 'matched', inputKey };
 }
 
 

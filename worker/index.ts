@@ -37,6 +37,7 @@ import type { ArchiveRuleInput } from './domains/orders-read.ts'
 import { archiveOrders, getArchivePreview, listOpenDebtOrders, listOrders, restoreArchivedOrder } from './domains/orders-read.ts'
 import { createOrder, getOrder, updateOrderCritical } from './domains/orders-write.ts'
 import { buildOrderShipmentPlan } from './domains/order-shipment-plan.ts'
+import { listOrderSourcePicker } from './domains/order-source-picker.ts'
 import { readPriorIssuedItemIds } from './domains/order-prior-issued-origin.ts'
 import { confirmPriorIssuedOrderShipping, correctPriorIssuedOrderShippingIfApplicable } from './domains/order-prior-issued-shipping.ts'
 import { dispatchSelectedCompleteOrderLines } from './domains/order-dispatch.ts'
@@ -909,6 +910,10 @@ export default {
       const clientMatch = url.pathname.match(/^\/api\/clients\/(\d+)$/);
       if (clientMatch && request.method === 'GET') {
         return measuredResponseRead('clients.details', () => getClientDetails(env.DB, Number(clientMatch[1]), url));
+      }
+
+      if (url.pathname === '/api/orders/source-picker' && request.method === 'GET') {
+        return measuredJsonRead('orders.source-picker', () => listOrderSourcePicker(env.DB));
       }
 
       if (url.pathname === '/api/orders/open-debts' && request.method === 'GET') {

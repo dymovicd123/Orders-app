@@ -495,6 +495,7 @@ export async function listOrders(db: D1Database, url: URL) {
       o.shipping_status, o.shipping_date,
       ${pricingModeSelect},
       o.total_amount, o.received_amount, o.debt_amount, o.return_amount, o.comment,
+      (SELECT COUNT(*) FROM order_items counted WHERE counted.order_id = o.id AND counted.quantity > 0) AS item_count,
       o.archived_at, o.archived_by, o.archive_reason, o.archive_batch_id
     ${joins}
     ${pageWhereParts.length ? `WHERE ${pageWhereParts.join(' AND ')}` : ''}

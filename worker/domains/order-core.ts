@@ -54,6 +54,19 @@ export class OrderInputValidationError extends Error {
 
 export function assertOrderItemInputs(items: OrderInput['items']) {
   for (const [index, item] of (Array.isArray(items) ? items : []).entries()) {
+    // Only explicit manual-order forms are subject to this complete-identity
+    // contract. Legacy rows and exact-SKU picker entries are unchanged.
+    if (item?.manualCatalogEntry) {
+      const needed: Array<[unknown,string]> = [
+        [item.productName,'товар'],[item.audienceType,'тип'],[item.gender,'пол'],
+        [item.color,'цвет'],[item.material,'материал'],[item.length,'длину'],
+        [item.size,'размер или возраст'],
+      ];
+      const missing = needed.filter(([value])=>!cleanText(value)).map(([,label])=>label);
+      if(missing.length) throw new OrderInputValidationError(
+        `Позиция ${index+1}: заполните ${missing.join(', ')}. Выберите «Без размера» или «Без цвета» явно, если они не применяются.`
+      );
+    }
     if (!upperText(item?.productName)) continue
     const quantity = Number(item?.quantity ?? 1)
     if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity < 1) {
@@ -88,22 +101,29 @@ export function normalizeOrderItems(items: OrderInput['items'], fallbackSource: 
       const unitPrice = Math.max(0, toInt(item?.unitPrice, 0));
       const lineTotal = quantity * unitPrice;
       const itemSource = normalizeOrderItemSourceType(item?.sourceType || fallbackSource, fallbackSource);
+      const isWorkshop = itemSource === 'workshop';
       const category = normalizeAudienceCategory(item?.audienceType, item?.size);
       return {
         productName: upperText(item?.productName),
+        catalogVariantId: Math.max(0,toInt(item?.catalogVariantId,0)),
+        manualCatalogEntry: Boolean(item?.manualCatalogEntry),
+        catalogProductId: 0,
         category,
         audienceType: category === 'child' ? 'ДЕТСКИЙ' : 'ВЗРОСЛЫЙ',
         gender: upperText(item?.gender),
         color: upperText(item?.color),
-        material: canonicalStockPositionValue(item?.material),
-        length: canonicalStockPositionValue(item?.length),
+        // Workshop descriptions must retain missing facts as missing. The
+        // Warehouse/Boutique canonical fallback to СТАНДАРТ is NOT evidence
+        // that a manager selected standard Workshop material or length.
+        material: isWorkshop ? upperText(item?.material) : canonicalStockPositionValue(item?.material),
+        length: isWorkshop ? upperText(item?.length) : canonicalStockPositionValue(item?.length),
         size: cleanText(item?.size),
         quantity,
         unitPrice,
         lineTotal,
         sourceType: itemSource,
         inventorySource: itemSource === 'boutique' ? 'boutique' : 'warehouse' as SourceType,
-        isWorkshop: itemSource === 'workshop',
+        isWorkshop,
         workshopComment: cleanText(item?.workshopComment),
         workshopUrgent: Boolean(item?.workshopUrgent),
         workshopDueDate: cleanText(item?.workshopDueDate) ? normalizeDate(item?.workshopDueDate) : '',

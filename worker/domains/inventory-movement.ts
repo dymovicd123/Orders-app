@@ -912,6 +912,12 @@ export async function applyInventoryMovement(
   });
 
   if (creatableIndexes.length) {
+    // Only a real receipt may introduce a brand-new product/variant implicitly.
+    // Correction has its existing deliberate "new variant" flag; a sale,
+    // return or revision must NEVER manufacture a stock identity from free text.
+    if (movementType !== 'arrival' && movementType !== 'manual_set') {
+      throw new Error('Новый вариант товара создаётся через Приход. В этой операции выберите существующую позицию каталога.');
+    }
     if (movementType === 'manual_set') {
       // Correction can only add a size/color for an EXISTING active product and
       // stock-position, exactly as a selective stocktake does. Never silently
