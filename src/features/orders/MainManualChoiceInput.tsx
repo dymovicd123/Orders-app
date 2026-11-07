@@ -62,13 +62,13 @@ export function MainManualChoiceInput({label,value,onChange,options=[],placehold
       aria-selected={index===active} className={index===active?'is-current':''}
       key={name} onMouseDown={event=>event.preventDefault()} onClick={()=>choose(name)}>
       {name}
-     </button>):<p className="main-manual-no-match">Нет совпадений. Можно вписать своё значение.</p>}
+     </button>):<p className="main-manual-no-match">В списке не найдено. Можно вписать свой вариант.</p>}
     {matches.length>shown.length&&<button type="button" className="main-manual-show-all" onMouseDown={event=>event.preventDefault()}
       onClick={()=>setFullList(true)}>Показать другие варианты</button>}
     <small>Можно выбрать из списка или вписать своё значение</small>
    </div>}
    {unknownValue&&<small className="main-manual-unrecognized">
-    Нового значения нет в подсказках. Заказ можно оформить на уточнение, но каталог не пополнится автоматически.
+    Такого значения нет в списке. Вы можете его вписать, но наличие товара понадобится проверить.
    </small>}
   </div>
  </div>
