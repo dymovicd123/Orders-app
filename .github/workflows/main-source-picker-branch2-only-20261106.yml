@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 QA retest: isolated collar fixture, full SKU identity and no-size 0 presentation.
+# Branch2 exact size identities: STANDARD, zero, genuinely blank SKU, search narrowing and browser acceptance.
 on:
   push:
     branches:
@@ -73,6 +73,8 @@ jobs:
         run: node scripts/test-main-sale-picker-20261107.mjs
       - name: Client3-style clothing - source scope and real Chrome flows
         run: node scripts/test-main-clothing-source-picker-20261107.mjs
+      - name: Exact Standard zero and no-size SKU Chrome acceptance
+        run: node scripts/test-main-picker-size-identities-20261107.mjs
       - name: UX review - filtered materials and modal workshop browser acceptance
         run: node scripts/test-main-order-ux-review-20261107.mjs
       - name: Manual source exact SKU and Workshop read-only identity regression
