@@ -137,3 +137,10 @@
 .main-manual-options .main-manual-show-all{border-top:1px solid #e7eef7;color:#1e5cac;text-align:center}
 
 .main-manual-unrecognized{display:block;font-size:11px;color:#935b20;background:#fff8ec;border:1px solid #f1ddb9;border-radius:7px;padding:7px 9px;line-height:1.45;margin-top:5px}
+
+.main-workshop-quick{display:grid;gap:12px;min-width:0}
+.main-workshop-quick-base{display:grid;gap:6px;background:#f3f7fc;padding:12px;border:1px solid #d5e2f1;border-radius:9px}
+.main-workshop-quick-base strong{color:#1e476f;font-size:14px;overflow-wrap:anywhere}
+.main-workshop-quick-base span{font-size:12px;color:#4d6681;line-height:1.5;overflow-wrap:anywhere}
+.main-workshop-expand{justify-self:start;padding:6px 0;border:0;background:transparent;color:#225bb0;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.main-workshop-expand:hover{text-decoration:underline}
