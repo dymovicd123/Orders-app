@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 final acceptance: HTTP 201 Created, exact SKU order/reserve and zero/blank/standard safety.
+# Branch2 workshop safety: no inferred STANDARD for omitted material/length; intentional no-size SKU matching only.
 on:
   push:
     branches:
