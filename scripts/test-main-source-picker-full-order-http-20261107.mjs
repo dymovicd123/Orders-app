@@ -207,6 +207,19 @@ try{
  assert.equal(rejected.status,400,'HTTP Workshop manual form must reject omitted material '+JSON.stringify(rejected.body))
  assert.equal(countVariants(),initialVariants)
  console.log('WORKSHOP_STRICT_HTTP_PASS: exact SKU linked without stock reservation; incomplete custom payload rejected')
+ // Standard order creation without a pinned SKU must NOT silently mint a new
+ // known-fact combination. Only explicit catalog/stocktake creation may do so.
+ const normalUnseen=make(undefined,'54','qa-ordinary-unseen-no-auto-sku')
+ normalUnseen.items[0]={...normalUnseen.items[0],catalogVariantId:undefined,manualCatalogEntry:false}
+ const normalResult=await post(normalUnseen)
+ assert([200,201].includes(normalResult.status),'Unknown normal order should stay an order, not fail on catalog mismatch '+JSON.stringify(normalResult.body))
+ const unresolvedNormal=sql.prepare('SELECT product_id,variant_id,source_type FROM order_items WHERE order_id=?').get(normalResult.body.orderId)
+ assert.equal(unresolvedNormal.product_id,98502)
+ assert.equal(unresolvedNormal.variant_id,null,'Normal order created SKU instead of leaving unknown combo unresolved')
+ assert.equal(countVariants(),initialVariants,'Normal known facts must not create new catalog variant')
+ const noAutoReserve=sql.prepare('SELECT status FROM inventory_reservations WHERE order_id=?').get(normalResult.body.orderId)
+ assert.equal(noAutoReserve?.status,'unresolved','Normal unknown combo may not get an invented-SKU stock reservation')
+ console.log('NORMAL_ORDER_READ_ONLY_CATALOG_PASS: exact already-known SKU or unresolved; never implicit catalog variant')
  console.log('MANUAL_ALL_SOURCE_HTTP_PASS: external-source SKU reused; new variation unresolved; no-color explicit; direct-HTTP required fields')
  console.log('EXACT_SIZE_HTTP_ORDER_PASS: persisted STANDARD, zero, no-size and safe incomplete Workshop tasks, no invented SKU or stock writes')
 }finally{sql.close()}
