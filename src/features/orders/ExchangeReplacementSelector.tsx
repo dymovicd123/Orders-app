@@ -77,6 +77,7 @@ export function ExchangeReplacementSelector({item,allocated,onApply,onClose,sugg
    onVariantsLoaded={setChoices}
    onPendingChange={setPending}
    editing={item.catalogVariantId?{index:0,item}:null}
+   allowManualWhileEditing
    onCancelEdit={()=>{setPickerRevision(n=>n+1);setPending(false)}}
   />
   {pending&&<p className="exchange-replacement-pending">Подтвердите выбранную вещь либо отмените выбор. Отправку клиенту укажете на следующем шаге.</p>}
