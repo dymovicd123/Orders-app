@@ -55,19 +55,21 @@ const fullName=(value:OrderPickerChoice,variants:readonly OrderPickerChoice[])=>
 // Queries can specify an exact STANDARD size without confusing it with
 // material or length. Unqualified "стандарт" narrows to any such characteristic.
 export function parseClothingSearch(query:string,colors:readonly string[]){
- let text=foldSaleName(query)
- let sizeMode:'no_size'|'standard'|'loose_standard'|'regular'='regular'
- if(/\bбез размера\b/.test(text)){
-  text=text.replace(/\bбез размера\b/g,' ').trim()
-  sizeMode='no_size'
- }else if(/\bразмер стандарт\b/.test(text)){
-  text=text.replace(/\bразмер стандарт\b/g,' ').trim()
-  sizeMode='standard'
- }else if(/\bстандарт\b/.test(text)){
-  text=text.replace(/\bстандарт\b/g,' ').trim()
-  sizeMode='loose_standard'
+ const terms=foldSaleName(query).split(' ').filter(Boolean)
+ const consume=(phrase:readonly string[])=>{
+  const start=terms.findIndex((word,index)=>word===phrase[0]&&
+   phrase.every((part,offset)=>terms[index+offset]===part))
+  if(start<0)return false
+  terms.splice(start,phrase.length)
+  return true
  }
- const parsed=parseSaleSearch(text,colors)
+ // JS \\b is not a Cyrillic word boundary. Operate on normalized tokens so
+ // «размер стандарт» and «без размера» work with Russian and Kazakh names.
+ let sizeMode:'no_size'|'standard'|'loose_standard'|'regular'='regular'
+ if(consume(['без','размера']))sizeMode='no_size'
+ else if(consume(['размер','стандарт']))sizeMode='standard'
+ else if(consume(['стандарт']))sizeMode='loose_standard'
+ const parsed=parseSaleSearch(terms.join(' '),colors)
  return {...parsed,sizeMode}
 }
 export function matchesClothingSize(row:OrderPickerChoice,search:ReturnType<typeof parseClothingSearch>,variants:readonly OrderPickerChoice[]){
