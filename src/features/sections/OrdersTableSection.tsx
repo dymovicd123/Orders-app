@@ -57,6 +57,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     executeAdminDeleteChain,
     confirmAdminDeletePhysicalBeforeChain,
     expandedOrderItemCounts,
+    expandOrderItems,
     filters,
     formatDateShort,
     formatMoney,
@@ -382,6 +383,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                       const projection = projectOrderOperationalState(order, { isAdmin })
                       const shipmentDisplay = projectOrderShipmentDisplay(order)
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
+                      const fullItemCount = Math.max(order.items.length, Number(order.item_count || 0))
                       const itemSummary = summarizeOrderItemLines(
                         order.items,
                         visibleItemCount,
@@ -440,16 +442,16 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                   </div>
                                 </div>
                               ))}
-                              {itemSummary.rest > 0 ? (
+                              {Math.max(0, fullItemCount - visibleItemCount) > 0 ? (
                                 <button
                                   className="order-item-chip order-item-chip-more is-clickable"
                                   type="button"
-                                  onClick={() => setExpandedOrderItemCounts((current) => ({ ...current, [order.id]: Math.min(order.items.length, visibleItemCount + 5) }))}
+                                  onClick={() => void expandOrderItems(order, visibleItemCount)}
                                 >
-                                  + ещё {itemSummary.rest}
+                                  + ещё {Math.max(0, fullItemCount - visibleItemCount)}
                                 </button>
                               ) : null}
-                              {visibleItemCount > 3 && order.items.length > 3 ? (
+                              {visibleItemCount > 3 && fullItemCount > 3 ? (
                                 <button
                                   className="order-item-chip order-item-chip-collapse is-clickable"
                                   type="button"
