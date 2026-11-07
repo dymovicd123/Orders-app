@@ -1,22 +1,27 @@
 import {useEffect,useId,useRef,useState,type FormEvent} from 'react'
+import {MainManualChoiceInput} from './MainManualChoiceInput'
 import '../../styles/main-sale-picker.css'
 
+export type ManualSource='warehouse'|'boutique'|'workshop'
 export type WorkshopOrderFields={
  productName:string;audienceType:string;gender:string;color:string;material:string;length:string;size:string;
- sourceType:'workshop';quantity:number;unitPrice:number;
+ sourceType:ManualSource;quantity:number;unitPrice:number;shortageAcknowledged:boolean;
  workshopComment:string;workshopUrgent:boolean;workshopDueDate:string;workshopDueTime:string;
  priceOrigin:'manual';catalogVariantId:undefined;catalogPriceSnapshot:null;priceNeedsConfirmation:false
 }
 type Props={
- onSave:(item:WorkshopOrderFields)=>void
- onClose:()=>void
+ onSave:(item:WorkshopOrderFields)=>void;onClose:()=>void;source?:ManualSource
  initial?:Partial<WorkshopOrderFields>|null
- suggestions?:{products?:readonly string[];colors?:readonly string[];materials?:readonly string[];lengths?:readonly string[]}
+ suggestions?:{products?:readonly string[];colors?:readonly string[];materials?:readonly string[];lengths?:readonly string[];sizes?:readonly string[];childAges?:readonly string[]}
 }
 const clean=(value:unknown)=>String(value??'')
-export function MainWorkshopOrderModal({onSave,onClose,initial,suggestions}:Props){
+const sourceTitle=(source:ManualSource)=>source==='warehouse'?'Товар со Склада':source==='boutique'?'Товар из Бутика':'Товар в цех'
+
+export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial,suggestions}:Props){
  const titleId=useId()
  const first=useRef<HTMLInputElement>(null)
+ const mode=initial?.sourceType||source
+ const isWorkshop=mode==='workshop'
  const [item,setItem]=useState({
   productName:clean(initial?.productName),audienceType:clean(initial?.audienceType)||'ВЗРОСЛЫЙ',
   gender:clean(initial?.gender),color:clean(initial?.color),material:clean(initial?.material),
@@ -38,62 +43,70 @@ export function MainWorkshopOrderModal({onSave,onClose,initial,suggestions}:Prop
  const save=(event:FormEvent)=>{
   event.preventDefault()
   const qty=Number(item.quantity),price=Number(item.unitPrice)
-  if(!item.productName.trim()){setError('Укажите название товара для Цеха.');return}
+  if(!item.productName.trim()){setError('Укажите название товара.');return}
   if(!item.size.trim()){setError('Укажите размер или возраст.');return}
+  if(!isWorkshop&&(!item.gender||!item.color.trim()||!item.material.trim()||!item.length.trim())){
+   setError('Для Склада и Бутика укажите пол, цвет, материал и длину. Это необходимо для точной идентификации.');return
+  }
   if(!Number.isSafeInteger(qty)||qty<1){setError('Количество должно быть целым числом больше нуля.');return}
   if(!item.unitPrice.trim()||!Number.isFinite(price)||price<0){setError('Укажите цену продажи в тенге.');return}
-  if(item.workshopUrgent&&!item.workshopDueDate){setError('Для срочного заказа укажите дату готовности.');return}
+  if(isWorkshop&&item.workshopUrgent&&!item.workshopDueDate){setError('Для срочного заказа укажите дату готовности.');return}
   onSave({
    productName:item.productName.trim(),audienceType:item.audienceType,gender:item.gender,
    color:item.color.trim(),material:item.material.trim(),length:item.length.trim(),size:item.size.trim(),
-   sourceType:'workshop',quantity:qty,unitPrice:price,
-   workshopComment:item.workshopComment.trim(),workshopUrgent:item.workshopUrgent,
-   workshopDueDate:item.workshopUrgent?item.workshopDueDate:'',workshopDueTime:item.workshopUrgent?item.workshopDueTime:'',
+   sourceType:mode,quantity:qty,unitPrice:price,shortageAcknowledged:!isWorkshop,
+   workshopComment:isWorkshop?item.workshopComment.trim():'',
+   workshopUrgent:isWorkshop&&item.workshopUrgent,
+   workshopDueDate:isWorkshop&&item.workshopUrgent?item.workshopDueDate:'',
+   workshopDueTime:isWorkshop&&item.workshopUrgent?item.workshopDueTime:'',
    priceOrigin:'manual',catalogVariantId:undefined,catalogPriceSnapshot:null,priceNeedsConfirmation:false
   })
  }
  return <div className="main-workshop-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
   <section className="main-workshop-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
    <header className="main-workshop-head">
-    <div><small>Новая позиция</small><h2 id={titleId}>{initial?'Изменить товар для Цеха':'Товар в цех'}</h2>
-     <p>Укажите изделие и характеристики. Товар появится в заказе после сохранения.</p></div>
+    <div><small>{initial?'Редактирование позиции':isWorkshop?'Новая позиция Цеха':'Нет в показанных вариантах'}</small>
+     <h2 id={titleId}>{initial?'Изменить '+sourceTitle(mode).toLowerCase():sourceTitle(mode)}</h2>
+     <p>{isWorkshop?'Оформите товар для изготовления. Он появится в заказе только после сохранения.':
+      'Укажите проданный вариант вручную. Источник останется '+(mode==='warehouse'?'Складом.':'Бутиком.')}</p></div>
     <button type="button" className="main-workshop-close" onClick={onClose} aria-label="Закрыть окно">×</button>
    </header>
    <form onSubmit={save} className="main-workshop-form">
     <div className="main-workshop-content">
+     {!isWorkshop&&<p className="main-workshop-source-notice">
+      <strong>{mode==='warehouse'?'Склад':'Бутик'} — без подмены источника.</strong>
+      {' '}Если точный вариант уже существует, система свяжет его с каталогом.
+      Если вариант неизвестен, заказ сохранится с уточнением товара и остатка.
+      Фактический остаток не увеличится автоматически.
+     </p>}
      <fieldset className="main-workshop-section">
-      <legend>1. Какой товар изготовить</legend>
-      <label className="main-workshop-field main-workshop-wide">Название товара *
-       <input ref={first} value={item.productName} onChange={e=>set('productName',e.target.value)} list="main-workshop-products" placeholder="Например, Баян Сұлу шапан"/>
-      </label>
-      <datalist id="main-workshop-products">{(suggestions?.products||[]).map((name,index)=><option value={name} key={name+'-'+index}/>)}</datalist>
+      <legend>1. Какой товар {isWorkshop?'изготовить':'продан'}</legend>
+      <MainManualChoiceInput label="Название товара" required value={item.productName}
+       inputRef={first} onChange={value=>set('productName',value)}
+       options={suggestions?.products} placeholder="Например, Баян Сұлу шапан"/>
       <div className="main-workshop-grid">
        <label className="main-workshop-field">Тип
         <select value={item.audienceType} onChange={e=>set('audienceType',e.target.value)}>
          <option value="ВЗРОСЛЫЙ">Взрослый</option><option value="ДЕТСКИЙ">Детский</option>
         </select>
        </label>
-       <label className="main-workshop-field">{item.audienceType==='ДЕТСКИЙ'?'Возраст *':'Размер *'}
-        <input value={item.size} onChange={e=>set('size',e.target.value)} placeholder={item.audienceType==='ДЕТСКИЙ'?'Например, 5 лет':'Например, 46'}/>
-       </label>
-       <label className="main-workshop-field">Пол
+       <MainManualChoiceInput label={item.audienceType==='ДЕТСКИЙ'?'Возраст':'Размер'} required
+        value={item.size} onChange={value=>set('size',value)}
+        options={item.audienceType==='ДЕТСКИЙ'?suggestions?.childAges:suggestions?.sizes}
+        placeholder={item.audienceType==='ДЕТСКИЙ'?'Например, 5 лет':'Например, 46'}/>
+       <label className="main-workshop-field">Пол{isWorkshop?'':' *'}
         <select value={item.gender} onChange={e=>set('gender',e.target.value)}>
          <option value="">Не указан</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option>
         </select>
        </label>
-       <label className="main-workshop-field">Цвет
-        <input value={item.color} onChange={e=>set('color',e.target.value)} list="main-workshop-colors" placeholder="Цвет"/>
-       </label>
-       <label className="main-workshop-field">Материал
-        <input value={item.material} onChange={e=>set('material',e.target.value)} list="main-workshop-materials" placeholder="Например, Замша велюр"/>
-       </label>
-       <label className="main-workshop-field">Длина
-        <input value={item.length} onChange={e=>set('length',e.target.value)} list="main-workshop-lengths" placeholder="Например, Стандарт"/>
-       </label>
+       <MainManualChoiceInput label={'Цвет'+(isWorkshop?'':' *')} value={item.color}
+        onChange={value=>set('color',value)} options={suggestions?.colors} placeholder="Укажите цвет"/>
+       <MainManualChoiceInput label={'Материал'+(isWorkshop?'':' *')} value={item.material}
+        onChange={value=>set('material',value)} options={suggestions?.materials} placeholder="Например, Замша велюр"/>
+       <MainManualChoiceInput label={'Длина'+(isWorkshop?'':' *')} value={item.length}
+        onChange={value=>set('length',value)} options={suggestions?.lengths} placeholder="Например, Стандарт"/>
       </div>
-      <datalist id="main-workshop-colors">{(suggestions?.colors||[]).map((value,index)=><option value={value} key={index}/>)}</datalist>
-      <datalist id="main-workshop-materials">{(suggestions?.materials||[]).map((value,index)=><option value={value} key={index}/>)}</datalist>
-      <datalist id="main-workshop-lengths">{(suggestions?.lengths||[]).map((value,index)=><option value={value} key={index}/>)}</datalist>
+      <small className="main-workshop-hint">Выбирайте значение из подсказок либо вводите своё. Полное совпадение с каталогом связывается с существующим вариантом, но похожие варианты не подменяются.</small>
      </fieldset>
      <fieldset className="main-workshop-section">
       <legend>2. Количество и цена</legend>
@@ -106,29 +119,31 @@ export function MainWorkshopOrderModal({onSave,onClose,initial,suggestions}:Prop
        </label>
       </div>
      </fieldset>
-     <fieldset className="main-workshop-section">
-      <legend>3. Задание и комментарий для Цеха</legend>
-      <label className="main-workshop-field">Что нужно изготовить или учесть
-       <textarea rows={3} value={item.workshopComment} onChange={e=>set('workshopComment',e.target.value)} placeholder="Пожелания, изменения, детали пошива"/>
-      </label>
-     </fieldset>
-     <fieldset className="main-workshop-section">
-      <legend>4. Срок изготовления</legend>
-      <label className="main-workshop-checkbox"><input type="checkbox" checked={item.workshopUrgent} onChange={e=>set('workshopUrgent',e.target.checked)}/> Срочно — указать срок</label>
-      {item.workshopUrgent?<div className="main-workshop-grid">
-       <label className="main-workshop-field">Нужно до *
-        <input type="date" value={item.workshopDueDate} onChange={e=>set('workshopDueDate',e.target.value)}/>
+     {isWorkshop&&<>
+      <fieldset className="main-workshop-section">
+       <legend>3. Задание и комментарий для Цеха</legend>
+       <label className="main-workshop-field">Что нужно изготовить или учесть
+        <textarea rows={3} value={item.workshopComment} onChange={e=>set('workshopComment',e.target.value)} placeholder="Пожелания, изменения, детали пошива"/>
        </label>
-       <label className="main-workshop-field">Время (необязательно)
-        <input type="time" value={item.workshopDueTime} onChange={e=>set('workshopDueTime',e.target.value)}/>
-       </label>
-      </div>:<p className="main-workshop-hint">Если заказ обычный, дату указывать не нужно.</p>}
-     </fieldset>
+      </fieldset>
+      <fieldset className="main-workshop-section">
+       <legend>4. Срок изготовления</legend>
+       <label className="main-workshop-checkbox"><input type="checkbox" checked={item.workshopUrgent} onChange={e=>set('workshopUrgent',e.target.checked)}/> Срочно — указать срок</label>
+       {item.workshopUrgent?<div className="main-workshop-grid">
+        <label className="main-workshop-field">Нужно до *
+         <input type="date" value={item.workshopDueDate} onChange={e=>set('workshopDueDate',e.target.value)}/>
+        </label>
+        <label className="main-workshop-field">Время (необязательно)
+         <input type="time" value={item.workshopDueTime} onChange={e=>set('workshopDueTime',e.target.value)}/>
+        </label>
+       </div>:<p className="main-workshop-hint">Для обычного заказа дата не требуется.</p>}
+      </fieldset>
+     </>}
     </div>
     {error&&<p role="alert" className="main-workshop-error">{error}</p>}
     <footer className="main-workshop-actions">
      <button type="button" className="secondary" onClick={onClose}>Отмена</button>
-     <button type="submit" className="primary">{initial?'Сохранить изменения':'+ Добавить товар в заказ'}</button>
+     <button type="submit" className="primary">{initial?'Сохранить изменения':'+ Добавить в заказ'}</button>
     </footer>
    </form>
   </section>
