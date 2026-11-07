@@ -55,6 +55,9 @@ for(const [id,size,physical] of [[98511,'СТАНДАРТ',4],[98512,'0',2],[985
  sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,gender,color,material,length,size_label,category,is_active) VALUES(?,98502,?,'ЖЕН','БЕЖЕВЫЙ','КАШЕМИР','СТАНДАРТ',?,'adult',1)").run(id,executionId,size)
  sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES('boutique',98502,?,'QA SIZE PONCHO','ЖЕН','БЕЖЕВЫЙ','КАШЕМИР','СТАНДАРТ',?,?,0)").run(id,size,physical)
 }
+// Existing colorless/size-less SKU; it is active in the catalog but not listed
+// in either physical source, so manual entry must recognize it without inventing one.
+sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,gender,color,material,length,size_label,category,is_active) VALUES(98514,98502,?,'ЖЕН','','КАШЕМИР','СТАНДАРТ','','adult',1)").run(executionId)
 sql.prepare("INSERT INTO inventory_model_meta(key,value,updated_at) VALUES('human_inventory_v2','active',?) ON CONFLICT(key) DO UPDATE SET value='active'").run(seededAt)
 const post=async (payload)=>{
  const request=new Request('https://test-only.invalid/api/orders',{
@@ -181,9 +184,29 @@ try{
  const noColorResult=await post(noColorSource)
  assert([200,201].includes(noColorResult.status),'Explicit no-color and no-size must be allowed')
  const noColorItem=sql.prepare('SELECT variant_id FROM order_items WHERE order_id=?').get(noColorResult.body.orderId)
- assert.equal(noColorItem.variant_id,null,'No-color must not select a beige SKU')
+ assert.equal(noColorItem.variant_id,98514,
+  'Explicit Без цвета + Без размера must identify existing global SKU even if absent from the selected source')
+ const noColorStock=sql.prepare("SELECT quantity FROM inventory_stock WHERE inventory_source='warehouse' AND variant_id=98514").get()
+ assert.equal(noColorStock?.quantity,0,'Matched source-absent no-color SKU must keep physical stock zero')
  assert.equal(countProducts(),1)
  assert.equal(countVariants(),initialVariants)
+ // Full Workshop manual creation also uses read-only matching, but never reserves stock.
+ const knownWorkshop=make(undefined,'СТАНДАРТ','qa-workshop-manual-complete')
+ knownWorkshop.items[0]={...knownWorkshop.items[0],catalogVariantId:undefined,manualCatalogEntry:true,
+  sourceType:'workshop',workshopComment:'Изготовить по образцу',shortageAcknowledged:false}
+ const fullTask=await post(knownWorkshop)
+ assert([200,201].includes(fullTask.status),'Complete Workshop task rejected '+JSON.stringify(fullTask.body))
+ const workshopSku=sql.prepare("SELECT variant_id FROM workshop_tasks WHERE order_id=?").get(fullTask.body.orderId)
+ assert.equal(workshopSku?.variant_id,98511,'Workshop task did not link exact existing SKU')
+ const workshopReserves=sql.prepare('SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=?').get(fullTask.body.orderId)
+ assert.equal(Number(workshopReserves?.n),0,'Workshop exact SKU linkage may not reserve physical stock')
+ const incompleteWorkshop=make(undefined,'СТАНДАРТ','qa-workshop-required-fields')
+ incompleteWorkshop.items[0]={...incompleteWorkshop.items[0],catalogVariantId:undefined,
+  manualCatalogEntry:true,sourceType:'workshop',material:'',shortageAcknowledged:false}
+ const rejected=await post(incompleteWorkshop)
+ assert.equal(rejected.status,400,'HTTP Workshop manual form must reject omitted material '+JSON.stringify(rejected.body))
+ assert.equal(countVariants(),initialVariants)
+ console.log('WORKSHOP_STRICT_HTTP_PASS: exact SKU linked without stock reservation; incomplete custom payload rejected')
  console.log('MANUAL_ALL_SOURCE_HTTP_PASS: external-source SKU reused; new variation unresolved; no-color explicit; direct-HTTP required fields')
  console.log('EXACT_SIZE_HTTP_ORDER_PASS: persisted STANDARD, zero, no-size and safe incomplete Workshop tasks, no invented SKU or stock writes')
 }finally{sql.close()}
