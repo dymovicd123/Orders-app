@@ -103,7 +103,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               <div className="create-hero">
                 <div>
                   <div className="card-label">Новый заказ</div>
-                  <div className="card-meta">Заполните данные клиента, товары и оплату.</div>
+                  <div className="card-meta">Сначала выберите проданную одежду, затем укажите данные клиента и оплаты.</div>
                 </div>
                 <div className="orders-workspace-kpis create-kpis">
                   <div>
@@ -122,82 +122,9 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               </div>
     
               <section className="order-step-card">
-                <div className="order-step-head">
-                  <div className="order-step-index">1</div>
-                  <div>
-                    <h3>Клиент и условия заказа</h3>
-                    <p>Основные данные заказа. Итоговая цена теперь складывается из цен товарных позиций.</p>
-                  </div>
-                </div>
-                <div className="form-grid edit-grid">
-                  <label>
-                    <span>Дата</span>
-                    <input
-                      type="date"
-                      value={createDraft.orderDate}
-                      onChange={(event) => updateCreateDraft('orderDate', event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <span>Менеджер <b className="required-mark">*</b></span>
-                    <ManagerPicker
-                      valueId={createDraft.managerId}
-                      valueName={createDraft.managerName}
-                      options={references?.managerOptions || []}
-                      onChange={(manager) => setCreateDraft((draft) => ({ ...draft, managerId: manager?.id || 0, managerName: manager?.name || '' }))}
-                    />
-                  </label>
-                  <label>
-                    <span>Телефон клиента</span>
-                    <input
-                      value={createDraft.customerPhone}
-                      onChange={(event) => updateCreateDraft('customerPhone', event.target.value)}
-                      placeholder="Например: +7 777 123 45 67"
-                    />
-                  </label>
-                  <label>
-                    <span>Город</span>
-                    <SmartPickerInput
-                      value={createDraft.city}
-                      onChange={(value) => updateCreateDraft('city', value)}
-                      placeholder="Город или населённый пункт"
-                      options={suggestionValues.cities}
-                    />
-                  </label>
-                  <label>
-                    <span>Доставка</span>
-                    <SmartPickerInput
-                      value={createDraft.deliveryType}
-                      onChange={(value) => updateCreateDraft('deliveryType', value)}
-                      placeholder="Выберите доставку"
-                      options={suggestionValues.deliveryTypes}
-                    />
-                  </label>
-                  <label>
-                    <span>Способ оплаты заказа</span>
-                    <SmartPickerInput
-                      value={createDraft.orderPaymentMethod}
-                      onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}
-                      placeholder="Как клиент будет оплачивать заказ"
-                      options={suggestionValues.paymentMethods}
-                    />
-                    <small>Выберите способ, которым клиент будет оплачивать заказ.</small>
-                  </label>
-                  <label className="wide-field">
-                    <span>Комментарий</span>
-                    <input
-                      value={createDraft.comment}
-                      onChange={(event) => updateCreateDraft('comment', event.target.value)}
-                      placeholder="Необязательно: адрес, пожелание, уточнение"
-                    />
-                  </label>
-                </div>
-              </section>
-    
-              <section className="order-step-card">
                 <div className="order-step-head order-step-head-split">
                   <div className="order-step-head-main">
-                    <div className="order-step-index">2</div>
+                    <div className="order-step-index">1</div>
                     <div>
                       <h3>Товары в заказе</h3>
                       <p>Для каждой позиции укажите итоговую цену продажи. Цена Каталога подставляется как рекомендация, но её можно изменить.</p>
@@ -405,9 +332,86 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   <div className="main-sale-basket-total"><span>Итого</span>
                     <strong>{formatMoney(Number(createTotals.totalAmount)||0)}</strong>
                   </div>
+                  <button type="button" className="primary" style={{width:'100%'}}
+                    onClick={()=>document.getElementById('sale-client-details')?.scrollIntoView({behavior:'smooth',block:'start'})}>
+                    К клиенту и оплате
+                  </button>
                   </aside>
                 </div>
                 
+              </section>
+    
+              <section className="order-step-card" id="sale-client-details">
+                <div className="order-step-head">
+                  <div className="order-step-index">2</div>
+                  <div>
+                    <h3>Клиент и условия заказа</h3>
+                    <p>Основные данные заказа. Итоговая цена теперь складывается из цен товарных позиций.</p>
+                  </div>
+                </div>
+                <div className="form-grid edit-grid">
+                  <label>
+                    <span>Дата</span>
+                    <input
+                      type="date"
+                      value={createDraft.orderDate}
+                      onChange={(event) => updateCreateDraft('orderDate', event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Менеджер <b className="required-mark">*</b></span>
+                    <ManagerPicker
+                      valueId={createDraft.managerId}
+                      valueName={createDraft.managerName}
+                      options={references?.managerOptions || []}
+                      onChange={(manager) => setCreateDraft((draft) => ({ ...draft, managerId: manager?.id || 0, managerName: manager?.name || '' }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Телефон клиента</span>
+                    <input
+                      value={createDraft.customerPhone}
+                      onChange={(event) => updateCreateDraft('customerPhone', event.target.value)}
+                      placeholder="Например: +7 777 123 45 67"
+                    />
+                  </label>
+                  <label>
+                    <span>Город</span>
+                    <SmartPickerInput
+                      value={createDraft.city}
+                      onChange={(value) => updateCreateDraft('city', value)}
+                      placeholder="Город или населённый пункт"
+                      options={suggestionValues.cities}
+                    />
+                  </label>
+                  <label>
+                    <span>Доставка</span>
+                    <SmartPickerInput
+                      value={createDraft.deliveryType}
+                      onChange={(value) => updateCreateDraft('deliveryType', value)}
+                      placeholder="Выберите доставку"
+                      options={suggestionValues.deliveryTypes}
+                    />
+                  </label>
+                  <label>
+                    <span>Способ оплаты заказа</span>
+                    <SmartPickerInput
+                      value={createDraft.orderPaymentMethod}
+                      onChange={(value) => updateCreateDraft('orderPaymentMethod', value)}
+                      placeholder="Как клиент будет оплачивать заказ"
+                      options={suggestionValues.paymentMethods}
+                    />
+                    <small>Выберите способ, которым клиент будет оплачивать заказ.</small>
+                  </label>
+                  <label className="wide-field">
+                    <span>Комментарий</span>
+                    <input
+                      value={createDraft.comment}
+                      onChange={(event) => updateCreateDraft('comment', event.target.value)}
+                      placeholder="Необязательно: адрес, пожелание, уточнение"
+                    />
+                  </label>
+                </div>
               </section>
     
               <section className="order-step-card">
