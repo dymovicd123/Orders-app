@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Restored Client3-style model cards with name autocomplete and compact execution/color grouped SKUs.
+# Isolated Branch2 release of model-first sale picker; retain previous picker tests and add new flow acceptance.
 on:
   push:
     branches:
@@ -69,6 +69,8 @@ jobs:
           name: main-picker-branch2-browser-screenshot
           path: artifacts/main-order-picker-visual.png
           if-no-files-found: ignore
+      - name: New model-first sale picker - SSR and Chrome interactions
+        run: node scripts/test-main-sale-picker-20261107.mjs
       - name: Full application build and main business release gates
         run: |
           npm run build
