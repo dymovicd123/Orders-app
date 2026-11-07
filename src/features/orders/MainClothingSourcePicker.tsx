@@ -15,6 +15,7 @@ type Props={
  onCancelEdit?:()=>void
  onPendingChange?:(pending:boolean)=>void
  onVariantsLoaded?:(rows:OrderPickerChoice[])=>void
+ allowManualWhileEditing?:boolean
  initialVariants?:OrderPickerChoice[]
 }
 type Model={id:number;name:string;rows:OrderPickerChoice[]}
@@ -131,7 +132,7 @@ export function sourceColorGroups(variants:readonly OrderPickerChoice[]){
   .map(([name,rows]):ColorGroup=>({name,rows}))
 }
 
-export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,onCancelEdit,onPendingChange,onVariantsLoaded,initialVariants}:Props){
+export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,onCancelEdit,onPendingChange,onVariantsLoaded,allowManualWhileEditing=false,initialVariants}:Props){
  const [source,setSource]=useState<SourceKey>('warehouse')
  const [showAll,setShowAll]=useState(false)
  const [variants,setVariants]=useState<OrderPickerChoice[]>(initialVariants||[])
@@ -478,7 +479,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
                <strong>{formatClothingSize(item,variants)}</strong><small>{bad?'Сверить':free===0?'0 шт.':free+' шт.'}</small>
               </button>
              })}</div>
-             {!editing&&<button type="button" className="clothing-source-quick-link"
+             {(!editing||allowManualWhileEditing)&&<button type="button" className="clothing-source-quick-link"
               onClick={()=>openManualForVariant(first,'size',false)}>+ Другой размер{first.category==='child'?' / возраст':''}</button>}
              {items.some(item=>noSize(item.size))&&<small className="clothing-source-hint">«Без размера» — это отдельный вариант товара. Выбирайте его только если такой вариант продан.</small>}
              {selected&&items.some(item=>item.variantId===selected.variantId)&&<form className="clothing-source-inline" onSubmit={save}>
@@ -489,7 +490,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
               </div>
               {blocked&&<p className="clothing-source-alert" role="alert">{blocked}</p>}
               {!blocked&&<>
-               {!editing&&<div className="clothing-source-quick-actions">
+               {(!editing||allowManualWhileEditing)&&<div className="clothing-source-quick-actions">
                 <span>Нужен такой же товар, но с другим размером или цветом?</span>
                 <button type="button" onClick={()=>openManualForVariant(selected,'size')}>Другой размер</button>
                 <button type="button" onClick={()=>openManualForVariant(selected,'color')}>Другой цвет</button>
