@@ -19,6 +19,7 @@ type Props={
  onManual:()=>void
  editing?:{index:number;item:OrderItem}|null
  onCancelEdit?:()=>void
+ onPendingChange?:(pending:boolean)=>void
  initialVariants?:OrderPickerChoice[]
 }
 const text=(value:unknown)=>String(value??'')
@@ -55,7 +56,7 @@ export function parseSaleSearch(query:string,availableColors:readonly string[]){
   size,color,isChild}
 }
 
-export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit,initialVariants}:Props){
+export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit,onPendingChange,initialVariants}:Props){
  const [variants,setVariants]=useState<OrderPickerChoice[]>(initialVariants||[])
  const [loading,setLoading]=useState(!initialVariants)
  const [error,setError]=useState('')
@@ -75,6 +76,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
  const [dueDate,setDueDate]=useState('')
  const [dueTime,setDueTime]=useState('')
  const [formError,setFormError]=useState('')
+ useEffect(()=>{onPendingChange?.(chosenId!==null)},[chosenId,onPendingChange])
 
  useEffect(()=>{
   if(initialVariants)return
@@ -169,6 +171,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
   setExpanded(false);setVisibleCount(20);setSource('');setQuantity('1');setPrice('')
   setComment('');setUrgent(false);setDueDate('');setDueTime('');setFormError('')
  }
+ const cancelEditing=()=>{reset();onCancelEdit?.()}
  const openModel=(id:number)=>{
   const model=models.find(value=>value.id===id)
   if(!model)return
@@ -221,7 +224,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
    {searchMatches.length>shownModels.length&&<button type="button" className="secondary compact" onClick={()=>setVisibleCount(x=>x+20)}>Показать ещё модели</button>}
    <div className="main-sale-footer"><small>{searchMatches.length} моделей из {models.length}</small>
     <button type="button" className="secondary compact" onClick={onManual}>Индивидуальное изделие в Цех</button></div>
-   {editing&&<button type="button" className="secondary compact" onClick={onCancelEdit}>Отменить изменение</button>}
+   {editing&&<button type="button" className="secondary compact" onClick={cancelEditing}>Отменить изменение</button>}
   </div>}
   {!loading&&!error&&selectedModel&&!chosen&&<div className="main-sale-stack">
    <button type="button" className="main-sale-link" onClick={reset}>← Все модели</button>
@@ -253,7 +256,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
     </article>)}
    </div>
    {shownGroups.length<sortedGroups.length&&<button type="button" className="main-sale-link" onClick={()=>setExpanded(true)}>Показать ещё сочетания ({sortedGroups.length-shownGroups.length})</button>}
-   {editing&&<button type="button" className="secondary compact" onClick={onCancelEdit}>Отменить изменение</button>}
+   {editing&&<button type="button" className="secondary compact" onClick={cancelEditing}>Отменить изменение</button>}
   </div>}
   {!loading&&!error&&chosen&&<form className="main-sale-stack" onSubmit={save}>
    <button type="button" className="main-sale-link" onClick={()=>{setChosenId(null);setFormError('')}}>← Другой вариант</button>
@@ -301,7 +304,7 @@ export function MainSalePicker({allocated,onCommit,onManual,editing,onCancelEdit
     {formError&&<p role="alert" className="main-sale-error">{formError}</p>}
     <button type="submit" className="primary">{editing?'Сохранить изменение':shortage>0?'Добавить с уточнением':'Добавить в заказ'}</button>
    </>}
-   {editing&&<button type="button" className="secondary compact" onClick={onCancelEdit}>Отменить изменение</button>}
+   {editing&&<button type="button" className="secondary compact" onClick={cancelEditing}>Отменить изменение</button>}
   </form>}
  </section>
 }
