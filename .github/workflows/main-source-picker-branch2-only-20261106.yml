@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 only: create/editor/exchange exact-variant picker parity; Chrome + stock gates, never Main.
+# Branch2 only: final exchange exact-variant picker and stock/shipment acceptance; no Main, no D1 mutations.
 on:
   push:
     branches:
