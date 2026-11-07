@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 SKU prevention: operational order, edit, exchange and background resolution are read-only; catalog/stocktake deliberate creation preserved.
+# Branch2 no-auto-SKU acceptance: migration-seeded baseline and read-only operational resolver; guarded test-only deploy.
 on:
   push:
     branches:
