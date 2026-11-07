@@ -118,7 +118,6 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
  const visibleModels=matchingModels.slice(0,modelLimit)
  const activeModel=models.find(model=>model.id===openId)||null
  const selected=variants.find(row=>row.variantId===pickedId)||null
- const otherSource:SourceKey=source==='warehouse'?'boutique':'warehouse'
  const chosenGroup=activeModel?.rows||[]
  const materials=[...new Set(chosenGroup.map(row=>norm(row.material)))]
   .sort((a,b)=>sortName(a,b))
