@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 only: parity between create and itemized editor, Work QA794 fixes, Chrome and warehouse integrity.
+# Branch2 only: exact-variant editing matches order creation; Chrome + Work QA794 + stock gates, no Main deployment.
 on:
   push:
     branches:
