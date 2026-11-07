@@ -39,8 +39,15 @@ assert(app.includes('createOrderFromDraft'),'Server save must be reused')
 const server=await createServer({configFile:false,plugins:[react()],appType:'custom',
  server:{middlewareMode:true},logLevel:'error'})
 try{
- const {MainClothingSourcePicker,sourceModelCatalog,sourceColorGroups,sourceFree}=
+ const {MainClothingSourcePicker,sourceModelCatalog,sourceColorGroups,sourceFree,formatClothingSize}=
   await server.ssrLoadModule('/src/features/orders/MainClothingSourcePicker.tsx')
+ // Warehouse/Boutique may hold an adult un-sized accessory using legacy literal "0".
+ // This affects the label only. A genuine size zero with competing sizes stays zero.
+ const collar={...rows[0],productId:54,variantId:1051,productName:'ВОРОТНИК',
+  color:'ГОЛУБОЙ',material:'ДЖИНСА',length:'СТАНДАРТ',size:'0'}
+ assert.equal(formatClothingSize(collar,[collar]),'Без размера')
+ assert.equal(formatClothingSize(collar,[collar,{...collar,variantId:1052,size:'2'}]),'0')
+ assert.equal(formatClothingSize({...collar,category:'child'},[collar]),'0')
  const warehouse=sourceModelCatalog(rows,'warehouse',false)
  assert.deepEqual(warehouse.map(x=>x.name),['БАЯН СҰЛУ ЖИЛЕТ'])
  assert.equal(warehouse[0].rows.length,4,'Zero-quantity source position stays in source catalogue')
