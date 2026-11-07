@@ -1,9 +1,9 @@
-import {useId,useMemo,useState,type KeyboardEvent} from 'react'
+import {useId,useMemo,useState,type KeyboardEvent,type Ref} from 'react'
 import '../../styles/main-sale-picker.css'
 
 type Props={
  label:string;value:string;onChange:(next:string)=>void;options?:readonly string[];
- placeholder?:string;required?:boolean;inputRef?:React.Ref<HTMLInputElement>
+ placeholder?:string;required?:boolean;inputRef?:Ref<HTMLInputElement>
 }
 const normalize=(value:string)=>value.toLocaleLowerCase('ru-RU')
  .replace(/[ёқөұүәіңғһ]/g,ch=>({'ё':'е','қ':'к','ө':'о','ұ':'у','ү':'у','ә':'а','і':'и','ң':'н','ғ':'г','һ':'х'}[ch]||ch))
