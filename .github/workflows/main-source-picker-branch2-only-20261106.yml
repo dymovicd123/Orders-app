@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 UX fix: clickable suggestions and manual variants inside model/material, guarded isolated deployment.
+# Branch2 validated UI: model-local custom SKU and click-to-open suggestions; deploy isolated Worker only.
 on:
   push:
     branches:
