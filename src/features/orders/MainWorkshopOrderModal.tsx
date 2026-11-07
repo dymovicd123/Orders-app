@@ -7,7 +7,7 @@ export type WorkshopOrderFields={
  productName:string;audienceType:string;gender:string;color:string;material:string;length:string;size:string;
  sourceType:ManualSource;quantity:number;unitPrice:number;shortageAcknowledged:boolean;
  workshopComment:string;workshopUrgent:boolean;workshopDueDate:string;workshopDueTime:string;
- priceOrigin:'manual';catalogVariantId:undefined;catalogPriceSnapshot:null;priceNeedsConfirmation:false
+ priceOrigin:'manual';catalogVariantId:undefined;manualCatalogEntry:true;catalogPriceSnapshot:null;priceNeedsConfirmation:false
 }
 type Props={
  onSave:(item:WorkshopOrderFields)=>void;onClose:()=>void;source?:ManualSource
@@ -25,7 +25,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
  const mode=initial?.sourceType||source
  const isWorkshop=mode==='workshop'
  const [item,setItem]=useState({
-  productName:clean(defaults?.productName),audienceType:clean(defaults?.audienceType)||'ВЗРОСЛЫЙ',
+  productName:clean(defaults?.productName),audienceType:clean(defaults?.audienceType),
   gender:clean(defaults?.gender),color:clean(defaults?.color),material:clean(defaults?.material),
   length:clean(defaults?.length),size:clean(defaults?.size),
   quantity:clean(defaults?.quantity??1),unitPrice:defaults?.unitPrice==null?'':clean(defaults.unitPrice),
@@ -46,9 +46,13 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
   event.preventDefault()
   const qty=Number(item.quantity),price=Number(item.unitPrice)
   if(!item.productName.trim()){setError('Укажите название товара.');return}
-  if(!item.size.trim()){setError('Укажите размер или возраст.');return}
-  if(!isWorkshop&&(!item.gender||!item.color.trim()||!item.material.trim()||!item.length.trim())){
-   setError('Для Склада и Бутика укажите пол, цвет, материал и длину. Это необходимо для точной идентификации.');return
+  const missing=[
+   [item.audienceType,'тип'],[item.gender,'пол'],[item.color,'цвет'],
+   [item.material,'материал'],[item.length,'длину'],[item.size,'размер или возраст'],
+  ].filter(([value])=>!value.trim()).map(([,name])=>name)
+  if(missing.length){
+   setError('Укажите '+missing.join(', ')+'. Если нет цвета или размера, выберите соответствующее значение явно.')
+   return
   }
   if(!Number.isSafeInteger(qty)||qty<1){setError('Количество должно быть целым числом больше нуля.');return}
   if(!item.unitPrice.trim()||!Number.isFinite(price)||price<0){setError('Укажите цену продажи в тенге.');return}
@@ -61,7 +65,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
    workshopUrgent:isWorkshop&&item.workshopUrgent,
    workshopDueDate:isWorkshop&&item.workshopUrgent?item.workshopDueDate:'',
    workshopDueTime:isWorkshop&&item.workshopUrgent?item.workshopDueTime:'',
-   priceOrigin:'manual',catalogVariantId:undefined,catalogPriceSnapshot:null,priceNeedsConfirmation:false
+   priceOrigin:'manual',catalogVariantId:undefined,manualCatalogEntry:true,catalogPriceSnapshot:null,priceNeedsConfirmation:false
   })
  }
  return <div className="main-workshop-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}>
@@ -78,8 +82,8 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
      {!isWorkshop&&<p className="main-workshop-source-notice">
       <strong>{mode==='warehouse'?'Склад':'Бутик'} — без подмены источника.</strong>
       {' '}Если точный вариант уже существует, система свяжет его с каталогом.
-      Если вариант неизвестен, заказ сохранится с уточнением товара и остатка.
-      Фактический остаток не увеличится автоматически.
+      Если варианта нет в каталоге, заказ сохранится на уточнение — новый SKU не создаётся.
+      При отсутствии записи в источнике остаток будет 0, источник не изменится.
      </p>}
      <fieldset className="main-workshop-section">
       <legend>1. Какой товар {isWorkshop?'изготовить':'продан'}</legend>
@@ -89,26 +93,26 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
       <div className="main-workshop-grid">
        <label className="main-workshop-field">Тип
         <select value={item.audienceType} onChange={e=>set('audienceType',e.target.value)}>
-         <option value="ВЗРОСЛЫЙ">Взрослый</option><option value="ДЕТСКИЙ">Детский</option>
+         <option value="" disabled>Выберите тип</option><option value="ВЗРОСЛЫЙ">Взрослый</option><option value="ДЕТСКИЙ">Детский</option>
         </select>
        </label>
        <MainManualChoiceInput label={item.audienceType==='ДЕТСКИЙ'?'Возраст':'Размер'} required
         value={item.size} onChange={value=>set('size',value)}
-        options={item.audienceType==='ДЕТСКИЙ'?suggestions?.childAges:suggestions?.sizes}
+        options={item.audienceType==='ДЕТСКИЙ'?suggestions?.childAges:['БЕЗ РАЗМЕРА',...(suggestions?.sizes||[])]}
         placeholder={item.audienceType==='ДЕТСКИЙ'?'Например, 5 лет':'Например, 46'}/>
-       <label className="main-workshop-field">Пол{isWorkshop?'':' *'}
+       <label className="main-workshop-field">Пол *
         <select value={item.gender} onChange={e=>set('gender',e.target.value)}>
-         <option value="">Не указан</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option>
+         <option value="" disabled>Выберите пол</option><option value="ЖЕН">Женский</option><option value="МУЖ">Мужской</option><option value="БЕЗ ПОЛА">Без пола</option>
         </select>
        </label>
-       <MainManualChoiceInput label={'Цвет'+(isWorkshop?'':' *')} value={item.color}
-        onChange={value=>set('color',value)} options={suggestions?.colors} placeholder="Укажите цвет"/>
-       <MainManualChoiceInput label={'Материал'+(isWorkshop?'':' *')} value={item.material}
+       <MainManualChoiceInput label="Цвет" required value={item.color}
+        onChange={value=>set('color',value)} options={['БЕЗ ЦВЕТА',...(suggestions?.colors||[])]} placeholder="Выберите цвет или «Без цвета»"/>
+       <MainManualChoiceInput label="Материал" required value={item.material}
         onChange={value=>set('material',value)} options={suggestions?.materials} placeholder="Например, Замша велюр"/>
-       <MainManualChoiceInput label={'Длина'+(isWorkshop?'':' *')} value={item.length}
+       <MainManualChoiceInput label="Длина" required value={item.length}
         onChange={value=>set('length',value)} options={suggestions?.lengths} placeholder="Например, Стандарт"/>
       </div>
-      <small className="main-workshop-hint">Выбирайте значение из подсказок либо вводите своё. Полное совпадение с каталогом связывается с существующим вариантом, но похожие варианты не подменяются.</small>
+      <small className="main-workshop-hint">Все характеристики должны быть указаны явно. «Без размера» и «Без цвета» выбираются как отдельные значения. Новый текст допустим для заказа на уточнение, но не создаёт SKU или новое значение справочника.</small>
      </fieldset>
      <fieldset className="main-workshop-section">
       <legend>2. Количество и цена</legend>
