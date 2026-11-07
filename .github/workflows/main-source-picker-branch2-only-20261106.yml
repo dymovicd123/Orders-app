@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Clothing picker: source-only models, material/color/size groups; deploy exclusively to isolated Branch2 Worker.
+# Validated Client3-style clothing picker: repeat full typecheck and isolated Branch2 deployment.
 on:
   push:
     branches:
