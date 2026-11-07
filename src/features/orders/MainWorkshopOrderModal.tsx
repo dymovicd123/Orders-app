@@ -57,7 +57,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
    setError('Укажите '+missing.join(', ')+'. Если нет цвета или размера, выберите соответствующее значение явно.')
    return
   }
-  if(quickChange&&item[quickChange].trim().toLocaleUpperCase('ru-RU')===
+  if(quickChange&&preset?.previousValue!==undefined&&item[quickChange].trim().toLocaleUpperCase('ru-RU')===
    String(preset?.previousValue||'').trim().toLocaleUpperCase('ru-RU')){
    setError('Выберите другой '+(quickChange==='size'?'размер или возраст':'цвет')+'. Для прежнего варианта используйте его карточку.');return
   }
@@ -111,7 +111,7 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
          item.audienceType==='ДЕТСКИЙ'?[...(suggestions?.childAges||[])]:
          ['БЕЗ РАЗМЕРА',...(suggestions?.sizes||[])]}
         placeholder={quickChange==='color'?'Выберите или впишите цвет':'Выберите или впишите размер'}/>
-       <button type="button" className="main-workshop-expand" onClick={()=>setEditAll(true)}>
+       <button type="button" className="main-workshop-expand" onMouseDown={event=>event.preventDefault()} onClick={()=>setEditAll(true)}>
         Изменить другие характеристики
        </button>
       </div>:<>
