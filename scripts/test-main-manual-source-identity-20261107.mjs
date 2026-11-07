@@ -22,6 +22,12 @@ try{
  const add=(id,position,length)=>sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active) VALUES(?,99400,?,'adult','ЖЕН','БЕЖЕВЫЙ','ЗАМША ВЕЛЮР',?,'46',1)").run(id,position,length)
  add(99403,99401,'СТАНДАРТ')
  add(99404,99402,'ДЛИННЫЙ')
+ // Real catalog STANDARD execution; missing workshop facts must NEVER
+ // silently acquire this pre-existing SKU through canonical fallbacks.
+ sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(99410,'ТЕСТ СТАНДАРТНЫЙ ШАПАН','adult',1)").run()
+ sql.prepare("INSERT INTO catalog_stock_positions(id,product_id,category,gender_scope,material,length,is_default,is_active) VALUES(99411,99410,'adult','unisex','СТАНДАРТ','СТАНДАРТ',0,1)").run()
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active) VALUES(99412,99410,99411,'adult','ЖЕН','БЕЖЕВЫЙ','СТАНДАРТ','СТАНДАРТ','46',1)").run()
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,category,gender,color,material,length,size_label,is_active) VALUES(99413,99410,99411,'adult','ЖЕН','БЕЖЕВЫЙ','СТАНДАРТ','СТАНДАРТ','',1)").run()
  const toItem=(source,attrs={})=>normalizeOrderItems([{
   productName:'БАЯН СУЛУ ШАПАН',sourceType:source,quantity:1,unitPrice:30000,
   audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:'БЕЖЕВЫЙ',
@@ -39,6 +45,24 @@ try{
   'Missing color is not enough to identify one of several variants')
  assert.equal((await resolveWorkshopCatalogProductOnly(db,toItem('workshop',{material:'НЕИЗВЕСТНО'}))).variantId,null,
   'Unknown material cannot be silently replaced')
+ const standard={productName:'ТЕСТ СТАНДАРТНЫЙ ШАПАН',material:'СТАНДАРТ',length:'СТАНДАРТ'}
+ assert.equal((await resolveWorkshopCatalogProductOnly(db,toItem('workshop',standard))).variantId,99412,
+  'Both explicitly entered STANDARD facts may match exact active SKU')
+ for(const attrs of [{material:''},{length:''},{material:'',length:''},{gender:''},{size:''},{color:''}]){
+  const omitted=toItem('workshop',{...standard,...attrs})
+  assert.equal(omitted.material,attrs.material===''?'':standard.material,
+   'Workshop missing material must remain missing rather than default to STANDARD')
+  assert.equal(omitted.length,attrs.length===''?'':standard.length,
+   'Workshop missing length must remain missing rather than default to STANDARD')
+  const result=await resolveWorkshopCatalogProductOnly(db,omitted)
+  assert.equal(result.productId,99410,'Existing model can be recognized without inventing a variant')
+  assert.equal(result.variantId,null,'Omitted Workshop fact must not link a STANDARD variant: '+JSON.stringify(attrs))
+ }
+ const intentionallyNoSize=toItem('workshop',{...standard,size:'БЕЗ РАЗМЕРА'})
+ assert.equal((await resolveWorkshopCatalogProductOnly(db,intentionallyNoSize)).variantId,99413,
+  'An explicit no-size choice may match existing truly dimensionless SKU')
+ assert.equal((await resolveWorkshopCatalogProductOnly(db,toItem('workshop',{...standard,size:'СТАНДАРТ'}))).variantId,null,
+  'STANDARD as size is not the same as missing size')
  assert.equal(count(),before,'Workshop matching must never create a variant')
  assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM inventory_stock').get().n),stockBefore,
   'Workshop matching must never change stock')
