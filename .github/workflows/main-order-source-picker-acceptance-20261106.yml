@@ -53,3 +53,101 @@ jobs:
         run: npm run build
       - name: Existing main business release suite
         run: npm run release:check
+
+  deploy-branch2-pr794:
+    name: Isolated Branch2 deploy after PR794 acceptance
+    needs: source-first-order-qa
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.number == 794
+      && github.event.pull_request.head.ref == 'feature/main-source-first-order-picker-20261106'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      DATABASE: orders_db_branch2_mirror_20261027
+      CONFIG: wrangler.source-picker-branch2.jsonc
+      HOST: https://orders-app-branch2.orders-clothes.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Isolated Branch2 PR and credentials safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = pull_request
+          test "$GITHUB_HEAD_REF" = feature/main-source-first-order-picker-20261106
+          test "$GITHUB_BASE_REF" = main
+          jq -e '.pull_request.number == 794
+            and .pull_request.head.repo.full_name == .repository.full_name
+            and .pull_request.head.ref == "feature/main-source-first-order-picker-20261106"' "$GITHUB_EVENT_PATH"
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const c=JSON.parse(readFileSync('wrangler.source-picker-branch2.jsonc','utf8'))
+          assert.equal(c.name,'orders-app-branch2')
+          assert.equal(c.main,'worker/index.ts')
+          assert.equal(c.assets.directory,'./dist/client')
+          assert.equal(c.d1_databases?.length,1)
+          assert.equal(c.d1_databases[0].binding,'DB')
+          assert.equal(c.d1_databases[0].database_name,'orders_db_branch2_mirror_20261027')
+          assert.equal(c.d1_databases[0].database_id,'0904a573-21ff-44d8-93b0-c9200f771702')
+          console.log('PR794_BRANCH2_ONLY_CONFIG_VERIFIED')
+          NODE
+      - run: npm ci
+      - name: Build confirmed PR head
+        run: npm run build
+      - name: Snapshot test D1 without modifying rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT (SELECT COUNT(*) FROM sqlite_master WHERE name='catalog_variants' AND type='table') AS variants,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='catalog_products' AND type='table') AS products,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='catalog_execution_prices' AND type='table') AS prices,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='inventory_reservations' AND type='table') AS reserves,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='inventory_stock' AND type='table') AS stock
+          " --json | jq -e '.[0].results[0] | .variants==1 and .products==1 and .prices==1 and .reserves==1 and .stock==1'
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_cached,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS revenue,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/branch2-before.json"
+      - name: Build Worker in isolated Branch2 config
+        run: npx wrangler deploy --dry-run --outdir .picker-branch2-dry-run --config "$CONFIG"
+      - name: Deploy ONLY Branch2 assets and Worker code
+        run: npx wrangler deploy --config "$CONFIG"
+      - name: Verify Branch2 D1 unchanged and test Worker reachable
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_cached,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS revenue,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/branch2-after.json"
+          cmp "$RUNNER_TEMP/branch2-before.json" "$RUNNER_TEMP/branch2-after.json"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/auth/status")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/orders/source-picker")" = 401
+          echo 'PR794_BRANCH2_ONLY_DEPLOY_VERIFIED'
