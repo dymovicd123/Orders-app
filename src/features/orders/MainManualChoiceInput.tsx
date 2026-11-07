@@ -5,8 +5,9 @@ type Props={
  label:string;value:string;onChange:(next:string)=>void;options?:readonly string[];
  placeholder?:string;required?:boolean;inputRef?:Ref<HTMLInputElement>
 }
+const letters:Record<string,string>={'ё':'е','қ':'к','ө':'о','ұ':'у','ү':'у','ә':'а','і':'и','ң':'н','ғ':'г','һ':'х'}
 const normalize=(value:string)=>value.toLocaleLowerCase('ru-RU')
- .replace(/[ёқөұүәіңғһ]/g,ch=>({'ё':'е','қ':'к','ө':'о','ұ':'у','ү':'у','ә':'а','і':'и','ң':'н','ғ':'г','һ':'х'}[ch]||ch))
+ .replace(/[ёқөұүәіңғһ]/g,ch=>letters[ch]||ch)
  .replace(/[^\p{L}\p{N}]+/gu,' ').trim()
 
 export function MainManualChoiceInput({label,value,onChange,options=[],placeholder,required,inputRef}:Props){
