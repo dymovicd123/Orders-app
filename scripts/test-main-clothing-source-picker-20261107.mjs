@@ -39,8 +39,33 @@ assert(app.includes('createOrderFromDraft'),'Server save must be reused')
 const server=await createServer({configFile:false,plugins:[react()],appType:'custom',
  server:{middlewareMode:true},logLevel:'error'})
 try{
- const {MainClothingSourcePicker,sourceModelCatalog,sourceColorGroups,sourceFree,formatClothingSize}=
+ const {MainClothingSourcePicker,sourceModelCatalog,sourceColorGroups,sourceFree,formatClothingSize,
+  parseClothingSearch,matchesClothingSize}=
   await server.ssrLoadModule('/src/features/orders/MainClothingSourcePicker.tsx')
+ const standard={...rows[0],productId:51,variantId:1465,productName:'БЕГІМ ПОНЧО',
+  material:'СТАНДАРТ',color:'БЕЖЕВЫЙ',length:'СТАНДАРТ',size:'СТАНДАРТ'}
+ const sizeZero={...standard,variantId:1051,size:'0'}
+ const noSize={...standard,variantId:1052,size:''}
+ assert.equal(formatClothingSize(standard,[standard]),'Стандарт')
+ assert.equal(formatClothingSize(noSize,[noSize]),'Без размера')
+ assert.equal(formatClothingSize(sizeZero,[sizeZero,standard]),'0',
+  'A genuine 0 must not turn into no-size when STANDARD SKU exists')
+ assert.equal(formatClothingSize(sizeZero,[sizeZero]),'Без размера',
+  'Isolated legacy 0 may use a human no-size label without mutating the SKU')
+ const searchExactStandard=parseClothingSearch('Бегім пончо размер стандарт',['БЕЖЕВЫЙ'])
+ const searchNoSize=parseClothingSearch('Бегім пончо без размера',['БЕЖЕВЫЙ'])
+ const searchLooseStandard=parseClothingSearch('Бегім пончо стандарт',['БЕЖЕВЫЙ'])
+ assert(searchExactStandard.modelTokens.length===2)
+ assert(matchesClothingSize(standard,searchExactStandard,[standard,sizeZero,noSize]))
+ assert(!matchesClothingSize(sizeZero,searchExactStandard,[standard,sizeZero,noSize]))
+ assert(!matchesClothingSize(noSize,searchExactStandard,[standard,sizeZero,noSize]))
+ assert(matchesClothingSize(noSize,searchNoSize,[standard,sizeZero,noSize]))
+ assert(!matchesClothingSize(sizeZero,searchNoSize,[standard,sizeZero,noSize]),
+  'Search no-size must not select competing literal 0')
+ assert(!matchesClothingSize(standard,searchNoSize,[standard,sizeZero,noSize]))
+ assert(matchesClothingSize(standard,searchLooseStandard,[standard,sizeZero,noSize]))
+ assert.equal(standard.size,'СТАНДАРТ','Display/search must never mutate actual catalog size')
+
  // Warehouse/Boutique may hold an adult un-sized accessory using legacy literal "0".
  // This affects the label only. A genuine size zero with competing sizes stays zero.
  const collar={...rows[0],productId:54,variantId:1051,productName:'ВОРОТНИК',
