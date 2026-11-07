@@ -2,6 +2,7 @@
 import {useEffect,useState} from 'react'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
 import {MainClothingSourcePicker} from '../orders/MainClothingSourcePicker'
+import {findExactExistingManualVariant} from '../orders/manualOrderCatalogPreview'
 import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
 import {MainWorkshopOrderModal,type WorkshopOrderFields,type ManualSource,type ManualOrderPreset} from '../orders/MainWorkshopOrderModal'
 import '../../styles/188f-stock-trust.css'
@@ -46,6 +47,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
   const [workshopOpen,setWorkshopOpen]=useState(false)
   const [manualSource,setManualSource]=useState<ManualSource>('workshop')
   const [manualPreset,setManualPreset]=useState<ManualOrderPreset|null>(null)
+  const [catalogChoices,setCatalogChoices]=useState<OrderPickerChoice[]>([])
   const [workshopEditing,setWorkshopEditing]=useState<number|null>(null)
   const [notice,setNotice]=useState<{message:string;id:number}|null>(null)
   useEffect(()=>{
@@ -226,6 +228,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 <div className="main-sale-workspace">
                   <div className="main-sale-picker-pane">
                     <MainClothingSourcePicker key={pickerRevision} allocated={allocated} onCommit={chooseVariant} onManual={startManual}
+                      onVariantsLoaded={setCatalogChoices}
                       onPendingChange={setPickerPending}
                       editing={editingIndex===null||!createDraft.items[editingIndex]?null:{index:editingIndex,item:createDraft.items[editingIndex]}}
                       onCancelEdit={()=>setEditingIndex(null)}/>
@@ -247,13 +250,19 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                       <p className="main-basket-details">
                         {[
                           item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender||'',
-                          item.material||'',item.color||'',
+                          String(item.material||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.material||'',item.color||'',
                           item.length?(String(item.length).toUpperCase()==='СТАНДАРТ'?'Обычная длина':item.length):'',
-                          (String(item.audienceType).toUpperCase()==='ДЕТСКИЙ'?'Возраст ':'Размер ')+(item.size||'не указан'),
+                          ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(String(item.size||'').trim().toUpperCase())
+                            ?'Без размера'
+                            :(String(item.audienceType).toUpperCase()==='ДЕТСКИЙ'?'Возраст ':'Размер ')+(item.size||'не указан'),
                         ].filter(Boolean).join(' · ')}
                       </p>
                       {!item.catalogVariantId&&item.sourceType!=='workshop'&&
-                        <p className="main-basket-catalog-note">Указано вручную. При сохранении проверим, есть ли такой товар в системе. Если нет, понадобится уточнить наличие.</p>}
+                        <p className="main-basket-catalog-note">{catalogChoices.length===0
+                           ?'Товар указан вручную. Проверим его наличие при сохранении.'
+                           :findExactExistingManualVariant(item,catalogChoices)
+                             ?'Такой вариант уже есть в каталоге. При сохранении проверим наличие в выбранном месте.'
+                             :'Точный вариант не найден. После сохранения потребуется уточнить товар и наличие.'}</p>}
                       {item.workshopUrgent&&<span className="main-basket-urgent">Срочно · {item.workshopDueDate||'срок не указан'}</span>}
                       <div className="main-basket-price">
                         <span>{Number(item.quantity)||1} шт. × {item.unitPrice==null?'Цена не указана':formatMoney(Number(item.unitPrice))}</span>
@@ -404,6 +413,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 source={manualSource}
                 preset={workshopEditing===null?manualPreset:null}
                 suggestions={suggestionValues}
+                catalogVariants={catalogChoices}
                 onClose={()=>{setWorkshopOpen(false);setWorkshopEditing(null);setManualPreset(null)}}
                 onSave={saveWorkshop}/>}
               {notice&&<div className="main-sale-toast" role="status" aria-live="polite" key={notice.id}>
