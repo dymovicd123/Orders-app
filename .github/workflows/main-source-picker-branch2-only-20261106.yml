@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 adaptive picker: independently chosen color/size filters and targeted warehouse lifecycle regression; deploy test Worker only.
+# Branch2 adaptive filters and active warehouse operation QA; legacy pre-refactor stocktake panel test superseded.
 on:
   push:
     branches:
@@ -90,7 +90,7 @@ jobs:
       - name: Warehouse targeted integrity - arrival, write-off, transfer, correction, stocktake
         run: |
           node scripts/test-main-transfer-canonical-sku-20261031.mjs
-          node scripts/test-stage02-phase2d-transfer-writeoff-possession-resolver.mjs
+          node scripts/test-main-active-warehouse-operation-ui-20261107.mjs
           node scripts/test-catalog-only-writeoff-20261018.mjs
           node scripts/test-inventory-integrity-safety-20261014.mjs
           node scripts/test-main-found-stocktake-identity-race-20261031.mjs
