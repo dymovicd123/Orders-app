@@ -201,6 +201,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   &&(!filterSize||(filterSize===EMPTY_SIZE_FILTER?noSize(row.size):row.size===filterSize))
   &&(!filterGender||row.gender===filterGender)&&(!filterLength||row.length===filterLength))
  const colorGroups=sourceColorGroups(shownRows)
+ const comparisonRows=filterSize&&new Set(shownRows.map(row=>norm(row.length))).size>1 ? shownRows : []
  // Small color palettes are all visible immediately. Larger ones still
  // expose every color through the selector, with progressive card browsing.
  const visibleColors=colorGroups.length<=10?colorGroups:colorGroups.slice(0,colorLimit)
@@ -217,9 +218,18 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   setDueDate('');setDueTime('');setError('');setItemSource(source)
  }
  const changeSource=(next:SourceKey)=>{
-  setSource(next);setShowAll(false);setModelLimit(20);setColorLimit(6)
-  setActiveMaterial(null);clearFilters();setError('');discardSelection()
-  // Leave the opened model in place, if it exists at the new source.
+  if(next===source)return
+  const keepModel=openId!==null&&variants.some(row=>row.productId===openId)
+  const exactVisible=selected?listed(selected,next):
+   !keepModel||variants.some(row=>row.productId===openId&&listed(row,next)
+     &&(selectedMaterial===null||norm(row.material)===selectedMaterial)
+     &&(!filterColor||row.color===filterColor)
+     &&(!filterSize||(filterSize===EMPTY_SIZE_FILTER?noSize(row.size):row.size===filterSize))
+     &&(!filterLength||row.length===filterLength)
+     &&(!filterGender||row.gender===filterGender))
+  setSource(next);setShowAll(keepModel&&!exactVisible)
+  setModelLimit(20);setColorLimit(30);setError('')
+  setItemSource(next)
  }
  const toggleAll=()=>{
   setShowAll(value=>!value);setActiveMaterial(null);clearFilters();setColorLimit(6);discardSelection()
@@ -280,7 +290,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
   })
  }
 
- const openManualForVariant=(row:OrderPickerChoice,change:'size'|'color')=>{
+ const openManualForVariant=(row:OrderPickerChoice,change:'size'|'color',explicitBase=true)=>{
   discardSelection()
   const hasDetails=Boolean(row.productName&&row.gender&&row.color&&row.material&&row.length&&
    (change==='size'||row.size))
@@ -295,7 +305,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
    quantity:1,
    unitPrice:row.salePrice??undefined,
    quickChange:hasDetails?change:undefined,
-   previousValue:change==='size'?row.size:row.color,
+   previousValue:explicitBase?(change==='size'?row.size:row.color):undefined,
   })
  }
 
@@ -426,6 +436,18 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
               <button className="clothing-source-link" type="button" onClick={()=>{clearFilters();setColorLimit(6);discardSelection()}}>Сбросить</button>}
           </div>
         </div>}
+        {comparisonRows.length>1&&<div className="clothing-source-comparison">
+         <strong>Размер {filterSize===EMPTY_SIZE_FILTER?'Без размера':filterSize}: сравните длину</strong>
+         <div className="clothing-source-comparison-options">
+          {comparisonRows.slice(0,12).map(row=><button type="button" key={row.variantId}
+           onClick={()=>{setFilterLength(row.length);setFilterColor(row.color);setFilterGender(row.gender);discardSelection()}}>
+           <strong>{length(row.length)}</strong>
+           <span>{gender(row.gender)} · {row.color||'Без цвета'}</span>
+           <small>{sourceFree(row,source,allocated,draftItem)} шт. доступно · Показать</small>
+          </button>)}
+         </div>
+         {comparisonRows.length>12&&<small>Показаны первые 12 вариантов. Выберите цвет для остальных.</small>}
+        </div>}
         {shownRows.length===0&&<div className="clothing-source-empty">Нет вариантов с этими характеристиками. Измените фильтры.</div>}
         <div className="clothing-source-color-list">
          {visibleColors.map(group=>{
@@ -455,7 +477,7 @@ export function MainClothingSourcePicker({allocated,onCommit,onManual,editing,on
               </button>
              })}</div>
              {!editing&&<button type="button" className="clothing-source-quick-link"
-              onClick={()=>openManualForVariant(first,'size')}>+ Другой размер{first.category==='child'?' / возраст':''}</button>}
+              onClick={()=>openManualForVariant(first,'size',false)}>+ Другой размер{first.category==='child'?' / возраст':''}</button>}
              {items.some(item=>noSize(item.size))&&<small className="clothing-source-hint">«Без размера» — это отдельный вариант товара. Выбирайте его только если такой вариант продан.</small>}
              {selected&&items.some(item=>item.variantId===selected.variantId)&&<form className="clothing-source-inline" onSubmit={save}>
               <div className="clothing-source-picked">
