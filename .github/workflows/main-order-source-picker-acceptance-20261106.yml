@@ -43,6 +43,8 @@ jobs:
           if-no-files-found: ignore
       - name: Guided size/color Chrome acceptance and manager-friendly order copy
         run: node scripts/test-main-order-ux-review-20261107.mjs
+      - name: Work QA794 F1-F7 report regressions in real Chrome
+        run: node scripts/test-branch2-order-qa794-report-fixes.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
