@@ -342,10 +342,10 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                 <div className="order-create-item-summary">
                   <div className="order-create-item-summary-head">
                     <strong>Состав заказа</strong>
-                    <span>{actualItems.length} поз. · {createDraft.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0)} шт.</span>
+                    <span>{actualItems.length} поз. · {actualItems.reduce((sum:any,item:any) => sum + Math.max(0, Number(item.quantity || 0)), 0)} шт.</span>
                   </div>
                   <div className="order-create-item-summary-list">
-                    {createDraft.items.map((item, index) => (
+                    {actualItems.map((item:any, index:number) => (
                       <div className="order-create-item-summary-row order-summary-card" key={`create-summary-${index}`}>
                         <span className="order-create-item-summary-index">{index + 1}</span>
                         <div className="order-summary-card-body">
