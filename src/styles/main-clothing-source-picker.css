@@ -55,7 +55,6 @@
 .clothing-source-color-title{display:flex;align-items:center;gap:8px;border-bottom:1px solid #e8eef6;padding-bottom:8px}
 .clothing-source-color-title strong{color:#1a405f;font-weight:850;font-size:13px;flex:1}
 .clothing-source-color-title small{color:#7790aa;font-size:11px}
-.clothing-source-tone{width:15px;height:15px;display:inline-block;border-radius:50%;border:1px solid #9eacbd;flex:none}
 .clothing-source-size-row{display:grid;gap:6px;padding:4px 0 9px}
 .clothing-source-size-row+.clothing-source-size-row{border-top:1px solid #e5edf5;padding-top:10px}
 .clothing-source-size-name strong{color:#324d6c;font-size:12px;font-weight:750}
@@ -94,3 +93,13 @@
 @media(max-width:960px){.clothing-source-model-pair{grid-template-columns:minmax(0,1fr)}.clothing-source-model{min-height:62px}.clothing-source-model-right small{font-size:10px}}
 @media(max-width:760px){.clothing-source-model-pair{grid-template-columns:repeat(2,minmax(0,1fr))}.clothing-source-detail{padding:10px}}
 @media(max-width:570px){.clothing-source-model-pair{grid-template-columns:minmax(0,1fr)}.clothing-source-model{min-height:60px}.clothing-source-model-mark{width:34px;height:34px}.clothing-source-top{align-items:start}.clothing-source-head{align-items:flex-start}.clothing-source-materials button{min-width:0;flex:1 1 140px}.clothing-source-color{padding:9px}.clothing-source-sizes{gap:5px}.clothing-source-size{min-width:50px}}
+
+.clothing-source-refinements{background:#f1f6fd;border:1px solid #d6e3f2;border-radius:10px;padding:10px 12px;display:grid;gap:10px}
+.clothing-source-refinement-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px}
+.clothing-source-refinement-head strong{color:#2c507c}
+.clothing-source-refinement-head span{color:#607c9e;font-size:11px}
+.clothing-source-refinement-controls{display:flex;gap:8px 10px;flex-wrap:wrap;align-items:end}
+.clothing-source-refinement-controls label{display:grid;gap:5px;min-width:120px;flex:1 1 130px;font-size:11px;color:#4c6682;font-weight:720}
+.clothing-source-refinement-controls select{min-height:37px;width:100%;border-radius:8px;padding:6px 9px;background:#fff;border:1px solid #bed1ea;font-size:12px;font-weight:600;color:#26496f}
+.clothing-source-refinement-controls .clothing-source-link{min-height:37px;padding:7px}
+@media(max-width:570px){.clothing-source-refinement-controls label{flex:1 1 calc(50% - 8px);min-width:0}}
