@@ -1,4 +1,5 @@
 import {cleanText,toInt} from '../core/text.ts'
+import {OrderInputValidationError} from './order-core.ts'
 
 export type SourcePickerVariant = {
   variantId:number
@@ -108,7 +109,7 @@ export async function hydratePickedOrderItems(
           FROM catalog_variants v JOIN catalog_products p ON p.id=v.product_id
           WHERE v.id=? AND v.is_active=1 AND p.is_active=1
           LIMIT 1`).bind(variantId).first<Record<string,unknown>>()||undefined
-      if(!record)throw new Error('Выбранный вариант товара больше не активен. Обновите список товаров.')
+      if(!record)throw new OrderInputValidationError('Выбранный вариант товара больше не активен. Обновите список товаров.')
       identities.set(variantId,record)
     }
     const upper=(value:unknown)=>cleanText(value).toLocaleUpperCase('ru-RU')
@@ -126,7 +127,7 @@ export async function hydratePickedOrderItems(
       || execution(item.material)!==execution(record.material)
       || execution(item.length)!==execution(record.length)
       || upper(item.size)!==canonicalSize){
-      throw new Error('Характеристики выбранного товара изменились в каталоге. Обновите выбор товара.')
+      throw new OrderInputValidationError('Характеристики выбранного товара изменились в каталоге. Обновите выбор товара.')
     }
     item.productName=canonicalProduct
     item.catalogProductId=toInt(record.product_id,0)
