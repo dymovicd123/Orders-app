@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Isolated Branch2 release of approved model-first picker, customer details follow items; preserve legacy business checks.
+# Final isolated Branch2 gate: product-first order, safe edit cancel, and unchanged Main/data.
 on:
   push:
     branches:
