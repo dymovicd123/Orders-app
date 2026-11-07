@@ -45,6 +45,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
 
   const [workshopOpen,setWorkshopOpen]=useState(false)
   const [manualSource,setManualSource]=useState<ManualSource>('workshop')
+  const [manualPreset,setManualPreset]=useState<Partial<WorkshopOrderFields>|null>(null)
   const [workshopEditing,setWorkshopEditing]=useState<number|null>(null)
   const [notice,setNotice]=useState<{message:string;id:number}|null>(null)
   useEffect(()=>{
@@ -64,8 +65,11 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     const key=pickerKey(source,item.catalogVariantId)
     allocated.set(key,(allocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
   }
-  const startManual=(origin:ManualSource='workshop')=>{setEditingIndex(null);setManualSource(origin);setWorkshopEditing(null);setWorkshopOpen(true)}
-  const editManual=(index:number)=>{setEditingIndex(null);setManualSource(createDraft.items[index]?.sourceType||'workshop');setWorkshopEditing(index);setWorkshopOpen(true)}
+  const startManual=(origin:ManualSource='workshop',preset?:Partial<WorkshopOrderFields>)=>{
+    setEditingIndex(null);setManualSource(origin);setManualPreset(preset||null)
+    setWorkshopEditing(null);setWorkshopOpen(true)
+  }
+  const editManual=(index:number)=>{setEditingIndex(null);setManualPreset(null);setManualSource(createDraft.items[index]?.sourceType||'workshop');setWorkshopEditing(index);setWorkshopOpen(true)}
   const saveWorkshop=(item:WorkshopOrderFields)=>{
     setCreateDraft((current:any)=>({
       ...current,
@@ -76,7 +80,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     notify(workshopEditing===null
       ?item.sourceType==='workshop'?'Товар в цех добавлен в заказ':'Товар добавлен в заказ'
       :'Позиция обновлена')
-    setWorkshopOpen(false);setWorkshopEditing(null)
+    setWorkshopOpen(false);setWorkshopEditing(null);setManualPreset(null)
   }
   const chooseVariant=(choice:OrderPickerChoice,source:SourceKey|'workshop',fields:any,insufficient:boolean)=>{
     const previous=editingIndex===null?null:createDraft.items[editingIndex]
@@ -387,7 +391,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                   >
                     {orderBusy ? 'Создаю...' : 'Сохранить заказ'}
                   </button>
-                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setPickerPending(false);setPickerRevision(x=>x+1);setWorkshopOpen(false);setWorkshopEditing(null);setNotice(null);resetCreateOrderDraft()}}>
+                  <button className="secondary" type="button" onClick={()=>{setEditingIndex(null);setPickerPending(false);setPickerRevision(x=>x+1);setWorkshopOpen(false);setWorkshopEditing(null);setManualPreset(null);setNotice(null);resetCreateOrderDraft()}}>
                     Очистить форму
                   </button>
                   <button className="secondary back-action" type="button" onClick={() => setOrderPanel('list')} disabled={orderBusy}>
@@ -398,8 +402,9 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               {workshopOpen&&<MainWorkshopOrderModal
                 initial={workshopEditing===null?null:createDraft.items[workshopEditing]}
                 source={manualSource}
+                preset={workshopEditing===null?manualPreset:null}
                 suggestions={suggestionValues}
-                onClose={()=>{setWorkshopOpen(false);setWorkshopEditing(null)}}
+                onClose={()=>{setWorkshopOpen(false);setWorkshopEditing(null);setManualPreset(null)}}
                 onSave={saveWorkshop}/>}
               {notice&&<div className="main-sale-toast" role="status" aria-live="polite" key={notice.id}>
                 <span aria-hidden="true">✓</span>{notice.message}
