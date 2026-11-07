@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react'
 import {pickerKey,type OrderPickerChoice,type SourceKey} from '../orders/MainOrderSourcePicker'
 import {MainClothingSourcePicker} from '../orders/MainClothingSourcePicker'
 import {MainPickedOrderLine} from '../orders/MainPickedOrderLine'
-import {MainWorkshopOrderModal,type WorkshopOrderFields} from '../orders/MainWorkshopOrderModal'
+import {MainWorkshopOrderModal,type WorkshopOrderFields,type ManualSource} from '../orders/MainWorkshopOrderModal'
 import '../../styles/188f-stock-trust.css'
 type SectionContext = Record<string, any>
 
@@ -44,6 +44,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
   } = ctx
 
   const [workshopOpen,setWorkshopOpen]=useState(false)
+  const [manualSource,setManualSource]=useState<ManualSource>('workshop')
   const [workshopEditing,setWorkshopEditing]=useState<number|null>(null)
   const [notice,setNotice]=useState<{message:string;id:number}|null>(null)
   useEffect(()=>{
@@ -63,8 +64,8 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
     const key=pickerKey(source,item.catalogVariantId)
     allocated.set(key,(allocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
   }
-  const startManual=()=>{setEditingIndex(null);setWorkshopEditing(null);setWorkshopOpen(true)}
-  const editManual=(index:number)=>{setEditingIndex(null);setWorkshopEditing(index);setWorkshopOpen(true)}
+  const startManual=(origin:ManualSource='workshop')=>{setEditingIndex(null);setManualSource(origin);setWorkshopEditing(null);setWorkshopOpen(true)}
+  const editManual=(index:number)=>{setEditingIndex(null);setManualSource(createDraft.items[index]?.sourceType||'workshop');setWorkshopEditing(index);setWorkshopOpen(true)}
   const saveWorkshop=(item:WorkshopOrderFields)=>{
     setCreateDraft((current:any)=>({
       ...current,
@@ -72,7 +73,9 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
         ?current.items.map((old:any,index:number)=>index===workshopEditing?{...old,...item}:old)
         :[...current.items.filter((old:any)=>old.catalogVariantId||String(old.productName||'').trim()),item],
     }))
-    notify(workshopEditing===null?'Товар в цех добавлен в заказ':'Товар в цех изменён')
+    notify(workshopEditing===null
+      ?item.sourceType==='workshop'?'Товар в цех добавлен в заказ':'Товар добавлен в заказ'
+      :'Позиция обновлена')
     setWorkshopOpen(false);setWorkshopEditing(null)
   }
   const chooseVariant=(choice:OrderPickerChoice,source:SourceKey|'workshop',fields:any,insufficient:boolean)=>{
@@ -255,7 +258,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         <button type="button" className="secondary compact" onClick={()=>{
                           if(item.catalogVariantId)setEditingIndex(index)
                           else editManual(index)
-                        }}>{item.catalogVariantId?'Изменить товар':'Изменить для Цеха'}</button>
+                        }}>Изменить товар</button>
                         <button type="button" className="ghost danger compact" onClick={()=>{removeCreateItem(index);setEditingIndex(null)}}>Убрать</button>
                       </div>
                       {item.catalogVariantId&&<details className="main-basket-editor">
@@ -392,6 +395,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
               </section>
               {workshopOpen&&<MainWorkshopOrderModal
                 initial={workshopEditing===null?null:createDraft.items[workshopEditing]}
+                source={manualSource}
                 suggestions={suggestionValues}
                 onClose={()=>{setWorkshopOpen(false);setWorkshopEditing(null)}}
                 onSave={saveWorkshop}/>}
