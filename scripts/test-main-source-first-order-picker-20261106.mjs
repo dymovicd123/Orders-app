@@ -69,22 +69,22 @@ try{
    /Характеристики выбранного товара изменились/,'SKU mismatch must reject '+field)
  }
  // Live Main equivalent: collar SKU stores literal size "0" and the boutique reservation is on that same ID.
- sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(99150,'ВОРОТНИК','adult',1)").run()
+ sql.prepare("INSERT INTO catalog_products(id,name,category,is_active) VALUES(99150,'QA ВОРОТНИК','adult',1)").run()
  sql.prepare("INSERT INTO catalog_variants(id,product_id,category,gender,color,material,length,size_label,is_active) VALUES(99151,99150,'adult','ЖЕН','ГОЛУБОЙ','ДЖИНСА','СТАНДАРТ','0',1)").run()
- sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES('boutique',99150,99151,'ВОРОТНИК',1,1)").run()
- sql.prepare("INSERT INTO order_items(id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status) VALUES(99123,99110,'ВОРОТНИК',1,0,0,0,'boutique','reserved')").run()
+ sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,quantity,reserved_quantity) VALUES('boutique',99150,99151,'QA ВОРОТНИК',1,1)").run()
+ sql.prepare("INSERT INTO order_items(id,order_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status) VALUES(99123,99110,'QA ВОРОТНИК',1,0,0,0,'boutique','reserved')").run()
  sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(99110,99123,'boutique',99150,99151,1,'active','2026-11-06T00:00:00Z','2026-11-06T00:00:00Z')").run()
  const collar=(await listOrderSourcePicker(db)).variants.find(value=>value.variantId===99151)
  assert.equal(collar.size,'0')
  assert.deepEqual(collar.boutique,{physical:1,reserved:1,cachedReserved:1,listed:true,free:0})
- const collarDraft=normalizeOrderItems([{productName:'ВОРОТНИК',audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',
+ const collarDraft=normalizeOrderItems([{productName:'QA ВОРОТНИК',audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',
    color:'ГОЛУБОЙ',material:'ДЖИНСА',length:'СТАНДАРТ',size:'0',
    quantity:1,sourceType:'boutique',catalogVariantId:99151}],'warehouse')
  const collarPinned=await hydratePickedOrderItems(db,collarDraft)
  assert.equal(collarPinned[0].catalogVariantId,99151)
  assert.equal(collarPinned[0].inventorySource,'boutique')
  assert.equal(collarPinned[0].size,'0')
- const wrongNoSize=normalizeOrderItems([{productName:'ВОРОТНИК',audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',
+ const wrongNoSize=normalizeOrderItems([{productName:'QA ВОРОТНИК',audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',
    color:'ГОЛУБОЙ',material:'ДЖИНСА',length:'СТАНДАРТ',size:'БЕЗ РАЗМЕРА',
    quantity:1,sourceType:'boutique',catalogVariantId:99151}],'warehouse')
  await assert.rejects(hydratePickedOrderItems(db,wrongNoSize),/Характеристики выбранного товара изменились/)
