@@ -1,5 +1,5 @@
 name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
-# Branch2 size acceptance: Cyrillic token matching, Kazakh і folding and exact STANDARD/0/no-size SKUs.
+# Branch2 final size safety: real order HTTP save/reserve, Cyrillic and STANDARD/0/blank SKU identities.
 on:
   push:
     branches:
@@ -79,6 +79,8 @@ jobs:
         run: node scripts/test-main-order-ux-review-20261107.mjs
       - name: Manual source exact SKU and Workshop read-only identity regression
         run: node scripts/test-main-manual-source-identity-20261107.mjs
+      - name: End-to-end Worker HTTP create and reservation of STANDARD/0/no-size SKUs on disposable D1
+        run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
       - name: Full application build and main business release gates
         run: |
           npm run build
