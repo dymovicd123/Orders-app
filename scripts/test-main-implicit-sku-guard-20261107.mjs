@@ -45,6 +45,8 @@ try {
    quantity:1,unitPrice:18000}],'boutique')[0]
  const count=()=>Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_variants').get().n)
  const start=count()
+ const startingModels=Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_products').get().n)
+ const startingExecutions=Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_stock_positions').get().n)
  const exact=await resolveCatalogProductAndVariantV2(db,item('46'),{createMissing:false})
  assert.equal(exact.variantId,99224,'Read-only resolver failed to re-use exact existing SKU')
  const unseen=await resolveCatalogProductAndVariantV2(db,item('48'),{createMissing:false})
@@ -56,7 +58,7 @@ try {
  assert.equal(unknown.variantId,null)
  assert.equal(unknown.productId,null)
  assert.equal(count(),start,'Read-only resolver created variant')
- assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_stock_positions').get().n),1,'Read-only resolver created execution')
- assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_products').get().n),1,'Read-only resolver created model')
+ assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_stock_positions').get().n),startingExecutions,'Read-only resolver created execution')
+ assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM catalog_products').get().n),startingModels,'Read-only resolver created model')
  console.log('NO_IMPLICIT_SKU_CREATION_PASS: normal order, edits, exchanges, queue guarded; exact active SKU reused; catalog/stocktake deliberate creators retained')
 } finally {sql.close()}
