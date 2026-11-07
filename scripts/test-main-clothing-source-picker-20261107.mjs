@@ -52,6 +52,9 @@ try{
   'A genuine 0 must not turn into no-size when STANDARD SKU exists')
  assert.equal(formatClothingSize(sizeZero,[sizeZero]),'Без размера',
   'Isolated legacy 0 may use a human no-size label without mutating the SKU')
+ const transliterated=parseClothingSearch('Бегим пончо размер стандарт',['БЕЖЕВЫЙ'])
+ assert.deepEqual(transliterated.modelTokens,['бегим','пончо'],
+  'Kazakh і and Russian и must match the same model')
  const searchExactStandard=parseClothingSearch('Бегім пончо размер стандарт',['БЕЖЕВЫЙ'])
  const searchNoSize=parseClothingSearch('Бегім пончо без размера',['БЕЖЕВЫЙ'])
  const searchLooseStandard=parseClothingSearch('Бегім пончо стандарт',['БЕЖЕВЫЙ'])
