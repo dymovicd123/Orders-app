@@ -122,3 +122,6 @@
 .clothing-source-own-variant>button{min-height:37px;border:1px solid #88b1e3;border-radius:8px;background:#fff;color:#1b5fb5;font-weight:800;font-size:12px;padding:8px 12px;cursor:pointer}
 .clothing-source-own-variant>button:hover{border-color:#347fda;background:#e9f3ff}
 @media(max-width:560px){.clothing-source-own-variant>button{width:100%}}
+
+.clothing-source-size.is-nosize{min-width:93px}
+.clothing-source-size.is-nosize strong{font-size:11px;line-height:1.25}
