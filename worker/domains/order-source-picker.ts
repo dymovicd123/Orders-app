@@ -11,11 +11,11 @@ export type SourcePickerVariant = {
   length:string
   size:string
   salePrice:number|null
-  warehouse:{physical:number;reserved:number;free:number;cachedReserved:number}
-  boutique:{physical:number;reserved:number;free:number;cachedReserved:number}
+  warehouse:{physical:number;reserved:number;free:number;cachedReserved:number;listed:boolean}
+  boutique:{physical:number;reserved:number;free:number;cachedReserved:number;listed:boolean}
 }
 
-type StockTotals={physical:number;reserved:number;cachedReserved:number}
+type StockTotals={physical:number;reserved:number;cachedReserved:number;listed:boolean}
 
 /**
  * Read-only source-first catalog for Main's order creator.
@@ -55,7 +55,8 @@ export async function listOrderSourcePicker(db:D1Database){
   for(const row of stockRows.results||[]){
     const source=cleanText(row.inventory_source),id=toInt(row.variant_id,0)
     if(!id)continue
-    const value=totals.get(key(source,id))||{physical:0,reserved:0,cachedReserved:0}
+    const value=totals.get(key(source,id))||{physical:0,reserved:0,cachedReserved:0,listed:false}
+    value.listed=true
     value.physical+=toInt(row.physical,0)
     value.cachedReserved+=toInt(row.cached_reserved,0)
     totals.set(key(source,id),value)
@@ -63,12 +64,12 @@ export async function listOrderSourcePicker(db:D1Database){
   for(const row of reserveRows.results||[]){
     const source=cleanText(row.inventory_source),id=toInt(row.variant_id,0)
     if(!id)continue
-    const value=totals.get(key(source,id))||{physical:0,reserved:0,cachedReserved:0}
+    const value=totals.get(key(source,id))||{physical:0,reserved:0,cachedReserved:0,listed:false}
     value.reserved+=Math.max(0,toInt(row.reserved,0))
     totals.set(key(source,id),value)
   }
   const source=(name:'warehouse'|'boutique',id:number)=>{
-    const value=totals.get(key(name,id))||{physical:0,reserved:0,cachedReserved:0}
+    const value=totals.get(key(name,id))||{physical:0,reserved:0,cachedReserved:0,listed:false}
     return {...value,free:Math.max(0,value.physical-value.reserved)}
   }
   const variants:SourcePickerVariant[]=(catalogRows.results||[]).map(row=>{
