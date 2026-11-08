@@ -63,12 +63,10 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          # Prior release attempts stopped safely before any remote change.
-          # The same bundle is now dry-run verified by the PR preview job.
-          # Only this reviewed two-file change can run the release.
-          test "$(git rev-parse HEAD^)" = 'd8419400dd3988355884405654d8555389861fd7'
-          expected="$(printf '%s\n' '.github/workflows/branch2-split-kpi-user-release-20261103.yml' 'scripts/branch2-manual-release.mjs')"
-          test "$(git diff --name-only HEAD^ HEAD)" = "$expected"
+          # Approve only the historical status-only shipping PR #818 plus
+          # this reviewed, one-file Branch2 release gate. No generic auto-deploy.
+          test "$(git rev-parse HEAD^)" = '233c1b81be42fd0f94092427e264204c5b68d9bf'
+          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/branch2-split-kpi-user-release-20261103.yml'
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node scripts/branch2-manual-release.mjs --check
