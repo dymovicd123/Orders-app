@@ -29,7 +29,7 @@ export type OrderStockHandoverItemView = {
   state: 'already_issued' | 'handover_review' | 'ready_to_issue' | 'needs_attention'
 }
 
-type OrderStockHandoverResponse = {
+export type OrderStockHandoverResponse = {
   ok: boolean
   message?: string
   orderId?: number
@@ -47,7 +47,7 @@ type OrderStockHandoverResponse = {
   refreshRequired?: boolean
 }
 
-type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'> & {
+export type OrderStockHandoverActionResponse = Omit<OrderStockHandoverResponse, 'items'> & {
   code?: string
   operationType?: string
   items?: Array<OrderStockHandoverItemView | StockResolutionRequiredItemView>
