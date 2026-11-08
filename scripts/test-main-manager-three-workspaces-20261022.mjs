@@ -22,6 +22,7 @@ assert(team.includes('<h3>Табель</h3>'), 'Timesheet heading must remain vi
 assert(!team.includes('Сымбат и администраторы не назначаются в табель'), 'Obsolete personalized timesheet notice returned')
 assert(!team.includes('Выбери дни в календаре, сотрудников и время работы'), 'Obsolete timesheet instructions returned')
 const app = readFileSync('src/App.tsx','utf8')
+const orderCreation = readFileSync('src/features/orders/orderCreationActions.ts', 'utf8')
 const gate = app.slice(app.indexOf('const syncSectorFromHash = () => {'), app.indexOf('window.addEventListener(\'hashchange\', syncSectorFromHash)'))
 assert(gate.includes('!canOpenWorkspaceSector(authUser.role, nextSector)'), 'Deep links are not checked against authenticated role')
 assert(gate.includes('window.history.replaceState(') && gate.includes('#orders'), 'Forbidden hash must be replaced with orders, without a back-loop')
@@ -34,7 +35,7 @@ assert(app.includes('<DeferredSection active={activeSector === \'orders\'} label
 assert(app.includes('<DeferredSection active={activeSector === \'workshop\'} label="Цех">'), 'Workshop still renders')
 assert(app.includes('<DeferredSection active={activeSector === \'inventory\'} label="Склад">'), 'Warehouse still renders')
 assert(app.includes('<DeferredSection active={activeSector === \'reports\'} label="Отчёты">'), 'Reports section must render for managers')
-assert(app.includes('authUser?.role === \'manager\''), 'Manager session handling must stay active')
+assert(app.includes('createOrderCreationActions({') && orderCreation.includes("authUser?.role === 'manager'"), 'Manager session handling must stay active in delegated creation')
 assert(!app.includes('setActiveSector(\'finance\')'), 'Manager business flow may not bypass role guard by direct state set')
 // This change does not alter server roles, stock, finance, master-data or D1.
 console.log('MANAGER_CURRENT_WORKSPACES_PASSED: role/menu, deep link, first-render and admin parity')
