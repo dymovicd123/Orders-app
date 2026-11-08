@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ManagedAuthUser, TeamEmployee } from '../../app/types'
 import { formatLocalDateInput, readJsonResponse } from '../../app/utils'
-import { resolveManagerDisplayColor } from '../../components'
+import { resolveManagerDisplayColor } from '../../components/managers/manager-colors'
 
 export type TeamEmployeeDraft = {
   id: number
