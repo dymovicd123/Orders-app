@@ -41,7 +41,7 @@ for (const filename of [
   'main-order-source-picker-acceptance-20261106.yml',
 ]) assert.equal(existsSync(join('.github/workflows', filename)), true,
   'Required current release/QA workflow missing: ' + filename)
-const active = readdirSync('.github/workflows').filter(file => /\\.ya?ml$/.test(file))
+const active = readdirSync('.github/workflows').filter(file => /\.ya?ml$/.test(file))
 const cfg=readFileSync('.github/workflows/quality-check.yml','utf8')
 assert(cfg.includes('npm run release:check'), 'Central regression gate must remain required')
 console.log('HISTORICAL_PROD_WORKFLOWS_ARCHIVED',JSON.stringify({preserved:historical.length,active:active.length}))
