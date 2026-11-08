@@ -1532,7 +1532,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
                                 {' · '}{line.dispatchPriorIssued
                                   ? 'По учёту уже выдан · отправка без повторного списания'
-                                  : line.selectable?(line.needsStockConfirmation?'Требуется подтверждение наличия · отправка всей позиции':`Готово ${line.readyQuantity} шт.`)
+                                  : line.selectable?(line.needsStockConfirmation?`Доступно к отправке ${line.readyQuantity} шт. · понадобится подтверждение наличия`:`Готово ${line.readyQuantity} шт.`)
                                     : dispatchDraft.history.some((sent:any)=>Number(sent.orderItemId)===Number(line.orderItemId)
                                       && Number(sent.cancelledQuantity)<Number(sent.quantity))
                                       ? 'Уже отправлено — повторная отправка не нужна'
@@ -1541,7 +1541,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             </div>
                             {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
                               aria-label={`Количество ${line.productName}`}
-                              disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued||line.needsStockConfirmation} value={value}
+                              disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued} value={value}
                               style={{width:72,padding:6}}
                               onChange={event=>{const quantity=clampDispatchQuantity(event.target.value,line.readyQuantity,false)
                                 setDispatchDraft(d=>d?{...d,error:'',selected:{...d.selected,
