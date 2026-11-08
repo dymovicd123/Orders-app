@@ -5,6 +5,8 @@ on:
     paths:
       - 'worker/domains/catalog-review.ts'
       - 'worker/domains/order-reservations.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/order-handover-exchange-correction.ts'
       - 'worker/domains/catalog.ts'
       - 'worker/index.ts'
       - 'worker/routes/order-selective-shipping.ts'
@@ -20,6 +22,8 @@ on:
       - '.github/workflows/resolver-shipping-acceptance-20261027.yml'
       - 'worker/domains/catalog-review.ts'
       - 'worker/domains/order-reservations.ts'
+      - 'worker/domains/returns-exchanges.ts'
+      - 'worker/domains/order-handover-exchange-correction.ts'
       - 'worker/domains/catalog.ts'
       - 'worker/index.ts'
       - 'src/features/orders/**'

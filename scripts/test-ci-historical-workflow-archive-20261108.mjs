@@ -12,6 +12,8 @@ const historical = [
   "kaspi-production-migration-0082.yml",
   "kaspi-production-post-deploy-reconcile.yml",
   "main-admin-editor-schema-0110-0112.yml",
+  "main-p0-financial-atomic-20261027.yml",
+  "main-p0-legacy-partial-exchange-20261027.yml",
   "main-ethno-manual-finalization-schema-0109.yml",
   "main-retired-sku-schema-0113-0114.yml",
   "main-stage04-dormant-schema-20261018.yml",
@@ -26,7 +28,8 @@ const historical = [
   "oneoff-production-color-canary-1464.yml",
   "oneoff-remaining26-colors-20261016.yml",
   "stage03-production-migration-0072.yml",
-  "stage03-production-migrations-0073-0074.yml"
+  "stage03-production-migrations-0073-0074.yml",
+  "test-main-return-active-reserve-p0.yml"
 ]
 for (const filename of historical) {
   assert.equal(existsSync(join('.github/workflows', filename)), false,

@@ -3,6 +3,14 @@ const read = (path) => fs.readFileSync(path, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 try {
   const reservations = read('worker/domains/order-reservations.ts')
+  const { correctMistakenOrderHandoverWithCurrentExchange: publicCorrection } = await import('../worker/domains/returns-exchanges.ts')
+  const { correctMistakenOrderHandoverWithCurrentExchange: extractedCorrection } = await import('../worker/domains/order-handover-exchange-correction.ts')
+  check(publicCorrection === extractedCorrection, 'Legacy Returns/Exchanges entrypoint lost the live exchange handover correction')
+  await extractedCorrection({} , 0, {physicalOutcome:'not_issued'}).then(
+    () => { throw new Error('Missing order ID must fail before any database mutation') },
+    (error) => check(error?.message === 'Заказ не найден.', 'Order ID validation or error contract changed'),
+  )
+
   const orderDelete = read('worker/domains/order-delete.ts')
   const ordersWrite = read('worker/domains/orders-write.ts')
   const worker = read('worker/index.ts')
@@ -36,8 +44,19 @@ try {
   check(app.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
   check(table.includes('Снять «Отправлен»'), 'sent-order correction action not visible in Orders table')
   check(!table.includes('активная обменённая позиция'), 'ordinary Orders UI exposes exchange implementation detail')
-  check(table.includes('Сначала исправьте возврат товара'), 'standalone item return blocker is not explained')
-  check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
+  const { projectOrderOperationalState } = await import('../src/app/orderOperationalProjection.ts')
+  const operationOrder = {order_status:'active', shipping_status:'sent', items:[],
+    has_committed_item_return:true, committed_return_count:1, committed_exchange_count:0}
+  check(projectOrderOperationalState(operationOrder).canCorrectShipping === false,
+    'Committed item Return must block a false-shipment correction without undoing physical Return')
+  check(projectOrderOperationalState({...operationOrder,
+    has_committed_item_return:false,committed_return_count:0,committed_exchange_count:1}).canCorrectShipping === true,
+    'An active Exchange must still allow correction of a false sent mark on the current replacement')
+  check(table.includes('projection.canCorrectShipping &&'),
+    'Orders table must use the shared return/exchange-safe correction permission')
+  check(projectOrderOperationalState({...operationOrder,
+    shipping_status:'not_sent',has_committed_item_return:false,committed_return_count:0}).canCorrectShipping === false,
+    'Correction action must not be offered for an order that was not sent')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')
 } catch (error) {
