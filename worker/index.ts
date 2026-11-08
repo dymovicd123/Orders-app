@@ -1922,7 +1922,7 @@ export default {
         if (!order) return json({ok:false,message:'Заказ не найден.'},{status:404});
         const activeReservations = await env.DB.prepare(
           `SELECT order_item_id, quantity, status, variant_id, inventory_source
-           FROM inventory_reservations WHERE order_id = ? AND status IN ('active','fulfilled')
+           FROM inventory_reservations WHERE order_id = ? AND status IN ('active','unresolved','fulfilled')
            ORDER BY order_item_id ASC, id ASC`
         ).bind(orderId).all<Record<string,unknown>>();
         return json(buildOrderShipmentPlan(
