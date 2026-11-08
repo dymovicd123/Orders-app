@@ -28,7 +28,8 @@ const historical = [
   "oneoff-production-color-canary-1464.yml",
   "oneoff-remaining26-colors-20261016.yml",
   "stage03-production-migration-0072.yml",
-  "stage03-production-migrations-0073-0074.yml"
+  "stage03-production-migrations-0073-0074.yml",
+  "test-main-return-active-reserve-p0.yml"
 ]
 for (const filename of historical) {
   assert.equal(existsSync(join('.github/workflows', filename)), false,
