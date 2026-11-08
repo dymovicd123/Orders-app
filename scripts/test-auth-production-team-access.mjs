@@ -21,7 +21,8 @@ try {
   check(employeeActions.includes("managerId: employeeId") && employeeActions.includes("displayName: teamDraft.name"), 'New account is not bound to the newly created employee')
   check(employeeActions.includes("Сотрудник создан, но вход не настроен"), 'Partial employee/account failure is not recoverable in the UI')
   check(team.includes('saveTeamEmployeeAccess') && team.includes('disableTeamEmployeeAccess'), 'Existing-employee account management handlers missing')
-  check(app.includes('duplicateManagerAccount'), 'UI does not guard one employee from accidental duplicate accounts')
+  const managedAccountActions = read('src/features/auth/managedAccountActions.ts')
+  check(app.includes('saveManagedAuthUser(') && managedAccountActions.includes('duplicateManagerAccount'), 'UI does not guard one employee from accidental duplicate accounts')
 
   check(team.includes('Вход в систему') && team.includes('Создать доступ сразу'), 'New employee form does not expose friendly access onboarding')
   check(team.includes("Можно оставить пустым — система возьмёт вариант из имени"), 'New employee login suggestion is not explained')
@@ -212,6 +213,72 @@ try {
   await managerTimesheet.saveTeamTimesheet()
   assert.equal(timesheetCalls.length, beforeDenied)
   assert.match(timesheetError, /только администратору/)
+
+
+  // Check the actual extracted admin account controller (not an invented mock).
+  const { loadManagedAuthUsers, saveManagedAuthUser, disableManagedAuthUser } =
+    await compiledActions('src/features/auth/managedAccountActions.ts')
+  let managedError = null
+  let managedMessage = null
+  let managedUsers = []
+  let draftAfterSave = null
+  let managedBusy = false
+  let managedReloads = 0
+  let canDisable = false
+  let managedResponseCode = 200
+  const managedCalls = []
+  const authDraft = {
+    id:0, login:'manager17', password:'test-password-123', role:'manager',
+    managerId:17, displayName:'Менеджер', isActive:true, mustChangePassword:true,
+  }
+  const managedArgs = {
+    isAdmin:true, apiFetch:async (url,init) => {
+      managedCalls.push({ url,init })
+      const list = url === '/api/auth/users' && !init
+      return respond(list
+        ? {ok:true,items:[{id:1,login:'manager17',managerId:17}]}
+        : managedResponseCode === 200 ? {ok:true} : {ok:false,message:'Запись устарела'},
+        list ? 200 : managedResponseCode)
+    },
+    setAuthUsersBusy: v => { managedBusy = v },
+    setAuthUsers: value => { managedUsers = value },
+    setError: value => { managedError = value },
+    setMessage: value => { managedMessage = value },
+    setAuthUserDraft: value => { draftAfterSave = value },
+    authUserDraft:authDraft, authUsers:[],
+    loadAuthUsers:async () => { managedReloads++ },
+  }
+  await loadManagedAuthUsers(managedArgs)
+  assert.equal(managedUsers[0].managerId,17)
+  assert.equal(managedBusy,false)
+  await saveManagedAuthUser(managedArgs)
+  assert.equal(managedCalls.at(-1).url,'/api/auth/users')
+  assert.equal(managedCalls.at(-1).init.method,'POST')
+  assert.equal(JSON.parse(managedCalls.at(-1).init.body).mustChangePassword,true)
+  assert.equal(draftAfterSave.id,0)
+  assert.equal(managedReloads,1)
+  assert.match(managedMessage,/Аккаунт создан/)
+  await saveManagedAuthUser({ ...managedArgs, authUsers:[{id:12,managerId:17,login:'manager17'}] })
+  assert.equal(managedCalls.length,2,'Duplicate linked employee must be rejected before HTTP')
+  assert.match(managedError,/уже есть аккаунт/)
+  const beforeManager = managedCalls.length
+  await saveManagedAuthUser({ ...managedArgs, isAdmin:false })
+  await loadManagedAuthUsers({ ...managedArgs, isAdmin:false })
+  await disableManagedAuthUser(12,{ ...managedArgs, isAdmin:false })
+  assert.equal(managedCalls.length,beforeManager)
+  globalThis.window.confirm = () => canDisable
+  await disableManagedAuthUser(12,managedArgs)
+  assert.equal(managedCalls.length,beforeManager)
+  canDisable = true
+  await disableManagedAuthUser(12,managedArgs)
+  assert.equal(managedCalls.at(-1).url,'/api/auth/users/12')
+  assert.equal(managedCalls.at(-1).init.method,'DELETE')
+  assert.equal(managedReloads,2)
+  managedResponseCode = 409
+  managedMessage = null
+  await saveManagedAuthUser(managedArgs)
+  assert.equal(managedMessage,null)
+  assert.match(managedError,/Запись устарела/)
 
   console.log('AUTH R3/R4 TEAM ACCESS UX PASSED — employee-first provisioning remains intact and row actions open a focused, keyboard-dismissable access modal.')
 } catch (error) {
