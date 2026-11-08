@@ -2,6 +2,8 @@
 // No byte-pinned historical release diff, no writes to Cloudflare, no moving Main assets.
 import {spawnSync} from 'node:child_process'
 const tests=[
+ 'scripts/test-main-manager-three-workspaces-20261022.mjs',
+ 'scripts/test-stage02-post-review-resolver-return-ux.mjs',
  'scripts/test-main-resolver-opposite-gender-20261022.mjs',
  'scripts/test-main-resolver-actionable-20261022.mjs',
  'scripts/test-catalog-resolver-r10-acceptance-matrix.mjs',
