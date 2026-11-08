@@ -5,6 +5,7 @@ on:
     paths:
       - 'worker/domains/order-reservations.ts'
       - 'worker/domains/order-handover-exchange-correction.ts'
+      - 'worker/domains/order-return-cancellation.ts'
       - 'worker/index.ts'
       - 'src/App.tsx'
       - 'src/features/sections/OrdersTableSection.tsx'

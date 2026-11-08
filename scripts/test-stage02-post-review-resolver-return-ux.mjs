@@ -47,7 +47,23 @@ function hasMoneyGuardedRefund(node) {
   return ts.forEachChild(node, hasMoneyGuardedRefund) === true
 }
 assert.ok(hasMoneyGuardedRefund(returnAst), 'Zero-money item return must not manufacture a money event')
-assert.ok(returnsWorker.includes('if (toInt(ret.amount, 0) > 0)'), 'Cancelling a zero-money return must not manufacture a refund reversal')
+// The cancellation workflow now lives in its own domain. Verify the actual
+// guarded reversal calls in its syntax tree rather than their old file location.
+const cancellationSource = read('worker/domains/order-return-cancellation.ts')
+const cancellationAst = ts.createSourceFile('order-return-cancellation.ts', cancellationSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+function hasCallInCancellation(node, name) {
+  if (ts.isCallExpression(node) && node.expression.getText(cancellationAst) === name) return true
+  return ts.forEachChild(node, child => hasCallInCancellation(child, name)) === true
+}
+function hasAmountGuardedRefundReversal(node) {
+  if (ts.isIfStatement(node)
+      && node.expression.getText(cancellationAst).replace(/\s/g,'') === 'toInt(ret.amount,0)>0'
+      && hasCallInCancellation(node.thenStatement, 'splitRefundReversalStatements')
+      && hasCallInCancellation(node.thenStatement, 'refundReversalMoneyEventStatement')) return true
+  return ts.forEachChild(node, hasAmountGuardedRefundReversal) === true
+}
+assert.ok(hasAmountGuardedRefundReversal(cancellationAst),
+  'Cancelling a zero-money return must not manufacture a refund reversal')
 assert.ok(returnsWorker.includes("code: 'intake_freshness_confirmation_required'"), 'Delayed intake does not stop on a newer physical count')
 assert.ok(returnsWorker.includes("freshnessDecision === 'already_counted'"), 'Delayed intake cannot preserve a newer count when the returned unit was already included')
 assert.ok(returnsWorker.includes('freshnessProtected = true'), 'Fresh-count intake protection is not recorded in the response')
