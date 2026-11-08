@@ -29,7 +29,7 @@ function preferredInventoryMatrixValue(values: string[], fallback = '') {
   return values.find((value) => normalizeSuggestion(value) === 'СТАНДАРТ') ?? values[0] ?? fallback
 }
 
-function inventoryMatrixGroupKey(value: Pick<InventoryMatrixDraft, 'productId' | 'productName' | 'category' | 'gender' | 'material' | 'length'> | InventoryDraftItem) {
+export function inventoryMatrixGroupKey(value: Pick<InventoryMatrixDraft, 'productId' | 'productName' | 'category' | 'gender' | 'material' | 'length'> | InventoryDraftItem) {
   const productKey = String(value.productId || '').trim()
     ? `id:${String(value.productId).trim()}`
     : `name:${normalizeSuggestion(value.productName)}`
