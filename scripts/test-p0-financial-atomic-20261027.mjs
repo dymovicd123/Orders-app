@@ -126,7 +126,7 @@ const returnInput={orderId:10,externalOrderId:'ORD-TEST',amount:3000,
 const reversal=await splitRefundReversalStatements(financeD1,returnInput)
 assert.equal(reversal.length,2,'Return cancellation must reverse both actual channels')
 for(const statement of reversal) await statement.run()
-const reads=()=>financeSql.prepare('SELECT event_type,amount_delta,payment_method,source_type,source_id FROM financial_events WHERE event_type=? ORDER BY event_key').all('refund_reversal')
+const reads=()=>financeSql.prepare('SELECT event_type,amount_delta,payment_method,source_type,source_id FROM financial_events WHERE event_type=? ORDER BY event_key').all('refund_reversal').map(row=>({...row}))
 assert.deepEqual(reads(),[
   {event_type:'refund_reversal',amount_delta:1200,payment_method:'НАЛИЧКА',source_type:'return',source_id:91},
   {event_type:'refund_reversal',amount_delta:1800,payment_method:'КАСПИ',source_type:'return',source_id:91}
