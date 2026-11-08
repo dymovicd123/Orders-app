@@ -7,9 +7,9 @@ import {build} from 'esbuild'
 
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'orders-mixed-editor-'))
 await build({entryPoints:['src/app/itemizedEditCatalogSnapshot.ts','src/app/order-pricing.ts'],
- bundle:true,platform:'node',format:'esm',target:'node20',outdir:dir,logLevel:'error'})
-const {historicalCatalogSnapshotForEdit:keepSnapshot}=await import(pathToFileURL(path.join(dir,'itemizedEditCatalogSnapshot.js')).href)
-const {evaluateItemizedCreatePricing:price}=await import(pathToFileURL(path.join(dir,'order-pricing.js')).href)
+ bundle:true,platform:'node',format:'esm',target:'node20',outdir:dir,outExtension:{'.js':'.mjs'},logLevel:'error'})
+const {historicalCatalogSnapshotForEdit:keepSnapshot}=await import(pathToFileURL(path.join(dir,'itemizedEditCatalogSnapshot.mjs')).href)
+const {evaluateItemizedCreatePricing:price}=await import(pathToFileURL(path.join(dir,'order-pricing.mjs')).href)
 
 const base=(id,name,material,length,size,qty,unitPrice,snapshot,source='warehouse')=>({
  id,orderItemId:id,productName:name,audienceType:'ВЗРОСЛЫЙ',gender:'ЖЕН',color:'СВЕТЛО-БЕЖЕВЫЙ',
