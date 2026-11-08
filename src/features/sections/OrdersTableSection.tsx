@@ -1491,12 +1491,18 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                             <div style={{flex:1,minWidth:0}}>
                               <strong>{line.productName}</strong>
                               <small style={{display:'block',opacity:.8}}>
-                                {[line.color,line.size,line.material,line.length].filter(Boolean).join(' · ')}
-                                {line.color||line.size||line.material||line.length ? ' · ' : ''}
+                                {[line.color,line.size,line.material,line.length]
+                                  .filter((part:any)=>String(part||'').trim() && String(part).trim().toUpperCase()!=='СТАНДАРТ').join(' · ')}
+                                {[line.color,line.size,line.material,line.length]
+                                  .some((part:any)=>String(part||'').trim() && String(part).trim().toUpperCase()!=='СТАНДАРТ') ? ' · ' : ''}
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
                                 {' · '}{line.dispatchPriorIssued
                                   ? 'По учёту уже выдан · отправка без повторного списания'
-                                  : line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
+                                  : line.selectable?`Готово ${line.readyQuantity} шт.`
+                                    : dispatchDraft.history.some((sent:any)=>Number(sent.orderItemId)===Number(line.orderItemId)
+                                      && Number(sent.cancelledQuantity)<Number(sent.quantity))
+                                      ? 'Уже отправлено — повторная отправка не нужна'
+                                      : line.reason}
                               </small>
                             </div>
                             {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
@@ -1521,7 +1527,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                         ) : null}
                         {dispatchDraft.plan && !dispatchDraft.plan.canConfirmIssuedOnly
                           && !dispatchDraft.plan.selectedCount && dispatchDraft.plan.lines?.length ? (
-                            <p>Нет доступных для отправки товаров. Проверьте причину у каждой позиции. Повторная выдача уже списанного товара запрещена.</p>
+                            <p role="status" aria-live="polite">
+                              {dispatchDraft.history.some((sent:any)=>Number(sent.cancelledQuantity)<Number(sent.quantity))
+                                ? 'По учёту отправка уже проведена. Повторно списывать эту вещь нельзя. Если отметка об отправке ошибочна и товар остался у вас, воспользуйтесь «Исправить ошибочную отправку» ниже. Если вещь действительно передали клиенту, ничего повторно делать не нужно.'
+                                : 'Сейчас нет товаров, готовых к отправке. Посмотрите причину у каждой позиции. Система не позволит повторно списать уже выданную вещь.'}
+                            </p>
                           ) : null}
                         {dispatchDraft.plan?.selectedCount ? (
                           <div className="toolbar-actions" style={{marginTop:16}}>
@@ -1544,7 +1554,11 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 <div style={{flex:1,minWidth:0}}>
                                   <strong>{x.productName}</strong>
                                   <small style={{display:'block',opacity:.8}}>
-                                    {[x.color,x.size,x.material,x.length].filter(Boolean).join(' · ')} · {x.quantity} шт. · {x.dispatchDate}
+                                    {[x.color,x.size,x.material,x.length]
+                                      .filter((part:any)=>String(part||'').trim() && String(part).trim().toUpperCase()!=='СТАНДАРТ').join(' · ')}
+                                    {' · '}{x.quantity} шт. · Отправлено: {x.dispatchedAt
+                                      ? new Date(x.dispatchedAt).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+                                      : x.dispatchDate}
                                   </small>
                                 </div>
                                 {x.hasReturn||x.hasExchange ? (
@@ -1552,7 +1566,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 ) : (
                                   <button type="button" className="secondary compact"
                                     disabled={dispatchDraft.submitting}
-                                    onClick={()=>cancelDispatchedLine(x)}>Отменить отправку</button>
+                                    onClick={()=>cancelDispatchedLine(x)}>Исправить ошибочную отправку</button>
                                 )}
                               </div>)}
                           </div>
