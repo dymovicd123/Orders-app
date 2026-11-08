@@ -1,10 +1,10 @@
 # Система заказов — актуальный continuation
 
-Updated: 2026-10-02  
+Last historical release snapshot: 2026-10-02  
 Repository: `dymovicd123/Orders-app`  
 Branch represented by this file: **main / Production**
 
-Этот файл — короткий актуальный checkpoint. Старые Step/Stage документы сохраняются как история и подробные доказательства, но не должны использоваться как текущий roadmap без сверки с GitHub.
+**ВНИМАНИЕ: ниже расположен исторический checkpoint 2 октября 2026, а не актуальный статус проекта.** Для продолжения разработки сначала открыть `AGENTS.md`, `docs/PROJECT_CONTEXT.md`, `docs/architecture/orders-app-audit-2026-11-08.md` и последние коммиты/CI на GitHub. Не возобновлять старые этапы по тексту ниже.
 
 ## RELEASE UPDATE — 2026-10-02 — Production authorization complete; stocktake navigation hotfix live
 
