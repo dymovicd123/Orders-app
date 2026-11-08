@@ -1,7 +1,7 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { readJson } from '../core/http.ts'
-import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeSourceType, toInt, upperText } from '../core/text.ts'
+import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeSourceType, toInt } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot } from './catalog.ts'
