@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
-const returns=readFileSync('worker/domains/returns-exchanges.ts','utf8')
+const returns=readFileSync('worker/domains/order-returned-item-receipt.ts','utf8')
 const creation=readFileSync('worker/domains/order-return-creation.ts','utf8')
 const shipping=readFileSync('worker/domains/order-reservations.ts','utf8')
 const capture=(source,variable)=>{
