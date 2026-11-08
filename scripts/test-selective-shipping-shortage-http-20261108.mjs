@@ -221,8 +221,8 @@ const secondPart=await dispatch(bulk,'qa-partial-shortage-dispatch-0002',
  [{orderItemId:remaining.id,quantity:1}],
  [{source:'warehouse',variantId:98986,expectedQuantity:0,operationQuantity:1}])
 assert.equal(secondPart.status,200)
-assert.deepEqual(sql.prepare('SELECT quantity,stock_writeoff_status FROM order_items WHERE id=?').get(remaining.id),
- {quantity:1,stock_writeoff_status:'fulfilled'})
+assert.deepEqual(Object.values(sql.prepare('SELECT quantity,stock_writeoff_status FROM order_items WHERE id=?').get(remaining.id)),
+ [1,'fulfilled'])
 assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(bulk.id).n,3)
 const dispatchItem1=sql.prepare('SELECT id FROM order_dispatch_items WHERE order_item_id=?').get(bulk.itemId)
 const undo=await call('/api/orders/'+bulk.id+'/shipping/dispatch-items/'+dispatchItem1.id+'/correct','POST',{
