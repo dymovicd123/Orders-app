@@ -222,7 +222,7 @@ export function createOrderEditorActions({
         setSelectedOrderId(result.order.id)
         setEditorOrderOverride(result.order)
       } else if (result.refreshRequired) {
-        void loadDashboard(false)
+        refreshDashboard()
       }
       invalidateFinanceReadCaches()
       setMessage(`Оплата по заказу ${selectedOrder.external_id} проведена отдельно и не переписывает предыдущие оплаты.`)
@@ -286,7 +286,7 @@ function removeEditorItem(index: number) {
       if(result.order)upsertOrderInState(result.order)
       else if(result.refreshRequired)refreshDashboard()
       invalidateFinanceReadCaches()
-      void Promise.allSettled([refreshFinanceReports(),loadDashboard(false)])
+      void Promise.allSettled([refreshFinanceReports(),refreshDashboard()])
       const message='Способ оплаты #'+payment.id+' исправлен. Сумма, заказ, товары и склад не менялись.'
       setMessage(message)
       return {ok:true,message}
