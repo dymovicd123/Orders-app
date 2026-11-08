@@ -378,7 +378,7 @@ export async function dispatchSelectedCompleteOrderLines(
           evidence_key,inventory_source,variant_id,operation_type,operation_reference,
           tracked_physical_before,confirmed_operation_quantity,explained_quantity,unexplained_quantity,
           confirmed_by,occurred_at,created_at
-        ) VALUES(?,?,?,'shipping',?,?,?,?,?,?,?,?,?)`
+        ) VALUES(?,?,?,'shipping',?,?,?,?,?,?,?,?)`
       ).bind(`dispatch:${requestId}:${g.source}:${g.variantId}`,
         g.source,g.variantId,`${order.external_id}:dispatch:${requestId}`,
         g.before,g.quantity,bounded.deducted,bounded.unaccounted,
