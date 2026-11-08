@@ -127,6 +127,38 @@ try{
  assert.equal(shipSibling.shippedQuantity,1)
  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM return_items WHERE order_item_id=9561').get().n,1)
  assert.equal(sql.prepare('SELECT SUM(line_total) AS total FROM order_items WHERE order_id=9551').get().total,6000)
+ // A shipped and later returned known-SKU line may arrive physically on a
+ // different day. Real HTTP receipt must add only this unit, once, without
+ // changing the active reserve of its independent unsent sibling.
+ const incoming=sql.prepare('SELECT id,physical_tracking,physical_received_at FROM return_items WHERE return_id=? AND order_item_id=9561').get(physicalReturn.returnId)
+ assert(incoming?.id,'Return must retain a physical receipt item')
+ assert.equal(incoming.physical_tracking,1)
+ assert.equal(incoming.physical_received_at,null)
+ const beforeIntake={...snapshot()}
+ const receiveInput={
+   requestId:'stage5-http-exact-return-receive-01',operationType:'return',
+   operationId:physicalReturn.returnId,operationItemId:incoming.id,
+   destination:'warehouse',
+ }
+ const received=await api('POST','/api/returned-items/receive',receiveInput)
+ assert.equal(received.ok,true)
+ assert.equal(received.operationItemId,incoming.id)
+ assert.equal(received.stockApplied,true,'Physical arrival must apply once for a known canonical SKU')
+ assert.deepEqual({...snapshot()},{
+   quantity:beforeIntake.quantity+1,reserved_quantity:beforeIntake.reserved_quantity,
+ },'Return receipt cannot alter other active reservations')
+ const afterIntake={...snapshot()}
+ const firstReceiptAt=sql.prepare('SELECT physical_received_at FROM return_items WHERE id=?').get(incoming.id).physical_received_at
+ assert(firstReceiptAt,'Physical receipt timestamp must be durable')
+ const replayIntake=await api('POST','/api/returned-items/receive',receiveInput)
+ assert.equal(replayIntake.ok,true)
+ assert.deepEqual({...snapshot()},afterIntake,'Lost-response replay cannot add the same returned unit again')
+ assert.equal(sql.prepare('SELECT physical_received_at FROM return_items WHERE id=?').get(incoming.id).physical_received_at,firstReceiptAt)
+ await api('POST','/api/returned-items/receive',{...receiveInput,
+   requestId:'stage5-http-exact-return-receive-wrong-destination',destination:'boutique',
+ },409)
+ assert.deepEqual({...snapshot()},afterIntake,'Different destination cannot duplicate the received stock')
+ console.log('STAGE5_RETURN_LATE_RECEIPT_STOCK_IDEMPOTENT_HTTP_PASS')
  // Workshop part of a mixed order was sent, but warehouse sibling is still
  // reserved: Return must follow the WORKSHOP shipment item, not parent sent flag.
  sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9552,'ORD-TEST-MIXED-WORKSHOP-HTTP','2026-11-01',9501,'active','warehouse','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()

@@ -31,7 +31,7 @@ assert.ok(review.includes('writeAlias: reusableExactInput'), 'Exact complete hum
 assert.ok(review.includes('normalizedCatalogReviewKey(row) === inputKey'), 'Exact complete confirmation must fan out to already-open identical raw rows')
 assert.ok(review.includes('toInt(row.id ?? row.order_item_id, 0) === orderItemId'), 'Incomplete/ambiguous confirmation must remain single-row scoped')
 
-const returnsWorker = read('worker/domains/returns-exchanges.ts')
+const receiptWorker = read('worker/domains/order-returned-item-receipt.ts')
 const creationWorker = read('worker/domains/order-return-creation.ts')
 assert.ok(creationWorker.includes('if (amount <= 0 && selectedItems.length === 0)'), 'Zero-money return must require a returned item, not positive money')
 assert.ok(creationWorker.includes('if (amount > 0 && !paymentMethod)'), 'Payment method must only be required when money is actually refunded')
@@ -65,9 +65,9 @@ function hasAmountGuardedRefundReversal(node) {
 }
 assert.ok(hasAmountGuardedRefundReversal(cancellationAst),
   'Cancelling a zero-money return must not manufacture a refund reversal')
-assert.ok(returnsWorker.includes("code: 'intake_freshness_confirmation_required'"), 'Delayed intake does not stop on a newer physical count')
-assert.ok(returnsWorker.includes("freshnessDecision === 'already_counted'"), 'Delayed intake cannot preserve a newer count when the returned unit was already included')
-assert.ok(returnsWorker.includes('freshnessProtected = true'), 'Fresh-count intake protection is not recorded in the response')
+assert.ok(receiptWorker.includes("code: 'intake_freshness_confirmation_required'"), 'Delayed intake does not stop on a newer physical count')
+assert.ok(receiptWorker.includes("freshnessDecision === 'already_counted'"), 'Delayed intake cannot preserve a newer count when the returned unit was already included')
+assert.ok(receiptWorker.includes('freshnessProtected = true'), 'Fresh-count intake protection is not recorded in the response')
 
 const app = read('src/App.tsx')
 assert.ok(app.includes('selectedReturnItems.length === 0'), 'Frontend zero-money return item guard is missing')

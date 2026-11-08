@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 
 const domain = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+const receipt = fs.readFileSync('worker/domains/order-returned-item-receipt.ts', 'utf8')
 const exchangeList = fs.readFileSync('worker/domains/order-exchange-list.ts', 'utf8')
 const creation = fs.readFileSync('worker/domains/order-return-creation.ts', 'utf8')
 const activity = fs.readFileSync('worker/domains/activity.ts', 'utf8')
@@ -40,14 +41,14 @@ expect(domain.includes("await releaseOrderReservationV2("), 'not-issued exchange
 expect(domain.includes("oldWasNotIssued ? 'not_issued'"), 'not-issued exchange marker is not persisted in the old snapshot')
 
 // Delayed physical receipt must be a dedicated idempotent operation, not a generic arrival.
-expect(domain.includes('export async function receiveReturnedItem'), 'receiveReturnedItem domain operation missing')
-expect(domain.includes("beginCriticalOperation(db, 'returned_item_receive'"), 'physical receipt critical operation missing')
-expect(domain.includes("physical_tracking = 1 AND physical_received_at IS NULL"), 'receipt update is not guarded against double receive')
-expect(domain.includes('`return:${operationId}:item:${operationItemId}`'), 'return delayed receipt must reuse canonical lifecycle event key')
-expect(domain.includes('`exchange:${operationId}:old`'), 'exchange delayed receipt must reuse canonical lifecycle event key')
-expect(domain.includes("destination === 'no_stock'"), 'received-without-restock path missing')
-expect(domain.includes('completeCriticalOperation(db, criticalOperation, completedResponse)'), 'physical receipt completion cache missing')
-expect(domain.includes("eventType: 'returned_item_received'"), 'physical receipt audit event missing')
+expect(receipt.includes('export async function receiveReturnedItem'), 'receiveReturnedItem domain operation missing')
+expect(receipt.includes("beginCriticalOperation(db, 'returned_item_receive'"), 'physical receipt critical operation missing')
+expect(receipt.includes("physical_tracking = 1 AND physical_received_at IS NULL"), 'receipt update is not guarded against double receive')
+expect(receipt.includes('`return:${operationId}:item:${operationItemId}`'), 'return delayed receipt must reuse canonical lifecycle event key')
+expect(receipt.includes('`exchange:${operationId}:old`'), 'exchange delayed receipt must reuse canonical lifecycle event key')
+expect(receipt.includes("destination === 'no_stock'"), 'received-without-restock path missing')
+expect(receipt.includes('completeCriticalOperation(db, criticalOperation, completedResponse)'), 'physical receipt completion cache missing')
+expect(receipt.includes("eventType: 'returned_item_received'"), 'physical receipt audit event missing')
 
 expect(router.includes("receiveReturnedItem"), 'receiveReturnedItem is not wired into Worker')
 expect(router.includes("url.pathname === '/api/returned-items/receive'"), 'physical receipt API route missing')
