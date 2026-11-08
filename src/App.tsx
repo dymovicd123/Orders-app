@@ -47,6 +47,7 @@ import { useMoneyHistoryWorkspace } from './app/controllers/useMoneyHistoryWorks
 import { cancelReturnCriticalRequest, cancelExchangeCriticalRequest, correctExchangeFinancialCriticalRequest } from './app/controllers/returnExchangeCriticalRequests'
 import { composeOrderExchangeCancellationPlan, type OrderExchangeCancelPlan } from './app/orderExchangeCancellationPlan'
 import { prepareReturnCreation, submitReturnCreation } from './app/returnCreationOperation'
+import { prepareExchangeSetCreation, submitExchangeSetCreation } from './app/exchangeSetCreationOperation'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
@@ -7378,185 +7379,20 @@ function removeDebtPayment(index: number) {
     const itemizedExchange = exchangeSelectedOrder.pricing_mode === 'itemized_v1'
 
     if (itemizedExchange && exchangeDraft.workflowMode === 'set_v2') {
-      const selectedOld = (exchangeDraft.oldSelections || []).filter((entry) => Number(entry.orderItemId || 0) > 0 && Number(entry.quantity || 0) > 0)
-      const selectedNew = (exchangeDraft.newItems || []).filter((entry) => String(entry.item?.productName || '').trim())
-
-      if (!selectedOld.length) {
-        setError('Выберите хотя бы один товар, который клиент меняет.')
+      const prepared = prepareExchangeSetCreation(exchangeSelectedOrder, exchangeDraft)
+      if (!prepared.ok) {
+        setError(prepared.error)
         return
       }
-      if (!selectedNew.length) {
-        setError('Добавьте хотя бы один товар, который клиент получает.')
-        return
-      }
-
-      const oldPayload: Array<{
-        orderItemId: number
-        quantity: number
-        physicalState: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'
-        expectedActiveQuantity: number
-        expectedUnitPrice: number
-        expectedLineTotal: number
-        expectedCatalogPriceSnapshot: number | null
-      }> = []
-      let removedValue = 0
-      for (const [index, selected] of selectedOld.entries()) {
-        const item = exchangeSelectedOrder.items.find((candidate) => Number(candidate.id || 0) === Number(selected.orderItemId || 0))
-        if (!item) {
-          setError(`Возвращаемая позиция ${index + 1} больше не найдена в заказе. Обновите заказ.`)
-          return
-        }
-        const available = Math.max(0, Number(item.availableOperationQuantity ?? item.quantity ?? 0))
-        const quantity = Math.max(1, Number(selected.quantity || 1))
-        const unitPrice = Number(item.unitPrice)
-        const lineTotal = Number(item.lineTotal)
-        if (quantity > available) {
-          setError(`Для «${item.productName}» доступно ${available} шт., выбрано ${quantity}.`)
-          return
-        }
-        if (!Number.isSafeInteger(unitPrice) || unitPrice < 0 || !Number.isSafeInteger(lineTotal) || lineTotal !== Number(item.quantity || 0) * unitPrice) {
-          setError(`У «${item.productName}» устарели ценовые данные. Обновите заказ и откройте обмен заново.`)
-          return
-        }
-        removedValue += quantity * unitPrice
-        oldPayload.push({
-          orderItemId: Number(item.id || 0),
-          quantity,
-          physicalState: selected.physicalState,
-          expectedActiveQuantity: Number(item.quantity || 0),
-          expectedUnitPrice: unitPrice,
-          expectedLineTotal: lineTotal,
-          expectedCatalogPriceSnapshot: item.catalogPriceSnapshot == null ? null : Number(item.catalogPriceSnapshot),
-        })
-      }
-
-      const newPayload: EditorItem[] = []
-      let addedValue = 0
-      for (const [index, entry] of selectedNew.entries()) {
-        const item = entry.item
-        const quantity = Math.max(1, Number(item.quantity || 1))
-        const unitPrice = item.unitPrice == null ? Number.NaN : Number(item.unitPrice)
-        const catalogSnapshot = item.catalogPriceSnapshot == null ? null : Number(item.catalogPriceSnapshot)
-        if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) {
-          setError(`Новая позиция ${index + 1}: укажите цену продажи.`)
-          return
-        }
-        if (catalogSnapshot !== null && (!Number.isSafeInteger(catalogSnapshot) || catalogSnapshot < 0)) {
-          setError(`Новая позиция ${index + 1}: цена Каталога изменилась. Выберите товар заново.`)
-          return
-        }
-        addedValue += quantity * unitPrice
-        newPayload.push({
-          ...item,
-          observedPhysicalQuantity: null,
-          quantity,
-          unitPrice,
-          catalogPriceSnapshot: catalogSnapshot,
-        })
-      }
-
-      const currentNetPaid = Math.max(0, Number(exchangeSelectedOrder.received_amount || 0) - Number(exchangeSelectedOrder.return_amount || 0))
-      const projectedTotal = Number(exchangeSelectedOrder.total_amount || 0) - removedValue + addedValue
-      if (!Number.isSafeInteger(projectedTotal) || projectedTotal < 0) {
-        setError('Не удалось безопасно рассчитать новый итог заказа.')
-        return
-      }
-      const dueBeforeSettlement = Math.max(0, projectedTotal - currentNetPaid)
-      const refundAmount = Math.max(0, currentNetPaid - projectedTotal)
-      const paymentAmount = Math.max(0, Math.trunc(Number(exchangeDraft.paymentAmount || 0)))
-      if (refundAmount > 0 && paymentAmount > 0) {
-        setError('После пересчёта клиенту нужно вернуть деньги. Уберите оплату сейчас.')
-        return
-      }
-      if (paymentAmount > dueBeforeSettlement) {
-        setError(`Оплата сейчас больше долга после обмена: ${formatMoney(dueBeforeSettlement)}.`)
-        return
-      }
-      if (paymentAmount > 0 && !exchangeDraft.paymentMethod.trim()) {
-        setError('Выберите способ оплаты денег, полученных сейчас.')
-        return
-      }
-      if (refundAmount > 0 && !exchangeDraft.refundMethod.trim()) {
-        setError(`Нужно вернуть клиенту ${formatMoney(refundAmount)}. Выберите способ возврата денег.`)
-        return
-      }
-
-      const extraPaymentAmount = Number(exchangeDraft.extraPaymentAmount || 0)
-      const extraRefundAmount = Number(exchangeDraft.extraRefundAmount || 0)
-      if (paymentAmount > 0 && exchangeDraft.extraPaymentEnabled && (
-        !Number.isSafeInteger(extraPaymentAmount) || extraPaymentAmount <= 0 || extraPaymentAmount >= paymentAmount
-        || !exchangeDraft.extraPaymentMethod.trim()
-        || exchangeDraft.extraPaymentMethod.trim().toUpperCase() === exchangeDraft.paymentMethod.trim().toUpperCase()
-      )) {
-        setError('Для второго способа доплаты укажите другой способ и сумму меньше получаемой доплаты.')
-        return
-      }
-      if (refundAmount > 0 && exchangeDraft.extraRefundEnabled && (
-        !Number.isSafeInteger(extraRefundAmount) || extraRefundAmount <= 0 || extraRefundAmount >= refundAmount
-        || !exchangeDraft.extraRefundMethod.trim()
-        || exchangeDraft.extraRefundMethod.trim().toUpperCase() === exchangeDraft.refundMethod.trim().toUpperCase()
-      )) {
-        setError('Для второго способа возврата укажите другой способ и сумму меньше возвращаемой.')
-        return
-      }
-      const paymentParts = paymentAmount > 0
-        ? exchangeDraft.extraPaymentEnabled
-          ? [
-              { method: exchangeDraft.paymentMethod, amount: paymentAmount - extraPaymentAmount },
-              { method: exchangeDraft.extraPaymentMethod, amount: extraPaymentAmount },
-            ]
-          : [{ method: exchangeDraft.paymentMethod, amount: paymentAmount }]
-        : []
-      const refundParts = refundAmount > 0
-        ? exchangeDraft.extraRefundEnabled
-          ? [
-              { method: exchangeDraft.refundMethod, amount: refundAmount - extraRefundAmount },
-              { method: exchangeDraft.extraRefundMethod, amount: extraRefundAmount },
-            ]
-          : [{ method: exchangeDraft.refundMethod, amount: refundAmount }]
-        : []
 
       setExchangeBusy(true)
       setError(null)
       setMessage(null)
       try {
-        const payload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          expectedOrderTotal: Number(exchangeSelectedOrder.total_amount || 0),
-          oldItems: oldPayload,
-          newItems: newPayload.map((item) => ({
-            ...item, observedPhysicalQuantity: null, issuePossessionConfirmed: item.stockObservationEnabled === true,
-          })),
-          paymentAmount,
-          paymentMethod: exchangeDraft.paymentMethod,
-          refundMethod: exchangeDraft.refundMethod,
-          paymentParts,
-          refundParts,
-          comment: exchangeDraft.comment,
-        }
-        const criticalKey = `exchange-set-create:${exchangeSelectedOrder.id}`
-        const critical = prepareCriticalRequest(criticalKey, payload)
-        const response = await apiFetch('/api/exchanges/set', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{
-          ok?: boolean
-          message?: string
-          order?: OrderRecord
-          oldItemCount?: number
-          newItemCount?: number
-          finalTotalAmount?: number
-          paymentAmount?: number
-          refundAmount?: number
-          remainingDebt?: number
-          pendingInventoryCount?: number
-          workshopCount?: number
-        }>(response, 'Обмен')
-        if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
-        completeCriticalRequest(criticalKey, critical.requestId)
+        const result = await submitExchangeSetCreation(
+          { apiFetch, prepareCriticalRequest, completeCriticalRequest },
+          prepared.payload,
+        )
 
         if (result.order) upsertOrderInState(result.order)
         setExchangeSelectedOrderId(null)
@@ -7581,7 +7417,7 @@ function removeDebtPayment(index: number) {
         const debtText = Number(result.remainingDebt || 0) > 0
           ? ` Остаток долга: ${formatMoney(Number(result.remainingDebt || 0))}.`
           : ' Долга после обмена нет.'
-        setMessage(`Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: убрано ${result.oldItemCount || oldPayload.length} поз., добавлено ${result.newItemCount || newPayload.length} поз. Новый итог: ${formatMoney(Number(result.finalTotalAmount ?? projectedTotal))}.${moneyText}${debtText}`)
+        setMessage(`Обмен по заказу ${exchangeSelectedOrder.external_id} сохранён: убрано ${result.oldItemCount || prepared.oldItemCount} поз., добавлено ${result.newItemCount || prepared.newItemCount} поз. Новый итог: ${formatMoney(Number(result.finalTotalAmount ?? prepared.projectedTotal))}.${moneyText}${debtText}`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Не удалось сохранить обмен.')
       } finally {
