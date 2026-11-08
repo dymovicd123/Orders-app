@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {clampDispatchQuantity,dispatchSelectionError} from '../src/features/orders/shippingSelection.ts'
+import {projectOrderShipmentDisplay,isOrderShipmentCompleteForActions} from '../src/app/orderShipmentProjection.ts'
 
 // Browser type=number max alone is NOT a guard: Work #733 entered 2 when only 1 was ready.
 assert.equal(clampDispatchQuantity('2',1),1)
@@ -44,4 +45,29 @@ assert(src.includes('let {res,data}=await submit()') && src.includes('({res,data
   'Shortage acknowledgement must retry with the original request ID rather than create a new dispatch')
 assert(src.includes('submitting:false,\n          error:e instanceof Error?e.message'),
   'On uncertain error keep the same draft/requestId for safe retry')
+// Exchange Set can retain the old order item as quantity=0 before a new line.
+// The order table still displays original item positions. A filtered shipment
+// projection must not attach the new item's badge to the old zero-qty row.
+const exchangedOrder={
+  shipping_status:'not_sent',
+  items:[
+    {id:21,productName:'Old replacement',quantity:0,sourceType:'warehouse',shipmentSentQuantity:null},
+    {id:22,productName:'New sent',quantity:1,sourceType:'warehouse',shipmentSentQuantity:1},
+    {id:23,productName:'Other pending',quantity:2,sourceType:'warehouse',shipmentSentQuantity:0},
+  ],
+}
+const displayAfterExchange=projectOrderShipmentDisplay(exchangedOrder)
+assert.equal(displayAfterExchange.state,'partial')
+assert.deepEqual(displayAfterExchange.lines.map(line=>line.sourceIndex),[1,2],
+  'Shipment statuses must retain original item positions when a zero-quantity row remains')
+const badgesByOriginalIndex=new Map(displayAfterExchange.lines.map(line=>[line.sourceIndex,line]))
+assert.equal(badgesByOriginalIndex.get(0),undefined,'A replaced zero-quantity row is not a shipped line')
+assert.equal(badgesByOriginalIndex.get(1)?.label,'Отправлен')
+assert.equal(badgesByOriginalIndex.get(2)?.label,'Не отправлен')
+assert.equal(isOrderShipmentCompleteForActions(exchangedOrder),false)
+const fullySentAfterExchange={...exchangedOrder,items:exchangedOrder.items.slice(0,2)}
+assert.equal(projectOrderShipmentDisplay(fullySentAfterExchange).state,'sent',
+  'A retained zero-quantity old item cannot force a fully shipped order into partial status')
+assert.equal(isOrderShipmentCompleteForActions(fullySentAfterExchange),true)
+console.log('STAGE5_EXCHANGE_ZERO_QUANTITY_STATUS_ALIGNMENT_PASS')
 console.log('STAGE5_CLIENT_QUANTITY_AND_RETRY_ID_PASS')
