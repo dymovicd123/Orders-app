@@ -1,5 +1,6 @@
 // Reusable, explicitly initiated Branch2 release. No scheduled/GitHub push deploy.
 // --check: offline config validation, suitable for CI.
+// --ci-preview: no-credentials PR build and real Wrangler dry-run, NEVER publish.
 // --dry-run --sha <full SHA>: local full regression + Cloudflare package preview.
 // --publish --sha <full SHA> --confirm BRANCH2-ONLY: same verification, then
 // read-only Branch2 D1 preflight, Worker-only deploy, read-only postflight.
@@ -18,8 +19,8 @@ const ORIGIN='https://orders-app-branch2.orders-clothes.workers.dev'
 const fail=message=>{throw new Error('Branch2 release blocked: '+message)}
 const args=process.argv.slice(2)
 const mode=args.shift()
-if(!['--check','--dry-run','--publish'].includes(mode)) {
-  fail('Usage: --check OR --dry-run --sha <40-char SHA> OR --publish --sha <40-char SHA> --confirm BRANCH2-ONLY')
+if(!['--check','--ci-preview','--dry-run','--publish'].includes(mode)) {
+  fail('Usage: --check OR --ci-preview OR --dry-run --sha <40-char SHA> OR --publish --sha <40-char SHA> --confirm BRANCH2-ONLY')
 }
 const fields=new Map()
 while(args.length){
@@ -27,9 +28,9 @@ while(args.length){
   if(!['--sha','--confirm'].includes(flag)||fields.has(flag)||!args.length)fail('Unexpected or duplicate release argument.')
   fields.set(flag,args.shift())
 }
-if(mode==='--check'&&fields.size)fail('--check never accepts release inputs.')
+if(['--check','--ci-preview'].includes(mode)&&fields.size)fail('Offline validation modes never accept release inputs.')
 const sha=fields.get('--sha')
-if(mode!=='--check' && (!sha||!/^[0-9a-f]{40}$/.test(sha)))fail('Supply a full 40-character lowercase Branch2 Git SHA.')
+if(!['--check','--ci-preview'].includes(mode) && (!sha||!/^[0-9a-f]{40}$/.test(sha)))fail('Supply a full 40-character lowercase Branch2 Git SHA.')
 if(mode==='--publish' && fields.get('--confirm')!=='BRANCH2-ONLY')fail('Explicit --confirm BRANCH2-ONLY is required to publish.')
 if(mode!=='--publish'&&fields.has('--confirm'))fail('Confirmation is accepted only for --publish.')
 
@@ -77,52 +78,43 @@ function run(program,argv,options={}){
   }
   return options.capture?String(result.stdout).trim():''
 }
-const git=(...argv)=>run('git',argv,{capture:true,timeout:30000})
-if(resolve(git('rev-parse','--show-toplevel'))!==resolve(ROOT))fail('Run from the Orders-app repository root.')
-if(git('branch','--show-current')!=='branch2')fail('Check out the actual branch2 branch; never publish main or a detached checkout.')
-if(git('rev-parse','HEAD')!==sha)fail('Local checkout does not match the explicitly approved SHA.')
-if(git('status','--porcelain','--untracked-files=all'))fail('Git worktree is not clean; no unpublished local code may enter the release.')
-const remote=git('remote','get-url','origin')
-if(!/(?:github\.com[:/])dymovicd123\/Orders-app(?:\.git)?$/.test(remote))fail('The origin remote is not the expected Orders-app repository.')
-const remoteLine=git('ls-remote','origin','refs/heads/branch2')
-const remoteSha=remoteLine.split(/\s+/)[0]
-if(remoteSha!==sha)fail('Remote branch2 HEAD has changed. Fetch/checkout and approve its exact new SHA first.')
+// Preview is intentionally confined to a no-credentials PR: no GitHub SHA
+// promotion and no network writes. Real --dry-run/--publish remain fully pinned.
+if(mode!=='--ci-preview'){
+  const git=(...argv)=>run('git',argv,{capture:true,timeout:30000})
+  if(resolve(git('rev-parse','--show-toplevel'))!==resolve(ROOT))fail('Run from the Orders-app repository root.')
+  if(git('branch','--show-current')!=='branch2')fail('Check out the actual branch2 branch; never publish main or a detached checkout.')
+  if(git('rev-parse','HEAD')!==sha)fail('Local checkout does not match the explicitly approved SHA.')
+  if(git('status','--porcelain','--untracked-files=all'))fail('Git worktree is not clean; no unpublished local code may enter the release.')
+  const remote=git('remote','get-url','origin')
+  if(!/(?:github\.com[:/])dymovicd123\/Orders-app(?:\.git)?$/.test(remote))fail('The origin remote is not the expected Orders-app repository.')
+  const remoteLine=git('ls-remote','origin','refs/heads/branch2')
+  const remoteSha=remoteLine.split(/\s+/)[0]
+  if(remoteSha!==sha)fail('Remote branch2 HEAD has changed. Fetch/checkout and approve its exact new SHA first.')
+  console.log('BRANCH2_MANUAL_RELEASE_SHA_PASS: '+sha+' is clean, exact remote branch2 HEAD')
+}
 if(existsSync(CONFIG)||existsSync(DRY_DIR))fail('Temporary release config/output already exists; inspect and clear it manually.')
 if(existsSync('.wrangler/deploy/config.json'))fail('An unexpected generated Wrangler config could redirect deployment.')
 
-console.log('BRANCH2_MANUAL_RELEASE_SHA_PASS: '+sha+' is clean, exact remote branch2 HEAD')
-console.log('Running complete Branch2 regression and build before any Cloudflare operation')
+console.log('Running Branch2 build and package safety checks before any remote Cloudflare operation')
 run(npm,['ci'])
-run(npm,['run','release:check'])
+if(mode==='--ci-preview')run(npm,['run','build'])
+else run(npm,['run','release:check'])
 if(!existsSync('dist/client/assets'))fail('Required built frontend assets are missing.')
-// Vite/Cloudflare's successful production build legitimately emits a Wrangler
-// config redirect. Never follow an implicit build-generated deployment target:
-// validate that it is a local build artifact, then remove only the pointer so
-// the explicit, separately verified Branch2 --config is authoritative.
+// Only a build-produced redirect is allowed here: preexisting redirect files
+// were rejected before npm ci. Remove the single generated pointer so Wrangler
+// MUST use the separately verified explicit Branch2 --config, never an implicit
+// auto-generated deployment target. Do not delete any generated app bundles.
 if(existsSync('.wrangler/deploy/config.json')){
-  const path='.wrangler/deploy/config.json'
-  let redirect
-  try{redirect=JSON.parse(readFileSync(path,'utf8'))}
-  catch{fail('The generated Wrangler redirect is not valid JSON.')}
-  if(!redirect || typeof redirect.configPath!=='string'
-    || Object.keys(redirect).length!==1 || !redirect.configPath.trim()){
-    fail('Unexpected generated Wrangler redirect structure.')
-  }
-  const generated=resolve(ROOT,'.wrangler/deploy',redirect.configPath)
-  const rel=relative(ROOT,generated)
-  if(!rel || rel==='..' || rel.startsWith('..'+(process.platform==='win32'?'\\':'/'))
-    || isAbsolute(rel) || !existsSync(generated)){
-    fail('Generated Wrangler config points outside this build or is missing.')
-  }
-  rmSync(path,{force:true})
-  if(existsSync(path))fail('Cannot remove implicit Wrangler deploy redirect.')
+  rmSync('.wrangler/deploy/config.json',{force:true})
+  if(existsSync('.wrangler/deploy/config.json'))fail('Cannot remove implicit Wrangler deploy redirect.')
   console.log('BRANCH2_BUILD_REDIRECT_REMOVED: explicit isolated --config enforced')
 }
 writeFileSync(CONFIG,cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'),{flag:'wx'})
 try{
   run(npx,['--no-install','wrangler','deploy','--dry-run','--outdir',DRY_DIR,'--config',CONFIG])
   console.log('BRANCH2_MANUAL_RELEASE_DRY_RUN_PASS: worker+assets package, no deployment')
-  if(mode==='--dry-run')process.exitCode=0
+  if(mode==='--dry-run'||mode==='--ci-preview')process.exitCode=0
   else{
     if(!process.env.CLOUDFLARE_API_TOKEN||!process.env.CLOUDFLARE_ACCOUNT_ID) {
       fail('Both CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be configured for manual publish.')
