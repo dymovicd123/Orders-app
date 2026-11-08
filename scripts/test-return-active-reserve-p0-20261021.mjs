@@ -84,4 +84,58 @@ db.exec("UPDATE exchanges SET status='cancelled'; UPDATE returns SET status='can
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42),null,'Cancelled return excluded')
 db.exec("UPDATE returns SET status='completed'; UPDATE order_items SET is_workshop=1 WHERE id=5")
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42),null,'Workshop obligations are independent of warehouse reservations')
+// Test the real Return INSERT against two stale preflights on disposable SQLite.
+// No Cloudflare or remote D1 connection is used.
+const guardedStart=returns.indexOf('INSERT INTO returns (order_id, manager_id, return_date, amount, payment_method, comment, status, created_at)',createFn)
+assert(guardedStart>createFn,'Return creation must have an atomic refund insert')
+const sqlTick=String.fromCharCode(96)
+const sqlOpeningTick=returns.lastIndexOf(sqlTick,guardedStart)
+const guardedEnd=returns.indexOf(sqlTick,guardedStart+1)
+assert(sqlOpeningTick>=createFn&&guardedEnd>guardedStart,'Missing Return INSERT SQL terminator')
+const guardedSql=returns.slice(sqlOpeningTick+1,guardedEnd)
+assert.match(guardedSql,/CASE WHEN \? = 0 OR EXISTS/)
+assert.match(guardedSql,/FROM payments p WHERE p\.order_id = o\.id/)
+assert.match(guardedSql,/COALESCE\(ret\.status, 'completed'\) <> 'cancelled'/)
+const refundSqlite=new DatabaseSync(':memory:')
+refundSqlite.exec(
+  "CREATE TABLE orders(id INTEGER PRIMARY KEY,order_status TEXT NOT NULL,archived_at TEXT);" +
+  "CREATE TABLE payments(order_id INTEGER NOT NULL,amount INTEGER NOT NULL);" +
+  "CREATE TABLE returns(id INTEGER PRIMARY KEY,order_id INTEGER,manager_id INTEGER,return_date TEXT," +
+  "amount INTEGER NOT NULL,payment_method TEXT,comment TEXT,status TEXT,created_at TEXT);" +
+  "INSERT INTO orders(id,order_status) VALUES(42,'active'),(43,'archived');" +
+  "INSERT INTO payments(order_id,amount) VALUES(42,100),(43,100);"
+)
+const guardedInsert=refundSqlite.prepare(guardedSql)
+const refund=(orderId,amount)=>guardedInsert.run(
+  orderId,null,'2026-11-08',
+  amount,orderId,amount,amount,
+  amount>0?'КАСПИ':null,null,'2026-11-08T10:00:00Z'
+)
+const refundable=()=>100-Number(refundSqlite.prepare(
+  "SELECT COALESCE(SUM(amount),0) AS total FROM returns WHERE order_id=42 AND status<>'cancelled'"
+).get()?.total)
+const countReturns=()=>Number(refundSqlite.prepare("SELECT COUNT(*) AS n FROM returns WHERE order_id=42").get()?.n)
+const firstPreflight=refundable(),secondPreflight=refundable()
+assert.equal(firstPreflight,100)
+assert.equal(secondPreflight,100)
+refund(42,70)
+assert.throws(()=>refund(42,70),/NOT NULL constraint failed: returns\.amount/,
+  'Second employee already passed the stale preflight; atomic INSERT must reject over-refund')
+assert.equal(refundable(),30,'Rejected concurrent refund cannot reduce available received funds')
+assert.equal(countReturns(),1,'Rejected refund must not leave a header')
+refund(42,30)
+assert.equal(refundable(),0,'Exactly the remaining amount is refundable once')
+assert.throws(()=>refund(42,1),/NOT NULL constraint failed: returns\.amount/)
+refund(42,0)
+assert.equal(refundable(),0,'A physical-only zero-money return must remain possible')
+const cancelledId=refundSqlite.prepare("SELECT id FROM returns WHERE order_id=42 AND amount=70").get().id
+refundSqlite.prepare("UPDATE returns SET status='cancelled' WHERE id=?").run(cancelledId)
+assert.equal(refundable(),70,'Cancelling a money Return restores the refundable balance')
+refund(42,70)
+assert.equal(refundable(),0,'Returned funds can be refunded again after cancellation')
+assert.throws(()=>refund(43,20),/NOT NULL constraint failed: returns\.amount/,
+  'Archived orders must never issue new refunds through the guarded SQL')
+refundSqlite.close()
+console.log('BRANCH2_ATOMIC_RETURN_REFUND_CAP_PASSED: concurrent stale preflights, zero, exact remainder, cancel/retry, archived order')
+
 console.log('RETURN_ACTIVE_RESERVE_P0_SQL_GUARDS_PASSED: 3 production queries; active, unresolved, fulfilled, money-only, exchange-linked, cancelled, scoped, workshop')
