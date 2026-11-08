@@ -3,9 +3,10 @@ import { getOrder } from './orders-write.ts'
 import { buildOrderShipmentPlan } from './order-shipment-plan.ts'
 import { CriticalOperationConflictError } from './critical.ts'
 import { activeStocktakeSessionForHandover, getOrderStockHandoverState } from './order-reservations.ts'
+import { boundedDispatchStock, DispatchStockConfirmationRequired, normalizeDispatchStockConfirmations, type DispatchStockConfirmation } from './order-dispatch-confirmation.ts'
 
 type Selection = { orderItemId: number; quantity: number }
-type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
+type StockKey = { source: 'warehouse' | 'boutique'; variantId: number; quantity: number; activeQuantity: number; unresolvedQuantity: number; needsConfirmation: boolean; stockId: number; before: number; reservedBefore: number; productId: number; productName: string; gender: string | null; color: string | null; material: string | null; length: string | null; size: string | null }
 
 const fail = (message: string): never => { throw new CriticalOperationConflictError(message) }
 
@@ -20,12 +21,13 @@ const fail = (message: string): never => { throw new CriticalOperationConflictEr
 export async function dispatchSelectedCompleteOrderLines(
   db: D1Database,
   orderId: number,
-  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string },
+  input: { requestId: string; items: Selection[]; actor: string; dispatchDate: string; stockConfirmations?: DispatchStockConfirmation[] },
 ) {
   const requestId = cleanText(input.requestId)
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{15,119}$/.test(requestId)) fail('Повторите отправку после обновления заказа.')
   if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 40) fail('Выберите товары для отправки.')
   if (input.items.some(row=>!Number.isSafeInteger(row.orderItemId)||row.orderItemId<=0||!Number.isSafeInteger(row.quantity)||row.quantity<=0)) fail('Укажите корректное количество.')
+  const confirmations=normalizeDispatchStockConfirmations(input.stockConfirmations)
   const uniqueIds = new Set(input.items.map(x=>x.orderItemId))
   if (uniqueIds.size !== input.items.length) fail('Одна позиция выбрана несколько раз.')
   const replay = await db.prepare('SELECT id,order_id FROM order_dispatches WHERE request_id=? LIMIT 1').bind(requestId).first<{id:number;order_id:number}>()
@@ -123,7 +125,11 @@ export async function dispatchSelectedCompleteOrderLines(
     replacementByItem.set(item.orderItemId,{eventId,exchangeId:toInt(event.operation_id,0)})
   }
   const reservations = (reserved.results||[]).filter(row=>selectedStock.some(x=>x.orderItemId===toInt(row.order_item_id,0)))
-  if (reservations.length!==selectedStock.length || reservations.some(x=>cleanText(x.status)!=='active')) fail('Резерв товара изменился. Обновите заказ.')
+  if (reservations.length!==selectedStock.length || reservations.some(x=>{
+    const item=selectedStock.find(row=>row.orderItemId===toInt(x.order_item_id,0))
+    const expected=item?.reservationStatus==='unresolved'?'unresolved':'active'
+    return !item || cleanText(x.status)!==expected
+  })) fail('Резерв товара изменился. Обновите заказ.')
   const perItemReservation = new Map(reservations.map(r=>[toInt(r.order_item_id,0),r]))
   for (const item of selectedStock) {
     const r=perItemReservation.get(item.orderItemId)
@@ -163,9 +169,13 @@ export async function dispatchSelectedCompleteOrderLines(
   for(const item of selectedStock) {
     const key=`${item.sourceType}:${toInt(item.variantId,0)}`
     const previous=groups.get(key)
+    const unresolved=item.reservationStatus==='unresolved'
     groups.set(key,{
       source:item.sourceType as 'warehouse'|'boutique',variantId:toInt(item.variantId,0),
       quantity:(previous?.quantity||0)+item.quantity,
+      activeQuantity:(previous?.activeQuantity||0)+(unresolved?0:item.quantity),
+      unresolvedQuantity:(previous?.unresolvedQuantity||0)+(unresolved?item.quantity:0),
+      needsConfirmation:false,
       stockId:0,before:0,reservedBefore:0,productId:0,productName:'',
       gender:null,color:null,material:null,length:null,size:null,
     })
@@ -185,8 +195,29 @@ export async function dispatchSelectedCompleteOrderLines(
     group.productId=toInt(stock.product_id,0);group.productName=cleanText(stock.product_name)
     group.gender=cleanText(stock.gender)||null;group.color=cleanText(stock.color)||null
     group.material=cleanText(stock.material)||null;group.length=cleanText(stock.length)||null;group.size=cleanText(stock.size)||null
-    if(group.before<group.quantity || group.reservedBefore<group.quantity) fail(`Не хватает товара «${group.productName}». Проверьте остаток перед отправкой.`)
+    group.needsConfirmation=group.before<group.quantity
+      || group.reservedBefore<group.activeQuantity || group.unresolvedQuantity>0
   }
+  const requiredConfirmations=[] as DispatchStockConfirmationRequired['items']
+  for(const group of groups.values()){
+    const key=`${group.source}:${group.variantId}`
+    const confirmation=confirmations.find(row=>`${row.source}:${row.variantId}`===key)
+    if(confirmation && (confirmation.expectedQuantity!==group.before || confirmation.operationQuantity!==group.quantity)){
+      fail('Остаток или выбранное количество изменились. Обновите отправку и подтвердите ещё раз.')
+    }
+    if(group.needsConfirmation && !confirmation){
+      requiredConfirmations.push({
+        source:group.source,variantId:group.variantId,
+        expectedQuantity:group.before,trackedPhysicalQuantity:group.before,
+        operationQuantity:group.quantity,productName:group.productName,
+        reservationShortage:group.reservedBefore<group.activeQuantity || group.unresolvedQuantity>0,
+      })
+    }
+  }
+  if(confirmations.some(row=>!groups.has(`${row.source}:${row.variantId}`))){
+    fail('В подтверждении есть товар, которого нет в выбранной отправке.')
+  }
+  if(requiredConfirmations.length)throw new DispatchStockConfirmationRequired(requiredConfirmations)
 
   // Commit in one D1 transaction. A competing worker must make a required
   // predicate fail and trigger the deliberate unique-key rollback below.
