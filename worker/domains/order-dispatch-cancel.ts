@@ -81,6 +81,7 @@ export async function cancelExactOrderDispatchItem(
   const stamp=new Date().toISOString()
   let stock:{id:number;quantity:number;reserved_quantity:number}|null=null
   let restorePhysical=false
+  let accountedQuantity=0
   const reservationId=toInt(line.reservation_id,0)
   const movementId=toInt(line.movement_id,0)
   if(!isWorkshop){
@@ -95,6 +96,13 @@ export async function cancelExactOrderDispatchItem(
       'SELECT id,quantity,reserved_quantity FROM inventory_stock WHERE inventory_source=? AND variant_id=?'
     ).bind(line.source_type,line.variant_id).first<{id:number;quantity:number;reserved_quantity:number}>()
     if(!stock?.id || !movementId)fail('Не найдена подтверждённая складская выдача этой вещи.')
+    const movement=await db.prepare(
+      `SELECT movement_type,quantity_delta,inventory_source,variant_id FROM inventory_movements WHERE id=?`
+    ).bind(movementId).first<Record<string,unknown>>()
+    if(cleanText(movement?.movement_type)!=='sale'
+      || cleanText(movement?.inventory_source)!==cleanText(line.source_type)
+      || toInt(movement?.variant_id,0)!==toInt(line.variant_id,0))fail('Складское движение отправки изменилось. Обновите заказ.')
+    accountedQuantity=Math.min(quantity,Math.max(0,-toInt(movement?.quantity_delta,0)))
     const recent=await db.prepare(
       `SELECT
          EXISTS(SELECT 1 FROM inventory_stock_checks c
@@ -110,6 +118,11 @@ export async function cancelExactOrderDispatchItem(
     restorePhysical=!toInt(recent?.newer_check,0)&&!toInt(recent?.newer_revision,0)
   }
 
+  // Only a physical decrement that is evidenced by the original outbound movement
+  // may be restored. Never add an unrecorded unit or reserve other buyers' stock.
+  const restoreQty=restorePhysical?accountedQuantity:0
+  const reactivateReservation=restorePhysical && accountedQuantity===quantity && Boolean(stock)
+    && stock!.quantity + accountedQuantity >= stock!.reserved_quantity + quantity
   const statements:D1PreparedStatement[]=[]
   statements.push(db.prepare(
     `INSERT INTO inventory_model_meta(key,value,updated_at)
@@ -137,20 +150,20 @@ export async function cancelExactOrderDispatchItem(
          SET quantity=quantity+?,reserved_quantity=reserved_quantity+?,
              last_action='Исправлена отправка',last_source_ref=?,updated_at=?
          WHERE id=? AND quantity=? AND reserved_quantity=?`
-      ).bind(restorePhysical?quantity:0,restorePhysical?quantity:0,`dispatch_cancel:${requestId}`,stamp,
+      ).bind(restoreQty,reactivateReservation?quantity:0,`dispatch_cancel:${requestId}`,stamp,
         stock!.id,stock!.quantity,stock!.reserved_quantity),
       db.prepare(
         `UPDATE inventory_reservations SET
            status=?,unresolved_reason=?,fulfilled_at=NULL,updated_at=?
          WHERE id=? AND status='fulfilled' AND quantity=?`
-      ).bind(restorePhysical?'active':'unresolved',restorePhysical?null:'concurrent_shortage',
+      ).bind(reactivateReservation?'active':'unresolved',reactivateReservation?null:'concurrent_shortage',
         stamp,reservationId,quantity),
       db.prepare(
         `UPDATE order_items SET stock_writeoff_status=?,stock_quantity_before=NULL,stock_quantity_after=NULL
          WHERE id=? AND stock_writeoff_status='fulfilled'`
-      ).bind(restorePhysical?'reserved':'pending_reservation',itemId),
+      ).bind(reactivateReservation?'reserved':'pending_reservation',itemId),
     )
-    if(restorePhysical) statements.push(db.prepare(
+    if(restoreQty>0) statements.push(db.prepare(
       `INSERT INTO inventory_movements(
         inventory_source,movement_type,product_id,variant_id,product_name_snapshot,
         gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,
@@ -159,7 +172,7 @@ export async function cancelExactOrderDispatchItem(
           gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,
           ?,?,'order_dispatch_correction',?, ?,?
         FROM inventory_movements WHERE id=? AND movement_type='sale'`
-    ).bind(quantity,stock!.quantity+quantity,`dispatch_cancel:${requestId}:item:${itemId}`,
+    ).bind(restoreQty,stock!.quantity+restoreQty,`dispatch_cancel:${requestId}:item:${itemId}`,
       'Отменена ошибочная отправка',stamp,movementId))
   }
   if (replacement?.id) {
@@ -187,7 +200,7 @@ export async function cancelExactOrderDispatchItem(
     db.prepare(
       `INSERT INTO order_dispatch_corrections(dispatch_item_id,request_id,quantity,stock_restored,reason,actor,created_at)
        VALUES(?,?,?,?,?,?,?)`
-    ).bind(dispatchItemId,requestId,quantity,restorePhysical?1:0,cleanText(input.reason)||'Ошибочная отправка',
+    ).bind(dispatchItemId,requestId,quantity,restoreQty>0?1:0,cleanText(input.reason)||'Ошибочная отправка',
       cleanText(input.actor),stamp),
     db.prepare(
       `UPDATE order_dispatches
@@ -209,6 +222,6 @@ export async function cancelExactOrderDispatchItem(
     throw error
   }
   return {ok:true,dispatchItemId,cancelledQuantity:quantity,
-    physicalRestoredQuantity:restorePhysical?quantity:0,
-    needsStockCheck:!isWorkshop&&!restorePhysical}
+    physicalRestoredQuantity:restoreQty,
+    needsStockCheck:!isWorkshop&&!reactivateReservation}
 }
