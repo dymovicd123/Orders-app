@@ -23,7 +23,7 @@ jobs:
   production-code-only:
     if: >-
       (github.event_name == 'pull_request'
-       && github.event.pull_request.number == 0
+       && github.event.pull_request.number == 795
        && github.event.pull_request.head.ref == 'release/main-pr794-production-20261108'
        && github.event.pull_request.head.repo.full_name == github.repository
        && github.event.pull_request.base.sha == '4c750922353826ec6995c5de5e603e80221bb9c0')
@@ -57,7 +57,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
             test "$GITHUB_HEAD_REF" = 'release/main-pr794-production-20261108'
             test "$GITHUB_BASE_REF" = main
-            jq -e '.pull_request.number == 0
+            jq -e '.pull_request.number == 795
               and .pull_request.head.repo.full_name == .repository.full_name
               and .pull_request.base.sha == "4c750922353826ec6995c5de5e603e80221bb9c0"' "$GITHUB_EVENT_PATH"
             git merge-base --is-ancestor 4c750922353826ec6995c5de5e603e80221bb9c0 HEAD
