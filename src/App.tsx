@@ -44,6 +44,7 @@ import { useOperationalViewModel } from './app/controllers/useOperationalViewMod
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { useReturnExchangeWorkspace } from './app/controllers/useReturnExchangeWorkspace'
 import { useMoneyHistoryWorkspace } from './app/controllers/useMoneyHistoryWorkspace'
+import { cancelReturnCriticalRequest, cancelExchangeCriticalRequest, correctExchangeFinancialCriticalRequest } from './app/controllers/returnExchangeCriticalRequests'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
@@ -310,6 +311,7 @@ function App() {
     setMessage,
     onAuthInvalid: handleAuthInvalid,
   })
+  const criticalReturnExchangeClient = { apiFetch, prepareCriticalRequest, completeCriticalRequest }
   
   
 
@@ -8118,17 +8120,7 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const payload = { comment: 'Отменено из интерфейса Cloudflare' }
-      const criticalKey = `return-cancel:${entry.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/returns/${entry.id}/cancel`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Отмена возврата')
-      if (!response.ok) throw new Error(result.message || `Cancel return failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
+      const result = await cancelReturnCriticalRequest(criticalReturnExchangeClient, entry.id)
       if (result.order) {
         upsertOrderInState(result.order)
         setReturnSelectedOrderId(result.order.id)
@@ -8185,16 +8177,7 @@ function removeDebtPayment(index: number) {
         expectedPaymentMethod: entry.paymentMethod || '',
         expectedComment: entry.comment || '',
       }
-      const criticalKey = `exchange-financial-correct:${entry.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/exchanges/${entry.id}/financials`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; unchanged?: boolean }>(response, 'Исправление денег обмена')
-      if (!response.ok) throw new Error(result.message || `Exchange correction failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
+      const result = await correctExchangeFinancialCriticalRequest(criticalReturnExchangeClient, entry.id, payload)
       if (result.order) upsertOrderInState(result.order)
       invalidateFinanceReadCaches()
       await Promise.allSettled([
@@ -8223,17 +8206,7 @@ function removeDebtPayment(index: number) {
     setError(null)
     setMessage(null)
     try {
-      const payload = { comment: 'Отменено из интерфейса Cloudflare' }
-      const criticalKey = `exchange-cancel:${entry.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/exchanges/${entry.id}/cancel`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(response, 'Отмена обмена')
-      if (!response.ok) throw new Error(result.message || `Cancel exchange failed: ${response.status}`)
-      completeCriticalRequest(criticalKey, critical.requestId)
+      const result = await cancelExchangeCriticalRequest(criticalReturnExchangeClient, entry.id)
       if (result.order) {
         upsertOrderInState(result.order)
         setSelectedOrderId(result.order.id)
