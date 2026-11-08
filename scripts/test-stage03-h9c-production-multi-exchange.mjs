@@ -57,7 +57,12 @@ check(batch.includes('right.delta - left.delta'), 'H9C Production safe child exe
 check(batch.includes("financialAction === 'refund' && position === 0"), 'H9C Production refund ordering missing')
 check(batch.includes("financialAction === 'extra_payment' && position === orderedPairs.length - 1"), 'H9C Production extra-payment ordering missing')
 check(batch.includes('stockGroups') && batch.includes('group.requestedQuantity'), 'H9C Production repeated-SKU stock preflight missing')
-check(batch.includes('observedAssigned') && batch.includes('observedPhysicalQuantity = null'), 'H9C Production physical observation dedupe missing')
+check(batch.includes('group.requestedQuantity +=') && batch.includes('group.allConfirmed = group.allConfirmed && physicalIssueConfirmed')
+  && batch.includes('physical < group.requestedQuantity && !group.allConfirmed'),
+  'H9C aggregate identical-SKU demand and confirmation preflight must be enforced before any child Exchange')
+check(batch.includes('observedPhysicalQuantity != null') && batch.includes('observedPhysicalQuantity = null')
+  && batch.includes('issuePossessionConfirmed = pair.physicalIssueConfirmed'),
+  'H9C no longer accepts full-SKU count, and only concrete possession proof reaches each child')
 check(batch.includes('const childRequestId =') && batch.includes('criticalOperation.requestId') && batch.includes(':p'), 'H9C Production deterministic child idempotency missing')
 check(batch.includes('await createExchange(db, {'), 'H9C Production batch does not reuse proven single-exchange mutation path')
 check(batch.includes('completedPairs}_done') && batch.includes('advanceCriticalOperation(db, criticalOperation'), 'H9C Production resumable progress checkpoint missing')
