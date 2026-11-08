@@ -502,12 +502,14 @@ export function workshopCustomerIdentity(task: Pick<WorkshopTaskRecord, 'custome
 
 
 export function workshopDetailRows(task: WorkshopTaskRecord) {
+  const material = normalizeSuggestion(task.material) === 'СТАНДАРТ' ? '' : String(task.material || '').trim()
+  const length = normalizeSuggestion(task.length) === 'СТАНДАРТ' ? '' : String(task.length || '').trim()
   return [
     { label: 'Тип', value: workshopAudienceLabel(task) },
     { label: 'Пол', value: task.gender || 'Не указано' },
     { label: 'Цвет', value: task.color || 'Не указано' },
-    { label: 'Материал', value: task.material || 'Не указано' },
-    { label: 'Длина', value: task.length || 'Не указано' },
+    ...(material ? [{ label: 'Материал', value: material }] : []),
+    ...(length ? [{ label: 'Длина', value: length }] : []),
     { label: workshopAudienceLabel(task) === 'Детский' ? 'Возраст' : 'Размер', value: task.size || 'Не указано' },
   ]
 }
@@ -518,8 +520,8 @@ export function workshopInvoiceProductTitle(task: WorkshopTaskRecord) {
   const values = [
     task.productName,
     task.gender,
-    task.material,
-    task.length,
+    normalizeSuggestion(task.material) === 'СТАНДАРТ' ? '' : task.material,
+    normalizeSuggestion(task.length) === 'СТАНДАРТ' ? '' : task.length,
     workshopAudienceLabel(task),
   ]
     .map((value) => String(value || '').trim())
@@ -554,7 +556,7 @@ export function formatOrderItemDetails(item: Pick<OrderItem, 'audienceType' | 'g
   const normalizedType = audienceType === 'ДЕТСКИЙ' || gender === 'ДЕТСКИЙ' ? 'ДЕТСКИЙ' : ''
 
   const material = normalizeSuggestion(item.material) === 'СТАНДАРТ' ? '' : item.material
-  const length = normalizeSuggestion(item.length) === 'СТАНДАРТ' ? 'Обычная длина' : item.length
+  const length = normalizeSuggestion(item.length) === 'СТАНДАРТ' ? '' : item.length
   const sizeValue = normalizeSuggestion(item.size)
   const size = ['БЕЗ РАЗМЕРА', 'БЕЗРАЗМЕРА', 'Б/Р'].includes(sizeValue) ? 'Без размера' : item.size
   return [normalizedType, normalizedGender, item.color, material, length, size]
