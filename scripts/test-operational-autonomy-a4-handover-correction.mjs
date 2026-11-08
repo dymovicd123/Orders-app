@@ -44,7 +44,16 @@ try {
   check(app.includes('/shipping/correct'), 'frontend does not use dedicated correction endpoint')
   check(table.includes('Снять «Отправлен»'), 'sent-order correction action not visible in Orders table')
   check(!table.includes('активная обменённая позиция'), 'ordinary Orders UI exposes exchange implementation detail')
-  check(table.includes('Сначала исправьте возврат товара'), 'standalone item return blocker is not explained')
+  const { projectOrderOperationalState } = await import('../src/app/orderOperationalProjection.ts')
+  const operationOrder = {order_status:'active', shipping_status:'sent', items:[],
+    has_committed_item_return:true, committed_return_count:1, committed_exchange_count:0}
+  check(projectOrderOperationalState(operationOrder).canCorrectShipping === false,
+    'Committed item Return must block a false-shipment correction without undoing physical Return')
+  check(projectOrderOperationalState({...operationOrder,
+    has_committed_item_return:false,committed_return_count:0,committed_exchange_count:1}).canCorrectShipping === true,
+    'An active Exchange must still allow correction of a false sent mark on the current replacement')
+  check(table.includes('projection.canCorrectShipping &&'),
+    'Orders table must use the shared return/exchange-safe correction permission')
   check(table.includes("order.shipping_status === 'sent'"), 'correction action is not scoped to sent orders')
 
   console.log('Operational Autonomy A4 handover correction checks passed.')
