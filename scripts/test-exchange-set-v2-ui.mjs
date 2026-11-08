@@ -1,9 +1,12 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const smart = fs.readFileSync('src/features/sections/OrderExchangeSmartSection.tsx', 'utf8')
 const legacyHost = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
+const setCreation = fs.readFileSync('src/app/exchangeSetCreationOperation.ts', 'utf8')
 const types = fs.readFileSync('src/app/types.ts', 'utf8')
 const utils = fs.readFileSync('src/app/utils.ts', 'utf8')
 const workspace = fs.readFileSync('src/app/controllers/useWorkspaceViewModel.tsx', 'utf8')
@@ -50,7 +53,117 @@ check(smart.includes("item.sourceType === 'workshop'") && smart.includes('Сро
 check(smart.includes('isSetExchange') && smart.includes('entry.oldItems') && smart.includes('entry.newItems'), 'Set exchange history does not render full old/new collections')
 check(smart.includes('removedHistoryQuantity') && smart.includes('addedHistoryQuantity') && smart.includes('Убрали: {removedHistoryQuantity} шт. · Добавили: {addedHistoryQuantity} шт.'), 'Exchange history summary still counts rows or falsely claims never-issued goods were returned by the client')
 check(smart.includes('Убираем <strong>{removedQuantity} шт.</strong>') && !smart.includes('Возвращает <strong>{removedQuantity} шт.</strong>'), 'Final summary falsely describes never-issued old goods as customer returns')
-check(smart.includes('Отменить обмен') && app.includes("apiFetch('/api/exchanges/set'"), 'Smart create/cancel workflow is not connected end-to-end')
+check(smart.includes('Отменить обмен') && app.includes('prepareExchangeSetCreation(exchangeSelectedOrder, exchangeDraft)') && app.includes('submitExchangeSetCreation(') && setCreation.includes("client.apiFetch('/api/exchanges/set'"), 'Smart create/cancel workflow is not connected end-to-end')
 check(css.includes('.exchange-old-card.is-selected') && css.includes('.exchange-old-order-info') && css.includes('.exchange-new-primary-fields') && css.includes('.exchange-money-result') && css.includes('.exchange-return-group') && css.includes('@media(max-width:720px)'), 'Smart Exchange lacks quantity-first, progressive, settlement, intake, or mobile styling')
+
+
+// Compile and execute the exact Set V2 UI preparation/POST module used by App.
+// These cases prove commercial and physical invariants without a Production D1.
+const compiled = await build({
+  entryPoints: ['src/app/exchangeSetCreationOperation.ts'], bundle: true,
+  platform: 'node', format: 'esm', target: 'es2022', write: false, logLevel: 'silent',
+})
+const setModule = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'))
+const { prepareExchangeSetCreation, submitExchangeSetCreation } = setModule
+const oldItem = {
+  id: 200, productName: 'СТАРЫЙ ШАПАН', quantity: 2, availableOperationQuantity: 2,
+  unitPrice: 3000, lineTotal: 6000, catalogPriceSnapshot: 3500, sourceType: 'warehouse',
+}
+const order = {
+  id: 38, external_id: 'SET-V2-SAFETY', pricing_mode: 'itemized_v1',
+  total_amount: 10000, received_amount: 7000, return_amount: 0, items: [oldItem],
+}
+const newItem = {
+  productName: 'НОВЫЙ ШАПАН', quantity: 1, unitPrice: 5000,
+  catalogPriceSnapshot: 5200, sourceType: 'warehouse', stockObservationEnabled: false,
+}
+const draft = {
+  workflowMode: 'set_v2', exchangeDate: '2026-11-08',
+  oldSelections: [{orderItemId:200, quantity:1, physicalState:'pending'}],
+  newItems: [{draftKey:'n1',item:newItem}],
+  paymentAmount: 2000, paymentMethod:'KASPI', refundMethod:'',
+  extraPaymentEnabled:false, extraPaymentAmount:0, extraPaymentMethod:'',
+  extraRefundEnabled:false, extraRefundAmount:0, extraRefundMethod:'',
+  comment:'тест набора',
+}
+const valid = prepareExchangeSetCreation(order,draft)
+assert.equal(valid.ok,true)
+assert.equal(valid.projectedTotal,12000)
+assert.deepEqual(valid.payload.oldItems,[{
+  orderItemId:200,quantity:1,physicalState:'pending',
+  expectedActiveQuantity:2,expectedUnitPrice:3000,expectedLineTotal:6000,
+  expectedCatalogPriceSnapshot:3500,
+}])
+assert.equal(valid.payload.newItems[0].observedPhysicalQuantity,null)
+assert.equal(valid.payload.newItems[0].issuePossessionConfirmed,false)
+assert.equal(valid.payload.expectedOrderTotal,10000)
+assert.deepEqual(valid.payload.paymentParts,[{method:'KASPI',amount:2000}])
+assert.deepEqual(valid.payload.refundParts,[])
+assert.deepEqual(prepareExchangeSetCreation(order,{...draft,newItems:[{draftKey:'n1',item:{...newItem,stockObservationEnabled:true}}]}).payload.newItems[0].issuePossessionConfirmed,true)
+assert.match(prepareExchangeSetCreation(order,{...draft,oldSelections:[]}).error,/хотя бы один товар/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,newItems:[]}).error,/хотя бы один товар/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,oldSelections:[{orderItemId:999,quantity:1,physicalState:'pending'}]}).error,/не найдена/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,oldSelections:[{orderItemId:200,quantity:3,physicalState:'pending'}]}).error,/доступно 2 шт/i)
+assert.match(prepareExchangeSetCreation({...order,items:[{...oldItem,lineTotal:0}]},draft).error,/устарели ценовые данные/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,newItems:[{draftKey:'n1',item:{...newItem,unitPrice:undefined}}]}).error,/укажите цену продажи/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,newItems:[{draftKey:'n1',item:{...newItem,catalogPriceSnapshot:-1}}]}).error,/цена Каталога изменилась/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,paymentAmount:6000}).error,/больше долга/i)
+assert.match(prepareExchangeSetCreation(order,{...draft,paymentMethod:''}).error,/способ оплаты/i)
+assert.match(prepareExchangeSetCreation(order,{
+  ...draft,extraPaymentEnabled:true,extraPaymentAmount:500,extraPaymentMethod:'kaspi',
+}).error,/второго способа доплаты/i,'Duplicate payment method should be rejected')
+const splitPayment = prepareExchangeSetCreation(order,{
+  ...draft,extraPaymentEnabled:true,extraPaymentAmount:500,extraPaymentMethod:'ТЕРМИНАЛ',
+})
+assert.equal(splitPayment.ok,true)
+assert.deepEqual(splitPayment.payload.paymentParts,[
+  {method:'KASPI',amount:1500},{method:'ТЕРМИНАЛ',amount:500},
+])
+const refundOrder = {...order,received_amount:15000}
+const refund = prepareExchangeSetCreation(refundOrder,{
+  ...draft,paymentAmount:0,paymentMethod:'',refundMethod:'KASPI',
+  extraRefundEnabled:true,extraRefundAmount:1000,extraRefundMethod:'НАЛИЧНЫЕ',
+})
+assert.equal(refund.ok,true)
+assert.equal(refund.projectedTotal,12000)
+assert.deepEqual(refund.payload.paymentParts,[])
+assert.deepEqual(refund.payload.refundParts,[
+  {method:'KASPI',amount:2000},{method:'НАЛИЧНЫЕ',amount:1000},
+])
+assert.match(prepareExchangeSetCreation(refundOrder,draft).error,/Уберите оплату сейчас/i)
+assert.match(prepareExchangeSetCreation(refundOrder,{...draft,paymentAmount:0,refundMethod:''}).error,/Выберите способ возврата денег/i)
+
+let attempt=0, drops=true
+const sent=[], completed=[], pending=new Map()
+const client = {
+  prepareCriticalRequest(key,payload) {
+    const fingerprint=JSON.stringify(payload)
+    let item=pending.get(key)
+    if(!item||item.fingerprint!==fingerprint){item={fingerprint,requestId:'set-test-'+(++attempt)};pending.set(key,item)}
+    return {requestId:item.requestId,payload:{...payload,requestId:item.requestId}}
+  },
+  completeCriticalRequest(key,requestId){
+    completed.push({key,requestId})
+    if(pending.get(key)?.requestId===requestId)pending.delete(key)
+  },
+  async apiFetch(url,init){
+    sent.push({url,method:init.method,header:init.headers['X-Idempotency-Key'],body:JSON.parse(init.body)})
+    if(drops){drops=false;throw new Error('Set network unknown')}
+    return new Response(JSON.stringify({
+      ok:true,oldItemCount:1,newItemCount:1,finalTotalAmount:12000,
+      paymentAmount:2000,refundAmount:0,remainingDebt:3000,
+    }),{status:200,headers:{'Content-Type':'application/json'}})
+  },
+}
+await assert.rejects(()=>submitExchangeSetCreation(client,valid.payload),/Set network unknown/)
+assert.equal(completed.length,0,'Unknown result must preserve the original requestId')
+const accepted=await submitExchangeSetCreation(client,valid.payload)
+assert.equal(accepted.remainingDebt,3000)
+assert.deepEqual(sent.map(x=>x.url),['/api/exchanges/set','/api/exchanges/set'])
+assert.deepEqual(sent.map(x=>x.method),['POST','POST'])
+assert.equal(sent[0].header,sent[1].header,'Set replay must reuse requestId')
+assert.deepEqual(sent[1].body,{...valid.payload,requestId:sent[1].header})
+assert.deepEqual(completed,[{key:'exchange-set-create:38',requestId:sent[1].header}])
+console.log('EXCHANGE_SET_V2_PREPARATION_AND_CRITICAL_REPLAY_PASS')
 
 console.log('EXCHANGE SET V2 UI PASSED — itemized exchanges use order-quantity-first old cards, progressive replacement fields, plain-language money settlement, full-arrival intake, and responsive manager-first controls.')
