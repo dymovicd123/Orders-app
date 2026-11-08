@@ -7,6 +7,7 @@ const tests=[
  'scripts/test-stage02-post-review-resolver-return-ux.mjs',
  'scripts/test-return-unissued-physical-safety-r2.mjs',
  'scripts/test-exchange-set-v2-ui.mjs',
+ 'scripts/test-stage03-h9c-production-multi-exchange.mjs',
  'scripts/test-main-resolver-opposite-gender-20261022.mjs',
  'scripts/test-main-resolver-actionable-20261022.mjs',
  'scripts/test-catalog-resolver-r10-acceptance-matrix.mjs',
