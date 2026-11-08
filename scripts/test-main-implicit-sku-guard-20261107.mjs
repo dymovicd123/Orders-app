@@ -6,7 +6,13 @@ import {resolveCatalogProductAndVariantV2} from '../worker/domains/order-reserva
 
 const code=path=>fs.readFileSync(path,'utf8')
 const order=code('worker/domains/orders-write.ts')
-const exchange=code('worker/domains/returns-exchanges.ts')
+const exchange=code('worker/domains/order-exchange-creation.ts')
+  + code('worker/domains/order-exchange-set-v2.ts')
+const publicExchange=code('worker/domains/returns-exchanges.ts')
+assert(publicExchange.includes("export { createExchange } from './order-exchange-creation.ts'"),
+ 'Legacy Exchange API must continue to use the guarded standalone creation module')
+assert(publicExchange.includes('createExchangeSetV2') && publicExchange.includes("from './order-exchange-set-v2.ts'"),
+ 'Set V2 API must continue to use the guarded Set V2 creation module')
 const background=code('worker/domains/catalog-review.ts')
 const sales=[
   ['order create/retry/edit',order,4],
