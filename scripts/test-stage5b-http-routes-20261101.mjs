@@ -226,6 +226,69 @@ try{
  await api('PATCH','/api/orders/'+exchangedId+'/shipping',{shippingStatus:'sent',confirmAlreadyIssued:true},409)
  assert.deepEqual({...snapshot()},oldStock,'Invalid status-only attempts may not change any physical stock')
  assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c,movementsAtStart)
+
+ // Verify a confirmed dispatch for the EXACT known SKU on zero tracked stock.
+ // This real authenticated Worker test uses a fully disposable migrated SQLite.
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9732,9521,'МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48','adult',1)").run()
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9733,9521,'МУЖ','КРАСНЫЙ','СТАНДАРТ','СТАНДАРТ','52','adult',1)").run()
+ sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9742,'warehouse',9521,9732,'STAGE 5 TEST WAREHOUSE','МУЖ','СИНИЙ','СТАНДАРТ','СТАНДАРТ','48',0,0)").run()
+ sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9743,'warehouse',9521,9733,'STAGE 5 TEST WAREHOUSE','МУЖ','КРАСНЫЙ','СТАНДАРТ','СТАНДАРТ','52',0,2)").run()
+ for(const [id,itemId,variant,status,itemStatus,reason] of [
+   [9753,9773,9732,'unresolved','pending_reservation','concurrent_shortage'],
+   [9754,9774,9733,'active','reserved',null],
+ ]){
+   sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(?,?,'2026-11-01',9501,'active','warehouse','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run(id,'STAGE5-CONFIRMED-'+id)
+   sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,?,9521,?,'STAGE 5 TEST WAREHOUSE',1,1000,1000,0,'warehouse',?,'2026-11-01T00:00:00Z')").run(itemId,id,variant,itemStatus)
+   sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,unresolved_reason,created_at,updated_at) VALUES(?,?,'warehouse',9521,?,1,?,?,'2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run(id,itemId,variant,status,reason)
+ }
+ const pendingPlan=await api('GET','/api/orders/9753/shipping/plan')
+ assert.equal(pendingPlan.selectedQuantity,1)
+ assert.equal(pendingPlan.lines[0].reservationStatus,'unresolved')
+ assert.equal(pendingPlan.lines[0].needsStockConfirmation,true)
+ const pendingSelection={requestId:'stage5-confirm-pending-stock-01',items:[{orderItemId:9773,quantity:1}]}
+ const asked=await api('POST','/api/orders/9753/shipping/dispatches',pendingSelection,409)
+ assert.equal(asked.code,'dispatch_stock_confirmation_required')
+ assert.deepEqual(asked.items.map(x=>[x.source,x.variantId,x.expectedQuantity,x.operationQuantity]),
+   [['warehouse',9732,0,1]])
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_dispatches WHERE order_id=9753').get().n,0)
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9773').get().status,'unresolved')
+ const stale=await api('POST','/api/orders/9753/shipping/dispatches',{
+   ...pendingSelection,stockConfirmations:[{source:'warehouse',variantId:9732,expectedQuantity:1,operationQuantity:1}],
+ },409)
+ assert.equal(stale.ok,false)
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_operation_evidence WHERE variant_id=9732').get().n,0)
+ const confirmed=await api('POST','/api/orders/9753/shipping/dispatches',{
+   ...pendingSelection,stockConfirmations:[{source:'warehouse',variantId:9732,expectedQuantity:0,operationQuantity:1}],
+ })
+ assert.equal(confirmed.shippedQuantity,1)
+ assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9742').get()},{quantity:0,reserved_quantity:0})
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9773').get().status,'fulfilled')
+ assert.equal(sql.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=9773').get().stock_writeoff_status,'fulfilled')
+ assert.equal(sql.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_id='dispatch:stage5-confirm-pending-stock-01:item:9773'").get().quantity_delta,0)
+ const evidence=sql.prepare("SELECT tracked_physical_before,confirmed_operation_quantity,explained_quantity,unexplained_quantity FROM inventory_operation_evidence WHERE evidence_key='dispatch:stage5-confirm-pending-stock-01:warehouse:9732'").get()
+ assert.deepEqual({...evidence},{tracked_physical_before:0,confirmed_operation_quantity:1,explained_quantity:0,unexplained_quantity:1})
+ assert.equal((await api('POST','/api/orders/9753/shipping/dispatches',pendingSelection)).alreadyCommitted,true)
+ assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_operation_evidence WHERE variant_id=9732').get().n,1)
+ const undoId=sql.prepare('SELECT di.id AS id FROM order_dispatch_items di JOIN order_dispatches d ON d.id=di.dispatch_id WHERE d.order_id=9753').get().id
+ const undo=await api('POST','/api/orders/9753/shipping/dispatch-items/'+undoId+'/correct',{
+   requestId:'stage5-confirm-pending-undo-01',reason:'Verify zero tracked stock cannot be restored',
+ })
+ assert.equal(undo.physicalRestoredQuantity,0)
+ assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9742').get()},{quantity:0,reserved_quantity:0})
+ const activePlan=await api('GET','/api/orders/9754/shipping/plan')
+ assert.equal(activePlan.selectedQuantity,1)
+ assert.equal(activePlan.lines[0].reservationStatus,'active')
+ const activeSelection={requestId:'stage5-confirm-active-stock-01',items:[{orderItemId:9774,quantity:1}]}
+ assert.equal((await api('POST','/api/orders/9754/shipping/dispatches',activeSelection,409)).code,'dispatch_stock_confirmation_required')
+ const activeSent=await api('POST','/api/orders/9754/shipping/dispatches',{
+   ...activeSelection,stockConfirmations:[{source:'warehouse',variantId:9733,expectedQuantity:0,operationQuantity:1}],
+ })
+ assert.equal(activeSent.shippedQuantity,1)
+ assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9743').get()},{quantity:0,reserved_quantity:1},
+   'Another buyer reservation must never be consumed by a confirmed shipment')
+ assert.equal(sql.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_id='dispatch:stage5-confirm-active-stock-01:item:9774'").get().quantity_delta,0)
+ assert.equal(sql.prepare("SELECT unexplained_quantity FROM inventory_operation_evidence WHERE evidence_key='dispatch:stage5-confirm-active-stock-01:warehouse:9733'").get().unexplained_quantity,1)
+ console.log('BRANCH2_CONFIRMED_SHORTAGE_REAL_HTTP_PASS: unresolved/active shortages, stale confirmation, bounded movements, other holds, retry and exact undo')
  console.log('BRANCH2_PRIOR_ISSUED_REAL_HTTP_PASS: evidence, atomic audit rollback, zero stock writes, correction, retry, mixed/unknown/returned/exchanged/newer guards')
  console.log('STAGE5_REAL_WORKER_HTTP_SELECTED_1_OF_3_UNDO_REPLAY_LEGACY_GUARD_AND_RETURN_PASS')
 }finally{sql.close()}
