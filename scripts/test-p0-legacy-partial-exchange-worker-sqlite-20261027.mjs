@@ -10,6 +10,9 @@ import { createReturn as legacyCreateReturn, noStandaloneReturnSql as legacyCapa
 import { createReturn as isolatedCreateReturn } from '../worker/domains/order-return-creation.ts'
 import { listExchanges as legacyListExchanges } from '../worker/domains/returns-exchanges.ts'
 import { listExchanges as isolatedListExchanges } from '../worker/domains/order-exchange-list.ts'
+import { createExchange as extractedCreateExchange } from '../worker/domains/order-exchange-creation.ts'
+import { createExchange as publicCreateExchange } from '../worker/domains/returns-exchanges.ts'
+assert.strictEqual(publicCreateExchange,extractedCreateExchange,'Worker legacy Exchange POST must call unchanged extracted creation implementation')
 import { receiveReturnedItem as publicReceiveReturnedItem } from '../worker/domains/returns-exchanges.ts'
 import { receiveReturnedItem as extractedReceiveReturnedItem } from '../worker/domains/order-returned-item-receipt.ts'
 assert.strictEqual(publicReceiveReturnedItem, extractedReceiveReturnedItem,
