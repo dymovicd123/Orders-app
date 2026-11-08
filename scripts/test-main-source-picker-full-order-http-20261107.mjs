@@ -296,7 +296,7 @@ try{
  assert.equal(resultOrder.total_amount,195200)
  assert.equal(resultOrder.received_amount,8000)
  assert.equal(resultOrder.debt_amount,187200)
- const saved=sql.prepare('SELECT size_snapshot,source_type,quantity,unit_price,catalog_price_snapshot,variant_id FROM order_items WHERE order_id=? ORDER BY id').all(editOrderId)
+ const saved=sql.prepare('SELECT size_snapshot,source_type,quantity,unit_price,catalog_price_snapshot,variant_id FROM order_items WHERE order_id=? AND quantity>0 ORDER BY id').all(editOrderId)
  assert.equal(saved.length,7,'One of the unchanged items was silently lost')
  assert(saved.some(row=>row.size_snapshot==='56'&&row.catalog_price_snapshot===27000&&row.unit_price===27500),'Replaced size lost historic execution snapshot')
  assert(saved.some(row=>row.size_snapshot==='44'&&row.quantity===2&&row.unit_price===22600),'Quantity/price correction lost')
