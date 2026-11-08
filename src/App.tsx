@@ -43,6 +43,7 @@ import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
+import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
 import { loadCompleteInventorySnapshot } from './features/inventory/loadCompleteInventorySnapshot'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
@@ -4374,6 +4375,8 @@ function App() {
         comment: createDraft.comment,
         items: createDraft.items.map((item) => ({
           productName: item.productName,
+          catalogVariantId: item.catalogVariantId || undefined,
+          manualCatalogEntry: Boolean(item.manualCatalogEntry),
           audienceType: item.audienceType || 'ВЗРОСЛЫЙ',
           gender: item.gender || null,
           color: item.color,
@@ -6411,9 +6414,50 @@ function removeDebtPayment(index: number) {
     }finally{setSavingOrder(false)}
   }
 
+  async function fetchCompleteOrderForEditing(order: OrderRecord): Promise<OrderRecord> {
+    // The list is an overview, never the source of truth for a complete itemized rewrite.
+    const response = await apiFetch(`/api/orders/${order.id}`, { cache: 'no-store' })
+    if (response.headers.get('X-Orders-App-Stale') === '1') {
+      throw new Error('Не удалось получить свежий состав заказа. Повторите открытие.')
+    }
+    const result = await readJsonResponse<{ ok?: boolean; order?: OrderRecord; message?: string }>(response, 'Полный состав заказа')
+    if (!response.ok || result.ok === false || !result.order || result.order.id !== order.id) {
+      throw new Error(result.message || 'Не удалось загрузить полный заказ. Редактирование не открыто.')
+    }
+    const fullOrder = result.order
+    const expectedCount = Math.max(order.items?.length || 0, Number(order.item_count || 0))
+    if ((fullOrder.items?.length || 0) < expectedCount) {
+      throw new Error('Получен неполный состав заказа. Редактирование остановлено, чтобы не потерять товары.')
+    }
+    return { ...fullOrder, item_count: fullOrder.items.length }
+  }
+
+  async function expandOrderItems(order: OrderRecord, visibleCount: number) {
+    const total = Math.max(order.items.length, Number(order.item_count || 0))
+    const wanted = Math.min(total, Math.max(3, visibleCount) + 5)
+    if (order.items.length >= wanted) {
+      setExpandedOrderItemCounts((current) => ({ ...current, [order.id]: wanted }))
+      return
+    }
+    try {
+      const fresh = await fetchCompleteOrderForEditing(order)
+      upsertOrderInState(fresh)
+      setExpandedOrderItemCounts((current) => ({ ...current, [order.id]: Math.min(fresh.items.length, wanted) }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось показать остальные товары.')
+    }
+  }
+
   async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
     if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
-    const projection = await getOrderOperationalProjection(order)
+    let completeOrder: OrderRecord
+    try {
+      completeOrder = await fetchCompleteOrderForEditing(order)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось открыть полный заказ.')
+      return
+    }
+    const projection = await getOrderOperationalProjection(completeOrder)
     if (!projection.canEdit) {
       setSelectedOrderId(order.id)
       setEditorOpen(false)
@@ -6423,14 +6467,15 @@ function removeDebtPayment(index: number) {
       return
     }
     setEditorReturnSector(returnSector)
-    setEditorOrderOverride(order)
-    setSelectedOrderId(order.id)
-    setEditorDraft(createEditorDraft(order))
+    upsertOrderInState(completeOrder)
+    setEditorOrderOverride(completeOrder)
+    setSelectedOrderId(completeOrder.id)
+    setEditorDraft(createEditorDraft(completeOrder))
     setActiveSector('orders')
     setOrderPanel('edit')
     setEditorOpen(true)
     window.location.hash = '#editor'
-    if (order.pricing_mode === 'itemized_v1') {
+    if (completeOrder.pricing_mode === 'itemized_v1') {
       void Promise.all([
         loadCatalogData(true),
         // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here
@@ -6630,7 +6675,9 @@ function removeDebtPayment(index: number) {
             size: item.size || null,
             quantity: Number(item.quantity || 0),
             unitPrice: item.unitPrice,
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+            catalogPriceSnapshot: historicalCatalogSnapshotForEdit(
+              originalItemsById.get(Number(item.orderItemId || 0)), item,
+            ),
             sourceType: item.sourceType || 'warehouse',
             workshopComment: item.workshopComment || null,
             workshopUrgent: Boolean(item.workshopUrgent),
@@ -9029,7 +9076,7 @@ function removeDebtPayment(index: number) {
         </DeferredSection>
 
         <DeferredSection active={activeSector === 'orders' && orderPanel === 'list'} label="Список заказов">
-        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text),
+        <OrdersTableSection ctx={{ correctMistakenOrderShipping, correctOrderMetadata, correctRecordedOrderItemPrice, correctRecordedOrderItemPrices, loadRetiredExchangePriceOptions, correctRecordedPaymentMethod, correctRetiredExchangePrice, loadExchangeCancellationPreview, loadOrderExchangeCancellationPlan, cancelOrderExchangeChain, loadOrderReturnCancellationChoices, cancelOrderReturnChoice, loadAdminOrderDeletePreview, deleteOrderAsAdmin, executeAdminDeleteChain, confirmAdminDeletePhysicalBeforeChain, expandedOrderItemCounts, expandOrderItems, filters, formatDateShort, formatMoney, handleEditOrder, handleOpenDebt, handleOpenExchange, handleOpenReturn, isAdmin, ManagerBadge, markOrderSentToClient, apiFetch, askActionConfirmation: async (text: string) => window.confirm(text),
         onShipmentChange: async () => { invalidateInventoryStockCaches(true); await loadDashboard(false) },
         setMessage, openOrderStockHandover, normalizeSuggestion, ordinaryOrdersSeparated: true, orderFinanceBusy: ordersFinanceBusy, orderFinanceReport: ordersFinanceReport, orderPanelStyle, orders, restoreArchivedOrder, savingOrder, sectorStyle, selectedOrderId, setExpandedOrderItemCounts, shippingStatusLabel, suggestionValues, busy, changeOrderPage, orderPageInfo, summarizeOrderItemLines, summarizeOrderPaymentLines, summary, waitingDaysLabel }} />
         </DeferredSection>

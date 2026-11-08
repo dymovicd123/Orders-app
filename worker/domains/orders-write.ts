@@ -13,6 +13,7 @@ import { assertOrderItemInputs, assertOrderPaymentInputs, assertOrderTotalInput,
 import { assertItemizedOrderMoneyNotOverpaid, buildItemizedOrderWritePlan, ItemizedPricingValidationError, type ItemizedOrderWritePlan } from './order-pricing.ts'
 import { assertCreateOrderShortageDecisions, catalogOrderInputKey, fulfillOrderReservationsV2, getOrderShipmentInventoryBlockers, inspectOrderRetiredCatalogIdentityV2, OrderRetiredCatalogConfirmationError, OrderStockShortageError, orderShipmentInventoryBlockerMessage, releaseOrderReservationsV2, reserveOrderItemV2, resolveCatalogProductAndVariant, resolveWorkshopCatalogProductOnly } from './order-reservations.ts'
 import { canonicalItemProjection, fetchOrderRelations, isOrderPricingFoundationEnabled, orderItemAvailableOperationQuantity, workshopTaskStatusForOrderItem } from './orders-relations.ts'
+import { hydratePickedOrderItems } from './order-source-picker.ts'
 import { upsertCustomerIdentityForOrderCreate } from './references.ts'
 import { isInventoryAutoWriteoffEnabled, recalculateCustomersAfterStorageCleanup } from './storage.ts'
 import { assertWorkshopTaskDetailSchema, ensureOrderItemWorkshopColumn } from './workshop-schema.ts'
@@ -421,7 +422,7 @@ export async function insertOrderContent(
 
   for (const [itemIndex, item] of items.entries()) {
     const initiallyResolved = preResolvedCatalog?.[itemIndex]
-      || (item.isWorkshop ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp));
+      || ((item.isWorkshop || item.manualCatalogEntry) ? await resolveWorkshopCatalogProductOnly(db, item) : await resolveCatalogProductAndVariant(db, item, timestamp, { createMissing: false }));
     // An order may be validated minutes before the source SKU is consolidated.
     // Resolve only the audited exact-SKU lineage here, immediately before the
     // order-item INSERT. Never resurrect the retired variant or guess another SKU.
@@ -742,7 +743,7 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const rawPayments = Array.isArray(input.payments) ? input.payments : [];
         assertOrderItemInputs(rawItems);
         assertOrderPaymentInputs(rawPayments);
-        const normalizedItems = normalizeOrderItems(rawItems, sourceType);
+        const normalizedItems = await hydratePickedOrderItems(db, normalizeOrderItems(rawItems, sourceType));
         const normalizedPayments = normalizeOrderPayments(rawPayments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
@@ -772,9 +773,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
               variantId: toInt(mappedItem.variant_id, 0) || null,
             });
           } else {
-            preResolvedCatalog.push(item.isWorkshop
-              ? await resolveWorkshopCatalogProductOnly(db, item)
-              : await resolveCatalogProductAndVariant(db, item, cleanText(existingOrder.created_at) || requestedAt));
+            preResolvedCatalog.push(item.catalogVariantId>0
+              ? {productId:item.catalogProductId,variantId:item.catalogVariantId}
+              : (item.isWorkshop || item.manualCatalogEntry)
+                ? await resolveWorkshopCatalogProductOnly(db, item)
+                : await resolveCatalogProductAndVariant(db, item, cleanText(existingOrder.created_at) || requestedAt, { createMissing: false }));
           }
         }
 
@@ -859,9 +862,9 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         // Older clients may still submit observedPhysicalQuantity: ignore it rather than
         // silently changing the Warehouse/Boutique truth. A shortage is kept as a
         // negative available balance and surfaced for warehouse attention.
-        let normalizedItems = normalizeOrderItems(items, sourceType).map(item => (
+        let normalizedItems = await hydratePickedOrderItems(db, normalizeOrderItems(items, sourceType).map(item => (
           item.isWorkshop ? item : { ...item, observedPhysicalQuantity: null, shortageAcknowledged: true }
-        ));
+        )));
         let normalizedPayments = normalizeOrderPayments(payments, orderDate).map(payment => (
           payment.paymentKind === 'primary'
             ? { ...payment, paymentDate: orderDate }
@@ -975,9 +978,11 @@ export async function createOrder(db: D1Database, input: OrderInput, actor?: Aut
         const observedByVariant = new Map<string, number>();
         for (const item of normalizedItems) {
           const allowRetiredRecreate = !item.isWorkshop && confirmedRetiredKeys.has(catalogOrderInputKey(item));
-          const resolved = item.isWorkshop
-            ? await resolveWorkshopCatalogProductOnly(db, item)
-            : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate });
+          const resolved = item.catalogVariantId>0
+            ? { productId:item.catalogProductId,variantId:item.catalogVariantId }
+            : (item.isWorkshop || item.manualCatalogEntry)
+              ? await resolveWorkshopCatalogProductOnly(db, item)
+              : await resolveCatalogProductAndVariant(db, item, createdAt, { allowRetiredRecreate, createMissing: false });
           preResolvedCatalog.push(resolved);
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {
@@ -1906,9 +1911,9 @@ export async function updateOrderCritical(
         rewritePreResolvedCatalog = [];
         const observedByVariant = new Map<string, number>();
         for (const item of nextItems) {
-          const resolved = item.isWorkshop
+          const resolved = item.isWorkshop || item.manualCatalogEntry
             ? await resolveWorkshopCatalogProductOnly(db, item)
-            : await resolveCatalogProductAndVariant(db, item, timestamp);
+            : await resolveCatalogProductAndVariant(db, item, timestamp, { createMissing: false });
           rewritePreResolvedCatalog.push({ productId: resolved.productId, variantId: resolved.variantId });
           if (item.observedPhysicalQuantity === null) continue;
           if (!resolved.productId || !resolved.variantId) {

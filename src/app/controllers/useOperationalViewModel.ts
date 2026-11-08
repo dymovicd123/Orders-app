@@ -245,9 +245,10 @@ const summary = useMemo(() => {
 
   const selectedOrder = useMemo(() => {
     if (!selectedOrderId) return null
+    // A freshly fetched full order must win over an incomplete list preview.
+    if (editorOrderOverride?.id === selectedOrderId) return editorOrderOverride
     const fromList = orders.find((order) => order.id === selectedOrderId)
     if (fromList) return fromList
-    if (editorOrderOverride?.id === selectedOrderId) return editorOrderOverride
     return null
   }, [orders, selectedOrderId, editorOrderOverride])
 
@@ -304,11 +305,16 @@ const summary = useMemo(() => {
       const hasComment = priority === 1 || Boolean(comment)
       const productTitle = workshopInvoiceProductTitle(task)
       const characteristics = workshopInvoiceCharacteristics(task)
+      // A shortened printed label must never combine different stored executions.
+      const exactCharacteristicsKey = JSON.stringify([
+        task.productName, task.audienceType, task.gender, task.color,
+        task.material, task.length, task.size,
+      ].map(value => normalizeSuggestion(value) || 'СТАНДАРТ'))
       const key = workshopInvoiceIsKaspi
         ? `kaspi|${task.orderId}|${task.id}`
         : isSpecialOrder
           ? `order|${task.orderId}|${task.id}`
-          : `normal|${productTitle}|${characteristics}`
+          : `normal|${exactCharacteristicsKey}`
       const current = grouped.get(key) || {
         key,
         priority,

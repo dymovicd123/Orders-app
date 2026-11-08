@@ -958,7 +958,7 @@ export async function reconcileCatalogReviewQueue(db: D1Database, url: URL) {
     }
 
     const item = catalogReviewRowToOrderItem(normalSample);
-    const resolved = await resolveCatalogProductAndVariantV2(db, item);
+    const resolved = await resolveCatalogProductAndVariantV2(db, item, { createMissing: false });
 
     // Even when the exact combination still needs a human decision, remembering a safely
     // recognized base product reduces the next task to the actual missing detail.
@@ -1069,7 +1069,7 @@ export async function reconcileCatalogReviewOrder(db: D1Database, orderId: numbe
     if (!sample) continue;
     try {
       const item = catalogReviewRowToOrderItem(sample);
-      const resolved = await resolveCatalogProductAndVariantV2(db, item);
+      const resolved = await resolveCatalogProductAndVariantV2(db, item, { createMissing: false });
       if (resolved.productId) {
         const timestamp = new Date().toISOString();
         for (const row of matching) {

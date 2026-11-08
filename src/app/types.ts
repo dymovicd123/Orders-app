@@ -2,6 +2,11 @@ import type * as React from 'react'
 
 export type OrderItem = {
   productName: string
+  catalogVariantId?: number
+  manualCatalogEntry?: boolean
+  availableAtPick?: number
+  physicalAtPick?: number
+  reservedAtPick?: number
   audienceType?: 'ВЗРОСЛЫЙ' | 'ДЕТСКИЙ'
   gender?: string
   color?: string
@@ -854,6 +859,7 @@ export type OrderRecord = {
   shipping_status?: 'not_sent' | 'sent' | string | null
   shipping_date?: string | null
   pricing_mode?: 'legacy_manual_total' | 'itemized_v1'
+  item_count?: number
   stock_handover_review_needed?: boolean
   stock_handover_has_active_items?: boolean
   catalog_review_required?: boolean

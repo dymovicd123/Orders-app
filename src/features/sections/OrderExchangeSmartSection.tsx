@@ -1,5 +1,7 @@
 // @ts-nocheck -- Exchange Set V2 is intentionally isolated from the legacy pair view while the old compatibility flow remains available.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ExchangeReplacementSelector } from '../orders/ExchangeReplacementSelector'
+import {pickerKey} from '../orders/MainOrderSourcePicker'
 import '../../styles/193-exchange-set-v2.css'
 
 type SectionContext = Record<string, any>
@@ -57,6 +59,23 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
   const [receiptDestinations, setReceiptDestinations] = useState<Record<string, 'warehouse' | 'boutique' | 'no_stock'>>({})
   const [receivingExchangeId, setReceivingExchangeId] = useState<number | null>(null)
+  const [activeReplacementKey,setActiveReplacementKey]=useState<string|null>(null)
+  const replacementPickerRef=useRef<HTMLDivElement>(null)
+  const replacementIndex=(exchangeDraft.newItems||[]).findIndex((entry:any)=>entry.draftKey===activeReplacementKey)
+  const replacementPickerOpen=replacementIndex>=0
+  useEffect(()=>{
+    if(!replacementPickerOpen)return
+    const frame=requestAnimationFrame(()=>replacementPickerRef.current?.scrollIntoView({behavior:'smooth',block:'start'}))
+    return ()=>cancelAnimationFrame(frame)
+  },[activeReplacementKey,replacementPickerOpen])
+  const replacementAllocated=new Map<string,number>()
+  for(const entry of exchangeDraft.newItems||[]){
+    const item=entry.item
+    if(!item?.catalogVariantId||item.sourceType==='workshop')continue
+    const source=item.sourceType==='boutique'?'boutique':'warehouse'
+    const key=pickerKey(source,Number(item.catalogVariantId))
+    replacementAllocated.set(key,(replacementAllocated.get(key)||0)+Math.max(0,Number(item.quantity)||0))
+  }
 
   const itemDetails = (item: any) => [item?.gender, item?.color, item?.material, item?.length, item?.size].filter(Boolean).join(' · ') || 'Характеристики не указаны'
   const historyItemDetails = (item: any) => itemDetails(item)
@@ -131,7 +150,9 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
     const price = entry.item?.unitPrice == null ? Number.NaN : Number(entry.item.unitPrice)
     return Number.isSafeInteger(price) && price >= 0
   })
-  const saveBlockReason = !(exchangeDraft.oldSelections || []).length
+  const saveBlockReason = replacementPickerOpen
+    ? 'Закончите выбор нового товара или отмените его перед проведением обмена.'
+    : !(exchangeDraft.oldSelections || []).length
     ? 'Выберите хотя бы один товар, который клиент возвращает.'
     : !filledNewItems.length
       ? 'Добавьте товар, который клиент получает.'
@@ -408,8 +429,21 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
 
           <section className="exchange-set-step">
             <div className="exchange-set-section-head">
-              <div><span className="exchange-set-kicker">2 · Клиент получает</span><h3>Что выдаём взамен</h3><p>Добавьте товар, затем проверьте размер, цвет и количество.</p></div>
+              <div><span className="exchange-set-kicker">2 · Клиент получает</span><h3>Что выдаём взамен</h3><p>Выберите точную вещь из того же каталога, что и при создании заказа. Затем укажите отправку и проверьте цену.</p></div>
             </div>
+            {replacementPickerOpen&&<div ref={replacementPickerRef} className="exchange-replacement-picker-holder">
+              <ExchangeReplacementSelector
+                key={exchangeSelectedOrder.id+':'+activeReplacementKey}
+                item={exchangeDraft.newItems[replacementIndex].item}
+                allocated={replacementAllocated}
+                suggestions={suggestionValues}
+                onClose={()=>setActiveReplacementKey(null)}
+                onApply={patch=>{
+                  applyExchangeSetNewItemPatch(replacementIndex,patch)
+                  setActiveReplacementKey(null)
+                }}
+              />
+            </div>}
             <div className="exchange-new-list">
               {(exchangeDraft.newItems || []).map((entry: any, index: number) => {
                 const item = entry.item
@@ -430,27 +464,36 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                 return (
                   <div className="exchange-new-card" key={entry.draftKey}>
                     <div className="exchange-new-card-head">
-                      <div><span>Товар {index + 1}</span><strong>{item.productName || 'Выберите товар'}</strong></div>
-                      <button className="ghost danger compact" type="button" onClick={() => removeExchangeSetNewItem(index)}>Убрать</button>
+                      <div><strong>Новая вещь {index + 1}</strong></div>
+                      <button className="ghost danger compact" type="button" onClick={() => {
+                        if(activeReplacementKey===entry.draftKey)setActiveReplacementKey(null)
+                        removeExchangeSetNewItem(index)
+                      }}>Убрать</button>
                     </div>
-                    <div className="exchange-new-primary-fields">
-                      <label><span>Товар</span><SmartPickerInput value={item.productName || ''} options={suggestionValues.products} placeholder="Начните вводить название" onChange={(value) => applyExchangeSetNewItemPatch(index, { productName: value, unitPrice: undefined, catalogPriceSnapshot: null, priceOrigin: 'missing', priceNeedsConfirmation: false })} onPick={(value) => applyExchangeSetNewProductPick(index, value)} /></label>
+                    <div className="exchange-new-identity">
+                      <div className="exchange-new-identity-description">
+                        <strong>{item.productName||'Вещь ещё не выбрана'}</strong>
+                        {item.productName&&<span>{[
+                          item.audienceType==='ДЕТСКИЙ'?'Детский':'',
+                          item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender,
+                          item.color==='БЕЗ ЦВЕТА'?'Без цвета':item.color,
+                          item.material==='СТАНДАРТ'?'':item.material,
+                          String(item.length||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.length,
+                          ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(String(item.size||'').toUpperCase())?'Без размера':item.size
+                        ].filter(Boolean).join(' · ')}</span>}
+                      </div>
+                      <button type="button" className="primary compact"
+                        aria-expanded={activeReplacementKey===entry.draftKey}
+                        onClick={()=>setActiveReplacementKey(entry.draftKey)}>
+                        {item.productName?'Изменить вариант':'Выбрать товар'}
+                      </button>
+                    </div>
+                    {item.productName&&<div className="exchange-new-primary-fields">
                       <label><span>Количество</span><FriendlyNumberInput type="number" min="1" step="1" value={required} onChange={(event) => applyExchangeSetNewItemPatch(index, { quantity: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} /></label>
-                      <label><span>Откуда выдаём</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
-                    </div>
+                      <label><span>Источник</span><select value={item.sourceType || 'warehouse'} onChange={(event) => applyExchangeSetNewItemPatch(index, { sourceType: event.target.value, shipmentState: undefined, stockObservationEnabled: false })}><option value="warehouse">Склад</option><option value="boutique">Бутик</option><option value="workshop">Цех</option></select></label>
+                    </div>}
                     {String(item.productName || '').trim() ? (
                       <>
-                        <div className="exchange-new-details">
-                          <span className="exchange-field-group-title">Характеристики</span>
-                          <div className="exchange-new-fields">
-                            <label><span>Категория</span><select value={item.audienceType || 'ВЗРОСЛЫЙ'} onChange={(event) => applyExchangeSetNewItemPatch(index, { audienceType: event.target.value }, true)}><option value="ВЗРОСЛЫЙ">Взрослый</option><option value="ДЕТСКИЙ">Детский</option></select></label>
-                            <label><span>Пол</span><select value={item.gender || ''} onChange={(event) => applyExchangeSetNewItemPatch(index, { gender: event.target.value })}><option value="">Не указан</option><option value="ЖЕН">Жен</option><option value="МУЖ">Муж</option></select></label>
-                            <label><span>Цвет</span><SmartPickerInput value={item.color || ''} options={suggestionValues.colors} placeholder="Цвет" onChange={(value) => applyExchangeSetNewItemPatch(index, { color: value })} /></label>
-                            <label><span>Материал</span><SmartPickerInput value={item.material || ''} options={suggestionValues.materials} placeholder="Материал" onChange={(value) => applyExchangeSetNewItemPatch(index, { material: value }, true)} /></label>
-                            <label><span>Длина</span><SmartPickerInput value={item.length || ''} options={suggestionValues.lengths} placeholder="Длина" onChange={(value) => applyExchangeSetNewItemPatch(index, { length: value }, true)} /></label>
-                            <label><span>{String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'}</span><SmartPickerInput value={item.size || ''} options={String(item.audienceType || '').includes('ДЕТ') ? suggestionValues.childAges : suggestionValues.sizes} placeholder={String(item.audienceType || '').includes('ДЕТ') ? 'Возраст' : 'Размер'} onChange={(value) => applyExchangeSetNewItemPatch(index, { size: value })} /></label>
-                          </div>
-                        </div>
                     {item.sourceType !== 'workshop' ? <div className={`exchange-shipment-choice${!item.shipmentState ? " needs-choice" : ""}`}>
                       <strong>Новый товар уже отправили клиенту?</strong>
                       <div className="exchange-choice-row" role="group" aria-label="Фактическая отправка замены">
@@ -465,7 +508,7 @@ export function OrderExchangeSmartSection({ ctx }: { ctx: SectionContext }) {
                           <div><span>Итого за позицию</span><strong>{item.unitPrice == null ? '—' : formatMoney(required * Number(item.unitPrice || 0))}</strong></div>
                         </div>
                       </>
-                    ) : <div className="exchange-new-hint">Сначала выберите товар — после этого появятся его характеристики и цена.</div>}
+                    ) : <div className="exchange-new-hint">Нажмите «Выбрать товар» и укажите вещь, которую получит клиент.</div>}
                     {availability ? (
                       <div className={`exchange-stock-note is-${physicalShortage ? 'danger' : availability.tone}`}>
                         {availability.canObservePhysical ? (

@@ -478,7 +478,11 @@ export async function addInventoryStocktakeCombination(
   const material = canonicalStockPositionValue(input.material);
   const length = canonicalStockPositionValue(input.length);
   const rawSizes = Array.isArray(input.sizes) ? input.sizes : [input.size];
-  const normalizedSizes = Array.from(new Set(rawSizes.map(value => normalizeCatalogCombinationSize(value)).filter(Boolean))).slice(0, 40);
+  // Explicit «БЕЗ РАЗМЕРА» is a real catalog choice with canonical empty size.
+  // A genuinely omitted size is NOT a choice and stays invalid.
+  const normalizedSizes = Array.from(new Set(rawSizes
+    .filter(value => cleanText(value))
+    .map(value => normalizeCatalogCombinationSize(value)))).slice(0, 40);
   const category = normalizeAudienceCategory(input.category, normalizedSizes[0] || input.size);
   const gender = normalizeCatalogCombinationGender(input.gender);
   const color = normalizeCatalogCombinationColor(input.color);

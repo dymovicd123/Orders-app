@@ -1,0 +1,211 @@
+name: "QA deploy - Main source-first order picker ONLY to isolated Branch2"
+# Branch2 only: final exchange exact-variant picker and stock/shipment acceptance; no Main, no D1 mutations.
+on:
+  pull_request:
+    types: [synchronize]
+    branches:
+      - main
+    paths:
+      - .github/workflows/main-source-picker-branch2-only-20261106.yml
+  push:
+    branches:
+      - feature/main-source-first-order-picker-20261106
+    paths:
+      - .github/workflows/main-source-picker-branch2-only-20261106.yml
+      - src/features/orders/MainClothingSourcePicker.tsx
+      - src/features/orders/MainWorkshopOrderModal.tsx
+      - src/features/orders/MainManualChoiceInput.tsx
+      - src/features/orders/MainPickedOrderLine.tsx
+      - src/features/orders/MainSalePicker.tsx
+      - src/features/sections/CreateOrderSection.tsx
+      - src/styles/main-clothing-source-picker.css
+      - src/styles/main-sale-picker.css
+      - scripts/test-main-order-ux-review-20261107.mjs
+      - scripts/test-branch2-order-qa794-report-fixes.mjs
+      - src/App.tsx
+      - src/app/types.ts
+      - src/app/utils.ts
+      - src/app/controllers/useOperationalViewModel.ts
+      - src/features/sections/OrdersTableSection.tsx
+      - src/features/orders/manualOrderCatalogPreview.ts
+      - src/features/orders/ItemizedOrderEditorWorkspace.tsx
+      - src/features/sections/OrderEditorSection.tsx
+      - src/styles/itemized-order-editor-workspace.css
+      - scripts/test-branch2-itemized-editor-picker-20261107.mjs
+      - src/features/orders/ExchangeReplacementSelector.tsx
+      - src/features/sections/OrderExchangeSmartSection.tsx
+      - src/styles/exchange-replacement-picker.css
+      - scripts/test-branch2-exchange-replacement-picker-20261107.mjs
+      - worker/domains/orders-read.ts
+permissions:
+  contents: read
+concurrency:
+  group: main-source-picker-branch2-only-20261106
+  cancel-in-progress: false
+jobs:
+  qa-branch2-only:
+    if: >-
+      (github.event_name == 'pull_request'
+       && github.event.pull_request.number == 794
+       && github.event.pull_request.head.ref == 'feature/main-source-first-order-picker-20261106'
+       && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name == 'push'
+       && github.ref == 'refs/heads/feature/main-source-first-order-picker-20261106'
+       && startsWith(github.event.head_commit.message, 'qa(branch2-picker):'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+      DATABASE: orders_db_branch2_mirror_20261027
+      CONFIG: wrangler.source-picker-branch2.jsonc
+      HOST: https://orders-app-branch2.orders-clothes.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Strict environment isolation and no migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            test "$GITHUB_HEAD_REF" = 'feature/main-source-first-order-picker-20261106'
+            test "$GITHUB_BASE_REF" = 'main'
+            jq -e '.pull_request.number == 794
+              and .pull_request.head.ref == "feature/main-source-first-order-picker-20261106"
+              and .pull_request.head.repo.full_name == .repository.full_name' "$GITHUB_EVENT_PATH"
+          else
+            test "$GITHUB_REF" = 'refs/heads/feature/main-source-first-order-picker-20261106'
+          fi
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const c=readFileSync('wrangler.source-picker-branch2.jsonc','utf8')
+          const x=JSON.parse(c)
+          assert.equal(x.name,'orders-app-branch2')
+          assert.equal(x.main,'worker/index.ts')
+          assert.equal(x.d1_databases?.length,1)
+          assert.equal(x.d1_databases[0].binding,'DB')
+          assert.equal(x.d1_databases[0].database_name,'orders_db_branch2_mirror_20261027')
+          assert.equal(x.d1_databases[0].database_id,'0904a573-21ff-44d8-93b0-c9200f771702')
+          assert.equal(x.assets.directory,'./dist/client')
+          for(const forbidden of ['orders_db_prod','17e68a41-1d58-4a36-8a63-47c3e32443c4',
+            '"name": "orders-app"','orders-app.orders-clothes.workers.dev'])
+            assert(!c.includes(forbidden),'PRODUCTION_BINDING_FORBIDDEN')
+          console.log('SOURCE_PICKER_BRANCH2_EXACT_ISOLATION_PASS')
+          NODE
+      - run: npm ci
+      - name: Source-first SKU and warehouse reservation regression
+        run: node scripts/test-main-source-first-order-picker-20261106.mjs
+      - name: Real Chrome visual regression - 12 models and 6 SKU cards
+        run: node scripts/test-main-order-picker-browser-visual-20261106.mjs
+      - name: Interactive Chrome clicks and search-suggestion acceptance
+        run: node scripts/test-main-order-picker-browser-interactions-20261106.mjs
+      - name: Upload browser screenshot of catalog
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-picker-branch2-browser-screenshot
+          path: artifacts/main-order-picker-visual.png
+          if-no-files-found: ignore
+      - name: New model-first sale picker - SSR and Chrome interactions
+        run: node scripts/test-main-sale-picker-20261107.mjs
+      - name: Client3-style clothing - source scope and real Chrome flows
+        run: node scripts/test-main-clothing-source-picker-20261107.mjs
+      - name: Exact Standard zero and no-size SKU Chrome acceptance
+        run: node scripts/test-main-picker-size-identities-20261107.mjs
+      - name: UX review - filtered materials and modal workshop browser acceptance
+        run: node scripts/test-main-order-ux-review-20261107.mjs
+      - name: Manual source exact SKU and Workshop read-only identity regression
+        run: node scripts/test-main-manual-source-identity-20261107.mjs
+      - name: End-to-end Worker HTTP create and reservation of STANDARD/0/no-size SKUs on disposable D1
+        run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
+      - name: No implicit SKU creation across orders exchanges and catalog queue
+        run: node scripts/test-main-implicit-sku-guard-20261107.mjs
+      - name: Arrival hidden STANDARD material length canonical SKU and new item creation
+        run: node scripts/test-main-arrival-standard-link-20261107.mjs
+      - name: Adaptive color and size filters - actual Chrome interactions
+        run: node scripts/test-main-adaptive-clothing-filters-20261107.mjs
+      - name: Work QA794 manual acceptance defects F1-F7 Chrome regression
+        run: node scripts/test-branch2-order-qa794-report-fixes.mjs
+      - name: Modern editor uses the same exact variant picker as order creation - real Chrome
+        run: node scripts/test-branch2-itemized-editor-picker-20261107.mjs
+      - name: Exchange replacement: exact catalog choice and shipping safety in Chrome
+        run: node scripts/test-branch2-exchange-replacement-picker-20261107.mjs
+      - name: Warehouse targeted integrity - arrival, write-off, transfer, correction, stocktake
+        shell: bash
+        run: |
+          failures=0
+          for script in \
+            test-main-transfer-canonical-sku-20261031.mjs \
+            test-main-active-warehouse-operation-ui-20261107.mjs \
+            test-main-warehouse-sku-feedback-20261031.mjs \
+            test-inventory-integrity-safety-20261014.mjs \
+            test-main-found-stocktake-identity-race-20261031.mjs \
+            test-arrival-save-reliability.mjs \
+            test-arrival-variant-integrity-r2.mjs \
+            test-arrival-materialization-reliability.mjs \
+            test-main-arrival-standard-link-20261107.mjs \
+            test-step191d-transfer-runtime-safety.mjs \
+            test-main-w19-stock-operations.mjs \
+            test-stocktake-functional-acceptance.mjs; do
+            echo "WAREHOUSE_TEST_BEGIN $script"
+            node "scripts/$script" || failures=$((failures + 1))
+          done
+          echo "WAREHOUSE_TEST_FAILURES=$failures"
+          test "$failures" -eq 0
+      - name: Full application build and main business release gates
+        run: |
+          npm run build
+          npm run release:check
+      - name: Branch2 D1 schema preflight READ ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT (SELECT COUNT(*) FROM sqlite_master WHERE name='catalog_variants' AND type='table') AS variants,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='catalog_products' AND type='table') AS products,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='catalog_execution_prices' AND type='table') AS prices,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='inventory_reservations' AND type='table') AS reserves,
+              (SELECT COUNT(*) FROM sqlite_master WHERE name='inventory_stock' AND type='table') AS stock
+          " --json | jq -e '.[0].results[0] | .variants==1 and .products==1 and .prices==1 and .reserves==1 and .stock==1'
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_cached,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS revenue,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/picker-before.json"
+      - name: Worker dry run using branch2 config
+        run: npx wrangler deploy --dry-run --outdir .picker-branch2-dry-run --config "$CONFIG"
+      - name: Deploy code and client assets ONLY to branch2 Worker (NO D1 mutations)
+        run: npx wrangler deploy --config "$CONFIG"
+      - name: Verify test D1 unchanged and protected API
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute "$DATABASE" --remote --config "$CONFIG" --command="
+            SELECT (SELECT COUNT(*) FROM orders) AS orders_count,
+              (SELECT COUNT(*) FROM order_items) AS order_items_count,
+              (SELECT COALESCE(SUM(quantity),0) FROM inventory_stock) AS physical,
+              (SELECT COALESCE(SUM(reserved_quantity),0) FROM inventory_stock) AS reserved_cached,
+              (SELECT COUNT(*) FROM inventory_reservations) AS reservation_rows,
+              (SELECT COUNT(*) FROM inventory_movements) AS movement_rows,
+              (SELECT COALESCE(SUM(total_amount),0) FROM orders) AS revenue,
+              (SELECT COALESCE(SUM(received_amount),0) FROM orders) AS received
+          " --json | jq -cSe '.[0].results[0]' > "$RUNNER_TEMP/picker-after.json"
+          cmp "$RUNNER_TEMP/picker-before.json" "$RUNNER_TEMP/picker-after.json"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/auth/status")" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/orders/source-picker")" = 401
+          echo 'SOURCE_PICKER_BRANCH2_ONLY_DEPLOY_VERIFIED: test Worker updated; Main untouched; no test D1 rows changed'

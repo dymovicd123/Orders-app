@@ -139,7 +139,8 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
   function addInlineVariant(sample:Row) {
     if(!inline)return
     if(mode!=='arrival'&&mode!=='manual_set')return
-    const color=inline.color==='БЕЗ ЦВЕТА'?'':inline.color.trim()
+    // «Без цвета» is an explicit catalog value, not an empty invalid input.
+    const color=inline.color.trim()
     const size=inline.size.trim(),quantity=Number(inline.quantity)
     if((inline.kind==='color'&&!color)||!size||inline.quantity.trim()===''||!Number.isInteger(quantity)||quantity<(mode==='manual_set'?0:1)||quantity>999999){
       setNotice('Выберите цвет, размер и целое количество от '+(mode==='manual_set'?'0':'1')+' до 999999.');return
