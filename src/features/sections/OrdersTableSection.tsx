@@ -74,6 +74,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     markExchangeReplacementSent,
     apiFetch,
     askActionConfirmation,
+    askStockResolution,
     onPendingReservationResolved,
     onShipmentChange,
     canResolvePendingReservation,
@@ -140,11 +141,37 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
     setDispatchDraft(v=>v?{...v,submitting:true,error:''}:v)
     void (async()=>{
       try{
-        const res=await apiFetch(`/api/orders/${d.order.id}/shipping/dispatches`,{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({requestId:d.requestId,items}),
-        })
-        const data=await res.json()
+        const submit=async(stockConfirmations?:Array<{source:'warehouse'|'boutique';variantId:number;expectedQuantity:number;operationQuantity:number}>)=>{
+          const res=await apiFetch(`/api/orders/${d.order.id}/shipping/dispatches`,{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({requestId:d.requestId,items,stockConfirmations}),
+          })
+          return {res,data:await res.json()}
+        }
+        let {res,data}=await submit()
+        if(!res.ok && data.code==='dispatch_stock_confirmation_required' && Array.isArray(data.items) && data.items.length){
+          const confirmed=await askStockResolution({
+            title:'Подтвердите наличие отправляемых вещей',
+            intro:'По системе остатка или резерва недостаточно. Если именно эти вещи фактически находятся у вас, подтвердите их передачу. Резервы других заказов останутся без изменений.',
+            actionLabel:'Да, эти вещи отправляю',
+            items:data.items.map((row:any)=>({
+              productName:String(row.productName||'Товар'),
+              tracked:Math.max(0,Number(row.trackedPhysicalQuantity||0)),
+              needed:Math.max(1,Number(row.operationQuantity||1)),
+            })),
+            note:'Подтверждается только выбранная отправка. Общий остаток вручную не увеличивается; расхождение сохраняется в журнале склада.',
+          })
+          if(!confirmed){
+            setDispatchDraft(v=>v?.order.id===d.order.id?{...v,submitting:false,error:'Отправка не проведена. Можно вернуться после проверки товара.'}:v)
+            return
+          }
+          ;({res,data}=await submit(data.items.map((row:any)=>({
+            source:row.source==='boutique'?'boutique' as const:'warehouse' as const,
+            variantId:Number(row.variantId),
+            expectedQuantity:Math.max(0,Number(row.expectedQuantity)),
+            operationQuantity:Math.max(1,Number(row.operationQuantity)),
+          }))))
+        }
         if(!res.ok||!data.ok)throw new Error(data.message||'Не удалось отправить товары.')
         setDispatchDraft(null)
         setMessage(`Заказ ${d.order.external_id}: отправлено ${data.shippedQuantity||items.reduce((n:any,x:any)=>n+x.quantity,0)} шт.`)
@@ -848,7 +875,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                 {[line.color,line.size,line.material,line.length].filter(Boolean).join(' · ')}
                                 {line.color||line.size||line.material||line.length ? ' · ' : ''}
                                 {line.sourceType==='workshop'?'Цех':line.sourceType==='boutique'?'Бутик':'Склад'}
-                                {' · '}{line.selectable?`Готово ${line.readyQuantity} шт.`:line.reason}
+                                {' · '}{line.selectable?(line.needsStockConfirmation?`Доступно к отправке ${line.readyQuantity} шт. · потребуется подтверждение наличия`:`Готово ${line.readyQuantity} шт.`):line.reason}
                               </small>
                             </div>
                             {line.selectable ? <input type="number" min={0} max={line.readyQuantity} step={1}
