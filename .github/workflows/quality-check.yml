@@ -60,5 +60,8 @@ jobs:
       - name: Verify original return-item characteristics and distinguish duplicate model names
         run: node scripts/test-return-attributes-20261029.mjs
 
+      - name: Read-only inventory of test usage and archived fixtures
+        run: node scripts/audit-ci-test-usage-20261108.mjs
+
       - name: Build application
         run: npm run build
