@@ -1,6 +1,7 @@
 // Read-only inventory of the current executable test surface.
 // "Unreferenced" means not mentioned by the repository's current runners;
-// it does NOT mean obsolete or safe to delete.
+// it does NOT mean obsolete or safe to delete. Static workflow references
+// include path-scoped/one-off jobs that may not run on every PR.
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -28,6 +29,10 @@ for (const p of otherRunnerFiles) {
     if (target !== p) fromOtherScripts.add(target)
   }
 }
+// Static references are an upper bound: path-filtered and one-time workflows
+// are not necessarily running in the current CI for every PR.
+const wiredToActiveWorkflowOrReleaseGate = new Set([...fromWorkflows, ...fromRelease])
+const notDirectlyWiredToCI = scripts.filter((p) => !wiredToActiveWorkflowOrReleaseGate.has(p))
 const candidateUnreferenced = scripts.filter((p) => !fromWorkflows.has(p)
   && !fromRelease.has(p) && !fromPackage.has(p) && !fromOtherScripts.has(p))
 const fixturePaths = listFiles('scripts/fixtures')
@@ -43,6 +48,8 @@ const largest = scripts.map((p) => ({ path: name(p), bytes: statSync(p).size }))
 const result = {
   totalTests: scripts.length,
   referencedInRequiredReleaseGate: fromRelease.size,
+  directlyReferencedByCurrentCI: wiredToActiveWorkflowOrReleaseGate.size,
+  notDirectlyWiredToCurrentCI: notDirectlyWiredToCI.length,
   referencedInActiveWorkflows: fromWorkflows.size,
   referencedInOtherScripts: fromOtherScripts.size,
   referencedInPackageScripts: fromPackage.size,
