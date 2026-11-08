@@ -18,7 +18,7 @@ export function dispatchSelectionError(lines: DispatchLine[], selection: Record<
     const ready = Number(line.readyQuantity)
     if (!line.selectable || !Number.isSafeInteger(selected) || selected < 0 ||
         !Number.isSafeInteger(ready) || ready < 1 || selected > ready ||
-        ((line.sourceType === 'workshop' || line.dispatchPriorIssued || line.needsStockConfirmation) && selected !== ready)) {
+        ((line.sourceType === 'workshop' || line.dispatchPriorIssued) && selected !== ready)) {
       return 'Количество изменилось или превышает доступное. Обновите отправку.'
     }
   }
