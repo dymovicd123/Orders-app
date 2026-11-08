@@ -47,6 +47,13 @@ assert.equal(ready.lines[0].readyQuantity,1)
 
 assert.equal(isOrderShipmentCompleteForActions(order),true,'Recorded sent order must have no primary send button')
 assert.equal(projectOrderShipmentDisplay(order).state,'sent')
+const mixedShipment={...order,shipping_status:'not_sent',items:[
+  {...item,shipmentSentQuantity:1},
+  {...item,id:5538,stockWriteoffStatus:'reserved',shipmentSentQuantity:0},
+]}
+assert.equal(projectOrderShipmentDisplay(mixedShipment).state,'partial')
+assert.equal(projectOrderShipmentDisplay(mixedShipment).label,'Частично отправлено')
+assert.equal(isOrderShipmentCompleteForActions(mixedShipment),false)
 assert.equal(isOrderShipmentCompleteForActions({...order,items:[{...item,shipmentSentQuantity:0}]}),true,'Old sent order with stale per-item projection cannot be offered for re-send')
 assert.equal(isOrderShipmentCompleteForActions({...order,shipping_status:'not_sent',items:[{...item,stockWriteoffStatus:'reserved',shipmentSentQuantity:0}]}),false)
 assert.equal(isOrderShipmentCompleteForActions({
@@ -61,6 +68,10 @@ assert.equal(isOrderShipmentCompleteForActions({...order,shipping_status:'not_se
 
 const ui=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 assert(ui.includes('const fullyShipped = isOrderShipmentCompleteForActions(order)'))
+assert(ui.includes("fullyShipped ? `Отправлено${order.shipping_date ? ` · ${order.shipping_date}` : ''}` : shipmentDisplay.label"),
+  'Delivery column must agree with the item-level partial shipment state')
+assert(!ui.includes("order.shipping_status === 'sent' ? `Отправлено"),
+  'Legacy whole-order flag cannot label a partial shipment as not sent')
 assert(ui.includes('&& !fullyShipped ? ('),'Primary dispatch action must be hidden for sent orders')
 assert(ui.includes("fullyShipped ? 'Отправлен' : shipmentDisplay.label"))
 assert(ui.includes("fullyShipped && projection.lifecycleLabel === 'Активен'"))
