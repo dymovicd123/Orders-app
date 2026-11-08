@@ -5,7 +5,7 @@
 // read-only Branch2 D1 preflight, Worker-only deploy, read-only postflight.
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, relative, isAbsolute } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const ROOT=process.cwd()
@@ -95,7 +95,29 @@ console.log('Running complete Branch2 regression and build before any Cloudflare
 run(npm,['ci'])
 run(npm,['run','release:check'])
 if(!existsSync('dist/client/assets'))fail('Required built frontend assets are missing.')
-if(existsSync('.wrangler/deploy/config.json'))fail('Build generated a redirected Wrangler config; release blocked.')
+// Vite/Cloudflare's successful production build legitimately emits a Wrangler
+// config redirect. Never follow an implicit build-generated deployment target:
+// validate that it is a local build artifact, then remove only the pointer so
+// the explicit, separately verified Branch2 --config is authoritative.
+if(existsSync('.wrangler/deploy/config.json')){
+  const path='.wrangler/deploy/config.json'
+  let redirect
+  try{redirect=JSON.parse(readFileSync(path,'utf8'))}
+  catch{fail('The generated Wrangler redirect is not valid JSON.')}
+  if(!redirect || typeof redirect.configPath!=='string'
+    || Object.keys(redirect).length!==1 || !redirect.configPath.trim()){
+    fail('Unexpected generated Wrangler redirect structure.')
+  }
+  const generated=resolve(ROOT,'.wrangler/deploy',redirect.configPath)
+  const rel=relative(ROOT,generated)
+  if(!rel || rel==='..' || rel.startsWith('..'+(process.platform==='win32'?'\\':'/'))
+    || isAbsolute(rel) || !existsSync(generated)){
+    fail('Generated Wrangler config points outside this build or is missing.')
+  }
+  rmSync(path,{force:true})
+  if(existsSync(path))fail('Cannot remove implicit Wrangler deploy redirect.')
+  console.log('BRANCH2_BUILD_REDIRECT_REMOVED: explicit isolated --config enforced')
+}
 writeFileSync(CONFIG,cfg.replace('"assets": {','"assets": {\n    "directory": "./dist/client",'),{flag:'wx'})
 try{
   run(npx,['--no-install','wrangler','deploy','--dry-run','--outdir',DRY_DIR,'--config',CONFIG])
