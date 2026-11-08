@@ -12,8 +12,25 @@ Updated: 2026-11-08 (Branch2 environment identity and sync checkpoint; older sec
 - First selected semantic fix: Branch2 Return creation already validated refundable money before its D1 batch, but lacked Main's atomic SQL revalidation. Copied just Main's guarded INSERT into Branch2 plus the identical race-conflict mapping. The money-event and physical item claim statements remain in the same batch. Existing Return active-reserve SQL test now executes the real guarded INSERT against disposable SQLite, including simultaneous stale preflights, zero-money, cancelled Return, and archived-order cases. This patch does not alter Main or any D1 database.
 - **Selective sync stage 2 (this PR):** Branch2 exact dispatch cancellation now checks the actual original `sale` movement and restores no more physical quantity than the recorded deduction. The cancelled reservation is reactivated only if the whole dispatched amount was actually deducted **and** sufficient physical stock remains after other reservations. Otherwise it becomes `unresolved` for reconciliation. These safeguards are ported from Main's existing `order-dispatch-cancel.ts` without copying Main's incompatible prior-issued shipping, shipment plan, UI, routes, or full Worker. Existing Stage5B real Worker/SQLite acceptance has additional movement-proof / partial accounted deduction / competing reserve / replay cases.
 - Still intentionally **not synchronized**: Main's selective-shipment route architecture and domain refactors, and Branch2-specific Exchange cancellation/dispatch behavior, must be reconciled case by case with real Worker HTTP/SQLite tests. Do not copy Main `returns-exchanges.ts`, `worker/index.ts`, `wrangler.jsonc`, production migrations, or DB IDs on top of Branch2.
-- **Branch2 publication:** the mainline Cloudflare deployment monitor on Branch2 is deliberately disabled/inert; GitHub merge does **not** mean the test Worker is published. Inspect actual current release controls and only publish through an explicitly approved isolated Branch2-only path. Do not resurrect frozen SHA one-off workflows or rely on the old Cloudflare native upload-only trigger.
+- **Branch2 publication:** новый постоянный ручной путь — scripts/branch2-manual-release.mjs. Он проверяет полный SHA текущей удалённой branch2, чистый checkout, изолированные Worker/D1, полный release:check, сборку, Wrangler dry-run. Только отдельная команда --publish с полным SHA, текстовым подтверждением и вручную настроенными Cloudflare credentials публикует Worker и assets. D1 проверяется исключительно через SELECT до/после; затем анонимный HTTP smoke. Никаких автоматических push/PR-триггеров; Main не изменяется. Прежний отключённый fallback остаётся неактивным. GitHub merge не является публикацией.
 - Main architecture continuation: `AGENTS.md` and `docs/architecture/orders-app-audit-2026-11-08.md` in Main; use target-branch code and PR checks as the final truth. Exact PR status and Branch2 deployment must be checked separately.
+
+## Ручной выпуск Branch2 Worker без автоматической публикации
+
+GitHub Actions UI не может создать новую кнопку workflow_dispatch только из файла Branch2: такой workflow должен существовать в default-ветке Main. Чтобы не затрагивать Production и его Cloudflare pipeline, используется **один постоянный локальный скрипт**. Его безопасная проверка --check включена в уже существующий Branch2 CI. Ассистент не может запустить фактический Cloudflare deploy через доступный GitHub-коннектор.
+
+Порядок для обладателя доступа к тестовому Cloudflare:
+
+1. В локальном репозитории выполнить git checkout branch2, затем git pull --ff-only. Рабочее дерево должно быть чистым, origin — dymovicd123/Orders-app.
+2. Получить полный актуальный SHA командой git rev-parse HEAD и подставить его вместо слова SHA в командах ниже.
+3. Проверить изоляцию: node scripts/branch2-manual-release.mjs --check. Команда не обращается к сети или D1 и не публикует ничего.
+4. Выполнить полный тест/сборку и Wrangler preview без публикации и D1: node scripts/branch2-manual-release.mjs --dry-run --sha SHA.
+5. Только после успешного dry-run вручную задать в локальном окружении CLOUDFLARE_API_TOKEN и CLOUDFLARE_ACCOUNT_ID с минимальными разрешениями для тестового Worker и Branch2 D1. Секреты не записывать в GitHub, логи или чат.
+6. Явно запустить публикацию: node scripts/branch2-manual-release.mjs --publish --sha SHA --confirm BRANCH2-ONLY. Скрипт повторит все тесты, убедится, что удалённый Branch2 HEAD не изменился, проверит тестовую D1 исключительно SELECT-запросами, опубликует только orders-app-branch2, сверит показатели D1 до/после и проверит HTTP auth/status=200 и защищённые маршруты=401.
+
+При неверном SHA, иной конфигурации, нечистом checkout, неуспешном CI, ошибке схемы или API команда завершится с ошибкой. **Если ошибка случилась после Wrangler deploy, Worker уже мог быть опубликован**: проверить состояние вручную и не запускать слепой повтор. Контроль показателей может выявить параллельные действия тестовых пользователей — это требует проверки, а не автоматической правки D1.
+
+Production Main, Production D1, GitHub Actions и исходный Branch2 wrangler.jsonc командой не изменяются. Промежуточная конфигурация создаётся только локально и удаляется после выполнения. Для следующих релизов повторно использовать тот же скрипт без нового workflow.
 
 ## Source of truth
 
