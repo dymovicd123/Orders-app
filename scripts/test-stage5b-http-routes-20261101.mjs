@@ -227,5 +227,140 @@ try{
  assert.deepEqual({...snapshot()},oldStock,'Invalid status-only attempts may not change any physical stock')
  assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM inventory_movements').get().c,movementsAtStart)
  console.log('BRANCH2_PRIOR_ISSUED_REAL_HTTP_PASS: evidence, atomic audit rollback, zero stock writes, correction, retry, mixed/unknown/returned/exchanged/newer guards')
+
+ // Known-SKU pending reservation: an operator may confirm the EXACT item even
+ // when the tracked stock is zero, but the competing order's active hold remains.
+ sql.prepare("INSERT INTO catalog_variants(id,product_id,gender,color,material,length,size_label,category,is_active) VALUES(9532,9521,'МУЖ','БЕЛЫЙ','СТАНДАРТ','СТАНДАРТ','48','adult',1)").run()
+ sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9542,'warehouse',9521,9532,'STAGE 5 TEST WAREHOUSE','МУЖ','БЕЛЫЙ','СТАНДАРТ','СТАНДАРТ','48',0,1)").run()
+ const seedStockOrder=(orderId,itemId,quantity,writeoff,resStatus)=>{
+   sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(?,?,'2026-11-08',9501,'active','warehouse','ready','not_sent','2026-11-08T00:00:00Z','2026-11-08T00:00:00Z')")
+     .run(orderId,'STAGE5-SHORTAGE-'+orderId)
+   sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,?,9521,9532,'STAGE 5 TEST WAREHOUSE',?,1000,?,0,'warehouse',?,'2026-11-08T00:00:00Z')")
+     .run(itemId,orderId,quantity,quantity*1000,writeoff)
+   sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,unresolved_reason,created_at,updated_at) VALUES(?,?,'warehouse',9521,9532,?,?,?,'2026-11-08T00:00:00Z','2026-11-08T00:00:00Z')")
+     .run(orderId,itemId,quantity,resStatus,resStatus==='unresolved'?'insufficient_physical':null)
+ }
+ seedStockOrder(9752,9762,1,'reserved','active') // Other buyer's committed hold.
+ seedStockOrder(9751,9761,1,'pending_reservation','unresolved')
+ const shortagePath='/api/orders/9751/shipping'
+ const shortageReq='stage5-http-known-unresolved-ship-01'
+ const shortagePayload={requestId:shortageReq,items:[{orderItemId:9761,quantity:1}]}
+ const shortageStock=()=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9542').get()})
+ const shortageBefore=shortageStock()
+ assert.deepEqual(shortageBefore,{quantity:0,reserved_quantity:1})
+ const shortagePlan=await api('GET',shortagePath+'/plan')
+ assert.equal(shortagePlan.selectedQuantity,1,'Known unresolved item is selectable but requires explicit physical check')
+ assert.equal(shortagePlan.lines[0].needsStockConfirmation,true)
+ assert.equal(shortagePlan.lines[0].reservationStatus,'unresolved')
+ const shortageDenied=await api('POST',shortagePath+'/dispatches',shortagePayload,409)
+ assert.equal(shortageDenied.code,'dispatch_stock_confirmation_required')
+ assert.equal(shortageDenied.items.length,1)
+ assert.deepEqual(
+   {source:shortageDenied.items[0].source,variantId:shortageDenied.items[0].variantId,
+    expectedQuantity:shortageDenied.items[0].expectedQuantity,operationQuantity:shortageDenied.items[0].operationQuantity},
+   {source:'warehouse',variantId:9532,expectedQuantity:0,operationQuantity:1}
+ )
+ assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM order_dispatches WHERE request_id=?').get(shortageReq).c,0,
+   'Missing confirmation must never write shipment records')
+ assert.deepEqual(shortageStock(),shortageBefore)
+ const wrongSku={source:'warehouse',variantId:9531,expectedQuantity:0,operationQuantity:1}
+ await api('POST',shortagePath+'/dispatches',{...shortagePayload,stockConfirmations:[wrongSku]},409)
+ // Confirmations are tied to the exact preflight physical snapshot; any change
+ // between first request and confirm must reject the stale answer atomically.
+ sql.prepare('UPDATE inventory_stock SET quantity=1 WHERE id=9542').run()
+ await api('POST',shortagePath+'/dispatches',{...shortagePayload,stockConfirmations:[{
+   source:'warehouse',variantId:9532,expectedQuantity:0,operationQuantity:1,
+ }]},409)
+ assert.equal(sql.prepare('SELECT COUNT(*) AS c FROM order_dispatches WHERE request_id=?').get(shortageReq).c,0)
+ sql.prepare('UPDATE inventory_stock SET quantity=0 WHERE id=9542').run()
+ const confirmation={source:'warehouse',variantId:9532,expectedQuantity:0,operationQuantity:1}
+ const shortageSent=await api('POST',shortagePath+'/dispatches',{
+   ...shortagePayload,stockConfirmations:[confirmation]
+ })
+ assert.equal(shortageSent.shippedQuantity,1)
+ assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=9751').get().shipping_status,'sent')
+ assert.deepEqual(shortageStock(),shortageBefore,'No phantom physical deduction or other buyer reservation release')
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9761').get().status,'fulfilled')
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9762').get().status,'active')
+ const shortageMovement=sql.prepare("SELECT id,quantity_delta,quantity_after FROM inventory_movements WHERE reference_type='order_dispatch' AND reference_id=?")
+   .get('dispatch:'+shortageReq+':item:9761')
+ assert.equal(shortageMovement.quantity_delta,0,'Zero tracked stock must never turn negative')
+ assert.equal(shortageMovement.quantity_after,0)
+ const shortageEvidence=sql.prepare('SELECT explained_quantity,unexplained_quantity FROM inventory_operation_evidence WHERE evidence_key=?')
+   .get('dispatch:'+shortageReq+':warehouse:9532')
+ assert.deepEqual({...shortageEvidence},{explained_quantity:0,unexplained_quantity:1})
+ const shortageReplay=await api('POST',shortagePath+'/dispatches',shortagePayload)
+ assert.equal(shortageReplay.alreadyCommitted,true,'Lost-response retry must not ship again')
+ assert.equal(sql.prepare("SELECT COUNT(*) AS c FROM inventory_movements WHERE reference_type='order_dispatch' AND reference_id=?")
+   .get('dispatch:'+shortageReq+':item:9761').c,1)
+ const shortageHistory=await api('GET',shortagePath+'/dispatches')
+ const shortageDispatchItem=shortageHistory.dispatches[0].dispatchItemId
+ const shortageUndo=await api('POST',shortagePath+'/dispatch-items/'+shortageDispatchItem+'/correct',{
+   requestId:'stage5-http-undo-known-shortage-01',reason:'Фактически не отправили'
+ })
+ assert.equal(shortageUndo.physicalRestoredQuantity,0,'Cannot restock a unit never physically deducted')
+ assert.equal(shortageUndo.needsStockCheck,true)
+ assert.deepEqual(shortageStock(),shortageBefore)
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9761').get().status,'unresolved')
+ assert.equal(sql.prepare('SELECT stock_writeoff_status FROM order_items WHERE id=9761').get().stock_writeoff_status,'pending_reservation')
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9762').get().status,'active')
+ const shortageUndoRetry=await api('POST',shortagePath+'/dispatch-items/'+shortageDispatchItem+'/correct',{
+   requestId:'stage5-http-undo-known-shortage-01',reason:'Повтор'
+ })
+ assert.equal(shortageUndoRetry.alreadyCorrected,true)
+ assert.deepEqual(shortageStock(),shortageBefore)
+ console.log('STAGE5_BRANCH2_ZERO_STOCK_CONFIRMED_SHIPMENT_AND_SAFE_UNDO_PASS')
+
+ // Active-reserved order with less physical stock than its promised quantity:
+ // only real physical quantity is decremented, foreign hold remains untouched.
+ seedStockOrder(9753,9763,2,'reserved','active')
+ sql.prepare('UPDATE inventory_stock SET quantity=1,reserved_quantity=3 WHERE id=9542').run()
+ const activePath='/api/orders/9753/shipping'
+ const activeReq='stage5-http-confirm-active-short-02'
+ const activeBefore=await api('GET',activePath+'/plan')
+ assert.equal(activeBefore.selectedQuantity,2)
+ assert.equal(activeBefore.lines[0].needsStockConfirmation,false,'POST reevaluates physical availability')
+ const activeAsk=await api('POST',activePath+'/dispatches',{
+   requestId:activeReq,items:[{orderItemId:9763,quantity:2}]
+ },409)
+ assert.equal(activeAsk.code,'dispatch_stock_confirmation_required')
+ assert.equal(activeAsk.items[0].expectedQuantity,1)
+ assert.equal(activeAsk.items[0].operationQuantity,2)
+ const activeSent=await api('POST',activePath+'/dispatches',{
+   requestId:activeReq,items:[{orderItemId:9763,quantity:2}],
+   stockConfirmations:[{source:'warehouse',variantId:9532,expectedQuantity:1,operationQuantity:2}]
+ })
+ assert.equal(activeSent.shippedQuantity,2)
+ assert.deepEqual(shortageStock(),{quantity:0,reserved_quantity:1})
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9762').get().status,'active')
+ const activeMovement=sql.prepare("SELECT quantity_delta,quantity_after FROM inventory_movements WHERE reference_type='order_dispatch' AND reference_id=?")
+   .get('dispatch:'+activeReq+':item:9763')
+ assert.deepEqual({...activeMovement},{quantity_delta:-1,quantity_after:0})
+ const activeEvidence=sql.prepare('SELECT explained_quantity,unexplained_quantity FROM inventory_operation_evidence WHERE evidence_key=?')
+   .get('dispatch:'+activeReq+':warehouse:9532')
+ assert.deepEqual({...activeEvidence},{explained_quantity:1,unexplained_quantity:1})
+ console.log('STAGE5_BRANCH2_ACTIVE_RESERVE_SHORT_PHYSICAL_CONFIRMED_PASS')
+
+ // Selective partial shipment of an unresolved Q=2 row must split the original
+ // business/financial row; outstanding half remains pending, never auto-reserved.
+ seedStockOrder(9754,9764,2,'pending_reservation','unresolved')
+ const partialReq='stage5-http-pending-split-ship-03'
+ const partialSent=await api('POST','/api/orders/9754/shipping/dispatches',{
+   requestId:partialReq,items:[{orderItemId:9764,quantity:1}],
+   stockConfirmations:[{source:'warehouse',variantId:9532,expectedQuantity:0,operationQuantity:1}],
+ })
+ assert.equal(partialSent.shippedQuantity,1)
+ const remainder=sql.prepare('SELECT id,quantity,line_total,stock_writeoff_status FROM order_items WHERE order_id=9754 ORDER BY id').all()
+ assert.equal(remainder.length,2)
+ assert.equal(remainder.reduce((n,x)=>n+x.quantity,0),2)
+ assert.equal(remainder.reduce((n,x)=>n+x.line_total,0),2000)
+ assert.equal(remainder.find(x=>x.id===9764).stock_writeoff_status,'fulfilled')
+ const pendingSibling=remainder.find(x=>x.id!==9764)
+ assert.equal(pendingSibling.stock_writeoff_status,'pending_reservation')
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?').get(pendingSibling.id).status,'unresolved')
+ assert.deepEqual(shortageStock(),{quantity:0,reserved_quantity:1})
+ assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=9762').get().status,'active')
+ assert.equal((await api('GET','/api/orders/9754/shipping/plan')).selectedQuantity,1)
+ console.log('STAGE5_BRANCH2_PARTIAL_PENDING_DISPATCH_SPLIT_AND_FOREIGN_RESERVATION_PASS')
  console.log('STAGE5_REAL_WORKER_HTTP_SELECTED_1_OF_3_UNDO_REPLAY_LEGACY_GUARD_AND_RETURN_PASS')
 }finally{sql.close()}
