@@ -1323,14 +1323,12 @@ function App() {
   })
   const {
     inventoryMatrixActiveGroupKey,
-    inventoryMatrixCurrentGroupItems,
     inventoryMatrixBatchGroups,
     inventoryMatrixSummary,
     clearInventoryMatrixValues,
     startNextInventoryMatrixProduct,
     openInventoryMatrixBatchGroup,
     removeInventoryMatrixBatchGroup,
-    configureInventoryMatrixProduct,
     updateInventoryMatrixProductInput,
     updateInventoryMatrixCategory,
     updateInventoryMatrixGender,
