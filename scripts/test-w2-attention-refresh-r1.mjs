@@ -15,6 +15,7 @@ const between = (source, startMarker, endMarker) => {
 try {
   const pkg = JSON.parse(read('package.json'))
   const app = read('src/App.tsx')
+  const warehouseSnapshots = read('src/features/inventory/useWarehouseSnapshots.ts')
   const actions = read('src/features/inventory/useInventoryAttentionActions.ts')
   const worker = read('worker/domains/warehouse-attention.ts')
 
@@ -25,7 +26,8 @@ try {
   const openPanel = app.slice(openPanelStart, openPanelStart + 1800)
   check(!openPanel.includes("if (nextPanel === 'attention') void loadWarehouseAttention(true)"), 'Attention still starts a duplicate detail request from navigation')
 
-  const loader = between(app, '  async function loadWarehouseAttention(details = false, force = false) {', '  async function loadInventoryData(')
+  check(app.includes('useWarehouseSnapshots({'), 'App is not wired to the Warehouse snapshot controller')
+  const loader = between(warehouseSnapshots, '  async function loadWarehouseAttention(details = false, force = false) {', '  async function loadInventoryData(')
   check(loader.includes("const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')"), 'Attention panel does not force detailed data shape')
   check(loader.includes('setWarehouseAttention((current) => current?.items ? current : cached.data)'), 'Cached summary can still erase already loaded detail items')
   const inflight = between(loader, '      if (warehouseAttentionSummaryInFlight) {', '    const requestToken = ++warehouseAttentionRequestToken')
