@@ -277,7 +277,7 @@ const managerCash = createCashRegisterActions({ ...cashArgs, isAdmin: false })
 const beforeReset = cashCalls.length
 await managerCash.resetCashRegisterCycle()
 assert.equal(cashCalls.length, beforeReset)
-assert.match(cashError, /только администратору/)
+assert.match(cashError, /только администратор/)
 
 const methodCalls = []
 let loadedMethods = []
