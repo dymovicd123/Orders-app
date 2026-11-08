@@ -109,6 +109,9 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
          item.length==='СТАНДАРТ'?'':item.length,
          quickChange==='size'?item.color:'Размер '+item.size,
         ].filter(Boolean).join(' · ')}</span>
+        <button type="button" className="main-workshop-expand" onMouseDown={event=>event.preventDefault()} onClick={()=>setEditAll(true)}>
+         Изменить другие характеристики
+        </button>
        </div>
        <MainManualChoiceInput label={quickChange==='size'?(item.audienceType==='ДЕТСКИЙ'?'Новый возраст':'Новый размер'):'Новый цвет'}
         required inputRef={first} value={item[quickChange]} onChange={value=>set(quickChange,value)}
@@ -116,9 +119,6 @@ export function MainWorkshopOrderModal({onSave,onClose,source='workshop',initial
          item.audienceType==='ДЕТСКИЙ'?[...(suggestions?.childAges||[])]:
          ['БЕЗ РАЗМЕРА',...(suggestions?.sizes||[])]}
         placeholder={quickChange==='color'?'Выберите или впишите цвет':'Выберите или впишите размер'}/>
-       <button type="button" className="main-workshop-expand" onMouseDown={event=>event.preventDefault()} onClick={()=>setEditAll(true)}>
-        Изменить другие характеристики
-       </button>
       </div>:<>
       <MainManualChoiceInput label="Название товара" required value={item.productName}
        inputRef={first} onChange={value=>set('productName',value)}
