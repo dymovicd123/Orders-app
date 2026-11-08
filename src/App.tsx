@@ -49,6 +49,7 @@ import { composeOrderExchangeCancellationPlan, type OrderExchangeCancelPlan } fr
 import { prepareReturnCreation, submitReturnCreation } from './app/returnCreationOperation'
 import { prepareExchangeSetCreation, submitExchangeSetCreation } from './app/exchangeSetCreationOperation'
 import { prepareLegacyExchangePairs } from './app/legacyExchangePreparation'
+import { submitLegacyExchangeBatch, submitLegacyExchangePair } from './app/legacyExchangeCriticalRequests'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
@@ -7445,51 +7446,10 @@ function removeDebtPayment(index: number) {
 
     try {
       if (itemizedExchange && unsavedPairs.length > 1) {
-        const batchPayload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-          pairs: unsavedPairs.map((pair) => ({
-            oldItemId: Number(pair.selectedOldItem.id || 0),
-            oldQuantity: pair.oldQuantity,
-            oldReturnSource: pair.oldReturnSource,
-            oldPhysicalState: pair.oldPhysicalState,
-            newItem: {
-              ...pair.effectiveNewItem,
-              issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true,
-              unitPrice: Number(pair.effectiveNewItem.unitPrice),
-              catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-            },
-            newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          })),
-          financialAction: exchangeDraft.financialAction,
-          financialAmount: exchangeDraft.financialAmount,
-          paymentMethod: exchangeDraft.paymentMethod,
-          comment: exchangeDraft.comment,
-        }
-        const batchKey = `exchange-batch-create:${exchangeSelectedOrder.id}:${unsavedPairs.map((pair) => pair.draftKey).join('.')}`
-        const critical = prepareCriticalRequest(batchKey, batchPayload)
-        const response = await apiFetch('/api/exchanges/batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{
-          ok?: boolean
-          message?: string
-          order?: OrderRecord
-          exchangeIds?: number[]
-          exchangeCount?: number
-          pendingInventoryCount?: number
-          workshopCount?: number
-          finalTotalAmount?: number
-        }>(response, 'Обмен · несколько позиций')
-        if (!response.ok) throw new Error(result.message || `Exchange batch failed: ${response.status}`)
-        completeCriticalRequest(batchKey, critical.requestId)
+        const result = await submitLegacyExchangeBatch(
+          { apiFetch, prepareCriticalRequest, completeCriticalRequest },
+          exchangeSelectedOrder, exchangeDraft, unsavedPairs,
+        )
 
         if (result.order) {
           upsertOrderInState(result.order)
@@ -7517,45 +7477,10 @@ function removeDebtPayment(index: number) {
       }
 
       for (const pair of unsavedPairs) {
-        const isFinalPair = pair.index === pairDrafts.length - 1
-        const payload = {
-          orderId: exchangeSelectedOrder.id,
-          exchangeDate: exchangeDraft.exchangeDate,
-          oldItemId: Number(pair.selectedOldItem.id || 0),
-          oldQuantity: pair.oldQuantity,
-          oldReturnSource: pair.oldReturnSource,
-          oldPhysicalState: pair.oldPhysicalState,
-          newItem: itemizedExchange ? {
-            ...pair.effectiveNewItem,
-            issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true,
-            unitPrice: Number(pair.effectiveNewItem.unitPrice),
-            catalogPriceSnapshot: pair.effectiveNewItem.catalogPriceSnapshot == null ? null : Number(pair.effectiveNewItem.catalogPriceSnapshot),
-          } : { ...pair.effectiveNewItem, issuePossessionConfirmed: pair.effectiveNewItem.stockObservationEnabled === true },
-          newSourceWasManuallyChanged: pair.newSourceWasManuallyChanged,
-          ...(itemizedExchange ? {
-            expectedOrderTotal: Number(exchangeSelectedOrder.total_amount),
-            expectedOldActiveQuantity: Number(pair.selectedOldItem.quantity),
-            expectedOldUnitPrice: Number(pair.selectedOldItem.unitPrice),
-            expectedOldLineTotal: Number(pair.selectedOldItem.lineTotal),
-            expectedOldCatalogPriceSnapshot: pair.selectedOldItem.catalogPriceSnapshot == null ? null : Number(pair.selectedOldItem.catalogPriceSnapshot),
-          } : {}),
-          // One visit has one money difference. Put it only on the final child exchange,
-          // so debt/top-up/refund can never be counted once per selected product.
-          financialAction: isFinalPair ? exchangeDraft.financialAction : 'none',
-          financialAmount: isFinalPair ? exchangeDraft.financialAmount : 0,
-          paymentMethod: isFinalPair ? exchangeDraft.paymentMethod : '',
-          comment: exchangeDraft.comment,
-        }
-        const criticalKey = `exchange-create:${exchangeSelectedOrder.id}:${pair.draftKey}`
-        const critical = prepareCriticalRequest(criticalKey, payload)
-        const response = await apiFetch('/api/exchanges', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-          body: JSON.stringify(critical.payload),
-        })
-        const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; exchangeId?: number; pendingInventoryCount?: number }>(response, `Обмен · позиция ${pair.index + 1}`)
-        if (!response.ok) throw new Error(result.message || `Exchange failed: ${response.status}`)
-        completeCriticalRequest(criticalKey, critical.requestId)
+        const result = await submitLegacyExchangePair(
+          { apiFetch, prepareCriticalRequest, completeCriticalRequest },
+          exchangeSelectedOrder, exchangeDraft, pair, pairDrafts.length, itemizedExchange,
+        )
         savedThisAttempt += 1
         pendingInventoryCount += Math.max(0, Number(result.pendingInventoryCount || 0))
         exchangeTouchesWorkshop = exchangeTouchesWorkshop || pair.selectedOldItem.sourceType === 'workshop' || pair.effectiveNewItem.sourceType === 'workshop'

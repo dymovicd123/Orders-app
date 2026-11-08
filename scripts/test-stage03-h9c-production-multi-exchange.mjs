@@ -16,6 +16,7 @@ const app = read('src/App.tsx')
 const ui = read('src/features/sections/OrderExchangeSection.tsx')
 const workerIndex = read('worker/index.ts')
 const batchWorker = read('worker/domains/exchange-batch.ts')
+const exchangeRequests = read('src/app/legacyExchangeCriticalRequests.ts')
 
 check(wrangler.includes('"name": "orders-app"'), 'H9C Production Worker identity drifted')
 check(wrangler.includes('"database_name": "orders_db_prod"') && wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'), 'H9C Production D1 identity drifted')
@@ -25,13 +26,13 @@ const saveExchange = between(app, 'async function saveExchange()', '\n\n  async 
 check(!saveExchange.includes('itemizedExchange && pairDrafts.length !== 1'), 'H9C Production still blocks itemized multi-pair exchange')
 check(saveExchange.includes('itemizedExchange && unsavedPairs.length > 1'), 'H9C Production multi-pair save branch missing')
 check(saveExchange.includes('prepareLegacyExchangePairs(exchangeSelectedOrder, exchangeDraft, getOrderSourceAvailability)'), 'App must validate legacy Exchange pairs before any write')
-check(saveExchange.includes("apiFetch('/api/exchanges/batch'"), 'H9C Production batch endpoint call missing')
-check(saveExchange.includes('expectedOrderTotal: Number(exchangeSelectedOrder.total_amount)'), 'H9C Production order-total stale snapshot missing')
+check(saveExchange.includes('submitLegacyExchangeBatch(') && exchangeRequests.includes("client.apiFetch('/api/exchanges/batch'"), 'H9C production must retain the real batch endpoint through the typed client')
+check(exchangeRequests.includes('expectedOrderTotal: Number(exchangeSelectedOrder.total_amount)'), 'H9C Production order-total stale snapshot missing')
 for (const field of ['expectedOldActiveQuantity', 'expectedOldUnitPrice', 'expectedOldLineTotal', 'expectedOldCatalogPriceSnapshot']) {
-  check(saveExchange.includes(field), 'H9C Production pair stale snapshot missing ' + field)
+  check(exchangeRequests.includes(field), 'H9C Production pair stale snapshot missing ' + field)
 }
-check(saveExchange.includes("'X-Idempotency-Key': critical.requestId"), 'H9C Production browser batch write is not retry-safe')
-check(saveExchange.includes('completeCriticalRequest(batchKey, critical.requestId)'), 'H9C Production browser does not retire completed batch idempotency token')
+check(exchangeRequests.includes("'X-Idempotency-Key': critical.requestId"), 'H9C Production browser batch write is not retry-safe')
+check(exchangeRequests.includes('client.completeCriticalRequest(batchKey, critical.requestId)'), 'H9C Production browser does not retire completed batch idempotency token')
 
 check(ui.includes('Добавить ещё позицию'), 'H9C Production multi-pair control missing')
 check(!ui.includes('if (itemizedExchange || !currentPairReady) return'), 'H9C Production queue still rejects itemized orders')
@@ -143,5 +144,99 @@ assert.match(prepareLegacyExchangePairs(itemized,{...draft,newItem:{...newGood,u
 assert.match(prepareLegacyExchangePairs(itemized,{...draft,newItem:{...newGood,catalogPriceSnapshot:-1}},canIssue).error,
  /снимок цены Каталога/)
 console.log('LEGACY_EXCHANGE_PURE_PREPARATION_CAPACITY_PRICE_PARTIAL_REPLAY_PASS')
+
+// Exercise both real extracted transport paths, preserving retry IDs,
+// CAS snapshots and money exactly once on the last unsaved child.
+const transportBundle=await build({entryPoints:['src/app/legacyExchangeCriticalRequests.ts'],
+ bundle:true,platform:'node',format:'esm',write:false,target:'es2022',logLevel:'silent'})
+const transport=await import('data:text/javascript;base64,'+Buffer.from(transportBundle.outputFiles[0].text).toString('base64'))
+const {submitLegacyExchangeBatch,submitLegacyExchangePair}=transport
+const observedRequests=[], completedOperations=[], pendingRequests=new Map()
+let currentSequence=0,failNext=true,conflictNext=false
+const client={
+ prepareCriticalRequest(key,payload){
+  const fingerprint=JSON.stringify(payload)
+  let previous=pendingRequests.get(key)
+  if(!previous||previous.fingerprint!==fingerprint){
+   previous={fingerprint,requestId:'exchange-transport-'+(++currentSequence)}
+   pendingRequests.set(key,previous)
+  }
+  return {requestId:previous.requestId,payload:{...payload,requestId:previous.requestId}}
+ },
+ completeCriticalRequest(key,id){
+  completedOperations.push({key,id})
+  if(pendingRequests.get(key)?.requestId===id)pendingRequests.delete(key)
+ },
+ async apiFetch(url,init){
+  observedRequests.push({url,method:init.method,token:init.headers['X-Idempotency-Key'],body:JSON.parse(init.body)})
+  if(failNext){failNext=false;throw new Error('Exchange response unknown')}
+  if(conflictNext){conflictNext=false;return new Response(JSON.stringify({message:'Снимок заказа устарел'}),{status:409,headers:{'Content-Type':'application/json'}})}
+  return new Response(JSON.stringify({ok:true,order:{id:80},exchangeId:135,exchangeCount:2,pendingInventoryCount:0}),
+   {status:200,headers:{'Content-Type':'application/json'}})
+ },
+}
+const transportOrder={...itemized,total_amount:11000}
+const itemizedMulti=prepareLegacyExchangePairs(transportOrder,{...draft,queuedPairs:[queued]},canIssue)
+assert.equal(itemizedMulti.ok,true)
+await assert.rejects(()=>submitLegacyExchangeBatch(client,transportOrder,{...draft,queuedPairs:[queued]},itemizedMulti.unsavedPairs),
+ /Exchange response unknown/)
+assert.equal(completedOperations.length,0,'Unknown batch outcome must retain its requestId')
+const batchResult=await submitLegacyExchangeBatch(client,transportOrder,{...draft,queuedPairs:[queued]},itemizedMulti.unsavedPairs)
+assert.equal(batchResult.exchangeCount,2)
+assert.equal(observedRequests[0].url,'/api/exchanges/batch')
+assert.equal(observedRequests[0].method,'POST')
+assert.equal(observedRequests[0].token,observedRequests[1].token,'Batch replay must use one stable idempotency requestId')
+assert.equal(observedRequests[1].body.expectedOrderTotal,11000,
+ 'Batch must submit the exact historic order-total CAS snapshot')
+assert.equal(observedRequests[1].body.pairs.length,2)
+assert.equal(observedRequests[1].body.pairs[0].expectedOldActiveQuantity,2)
+assert.equal(observedRequests[1].body.pairs[0].expectedOldUnitPrice,4000)
+assert.equal(observedRequests[1].body.pairs[0].expectedOldLineTotal,8000)
+assert.equal(observedRequests[1].body.pairs[0].expectedOldCatalogPriceSnapshot,4100)
+assert.equal(observedRequests[1].body.pairs[0].newItem.issuePossessionConfirmed,false)
+assert.equal(observedRequests[1].body.pairs[0].newItem.observedPhysicalQuantity,null)
+assert.equal(observedRequests[1].body.financialAction,'none')
+assert.deepEqual(completedOperations[0],{key:'exchange-batch-create:80:old-1.now-1',id:observedRequests[1].token})
+const financeDraft={...draft,financialAction:'extra_payment',financialAmount:150,paymentMethod:'НАЛИЧНЫЕ'}
+const unsaved=multi.unsavedPairs
+failNext=true
+await assert.rejects(()=>submitLegacyExchangePair(client,oldOrder,financeDraft,unsaved[0],2,false),
+ /Exchange response unknown/)
+assert.equal(completedOperations.length,1,'Unknown child outcome must not clear the child retry key')
+const firstResult=await submitLegacyExchangePair(client,oldOrder,financeDraft,unsaved[0],2,false)
+assert.equal(firstResult.exchangeId,135)
+const firstAttempt=observedRequests[2], firstRetry=observedRequests[3]
+assert.equal(firstAttempt.url,'/api/exchanges')
+assert.equal(firstAttempt.token,firstRetry.token)
+assert.equal(firstRetry.body.financialAction,'none')
+assert.equal(firstRetry.body.financialAmount,0)
+assert.equal(firstRetry.body.paymentMethod,'')
+assert.equal(firstRetry.body.oldPhysicalState,'warehouse')
+assert.equal(firstRetry.body.newItem.observedPhysicalQuantity,null)
+conflictNext=true
+await assert.rejects(()=>submitLegacyExchangePair(client,oldOrder,financeDraft,unsaved[1],2,false),
+ /Снимок заказа устарел/)
+assert.equal(completedOperations.length,2,'Stale 409 must not finalize the last money-bearing Exchange child')
+const lastResult=await submitLegacyExchangePair(client,oldOrder,financeDraft,unsaved[1],2,false)
+assert.equal(lastResult.order.id,80)
+const lastAttempt=observedRequests[4],lastRetry=observedRequests[5]
+assert.equal(lastAttempt.token,lastRetry.token)
+assert.notEqual(lastRetry.token,firstRetry.token)
+assert.equal(lastRetry.body.financialAction,'extra_payment')
+assert.equal(lastRetry.body.financialAmount,150)
+assert.equal(lastRetry.body.paymentMethod,'НАЛИЧНЫЕ')
+assert.equal(lastRetry.body.oldPhysicalState,'pending')
+assert.equal(completedOperations.length,3,'Only successful durable batch and children complete a critical token')
+const itemizedFirst=await submitLegacyExchangePair(client,transportOrder,financeDraft,itemizedMulti.unsavedPairs[0],2,true)
+assert.equal(itemizedFirst.exchangeId,135)
+const itemizedBody=observedRequests[6].body
+assert.equal(itemizedBody.expectedOrderTotal,11000,'Itemized pair must carry the exact order-total CAS snapshot')
+assert.equal(itemizedBody.expectedOldActiveQuantity,2)
+assert.equal(itemizedBody.expectedOldUnitPrice,4000)
+assert.equal(itemizedBody.expectedOldLineTotal,8000)
+assert.equal(itemizedBody.expectedOldCatalogPriceSnapshot,4100)
+assert.equal(itemizedBody.newItem.issuePossessionConfirmed,false)
+assert.equal(itemizedBody.newItem.observedPhysicalQuantity,null)
+console.log('LEGACY_EXCHANGE_BATCH_CHILD_POST_IDEMPOTENT_REPLAY_FINANCIAL_ONCE_PASS')
 
 console.log('STAGE03-H9C PRODUCTION MULTI-EXCHANGE PASSED — Production has the Branch2-tested multi-position itemized Exchange path with stale-safe aggregate validation, resumable idempotency and repeated-SKU stock protection')
