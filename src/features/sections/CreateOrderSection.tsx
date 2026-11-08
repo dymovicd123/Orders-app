@@ -251,7 +251,7 @@ export function CreateOrderSection({ ctx }: { ctx: SectionContext }) {
                         {[
                           item.gender==='ЖЕН'?'Женский':item.gender==='МУЖ'?'Мужской':item.gender||'',
                           String(item.material||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.material||'',item.color||'',
-                          item.length?(String(item.length).toUpperCase()==='СТАНДАРТ'?'Обычная длина':item.length):'',
+                          item.length?(String(item.length).trim().toUpperCase()==='СТАНДАРТ'?'':item.length):'',
                           ['БЕЗ РАЗМЕРА','БЕЗРАЗМЕРА','Б/Р'].includes(String(item.size||'').trim().toUpperCase())
                             ?'Без размера'
                             :(String(item.audienceType).toUpperCase()==='ДЕТСКИЙ'?'Возраст ':'Размер ')+(item.size||'не указан'),
