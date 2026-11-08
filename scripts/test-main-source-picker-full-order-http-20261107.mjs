@@ -219,6 +219,92 @@ try{
  assert.equal(countVariants(),initialVariants,'Normal known facts must not create new catalog variant')
  const noAutoReserve=sql.prepare('SELECT status FROM inventory_reservations WHERE order_id=?').get(normalResult.body.orderId)
  assert.equal(noAutoReserve?.status,'unresolved','Normal unknown combo may not get an invented-SKU stock reservation')
+
+ // HTTP regression from Work final acceptance: mixed change of an existing
+ // execution's size, a separate quantity/sale-price edit, and an added source
+ // variant in one atomic update. Uses only disposable in-memory SQLite.
+ for(const [id,size] of [[98521,'44'],[98522,'46'],[98523,'48'],[98524,'50'],[98525,'52'],[98526,'54'],[98527,'56']]){
+  sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,gender,color,material,length,size_label,category,is_active) VALUES(?,98502,?,'ЖЕН','БЕЖЕВЫЙ','КАШЕМИР','СТАНДАРТ',?,'adult',1)").run(id,executionId,size)
+  sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES('boutique',98502,?,'QA SIZE PONCHO','ЖЕН','БЕЖЕВЫЙ','КАШЕМИР','СТАНДАРТ',?,20,0)").run(id,size)
+ }
+ const seed=make(98521,'44','qa-atomic-mixed-order-create')
+ const prices=[22500,27500,25000,20000,25000,25000]
+ const snapshots=[22500,27000,25000,20000,25000,25000]
+ seed.items=[98521,98522,98523,98524,98525,98526].map((variantId,index)=>({
+  ...seed.items[0],catalogVariantId:variantId,size:String(44+index*2),
+  quantity:1,unitPrice:prices[index],catalogPriceSnapshot:snapshots[index]
+ }))
+ seed.payments=[{paymentDate:'2026-11-07',method:'НАЛИЧКА',amount:8000,paymentKind:'primary'}]
+ const created=await post(seed)
+ assert([200,201].includes(created.status),'Mixed edit base order creation rejected: '+JSON.stringify(created.body))
+ const editOrderId=created.body.orderId
+ assert(editOrderId>0)
+ const detailRequest=new Request('https://test-only.invalid/api/orders/'+editOrderId,{
+  method:'GET',headers:{Cookie:'orders_session='+token}
+ })
+ const detailResponse=await worker.fetch(detailRequest,{DB:db})
+ assert.equal(detailResponse.status,200,'Expected full order detail to be readable before rewrite')
+ const detail=(await detailResponse.json()).order
+ assert.equal(detail.items.length,6)
+ assert.equal(detail.total_amount,145000)
+ assert.equal(detail.received_amount,8000)
+ const expected=detail.items.map(row=>({
+  orderItemId:Number(row.id),productName:row.productName,audienceType:row.audienceType,
+  gender:row.gender,color:row.color,material:row.material||'СТАНДАРТ',
+  length:row.length||'СТАНДАРТ',size:row.size,
+  quantity:Number(row.quantity),unitPrice:Number(row.unitPrice),lineTotal:Number(row.lineTotal),
+  catalogPriceSnapshot:row.catalogPriceSnapshot??null,
+  sourceType:row.isWorkshop?'workshop':row.sourceType,
+  workshopComment:row.workshopComment||null,workshopUrgent:Boolean(row.workshopUrgent),
+  workshopDueDate:row.workshopDueDate||null,workshopDueTime:row.workshopDueTime||null
+ }))
+ const editItems=expected.map(row=>({
+  ...row,unitPrice:row.unitPrice,
+ }))
+ editItems[0].quantity=2
+ editItems[0].unitPrice=22600
+ editItems[1].size='56'
+ // The new SKU may suggest 29000, but the unchanged execution retains its
+ // historical 27000 snapshot; the server deliberately rejects 29000.
+ const unguarded=editItems.map(x=>({...x}))
+ unguarded[1].catalogPriceSnapshot=29000
+ const added={
+  ...editItems[1],orderItemId:undefined,sourceType:'warehouse',size:'44',
+  quantity:1,unitPrice:27500,catalogPriceSnapshot:27000,
+  shortageAcknowledged:true
+ }
+ const patch=async(requestId,items)=>{
+  const request=new Request('https://test-only.invalid/api/orders/'+editOrderId,{
+   method:'PATCH',headers:{Cookie:'orders_session='+token,'Content-Type':'application/json','X-Idempotency-Key':requestId},
+   body:JSON.stringify({
+    requestId,orderDate:'2026-11-07',managerId,managerName:'QA Picker Manager',
+    customerName:'QA Customer',city:'Алматы',deliveryType:'Самовывоз',
+    paymentCorrections:[],
+    itemContentReplacement:{expectedItems:expected,items},
+   })
+  })
+  const response=await worker.fetch(request,{DB:db})
+  return{status:response.status,body:await response.json()}
+ }
+ const rejectedSnapshot=await patch('qa-mixed-reject-snapshot', [...unguarded,added])
+ assert.equal(rejectedSnapshot.status,409,'Server must reject overwritten historical execution snapshot '+JSON.stringify(rejectedSnapshot.body))
+ assert.equal(Number(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(editOrderId).n),6)
+ assert.equal(Number(sql.prepare('SELECT total_amount FROM orders WHERE id=?').get(editOrderId).total_amount),145000)
+ const corrected=await patch('qa-mixed-correct-historical-snapshot', [...editItems,added])
+ assert([200,201].includes(corrected.status),'Mixed 6 -> 7 PATCH failed: '+JSON.stringify(corrected.body))
+ const resultOrder=sql.prepare('SELECT total_amount,received_amount,debt_amount FROM orders WHERE id=?').get(editOrderId)
+ assert.equal(resultOrder.total_amount,195200)
+ assert.equal(resultOrder.received_amount,8000)
+ assert.equal(resultOrder.debt_amount,187200)
+ const saved=sql.prepare('SELECT size_snapshot,source_type,quantity,unit_price,catalog_price_snapshot,variant_id FROM order_items WHERE order_id=? ORDER BY id').all(editOrderId)
+ assert.equal(saved.length,7,'One of the unchanged items was silently lost')
+ assert(saved.some(row=>row.size_snapshot==='56'&&row.catalog_price_snapshot===27000&&row.unit_price===27500),'Replaced size lost historic execution snapshot')
+ assert(saved.some(row=>row.size_snapshot==='44'&&row.quantity===2&&row.unit_price===22600),'Quantity/price correction lost')
+ assert(saved.some(row=>row.size_snapshot==='44'&&row.source_type==='warehouse'&&row.catalog_price_snapshot===27000),'Added warehouse line lost')
+ const editPaymentCount=Number(sql.prepare('SELECT COUNT(*) AS n FROM payments WHERE order_id=?').get(editOrderId).n)
+ assert.equal(editPaymentCount,1,'Existing posted payment changed during mixed item edit')
+ console.log('MIXED_ITEMIZED_HTTP_PATCH_PASS: rejected invalid snapshot atomically; accepted 6 to 7, total 195200, retained 8000 payment, correct source and historical snapshot')
+
  console.log('NORMAL_ORDER_READ_ONLY_CATALOG_PASS: exact already-known SKU or unresolved; never implicit catalog variant')
  console.log('MANUAL_ALL_SOURCE_HTTP_PASS: external-source SKU reused; new variation unresolved; no-color explicit; direct-HTTP required fields')
  console.log('EXACT_SIZE_HTTP_ORDER_PASS: persisted STANDARD, zero, no-size and safe incomplete Workshop tasks, no invented SKU or stock writes')
