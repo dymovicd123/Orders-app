@@ -8,11 +8,12 @@ import {build} from 'esbuild'
 const section=fs.readFileSync('src/features/sections/OrderEditorSection.tsx','utf8')
 const utils=fs.readFileSync('src/app/utils.ts','utf8')
 const app=fs.readFileSync('src/App.tsx','utf8')
+const editSession=fs.readFileSync('src/features/orders/orderEditSessionActions.ts','utf8')
 assert(section.includes('itemizedMode&&<ItemizedOrderEditorWorkspace'),'Modern picker not mounted in order editor')
 assert(section.includes('!itemizedMode&&<section className="mini-panel">'),'Old product fields not confined to legacy orders')
 assert(section.includes('disabled={savingOrder||Boolean(itemizedMode&&itemPickerBlocking)}'),'Half-finished selection must block order save')
 assert(utils.includes('catalogVariantId: Number(item.variantId || 0) || undefined'),'Existing SKU identity must survive hydration')
-assert(app.includes('completeOrder = await fetchCompleteOrderForEditing(order)'),'Editor must fetch authoritative full order')
+assert(app.includes('createOrderEditSessionActions({') && editSession.includes('completeOrder = await fetchCompleteOrderForEditing(order)'),'Editor must fetch authoritative full order')
 const stock=(qty,listed=true)=>({physical:qty,reserved:0,cachedReserved:0,free:qty,listed})
 const make=(id,size)=>({
  variantId:id,productId:5,productName:'БАЯН СҰЛУ ШАПАН',category:'adult',
