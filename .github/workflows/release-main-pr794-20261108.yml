@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 3
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -44,7 +44,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = 'refs/heads/main'
-          test "$(git rev-parse HEAD^)" = 'f315cbb8fd4161a61a80dee1c205426d93673883'
+          test "$(git rev-parse HEAD^)" = '7b07e6c7cfc993c47ae2e203bb8b50a0cb79029f'
+          test "$(git rev-parse HEAD^^)" = 'f315cbb8fd4161a61a80dee1c205426d93673883'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/release-main-pr794-20261108.yml'
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
