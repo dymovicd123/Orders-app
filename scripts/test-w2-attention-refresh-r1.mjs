@@ -17,6 +17,7 @@ try {
   const app = read('src/App.tsx')
   const warehouseSnapshots = read('src/features/inventory/useWarehouseSnapshots.ts')
   const actions = read('src/features/inventory/useInventoryAttentionActions.ts')
+  const recovery = read('src/features/inventory/warehouseRecoveryActions.ts')
   const worker = read('worker/domains/warehouse-attention.ts')
 
   check(String(pkg.scripts?.['release:check'] || '').includes('node scripts/test-w2-attention-refresh-r1.mjs'), 'R1 regression is not chained into release:check')
@@ -42,9 +43,10 @@ try {
 
   const intake = between(actions, '  async function openAttentionIntake(item: any) {', '  function openAttentionHandover')
   check(intake.includes('else if (!result?.warehouseAttention) await loadWarehouseAttention(true)'), 'Intake still performs a second detailed Attention read when reconciliation already returned refreshed data')
-  const reconcileStart = app.indexOf('  async function reconcileKnownInventoryLifecycle(eventId: number) {')
+  check(app.includes('createWarehouseRecoveryActions({'), 'Warehouse recovery module no longer connected to App')
+  const reconcileStart = recovery.indexOf('  async function reconcileKnownInventoryLifecycle(eventId: number) {')
   check(reconcileStart >= 0, 'reconcileKnownInventoryLifecycle missing')
-  const reconcile = app.slice(reconcileStart, reconcileStart + 2400)
+  const reconcile = recovery.slice(reconcileStart, reconcileStart + 2400)
   check(reconcile.includes('const [attentionData] = await Promise.all(['), 'Intake reconciliation does not retain its already loaded Attention payload')
   check(reconcile.includes('return { ...result, warehouseAttention: attentionData }'), 'Intake reconciliation does not return reusable Attention data')
 
