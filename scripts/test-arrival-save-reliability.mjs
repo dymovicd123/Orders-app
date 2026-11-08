@@ -2,10 +2,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 const root=process.cwd()
 const app=fs.readFileSync(path.join(root,'src/App.tsx'),'utf8')
-const start=app.indexOf('async function saveInventoryMovement')
+const movements=fs.readFileSync(path.join(root,'src/features/inventory/inventoryMovementActions.ts'),'utf8')
+const start=movements.indexOf('async function saveInventoryMovement')
 if (start < 0) throw new Error('saveInventoryMovement missing')
-const end=app.indexOf('\n  async function ', start + 20)
-const body=app.slice(start, end > start ? end : app.length)
+const end=movements.indexOf('\n  return {', start + 20)
+const body=movements.slice(start, end > start ? end : movements.length)
+if (!app.includes('createInventoryMovementActions({')) throw new Error('Actual movement workflow not connected to App')
 const check=(value,message)=>{ if(!value) throw new Error(message) }
 const finishStart = body.indexOf('const finishMovement = async')
 const finishEnd = body.indexOf('const isArrivalRecoveryResult =', finishStart)
