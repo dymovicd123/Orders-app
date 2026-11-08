@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 const returns=readFileSync('worker/domains/returns-exchanges.ts','utf8')
+const creation=readFileSync('worker/domains/order-return-creation.ts','utf8')
 const shipping=readFileSync('worker/domains/order-reservations.ts','utf8')
 const capture=(source,variable)=>{
   const i=source.indexOf('const '+variable+' = await db.prepare(')
@@ -12,20 +13,20 @@ const capture=(source,variable)=>{
   assert(start>=0&&end>start,'Unterminated query: '+variable)
   return source.slice(start+1,end)
 }
-const creation=capture(returns,'dangling')
+const creationQuery=capture(creation,'dangling')
 const intake=capture(returns,'activeReservation')
 const shipment=capture(shipping,'conflictingReturn')
-assert.match(creation,/inventory_reservations/)
-assert.match(creation,/status IN \('active', 'unresolved'\)/)
+assert.match(creationQuery,/inventory_reservations/)
+assert.match(creationQuery,/status IN \('active', 'unresolved'\)/)
 assert.match(intake,/status IN \('active', 'unresolved'\)/)
 assert.match(shipment,/AND ret\.order_id = r\.order_id/)
 assert.match(shipment,/NOT EXISTS \(/)
 assert.match(shipment,/e\.refund_return_id = ret\.id/)
 assert.match(shipment,/COALESCE\(oi\.is_workshop, 0\) = 0/)
-const createFn=returns.indexOf('export async function createReturn(')
-const guard=returns.indexOf('const dangling = await db.prepare(',createFn)
-const issued=returns.indexOf('const issuedToClient =',createFn)
-const physicalState=returns.indexOf('const physicalState = selected.physicalState;',createFn)
+const createFn=creation.indexOf('export async function createReturn(')
+const guard=creation.indexOf('const dangling = await db.prepare(',createFn)
+const issued=creation.indexOf('const issuedToClient =',createFn)
+const physicalState=creation.indexOf('const physicalState = selected.physicalState;',createFn)
 assert(createFn>=0&&issued<guard&&guard<physicalState,
   'Guard must occur after exact issue validation and before physical return actions')
 const receiveFn=returns.indexOf('export async function receiveReturnedItem(')
@@ -53,7 +54,7 @@ db.exec(`
  INSERT INTO return_items VALUES(11,10,5,1);
 `)
 const read=(q,...args)=>db.prepare(q).get(...args)??null
-assert.equal(read(creation,5)?.id,7,'Create: active reserve must block physical Return')
+assert.equal(read(creationQuery,5)?.id,7,'Create: active reserve must block physical Return')
 assert.equal(read(intake,5)?.id,7,'Late intake: active reserve must block stock +1')
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42)?.return_id,10,
   'Normal shipment cannot fulfill a returned still-active line')
@@ -62,10 +63,10 @@ assert.equal(read(shipment.replaceAll('${scopeSql}',' AND r.order_item_id IN (SE
 assert.equal(read(shipment.replaceAll('${scopeSql}',' AND r.order_item_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))'),42,'[500]'),null,
   'Scoped guard cannot block unrelated order item')
 db.exec("UPDATE inventory_reservations SET status='unresolved' WHERE id=7")
-assert.equal(read(creation,5)?.id,7,'Physical Return must reject unresolved stock obligation')
+assert.equal(read(creationQuery,5)?.id,7,'Physical Return must reject unresolved stock obligation')
 assert.equal(read(intake,5)?.id,7,'Late receipt must reject unresolved stock obligation')
 db.exec("UPDATE inventory_reservations SET status='fulfilled' WHERE id=7")
-assert.equal(read(creation,5),null,'Legitimately fulfilled SKU must remain returnable')
+assert.equal(read(creationQuery,5),null,'Legitimately fulfilled SKU must remain returnable')
 assert.equal(read(intake,5),null,'Legitimately fulfilled SKU can be received')
 assert.equal(read(shipment.replaceAll('${scopeSql}',''),42),null,'Fulfilled item is not a double-shipment candidate')
 db.exec("UPDATE inventory_reservations SET status='active' WHERE id=7")

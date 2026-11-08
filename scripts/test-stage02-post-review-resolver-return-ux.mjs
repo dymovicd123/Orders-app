@@ -32,11 +32,12 @@ assert.ok(review.includes('normalizedCatalogReviewKey(row) === inputKey'), 'Exac
 assert.ok(review.includes('toInt(row.id ?? row.order_item_id, 0) === orderItemId'), 'Incomplete/ambiguous confirmation must remain single-row scoped')
 
 const returnsWorker = read('worker/domains/returns-exchanges.ts')
-assert.ok(returnsWorker.includes('if (amount <= 0 && selectedItems.length === 0)'), 'Zero-money return must require a returned item, not positive money')
-assert.ok(returnsWorker.includes('if (amount > 0 && !paymentMethod)'), 'Payment method must only be required when money is actually refunded')
+const creationWorker = read('worker/domains/order-return-creation.ts')
+assert.ok(creationWorker.includes('if (amount <= 0 && selectedItems.length === 0)'), 'Zero-money return must require a returned item, not positive money')
+assert.ok(creationWorker.includes('if (amount > 0 && !paymentMethod)'), 'Payment method must only be required when money is actually refunded')
 // Inspect the TypeScript syntax tree instead of pinning the exact whitespace
-// or number of nested payment-method loops in returns-exchanges.ts.
-const returnAst = ts.createSourceFile('returns-exchanges.ts', returnsWorker, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+// or number of nested payment-method loops in order-return-creation.ts.
+const returnAst = ts.createSourceFile('order-return-creation.ts', creationWorker, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 function includesRefundEventCall(node) {
   if (ts.isCallExpression(node) && node.expression.getText(returnAst) === 'refundMoneyEventStatement') return true
   return ts.forEachChild(node, includesRefundEventCall) === true

@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
 const moneySource=fs.readFileSync('worker/domains/money.ts','utf8')
-const returnsSource=fs.readFileSync('worker/domains/returns-exchanges.ts','utf8')
+const returnsSource=fs.readFileSync('worker/domains/order-return-creation.ts','utf8')
 function sqlFrom(source, start, guard) {
   // The file also contains historical/general inserts. Exercise only the
   // guarded statement from the current critical-operation path.

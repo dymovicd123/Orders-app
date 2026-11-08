@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 
 const domain = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+const creation = fs.readFileSync('worker/domains/order-return-creation.ts', 'utf8')
 const activity = fs.readFileSync('worker/domains/activity.ts', 'utf8')
 const router = fs.readFileSync('worker/index.ts', 'utf8')
 const migration = fs.readFileSync('migrations/0069_v72_return_exchange_physical_receipt.sql', 'utf8')
@@ -20,18 +21,18 @@ expect(migration.includes('ALTER TABLE exchange_items ADD COLUMN physical_tracki
 expect(migration.includes('ALTER TABLE exchange_items ADD COLUMN physical_received_at'), 'exchange_items physical_received_at migration missing')
 expect(migration.includes('DEFAULT 0'), 'legacy rows must remain untracked by default')
 
-expect(domain.includes("physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'return item physicalState contract missing')
+expect(creation.includes("physicalState?: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'return item physicalState contract missing')
 expect(domain.includes("oldPhysicalState?: 'not_issued' | 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'exchange oldPhysicalState contract missing')
-expect(domain.includes('physical_tracking, physical_received_at'), 'physical receipt columns are not written by create flows')
-expect(domain.includes("physicalState !== 'pending' ? createdAt : null"), 'return received timestamp semantics missing')
+expect(creation.includes('physical_tracking, physical_received_at'), 'physical receipt columns are not written by create flows')
+expect(creation.includes("physicalState !== 'pending' ? createdAt : null"), 'return received timestamp semantics missing')
 expect(domain.includes("oldPhysicalTracking && oldPhysicalState !== 'pending' ? timestamp : null"), 'exchange received timestamp semantics missing')
-expect(domain.includes('physicalTracking ? 1 : 0'), 'return tracking flag is not written')
+expect(creation.includes('physicalTracking ? 1 : 0'), 'return tracking flag is not written')
 expect(domain.includes('oldPhysicalTracking ? 1 : 0'), 'exchange tracking flag is not written')
-expect(domain.includes("physicalState === 'warehouse' || physicalState === 'boutique'"), 'return destination is not derived from physical state')
+expect(creation.includes("physicalState === 'warehouse' || physicalState === 'boutique'"), 'return destination is not derived from physical state')
 expect(domain.includes("oldPhysicalState === 'warehouse' || oldPhysicalState === 'boutique'"), 'exchange destination is not derived from physical state')
 
 // Compatibility guard: legacy payloads must still use the existing restock source semantics.
-expect(domain.includes("physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null)"), 'legacy return restock fallback missing')
+expect(creation.includes("physicalTracking ? trackedInventorySource : (restockSource !== 'none' && itemRestockRequested ? restockSource : null)"), 'legacy return restock fallback missing')
 expect(domain.includes("oldPhysicalTracking ? trackedOldReturnSource : normalizeExchangeReturnSource(input.oldReturnSource)"), 'legacy exchange restock fallback missing')
 expect(domain.includes("const oldWasNotIssued = oldPhysicalState === 'not_issued'"), 'exchange not-issued branch missing')
 expect(domain.includes("await releaseOrderReservationV2("), 'not-issued exchange does not release the old reservation without touching physical stock')

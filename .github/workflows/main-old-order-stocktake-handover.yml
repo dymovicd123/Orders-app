@@ -6,6 +6,8 @@ on:
       - 'worker/domains/order-reservations.ts'
       - 'worker/domains/order-handover-exchange-correction.ts'
       - 'worker/domains/order-return-cancellation.ts'
+      - 'worker/domains/order-return-creation.ts'
+      - 'worker/domains/order-return-capacity.ts'
       - 'worker/index.ts'
       - 'src/App.tsx'
       - 'src/features/sections/OrdersTableSection.tsx'

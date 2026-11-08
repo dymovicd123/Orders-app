@@ -6,6 +6,13 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import path from 'node:path'
 import worker from '../worker/index.ts'
+import { createReturn as legacyCreateReturn, noStandaloneReturnSql as legacyCapacityFilter, hasActiveStandaloneReturn as legacyCapacityCheck } from '../worker/domains/returns-exchanges.ts'
+import { createReturn as isolatedCreateReturn } from '../worker/domains/order-return-creation.ts'
+import { noStandaloneReturnSql as sharedCapacityFilter, hasActiveStandaloneReturn as isolatedCapacityCheck } from '../worker/domains/order-return-capacity.ts'
+
+assert.strictEqual(legacyCreateReturn, isolatedCreateReturn, 'Old Return API must resolve to isolated creation function')
+assert.strictEqual(legacyCapacityFilter, sharedCapacityFilter, 'Shared Return/Exchange SQL predicate must retain exact value')
+assert.strictEqual(legacyCapacityCheck, isolatedCapacityCheck, 'Standalone Return checker export must stay identical')
 import { cancelReturn as originalCancelReturn } from '../worker/domains/returns-exchanges.ts'
 import { cancelReturn as isolatedCancelReturn } from '../worker/domains/order-return-cancellation.ts'
 
