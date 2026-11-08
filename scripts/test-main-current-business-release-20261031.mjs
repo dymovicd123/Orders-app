@@ -16,6 +16,8 @@ const tests=[
  'scripts/test-return-active-reserve-p0-20261021.mjs',
  'scripts/test-return-exchange-physical-receipt-r1.mjs',
  'scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs',
+ 'scripts/test-stage345-concurrent-return-exchange-http-20261031.mjs',
+ 'scripts/test-stage345-concurrent-legacy-return-exchange-http-20261031.mjs',
  'scripts/test-p0-financial-atomic-20261027.mjs',
  'scripts/test-return-exchange-cancel-autonomy.mjs',
  'scripts/test-operational-autonomy-r3-return-exchange-capacity.mjs',
