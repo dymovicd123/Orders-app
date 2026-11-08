@@ -11,6 +11,7 @@ on:
       - 'src/app/controllers/useWorkspaceViewModel.tsx'
       - '.github/workflows/resolver-shipping-acceptance-20261027.yml'
       - 'scripts/test-main-resolver-*.mjs'
+      - 'scripts/test-stage02-post-review-resolver-return-ux.mjs'
       - 'scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs'
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'worker/domains/catalog.ts'
       - 'worker/index.ts'
       - 'src/features/orders/**'
+      - 'scripts/test-stage02-post-review-resolver-return-ux.mjs'
 permissions:
   contents: read
 jobs:
