@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 
 const domain = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8')
+const exchangeList = fs.readFileSync('worker/domains/order-exchange-list.ts', 'utf8')
 const creation = fs.readFileSync('worker/domains/order-return-creation.ts', 'utf8')
 const activity = fs.readFileSync('worker/domains/activity.ts', 'utf8')
 const router = fs.readFileSync('worker/index.ts', 'utf8')
@@ -58,11 +59,11 @@ expect(activity.includes('ri.physical_tracking AS return_item_physical_tracking'
 expect(activity.includes('ri.physical_received_at AS return_item_physical_received_at'), 'return history does not select received timestamp')
 expect(activity.includes('physicalTracking: Boolean(toInt(row.return_item_physical_tracking, 0))'), 'return history does not map physical tracking')
 expect(activity.includes('physicalReceivedAt: cleanText(row.return_item_physical_received_at) || null'), 'return history does not map received timestamp')
-expect(domain.includes('old_snapshot.physical_tracking AS old_physical_tracking'), 'exchange history does not select physical tracking')
-expect(domain.includes('old_snapshot.physical_received_at AS old_physical_received_at'), 'exchange history does not select received timestamp')
-expect(domain.includes('oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0))'), 'exchange history does not map physical tracking')
-expect(domain.includes('oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null'), 'exchange history does not map received timestamp')
-expect(domain.includes("oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued'"), 'exchange history does not expose not-issued marker')
+expect(exchangeList.includes('old_snapshot.physical_tracking AS old_physical_tracking'), 'exchange history does not select physical tracking')
+expect(exchangeList.includes('old_snapshot.physical_received_at AS old_physical_received_at'), 'exchange history does not select received timestamp')
+expect(exchangeList.includes('oldPhysicalTracking: Boolean(toInt(row.old_physical_tracking, 0))'), 'exchange history does not map physical tracking')
+expect(exchangeList.includes('oldPhysicalReceivedAt: cleanText(row.old_physical_received_at) || null'), 'exchange history does not map received timestamp')
+expect(exchangeList.includes("oldWasNotIssued: cleanText(row.old_inventory_source) === 'not_issued'"), 'exchange history does not expose not-issued marker')
 
 // Frontend must expose one clear physical-state choice and a compact delayed-receipt action.
 expect(types.includes("physicalState: 'pending' | 'warehouse' | 'boutique' | 'no_stock'"), 'return draft physicalState missing')
@@ -96,8 +97,8 @@ expect(exchangeSection.includes('Старая запись — физическ�
 
 expect(activity.includes('AS pending_physical_quantity'), 'return history pending physical quantity summary missing')
 expect(activity.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'return history pending physical quantity response missing')
-expect(domain.includes('old_summary.physical_tracking = 1'), 'exchange pending physical quantity summary missing')
-expect(domain.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'exchange pending physical quantity response missing')
+expect(exchangeList.includes('old_summary.physical_tracking = 1'), 'exchange pending physical quantity summary missing')
+expect(exchangeList.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'exchange pending physical quantity response missing')
 expect(app.includes('pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0)'), 'frontend does not consume pending physical quantity')
 expect(returnSection.includes('Ожидают приёмки'), 'return summary does not show pending physical quantity')
 expect(exchangeSection.includes('Ожидают приёмки'), 'exchange summary does not show pending physical quantity')

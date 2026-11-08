@@ -8,6 +8,11 @@ import path from 'node:path'
 import worker from '../worker/index.ts'
 import { createReturn as legacyCreateReturn, noStandaloneReturnSql as legacyCapacityFilter, hasActiveStandaloneReturn as legacyCapacityCheck } from '../worker/domains/returns-exchanges.ts'
 import { createReturn as isolatedCreateReturn } from '../worker/domains/order-return-creation.ts'
+import { listExchanges as legacyListExchanges } from '../worker/domains/returns-exchanges.ts'
+import { listExchanges as isolatedListExchanges } from '../worker/domains/order-exchange-list.ts'
+
+assert.strictEqual(legacyListExchanges, isolatedListExchanges,
+  'Existing Exchange GET route must use the identical extracted read-only implementation')
 import { noStandaloneReturnSql as sharedCapacityFilter, hasActiveStandaloneReturn as isolatedCapacityCheck } from '../worker/domains/order-return-capacity.ts'
 
 assert.strictEqual(legacyCreateReturn, isolatedCreateReturn, 'Old Return API must resolve to isolated creation function')
@@ -302,6 +307,16 @@ try {
   const switched=await api('/api/exchanges/set','POST',exchangeSetPayload,{expectedStatus:201,requestId:'stability-set-swap-once'})
   const exchangeId=Number(switched.data.exchangeId)
   assert(exchangeId>0,'Exchange Set must have ID')
+  const activeExchangeList=(await api('/api/exchanges?orderId='+orderId+'&status=completed')).data
+  assert.equal(activeExchangeList.ok,true,'Exchange list must retain its existing response envelope')
+  assert.equal(Number(activeExchangeList.count),1,'Completed set exchange must appear exactly once')
+  assert.equal(Number(activeExchangeList.summary.activeCount),1)
+  assert.equal(Number(activeExchangeList.summary.cancelledCount),0)
+  const listedSet=activeExchangeList.exchanges.find(row=>Number(row.id)===exchangeId)
+  assert(listedSet,'Created set exchange must remain reachable through GET /api/exchanges')
+  assert.equal(listedSet.isSetExchange,true)
+  assert.equal(listedSet.oldItems.length,1,'Read model must retain the returned exact item')
+  assert.equal(listedSet.newItems.length,1,'Read model must retain the replacement exact item')
   assert.equal(Number(stock().quantity),1,'One physically returned old SKU must increase stock by one')
   assert.equal(Number(newStock().quantity),1,'One new SKU must leave Physical exactly once')
   assert.equal(actualOrder().total_amount,20000,'Equal-priced Set exchange must preserve total')
@@ -329,6 +344,13 @@ try {
   assert.equal(Number(stock().quantity),0,'Set cancellation replay must not touch old SKU again')
   assert.equal(Number(newStock().quantity),2,'Set cancellation replay must not touch new SKU again')
   assert.equal(sql('SELECT status FROM exchanges WHERE id=?',exchangeId).status,'cancelled')
+  const cancelledExchangeList=(await api('/api/exchanges?orderId='+orderId+'&status=cancelled')).data
+  assert.equal(Number(cancelledExchangeList.count),1,'Cancelled set exchange remains in history')
+  assert.equal(Number(cancelledExchangeList.summary.cancelledCount),1)
+  assert.equal(Number(cancelledExchangeList.exchanges[0].id),exchangeId)
+  assert.equal(cancelledExchangeList.exchanges[0].status,'cancelled')
+  assert.equal(Number((await api('/api/exchanges?orderId='+orderId+'&status=completed')).data.count),0,
+    'Cancelled exchange must disappear from the active-only list')
   console.log('MAIN_EXCHANGE_SET_WORKER_SQLITE_PASSED: 1-for-1 canonical variant swap, exact Physical, preserved money, create replay, cancellation and replay')
   // LEGACY HISTORICAL ORDER: intentionally has ONLY an order-level total.
   // We must not invent a unit price while exchanging or undoing it.
@@ -370,6 +392,11 @@ try {
   })
   const legacyExchangeId=Number(legacySwap.data.exchangeId)
   assert(legacyExchangeId>0)
+  const listedLegacy=(await api('/api/exchanges?orderId='+legacyId+'&status=completed')).data
+  assert.equal(Number(listedLegacy.count),1,'Historical manual-total exchange must remain listed')
+  assert.equal(Number(listedLegacy.exchanges[0].id),legacyExchangeId)
+  assert.equal(listedLegacy.exchanges[0].isSetExchange,false,
+    'Read-only extraction must not reinterpret legacy exchange as set-v2')
   assert.equal(Number(stock().quantity),legacyPhysicalBefore+1,'Legacy old received SKU must add one')
   assert.equal(Number(newStock().quantity),legacyReplacementBefore-1,'Legacy replacement must issue exactly one')
   assert.equal(sql('SELECT total_amount FROM orders WHERE id=?',legacyId).total_amount,12000)
@@ -393,6 +420,8 @@ try {
   assert.equal(Number(legacyFinal.received_amount),5000)
   assert.equal(Number(legacyFinal.debt_amount),7000)
   assert.equal(sql('SELECT status FROM exchanges WHERE id=?',legacyExchangeId).status,'cancelled')
+  assert.equal(Number((await api('/api/exchanges?orderId='+legacyId+'&status=cancelled')).data.count),1,
+    'Cancelled historical exchange must remain visible for audit')
   console.log('MAIN_LEGACY_EXCHANGE_WORKER_SQLITE_PASSED: old manual total, concrete SKU exchange, no invented unit price, retries and cancellation reconcile')
   // LEGACY MULTI-PAIR visit: the existing UI does sequential critical
   // operations, not one transaction. Simulate a network cut AFTER pair 1,
