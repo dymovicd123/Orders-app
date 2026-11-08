@@ -138,7 +138,10 @@ export async function cancelExactOrderDispatchItem(
   // A corrected shipment must not invent physical inventory units that were
   // never deducted from tracked stock during shortage confirmation.
   const restoreQty=restorePhysical?accountedQuantity:0
-  const reactivateReservation=restorePhysical && accountedQuantity===quantity
+  // A stock return restores only what was actually deducted. Never reactivate
+  // a cancelled shortage reservation when another buyer still holds those pieces.
+  const reactivateReservation=restorePhysical && accountedQuantity===quantity && Boolean(stock)
+    && stock!.quantity + accountedQuantity >= stock!.reserved_quantity + quantity
   const statements:D1PreparedStatement[]=[]
   statements.push(db.prepare(
     `INSERT INTO inventory_model_meta(key,value,updated_at)
