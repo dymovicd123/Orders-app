@@ -1,6 +1,11 @@
 name: PR794 One-time Main Worker code release
 
 on:
+  pull_request:
+    types: [synchronize]
+    branches: [main]
+    paths:
+      - .github/workflows/release-main-pr794-20261108.yml
   push:
     branches:
       - main
@@ -17,9 +22,14 @@ concurrency:
 jobs:
   production-code-only:
     if: >-
-      github.ref == 'refs/heads/main'
-      && github.event_name == 'push'
-      && github.event.head_commit.message == 'release(main): deploy PR794 validated Worker to production'
+      (github.event_name == 'pull_request'
+       && github.event.pull_request.number == 795
+       && github.event.pull_request.head.ref == 'release/main-pr794-production-20261108'
+       && github.event.pull_request.head.repo.full_name == github.repository
+       && github.event.pull_request.base.sha == '4c750922353826ec6995c5de5e603e80221bb9c0')
+      || (github.ref == 'refs/heads/main'
+       && github.event_name == 'push'
+       && github.event.head_commit.message == 'release(main): deploy PR794 validated Worker to production')
     name: Production Worker release, no database migration
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -33,8 +43,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-          fetch-depth: 3
+          fetch-depth: 5
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -43,10 +54,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/main'
-          test "$(git rev-parse HEAD^)" = '7b07e6c7cfc993c47ae2e203bb8b50a0cb79029f'
-          test "$(git rev-parse HEAD^^)" = 'f315cbb8fd4161a61a80dee1c205426d93673883'
-          test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/release-main-pr794-20261108.yml'
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            test "$GITHUB_HEAD_REF" = 'release/main-pr794-production-20261108'
+            test "$GITHUB_BASE_REF" = main
+            jq -e '.pull_request.number == 795
+              and .pull_request.head.repo.full_name == .repository.full_name
+              and .pull_request.base.sha == "4c750922353826ec6995c5de5e603e80221bb9c0"' "$GITHUB_EVENT_PATH"
+            git merge-base --is-ancestor 4c750922353826ec6995c5de5e603e80221bb9c0 HEAD
+            test "$(git diff --name-only 4c750922353826ec6995c5de5e603e80221bb9c0 HEAD)" = '.github/workflows/release-main-pr794-20261108.yml'
+          else
+            test "$GITHUB_REF" = 'refs/heads/main'
+            git merge-base --is-ancestor f315cbb8fd4161a61a80dee1c205426d93673883 HEAD
+            test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/release-main-pr794-20261108.yml'
+          fi
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
