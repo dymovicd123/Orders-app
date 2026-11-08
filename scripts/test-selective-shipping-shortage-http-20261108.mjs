@@ -50,7 +50,7 @@ const stamp='2026-11-08T00:00:00Z'
 sql.prepare("INSERT INTO catalog_stock_positions(product_id,category,gender_scope,material,length,is_default,is_active,sort_order,created_at,updated_at) VALUES(98982,'adult','unisex','КАШЕМИР','СТАНДАРТ',0,1,0,?,?)").run(stamp,stamp)
 const execution=Number(sql.prepare("SELECT id FROM catalog_stock_positions WHERE product_id=98982").get()?.id)
 assert(execution>0)
-for(const [id,size,physical] of [[98983,'44',1],[98984,'46',1],[98985,'48',1]]){
+for(const [id,size,physical] of [[98983,'44',1],[98984,'46',1],[98985,'48',1],[98986,'50',1]]){
  sql.prepare("INSERT INTO catalog_variants(id,product_id,stock_position_id,gender,color,material,length,size_label,category,is_active) VALUES(?,98982,?,'ЖЕН','БЕЖЕВЫЙ','КАШЕМИР','СТАНДАРТ',?,'adult',1)").run(id,execution,size)
  sql.prepare("INSERT INTO inventory_stock(inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES('warehouse',98982,?,'QA DISPATCH SHAPAN','ЖЕН','БЕЖЕВЫЙ','КАШЕМИР','СТАНДАРТ',?,?,0)").run(id,size,physical)
 }
@@ -66,17 +66,17 @@ async function call(url,method='GET',body=null){
  try{value=await response.json()}catch{}
  return {status:response.status,body:value}
 }
-function payload(variant,size,id){
+function payload(variant,size,id,quantity=1){
  return{requestId:id,orderDate:'2026-11-08',managerId:actor,managerName:'QA Dispatch Manager',
   customerName:'QA Customer',city:'Алматы',deliveryType:'Самовывоз',sourceType:'warehouse',
   workshopStatus:'ready',orderStatus:'active',pricingMode:'itemized_v1',
   items:[{productName:'QA DISPATCH SHAPAN',catalogVariantId:variant,audienceType:'ВЗРОСЛЫЙ',
    gender:'ЖЕН',color:'БЕЖЕВЫЙ',material:'КАШЕМИР',length:'СТАНДАРТ',
-   size,sourceType:'warehouse',quantity:1,unitPrice:18000,
+   size,sourceType:'warehouse',quantity,unitPrice:18000,
    catalogPriceSnapshot:null,shortageAcknowledged:true}],payments:[]}
 }
-const create=async (variant,size,key)=>{
- const response=await call('/api/orders','POST',payload(variant,size,key))
+const create=async (variant,size,key,quantity=1)=>{
+ const response=await call('/api/orders','POST',payload(variant,size,key,quantity))
  assert([200,201].includes(response.status),'Create failed: '+JSON.stringify(response))
  assert(response.body.orderId>0)
  const id=response.body.orderId
@@ -167,4 +167,73 @@ assert.equal(otherReserve.status,'active','Another buyer reservation may not be 
 const otherStock=sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=98985').get()
 assert.deepEqual([otherStock.quantity,otherStock.reserved_quantity],[0,1],
  'Physical stock can now be lower than held commitments, but outstanding reservations must remain intact')
+
+ // Partial delivery of a known SKU whose reservation could not be admitted.
+ // A different buyer still owns the only active reservation.
+const owner=await create(98986,'50','qa-partial-owner-0001')
+assert.equal(owner.reservation.status,'active')
+const bulk=await create(98986,'50','qa-partial-shortage-0001',3)
+assert.equal(bulk.reservation.status,'unresolved')
+const planBefore=await getPlan(bulk)
+assert.equal(planBefore.lines[0].selectedQuantity,3,'All pending goods are selected by default')
+assert.equal(planBefore.lines[0].selectable,true)
+const subset=[{orderItemId:bulk.itemId,quantity:1}]
+const partialKey='qa-partial-shortage-dispatch-0001'
+const needConfirm=await dispatch(bulk,partialKey,subset)
+assert.equal(needConfirm.status,409)
+assert.equal(needConfirm.body.code,'dispatch_stock_confirmation_required')
+assert.equal(needConfirm.body.items[0].operationQuantity,1,
+  'Confirm only the one piece actually being dispatched')
+const sentOne=await dispatch(bulk,partialKey,subset,[{
+ source:'warehouse',variantId:98986,expectedQuantity:1,operationQuantity:1
+}])
+assert.equal(sentOne.status,200,'Partial unresolved dispatch must commit: '+JSON.stringify(sentOne))
+const remaining=sql.prepare(`SELECT id,quantity,line_total,stock_writeoff_status
+ FROM order_items WHERE order_id=? AND id<>?`).get(bulk.id,bulk.itemId)
+assert(remaining?.id>0)
+assert.equal(remaining.quantity,2)
+assert.equal(remaining.stock_writeoff_status,'pending_reservation')
+const pendingReserve=sql.prepare('SELECT quantity,status,unresolved_reason FROM inventory_reservations WHERE order_item_id=?').get(remaining.id)
+assert.deepEqual([pendingReserve.quantity,pendingReserve.status,pendingReserve.unresolved_reason],
+ [2,'unresolved','concurrent_shortage'])
+assert.equal(sql.prepare('SELECT quantity FROM order_items WHERE id=?').get(bulk.itemId).quantity,1)
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?').get(bulk.itemId).status,'fulfilled')
+assert.equal(sql.prepare('SELECT SUM(line_total) AS total FROM order_items WHERE order_id=?').get(bulk.id).total,54000,
+  'Splitting must preserve the order total')
+assert.equal(sql.prepare('SELECT shipping_status FROM orders WHERE id=?').get(bulk.id).shipping_status,'not_sent')
+assert.deepEqual([
+ ...Object.values(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=98986').get())
+],[0,1],'Never steal a different buyer\'s reservation or run physical negative')
+const sameRetry=await dispatch(bulk,partialKey,subset)
+assert.equal(sameRetry.status,200)
+assert.equal(sameRetry.body.alreadyCommitted,true)
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(bulk.id).n,2,
+ 'Idempotent retry may not duplicate the remaining item')
+const secondPlan=await getPlan(bulk)
+const remPlan=secondPlan.lines.find(x=>x.orderItemId===remaining.id)
+assert.equal(remPlan.readyQuantity,2)
+assert.equal(remPlan.selectedQuantity,2)
+const nextPart=await dispatch(bulk,'qa-partial-shortage-dispatch-0002',
+ [{orderItemId:remaining.id,quantity:1}])
+assert.equal(nextPart.status,409)
+assert.equal(nextPart.body.items[0].operationQuantity,1)
+const secondPart=await dispatch(bulk,'qa-partial-shortage-dispatch-0002',
+ [{orderItemId:remaining.id,quantity:1}],
+ [{source:'warehouse',variantId:98986,expectedQuantity:0,operationQuantity:1}])
+assert.equal(secondPart.status,200)
+assert.deepEqual(sql.prepare('SELECT quantity,stock_writeoff_status FROM order_items WHERE id=?').get(remaining.id),
+ {quantity:1,stock_writeoff_status:'fulfilled'})
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id=?').get(bulk.id).n,3)
+const dispatchItem1=sql.prepare('SELECT id FROM order_dispatch_items WHERE order_item_id=?').get(bulk.itemId)
+const undo=await call('/api/orders/'+bulk.id+'/shipping/dispatch-items/'+dispatchItem1.id+'/correct','POST',{
+ requestId:'qa-partial-shortage-undo-0001',reason:'QA cancel only one shipped unit'
+})
+assert.equal(undo.status,200,'Cancel one dispatched piece: '+JSON.stringify(undo))
+assert.equal(sql.prepare('SELECT status FROM inventory_reservations WHERE order_item_id=?').get(bulk.itemId).status,
+ 'unresolved','A cancelled shortage must not create an active reservation ahead of another buyer')
+assert.deepEqual([
+ ...Object.values(sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE variant_id=98986').get())
+],[1,1],'Undo restores only previously deducted stock, never another buyer\'s reserved balance')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_reservations WHERE order_id=? AND status=\'unresolved\'').get(bulk.id).n,2)
+
 console.log('SELECTIVE_SHIPPING_HTTP_SHORTAGE_PASS: zero free, bounded zero stock with confirmation, idempotency, undo without phantom stock, unresolved known SKU and another order reserve preserved')
