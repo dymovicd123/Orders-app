@@ -21,6 +21,7 @@ on:
       - worker/domains/order-dispatch-confirmation.ts
       - worker/domains/order-dispatch-cancel.ts
       - scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
+      - scripts/test-selective-shipping-shortage-http-20261108.mjs
       - scripts/test-main-confirmed-shipping-state-20261108.mjs
 permissions:
   contents: read
@@ -66,6 +67,8 @@ jobs:
         run: node scripts/test-main-confirmed-shipping-state-20261108.mjs
       - name: Selective shipping shortage confirmation without hard stock block
         run: node scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
+      - name: Worker HTTP and SQLite shipment shortage, idempotency and cancellation
+        run: node scripts/test-selective-shipping-shortage-http-20261108.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
