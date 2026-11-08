@@ -16,6 +16,7 @@ const app = read('src/App.tsx')
 const ui = read('src/features/sections/OrderExchangeSection.tsx')
 const workerIndex = read('worker/index.ts')
 const batchWorker = read('worker/domains/exchange-batch.ts')
+const exchangeRequests = read('src/app/legacyExchangeCriticalRequests.ts')
 
 check(wrangler.includes('"name": "orders-app"'), 'H9C Production Worker identity drifted')
 check(wrangler.includes('"database_name": "orders_db_prod"') && wrangler.includes('"database_id": "17e68a41-1d58-4a36-8a63-47c3e32443c4"'), 'H9C Production D1 identity drifted')
@@ -25,13 +26,13 @@ const saveExchange = between(app, 'async function saveExchange()', '\n\n  async 
 check(!saveExchange.includes('itemizedExchange && pairDrafts.length !== 1'), 'H9C Production still blocks itemized multi-pair exchange')
 check(saveExchange.includes('itemizedExchange && unsavedPairs.length > 1'), 'H9C Production multi-pair save branch missing')
 check(saveExchange.includes('prepareLegacyExchangePairs(exchangeSelectedOrder, exchangeDraft, getOrderSourceAvailability)'), 'App must validate legacy Exchange pairs before any write')
-check(saveExchange.includes("apiFetch('/api/exchanges/batch'"), 'H9C Production batch endpoint call missing')
-check(saveExchange.includes('expectedOrderTotal: Number(exchangeSelectedOrder.total_amount)'), 'H9C Production order-total stale snapshot missing')
+check(saveExchange.includes('submitLegacyExchangeBatch(') && exchangeRequests.includes("client.apiFetch('/api/exchanges/batch'"), 'H9C production must retain the real batch endpoint through the typed client')
+check(exchangeRequests.includes('expectedOrderTotal: Number(exchangeSelectedOrder.total_amount)'), 'H9C Production order-total stale snapshot missing')
 for (const field of ['expectedOldActiveQuantity', 'expectedOldUnitPrice', 'expectedOldLineTotal', 'expectedOldCatalogPriceSnapshot']) {
-  check(saveExchange.includes(field), 'H9C Production pair stale snapshot missing ' + field)
+  check(exchangeRequests.includes(field), 'H9C Production pair stale snapshot missing ' + field)
 }
-check(saveExchange.includes("'X-Idempotency-Key': critical.requestId"), 'H9C Production browser batch write is not retry-safe')
-check(saveExchange.includes('completeCriticalRequest(batchKey, critical.requestId)'), 'H9C Production browser does not retire completed batch idempotency token')
+check(exchangeRequests.includes("'X-Idempotency-Key': critical.requestId"), 'H9C Production browser batch write is not retry-safe')
+check(exchangeRequests.includes('client.completeCriticalRequest(batchKey, critical.requestId)'), 'H9C Production browser does not retire completed batch idempotency token')
 
 check(ui.includes('Добавить ещё позицию'), 'H9C Production multi-pair control missing')
 check(!ui.includes('if (itemizedExchange || !currentPairReady) return'), 'H9C Production queue still rejects itemized orders')
