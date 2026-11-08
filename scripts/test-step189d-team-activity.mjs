@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 import { readWorkerSource } from './lib/worker-source.mjs'
 const read = (file) => fs.readFileSync(file, 'utf8')
@@ -56,6 +58,77 @@ try {
   for (const forbidden of ['Передан менеджеру', 'передан менеджеру', 'Передача заказа менеджеру']) {
     check(!worker.includes(forbidden) && !team.includes(forbidden) && !activity.includes(forbidden), `189D must not invent manager-transfer workflow: ${forbidden}`)
   }
+
+
+  // Execute the actual extracted read owners to verify period, pagination and row truth.
+  const compiled = await build({
+    entryPoints: ['src/features/team/teamReportActions.ts'],
+    bundle: true, platform: 'node', format: 'esm', target: 'es2022',
+    write: false, logLevel: 'silent',
+  })
+  const { createTeamReportActions } = await import(
+    'data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64')
+  )
+  const calls = []
+  let salaryState = null
+  let activityState = null
+  let failed = false
+  let readError = null
+  let badHttp = false
+  let busy = false
+  const salaryFilters = { dateFrom: '2026-11-01', dateTo: '2026-11-30' }
+  const activityFilters = { ...salaryFilters, q: 'ЗАКАЗ', actionType: 'orders' }
+  const args = {
+    teamSalaryFilters: salaryFilters, teamSalaryReport: null,
+    teamActivityFilters: activityFilters, teamActivityReport: null,
+    setTeamBusy: () => {},
+    setTeamSalaryReport: (next) => { salaryState = next },
+    setTeamActivityBusy: (next) => { busy = next },
+    setTeamActivityLoadFailed: (next) => { failed = next },
+    setTeamActivityReport: (next) => { activityState = typeof next === 'function' ? next(activityState) : next },
+    apiFetch: async (url, init) => {
+      calls.push({ url, init })
+      if (badHttp) return new Response(JSON.stringify({ ok:false, message:'Параметры устарели' }), { status:409 })
+      if (url.startsWith('/api/team/salary?')) {
+        return new Response(JSON.stringify({ ok:true, startDate:salaryFilters.dateFrom, endDate:salaryFilters.dateTo, rows:[{manager:'М'}], totals:{ employees:1 } }), {status:200})
+      }
+      const offset = Number(new URL('https://fixture' + url).searchParams.get('offset'))
+      return new Response(JSON.stringify({
+        ok:true,startDate:activityFilters.dateFrom,endDate:activityFilters.dateTo,
+        actionType:'orders',count:3,offset,limit:50,hasMore:offset===0,
+        rows: offset===0 ? [{id:'a'},{id:'b'}] : [{id:'c'}],
+        summary:[{manager:'М',orders:3}],totals:{actions:3},
+      }), {status:200})
+    },
+    reportReadFailure: (err) => { readError = err },
+  }
+  const owner = createTeamReportActions(args)
+  await owner.loadTeamSalaryReport()
+  assert.equal(calls[0].url, '/api/team/salary?startDate=2026-11-01&endDate=2026-11-30')
+  assert.equal(salaryState.rows.length,1)
+  await owner.loadTeamActivityReport()
+  const first = new URL('https://fixture' + calls.at(-1).url)
+  assert.equal(first.searchParams.get('limit'),'50')
+  assert.equal(first.searchParams.get('offset'),'0')
+  assert.equal(first.searchParams.get('q'),'ЗАКАЗ')
+  assert.equal(first.searchParams.get('actionType'),'orders')
+  assert.equal(activityState.rows.length,2)
+  assert.equal(failed,false)
+  assert.equal(busy,false)
+  // React re-render provides fresh row length for append, preserving stable summary.
+  const next = createTeamReportActions({ ...args, teamActivityReport: activityState })
+  await next.loadTeamActivityReport(activityFilters,{ append:true })
+  const second = new URL('https://fixture' + calls.at(-1).url)
+  assert.equal(second.searchParams.get('offset'),'2')
+  assert.deepEqual(activityState.rows.map(row=>row.id),['a','b','c'])
+  assert.equal(activityState.summary[0].orders,3)
+  badHttp = true
+  const prior = activityState
+  await createTeamReportActions({ ...args, teamActivityReport: activityState }).loadTeamActivityReport(activityFilters,{ append:true })
+  assert.equal(activityState, prior, 'failed append must retain last successful report')
+  assert.equal(failed,true)
+  assert.equal(busy,false)
+  assert(readError instanceof Error, 'failed report must show a real read failure')
 
   console.log('Step 189D team activity/static tests: OK')
 } catch (error) {
