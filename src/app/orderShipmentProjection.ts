@@ -99,3 +99,21 @@ export function projectOrderShipmentDisplay(
     lines,
   }
 }
+
+/**
+ * The order-wide "sent" marker remains a compatibility fact, but a later
+ * exchange may add a new replacement that still needs shipping. Keep the
+ * primary dispatch action closed for completed orders and open only for a
+ * genuinely pending replacement.
+ */
+export function isOrderShipmentCompleteForActions(
+  order: Pick<OrderRecord, 'shipping_status' | 'items'>,
+): boolean {
+  const hasPendingReplacement = (order.items || []).some(item =>
+    Number(item.quantity || 0) > 0
+    && (Number(item.pendingExchangeDispatchId || 0) > 0
+      || Number(item.pendingExchangeWorkshopId || 0) > 0),
+  )
+  if (hasPendingReplacement) return false
+  return order.shipping_status === 'sent' || projectOrderShipmentDisplay(order).state === 'sent'
+}
