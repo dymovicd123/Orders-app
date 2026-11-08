@@ -22,7 +22,7 @@ import { exchangeSetPaymentIds, moneyMethodsSummary, normalizeMoneyParts, splitR
 import type { MoneyPart, MoneyPartInput } from './return-exchange-payment-channels.ts'
 import { noStandaloneReturnSql } from './order-return-capacity.ts'
 import type { ReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
-import { applyNotIssuedReservationReduction, loadReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
+import { applyNotIssuedReservationReduction, loadReservationSnapshot, restoreNotIssuedReservation } from './order-exchange-reservation-snapshot.ts'
 
 export { correctMistakenOrderHandoverWithCurrentExchange } from './order-handover-exchange-correction.ts'
 export { normalizeMoneyParts } from './return-exchange-payment-channels.ts'
@@ -566,64 +566,6 @@ function requiredSafeMoney(value: unknown, label: string, minimum = 0) {
 function optionalCatalogPriceSnapshot(value: unknown, label: string) {
   if (value === null || value === undefined || String(value).trim() === '') return null
   return requiredSafeMoney(value, label)
-}
-
-async function restoreNotIssuedReservation(
-  db: D1Database,
-  plan: Pick<ExchangeSetOldPlan, 'orderItemId' | 'quantity' | 'reservationSnapshot'>,
-  timestamp: string,
-  exchangeId: number,
-) {
-  const snapshot = plan.reservationSnapshot
-  if (!snapshot) return
-  if (snapshot.targetQuantity <= 0) {
-    const restored = await reactivateReleasedOrderReservationV2(
-      db,
-      plan.orderItemId,
-      timestamp,
-      `Отмена обмена #${exchangeId}: восстановление резерва невыданной позиции`,
-    )
-    if (!restored) {
-      throw new CriticalOperationConflictError('Не удалось безопасно восстановить резерв невыданной позиции. Обновите заказ.')
-    }
-    return
-  }
-
-  const current = await db.prepare(
-    `SELECT quantity, status FROM inventory_reservations WHERE id = ? AND order_item_id = ? LIMIT 1`
-  ).bind(snapshot.id, plan.orderItemId).first<Record<string, unknown>>()
-  if (!current?.status) throw new CriticalOperationConflictError('Резерв старой позиции больше не найден.')
-  const currentQuantity = Math.max(0, toInt(current.quantity, 0))
-  const currentStatus = cleanText(current.status)
-  if (currentQuantity === snapshot.quantity && currentStatus === snapshot.status) return
-  if (currentQuantity !== snapshot.targetQuantity || currentStatus !== snapshot.targetStatus) {
-    throw new CriticalOperationConflictError('Резерв старой позиции уже изменился после обмена. Автоматическая отмена остановлена.')
-  }
-
-  const statements: D1PreparedStatement[] = []
-  if (snapshot.status === 'active' && snapshot.variantId) {
-    await loadCanonicalVariantSnapshot(db, snapshot.variantId, { activeOnly: true })
-    statements.push(db.prepare(
-      `UPDATE inventory_stock
-       SET reserved_quantity = COALESCE(reserved_quantity, 0) + ?,
-           last_action = 'Резерв восстановлен после отмены обмена',
-           last_source_ref = ?,
-           updated_at = ?
-       WHERE inventory_source = ? AND variant_id = ?`
-    ).bind(
-      plan.quantity,
-      `exchange_cancel:${exchangeId}:old:${plan.orderItemId}`,
-      timestamp,
-      snapshot.source,
-      snapshot.variantId,
-    ))
-  }
-  statements.push(db.prepare(
-    `UPDATE inventory_reservations
-     SET quantity = ?, status = ?, released_at = NULL, updated_at = ?
-     WHERE id = ? AND order_item_id = ? AND quantity = ? AND status = ?`
-  ).bind(snapshot.quantity, snapshot.status, timestamp, snapshot.id, plan.orderItemId, snapshot.targetQuantity, snapshot.targetStatus))
-  await db.batch(statements)
 }
 
 async function loadWorkshopSnapshot(
