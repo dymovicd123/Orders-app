@@ -25,10 +25,10 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
-import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
+import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
 import { ChoicePills, FriendlyNumberInput, ManagerBadge, ManagerPicker, SmartPickerInput, resolveManagerDisplayColor } from './components'
 import { TableDragScrollManager } from './components/tables/TableDragScrollManager'
 import { DatabaseStorageModal, DatabaseStorageWarning, useDatabaseStorageMaintenance } from './features/storage/DatabaseStorageMaintenance'
@@ -38,6 +38,8 @@ import type { ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRe
 import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
+import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
+import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
 import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
@@ -3076,276 +3078,31 @@ function App() {
     }
   }
 
-  function applyWorkshopPeriodPreset(preset: WorkshopPeriodPreset) {
-    const range = preset === 'all' ? { dateFrom: '', dateTo: '' } : getPeriodRange(preset)
-    setWorkshopFilters((current) => ({
-      ...current, period: preset,
-      dateFrom: preset === 'custom' ? current.dateFrom : range.dateFrom,
-      dateTo: preset === 'custom' ? current.dateTo : range.dateTo,
-    }))
-  }
+  const { applyWorkshopPeriodPreset, markWorkshopTaskDone, restoreWorkshopTaskActive } = createWorkshopTaskActions({
+    workshopFilters,
+    setWorkshopFilters,
+    setWorkshopBusy,
+    setError,
+    setMessage,
+    apiFetch,
+    loadWorkshopData,
+    applyWorkshopTaskStatusChange,
+    upsertOrderInState,
+    loadDashboard,
+  })
 
-
-
-  async function markWorkshopTaskDone(task: WorkshopTaskRecord) {
-    setWorkshopBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/workshop/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'done', orderItemId: task.orderItemId || null }),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
-      if (!response.ok) {
-        throw new Error(result.message || 'Не удалось отметить позицию готовой.')
-      }
-      if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
-      else applyWorkshopTaskStatusChange(task, 'done', result.previousStatus || task.status)
-      if (result.order) upsertOrderInState(result.order)
-      else if (result.refreshRequired) void loadDashboard(false)
-      const orderAlreadySent = String(result.order?.shipping_status || task.shippingStatus || '').trim().toLowerCase() === 'sent'
-      setMessage(orderAlreadySent
-        ? `Позиция цеха по заказу ${task.externalOrderId} готова. Сам заказ уже был отмечен отправленным ранее.`
-        : `Позиция цеха по заказу ${task.externalOrderId} готова. Это не отправка клиенту: заказ остаётся «Не отправлен».`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
-    } finally {
-      setWorkshopBusy(false)
-    }
-  }
-
-  async function restoreWorkshopTaskActive(task: WorkshopTaskRecord) {
-    setWorkshopBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/workshop/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'active', orderItemId: task.orderItemId || null }),
-      })
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; changed?: boolean; previousStatus?: string; order?: OrderRecord; refreshRequired?: boolean }>(response, 'Цех')
-      if (!response.ok) {
-        throw new Error(result.message || 'Не удалось вернуть позицию в актуальные.')
-      }
-      if (result.changed === false) await loadWorkshopData(workshopFilters, { force: true, refreshCounts: true })
-      else applyWorkshopTaskStatusChange(task, 'active', result.previousStatus || task.status)
-      if (result.order) upsertOrderInState(result.order)
-      else if (result.refreshRequired) void loadDashboard(false)
-      setMessage(`Позиция цеха по заказу ${task.externalOrderId} возвращена в актуальные.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка обновления цеха')
-    } finally {
-      setWorkshopBusy(false)
-    }
-  }
-
-  function workshopInvoiceDocumentTitle() {
-    return workshopInvoiceIsKaspi ? 'Накладная КАСПИ МАГАЗИН' : 'Накладная цеха'
-  }
-
-  function workshopInvoiceTimingHeader() {
-    return workshopInvoiceIsKaspi ? 'Срок' : 'Срочность'
-  }
-
-  function workshopInvoiceTimingLabel(row: WorkshopInvoiceRow) {
-    return workshopInvoiceIsKaspi ? getWorkshopInvoiceDeadlineLabel(row) : getWorkshopInvoiceImportanceLabel(row)
-  }
-
-  function workshopInvoiceFileStem() {
-    return workshopInvoiceIsKaspi ? 'workshop-kaspi-invoice' : 'workshop-invoice'
-  }
-
-  function buildWorkshopInvoiceText() {
-    const lines = [
-      workshopInvoiceDocumentTitle(),
-      `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)}`,
-      `Позиций в накладной: ${workshopScopeTasks.length}`,
-      '',
-      `Изделие | Характеристики | Кол-во | ${workshopInvoiceTimingHeader()} | Комментарий | Заказ`,
-      ...workshopInvoiceRows.map((row) => [
-        row.productName,
-        row.characteristics || '—',
-        `${row.quantity} шт.`,
-        workshopInvoiceTimingLabel(row),
-        row.comment || '—',
-        row.orderRef || '—',
-      ].join(' | ')),
-    ]
-    return lines.join('\n')
-  }
-
-  async function copyWorkshopInvoiceText() {
-    const text = buildWorkshopInvoiceText()
-    try {
-      await navigator.clipboard.writeText(text)
-      setMessage(`${workshopInvoiceDocumentTitle()} скопирована в буфер обмена.`)
-    } catch {
-      setError('Не удалось скопировать накладную. Используйте скачивание Word или PDF.')
-    }
-  }
-
-  function buildWorkshopInvoiceHtmlTable(rows: WorkshopInvoiceRow[] = workshopInvoiceRows, pageLabel = '') {
-    const detailRows = rows.map((row) => `
-      <tr class="${row.priority === 0 ? 'urgent' : row.priority === 1 ? 'commented' : ''}">
-        <td>${htmlEscape(row.productName)}</td>
-        <td>${htmlEscape(row.characteristics || '—')}</td>
-        <td>${row.quantity}</td>
-        <td>${htmlEscape(workshopInvoiceTimingLabel(row))}</td>
-        <td>${htmlEscape(row.comment || '—')}</td>
-        <td>${htmlEscape(row.orderRef || '—')}</td>
-      </tr>`).join('')
-
-    return `
-      <style>@page{size:A4 landscape;margin:8mm;}</style>
-      <p class="note"><strong>Период:</strong> ${htmlEscape(formatDateShort(workshopFilters.dateFrom))} — ${htmlEscape(formatDateShort(workshopFilters.dateTo))} · позиций в накладной ${workshopScopeTasks.length}${pageLabel ? ` · ${htmlEscape(pageLabel)}` : ''}</p>
-      <table class="data-table strict-report-table">
-        <thead><tr><th>Изделие</th><th>Характеристики</th><th>Кол-во</th><th>${htmlEscape(workshopInvoiceTimingHeader())}</th><th>Комментарий</th><th>Заказ</th></tr></thead>
-        <tbody>${detailRows || '<tr><td colspan="6">Нет позиций</td></tr>'}</tbody>
-      </table>`
-  }
-
-  async function exportWorkshopInvoiceWord() {
-    if (!workshopInvoiceRows.length) return
-    try {
-      setError(null)
-      const {
-        AlignmentType,
-        Document,
-        HeadingLevel,
-        PageOrientation,
-        Packer,
-        Paragraph,
-        Table,
-        TableCell,
-        TableRow,
-        TextRun,
-        WidthType,
-      } = await import('docx')
-
-      const makeCell = (text: string, bold = false) => new TableCell({
-        children: [new Paragraph({
-          children: [new TextRun({ text, bold, size: 18 })],
-          spacing: { after: 0 },
-        })],
-      })
-      const rows = [
-        new TableRow({
-          tableHeader: true,
-          children: ['Изделие', 'Характеристики', 'Кол-во', workshopInvoiceTimingHeader(), 'Комментарий', 'Заказ'].map((text) => makeCell(text, true)),
-        }),
-        ...workshopInvoiceRows.map((row) => new TableRow({
-          children: [
-            makeCell(row.productName),
-            makeCell(row.characteristics || '—'),
-            makeCell(String(row.quantity)),
-            makeCell(workshopInvoiceTimingLabel(row)),
-            makeCell(row.comment || '—'),
-            makeCell(row.orderRef || '—'),
-          ],
-        })),
-      ]
-      const documentFile = new Document({
-        sections: [{
-          properties: {
-            page: {
-              size: { orientation: PageOrientation.LANDSCAPE },
-              margin: { top: 500, right: 500, bottom: 500, left: 500 },
-            },
-          },
-          children: [
-            new Paragraph({
-              text: workshopInvoiceDocumentTitle(),
-              heading: HeadingLevel.HEADING_1,
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 120 },
-            }),
-            new Paragraph({
-              text: `Период: ${formatDateShort(workshopFilters.dateFrom)} — ${formatDateShort(workshopFilters.dateTo)} · позиций в накладной ${workshopScopeTasks.length}`,
-              spacing: { after: 160 },
-            }),
-            new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }),
-          ],
-        }],
-      })
-      const blob = await Packer.toBlob(documentFile)
-      downloadBlobFile(blob, `${workshopInvoiceFileStem()}-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.docx`)
-      setMessage(`${workshopInvoiceDocumentTitle()} Word скачана в формате DOCX.`)
-    } catch (err) {
-      setError(err instanceof Error ? `Не удалось создать Word: ${err.message}` : 'Не удалось создать файл Word.')
-    }
-  }
-
-  async function downloadWorkshopInvoicePdf() {
-    if (!workshopInvoiceRows.length) return
-    try {
-      setError(null)
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ])
-      const rowsPerPage = 18
-      const chunks: WorkshopInvoiceRow[][] = []
-      for (let index = 0; index < workshopInvoiceRows.length; index += rowsPerPage) {
-        chunks.push(workshopInvoiceRows.slice(index, index + rowsPerPage))
-      }
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true })
-
-      for (let pageIndex = 0; pageIndex < chunks.length; pageIndex += 1) {
-        const iframe = document.createElement('iframe')
-        iframe.title = `${workshopInvoiceDocumentTitle()} — страница ${pageIndex + 1}`
-        iframe.style.position = 'fixed'
-        iframe.style.left = '-20000px'
-        iframe.style.top = '0'
-        iframe.style.width = '1200px'
-        iframe.style.height = '900px'
-        iframe.style.border = '0'
-        document.body.appendChild(iframe)
-        try {
-          const doc = iframe.contentWindow?.document
-          if (!doc) throw new Error('браузер не подготовил страницу документа')
-          doc.open()
-          doc.write(makeExportHtml(workshopInvoiceDocumentTitle(), buildWorkshopInvoiceHtmlTable(chunks[pageIndex], `страница ${pageIndex + 1} из ${chunks.length}`)))
-          doc.close()
-          await new Promise((resolve) => window.setTimeout(resolve, 80))
-          const fullHeight = Math.max(700, doc.documentElement.scrollHeight + 24)
-          iframe.style.height = `${fullHeight}px`
-          const canvas = await html2canvas(doc.body, {
-            backgroundColor: '#ffffff',
-            logging: false,
-            scale: 1.6,
-            useCORS: true,
-            windowWidth: 1200,
-            windowHeight: fullHeight,
-          })
-          if (pageIndex > 0) pdf.addPage('a4', 'landscape')
-          const pageWidth = pdf.internal.pageSize.getWidth()
-          const pageHeight = pdf.internal.pageSize.getHeight()
-          const margin = 6
-          const availableWidth = pageWidth - margin * 2
-          const availableHeight = pageHeight - margin * 2
-          const ratio = Math.min(availableWidth / canvas.width, availableHeight / canvas.height)
-          const imageWidth = canvas.width * ratio
-          const imageHeight = canvas.height * ratio
-          pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, imageWidth, imageHeight, undefined, 'FAST')
-        } finally {
-          iframe.remove()
-        }
-      }
-
-      pdf.save(`${workshopInvoiceFileStem()}-${workshopFilters.dateFrom}-${workshopFilters.dateTo}.pdf`)
-      setMessage(`${workshopInvoiceDocumentTitle()} PDF скачана.`)
-    } catch (err) {
-      setError(err instanceof Error ? `Не удалось создать PDF: ${err.message}` : 'Не удалось создать PDF.')
-    }
-  }
-
-  function printWorkshopInvoice() {
-    const html = buildWorkshopInvoiceHtmlTable().replace(/<script/gi, '&lt;script')
-    printHtmlDocument(workshopInvoiceDocumentTitle(), html)
-  }
+  const { copyWorkshopInvoiceText, exportWorkshopInvoiceWord, downloadWorkshopInvoicePdf, printWorkshopInvoice } = createWorkshopInvoiceActions({
+    invoiceRows: workshopInvoiceRows,
+    invoiceIsKaspi: workshopInvoiceIsKaspi,
+    invoiceTaskCount: workshopScopeTasks.length,
+    invoiceDateFrom: workshopFilters.dateFrom,
+    invoiceDateTo: workshopFilters.dateTo,
+    getWorkshopInvoiceDeadlineLabel,
+    getWorkshopInvoiceImportanceLabel,
+    printHtmlDocument,
+    setError,
+    setMessage,
+  })
 
   async function saveReferenceEntry() {
     if (!(isAdmin || (canManageWarehouse && ['colors', 'materials', 'lengths', 'sizes', 'childAges'].includes(referenceKind)))) {

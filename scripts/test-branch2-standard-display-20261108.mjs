@@ -47,12 +47,14 @@ assert.notEqual(formatOrderItemDetails({...standard,size:'0'}),formatOrderItemDe
 
 const table=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 const workshop=fs.readFileSync('src/features/sections/WorkshopSection.tsx','utf8')
-const invoices=fs.readFileSync('src/App.tsx','utf8')
+const app=fs.readFileSync('src/App.tsx','utf8')
+const invoices=fs.readFileSync('src/features/workshop/workshopInvoiceActions.ts','utf8')
 const view=fs.readFileSync('src/app/controllers/useOperationalViewModel.ts','utf8')
 const utils=fs.readFileSync('src/app/utils.ts','utf8')
 assert(table.includes('line.details')&&utils.includes('formatOrderItemDetails(item)'), 'Orders table not connected to standard formatter')
 assert(workshop.includes('workshopDetailRows(task)'),'Workshop chips not connected to filtered details')
 assert(workshop.includes('workshopInvoiceRows.map('),'Invoice screen does not use grouped, formatted rows')
+assert(app.includes('createWorkshopInvoiceActions({') && app.includes('invoiceRows: workshopInvoiceRows'), 'App no longer wires actual grouped Workshop rows into invoice export owner')
 for(const exportMethod of ['buildWorkshopInvoiceText','buildWorkshopInvoiceHtmlTable','exportWorkshopInvoiceWord','downloadWorkshopInvoicePdf','printWorkshopInvoice']){
  assert(invoices.includes(exportMethod),'Missing export channel '+exportMethod)
 }
