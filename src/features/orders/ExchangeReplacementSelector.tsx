@@ -65,7 +65,7 @@ export function ExchangeReplacementSelector({item,allocated,onApply,onClose,sugg
    <button type="button" className="secondary compact" onClick={onClose}>Отменить выбор</button>
   </div>
   {item.productName&&<div className="exchange-replacement-current">
-   <span>Сейчас выбран: <strong>{item.productName}</strong> · {[item.gender,item.color,item.material,item.length,item.size].filter(Boolean).join(' · ')}</span>
+   <span>Сейчас выбран: <strong>{item.productName}</strong> · {[item.gender,item.color,String(item.material||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.material,String(item.length||'').trim().toUpperCase()==='СТАНДАРТ'?'':item.length,item.size].filter(Boolean).join(' · ')}</span>
    <button type="button" className="secondary compact" onClick={()=>setModal({
     source:(item.sourceType||'warehouse') as ManualSource,preset:null,initial:true
    })}>Изменить вручную</button>
