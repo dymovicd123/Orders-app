@@ -25,7 +25,7 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinancialHistoryEntry, FinancialHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
@@ -43,6 +43,7 @@ import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { useReturnExchangeWorkspace } from './app/controllers/useReturnExchangeWorkspace'
+import { useMoneyHistoryWorkspace } from './app/controllers/useMoneyHistoryWorkspace'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
@@ -710,14 +711,18 @@ function App() {
   const [activityFilters, setActivityFilters] = useState({ q: '', eventType: 'all', orderId: '' })
   const [financeReportFilters, setFinanceReportFilters] = useState({ dateFrom: getPeriodRange('month').dateFrom, dateTo: getPeriodRange('month').dateTo })
   const [financeReportType, setFinanceReportType] = useState<FinanceReportType>('payments')
-  const [moneyHistory, setMoneyHistory] = useState<FinancialHistoryEntry[]>([])
-  const [moneyHistoryBusy, setMoneyHistoryBusy] = useState(false)
-  const [moneyHistoryError, setMoneyHistoryError] = useState('')
-  const [moneyHistoryQuery, setMoneyHistoryQuery] = useState('')
-  const [moneyHistoryType, setMoneyHistoryType] = useState({ flow: 'all' as 'all' | 'in' | 'out', operation: 'all' as 'all' | 'order_payment' | 'debt_close' | 'order_extra' | 'exchange_extra' | 'refund' | 'correction', trace: 'all' as 'all' | 'normal' | 'info' | 'review' | 'legacy' })
-  const [moneyHistoryHasMore, setMoneyHistoryHasMore] = useState(false)
-  const [moneyHistorySummary, setMoneyHistorySummary] = useState({ count: 0, totalIn: 0, totalOut: 0, net: 0 })
-  const moneyHistoryRequestIdRef = useRef(0)
+  const {
+    moneyHistory,
+    moneyHistoryBusy,
+    moneyHistoryError,
+    moneyHistoryQuery,
+    setMoneyHistoryQuery,
+    moneyHistoryType,
+    setMoneyHistoryType,
+    moneyHistoryHasMore,
+    moneyHistorySummary,
+    loadMoneyHistory,
+  } = useMoneyHistoryWorkspace({ apiFetch, financeReportFilters })
   const [financeMode, setFinanceMode] = useState<'summary' | 'payments' | 'debts' | 'returns' | 'methods' | 'cash'>('summary')
   const [cashRegister, setCashRegister] = useState<CashRegisterResponse | null>(null)
   const [cashRegisterBusy, setCashRegisterBusy] = useState(false)
@@ -2379,52 +2384,6 @@ function App() {
   function loadFinanceReports(nextFilters = financeReportFilters, options: { force?: boolean; scope?: 'full' | 'finance' } = {}) {
     const scope = options.scope || (activeSector === 'finance' ? 'finance' : 'full')
     return loadFinanceReportsForRange(nextFilters, { ...options, scope, reportType: activeSector === 'reports' ? financeReportType : undefined })
-  }
-
-  async function loadMoneyHistory(options: { append?: boolean } = {}) {
-    const append = Boolean(options.append)
-    if (!financeReportFilters.dateFrom || !financeReportFilters.dateTo) return null
-    const requestId = ++moneyHistoryRequestIdRef.current
-    const offset = append ? moneyHistory.length : 0
-    const currentMonthStart = `${formatLocalDateInput().slice(0, 7)}-01`
-    const includeLegacy = financeReportFilters.dateFrom < currentMonthStart
-    const effectiveTrace = !includeLegacy && moneyHistoryType.trace === 'legacy' ? 'all' : moneyHistoryType.trace
-    setMoneyHistoryBusy(true)
-    setMoneyHistoryError('')
-    try {
-      const params = new URLSearchParams({
-        dateFrom: financeReportFilters.dateFrom,
-        dateTo: financeReportFilters.dateTo,
-        q: moneyHistoryQuery.trim(),
-        flow: moneyHistoryType.flow,
-        operation: moneyHistoryType.operation,
-        trace: effectiveTrace,
-        includeLegacy: includeLegacy ? '1' : '0',
-        limit: '50',
-        offset: String(offset),
-      })
-      const response = await apiFetch(`/api/finance/money-history?${params.toString()}`)
-      const data = await readJsonResponse<FinancialHistoryResponse & { message?: string }>(response, 'История денег')
-      if (!response.ok) throw new Error(data.message || 'Не удалось загрузить историю денег.')
-      if (requestId !== moneyHistoryRequestIdRef.current) return data
-      setMoneyHistory((current) => append ? [...current, ...(data.events || [])] : (data.events || []))
-      setMoneyHistoryHasMore(Boolean(data.hasMore))
-      setMoneyHistorySummary({
-        count: Number(data.count || 0),
-        totalIn: Number(data.summary?.totalIn || 0),
-        totalOut: Number(data.summary?.totalOut || 0),
-        net: Number(data.summary?.net || 0),
-      })
-      return data
-    } catch (err) {
-      if (requestId === moneyHistoryRequestIdRef.current) {
-        setMoneyHistoryError(err instanceof Error ? err.message : 'Не удалось загрузить историю денег.')
-        if (!append) setMoneyHistory([])
-      }
-      return null
-    } finally {
-      if (requestId === moneyHistoryRequestIdRef.current) setMoneyHistoryBusy(false)
-    }
   }
 
   function refreshFinanceReportsIfVisible() {
