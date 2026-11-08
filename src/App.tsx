@@ -43,6 +43,7 @@ import { useApiClient } from './app/controllers/useApiClient'
 import { useOperationalViewModel } from './app/controllers/useOperationalViewModel'
 import { useWorkspaceViewModel } from './app/controllers/useWorkspaceViewModel'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
+import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
 import { loadCompleteInventorySnapshot } from './features/inventory/loadCompleteInventorySnapshot'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
@@ -6674,7 +6675,9 @@ function removeDebtPayment(index: number) {
             size: item.size || null,
             quantity: Number(item.quantity || 0),
             unitPrice: item.unitPrice,
-            catalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
+            catalogPriceSnapshot: historicalCatalogSnapshotForEdit(
+              originalItemsById.get(Number(item.orderItemId || 0)), item,
+            ),
             sourceType: item.sourceType || 'warehouse',
             workshopComment: item.workshopComment || null,
             workshopUrgent: Boolean(item.workshopUrgent),
