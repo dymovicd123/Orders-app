@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'worker/domains/order-reservations.ts'
+      - 'worker/domains/order-handover-exchange-correction.ts'
       - 'worker/index.ts'
       - 'src/App.tsx'
       - 'src/features/sections/OrdersTableSection.tsx'
