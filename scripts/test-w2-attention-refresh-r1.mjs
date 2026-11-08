@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 const root = process.cwd()
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8')
@@ -51,6 +53,72 @@ try {
   check(reconcile.includes('return { ...result, warehouseAttention: attentionData }'), 'Intake reconciliation does not return reusable Attention data')
 
   check(worker.includes('if (!details) {') && worker.includes('response.items = {'), 'Warehouse Attention API summary/detail contract changed unexpectedly')
+  // Call the exact compiled production implementation, not a duplicate simulation.
+  const compiled = await build({
+    entryPoints: ['src/features/inventory/warehouseRecoveryActions.ts'],
+    bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+  })
+  const { createWarehouseRecoveryActions } = await import(
+    'data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64')
+  )
+  const calls = []
+  const attentionData = { ok: true, total: 1, counts: { unresolved: 1 }, items: [{ id: 45 }] }
+  let attentionReads = 0
+  let inventoryReads = 0
+  let busyState = false
+  let lastMessage = ''
+  const recoveryActions = createWarehouseRecoveryActions({
+    canManageWarehouse: true, catalogReview: null, catalogReviewBusy: false,
+    setCatalogReview: () => {}, setCatalogReviewBusy: () => {},
+    inventoryLifecycle: null, inventoryLifecycleBusy: false,
+    setInventoryLifecycle: () => {}, setInventoryLifecycleBusy: next => { busyState = next },
+    apiFetch: async (url, options = {}) => {
+      calls.push({ url: String(url), method: options.method || 'GET' })
+      return new Response(JSON.stringify({ ok: true, message: 'Приёмка завершена', pending: [] }),
+        { status: 200, headers: { 'content-type': 'application/json' } })
+    },
+    setError: () => {}, setMessage: next => { lastMessage = next },
+    loadInventoryData: async () => { inventoryReads += 1; return { ok: true, items: [] } },
+    loadCatalogData: async () => ({ ok: true, products: [], variants: [] }),
+    loadReferencesData: async () => null,
+    loadWarehouseAttention: async details => {
+      assert.equal(details, true, 'Known physical intake must refresh detailed Attention once')
+      attentionReads += 1
+      return attentionData
+    },
+  })
+  const receipt = await recoveryActions.reconcileKnownInventoryLifecycle(45)
+  assert.equal(receipt.warehouseAttention, attentionData, 'The refreshed Attention payload must be returned for reuse')
+  assert.equal(attentionReads, 1, 'A known physical intake must not double-fetch detailed warehouse Attention')
+  assert.equal(inventoryReads, 2, 'Reconciliation refresh must include Warehouse and Boutique')
+  assert.deepEqual(calls.map(call => call.url), [
+    '/api/inventory/lifecycle/45/reconcile-known',
+    '/api/inventory/lifecycle/pending?limit=60',
+  ], 'The physical intake must preserve original POST and pending-reconciliation GET routes')
+  assert.equal(calls[0].method, 'POST')
+  assert.equal(lastMessage, 'Приёмка завершена')
+  assert.equal(busyState, false, 'Completed reconciliation must clear its pending-list loading flag')
+
+  const blockedCalls = []
+  let resetLifecycle = false
+  const restricted = createWarehouseRecoveryActions({
+    canManageWarehouse: false, catalogReview: null, catalogReviewBusy: false,
+    setCatalogReview: () => {}, setCatalogReviewBusy: () => {},
+    inventoryLifecycle: null, inventoryLifecycleBusy: false,
+    setInventoryLifecycle: next => { resetLifecycle = next === null },
+    setInventoryLifecycleBusy: () => {},
+    apiFetch: async url => { blockedCalls.push(url); throw new Error('Should not contact server') },
+    setError: () => {}, setMessage: () => {},
+    loadInventoryData: async () => null, loadCatalogData: async () => null,
+    loadReferencesData: async () => null, loadWarehouseAttention: async () => null,
+  })
+  assert.equal(await restricted.loadCatalogReview(true), null)
+  assert.equal(await restricted.loadInventoryLifecycle(true), null)
+  assert.equal(await restricted.resolveCatalogReviewItem(33, 44), false)
+  assert.equal(await restricted.resolveCatalogReviewFacts(33, { productId: 1 }), null)
+  assert.equal(resetLifecycle, true, 'No warehouse role must clear privileged pending lifecycle data')
+  assert.equal(blockedCalls.length, 0, 'Non-warehouse roles cannot make privileged recovery requests')
+
   console.log('W2 ATTENTION REFRESH R1 TESTS PASSED — detailed inbox wins summary races, entry has one owner, detail failures are visible, intake reuses its refresh')
 } catch (error) {
   console.error(`W2 ATTENTION REFRESH R1 TESTS FAILED: ${error?.message || error}`)
