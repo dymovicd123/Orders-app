@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const source = fs.readFileSync('worker/domains/returns-exchanges.ts', 'utf8');
+const source = fs.readFileSync('worker/domains/order-exchange-set-v2.ts', 'utf8');
 const exchangeCreation = fs.readFileSync('worker/domains/order-exchange-creation.ts', 'utf8');
 const cancellation = fs.readFileSync('worker/domains/order-return-cancellation.ts', 'utf8');
 const creation = fs.readFileSync('worker/domains/order-return-creation.ts', 'utf8');

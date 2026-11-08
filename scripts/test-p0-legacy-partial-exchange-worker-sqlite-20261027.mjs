@@ -15,6 +15,12 @@ import { createExchange as publicCreateExchange } from '../worker/domains/return
 import { cancelExchange as publicCancelExchange } from '../worker/domains/returns-exchanges.ts'
 import { cancelExchange as extractedCancelExchange } from '../worker/domains/order-exchange-cancellation.ts'
 assert.strictEqual(publicCancelExchange,extractedCancelExchange,'Existing Exchange cancellation route must resolve to identical extracted implementation')
+const publicSet=await import('../worker/domains/returns-exchanges.ts')
+const isolatedSet=await import('../worker/domains/order-exchange-set-v2.ts')
+for(const name of ['deriveExchangeSetSettlement','createExchangeSetV2','createExchangeSetV2FromRequest','isExchangeSetV2','cancelExchangeSetV2']){
+ assert.strictEqual(publicSet[name],isolatedSet[name],
+  'Existing Worker Set V2 route must keep exact extracted '+name+' implementation')
+}
 assert.strictEqual(publicCreateExchange,extractedCreateExchange,'Worker legacy Exchange POST must call unchanged extracted creation implementation')
 import { receiveReturnedItem as publicReceiveReturnedItem } from '../worker/domains/returns-exchanges.ts'
 import { receiveReturnedItem as extractedReceiveReturnedItem } from '../worker/domains/order-returned-item-receipt.ts'
