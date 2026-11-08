@@ -14,6 +14,8 @@ import { getOrder, insertOrderContent } from './orders-write.ts'
 import { refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
 import { noStandaloneReturnSql } from './order-return-capacity.ts'
 import { ensureExchangeWorkshopReplacementTask } from './order-exchange-workshop-task.ts'
+import type { ReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
+import { applyNotIssuedReservationReduction, loadReservationSnapshot } from './order-exchange-reservation-snapshot.ts'
 
 export async function createExchange(
   db: D1Database,
