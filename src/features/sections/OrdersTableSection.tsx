@@ -409,6 +409,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                     {orders.length ? orders.map((order) => {
                       const projection = projectOrderOperationalState(order, { isAdmin })
                       const shipmentDisplay = projectOrderShipmentDisplay(order)
+                      const shipmentLinesByItemIndex = new Map(shipmentDisplay.lines.map(line => [line.sourceIndex, line]))
                       const fullyShipped = isOrderShipmentCompleteForActions(order)
                       const visibleItemCount = Math.max(3, expandedOrderItemCounts[order.id] || 3)
                       const fullItemCount = Math.max(order.items.length, Number(order.item_count || 0))
@@ -459,7 +460,7 @@ export function OrdersTableSection({ ctx }: { ctx: SectionContext }) {
                                     <span className="order-item-quantity-badge">× {line.quantity}</span>
                                   </div>
                                   {line.details ? <span className="order-item-card-details">{line.details}</span> : null}
-                                  <small className={`order-item-shipment-status is-${shipmentDisplay.lines[index]?.state || 'unknown'}`}>{shipmentDisplay.lines[index]?.label || 'Отправка не уточнена'}</small>
+                                  <small className={`order-item-shipment-status is-${shipmentLinesByItemIndex.get(index)?.state || 'unknown'}`}>{shipmentLinesByItemIndex.get(index)?.label || 'Не участвует в отправке'}</small>
                                   <div className="order-item-chip-meta">
                                     <span className={`order-item-source-badge source-${normalizeSuggestion(line.source) === 'ЦЕХ' ? 'workshop' : normalizeSuggestion(line.source) === 'БУТИК' ? 'boutique' : 'warehouse'}`}>{line.source}</span>
                                     {line.isWorkshop ? (
