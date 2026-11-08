@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { createRequire } from 'node:module'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement } from 'react'
+import { build } from 'esbuild'
 
 const nativeRequire = createRequire(import.meta.url)
 const modules = new Map()
@@ -159,8 +160,10 @@ assert.ok(rendererSource.indexOf('История наличных по дням'
 assert.ok(rendererSource.includes('Внесено позже'), 'late-recorded cash must be secondary annotation')
 assert.ok(rendererSource.includes('Прошлая дата — только если запись забыли'), 'admin historical cash date control missing')
 assert.ok(rendererSource.includes('Дата не может быть раньше начала текущего цикла кассы'), 'historical cash safety copy missing')
-assert.ok(appSource.includes('historicalBusinessDate'), 'historical cash date must be sent intentionally, not inferred')
-assert.ok(appSource.includes('businessDate: historicalBusinessDate'), 'historical cash business date missing from mutation payload')
+const cashOperatorSource = fs.readFileSync('src/features/finance/cashRegisterActions.ts', 'utf8')
+assert.ok(appSource.includes('createCashRegisterActions({'), 'cash operator actions are no longer wired to Finance workspace')
+assert.ok(cashOperatorSource.includes('historicalBusinessDate'), 'historical cash date must be sent intentionally, not inferred')
+assert.ok(cashOperatorSource.includes('businessDate: historicalBusinessDate'), 'historical cash business date missing from mutation payload')
 const cashDomainSource = fs.readFileSync('worker/domains/cash.ts', 'utf8')
 assert.ok(cashDomainSource.includes("actor?.role !== 'admin'"), 'historical cash mutation must be admin-only')
 assert.ok(cashDomainSource.includes('requestedBusinessDate < cycleStartDate'), 'historical cash must not cross the current-cycle baseline')
@@ -168,5 +171,164 @@ assert.ok(cashDomainSource.includes('Нельзя добавить операц�
 assert.ok(cashDomainSource.includes('.bind(timestamp, businessDate, direction'), 'historical cash must persist business_date separately from insertion time')
 assert.ok(cashDomainSource.includes('source_type, business_date'), 'manual reversal must read original business date')
 assert.ok(cashDomainSource.includes('.bind(timestamp, businessDate, direction, Math.max(0, toInt(original.amount, 0))'), 'manual reversal must preserve the original business date')
+
+// Live compiled Finance operator acceptance against isolated fake HTTP; no D1 writes.
+async function compileController(file) {
+  const result = await build({
+    entryPoints: [file], bundle: true, platform: 'node', format: 'esm',
+    target: 'es2022', write: false, logLevel: 'silent',
+  })
+  return import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'))
+}
+const { createCashRegisterActions } = await compileController('src/features/finance/cashRegisterActions.ts')
+const { createFinancePaymentMethodActions } = await compileController('src/features/finance/paymentMethodActions.ts')
+const prompts = []
+globalThis.window = {
+  confirm: (prompt) => { prompts.push(prompt); return true },
+  prompt: () => 'Проверка кассы',
+}
+const cashCalls = []
+let cashBalanceState = null
+let cashError = null
+let cashMessage = null
+let cashBusy = false
+let responseCode = 200
+let responseData = { ok: true, initialized: true, currentBalance: 6200, entries: [] }
+const movementDraft = { direction: 'in', amount: 1200, comment: 'Внесено наличными', businessDate: '2026-09-05' }
+const cashArgs = {
+  isAdmin: true,
+  cashRegister: { initialized: true, currentBalance: 5000 },
+  cashRegisterCycles: [], cashRegisterCyclesOpen: false,
+  cashSetupAmount: 5000, cashMovementDraft: movementDraft,
+  cashReconcileAmount: 5000, cashReconcileComment: 'Пересчет',
+  cashMutationLockRef: { current: false },
+  setCashRegister: (value) => { cashBalanceState = value },
+  setCashRegisterBusy: (value) => { cashBusy = value },
+  setCashRegisterCycles: () => {},
+  setCashRegisterCyclesBusy: () => {},
+  setCashRegisterCyclesHasMore: () => {},
+  setCashMovementDraft: () => {},
+  setCashReconcileAmount: () => {},
+  setCashReconcileComment: () => {},
+  setError: (value) => { cashError = value },
+  setMessage: (value) => { cashMessage = value },
+  apiFetch: async (url, init) => {
+    cashCalls.push({ url, init })
+    return new Response(JSON.stringify(responseData), {
+      status: responseCode, headers: { 'Content-Type': 'application/json' },
+    })
+  },
+  makeCashRequestId: (prefix) => prefix + '-known-request',
+}
+const cashActions = createCashRegisterActions(cashArgs)
+await cashActions.saveCashRegisterMovement()
+assert.equal(cashCalls.length, 1)
+assert.equal(cashCalls[0].url, '/api/finance/cash-register/movements')
+assert.equal(cashCalls[0].init.method, 'POST')
+assert.deepEqual(JSON.parse(cashCalls[0].init.body), {
+  direction: 'in', amount: 1200, comment: 'Внесено наличными',
+  requestId: 'manual-known-request', businessDate: '2026-09-05',
+})
+assert.equal(cashBalanceState.currentBalance, 6200)
+assert.equal(cashBusy, false)
+assert.match(cashMessage, /Пропущенная операция добавлена/)
+assert.equal(cashError, null)
+
+// Rejected or stale writes must not publish a success state.
+responseCode = 409
+responseData = { ok: false, message: 'Операция устарела' }
+cashBalanceState = null
+await cashActions.saveCashRegisterMovement()
+assert.equal(cashBalanceState, null)
+assert.equal(cashError, 'Операция устарела')
+assert.equal(cashBusy, false)
+
+// One in-flight critical cash action blocks overlapping operator requests.
+let unblock
+let lockedCalls = 0
+const lockedActions = createCashRegisterActions({
+  ...cashArgs,
+  cashMovementDraft: { ...movementDraft, businessDate: '' },
+  cashMutationLockRef: { current: false },
+  apiFetch: async () => {
+    lockedCalls += 1
+    return new Promise((resolve) => { unblock = resolve })
+  },
+})
+const first = lockedActions.saveCashRegisterMovement()
+const second = lockedActions.saveCashRegisterMovement()
+assert.equal(lockedCalls, 1, 'second cash action must not write while previous one is unresolved')
+unblock(new Response(JSON.stringify({ ok: true, initialized: true, currentBalance: 7000 }), {
+  headers: { 'Content-Type': 'application/json' },
+}))
+await Promise.all([first, second])
+assert.equal(lockedCalls, 1)
+
+// Reversal preserves an append-only server operation rather than deleting the old entry.
+responseCode = 200
+responseData = { ok: true, initialized: true, currentBalance: 5000 }
+await cashActions.reverseCashRegisterMovement(37)
+assert.equal(cashCalls.at(-1).url, '/api/finance/cash-register/movements/37/reverse')
+assert.equal(cashCalls.at(-1).init.method, 'POST')
+assert.equal(cashBalanceState.currentBalance, 5000)
+
+// Cash cycle resets retain the original administrator-only guard.
+const managerCash = createCashRegisterActions({ ...cashArgs, isAdmin: false })
+const beforeReset = cashCalls.length
+await managerCash.resetCashRegisterCycle()
+assert.equal(cashCalls.length, beforeReset)
+assert.match(cashError, /только администратору/)
+
+const methodCalls = []
+let loadedMethods = []
+let methodMessage = null
+let methodError = null
+let refreshCount = 0
+const methodArgs = {
+  isAdmin: true,
+  financePaymentMethods: [],
+  financeMethodDraft: { id: 0, value: 'Банковская карта', sortOrder: '2', isActive: true },
+  setFinancePaymentMethods: (value) => { loadedMethods = value },
+  setFinanceMethodsBusy: () => {},
+  setFinanceMethodDraft: () => {},
+  setError: (value) => { methodError = value },
+  setMessage: (value) => { methodMessage = value },
+  apiFetch: async (url, init) => {
+    methodCalls.push({ url, init })
+    const body = url === '/api/reference-values?kind=paymentMethods'
+      ? { ok: true, items: [{ id: 7, kind: 'paymentMethods', value: 'Банковская карта', isActive: true }] }
+      : { ok: true }
+    return new Response(JSON.stringify(body), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  },
+  reportReadFailure: (error) => { throw error },
+  loadReferencesData: async () => { refreshCount += 1 },
+}
+const paymentMethods = createFinancePaymentMethodActions(methodArgs)
+await paymentMethods.saveFinancePaymentMethod()
+assert.equal(methodCalls[0].url, '/api/reference-values')
+assert.equal(methodCalls[0].init.method, 'POST')
+assert.deepEqual(JSON.parse(methodCalls[0].init.body), {
+  kind: 'paymentMethods', value: 'Банковская карта', sortOrder: 2, isActive: true,
+})
+assert.equal(loadedMethods[0].value, 'Банковская карта')
+assert.equal(refreshCount, 1)
+assert.match(methodMessage, /Способ оплаты обновлён/)
+assert.equal(methodError, null)
+
+await paymentMethods.removeFinancePaymentMethod(7)
+assert.equal(methodCalls.at(-2).url, '/api/reference-values/7')
+assert.equal(methodCalls.at(-2).init.method, 'DELETE')
+assert.deepEqual(JSON.parse(methodCalls.at(-2).init.body), { kind: 'paymentMethods' })
+assert.equal(refreshCount, 2)
+
+const managerMethods = createFinancePaymentMethodActions({ ...methodArgs, isAdmin: false })
+const beforeDeny = methodCalls.length
+await managerMethods.saveFinancePaymentMethod()
+await managerMethods.removeFinancePaymentMethod(7)
+assert.equal(methodCalls.length, beforeDeny, 'manager cannot mutate payment-method references')
+assert.match(methodError, /только администратору/)
+
 console.log('FINANCE DAY FOCUSED GREEN — business-date human journal leads; corrections and audit stay secondary; cash remains a separate current-state workspace')
 export { day, initialCashDay }
