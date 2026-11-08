@@ -53,6 +53,8 @@ jobs:
         run: node scripts/test-branch2-standard-display-20261108.mjs
       - name: Work mixed order edit - immutable catalog snapshot and 7 lines
         run: node scripts/test-branch2-mixed-order-editor-snapshot-20261108.mjs
+      - name: Real HTTP six-to-seven line editor rewrite with payment and reservation checks
+        run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
