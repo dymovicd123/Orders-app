@@ -53,10 +53,10 @@ assert(physical.includes('if(!valid)return bad(appliedCount'),
   'Unsafe booked stock movements must not be deleted through a checkbox')
 // Exercise the actual pure dependency graph, not merely a code-text marker.
 const step=(type,id,requiresManualReview=false)=>({type,id,reason:'Зависит от операции',requiresManualReview,order:1})
-const preview=(steps,manualReviewRequired=false)=>({steps,manualReviewRequired})
+const makeGraphPreview=(steps,manualReviewRequired=false)=>({steps,manualReviewRequired})
 const inputs=[
- preview([step('return',91),step('exchange',81)]),
- preview([step('return',92),step('exchange',82),step('return',91),step('exchange',81)]),
+ makeGraphPreview([step('return',91),step('exchange',81)]),
+ makeGraphPreview([step('return',92),step('exchange',82),step('return',91),step('exchange',81)]),
 ]
 const plan=composeOrderExchangeCancellationPlan('all',[81,82],[81,82],inputs)
 assert.deepEqual(plan.steps.map(x=>x.type+':'+x.id),
@@ -70,23 +70,23 @@ assert.equal(plan.steps.length,4,'Shared downstream return/exchange nodes must n
 assert(!plan.steps.some(x=>x.id===999),'Never include a Return not in the server-proven dependency graph')
 assert.equal(plan.signature,composeOrderExchangeCancellationPlan('all',[81,82],[81,82],inputs).signature,
  'Equal server-proven plans must have stable signatures')
-const onlyLast=composeOrderExchangeCancellationPlan('last',[81,82],[82],[preview([step('exchange',82)])])
+const onlyLast=composeOrderExchangeCancellationPlan('last',[81,82],[82],[makeGraphPreview([step('exchange',82)])])
 assert.deepEqual(onlyLast.steps.map(x=>x.id),[82])
 assert.notEqual(onlyLast.signature,plan.signature,'Different user-confirmed modes must not share cancellation signatures')
-const ambiguous=composeOrderExchangeCancellationPlan('all',[81],[81],[preview([step('exchange',81)],true)])
+const ambiguous=composeOrderExchangeCancellationPlan('all',[81],[81],[makeGraphPreview([step('exchange',81)],true)])
 assert.equal(ambiguous.canExecute,false,'Legacy ambiguity must fail closed')
 assert.equal(ambiguous.manualReviewRequired,true)
 assert.match(ambiguous.notice,/заблокирована/)
-const stepReview=composeOrderExchangeCancellationPlan('all',[81],[81],[preview([step('exchange',81,true)])])
+const stepReview=composeOrderExchangeCancellationPlan('all',[81],[81],[makeGraphPreview([step('exchange',81,true)])])
 assert.equal(stepReview.canExecute,false,'Individual operation manual review must block all automatic cancellation')
 assert.throws(()=>composeOrderExchangeCancellationPlan('all',[81,82],[81,82],[
- preview([step('exchange',81),step('exchange',82)]),
- preview([step('exchange',82),step('exchange',81)]),
+ makeGraphPreview([step('exchange',81),step('exchange',82)]),
+ makeGraphPreview([step('exchange',82),step('exchange',81)]),
 ]),/цикл|отсутствующую операцию/i,'A cyclic downstream chain must never start writes')
 assert.throws(()=>composeOrderExchangeCancellationPlan('all',[81,82],[81,82],[
- preview([step('exchange',81)]),
+ makeGraphPreview([step('exchange',81)]),
 ]),/цикл|отсутствующую операцию/i,'A selected exchange missing from the graph must fail closed')
-assert.throws(()=>composeOrderExchangeCancellationPlan('last',[81],[81],[preview([step('exchange',0)])]),
+assert.throws(()=>composeOrderExchangeCancellationPlan('last',[81],[81],[makeGraphPreview([step('exchange',0)])]),
  /Неоднозначная зависимость/i,'Invalid operation IDs must be rejected')
 console.log('ORDER_EXCHANGE_REAL_TOPOLOGICAL_CANCEL_GRAPH_PASS')
 
