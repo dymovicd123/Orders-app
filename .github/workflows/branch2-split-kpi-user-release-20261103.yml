@@ -6,6 +6,11 @@ on:
     branches: [branch2]
     paths:
       - '.github/workflows/branch2-split-kpi-user-release-20261103.yml'
+  pull_request:
+    branches: [branch2]
+    paths:
+      - '.github/workflows/branch2-split-kpi-user-release-20261103.yml'
+      - 'scripts/branch2-manual-release.mjs'
 
 permissions:
   contents: read
@@ -14,6 +19,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preview:
+    name: Verify exact Branch2 Worker bundle (NO DEPLOY)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check isolated Branch2 Worker and D1 bindings
+        run: node scripts/branch2-manual-release.mjs --check
+      - name: Build real Worker and run Cloudflare dry-run only
+        run: node scripts/branch2-manual-release.mjs --ci-preview
+
   release:
     if: github.ref == 'refs/heads/branch2' && startsWith(github.event.head_commit.message, 'release(branch2):')
     runs-on: ubuntu-latest
@@ -40,9 +63,10 @@ jobs:
           test "$GITHUB_REF" = 'refs/heads/branch2'
           test "$(git branch --show-current)" = 'branch2'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          # PR #815 failed safely before deploy on a normal build-generated redirect.
-          # Review and publish only this two-file correction from that exact parent.
-          test "$(git rev-parse HEAD^)" = 'c6d7fce47f818d1e5a14fde1965c89ba8dc0e71c'
+          # Prior release attempts stopped safely before any remote change.
+          # The same bundle is now dry-run verified by the PR preview job.
+          # Only this reviewed two-file change can run the release.
+          test "$(git rev-parse HEAD^)" = 'd8419400dd3988355884405654d8555389861fd7'
           expected="$(printf '%s\n' '.github/workflows/branch2-split-kpi-user-release-20261103.yml' 'scripts/branch2-manual-release.mjs')"
           test "$(git diff --name-only HEAD^ HEAD)" = "$expected"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
