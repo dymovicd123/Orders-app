@@ -46,6 +46,7 @@ import { useReturnExchangeWorkspace } from './app/controllers/useReturnExchangeW
 import { useMoneyHistoryWorkspace } from './app/controllers/useMoneyHistoryWorkspace'
 import { cancelReturnCriticalRequest, cancelExchangeCriticalRequest, correctExchangeFinancialCriticalRequest } from './app/controllers/returnExchangeCriticalRequests'
 import { composeOrderExchangeCancellationPlan, type OrderExchangeCancelPlan } from './app/orderExchangeCancellationPlan'
+import { prepareReturnCreation, submitReturnCreation } from './app/returnCreationOperation'
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
@@ -7324,91 +7325,21 @@ function removeDebtPayment(index: number) {
       return
     }
 
-    const amount = Math.max(0, Number(returnDraft.amount || 0))
-    const availableAmount = Math.max(
-      0,
-      Number(returnSelectedOrder.received_amount || 0) - Number(returnSelectedOrder.return_amount || 0),
-    )
-
-    const selectedUnissuedItem = returnDraft.items.find((item) =>
-      Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0 && !item.issuedToClient
-    )
-    if (selectedUnissuedItem) {
-      setError(`«${selectedUnissuedItem.productName}» не выдавали клиенту. Не оформляйте её как физический возврат: сначала измените состав заказа. Если нужно вернуть только деньги, оставьте количество товара 0.`)
+    const prepared = prepareReturnCreation(returnSelectedOrder, returnDraft)
+    if (!prepared.ok) {
+      setError(prepared.error)
       return
     }
-
-    const selectedReturnItems = returnDraft.items
-      .filter((item) => Number(item.orderItemId || 0) > 0 && Number(item.quantity || 0) > 0)
-      .map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: item.quantity,
-        restock: item.physicalState === 'warehouse' || item.physicalState === 'boutique',
-        physicalState: item.physicalState,
-      }))
-
-    if (amount <= 0 && selectedReturnItems.length === 0) {
-      setError('Для возврата без денег выберите хотя бы один возвращаемый товар.')
-      return
-    }
-    if (amount > availableAmount) {
-      setError(`Сумма возврата ${formatMoney(amount)} больше доступной суммы ${formatMoney(availableAmount)}.`)
-      return
-    }
-    if (amount > 0 && !returnDraft.paymentMethod.trim()) {
-      setError('Выберите способ возврата денег. Это нужно для правильного учёта наличных и финансов.')
-      return
-    }
-
-    const extraReturnAmount = Number(returnDraft.extraRefundAmount || 0)
-    if (amount > 0 && returnDraft.extraRefundEnabled && (
-      !Number.isSafeInteger(extraReturnAmount)
-      || extraReturnAmount <= 0 || extraReturnAmount >= amount
-      || !returnDraft.extraRefundMethod.trim()
-      || returnDraft.extraRefundMethod.trim().toUpperCase() === returnDraft.paymentMethod.trim().toUpperCase()
-    )) {
-      setError('Для второго способа возврата выберите другой способ и сумму от 1 ₸ до суммы возврата без 1 ₸.')
-      return
-    }
-    const returnPaymentParts = amount > 0
-      ? returnDraft.extraRefundEnabled
-        ? [
-            { method: returnDraft.paymentMethod, amount: amount - extraReturnAmount },
-            { method: returnDraft.extraRefundMethod, amount: extraReturnAmount },
-          ]
-        : [{ method: returnDraft.paymentMethod, amount }]
-      : []
 
     setReturnBusy(true)
     setError(null)
     setMessage(null)
 
     try {
-      const payload = {
-        orderId: returnSelectedOrder.id,
-        returnDate: returnDraft.returnDate,
-        amount,
-        paymentMethod: returnDraft.paymentMethod,
-        paymentParts: returnPaymentParts,
-        comment: returnDraft.comment,
-        restockSource: returnDraft.restockSource,
-        items: selectedReturnItems,
-      }
-      const criticalKey = `return-create:${returnSelectedOrder.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch('/api/returns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-
-      const result = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; pendingInventoryCount?: number }>(response, 'Возврат')
-      if (!response.ok) {
-        throw new Error(result.message || `Return failed: ${response.status}`)
-      }
-      // The return is already durably completed on the server. Clear its retry token before any
-      // secondary refresh so a read failure cannot make the UI treat a committed return as unsaved.
-      completeCriticalRequest(criticalKey, critical.requestId)
+      const result = await submitReturnCreation(
+        { apiFetch, prepareCriticalRequest, completeCriticalRequest },
+        prepared.payload,
+      )
 
       if (result.order) {
         upsertOrderInState(result.order)
