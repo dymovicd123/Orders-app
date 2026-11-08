@@ -212,6 +212,7 @@ creator.updateCreateDraft('orderDate', '2026-11-05')
 assert.equal(createDraft.payments[0].paymentDate, '2026-11-05',
   'Changing the order date must also synchronize primary payment date')
 assert.equal(createDraft.orderDate, '2026-11-05')
+const readyDraft = structuredClone(createDraft)
 creator = createOrderCreationActions({ ...baseArgs, createDraft })
 await creator.createOrderFromDraft()
 assert.equal(capturedRequests.length, 1, 'One order save must send exactly one critical POST')
@@ -242,7 +243,7 @@ completedCritical = []
 invalidated = []
 addedOrder = null
 lastError = ''
-const failureDraft = { ...createDraft, managerId: 7 }
+const failureDraft = { ...readyDraft, managerId: 7 }
 const failing = createOrderCreationActions({
   ...baseArgs,
   createDraft: failureDraft,
