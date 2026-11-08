@@ -1,14 +1,14 @@
 // Step 190.6A: structural module extracted from worker/index.ts.
 // Business behavior is intentionally unchanged.
 import { readJson } from '../core/http.ts'
-import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeReturnRestockSource, normalizeSourceType, toInt, upperText } from '../core/text.ts'
+import { cleanText, isArchivedOrder, normalizeDate, normalizeExchangeFinancialAction, normalizeExchangeReturnSource, normalizeOrderStatus, normalizeSourceType, toInt, upperText } from '../core/text.ts'
 import type { OrderInput, OrderItemSourceType, SourceType } from '../core/types.ts'
 import { writeActivityLog } from './activity.ts'
 import { isHumanInventoryModelEnabled, loadCanonicalVariantSnapshot } from './catalog.ts'
 import { orderItemWasPhysicallyIssued } from './catalog-review.ts'
 import { isApprovedExchangePriceLineage } from './exchange-price-history.ts'
 import type { CriticalOperationHandle } from './critical.ts'
-import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, refreshCriticalOperation, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
+import { advanceCriticalOperation, beginCriticalOperation, completeCriticalOperation, CriticalOperationConflictError, criticalOperationEntityId, failCriticalOperation, insertCriticalMappedEntity, parseCriticalContext, updateCriticalOperationTargetFromLastInsert } from './critical.ts'
 import type { InventoryLifecycleEventRow } from './lifecycle.ts'
 import { applyCanonicalInventoryLifecycleEvent, canAutoApplyFreshWorkshopInbound, cancelInventoryLifecycleEvent, getOrderItemForReturnOrExchange, insertInventoryLifecycleEvent, inventoryLifecyclePendingReason, resolveInventoryLifecycleCandidate } from './lifecycle.ts'
 import { buildPaymentAndMoneyEventStatements, financialEventStatement, readOrderFinancialLedger, refundMoneyEventStatement, refundReversalMoneyEventStatement, removeSinglePaymentWithMoneyEvent, syncOrderFinancialLedger } from './money.ts'
