@@ -1,16 +1,17 @@
 import fs from 'node:fs'
 
 const read = (path) => fs.readFileSync(path, 'utf8')
-const worker = read('worker/domains/returns-exchanges.ts')
+const worker = read('worker/domains/order-exchange-financial-correction.ts')
+const existingExports=await import('../worker/domains/returns-exchanges.ts')
+const extractedExports=await import('../worker/domains/order-exchange-financial-correction.ts')
+if(existingExports.correctExchangeFinancials!==extractedExports.correctExchangeFinancials){throw new Error('Original Exchange PATCH route must use the same extracted finance correction implementation')}
 const router = read('worker/index.ts')
 const app = read('src/App.tsx')
 const ui = read('src/features/sections/OrderExchangeSection.tsx')
 
 const check = (condition, message) => { if (!condition) throw new Error(message) }
-const fnStart = worker.indexOf('export async function correctExchangeFinancials(')
-const fnEnd = worker.indexOf('export async function listExchanges(', fnStart)
-check(fnStart >= 0 && fnEnd > fnStart, 'A5 correction function missing')
-const fn = worker.slice(fnStart, fnEnd)
+check(worker.includes('export async function correctExchangeFinancials('), 'A5 correction function missing')
+const fn = worker
 
 check(fn.includes("beginCriticalOperation(db, 'exchange_financial_correction'"), 'A5 correction must be idempotent')
 check(fn.includes('CriticalOperationConflictError'), 'A5 correction must stale-check the opened exchange snapshot')
