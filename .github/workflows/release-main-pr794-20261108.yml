@@ -89,6 +89,11 @@ jobs:
             WHERE order_id=(SELECT id FROM orders WHERE external_id='ORD-20261107074906-85953D6C')
             ORDER BY id DESC LIMIT 24
           "
+          echo 'CONFIRMED_MOVEMENT_7840'
+          npx wrangler d1 execute "$db" --remote --config "$config" --json --command="
+            SELECT id,inventory_source,variant_id,movement_type,quantity_delta,quantity_after,reference_type,reference_id,created_at
+            FROM inventory_movements WHERE id=7840
+          "
           echo 'MOVEMENT_SCHEMA'
           npx wrangler d1 execute "$db" --remote --config "$config" --json --command="PRAGMA table_info(inventory_movements)"
           echo 'CASE_END_85953D6C'
