@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { spawnSync } from 'node:child_process'
 const workflow=fs.readFileSync('.github/workflows/cloudflare-deploy-monitor.yml','utf8')
 const wrangler=fs.readFileSync('wrangler.jsonc','utf8')
 const smoke=fs.readFileSync('scripts/verify-branch2-live-ui.mjs','utf8')
@@ -17,4 +18,29 @@ for(const label of ['Остатки какой точки?','С учтённым
  assert(smoke.includes(label))
  assert(view.includes(label))
 }
+
+// Manual publication uses one permanent reusable CLI, not an implicit workflow.
+// The offline check must never need cloud credentials, network or real D1.
+const command='scripts/branch2-manual-release.mjs'
+const offline=spawnSync(process.execPath,[command,'--check'],{encoding:'utf8'})
+assert.equal(offline.status,0,'Offline release isolation check failed: '+offline.stderr)
+assert.match(offline.stdout,/BRANCH2_MANUAL_RELEASE_CONFIG_PASS/)
+for(const unsafe of [
+  ['--publish','--sha','0000000000000000000000000000000000000000'],
+  ['--publish','--sha','0000000000000000000000000000000000000000','--confirm','MAIN'],
+  ['--dry-run','--sha','not-a-full-sha'],
+  ['--check','--publish'],
+]){
+  const rejected=spawnSync(process.execPath,[command,...unsafe],{encoding:'utf8'})
+  assert.notEqual(rejected.status,0,'Unsafe manual-release input must be rejected before any external operation')
+}
+const source=fs.readFileSync(command,'utf8')
+assert.match(source,/git\('ls-remote','origin','refs\/heads\/branch2'\)/)
+assert.match(source,/git\('status','--porcelain','--untracked-files=all'\)/)
+assert.match(source,/if\(mode==='--publish' && fields\.get\('--confirm'\)!=='BRANCH2-ONLY'\)/)
+assert.match(source,/const before=query\(fingerprintSql\)/)
+assert.match(source,/const after=query\(fingerprintSql\)/)
+assert.doesNotMatch(source,/wrangler','d1','migrations|wrangler','d1','delete/)
+console.log('BRANCH2_MANUAL_RELEASE_INPUT_SAFETY_PASSED: offline isolated config, full SHA, explicit consent, read-only D1 probes')
+
 console.log('BRANCH2_CD_SAFETY_PASSED — no implicit deploy and isolated D1; manual version promotion required')
