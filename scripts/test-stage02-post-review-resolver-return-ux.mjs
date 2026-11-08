@@ -34,7 +34,19 @@ assert.ok(review.includes('toInt(row.id ?? row.order_item_id, 0) === orderItemId
 const returnsWorker = read('worker/domains/returns-exchanges.ts')
 assert.ok(returnsWorker.includes('if (amount <= 0 && selectedItems.length === 0)'), 'Zero-money return must require a returned item, not positive money')
 assert.ok(returnsWorker.includes('if (amount > 0 && !paymentMethod)'), 'Payment method must only be required when money is actually refunded')
-assert.ok(returnsWorker.includes('if (amount > 0) {\n      createStatements.push(refundMoneyEventStatement'), 'Zero-money item return must not manufacture a money event')
+// Inspect the TypeScript syntax tree instead of pinning the exact whitespace
+// or number of nested payment-method loops in returns-exchanges.ts.
+const returnAst = ts.createSourceFile('returns-exchanges.ts', returnsWorker, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+function includesRefundEventCall(node) {
+  if (ts.isCallExpression(node) && node.expression.getText(returnAst) === 'refundMoneyEventStatement') return true
+  return ts.forEachChild(node, includesRefundEventCall) === true
+}
+function hasMoneyGuardedRefund(node) {
+  if (ts.isIfStatement(node) && node.expression.getText(returnAst).replace(/\\s/g, '') === 'amount>0'
+    && includesRefundEventCall(node.thenStatement)) return true
+  return ts.forEachChild(node, hasMoneyGuardedRefund) === true
+}
+assert.ok(hasMoneyGuardedRefund(returnAst), 'Zero-money item return must not manufacture a money event')
 assert.ok(returnsWorker.includes('if (toInt(ret.amount, 0) > 0)'), 'Cancelling a zero-money return must not manufacture a refund reversal')
 assert.ok(returnsWorker.includes("code: 'intake_freshness_confirmation_required'"), 'Delayed intake does not stop on a newer physical count')
 assert.ok(returnsWorker.includes("freshnessDecision === 'already_counted'"), 'Delayed intake cannot preserve a newer count when the returned unit was already included')
