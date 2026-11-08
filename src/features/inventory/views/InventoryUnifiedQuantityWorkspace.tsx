@@ -480,7 +480,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
       {mode==='arrival'&&isAdmin&&newVariant&&<div className="w6-stocktake-new-content">
         {newVariantWorkspace}
       </div>}
-      <label className="w6-stocktake-reason">Комментарий (необязательно)
+      <label className="w6-stocktake-reason">{mode==='transfer'?'Комментарий к перемещению (необязательно)':'Комментарий (необязательно)'}
         <input value={reason} onChange={e=>p.onReason(e.target.value)}
           placeholder="При необходимости поясните действие" />
       </label>
@@ -519,7 +519,7 @@ export function InventoryUnifiedQuantityWorkspace(p: Props) {
           <div className="stocktake-e-review-quantity"><strong>+{extraArrival.totalQuantity} шт.</strong></div>
         </div>}
       </div>
-      <label className="w6-stocktake-reason">Комментарий (необязательно)
+      <label className="w6-stocktake-reason">{mode==='transfer'?'Комментарий к перемещению (необязательно)':'Комментарий (необязательно)'}
         <input value={reason} onChange={e=>p.onReason(e.target.value)} placeholder="При необходимости поясните действие" />
       </label>
       {notice&&<div className="stocktake-inline-notice w6-notice-error" role="alert">{notice}</div>}
