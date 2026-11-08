@@ -429,6 +429,61 @@ await verifyShipmentView(9930,'not_sent',false,['not_sent','not_sent'])
 console.log('STAGE5B_EXCHANGE_CHAIN_REAL_SQLITE_SHIPMENT_UI_STATE_PASS')
 console.log('STAGE5B_APPLIED_EXCHANGE_SHIPMENT_COMPAT_NO_DOUBLE_STOCK_PASS')
 
+
+const {ensureExchangeWorkshopReplacementTask: publicWorkshopTask}=await import('../worker/domains/returns-exchanges.ts')
+const {ensureExchangeWorkshopReplacementTask: isolatedWorkshopTask}=await import('../worker/domains/order-exchange-workshop-task.ts')
+assert.strictEqual(publicWorkshopTask,isolatedWorkshopTask,
+ 'The existing Exchange API and internal callers must use the exact extracted workshop task helper')
+// Exercise both paths of the real extracted SQL on the same full-migration
+// disposable SQLite database: an existing task is updated, a missing task
+// is inserted. Replaying either must never create duplicate active tasks.
+const beforeTaskStock={...stock()}
+const beforeTaskReplacementStock={...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()}
+const beforeTaskMovements=sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n
+for(const [orderId,orderItemId,exchangeId,withExistingTask] of [
+ [9101,91011,91021,true],[9102,91012,91022,false],
+]){
+ const externalId='ORD-EXCHANGE-WORKSHOP-HELPER-'+orderId
+ const stamp='2026-11-01T10:00:00Z'
+ sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(?,?,'2026-11-01',1,'active','warehouse','in_workshop','not_sent',?,?)")
+  .run(orderId,externalId,stamp,stamp)
+ sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(?,?,9021,9032,'WORKSHOP REPLACEMENT','МУЖ','ЧЕРНЫЙ','СТАНДАРТ','СТАНДАРТ','50',1,1000,1000,0,'warehouse','reserved',?)")
+  .run(orderItemId,orderId,stamp)
+ sql.prepare("INSERT INTO exchanges(id,order_id,exchange_date,old_order_item_id,old_quantity,new_order_item_id,new_source_type,financial_action,financial_amount,status,created_at) VALUES(?,?,'2026-11-01',NULL,0,NULL,'warehouse','none',0,'completed',?)")
+  .run(exchangeId,orderId,stamp)
+ sql.prepare("INSERT INTO exchange_items(exchange_id,role,order_item_id,product_name_snapshot,quantity,inventory_source,created_at) VALUES(?,'new',?,'WORKSHOP REPLACEMENT',1,'warehouse',?)")
+  .run(exchangeId,orderItemId,stamp)
+ if(withExistingTask){
+  sql.prepare("INSERT INTO workshop_tasks(order_id,external_order_id,order_item_id,product_name_snapshot,quantity,status,created_at,updated_at) VALUES(?,?,?,'OLD TASK',1,'done',?,?)")
+   .run(orderId,externalId,orderItemId,stamp,stamp)
+ }
+ const taskBefore=sql.prepare('SELECT id FROM workshop_tasks WHERE order_id=? AND order_item_id=?').get(orderId,orderItemId)
+ const input={exchangeId,orderId,externalId,orderItemId,timestamp:stamp}
+ await publicWorkshopTask(db,input)
+ const active=sql.prepare("SELECT id,quantity,status,product_name_snapshot,external_order_id FROM workshop_tasks WHERE order_id=? AND order_item_id=? AND status='active'")
+  .all(orderId,orderItemId)
+ assert.equal(active.length,1,'Exactly one active task must be linked to exchanged item')
+ assert.equal(active[0].quantity,1)
+ assert.equal(active[0].external_order_id,externalId)
+ assert.equal(active[0].product_name_snapshot,'WORKSHOP REPLACEMENT')
+ if(withExistingTask)assert.equal(active[0].id,taskBefore.id,'Existing task is updated in place')
+ assert.equal(sql.prepare('SELECT is_workshop,source_type,stock_writeoff_status FROM order_items WHERE id=?').get(orderItemId).is_workshop,1)
+ assert.deepEqual({...sql.prepare('SELECT new_source_type,new_order_item_id FROM exchanges WHERE id=?').get(exchangeId)},
+  {new_source_type:'workshop',new_order_item_id:orderItemId})
+ assert.equal(sql.prepare("SELECT inventory_source FROM exchange_items WHERE exchange_id=? AND role='new'").get(exchangeId).inventory_source,'workshop')
+ await publicWorkshopTask(db,input)
+ const afterReplay=sql.prepare("SELECT id FROM workshop_tasks WHERE order_id=? AND order_item_id=? AND status='active'")
+  .all(orderId,orderItemId)
+ assert.deepEqual(afterReplay.map(x=>x.id),[active[0].id],
+  'Retry must update the same task without a second active work item')
+}
+assert.deepEqual({...stock()},beforeTaskStock,'Task synchronization never adjusts physical warehouse stock')
+assert.deepEqual({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9042').get()},beforeTaskReplacementStock,
+ 'Task synchronization never adjusts replacement stock or reserved quantities')
+assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM inventory_movements').get().n,beforeTaskMovements,
+ 'No inventory movement is allowed during workshop task synchronization')
+console.log('STAGE5_EXCHANGE_WORKSHOP_TASK_CREATION_UPDATE_REPLAY_SQLITE_PASS')
+
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
 console.log('STAGE5B_NEW_ORDER_PREISSUED_NORMAL_DISPATCH_NO_DOUBLE_STOCK_PASS')
