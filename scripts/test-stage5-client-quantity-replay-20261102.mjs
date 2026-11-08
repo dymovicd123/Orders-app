@@ -31,8 +31,13 @@ assert(src.includes("disabled={dispatchDraft.submitting||line.sourceType==='work
   'Workshop quantity must not be partially editable')
 assert(src.includes('Boolean(dispatchSelectionError(dispatchDraft.plan?.lines||[],dispatchDraft.selected))'),
   'Invalid selected quantities must disable confirmation')
-assert(src.includes('body:JSON.stringify({requestId:d.requestId,items})'),
-  'Same idempotency requestId must survive an uncertain POST response')
+assert(src.includes('body:JSON.stringify({requestId:d.requestId,items,stockConfirmations})'),
+  'Initial shipment and confirmed retry must share the original idempotency requestId')
+assert(src.includes('let {res,data}=await submit()') && src.includes('({res,data}=await submit(data.items.map('),
+  'Confirmation must retry the same selected items through the same requestId and only add exact stock proof')
+const submitBlock=src.slice(src.indexOf('  const submitSelectedDispatch=()=>{'),src.indexOf('  const confirmIssuedOnlyDispatch=()=>{'))
+assert(!submitBlock.includes('newDispatchRequestId()'),
+  'Uncertain shipment response or physical confirmation must never generate a fresh requestId')
 assert(src.includes('submitting:false,\n          error:e instanceof Error?e.message'),
   'On uncertain error keep the same draft/requestId for safe retry')
 console.log('STAGE5_CLIENT_QUANTITY_AND_RETRY_ID_PASS')
