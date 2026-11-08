@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 import { readWorkerSource } from './lib/worker-source.mjs'
 
@@ -320,4 +322,141 @@ expect(count === 60, '60-line one-bind-per-row source failed')
 expect(60 + 6 <= 100, 'Transfer bind budget no longer fits Cloudflare D1 limit')
 
 db.close()
+
+const movementBundle = await build({
+  entryPoints: ['src/features/inventory/inventoryMovementActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { createInventoryMovementActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(movementBundle.outputFiles[0].text).toString('base64')
+)
+const stockRow = {
+  id: 1, inventorySource: 'warehouse', productId: 1, variantId: 33, productName: 'БАЯН СҰЛУ ШАПАН',
+  gender: 'ЖЕН', color: 'ОРАНЖЕВЫЙ', material: 'ЗАМША ВЕЛЮР', length: 'СТАНДАРТ', size: '56',
+  audienceType: 'ВЗРОСЛЫЙ', quantity: 1, reservedQuantity: 0, availableQuantity: 1,
+}
+const transferItem = {
+  productId: '1', variantId: '33', productName: stockRow.productName, category: 'adult',
+  gender: stockRow.gender, color: stockRow.color, material: stockRow.material, length: stockRow.length,
+  size: stockRow.size, quantity: 2, expectedQuantity: 1,
+}
+const originalDraft = {
+  source: 'warehouse', targetSource: 'boutique', movementType: 'transfer',
+  comment: 'Перемещение между точками', items: [transferItem],
+}
+let currentDraft = structuredClone(originalDraft)
+let currentTransferRequestId = 'transfer-original-request'
+let savedMessage = null
+let savedError = null
+let movedError = null
+let numberOfResets = 0
+let promptCount = 0
+let fetchCalls = []
+let loadCalls = []
+let failureMode = 'needs_confirmation'
+const trackedFetch = async (url, init = {}) => {
+  fetchCalls.push({ url: String(url), init })
+  if (failureMode === 'network_error') throw new Error('unknown transport outcome')
+  if (failureMode === 'needs_confirmation' && fetchCalls.length === 1) {
+    return new Response(JSON.stringify({
+      ok: false, code: 'stock_resolution_required', operationType: 'transfer',
+      items: [{ source: 'warehouse', variantId: 33, productName: stockRow.productName, trackedPhysicalQuantity: 1, operationQuantity: 2 }],
+    }), { status: 409, headers: { 'content-type': 'application/json' } })
+  }
+  return new Response(JSON.stringify({ ok: true, externalId: 'T-TEST-1', warnings: [{ shortageAfter: 1 }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } })
+}
+const operations = createInventoryMovementActions({
+  inventoryMovementBusy: false,
+  setInventoryMovementBusy: () => {},
+  setInventoryMovementError: value => { movedError = value },
+  setError: value => { savedError = value },
+  setMessage: value => { savedMessage = value },
+  inventoryDraft: currentDraft,
+  setInventoryDraft: next => { currentDraft = typeof next === 'function' ? next(currentDraft) : next },
+  flattenInventoryArrivalPositions: () => [],
+  inventoryOperationSourceRows: [stockRow],
+  getInventoryRowCategory: () => 'adult',
+  inventoryTransferRequestId: currentTransferRequestId,
+  inventoryManualRequestId: 'manual-original-request',
+  apiFetch: trackedFetch,
+  loadInventoryData: async (source, force) => {
+    loadCalls.push({ source, force })
+    return { ok: true, items: [stockRow] }
+  },
+  loadCatalogData: async () => null,
+  setInventoryTransferRequestId: next => { currentTransferRequestId = typeof next === 'function' ? next(currentTransferRequestId) : next; numberOfResets += 1 },
+  setInventoryManualRequestId: () => { numberOfResets += 1 },
+  makeCashRequestId: prefix => `new-${prefix}`,
+  setInventoryArrivalPositions: () => {},
+  setInventoryArrivalVariantOpen: () => {},
+  resetInventoryOperationSelection: () => {},
+  setInventoryMatrix: () => {},
+  setInventoryMatrixColorToAdd: () => {},
+  setInventoryMatrixSizeToAdd: () => {},
+  setArrivalRecoveryPrompt: () => {},
+  setArrivalRecoveryError: () => {},
+  arrivalRecoveryContinueRef: { current: null },
+  askStockResolution: async prompt => {
+    promptCount += 1
+    assert.match(prompt.note, /не заменяет ревизию/)
+    assert.equal(prompt.items[0].needed, 2)
+    return true
+  },
+})
+await operations.saveInventoryMovement()
+assert.equal(fetchCalls.length, 2, 'Possession-confirmed shortage must retry the same operation once, not post twice without confirmation')
+assert.equal(promptCount, 1, 'Missing physical quantity must ask once, not block the operator without a choice')
+assert.deepEqual(fetchCalls.map(call => call.url), [
+  '/api/inventory/transfer?returnInventory=0',
+  '/api/inventory/transfer?returnInventory=0',
+], 'Both transfer attempts must preserve their Worker route')
+const submitted = fetchCalls.map(call => JSON.parse(call.init.body))
+assert.deepEqual(submitted.map(p => p.requestId), ['transfer-original-request', 'transfer-original-request'],
+  'Confirmed stock shortage must reuse the exact original idempotency key')
+assert.equal(submitted[1].stockConfirmations[0].expectedQuantity, 1,
+  'Physical confirmation may prove possession but must not replace current baseline facts')
+assert.equal(submitted[1].items[0].variantId, '33', 'Exact SKU must not drift during the confirmation retry')
+assert.equal(submitted[1].items[0].observedPhysicalQuantity, undefined,
+  'Transfer must never manufacture an absolute physical inventory count')
+assert.deepEqual(loadCalls.map(call => call.source), ['warehouse', 'boutique'],
+  'Committed transfer must refresh both inventory locations')
+assert.equal(numberOfResets, 1, 'Only confirmed successful transfer may issue a new idempotency request ID')
+assert.equal(currentTransferRequestId, 'new-inventory-transfer')
+assert.match(savedMessage, /резервы сохранены/, 'Post-transfer stock shortage must keep existing reservations and explain the result')
+assert.equal(movedError, '', 'A successfully confirmed transfer must clear its error state')
+
+fetchCalls = []
+loadCalls = []
+numberOfResets = 0
+failureMode = 'network_error'
+currentDraft = structuredClone(originalDraft)
+currentTransferRequestId = 'same-original-token-for-retry'
+const unknownOutcome = createInventoryMovementActions({
+  inventoryMovementBusy: false, setInventoryMovementBusy: () => {},
+  setInventoryMovementError: value => { movedError = value },
+  setError: value => { savedError = value }, setMessage: value => { savedMessage = value },
+  inventoryDraft: currentDraft, setInventoryDraft: () => { throw new Error('Draft must not reset on unknown outcome') },
+  flattenInventoryArrivalPositions: () => [], inventoryOperationSourceRows: [stockRow],
+  getInventoryRowCategory: () => 'adult', inventoryTransferRequestId: currentTransferRequestId,
+  inventoryManualRequestId: 'unused', apiFetch: trackedFetch,
+  loadInventoryData: async () => { throw new Error('Refresh must not execute after an unconfirmed write') },
+  loadCatalogData: async () => null,
+  setInventoryTransferRequestId: () => { numberOfResets += 1 },
+  setInventoryManualRequestId: () => { numberOfResets += 1 },
+  makeCashRequestId: prefix => `new-${prefix}`,
+  setInventoryArrivalPositions: () => {}, setInventoryArrivalVariantOpen: () => {},
+  resetInventoryOperationSelection: () => {}, setInventoryMatrix: () => {},
+  setInventoryMatrixColorToAdd: () => {}, setInventoryMatrixSizeToAdd: () => {},
+  setArrivalRecoveryPrompt: () => {}, setArrivalRecoveryError: () => {},
+  arrivalRecoveryContinueRef: { current: null },
+  askStockResolution: async () => { throw new Error('No confirmation for a failed network request') },
+})
+await unknownOutcome.saveInventoryMovement()
+assert.equal(fetchCalls.length, 1)
+assert.equal(JSON.parse(fetchCalls[0].init.body).requestId, 'same-original-token-for-retry')
+assert.equal(numberOfResets, 0, 'Indeterminate network write must not rotate idempotency token')
+assert.match(movedError, /unknown transport outcome/)
+assert.deepEqual(currentDraft, originalDraft, 'Unknown outcome must preserve the complete operator draft')
+
 console.log('STEP 191D TRANSFER RUNTIME SAFETY TESTS PASSED — exact video row 1→0, absent target, 0 reserved; 60-line bind budget preserved')
