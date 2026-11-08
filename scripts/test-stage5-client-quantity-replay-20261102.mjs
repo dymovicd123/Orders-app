@@ -26,7 +26,7 @@ const priorIssued={orderItemId:14,readyQuantity:2,selectable:true,sourceType:'wa
 assert.equal(dispatchSelectionError([priorIssued],{14:1}).includes('Количество'),true)
 assert.equal(dispatchSelectionError([priorIssued],{14:2}),'')
 const unresolved={orderItemId:15,readyQuantity:2,selectable:true,sourceType:'warehouse',needsStockConfirmation:true}
-assert.equal(dispatchSelectionError([unresolved],{15:1}).includes('Количество'),true,'Shortage line must not offer partial quantity rejected by server')
+assert.equal(dispatchSelectionError([unresolved],{15:1}),'','Known-SKU shortage can send a subset after confirmation')
 assert.equal(dispatchSelectionError([unresolved],{15:2}),'')
 assert.equal(dispatchSelectionError([unresolved],{15:0}),'')
 const src=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
@@ -34,8 +34,8 @@ assert(src.includes('const selectionError=dispatchSelectionError(d.plan?.lines||
   'Submit preflight must reject invalid quantity before POST')
 assert(src.includes('const quantity=clampDispatchQuantity('),
   'Numeric input must clamp to the ready quantity')
-assert(src.includes("disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued||line.needsStockConfirmation}"),
-  'Workshop and unresolved-stock quantities must not be partially editable')
+assert(src.includes("disabled={dispatchDraft.submitting||line.sourceType==='workshop'||line.dispatchPriorIssued}"),
+  'Workshop and already-issued quantities must not be partially editable')
 assert(src.includes('Boolean(dispatchSelectionError(dispatchDraft.plan?.lines||[],dispatchDraft.selected))'),
   'Invalid selected quantities must disable confirmation')
 assert(src.includes('body:JSON.stringify({requestId:d.requestId,items,stockConfirmations})'),
