@@ -39,6 +39,8 @@ import type { StockResolutionPrompt } from './features/orders/StockResolutionCon
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
 import { createCashRegisterActions } from './features/finance/cashRegisterActions'
 import { createFinancePaymentMethodActions } from './features/finance/paymentMethodActions'
+import { createTeamEmployeeActions } from './features/team/teamEmployeeActions'
+import { createTeamTimesheetActions } from './features/team/teamTimesheetActions'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
 import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
@@ -2114,217 +2116,67 @@ function App() {
     loadReferencesData,
   })
 
-  async function loadTeamEmployees() {
-    setTeamBusy(true)
-    try {
-      const response = await apiFetch('/api/team')
-      const data = await readJsonResponse<{ ok?: boolean; employees?: TeamEmployee[] }>(response, 'Команда')
-      if (!response.ok) throw new Error('Не удалось загрузить команду.')
-      setTeamEmployees(Array.isArray(data.employees) ? data.employees : [])
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Команда', teamEmployees.length > 0)
-      return null
-    } finally {
-      setTeamBusy(false)
-    }
-  }
+  const {
+    loadTeamEmployees: loadTeamEmployeesAction,
+    saveTeamEmployee,
+    saveTeamEmployeeColor,
+    setTeamEmployeeEmploymentStatus,
+    removeTeamEmployee,
+  } = createTeamEmployeeActions({
+    isAdmin,
+    teamDraft,
+    teamEmployees,
+    authUsers,
+    setTeamBusy,
+    setTeamEmployees,
+    setTeamDraft,
+    setTeamFormOpen,
+    setTeamColorEditorId,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    loadAuthUsers,
+    loadReferencesData,
+  })
 
-  async function saveTeamEmployee() {
-    if (!isAdmin) {
-      setError('Изменение команды доступно только администратору.')
-      return
-    }
+  // These loaders are also referenced by the earlier sector effects.
+  function loadTeamEmployees() { return loadTeamEmployeesAction() }
 
-    const hasLinkedAccount = Boolean(teamDraft.id && authUsers.some((user) => user.managerId === teamDraft.id))
-    const shouldCreateAccount = teamDraft.createAccount !== false && !hasLinkedAccount
-    const requestedLogin = (teamDraft.login || '').trim().toLowerCase()
-    if (shouldCreateAccount) {
-      if (requestedLogin.length < 3) {
-        setError('Для входа укажите логин минимум из 3 символов.')
-        return
-      }
-      if ((teamDraft.password || '').length < 8) {
-        setError('Для нового сотрудника задайте временный пароль минимум из 8 символов.')
-        return
-      }
-    }
+  const {
+    getTimesheetMonthDays,
+    shiftTimesheetMonth,
+    setTimesheetCurrentMonth,
+    getTimesheetCalendarSlots,
+    getTimesheetWeekdayLabel,
+    getTimesheetEntriesForDate,
+    loadTeamTimesheet: loadTeamTimesheetAction,
+    saveTeamTimesheet,
+    setTimesheetDaysPreset,
+    toggleTimesheetDay,
+    toggleTimesheetManager,
+  } = createTeamTimesheetActions({
+    isAdmin,
+    timesheetMonth,
+    timesheetData,
+    timesheetSelectedDays,
+    timesheetSelectedManagers,
+    timesheetWorkUntil,
+    timesheetComment,
+    setTimesheetMonth,
+    setTimesheetSelectedDays,
+    setTimesheetSelectedManagers,
+    setTimesheetData,
+    setTimesheetBusy,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    loadTeamSalaryReport,
+    refreshActivityLogIfVisible,
+  })
 
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/team/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(teamDraft),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string; employeeId?: number }>(response, 'Сотрудник')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить сотрудника.')
-      const employeeId = Number(data.employeeId || teamDraft.id || 0)
-
-      if (shouldCreateAccount && employeeId) {
-        const accountResponse = await apiFetch('/api/auth/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            login: requestedLogin,
-            password: teamDraft.password,
-            role: String(teamDraft.role || '').toLowerCase().includes('админ') ? 'admin' : 'manager',
-            managerId: employeeId,
-            displayName: teamDraft.name,
-            isActive: true,
-            mustChangePassword: teamDraft.mustChangePassword !== false,
-          }),
-        })
-        const accountData = await readJsonResponse<{ ok?: boolean; message?: string }>(accountResponse, 'Доступ сотрудника')
-        if (!accountResponse.ok) {
-          await Promise.all([loadTeamEmployees(), loadAuthUsers(), loadReferencesData(true)])
-          setTeamDraft((draft) => ({ ...draft, id: employeeId, login: requestedLogin, createAccount: true }))
-          setError(`Сотрудник создан, но вход не настроен: ${accountData.message || 'не удалось создать аккаунт'}. Исправьте логин или пароль здесь и сохраните ещё раз.`)
-          return
-        }
-      }
-
-      setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
-      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
-      setTeamFormOpen(false)
-      setMessage(shouldCreateAccount ? `Сотрудник сохранён. Вход @${requestedLogin} создан.` : 'Сотрудник сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения сотрудника')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function saveTeamEmployeeColor(employee: TeamEmployee, colorKey: string) {
-    if (!isAdmin || !employee?.id) return
-    const normalizedColor = resolveManagerDisplayColor(colorKey, employee.id)
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/team/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: employee.id,
-          name: employee.name,
-          role: employee.role || 'Менеджер',
-          phone: employee.phone || '',
-          colorKey: normalizedColor,
-          hiredAt: employee.hiredAt || formatLocalDateInput(),
-          comment: employee.comment || '',
-          isActive: employee.isActive,
-        }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Цвет сотрудника')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить цвет сотрудника.')
-      setTeamEmployees((current) => current.map((item) => item.id === employee.id ? { ...item, colorKey: normalizedColor } : item))
-      if (teamDraft.id === employee.id) setTeamDraft((draft) => ({ ...draft, colorKey: normalizedColor }))
-      setTeamColorEditorId(null)
-      void loadReferencesData(true)
-      setMessage(`Цвет сотрудника ${employee.name} обновлён.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения цвета сотрудника')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function setTeamEmployeeEmploymentStatus(employee: TeamEmployee, isActive: boolean) {
-    if (!isAdmin) {
-      setError('Изменение статуса сотрудника доступно только администратору.')
-      return
-    }
-    if (!employee?.id) return
-    const confirmation = isActive
-      ? `Вернуть сотрудника ${employee.name} в активную команду? Он снова появится в новых заказах и назначениях.`
-      : `Отметить сотрудника ${employee.name} как уволенного? Старые заказы, планы, выплаты и отчёты сохранятся.`
-    if (!window.confirm(confirmation)) return
-
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/team/employees/${employee.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Статус сотрудника')
-      if (teamDraft.id === employee.id) {
-        setTeamDraft((draft) => ({ ...draft, isActive }))
-      }
-      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
-      setMessage(data.message || (isActive ? 'Сотрудник возвращён в команду. Доступ в систему включите отдельно, если он нужен.' : 'Сотрудник отмечен как уволенный. Его вход в систему отключён.'))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось изменить статус сотрудника.')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  async function removeTeamEmployee(employee: TeamEmployee) {
-    if (!isAdmin) {
-      setError('Удаление сотрудников доступно только администратору.')
-      return
-    }
-    if (!employee?.id) return
-    if (!window.confirm(`Удалить сотрудника ${employee.name}? Если по нему есть заказы, планы или отчёты, система не даст удалить и предложит отметить его как уволенного.`)) return
-    setTeamBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch(`/api/team/employees/${employee.id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Удаление сотрудника')
-      if (!response.ok) throw new Error(data.message || 'Не удалось удалить сотрудника.')
-      if (teamDraft.id === employee.id) setTeamDraft({ id: 0, name: '', role: 'Менеджер', phone: '', birthDate: '', colorKey: '#2563EB', hiredAt: formatLocalDateInput(), comment: '', isActive: true, createAccount: true, login: '', password: '', mustChangePassword: true })
-      await Promise.all([loadTeamEmployees(), isAdmin ? loadAuthUsers() : Promise.resolve(), loadReferencesData(true)])
-      setMessage(data.message || 'Сотрудник удалён из команды.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления сотрудника')
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-  function getTimesheetMonthDays(monthValue = timesheetMonth) {
-    const [yearText, monthText] = monthValue.split('-')
-    const year = Number(yearText)
-    const month = Number(monthText)
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
-    return Array.from({ length: lastDay }, (_, index) => `${yearText}-${monthText}-${String(index + 1).padStart(2, '0')}`)
-  }
-
-
-  function shiftTimesheetMonth(offset: number) {
-    const [yearText, monthText] = timesheetMonth.split('-')
-    const date = new Date(Date.UTC(Number(yearText), Number(monthText) - 1 + offset, 1))
-    setTimesheetMonth(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`)
-    setTimesheetSelectedDays([])
-  }
-
-  function setTimesheetCurrentMonth() {
-    setTimesheetMonth(formatLocalDateInput().slice(0, 7))
-    setTimesheetSelectedDays([])
-  }
-
-  function getTimesheetCalendarSlots() {
-    const days = getTimesheetMonthDays()
-    const first = days[0]
-    const firstOffset = first ? ((new Date(`${first}T00:00:00`).getDay() + 6) % 7) : 0
-    return [...Array.from({ length: firstOffset }, () => ''), ...days]
-  }
-
-  function getTimesheetWeekdayLabel(date: string) {
-    const labels = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
-    return labels[new Date(`${date}T00:00:00`).getDay()] || ''
-  }
-
-  function getTimesheetEntriesForDate(date: string) {
-    return (timesheetData?.entries || []).filter((entry) => entry.date === date)
-  }
+  function loadTeamTimesheet(monthValue = timesheetMonth) { return loadTeamTimesheetAction(monthValue) }
 
   function editManagerPlan(row: ManagerPlanRecord) {
     setManagerPlanDraft({
@@ -2383,53 +2235,7 @@ function App() {
     }
   }
 
-  async function loadTeamTimesheet(monthValue = timesheetMonth) {
-    setTimesheetBusy(true)
-    try {
-      const response = await apiFetch(`/api/team/timesheet?month=${encodeURIComponent(monthValue)}`)
-      const data = await readJsonResponse<TeamTimesheetResponse>(response, 'Табель')
-      if (!response.ok) throw new Error('Не удалось загрузить табель.')
-      setTimesheetData(data)
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Табель', Boolean(timesheetData))
-      return null
-    } finally {
-      setTimesheetBusy(false)
-    }
-  }
 
-  async function saveTeamTimesheet(clear = false) {
-    if (!isAdmin) {
-      setError('Изменение табеля доступно только администратору.')
-      return
-    }
-
-    setTimesheetBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/team/timesheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dates: timesheetSelectedDays,
-          managerIds: timesheetSelectedManagers,
-          workUntil: timesheetWorkUntil,
-          comment: timesheetComment,
-          clear,
-        }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Табель')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить табель.')
-      await Promise.all([loadTeamTimesheet(), loadTeamSalaryReport(), refreshActivityLogIfVisible()])
-      setMessage(clear ? 'Выбранные назначения табеля очищены.' : 'Табель сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения табеля')
-    } finally {
-      setTimesheetBusy(false)
-    }
-  }
 
   async function loadTeamSalaryReport(nextFilters = teamSalaryFilters) {
     setTeamBusy(true)
@@ -2480,45 +2286,6 @@ function App() {
     }
   }
 
-  function setTimesheetDaysPreset(kind: 'all' | 'weekdays' | 'weekends' | 'odd' | 'even' | 'clear') {
-    const days = getTimesheetMonthDays()
-    if (kind === 'clear') {
-      setTimesheetSelectedDays([])
-      return
-    }
-    const filtered = days.filter((date) => {
-      const dayNumber = Number(date.slice(-2))
-      const dayOfWeek = new Date(`${date}T00:00:00`).getDay()
-      if (kind === 'weekdays') return dayOfWeek >= 1 && dayOfWeek <= 5
-      if (kind === 'weekends') return dayOfWeek === 0 || dayOfWeek === 6
-      if (kind === 'odd') return dayNumber % 2 === 1
-      if (kind === 'even') return dayNumber % 2 === 0
-      return true
-    })
-    setTimesheetSelectedDays(filtered)
-  }
-
-  function toggleTimesheetDay(date: string) {
-    setTimesheetSelectedDays((current) => current.includes(date) ? current.filter((entry) => entry !== date) : [...current, date])
-  }
-
-  function toggleTimesheetManager(id: number) {
-    setTimesheetSelectedManagers((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])
-  }
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
 
 
   function getExportElementHtml(elementId: string) {
