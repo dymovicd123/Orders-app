@@ -279,6 +279,75 @@ const setWorkshopLine=sql.prepare('SELECT id FROM order_dispatch_items WHERE dis
 await cancelExactOrderDispatchItem(db,9054,{dispatchItemId:setWorkshopLine,requestId:'stage5-set-v2-workshop-undo-01',actor:'QA',reason:'test'})
 assert.deepEqual({...stock()},snapshotBeforeWorkshop)
 
+// A corrected dispatch cannot put back more physical stock than the exact
+// outgoing movement recorded; the remaining obligation stays unresolved.
+// Exercise the real Worker domain against disposable SQLite, not a string assertion.
+sql.prepare("INSERT INTO inventory_stock(id,inventory_source,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,reserved_quantity) VALUES(9045,'boutique',9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',4,2)").run()
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9055,'TEST-BOUNDED-UNDO','2026-11-01',1,'active','boutique','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(9973,9055,9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',2,1000,2000,0,'boutique','reserved','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9055,9973,'boutique',9021,9031,2,'active','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+const boutiqueStock=()=>({...sql.prepare('SELECT quantity,reserved_quantity FROM inventory_stock WHERE id=9045').get()})
+const boundedSend=await dispatchSelectedCompleteOrderLines(db,9055,{
+ requestId:'stage5b-bounded-real-send-01',
+ items:[{orderItemId:9973,quantity:2}],actor:'QA',dispatchDate:'2026-11-01',
+})
+assert.equal(boundedSend.shippedQuantity,2)
+assert.deepEqual(boutiqueStock(),{quantity:2,reserved_quantity:0})
+const boundedLine=sql.prepare('SELECT id,movement_id FROM order_dispatch_items WHERE dispatch_id=?').get(boundedSend.dispatchId)
+const actualMovement=sql.prepare('SELECT movement_type,quantity_delta FROM inventory_movements WHERE id=?').get(boundedLine.movement_id)
+assert.equal(actualMovement.movement_type,'sale')
+assert.equal(actualMovement.quantity_delta,-2)
+// Inconsistent historical movement proof: fail closed without any mutation.
+sql.prepare("UPDATE inventory_movements SET movement_type='manual_set' WHERE id=?").run(boundedLine.movement_id)
+await assert.rejects(cancelExactOrderDispatchItem(db,9055,{
+ dispatchItemId:boundedLine.id,requestId:'stage5b-invalid-sale-proof-01',actor:'QA',reason:'Test invalid proof',
+}),/Складское движение отправки изменилось/)
+assert.deepEqual(boutiqueStock(),{quantity:2,reserved_quantity:0})
+assert.equal(sql.prepare('SELECT cancelled_quantity FROM order_dispatch_items WHERE id=?').get(boundedLine.id).cancelled_quantity,0)
+// A legacy anomaly recorded only -1 while the customer-facing dispatch says 2.
+// Never restore +2 to the tracked stock without proof of a second physical unit.
+sql.prepare("UPDATE inventory_movements SET movement_type='sale',quantity_delta=-1 WHERE id=?").run(boundedLine.movement_id)
+const boundedUndo=await cancelExactOrderDispatchItem(db,9055,{
+ dispatchItemId:boundedLine.id,requestId:'stage5b-limited-restoration-01',actor:'QA',reason:'Test exact refund',
+})
+assert.equal(boundedUndo.physicalRestoredQuantity,1)
+assert.equal(boundedUndo.needsStockCheck,true)
+assert.deepEqual(boutiqueStock(),{quantity:3,reserved_quantity:0})
+assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9973").get().status,'unresolved')
+assert.equal(sql.prepare("SELECT stock_writeoff_status FROM order_items WHERE id=9973").get().stock_writeoff_status,'pending_reservation')
+assert.equal(sql.prepare("SELECT quantity_delta FROM inventory_movements WHERE reference_type='order_dispatch_correction' AND reference_id='dispatch_cancel:stage5b-limited-restoration-01:item:9973'").get().quantity_delta,1)
+const boundedReplay=await cancelExactOrderDispatchItem(db,9055,{
+ dispatchItemId:boundedLine.id,requestId:'stage5b-limited-restoration-01',actor:'QA',reason:'Repeat',
+})
+assert.equal(boundedReplay.alreadyCorrected,true)
+assert.deepEqual(boutiqueStock(),{quantity:3,reserved_quantity:0})
+
+// Even with a full -1 sale, a competing reservation may already use all
+// available units. Cancellation must not fabricate an additional reservation.
+sql.prepare("INSERT INTO orders(id,external_id,order_date,manager_id,order_status,source_type,workshop_status,shipping_status,created_at,updated_at) VALUES(9056,'TEST-RESERVE-BOUND','2026-11-01',1,'active','boutique','ready','not_sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO order_items(id,order_id,product_id,variant_id,product_name_snapshot,gender_snapshot,color_snapshot,material_snapshot,length_snapshot,size_snapshot,quantity,unit_price,line_total,is_workshop,source_type,stock_writeoff_status,created_at) VALUES(9974,9056,9021,9031,'DISPATCH EXACT SKU','МУЖ','БЕЖ','СТАНДАРТ','СТАНДАРТ','50',1,1000,1000,0,'boutique','reserved','2026-11-01T00:00:00Z')").run()
+sql.prepare("INSERT INTO inventory_reservations(order_id,order_item_id,inventory_source,product_id,variant_id,quantity,status,created_at,updated_at) VALUES(9056,9974,'boutique',9021,9031,1,'active','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')").run()
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=1 WHERE id=9045').run()
+const reserveBoundSend=await dispatchSelectedCompleteOrderLines(db,9056,{
+ requestId:'stage5b-reserve-bound-send-01',items:[{orderItemId:9974,quantity:1}],
+ actor:'QA',dispatchDate:'2026-11-01',
+})
+assert.equal(reserveBoundSend.shippedQuantity,1)
+assert.deepEqual(boutiqueStock(),{quantity:2,reserved_quantity:0})
+sql.prepare('UPDATE inventory_stock SET reserved_quantity=3 WHERE id=9045').run()
+const reserveBoundLine=sql.prepare('SELECT id FROM order_dispatch_items WHERE dispatch_id=?').get(reserveBoundSend.dispatchId).id
+const reserveBoundUndo=await cancelExactOrderDispatchItem(db,9056,{
+ dispatchItemId:reserveBoundLine,requestId:'stage5b-reserve-bound-undo-01',
+ actor:'QA',reason:'Another order holds available stock',
+})
+assert.equal(reserveBoundUndo.physicalRestoredQuantity,1)
+assert.equal(reserveBoundUndo.needsStockCheck,true)
+assert.deepEqual(boutiqueStock(),{quantity:3,reserved_quantity:3},
+ 'Actual physical movement restored; the conflicting hold belongs to other orders')
+assert.equal(sql.prepare("SELECT status FROM inventory_reservations WHERE order_item_id=9974").get().status,'unresolved')
+assert.equal(sql.prepare("SELECT stock_writeoff_status FROM order_items WHERE id=9974").get().stock_writeoff_status,'pending_reservation')
+console.log('STAGE5B_BRANCH2_BOUNDED_CANCEL_PASS: movement proof, one-unit restore, no phantom hold, idempotent replay')
+
 sql.close()
 console.log('STAGE5B_ATOMIC_FULL_LINE_DISPATCH_AND_EXACT_ITEM_UNDO_PASS')
 console.log('STAGE5B_TWO_EXCHANGE_REPLACEMENTS_ONE_BATCH_PASS')
