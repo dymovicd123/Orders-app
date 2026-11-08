@@ -25,8 +25,8 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, InventoryHistoryResponse, InventoryCheckHistoryResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
-import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse, InventoryCycleCountApplyResponse, InventoryCycleCountSuggestionsResponse, InventoryReservationsResponse, InventoryStocktakeMutationResponse, InventoryStocktakeSessionsResponse, WarehouseAttentionSummaryResponse } from '../shared/api-contracts.ts'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, ExchangeHistoryEntry, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryDraftItem, InventoryMatrixDraft, InventoryMovementRecord, InventoryOperationVariantDraft, InventoryPanel, InventoryResponse, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, InventoryStockRecord, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, ReturnHistoryEntry, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopInvoiceRow, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
+import type { CatalogResolutionContext, CatalogResolutionInput, CatalogResolutionResponse } from '../shared/api-contracts.ts'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
 import { createDebtClosePayment, createEditorDraft, createEmptyEditorItem, createEmptyEditorPayment, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, deriveOrderSourceType, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, htmlEscape, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, resolvePaymentKind, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
@@ -53,8 +53,9 @@ import { submitLegacyExchangeBatch, submitLegacyExchangePair } from './app/legac
 import { evaluateItemizedCreatePricing, resolveCatalogOrderSalePrice } from './app/order-pricing'
 import { historicalCatalogSnapshotForEdit } from './app/itemizedEditCatalogSnapshot'
 import { createEmptyArrivalPosition, createEmptyInventoryOperationVariantDraft, inventoryUiId } from './features/inventory/inventoryDraftFactories'
-import { loadCompleteInventorySnapshot } from './features/inventory/loadCompleteInventorySnapshot'
 import { useInventoryMatrixWorkspace } from './features/inventory/useInventoryMatrixWorkspace'
+import { useWarehouseSnapshots } from './features/inventory/useWarehouseSnapshots'
+import { createInventoryStocktakeClient } from './features/inventory/inventoryStocktakeClient'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
@@ -177,12 +178,6 @@ async function offerBrowserPasswordSave(login: string, password: string) {
   }
 }
 
-const WAREHOUSE_ATTENTION_SUMMARY_TTL_MS = 60_000
-const INVENTORY_FORM_SNAPSHOT_TTL_MS = 30_000
-let warehouseAttentionSummaryCache: { data: WarehouseAttentionSummaryResponse; loadedAt: number } | null = null
-let warehouseAttentionSummaryInFlight: Promise<WarehouseAttentionSummaryResponse | null> | null = null
-let warehouseAttentionRequestToken = 0
-
 function handoverCheckpointDateLabel(value: string | null | undefined) {
   const raw = String(value || '').trim()
   if (!raw) return 'последней сверки'
@@ -233,22 +228,11 @@ function App() {
   const [stockHandoverActionItemId, setStockHandoverActionItemId] = useState<number | null>(null)
   const [orderCatalogResolutionOrder, setOrderCatalogResolutionOrder] = useState<OrderRecord | null>(null)
   const [references, setReferences] = useState<ReferenceData | null>(null)
-  const [inventoryData, setInventoryData] = useState<{
-    warehouse: InventoryResponse | null
-    boutique: InventoryResponse | null
-  }>({
-    warehouse: null,
-    boutique: null,
-  })
-  const inventorySnapshotLoadedAt = useRef<Record<InventorySourceKey, number>>({ warehouse: 0, boutique: 0 })
-  const inventorySnapshotRequestSeq = useRef<Record<InventorySourceKey, number>>({ warehouse: 0, boutique: 0 })
-  const [inventorySnapshotLoadErrors, setInventorySnapshotLoadErrors] = useState<Record<InventorySourceKey, string>>({ warehouse: '', boutique: '' })
   const [catalogData, setCatalogData] = useState<CatalogResponse | null>(null)
   const [catalogReview, setCatalogReview] = useState<CatalogReviewResponse | null>(null)
   const [catalogReviewBusy, setCatalogReviewBusy] = useState(false)
   const [inventoryLifecycle, setInventoryLifecycle] = useState<InventoryLifecyclePendingResponse | null>(null)
   const [inventoryLifecycleBusy, setInventoryLifecycleBusy] = useState(false)
-  const [warehouseAttention, setWarehouseAttention] = useState<WarehouseAttentionSummaryResponse | null>(null)
   const [dashboardInsights, setDashboardInsights] = useState<DashboardInsightsResponse | null>(null)
   const [workshopFilters, setWorkshopFilters] = useState({
     view: 'active' as WorkshopView,
@@ -811,6 +795,40 @@ function App() {
   const debtFormRef = useRef<HTMLElement | null>(null)
   const returnFormRef = useRef<HTMLElement | null>(null)
   const exchangeFormRef = useRef<HTMLElement | null>(null)
+  const {
+    inventoryData,
+    inventorySnapshotLoadErrors,
+    warehouseAttention,
+    loadWarehouseAttention,
+    loadInventoryData,
+    invalidateInventoryStockCaches,
+  } = useWarehouseSnapshots({
+    apiFetch,
+    activeSector,
+    inventoryPanel,
+    inventorySource: inventoryDraft.source,
+    clearCatalogReview: () => setCatalogReview(null),
+  })
+
+  const {
+    loadInventoryReservations,
+    loadInventoryStocktakeSessions,
+    loadInventoryStocktakeSession,
+    createInventoryStocktakeSession,
+    saveInventoryStocktakeCount,
+    addInventoryStocktakeVariant,
+    addInventoryStocktakeCombination,
+    reconcileFoundInventoryStock,
+    loadInventoryCycleCounts,
+    applyInventoryCycleCounts,
+    quickInventoryStocktakeBatch,
+    quickInventoryStocktake,
+    completeInventoryStocktakeSession,
+    cancelInventoryStocktakeSession,
+    loadInventoryHistory,
+    loadInventoryCheckHistory,
+  } = createInventoryStocktakeClient(apiFetch)
+
   const editorFormRef = useRef<HTMLElement | null>(null)
 
   function managerColorFor(name?: string | null, id?: number | null, explicitColor?: string | null) {
@@ -1696,143 +1714,6 @@ function App() {
     }
   }
 
-  async function loadWarehouseAttention(details = false, force = false) {
-    const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')
-    if (!shouldLoadDetails && !force) {
-      const cached = warehouseAttentionSummaryCache
-      if (cached && Date.now() - cached.loadedAt < WAREHOUSE_ATTENTION_SUMMARY_TTL_MS) {
-        setWarehouseAttention((current) => current?.items ? current : cached.data)
-        return cached.data
-      }
-      if (warehouseAttentionSummaryInFlight) {
-        return await warehouseAttentionSummaryInFlight
-      }
-    }
-    const requestToken = ++warehouseAttentionRequestToken
-    const request = (async () => {
-      const response = await apiFetch(`/api/inventory/attention${shouldLoadDetails ? '?details=1&limit=30' : ''}`)
-      if (!response.ok) return null
-      return await readJsonResponse<WarehouseAttentionSummaryResponse>(response, 'Склад')
-    })()
-    if (!shouldLoadDetails) warehouseAttentionSummaryInFlight = request
-    try {
-      const data = await request
-      if (!data || requestToken !== warehouseAttentionRequestToken) return data
-      setWarehouseAttention(data)
-      if (shouldLoadDetails) {
-        // R7.7: a detailed Attention response already carries the exact summary counters.
-        // Reuse those counters for the next passive badge/overview read instead of immediately
-        // rebuilding the same live Warehouse truth graph.
-        warehouseAttentionSummaryCache = {
-          data: { ok: data.ok, total: data.total, counts: data.counts },
-          loadedAt: Date.now(),
-        }
-      } else {
-        warehouseAttentionSummaryCache = { data, loadedAt: Date.now() }
-      }
-      return data
-    } finally {
-      if (!shouldLoadDetails && warehouseAttentionSummaryInFlight === request) warehouseAttentionSummaryInFlight = null
-    }
-  }
-
-  async function loadInventoryData(
-    source: 'warehouse' | 'boutique' = inventoryDraft.source,
-    force = false,
-    query = '',
-    includeMovements = false,
-  ) {
-    const cached = inventoryData[source]
-    const cachedHasMovements = cached?.movementsIncluded !== false
-    const snapshotAgeMs = Date.now() - inventorySnapshotLoadedAt.current[source]
-    if (
-      cached
-      && !force
-      && !query.trim()
-      && snapshotAgeMs >= 0
-      && snapshotAgeMs <= INVENTORY_FORM_SNAPSHOT_TTL_MS
-      && (!includeMovements || cachedHasMovements)
-    ) {
-      return cached
-    }
-
-    const fullSnapshot = !query.trim()
-    const requestSeq = fullSnapshot
-      ? ++inventorySnapshotRequestSeq.current[source]
-      : inventorySnapshotRequestSeq.current[source]
-    const rejectSnapshot = (message: string) => {
-      // Never present a previously loaded count as though a newer full
-      // refresh succeeded. Earlier failed requests must not erase a later
-      // successful one.
-      if (fullSnapshot && inventorySnapshotRequestSeq.current[source] === requestSeq) {
-        inventorySnapshotLoadedAt.current[source] = 0
-        setInventoryData((current) => ({ ...current, [source]: null }))
-        setInventorySnapshotLoadErrors((current) => ({ ...current, [source]: message }))
-      }
-      return null
-    }
-
-    let data: InventoryResponse | null = null
-    try {
-      data = await loadCompleteInventorySnapshot(async (cursor, firstPageWithMovements) => {
-        const params = new URLSearchParams({
-          source,
-          limit: '1000',
-          cursor: String(cursor),
-          q: query.trim(),
-          includeMovements: firstPageWithMovements ? '1' : '0',
-        })
-        const response = await apiFetch(`/api/inventory?${params.toString()}`)
-        if (response.headers.get('X-Orders-App-Stale') === '1') {
-          throw new Error('Свежие остатки недоступны. Получен старый кеш — он не принят за актуальный склад.')
-        }
-        if (!response.ok) return null
-        return readJsonResponse<InventoryResponse>(response, 'Склад')
-      }, includeMovements)
-    } catch (error) {
-      console.error('Полные остатки не загружены:', error)
-      return rejectSnapshot(error instanceof Error ? error.message : 'Не удалось получить достоверные остатки.')
-    }
-    if (!data) return rejectSnapshot('Сервер не отдал полный список остатков. Данные не обновлены.')
-    // A filtered query is only a search result. It must never replace the
-    // authoritative all-items snapshot used by the entire Warehouse screen.
-    if (!fullSnapshot) return data
-    if (inventorySnapshotRequestSeq.current[source] !== requestSeq) return null
-    // No interim state update: all downstream stocktake/arrival/catalog editors
-    // must see one complete, LIVE source snapshot, never partial/stale pages.
-    if (fullSnapshot) {
-      inventorySnapshotLoadedAt.current[source] = Date.now()
-      setInventorySnapshotLoadErrors((current) => ({ ...current, [source]: '' }))
-    }
-    setInventoryData((current) => {
-      const previous = current[source]
-      if (!includeMovements && previous && previous.movementsIncluded !== false) {
-        return {
-          ...current,
-          [source]: {
-            ...data,
-            movements: previous.movements,
-            movementsIncluded: false,
-          },
-        }
-      }
-      return { ...current, [source]: data }
-    })
-    return data
-  }
-
-  function invalidateInventoryStockCaches(includeCatalogReview = false) {
-    setInventoryData({ warehouse: null, boutique: null })
-    inventorySnapshotLoadedAt.current = { warehouse: 0, boutique: 0 }
-    inventorySnapshotRequestSeq.current = { warehouse: inventorySnapshotRequestSeq.current.warehouse + 1, boutique: inventorySnapshotRequestSeq.current.boutique + 1 }
-    setInventorySnapshotLoadErrors({ warehouse: '', boutique: '' })
-    if (includeCatalogReview) setCatalogReview(null)
-    // W3.1A: mutations invalidate Warehouse Attention truth, but do not spend a D1 read
-    // unless the user actually opens/refreshes the recovery surface. Its own effect/action
-    // remains the single owner of detailed refreshes (W2.1 race invariant).
-    warehouseAttentionSummaryCache = null
-  }
-
   async function loadCatalogData(force = false) {
     if (catalogData && !force) return catalogData
     const response = await apiFetch('/api/catalog')
@@ -2014,140 +1895,6 @@ function App() {
     }
   }
 
-  async function loadInventoryReservations(source: InventorySourceKey, variantId = 0, productId = 0): Promise<InventoryReservationsResponse> {
-    if (!variantId && !productId) return { ok: true, source, variantId: 0, productId: 0, totalQuantity: 0, reservations: [] }
-    const params = new URLSearchParams({ source })
-    if (variantId) params.set('variantId', String(variantId))
-    if (productId) params.set('productId', String(productId))
-    const response = await apiFetch(`/api/inventory/reservations?${params.toString()}`)
-    const data = await readJsonResponse<InventoryReservationsResponse>(response, 'Заказы по резерву')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось загрузить заказы, которые держат товар.')
-    return data
-  }
-
-  async function loadInventoryStocktakeSessions(source: InventorySourceKey | '' = '') {
-    const params = new URLSearchParams()
-    if (source) params.set('source', source)
-    const response = await apiFetch(`/api/inventory/stocktakes${params.toString() ? `?${params.toString()}` : ''}`)
-    const data = await readJsonResponse<InventoryStocktakeSessionsResponse>(response, 'Активные ревизии')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось загрузить активные ревизии.')
-    return data
-  }
-
-  async function loadInventoryStocktakeSession(sessionId: string) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}`)
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Ревизия')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось загрузить ревизию.')
-    return data
-  }
-
-  async function createInventoryStocktakeSession(source: InventorySourceKey, productIds: number[] = []) {
-    const response = await apiFetch('/api/inventory/stocktakes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source, productIds }),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Начало ревизии')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось начать ревизию.')
-    return data
-  }
-
-  async function saveInventoryStocktakeCount(sessionId: string, itemId: number, countedQuantity: number | null) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/items/${itemId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ countedQuantity }),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Сохранение пересчёта')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось сохранить количество.')
-    return data
-  }
-
-  async function addInventoryStocktakeVariant(sessionId: string, variantId: number) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/items`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantId }),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Добавление товара в ревизию')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось добавить товар в ревизию.')
-    return data
-  }
-
-
-  async function addInventoryStocktakeCombination(sessionId: string, input: {
-    productId: number
-    material: string
-    length: string
-    category: 'adult' | 'child'
-    gender: string
-    color: string
-    size?: string
-    sizes?: string[]
-    createReferenceFields?: string[]
-    deferUnknown?: boolean
-  }) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/items/combination`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Добавление комбинации в ревизию')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось добавить комбинацию товара в ревизию.')
-    return data
-  }
-
-  async function reconcileFoundInventoryStock(stockId: number) {
-    if (!stockId) return null
-    const response = await apiFetch(`/api/inventory/found-stock/${stockId}/reconcile`, { method: 'POST' })
-    const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'Уточнение найденной позиции')
-    if (!response.ok || data?.ok === false) throw new Error(data?.message || 'Не удалось определить найденную позицию.')
-    return data
-  }
-
-  async function loadInventoryCycleCounts(source: InventorySourceKey, limit = 12) {
-    const params = new URLSearchParams({ source, limit: String(limit) })
-    const response = await apiFetch(`/api/inventory/cycle-counts?${params.toString()}`)
-    const data = await readJsonResponse<InventoryCycleCountSuggestionsResponse>(response, 'Короткие сверки')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось подобрать позиции для короткой сверки.')
-    return data
-  }
-
-  async function applyInventoryCycleCounts(input: { source: InventorySourceKey; items: Array<{ variantId: number; expectedQuantity: number; countedQuantity: number }> }) {
-    const response = await apiFetch('/api/inventory/cycle-counts/apply', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryCycleCountApplyResponse>(response, 'Короткая сверка')
-    if (!response.ok && data?.code !== 'changed' && data?.code !== 'stocktake_active') throw new Error(data?.message || 'Не удалось сохранить короткую сверку.')
-    return data
-  }
-
-  async function quickInventoryStocktakeBatch(input: { source: InventorySourceKey; items: Array<{ variantId: number; expectedQuantity: number; countedQuantity: number }> }) {
-    const response = await apiFetch('/api/inventory/stocktakes/quick-batch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryCycleCountApplyResponse>(response, 'Быстрая сверка')
-    if (!response.ok && data?.code !== 'changed' && data?.code !== 'stocktake_active') throw new Error(data?.message || 'Не удалось сверить выбранные позиции.')
-    return data
-  }
-
-  async function quickInventoryStocktake(input: { source: InventorySourceKey; variantId: number; expectedQuantity: number; countedQuantity: number }) {
-    const response = await apiFetch('/api/inventory/stocktakes/quick', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
-    })
-    const data = await readJsonResponse<InventoryCycleCountApplyResponse>(response, 'Точечная сверка')
-    if (!response.ok && data?.code !== 'changed') throw new Error(data?.message || 'Не удалось сверить количество.')
-    return data
-  }
-
-  async function completeInventoryStocktakeSession(sessionId: string) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/complete`, { method: 'POST' })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Завершение ревизии')
-    if (!response.ok && data?.code !== 'recount_required' && data?.code !== 'unfilled') {
-      throw new Error(data?.message || 'Не удалось завершить ревизию.')
-    }
-    return data
-  }
-
-  async function cancelInventoryStocktakeSession(sessionId: string) {
-    const response = await apiFetch(`/api/inventory/stocktakes/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' })
-    const data = await readJsonResponse<InventoryStocktakeMutationResponse>(response, 'Отмена ревизии')
-    if (!response.ok) throw new Error(data?.message || 'Не удалось отменить ревизию.')
-    return data
-  }
-
   async function resolveCatalogReviewItem(orderItemId: number, variantId: number) {
     if (!canManageWarehouse || !orderItemId || !variantId || catalogReviewBusy) return false
     setCatalogReviewBusy(true)
@@ -2308,28 +2055,6 @@ function App() {
   ) {
     const data = await loadWorkshopRead(nextFilters, workshopSortDirection, options)
     if (data) setSelectedWorkshopTaskIds((current) => current.filter((id) => data.tasks.some((task) => task.id === id)))
-    return data
-  }
-
-  async function loadInventoryHistory(input: { source?: string; variantId?: number; q?: string; beforeId?: number; limit?: number } = {}) {
-    const params = new URLSearchParams({ limit: String(input.limit || 50) })
-    if (input.source) params.set('source', input.source)
-    if (input.variantId) params.set('variantId', String(input.variantId))
-    if (input.q?.trim()) params.set('q', input.q.trim())
-    if (input.beforeId) params.set('beforeId', String(input.beforeId))
-    const response = await apiFetch(`/api/inventory/history?${params.toString()}`)
-    const data = await readJsonResponse<InventoryHistoryResponse>(response, 'История склада')
-    if (!response.ok) throw new Error('Не удалось загрузить историю склада.')
-    return data
-  }
-
-  async function loadInventoryCheckHistory(input: { source?: string; variantId?: number; limit?: number } = {}) {
-    const params = new URLSearchParams({ limit: String(input.limit || 30) })
-    if (input.source) params.set('source', input.source)
-    if (input.variantId) params.set('variantId', String(input.variantId))
-    const response = await apiFetch(`/api/inventory/check-history?${params.toString()}`)
-    const data = await readJsonResponse<InventoryCheckHistoryResponse>(response, 'Ревизии и сверки')
-    if (!response.ok) throw new Error('Не удалось загрузить ревизии и сверки.')
     return data
   }
 

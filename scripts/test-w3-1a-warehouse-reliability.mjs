@@ -3,6 +3,7 @@ import fs from 'node:fs'
 const read = (p) => fs.readFileSync(p, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 const app = read('src/App.tsx')
+const warehouseSnapshots = read('src/features/inventory/useWarehouseSnapshots.ts')
 const movement = read('src/features/inventory/views/renderInventoryMovementPanel.tsx')
 const worker = read('worker/index.ts')
 const inventorySection = read('src/features/sections/InventorySection.tsx')
@@ -37,14 +38,15 @@ const transferRoute = block(worker, "if (url.pathname === '/api/inventory/transf
 check(!transferRoute.includes('requireAdminAccess(request)'), 'known-SKU transfer unexpectedly became admin-only')
 
 // Cache invalidation must be side-effect free for Attention: no hidden D1 read after unrelated writes.
-const invalidator = block(app, 'function invalidateInventoryStockCaches(includeCatalogReview = false)', 'async function loadCatalogData(force = false)')
+check(app.includes('useWarehouseSnapshots({'), 'Warehouse snapshot controller is not mounted in App')
+const invalidator = block(warehouseSnapshots, 'function invalidateInventoryStockCaches(includeCatalogReview = false)', '  return {')
 check(invalidator.includes('warehouseAttentionSummaryCache = null'), 'Attention summary cache is not invalidated')
 check(!invalidator.includes('loadWarehouseAttention('), 'inventory cache invalidation still performs a hidden Attention read')
 check(!app.includes('if (postSaveShortages.length) void loadWarehouseAttention()'), 'order save still performs an unsolicited Attention read')
 
 // W2.1 detail ownership/race protection must remain intact.
-check(app.includes("const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')"), 'W2.1 detail ownership guard missing')
-check(app.includes('setWarehouseAttention((current) => current?.items ? current : cached.data)'), 'W2.1 cached-summary detail preservation missing')
+check(warehouseSnapshots.includes("const shouldLoadDetails = details || (activeSector === 'inventory' && inventoryPanel === 'attention')"), 'W2.1 detail ownership guard missing')
+check(warehouseSnapshots.includes('setWarehouseAttention((current) => current?.items ? current : cached.data)'), 'W2.1 cached-summary detail preservation missing')
 
 // Preserve the modularization guard as an explicit delta chained after W2, not a rewritten history hash.
 check(w3Manifest.version === 1 && w3Manifest.revision === 'w3-1a-warehouse-reliability', 'W3.1A frontend preservation manifest invalid')

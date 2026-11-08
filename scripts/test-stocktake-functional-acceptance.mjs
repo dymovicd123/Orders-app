@@ -1,4 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 import {
   cancelInventoryStocktakeSession,
   completeInventoryStocktakeSession,
@@ -13,6 +15,66 @@ import { prepareManagedInventoryWrite } from '../src/app/controllers/inventoryWr
 const fail = (message) => { throw new Error(message) }
 const check = (condition, message) => { if (!condition) fail(message) }
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Exercise the actual browser transport boundary as compiled application code.
+// Worker/SQLite acceptance below independently verifies committed stock, CAS and replay.
+async function checkInventoryStocktakeClient() {
+  const compiled = await build({
+    entryPoints: ['src/features/inventory/inventoryStocktakeClient.ts'],
+    bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+  })
+  const { createInventoryStocktakeClient } = await import(
+    'data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64')
+  )
+  const requests = []
+  let nextStatus = 200
+  let failNext = false
+  const apiFetch = async (url, options = {}) => {
+    requests.push({ url: String(url), method: options.method || 'GET', body: options.body })
+    if (failNext) { failNext = false; throw new Error('connection lost') }
+    const status = nextStatus
+    nextStatus = 200
+    return new Response(JSON.stringify(status === 200 ? { ok: true, session: { id: 'REV 1' } } : { ok: false, code: 'changed', message: 'stale facts' }), {
+      status, headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const client = createInventoryStocktakeClient(apiFetch)
+  assert.equal((await client.loadInventoryReservations('warehouse')).reservations.length, 0,
+    'Without a source SKU/product identity there must be no unnecessary inventory read')
+  assert.equal(requests.length, 0, 'Empty reservation inquiry unexpectedly contacted server')
+  await client.loadInventoryStocktakeSessions('boutique')
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes?source=boutique')
+  await client.createInventoryStocktakeSession('warehouse', [21, 22])
+  assert.deepEqual(JSON.parse(requests.at(-1).body), { source: 'warehouse', productIds: [21, 22] })
+  assert.equal(requests.at(-1).method, 'POST')
+  await client.saveInventoryStocktakeCount('REV 1', 17, 0)
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/REV%201/items/17')
+  assert.deepEqual(JSON.parse(requests.at(-1).body), { countedQuantity: 0 },
+    'An explicit physical zero must remain zero during an isolated stocktake save')
+  await client.addInventoryStocktakeCombination('REV 1', {
+    productId: 21, material: 'СТАНДАРТ', length: 'СТАНДАРТ', category: 'adult',
+    gender: 'ЖЕН', color: 'КРАСНЫЙ', sizes: ['44', '46'], createReferenceFields: [],
+  })
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/REV%201/items/combination')
+  assert.deepEqual(JSON.parse(requests.at(-1).body).sizes, ['44', '46'])
+  await client.quickInventoryStocktakeBatch({ source: 'warehouse',
+    items: [{ variantId: 45, expectedQuantity: 6, countedQuantity: 5 }] })
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/quick-batch')
+  assert.equal(JSON.parse(requests.at(-1).body).items[0].expectedQuantity, 6,
+    'Warehouse CAS baseline must survive the transport extraction')
+  await client.completeInventoryStocktakeSession('REV 1')
+  assert.equal(requests.at(-1).url, '/api/inventory/stocktakes/REV%201/complete')
+  await client.loadInventoryHistory({ source: 'boutique', variantId: 45, beforeId: 100, limit: 20 })
+  assert.equal(requests.at(-1).url, '/api/inventory/history?limit=20&source=boutique&variantId=45&beforeId=100')
+  await client.loadInventoryCheckHistory({ source: 'warehouse', variantId: 45 })
+  assert.equal(requests.at(-1).url, '/api/inventory/check-history?limit=30&source=warehouse&variantId=45')
+  nextStatus = 409
+  await assert.rejects(client.quickInventoryStocktake({ source: 'warehouse', variantId: 45, expectedQuantity: 6, countedQuantity: 4 }),
+    /stale facts/, 'Stale 409 must never be treated as a successful physical recount')
+  failNext = true
+  await assert.rejects(client.cancelInventoryStocktakeSession('REV 1'), /connection lost/,
+    'Unknown network outcome must surface to the existing managed retry layer')
+}
 
 class TestD1Statement {
   constructor(owner, sql, bindings = []) {
@@ -325,6 +387,7 @@ function testManagedBrowserTransport() {
 }
 
 async function main() {
+  await checkInventoryStocktakeClient()
   testManagedBrowserTransport()
 
   const db = new TestD1Database()
