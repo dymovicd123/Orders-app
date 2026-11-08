@@ -22,6 +22,8 @@ on:
       - worker/domains/order-dispatch-cancel.ts
       - scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
       - scripts/test-selective-shipping-shortage-http-20261108.mjs
+      - src/features/orders/shippingSelection.ts
+      - scripts/test-stage5-client-quantity-replay-20261102.mjs
       - scripts/test-main-confirmed-shipping-state-20261108.mjs
 permissions:
   contents: read
@@ -65,6 +67,8 @@ jobs:
         run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
       - name: Completed dispatch must remain blocked and shown clearly
         run: node scripts/test-main-confirmed-shipping-state-20261108.mjs
+      - name: Quantity selection allows partial known-SKU shortage without affecting workshop rules
+        run: node scripts/test-stage5-client-quantity-replay-20261102.mjs
       - name: Selective shipping shortage confirmation without hard stock block
         run: node scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
       - name: Worker HTTP and SQLite shipment shortage, idempotency and cancellation
@@ -74,13 +78,13 @@ jobs:
       - name: Existing main business release suite
         run: npm run release:check
 
-  deploy-branch2-pr802:
-    name: Isolated Branch2 deploy after PR802 shipping acceptance
+  deploy-branch2-pr803:
+    name: Isolated Branch2 deploy after PR803 partial shortage shipping acceptance
     needs: source-first-order-qa
     if: >-
       github.event_name == 'pull_request'
-      && github.event.pull_request.number == 802
-      && github.event.pull_request.head.ref == 'fix/shipping-status-quantity-unification-20261108'
+      && github.event.pull_request.number == 803
+      && github.event.pull_request.head.ref == 'fix/partial-unresolved-dispatch-20261108'
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -105,11 +109,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = pull_request
-          test "$GITHUB_HEAD_REF" = fix/shipping-status-quantity-unification-20261108
+          test "$GITHUB_HEAD_REF" = fix/partial-unresolved-dispatch-20261108
           test "$GITHUB_BASE_REF" = main
-          jq -e '.pull_request.number == 802
+          jq -e '.pull_request.number == 803
             and .pull_request.head.repo.full_name == .repository.full_name
-            and .pull_request.head.ref == "fix/shipping-status-quantity-unification-20261108"' "$GITHUB_EVENT_PATH"
+            and .pull_request.head.ref == "fix/partial-unresolved-dispatch-20261108"' "$GITHUB_EVENT_PATH"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
           node --input-type=module <<'NODE'
@@ -123,7 +127,7 @@ jobs:
           assert.equal(c.d1_databases[0].binding,'DB')
           assert.equal(c.d1_databases[0].database_name,'orders_db_branch2_mirror_20261027')
           assert.equal(c.d1_databases[0].database_id,'0904a573-21ff-44d8-93b0-c9200f771702')
-          console.log('PR802_BRANCH2_ONLY_CONFIG_VERIFIED')
+          console.log('PR803_BRANCH2_ONLY_CONFIG_VERIFIED')
           NODE
       - run: npm ci
       - name: Build confirmed PR head
@@ -170,4 +174,4 @@ jobs:
           cmp "$RUNNER_TEMP/branch2-before.json" "$RUNNER_TEMP/branch2-after.json"
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/auth/status")" = 200
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/orders/source-picker")" = 401
-          echo 'PR802_BRANCH2_ONLY_DEPLOY_VERIFIED'
+          echo 'PR803_BRANCH2_ONLY_DEPLOY_VERIFIED'
