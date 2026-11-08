@@ -25,7 +25,7 @@ import './styles/189b-business-history.css'
 import './styles/189c-reliable-money-history.css'
 import './styles/finance-f4-money-journal.css'
 import './styles/189d-team-activity-cleanup.css'
-import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, CashRegisterResponse, CashRegisterCycle, CashRegisterCyclesResponse, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
+import type { AccessRole, ActivityLogEntry, ApiState, AppSector, ArchiveMode, ArchivePreviewResponse, AuthUser, CallCentreRecord, CatalogResponse, CatalogReviewResponse, ClientDetailsResponse, ClientMode, ClientOrderRecord, ClientsResponse, DashboardInsightsResponse, DashboardLowStockItem, DashboardWorkshopWarning, DepartmentPlanRecord, EditorDraft, EditorItem, EditorPayment, CashRegisterResponse, CashRegisterCycle, FinanceReportType, InventoryAuditResponse, InventoryCategoryFilter, InventoryControlSettings, InventoryLifecyclePendingResponse, InventoryArrivalPosition, InventoryDraft, InventoryMatrixDraft, InventoryOperationVariantDraft, InventoryPanel, InventorySortMode, InventorySourceKey, InventoryStatusFilter, InventoryStockGroup, LeadRecord, ManagedAuthUser, ManagerPlanRecord, OrderListResponse, OrderPanel, OrderPeriodPreset, OrderPeriodStats, OrderRecord, ReferenceData, ReferenceKind, ReferenceListItem, AuthStatusResponse, TeamActivityResponse, TeamActivityType, TeamEmployee, TeamMode, TeamSalaryResponse, TeamTimesheetResponse, WorkshopPeriodPreset, WorkshopTaskRecord, WorkshopView } from './app/types'
 import { MANAGER_COLOR_OPTIONS, orderPanelOptions, workspaceModules } from './app/constants'
 import { canOpenWorkspaceSector, canSeeWorkspaceMenuItem } from './app/managerWorkspaceAccess'
 import { createDebtClosePayment, createEditorDraft, createEmptyInventoryItem, createEmptyInventoryMatrixDraft, createEmptyOrderDraft, createExchangeDraft, createReturnDraft, formatDateShort, formatLocalDateInput, formatMoney, formatOrderItemDetails, formatOrderItemTitle, formatPercent, getCatalogVariantCategory, getClosedArchiveMonth, getPeriodRange, inventoryMatrixAxisLabel, inventoryMatrixCellKey, isArchivedOrderRecord, isLikelyAdultSizeValue, monthEndFromInput, monthLabelFromInput, monthStartFromInput, normalizeAccessRole, normalizeAudienceTypeValue, normalizeSearchText, normalizeSuggestion, orderLifecycleLabel, productCategoryLabel, readJsonResponse, isTransientApiError, sectorFromHash, shippingStatusLabel, sourceLabel, summarizeOrderItemLines, summarizeOrderPaymentLines, waitingDaysLabel, workshopCustomerIdentity, workshopDetailRows, } from './app/utils'
@@ -37,6 +37,8 @@ import { InventoryStockGroupsRenderer } from './features/renderers/InventoryStoc
 import type { ArrivalRecoveryPrompt } from './features/inventory/views/ArrivalRecoveryDialog'
 import type { StockResolutionPrompt } from './features/orders/StockResolutionConfirmModal'
 import { useFinanceReportReads } from './features/finance/useFinanceReportReads'
+import { createCashRegisterActions } from './features/finance/cashRegisterActions'
+import { createFinancePaymentMethodActions } from './features/finance/paymentMethodActions'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
 import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
@@ -2061,297 +2063,56 @@ function App() {
     return `${prefix}-${cryptoId}`
   }
 
-  async function runCashMutation<T>(action: () => Promise<T>) {
-    if (cashMutationLockRef.current) return null
-    cashMutationLockRef.current = true
-    setCashRegisterBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      return await action()
-    } finally {
-      cashMutationLockRef.current = false
-      setCashRegisterBusy(false)
-    }
-  }
+  const {
+    loadCashRegister: loadCashRegisterAction,
+    loadCashRegisterCycles,
+    setupCashRegister,
+    setCashAutoTracking,
+    activateCashRegister,
+    saveCashRegisterMovement,
+    reconcileCashRegister,
+    reverseCashRegisterMovement,
+    resetCashRegisterCycle,
+  } = createCashRegisterActions({
+    isAdmin,
+    cashRegister,
+    cashRegisterCycles,
+    cashRegisterCyclesOpen,
+    cashSetupAmount,
+    cashMovementDraft,
+    cashReconcileAmount,
+    cashReconcileComment,
+    cashMutationLockRef,
+    setCashRegister,
+    setCashRegisterBusy,
+    setCashRegisterCycles,
+    setCashRegisterCyclesBusy,
+    setCashRegisterCyclesHasMore,
+    setCashMovementDraft,
+    setCashReconcileAmount,
+    setCashReconcileComment,
+    setError,
+    setMessage,
+    apiFetch,
+    makeCashRequestId,
+  })
 
-  async function loadCashRegister() {
-    setCashRegisterBusy(true)
-    try {
-      const response = await apiFetch('/api/finance/cash-register')
-      const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Инкассация')
-      if (!response.ok) throw new Error(data.message || 'Не удалось загрузить кассу.')
-      setCashRegister(data)
-      if (data.initialized) setCashReconcileAmount(Number(data.currentBalance || 0))
-      return data
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить инкассацию.')
-      return null
-    } finally {
-      setCashRegisterBusy(false)
-    }
-  }
+  // Preserve the original hoisted function contract for earlier workspace setup.
+  function loadCashRegister() { return loadCashRegisterAction() }
 
-  async function loadCashRegisterCycles(append = false) {
-    setCashRegisterCyclesBusy(true)
-    try {
-      const offset = append ? cashRegisterCycles.length : 0
-      const response = await apiFetch(`/api/finance/cash-register/cycles?limit=12&offset=${offset}`)
-      const data = await readJsonResponse<CashRegisterCyclesResponse & { message?: string }>(response, 'Прошлые циклы кассы')
-      if (!response.ok) throw new Error(data.message || 'Не удалось загрузить прошлые циклы кассы.')
-      const nextCycles = Array.isArray(data.cycles) ? data.cycles : []
-      setCashRegisterCycles((current) => append ? [...current, ...nextCycles] : nextCycles)
-      setCashRegisterCyclesHasMore(Boolean(data.hasMore))
-      return nextCycles
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось загрузить прошлые циклы кассы.')
-      return []
-    } finally {
-      setCashRegisterCyclesBusy(false)
-    }
-  }
-
-  async function setupCashRegister() {
-    const amount = Math.max(0, Math.trunc(Number(cashSetupAmount || 0)))
-    if (!window.confirm(`Зафиксировать начальный остаток наличных ${formatMoney(amount)}?`)) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Настройка инкассации')
-        if (!response.ok) throw new Error(data.message || 'Не удалось установить начальный остаток.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setMessage('Начальный остаток сохранён. Автоучёт пока выключен.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось установить начальный остаток.')
-      }
-    })
-  }
-
-  async function setCashAutoTracking(enabled: boolean) {
-    const prompt = enabled
-      ? 'Включить автоучёт? Новые наличные оплаты будут увеличивать кассу, а возвраты наличными — уменьшать.'
-      : 'Остановить автоучёт? Журнал, ручные операции и сверка остатка останутся доступны, но новые операции по заказам временно не будут менять кассу автоматически.'
-    if (!window.confirm(prompt)) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/auto-tracking', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enabled }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Автоучёт наличных')
-        if (!response.ok) throw new Error(data.message || 'Не удалось изменить состояние автоучёта.')
-        setCashRegister(data)
-        setMessage(enabled ? 'Автоучёт наличных включён.' : 'Автоучёт остановлен. Ручной учёт и журнал продолжают работать.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось изменить состояние автоучёта.')
-      }
-    })
-  }
-
-  async function activateCashRegister() {
-    return setCashAutoTracking(true)
-  }
-
-  async function saveCashRegisterMovement() {
-    const amount = Math.max(0, Math.trunc(Number(cashMovementDraft.amount || 0)))
-    const comment = cashMovementDraft.comment.trim()
-    if (amount <= 0) {
-      setError('Укажите сумму больше нуля.')
-      return
-    }
-    if (!comment) {
-      setError('Комментарий обязателен: укажите, куда ушли или откуда пришли наличные.')
-      return
-    }
-    if (cashMovementDraft.direction === 'out' && cashRegister && amount > cashRegister.currentBalance) {
-      setError(`По учёту в кассе только ${formatMoney(cashRegister.currentBalance)}.`)
-      return
-    }
-    const historicalBusinessDate = isAdmin ? cashMovementDraft.businessDate.trim() : ''
-    if (historicalBusinessDate && !/^\d{4}-\d{2}-\d{2}$/.test(historicalBusinessDate)) {
-      setError('Укажите корректную дату пропущенной операции.')
-      return
-    }
-    if (historicalBusinessDate) {
-      const directionLabel = cashMovementDraft.direction === 'in' ? 'внесение' : 'выдачу'
-      if (!window.confirm(`Добавить пропущенное ${directionLabel} ${formatMoney(amount)} за ${formatDateShort(historicalBusinessDate)}?\n\nДата операции будет сохранена отдельно от сегодняшнего времени внесения.\n${comment}`)) return
-    } else if (cashMovementDraft.direction === 'out' && !window.confirm(`Выдать из кассы ${formatMoney(amount)}?\n\n${comment}`)) return
-    const requestId = makeCashRequestId('manual')
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/movements', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direction: cashMovementDraft.direction, amount, comment, requestId, ...(historicalBusinessDate ? { businessDate: historicalBusinessDate } : {}) }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Ручное движение наличных')
-        if (!response.ok) throw new Error(data.message || 'Не удалось сохранить движение наличных.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '', businessDate: '' }))
-        setMessage(historicalBusinessDate
-          ? `Пропущенная операция добавлена за ${formatDateShort(historicalBusinessDate)}. Время внесения сохранено отдельно.`
-          : cashMovementDraft.direction === 'in' ? 'Внесение наличных записано.' : 'Выдача наличных записана.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось сохранить движение наличных.')
-      }
-    })
-  }
-
-  async function reconcileCashRegister() {
-    if (!cashRegister?.initialized) return
-    const amount = Math.max(0, Math.trunc(Number(cashReconcileAmount || 0)))
-    const comment = cashReconcileComment.trim()
-    if (!comment) {
-      setError('Для сверки укажите причину изменения остатка.')
-      return
-    }
-    if (amount === cashRegister.currentBalance) {
-      setMessage('Фактический остаток уже совпадает с учётом.')
-      return
-    }
-    if (!window.confirm(`Установить фактический остаток ${formatMoney(amount)}?\n\nСистема запишет только разницу отдельной строкой журнала.\nПричина: ${comment}`)) return
-    const requestId = makeCashRequestId('reconcile')
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/reconcile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount, comment, requestId }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Сверка кассы')
-        if (!response.ok) throw new Error(data.message || 'Не удалось скорректировать остаток.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setCashReconcileComment('')
-        setMessage('Фактический остаток кассы обновлён. Разница сохранена в журнале.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось скорректировать остаток.')
-      }
-    })
-  }
-
-  async function reverseCashRegisterMovement(entryId: number) {
-    if (!window.confirm('Отменить эту ручную операцию? Исходная строка останется в истории, а система добавит обратную запись.')) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch(`/api/finance/cash-register/movements/${entryId}/reverse`, { method: 'POST' })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Отмена ручной операции')
-        if (!response.ok) throw new Error(data.message || 'Не удалось отменить ручную операцию.')
-        setCashRegister(data)
-        setCashReconcileAmount(data.currentBalance)
-        setMessage('Ручная операция отменена обратной записью.')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось отменить ручную операцию.')
-      }
-    })
-  }
-
-  async function resetCashRegisterCycle() {
-    if (!isAdmin) {
-      setError('Начать новый цикл учёта может только администратор.')
-      return
-    }
-    const comment = window.prompt('Причина сброса текущего журнала:', 'Перезапуск учёта наличных после сверки')?.trim() || ''
-    if (!comment) return
-    if (!window.confirm('Обнулить текущую кассу и начать новый чистый цикл?\n\nСтарые записи НЕ удалятся из базы, но будут отделены от нового журнала. Автоучёт будет остановлен.')) return
-    await runCashMutation(async () => {
-      try {
-        const response = await apiFetch('/api/finance/cash-register/reset-cycle', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ comment }),
-        })
-        const data = await readJsonResponse<CashRegisterResponse & { message?: string }>(response, 'Сброс кассы')
-        if (!response.ok) throw new Error(data.message || 'Не удалось начать новый цикл кассы.')
-        setCashRegister(data)
-        setCashReconcileAmount(0)
-        setCashReconcileComment('')
-        setCashMovementDraft((current) => ({ ...current, amount: 0, comment: '' }))
-        setMessage('Начат новый цикл кассы с 0 ₸. Старый журнал сохранён в базе. Автоучёт выключен.')
-        if (cashRegisterCyclesOpen) void loadCashRegisterCycles()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Не удалось начать новый цикл кассы.')
-      }
-    })
-  }
-
-  async function loadFinancePaymentMethods(force = false) {
-    if (financePaymentMethods.length && !force) return financePaymentMethods
-    setFinanceMethodsBusy(true)
-    try {
-      const response = await apiFetch('/api/reference-values?kind=paymentMethods')
-      const data = await readJsonResponse<{ ok?: boolean; items?: ReferenceListItem[] }>(response, 'Способы оплаты')
-      if (!response.ok) throw new Error('Не удалось загрузить способы оплаты.')
-      const rows = Array.isArray(data.items) ? data.items : []
-      setFinancePaymentMethods(rows)
-      return rows
-    } catch (err) {
-      reportReadFailure(err, 'Способы оплаты', financePaymentMethods.length > 0)
-      return []
-    } finally {
-      setFinanceMethodsBusy(false)
-    }
-  }
-
-  async function saveFinancePaymentMethod() {
-    if (!isAdmin) {
-      setError('Изменение способов оплаты доступно только администратору.')
-      return null
-    }
-    const value = normalizeSuggestion(financeMethodDraft.value)
-    if (!value) {
-      setError('Введите способ оплаты.')
-      return null
-    }
-
-    const isEdit = financeMethodDraft.id > 0
-    const response = await apiFetch(isEdit ? `/api/reference-values/${financeMethodDraft.id}` : '/api/reference-values', {
-      method: isEdit ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: 'paymentMethods',
-        value,
-        sortOrder: Number(financeMethodDraft.sortOrder || 0),
-        isActive: true,
-      }),
-    })
-
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(text || 'Не удалось сохранить способ оплаты.')
-    }
-
-    setFinanceMethodDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    await Promise.all([loadFinancePaymentMethods(true), loadReferencesData(true)])
-    setMessage('Способ оплаты обновлён. Формы заказов, долгов и обменов будут брать список отсюда.')
-    return readJsonResponse(response, 'Способ оплаты')
-  }
-
-  async function removeFinancePaymentMethod(id: number) {
-    if (!isAdmin) {
-      setError('Удаление способа оплаты доступно только администратору.')
-      return
-    }
-    if (!id) return
-    const response = await apiFetch(`/api/reference-values/${id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: 'paymentMethods' }),
-    })
-    if (!response.ok) throw new Error('Не удалось отключить способ оплаты.')
-    if (financeMethodDraft.id === id) {
-      setFinanceMethodDraft({ id: 0, value: '', sortOrder: '0', isActive: true })
-    }
-    await Promise.all([loadFinancePaymentMethods(true), loadReferencesData(true)])
-    setMessage('Способ оплаты отключён.')
-  }
+  const { loadFinancePaymentMethods, saveFinancePaymentMethod, removeFinancePaymentMethod } = createFinancePaymentMethodActions({
+    isAdmin,
+    financePaymentMethods,
+    financeMethodDraft,
+    setFinancePaymentMethods,
+    setFinanceMethodsBusy,
+    setFinanceMethodDraft,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    loadReferencesData,
+  })
 
   async function loadTeamEmployees() {
     setTeamBusy(true)
