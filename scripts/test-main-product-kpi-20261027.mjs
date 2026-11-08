@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { build } from 'esbuild'
 const read = p => readFileSync(p,'utf8')
 const src=read('worker/domains/product-kpi.ts')
 const worker=read('worker/index.ts')
@@ -112,4 +113,95 @@ const even=(total,persons)=>{
 assert.deepEqual(even(90,4),[23,23,22,22])
 assert.deepEqual(even(100,4),[25,25,25,25])
 assert.equal(even(90,4).reduce((a,b)=>a+b,0),90)
+
+// Exercise the actual typed Plan read/create/delete frontend, not just source markers.
+const compiledPlan = await build({
+  entryPoints: ['src/features/plans/planActions.ts'], bundle: true,
+  platform: 'node', format: 'esm', target: 'es2022', write: false, logLevel: 'silent',
+})
+const { createPlanActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(compiledPlan.outputFiles[0].text).toString('base64')
+)
+const calls = []
+let planReportValue = null
+let planError = null
+let planMessage = null
+let managerDraftValue = null
+let departmentDraftValue = null
+let financeRefreshes = 0
+let responseCode = 200
+globalThis.confirm = () => true
+const managerDraft = {
+  id: 0, periodStart: '2026-11-01', periodEnd: '2026-11-30',
+  managerId: 9, managerName: 'Менеджер', plannedAmount: 500000,
+  salaryBase: 0, comment: '',
+}
+const departmentDraft = {
+  id: 0, periodStart: '2026-11-01', periodEnd: '2026-11-30',
+  plannedAmount: 2000000, comment: '',
+}
+const planArgs = {
+  isAdmin: true,
+  planFilters: { dateFrom: '2026-11-01', dateTo: '2026-11-30' },
+  planReport: null, managerPlanDraft: managerDraft, departmentPlanDraft: departmentDraft,
+  setManagerPlanDraft: (value) => { managerDraftValue = value },
+  setDepartmentPlanDraft: (value) => { departmentDraftValue = value },
+  setPlanBusy: () => {},
+  setPlanReport: (value) => { planReportValue = value },
+  setError: (value) => { planError = value },
+  setMessage: (value) => { planMessage = value },
+  apiFetch: async (url, init) => {
+    calls.push({ url, init })
+    const body = url.startsWith('/api/plans?')
+      ? { ok: true, managerPlans: [{id: 12}], departmentPlans: [{id: 15}] }
+      : { ok: responseCode === 200, message: responseCode === 200 ? undefined : 'Изменено конкурентно' }
+    return new Response(JSON.stringify(body), {
+      status: responseCode, headers: { 'Content-Type': 'application/json' },
+    })
+  },
+  reportReadFailure: (err) => { throw err },
+  refreshFinanceReportsIfVisible: async () => { financeRefreshes++ },
+}
+const plans = createPlanActions(planArgs)
+await plans.loadPlans()
+assert.deepEqual(planReportValue, { managerPlans: [{ id: 12 }], departmentPlans: [{ id: 15 }] })
+assert.equal(calls[0].url, '/api/plans?startDate=2026-11-01&endDate=2026-11-30')
+await plans.saveManagerPlan()
+const managerPost = calls.find(c => c.url === '/api/plans' && c.init?.method === 'POST')
+assert(managerPost, 'Admin plan save must use original endpoint')
+assert.deepEqual(JSON.parse(managerPost.init.body), {
+  ...managerDraft, salaryBase: 100000, bonusHitPercent: 5, bonusMissPercent: 3,
+})
+assert.equal(financeRefreshes, 1, 'Manager plan updates should refresh financial reports after save')
+assert.equal(managerDraftValue.managerId, 0)
+assert.equal(managerDraftValue.salaryBase, 100000)
+assert.match(planMessage, /План менеджера сохранён/)
+await plans.saveDepartmentPlan()
+const departmentPost = calls.find(c => c.url === '/api/department-plans' && c.init?.method === 'POST')
+assert.deepEqual(JSON.parse(departmentPost.init.body), departmentDraft)
+assert.equal(financeRefreshes, 2)
+assert.equal(departmentDraftValue.plannedAmount, 0)
+await plans.deleteManagerPlan(12)
+assert(calls.some(c => c.url === '/api/plans/12' && c.init.method === 'DELETE'))
+await plans.deleteDepartmentPlan(15)
+assert(calls.some(c => c.url === '/api/department-plans/15' && c.init.method === 'DELETE'))
+assert.equal(financeRefreshes, 4, 'Both deletion paths must refresh finance after success')
+// An admin plan HTTP failure must not silently publish a successful save or refresh.
+responseCode = 409
+planMessage = null
+const beforeFinance = financeRefreshes
+await plans.saveManagerPlan()
+assert.equal(financeRefreshes, beforeFinance)
+assert.equal(planMessage, null)
+assert.match(planError, /Изменено конкурентно/)
+// Managers may read but not alter salary, plan or department budgets.
+const managerPlans = createPlanActions({ ...planArgs, isAdmin: false })
+const beforeDeny = calls.length
+await managerPlans.saveManagerPlan()
+await managerPlans.saveDepartmentPlan()
+await managerPlans.deleteManagerPlan(12)
+await managerPlans.deleteDepartmentPlan(15)
+assert.equal(calls.length, beforeDeny)
+assert.match(planError, /только администратору/)
+
 console.log('PRODUCT_KPI_AND_LEADS_INVARIANTS_PASS')
