@@ -214,7 +214,7 @@ assert.equal(sent[0].headers['X-Idempotency-Key'],sent[1].headers['X-Idempotency
 assert.deepEqual(sent[1].payload,{...split.payload,requestId:sent[1].headers['X-Idempotency-Key']})
 assert.deepEqual(completed,[{key:'return-create:987',requestId:sent[1].headers['X-Idempotency-Key']}],
  'Complete critical request only after a durably successful Worker response')
-assert.ok(app.includes('submitReturnCreation('),'Return UI must use the tested exact POST helper')
+assert.ok(app.includes('createReturnExchangeCreationActions({') && creationActions.includes('submitReturnCreation('),'Return UI must use the tested exact POST helper')
 console.log('RETURN_CREATION_PREPARATION_AND_CRITICAL_REPLAY_PASS')
 
 console.log('STAGE02 POST-REVIEW RESOLVER/RETURN UX PASSED — incremental search, safe learning, zero-money item returns, in-flow receipt resolution, friendly possession confirmation, and visible pending intake are protected.')
