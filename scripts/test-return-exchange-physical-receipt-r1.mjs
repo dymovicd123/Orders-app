@@ -10,6 +10,7 @@ const migration = fs.readFileSync('migrations/0069_v72_return_exchange_physical_
 const types = fs.readFileSync('src/app/types.ts', 'utf8')
 const utils = fs.readFileSync('src/app/utils.ts', 'utf8')
 const app = fs.readFileSync('src/App.tsx', 'utf8')
+const readController = fs.readFileSync('src/app/controllers/useReturnExchangeWorkspace.ts', 'utf8')
 const returnSection = fs.readFileSync('src/features/sections/OrderReturnsSection.tsx', 'utf8')
 const exchangeSection = fs.readFileSync('src/features/sections/OrderExchangeSection.tsx', 'utf8')
 
@@ -100,7 +101,10 @@ expect(activity.includes('AS pending_physical_quantity'), 'return history pendin
 expect(activity.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'return history pending physical quantity response missing')
 expect(exchangeList.includes('old_summary.physical_tracking = 1'), 'exchange pending physical quantity summary missing')
 expect(exchangeList.includes('pendingPhysicalQuantity: Math.max(0, toInt(summary?.pending_physical_quantity, 0))'), 'exchange pending physical quantity response missing')
-expect(app.includes('pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0)'), 'frontend does not consume pending physical quantity')
+expect(app.includes('useReturnExchangeWorkspace({ apiFetch, reportReadFailure })'), 'App must wire the Return/Exchange read controller')
+expect(readController.includes('pendingPhysicalQuantity: Number(data.summary?.pendingPhysicalQuantity || 0)'), 'read controller must consume pending physical quantity')
+expect(readController.includes("pendingOnly: '1'") && readController.includes('++returnPendingInboxToken.current') && readController.includes('++exchangePendingInboxToken.current'),
+  'physical receipt inboxes must remain independent of history filters and reject stale responses')
 expect(returnSection.includes('Ожидают приёмки'), 'return summary does not show pending physical quantity')
 expect(exchangeSection.includes('Ожидают приёмки'), 'exchange summary does not show pending physical quantity')
 
