@@ -17,6 +17,10 @@ on:
       - src/App.tsx
       - src/features/sections/OrdersTableSection.tsx
       - worker/domains/order-shipment-plan.ts
+      - worker/domains/order-dispatch.ts
+      - worker/domains/order-dispatch-confirmation.ts
+      - worker/domains/order-dispatch-cancel.ts
+      - scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
       - scripts/test-main-confirmed-shipping-state-20261108.mjs
 permissions:
   contents: read
@@ -60,6 +64,8 @@ jobs:
         run: node scripts/test-main-source-picker-full-order-http-20261107.mjs
       - name: Completed dispatch must remain blocked and shown clearly
         run: node scripts/test-main-confirmed-shipping-state-20261108.mjs
+      - name: Selective shipping shortage confirmation without hard stock block
+        run: node scripts/test-selective-shipping-shortage-confirmation-20261108.mjs
       - name: Type check and frontend build
         run: npm run build
       - name: Existing main business release suite
