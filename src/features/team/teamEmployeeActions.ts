@@ -119,7 +119,7 @@ export function createTeamEmployeeActions({
             mustChangePassword: teamDraft.mustChangePassword !== false,
           }),
         })
-        const accountData = await readJsonResponse<{ ok?: boolean; message?: string }>(accountResponse, 'Доступ сотрудника')
+        const accountData = await readJsonResponse<{ ok?: boolean; message?: string }>(accountResponse, 'Доступ сотрудника', { allowHttpError: true })
         if (!accountResponse.ok) {
           await Promise.all([loadTeamEmployees(), loadAuthUsers(), loadReferencesData(true)])
           setTeamDraft((draft) => ({ ...draft, id: employeeId, login: requestedLogin, createAccount: true }))
