@@ -41,6 +41,9 @@ import { createCashRegisterActions } from './features/finance/cashRegisterAction
 import { createFinancePaymentMethodActions } from './features/finance/paymentMethodActions'
 import { createTeamEmployeeActions } from './features/team/teamEmployeeActions'
 import { createTeamTimesheetActions } from './features/team/teamTimesheetActions'
+import { createTeamReportActions } from './features/team/teamReportActions'
+import { createPlanActions } from './features/plans/planActions'
+import { createReportExportActions } from './features/export/reportExportActions'
 import { useWorkshopReads } from './features/workshop/useWorkshopReads'
 import { createWorkshopTaskActions } from './features/workshop/workshopTaskActions'
 import { createWorkshopInvoiceActions } from './features/workshop/workshopInvoiceActions'
@@ -67,7 +70,6 @@ import { createOrderShippingHandoverActions, handoverCheckpointDateLabel, handov
 import { createReturnExchangeCreationActions } from './features/orders/returnExchangeCreationActions'
 import { createReturnExchangeAftercareActions } from './features/orders/returnExchangeAftercareActions'
 import { createOrderDependentCancellationActions } from './features/orders/orderDependentCancellationActions'
-import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
 import './styles/192c-arrival-recovery.css'
@@ -2177,220 +2179,68 @@ function App() {
 
   function loadTeamTimesheet(monthValue = timesheetMonth) { return loadTeamTimesheetAction(monthValue) }
 
-  function editManagerPlan(row: ManagerPlanRecord) {
-    setManagerPlanDraft({
-      id: row.id,
-      periodStart: row.periodStart,
-      periodEnd: row.periodEnd,
-      managerId: Number(row.managerId || 0),
-      managerName: row.manager,
-      plannedAmount: row.plannedAmount,
-      salaryBase: row.salaryBase || 100000,
-      comment: row.comment || '',
-    })
-  }
+  const {
+    editManagerPlan,
+    editDepartmentPlan,
+    deleteManagerPlan,
+    deleteDepartmentPlan,
+    loadPlans: loadPlansAction,
+    saveManagerPlan,
+    saveDepartmentPlan,
+  } = createPlanActions({
+    isAdmin,
+    planFilters,
+    planReport,
+    managerPlanDraft,
+    departmentPlanDraft,
+    setManagerPlanDraft,
+    setDepartmentPlanDraft,
+    setPlanBusy,
+    setPlanReport,
+    setError,
+    setMessage,
+    apiFetch,
+    reportReadFailure,
+    refreshFinanceReportsIfVisible,
+  })
 
-  function editDepartmentPlan(row: DepartmentPlanRecord) {
-    setDepartmentPlanDraft({
-      id: row.id,
-      periodStart: row.periodStart,
-      periodEnd: row.periodEnd,
-      plannedAmount: row.plannedAmount,
-      comment: row.comment || '',
-    })
-  }
+  // Earlier sector effects retain the former hoisted loader entrypoint.
+  function loadPlans(nextFilters = planFilters) { return loadPlansAction(nextFilters) }
 
-  async function deleteManagerPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план менеджера?')) return
-    setPlanBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/plans/${id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План менеджера')
-      if (!response.ok) throw new Error(data.message || 'Не удалось удалить план менеджера.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setMessage('План менеджера удалён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления плана')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
+  const { loadTeamSalaryReport: loadTeamSalaryReportAction, loadTeamActivityReport: loadTeamActivityReportAction } = createTeamReportActions({
+    teamSalaryFilters,
+    teamSalaryReport,
+    teamActivityFilters,
+    teamActivityReport,
+    setTeamBusy,
+    setTeamSalaryReport,
+    setTeamActivityBusy,
+    setTeamActivityLoadFailed,
+    setTeamActivityReport,
+    apiFetch,
+    reportReadFailure,
+  })
 
-  async function deleteDepartmentPlan(id: number) {
-    if (!isAdmin || !id || !confirm('Удалить план отдела?')) return
-    setPlanBusy(true)
-    setError(null)
-    try {
-      const response = await apiFetch(`/api/department-plans/${id}`, { method: 'DELETE' })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План отдела')
-      if (!response.ok) throw new Error(data.message || 'Не удалось удалить план отдела.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setMessage('План отдела удалён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления плана отдела')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
+  function loadTeamSalaryReport(nextFilters = teamSalaryFilters) { return loadTeamSalaryReportAction(nextFilters) }
+  function loadTeamActivityReport(nextFilters = teamActivityFilters, options: { append?: boolean } = {}) { return loadTeamActivityReportAction(nextFilters, options) }
 
-
-
-  async function loadTeamSalaryReport(nextFilters = teamSalaryFilters) {
-    setTeamBusy(true)
-    try {
-      const params = new URLSearchParams({ startDate: nextFilters.dateFrom, endDate: nextFilters.dateTo })
-      const response = await apiFetch(`/api/team/salary?${params.toString()}`)
-      const data = await readJsonResponse<TeamSalaryResponse>(response, 'Зарплата команды')
-      if (!response.ok) throw new Error('Не удалось загрузить зарплату команды.')
-      setTeamSalaryReport(data)
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Отчёт по зарплате', Boolean(teamSalaryReport))
-      return null
-    } finally {
-      setTeamBusy(false)
-    }
-  }
-
-
-  async function loadTeamActivityReport(nextFilters = teamActivityFilters, options: { append?: boolean } = {}) {
-    const append = Boolean(options.append)
-    setTeamActivityBusy(true)
-    setTeamActivityLoadFailed(false)
-    try {
-      const offset = append ? Number(teamActivityReport?.rows?.length || 0) : 0
-      const params = new URLSearchParams({
-        startDate: nextFilters.dateFrom,
-        endDate: nextFilters.dateTo,
-        q: nextFilters.q.trim(),
-        actionType: nextFilters.actionType,
-        limit: '50',
-        offset: String(offset),
-      })
-      const response = await apiFetch(`/api/team/activity?${params.toString()}`)
-      const data = await readJsonResponse<TeamActivityResponse>(response, 'Работа с заказами')
-      if (!response.ok) throw new Error('Не удалось загрузить работу с заказами.')
-      setTeamActivityReport((current) => append && current
-        ? { ...data, rows: [...(current.rows || []), ...(data.rows || [])] }
-        : data)
-      setTeamActivityLoadFailed(false)
-      return data
-    } catch (err) {
-      setTeamActivityLoadFailed(true)
-      reportReadFailure(err, 'Работа с заказами', Boolean(teamActivityReport))
-      return null
-    } finally {
-      setTeamActivityBusy(false)
-    }
-  }
-
-
-
-  function getExportElementHtml(elementId: string) {
-    const element = document.getElementById(elementId)
-    if (!element) {
-      setError('Сначала сформируй отчёт, потом скачивай его.')
-      return ''
-    }
-    return element.innerHTML
-  }
-
-  function downloadWordDocument(filename: string, title: string, bodyHtml: string) {
-    const blob = new Blob(['\ufeff', makeExportHtml(title, bodyHtml)], { type: 'application/msword;charset=utf-8' })
-    downloadBlobFile(blob, `${filename}.doc`)
-  }
-
-  function exportElementWord(elementId: string, filename: string, title: string) {
-    const bodyHtml = getExportElementHtml(elementId)
-    if (!bodyHtml) return
-    downloadWordDocument(filename, title, bodyHtml)
-  }
-
-  function printHtmlDocument(title: string, bodyHtml: string) {
-    const iframe = document.createElement('iframe')
-    iframe.title = title
-    iframe.style.position = 'fixed'
-    iframe.style.right = '0'
-    iframe.style.bottom = '0'
-    iframe.style.width = '0'
-    iframe.style.height = '0'
-    iframe.style.border = '0'
-    iframe.style.visibility = 'hidden'
-    document.body.appendChild(iframe)
-
-    const doc = iframe.contentWindow?.document
-    if (!doc) {
-      iframe.remove()
-      setError('Не удалось подготовить печать. Попробуйте ещё раз.')
-      return
-    }
-
-    doc.open()
-    doc.write(makeExportHtml(title, bodyHtml))
-    doc.close()
-
-    const doPrint = () => {
-      try {
-        iframe.contentWindow?.focus()
-        iframe.contentWindow?.print()
-        window.setTimeout(() => iframe.remove(), 1200)
-      } catch {
-        iframe.remove()
-        setError('Не удалось открыть печать. Проверьте настройки браузера.')
-      }
-    }
-
-    window.setTimeout(doPrint, 80)
-  }
-
-  function printElementPdf(elementId: string, title: string) {
-    const bodyHtml = getExportElementHtml(elementId)
-    if (!bodyHtml) return
-    printHtmlDocument(title, bodyHtml)
-  }
-
-    function exportPlanReportWord() {
-    exportElementWord('planReportExport', `plan-report-${planFilters.dateFrom}-${planFilters.dateTo}`, 'План и зарплата')
-  }
-
-  function printPlanReportPdf() {
-    printElementPdf('planReportExport', 'План и зарплата')
-  }
-
-  function printInventoryStocktakePdf() {
-    printElementPdf('inventoryStocktakePrint', 'Ревизия остатков')
-  }
-
-
-  function exportTeamPlanReportWord() {
-    exportElementWord('teamPlanReportExport', `team-plan-report-${planFilters.dateFrom}-${planFilters.dateTo}`, 'Выполнение плана команды')
-  }
-
-  function printTeamPlanReportPdf() {
-    printElementPdf('teamPlanReportExport', 'Выполнение плана команды')
-  }
-
-  function getSelectedFinanceReportExportTitle() {
-    if (financeReportType === 'payments') return 'Отчёт по способам оплаты'
-    if (financeReportType === 'managers') return 'Отчёт менеджеров'
-    if (financeReportType === 'products') return 'Отчёт по товарам'
-    if (financeReportType === 'cities') return 'Отчёт по городам'
-    if (financeReportType === 'returns') return 'Отчёт по возвратам'
-    if (financeReportType === 'debts') return 'Отчёт по закрытым долгам'
-    if (financeReportType === 'leads') return 'Отчёт по лидам'
-    if (financeReportType === 'callCentre') return 'Отчёт Call Centre'
-    return 'Отчёт'
-  }
-
-  function exportSelectedFinanceReportWord() {
-    exportElementWord('selectedFinanceReportExport', `report-${financeReportType}-${financeReportFilters.dateFrom}-${financeReportFilters.dateTo}`, getSelectedFinanceReportExportTitle())
-  }
-
-  function printSelectedFinanceReportPdf() {
-    printElementPdf('selectedFinanceReportExport', getSelectedFinanceReportExportTitle())
-  }
-
+  const {
+    printHtmlDocument,
+    exportPlanReportWord,
+    printPlanReportPdf,
+    printInventoryStocktakePdf,
+    exportTeamPlanReportWord,
+    printTeamPlanReportPdf,
+    exportSelectedFinanceReportWord,
+    printSelectedFinanceReportPdf,
+  } = createReportExportActions({
+    planDateFrom: planFilters.dateFrom,
+    planDateTo: planFilters.dateTo,
+    financeReportType,
+    financeDateFrom: financeReportFilters.dateFrom,
+    financeDateTo: financeReportFilters.dateTo,
+    setError,
+  })
 
   async function loadLeadRecords(nextFilters = leadFilters) {
     setLeadBusy(true)
@@ -2534,76 +2384,7 @@ function App() {
     }
   }
 
-  async function loadPlans(nextFilters = planFilters) {
-    setPlanBusy(true)
-    try {
-      const params = new URLSearchParams({ startDate: nextFilters.dateFrom, endDate: nextFilters.dateTo })
-      const response = await apiFetch(`/api/plans?${params.toString()}`)
-      const data = await readJsonResponse<{ ok?: boolean; managerPlans?: ManagerPlanRecord[]; departmentPlans?: DepartmentPlanRecord[] }>(response, 'План')
-      if (!response.ok) throw new Error('Не удалось загрузить планы.')
-      setPlanReport({ managerPlans: data.managerPlans || [], departmentPlans: data.departmentPlans || [] })
-      return data
-    } catch (err) {
-      reportReadFailure(err, 'Планы', Boolean(planReport))
-      return null
-    } finally {
-      setPlanBusy(false)
-    }
-  }
 
-  async function saveManagerPlan() {
-    if (!isAdmin) {
-      setError('Изменение плана доступно только администратору.')
-      return
-    }
-
-    setPlanBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...managerPlanDraft, salaryBase: managerPlanDraft.salaryBase || 100000, bonusHitPercent: 5, bonusMissPercent: 3 }),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План менеджера')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить план менеджера.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setManagerPlanDraft({ id: 0, periodStart: managerPlanDraft.periodStart, periodEnd: managerPlanDraft.periodEnd, managerId: 0, managerName: '', plannedAmount: 0, salaryBase: 100000, comment: '' })
-      setMessage(managerPlanDraft.id ? 'План менеджера обновлён.' : 'План менеджера сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения плана')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
-
-  async function saveDepartmentPlan() {
-    if (!isAdmin) {
-      setError('Изменение плана отдела доступно только администратору.')
-      return
-    }
-
-    setPlanBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const response = await apiFetch('/api/department-plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(departmentPlanDraft),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string }>(response, 'План отдела')
-      if (!response.ok) throw new Error(data.message || 'Не удалось сохранить план отдела.')
-      await Promise.all([loadPlans(), refreshFinanceReportsIfVisible()])
-      setDepartmentPlanDraft({ id: 0, periodStart: departmentPlanDraft.periodStart, periodEnd: departmentPlanDraft.periodEnd, plannedAmount: 0, comment: '' })
-      setMessage(departmentPlanDraft.id ? 'План отдела обновлён.' : 'План отдела сохранён.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка сохранения плана отдела')
-    } finally {
-      setPlanBusy(false)
-    }
-  }
 
   const { applyWorkshopPeriodPreset, markWorkshopTaskDone, restoreWorkshopTaskActive } = createWorkshopTaskActions({
     workshopFilters,
