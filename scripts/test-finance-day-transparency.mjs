@@ -310,7 +310,7 @@ await paymentMethods.saveFinancePaymentMethod()
 assert.equal(methodCalls[0].url, '/api/reference-values')
 assert.equal(methodCalls[0].init.method, 'POST')
 assert.deepEqual(JSON.parse(methodCalls[0].init.body), {
-  kind: 'paymentMethods', value: 'Банковская карта', sortOrder: 2, isActive: true,
+  kind: 'paymentMethods', value: 'БАНКОВСКАЯ КАРТА', sortOrder: 2, isActive: true,
 })
 assert.equal(loadedMethods[0].value, 'Банковская карта')
 assert.equal(refreshCount, 1)
