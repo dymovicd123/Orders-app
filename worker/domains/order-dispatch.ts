@@ -143,7 +143,7 @@ export async function dispatchSelectedCompleteOrderLines(
     if (!r || toInt(r.quantity,0)!==item.originalQuantity || toInt(r.variant_id,0)!==item.variantId || normalizeSourceType(r.inventory_source)!==item.sourceType) {
       fail('Связь со складом или характеристики вещи изменились. Обновите заказ.')
     }
-    if(cleanText(r.status)==='unresolved' && item.quantity!==item.originalQuantity){
+    if(r && cleanText(r.status)==='unresolved' && item.quantity!==item.originalQuantity){
       fail('При уточнении наличия отправьте всю выбранную позицию. Для частичной отправки сначала разделите заказ.')
     }
   }
