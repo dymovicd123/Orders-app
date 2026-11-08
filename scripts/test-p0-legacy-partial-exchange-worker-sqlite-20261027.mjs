@@ -6,6 +6,11 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import path from 'node:path'
 import worker from '../worker/index.ts'
+import { cancelReturn as originalCancelReturn } from '../worker/domains/returns-exchanges.ts'
+import { cancelReturn as isolatedCancelReturn } from '../worker/domains/order-return-cancellation.ts'
+
+assert.strictEqual(originalCancelReturn, isolatedCancelReturn,
+  'Existing Return cancellation entrypoint must re-export the exact isolated implementation')
 
 const sqlite = new DatabaseSync(':memory:')
 sqlite.exec('PRAGMA foreign_keys=ON')
