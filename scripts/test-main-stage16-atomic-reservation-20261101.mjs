@@ -261,6 +261,140 @@ assert.equal(addedOrder, null, 'Unknown network outcome cannot fabricate a new o
 assert.match(lastError, /uncertain network result/)
 assert.equal(orderBusy, false, 'Busy state must clear even after an indeterminate response')
 
+// Test the actual bundled admin edit boundary without any Production data writes.
+// Existing SQLite tests above verify reservation CAS; these requests must preserve its
+// exact historical item/pricing/payment facts without manufacturing stock.
+const editBundle = await build({
+  entryPoints: ['src/features/orders/orderEditPersistenceActions.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false, target: 'es2022', logLevel: 'silent',
+})
+const { createOrderEditPersistenceActions } = await import(
+  'data:text/javascript;base64,' + Buffer.from(editBundle.outputFiles[0].text).toString('base64')
+)
+const existingOrder = {
+  id: 991, external_id: 'QA-991', pricing_mode: 'itemized_v1',
+  order_date: '2026-11-03', manager_id: 7, manager_name: 'MANAGER',
+  order_status: 'active', workshop_status: 'ready',
+  shipping_status: 'not_sent', source_type: 'warehouse',
+  total_amount: 10000, received_amount: 3000, debt_amount: 7000, return_amount: 0,
+  items: [{
+    id: 301, productName: 'QA ШАПАН', audienceType: 'ВЗРОСЛЫЙ', gender: 'ЖЕН',
+    color: 'БЕЛЫЙ', material: 'СТАНДАРТ', length: 'СТАНДАРТ', size: '46',
+    quantity: 1, unitPrice: 10000, lineTotal: 10000,
+    catalogPriceSnapshot: 8500, sourceType: 'warehouse', isWorkshop: false,
+  }],
+  payments: [{
+    id: 401, paymentDate: '2026-11-03', method: 'КАРТА', amount: 3000,
+    paymentKind: 'primary', comment: '',
+  }],
+  returns: [],
+}
+const { createEditorDraft } = await import('../src/app/utils.ts')
+let editingDraft = createEditorDraft(existingOrder)
+editingDraft.payments[0].method = 'ТЕРМИНАЛ'
+editingDraft.payments.push({
+  ...createEmptyEditorPayment(editingDraft.orderDate),
+  method: 'НАЛИЧНЫЕ', amount: 1000, paymentKind: 'primary',
+})
+let editWrites = []
+let editCompleted = []
+let editInvalidated = []
+let editorClosed = 0
+let lastEditorDraft = null
+let editError = null
+const editArgs = {
+  isAdmin: true, selectedOrder: existingOrder, activeSector: 'orders', orderPanel: 'edit',
+  setSavingOrder: () => {}, setError: next => { editError = next }, setMessage: () => {},
+  getOrderOperationalProjection: async () => ({ canEdit: true, hasCommittedDownstreamOperation: false }),
+  prepareCriticalRequest: (key, payload) => ({
+    requestId: 'qa-idempotent-edit-991', payload: { ...payload, requestId: 'qa-idempotent-edit-991' },
+  }),
+  completeCriticalRequest: (key, requestId) => { editCompleted.push({ key, requestId }) },
+  apiFetch: async (url, init = {}) => {
+    editWrites.push({ url: String(url), init })
+    return new Response(JSON.stringify({ ok: true, order: existingOrder }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  },
+  setEditorDraft: updater => { lastEditorDraft = typeof updater === 'function' ? updater(lastEditorDraft) : updater },
+  setEditorOrderOverride: () => {}, setSelectedOrderId: () => {},
+  setEditorOpen: () => {}, invalidateFinanceReadCaches: () => editInvalidated.push('finance'),
+  invalidateInventoryStockCaches: () => editInvalidated.push('stock'),
+  upsertOrderInState: () => {}, closeOrderEditor: () => { editorClosed++ },
+  refreshDashboard: () => {}, refreshWorkshop: () => {}, refreshOrderFinance: () => {},
+}
+await createOrderEditPersistenceActions({ ...editArgs, isAdmin: false }).persistOrder(editingDraft)
+assert.equal(editWrites.length, 0, 'Only the administrator can rewrite order records')
+await createOrderEditPersistenceActions({
+  ...editArgs,
+  getOrderOperationalProjection: async () => ({ canEdit: false, hasCommittedDownstreamOperation: true }),
+}).persistOrder(editingDraft)
+assert.equal(editWrites.length, 0, 'Committed Return/Exchange must block subsequent full order rewrites')
+await createOrderEditPersistenceActions(editArgs).persistOrder(editingDraft)
+assert.equal(editWrites.length, 1, 'One editor save must send one PATCH, not post appended payments')
+assert.equal(editWrites[0].url, '/api/orders/991')
+assert.equal(editWrites[0].init.method, 'PATCH')
+assert.equal(editWrites[0].init.headers['X-Idempotency-Key'], 'qa-idempotent-edit-991')
+const editPayload = JSON.parse(editWrites[0].init.body)
+assert.equal(editPayload.requestId, 'qa-idempotent-edit-991')
+assert.equal(editPayload.itemContentReplacement, undefined, 'A payment-only correction must never rewrite item or physical inventory')
+assert.deepEqual(editPayload.itemPriceCorrections, [])
+assert.equal(editPayload.paymentCorrections.length, 1)
+assert.deepEqual(editPayload.paymentCorrections[0], {
+  paymentId: 401, paymentDate: '2026-11-03', method: 'ТЕРМИНАЛ',
+  amount: 3000, paymentKind: 'primary', comment: '',
+  expectedPaymentDate: '2026-11-03', expectedMethod: 'КАРТА',
+  expectedAmount: 3000, expectedPaymentKind: 'primary', expectedComment: '',
+}, 'Existing payments must retain all original CAS facts during a method correction')
+assert.deepEqual(editCompleted, [{ key: 'order-edit:991', requestId: 'qa-idempotent-edit-991' }])
+assert.deepEqual(editInvalidated, ['finance'], 'Payment-only editing must not invalidate or mutate physical stock')
+assert.equal(editorClosed, 0, 'Unsaved new payment stays visible and must not be silently recorded')
+assert.equal(lastEditorDraft.payments.some(payment => !payment.id && payment.amount === 1000), true,
+  'An appended payment must stay pending until its own independent money operation')
+
+editWrites = []
+editCompleted = []
+editInvalidated = []
+editorClosed = 0
+const changedQuantityDraft = createEditorDraft(existingOrder)
+changedQuantityDraft.items[0].quantity = 2
+await createOrderEditPersistenceActions({
+  ...editArgs,
+  apiFetch: async (url, init = {}) => {
+    editWrites.push({ url: String(url), init })
+    return new Response(JSON.stringify({ ok: true, order: existingOrder }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  },
+}).persistOrder(changedQuantityDraft)
+const quantityPayload = JSON.parse(editWrites[0].init.body)
+assert.equal(quantityPayload.itemContentReplacement.expectedItems[0].quantity, 1)
+assert.equal(quantityPayload.itemContentReplacement.items[0].quantity, 2)
+assert.equal(quantityPayload.itemContentReplacement.expectedItems[0].catalogPriceSnapshot, 8500)
+assert.equal(quantityPayload.itemContentReplacement.items[0].catalogPriceSnapshot, 8500,
+  'Editing quantity must preserve historic Catalog price snapshot')
+assert.deepEqual(editInvalidated, ['finance', 'stock'],
+  'Only content rewrite must invalidate both Finance and Inventory')
+assert.equal(editorClosed, 1)
+
+editWrites = []
+editCompleted = []
+editInvalidated = []
+editorClosed = 0
+await createOrderEditPersistenceActions({
+  ...editArgs,
+  apiFetch: async (url, init = {}) => {
+    editWrites.push({ url: String(url), init })
+    throw new Error('uncertain network edit outcome')
+  },
+}).persistOrder(editingDraft)
+assert.equal(editWrites.length, 1)
+assert.equal(JSON.parse(editWrites[0].init.body).requestId, 'qa-idempotent-edit-991')
+assert.equal(editCompleted.length, 0, 'Unknown edit outcome must preserve the critical requestId for safe replay')
+assert.equal(editorClosed, 0, 'Unknown edit outcome cannot close the editor as though the order saved')
+assert.deepEqual(editInvalidated, [], 'Unknown edit outcome cannot pretend to commit stock or money')
+assert.match(editError, /uncertain network edit outcome/)
+
 sql.close()
 console.log('MAIN_STAGE16_ATOMIC_ADMISSION_SQLITE_PASS: last-piece, stale approval, sources, wrong SKU, trigger and no phantom stock')
 console.log('MAIN_STAGE16_PENDING_RECOVERY_PASS: arrival/second send, concurrent retries, preserved identity, returned/sent/archived/mismatched guards, idempotent')
