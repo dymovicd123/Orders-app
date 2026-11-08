@@ -61,6 +61,8 @@ import { createWarehouseGovernanceActions } from './features/inventory/warehouse
 import { createOrderCreationActions } from './features/orders/orderCreationActions'
 import { createOrderEditorActions } from './features/orders/orderEditorActions'
 import { createOrderEditPersistenceActions } from './features/orders/orderEditPersistenceActions'
+import { createOrderEditSessionActions } from './features/orders/orderEditSessionActions'
+import { createOrderCorrectionsActions } from './features/orders/orderCorrectionsActions'
 import { downloadBlobFile, makeExportHtml } from './features/export/documentExport'
 import './styles/1905-small-screen-acceptance.css'
 import './styles/192b1-warehouse-attention.css'
@@ -1518,6 +1520,47 @@ function App() {
     invalidateFinanceReadCaches,
     refreshDashboard: () => { void loadDashboard(false) },
     refreshFinanceReports: refreshFinanceReportsIfVisible,
+  })
+
+  const {
+    closeOrderEditor,
+    expandOrderItems,
+    handleEditOrder,
+  } = createOrderEditSessionActions({
+    isAdmin,
+    editorReturnSector,
+    setEditorReturnSector,
+    setEditorOpen,
+    setEditorOrderOverride,
+    setSelectedOrderId,
+    setActiveSector,
+    setOrderPanel,
+    setMessage,
+    setError,
+    setExpandedOrderItemCounts,
+    setEditorDraft,
+    apiFetch,
+    getOrderOperationalProjection,
+    upsertOrderInState,
+    loadCatalogData,
+    loadInventoryData,
+  })
+
+  const {
+    correctOrderMetadata,
+    correctRecordedOrderItemPrice,
+    correctRecordedOrderItemPrices,
+    loadRetiredExchangePriceOptions,
+    correctRetiredExchangePrice,
+  } = createOrderCorrectionsActions({
+    setSavingOrder,
+    setError,
+    setMessage,
+    prepareCriticalRequest,
+    completeCriticalRequest,
+    apiFetch,
+    upsertOrderInState,
+    refreshDashboard: () => { void loadDashboard() },
   })
 
   const { persistOrder } = createOrderEditPersistenceActions({
@@ -3899,226 +3942,6 @@ function removeDebtPayment(index: number) {
     setEditorOpen(false)
   }
 
-  function closeOrderEditor() {
-    setEditorOpen(false)
-    setEditorOrderOverride(null)
-    setSelectedOrderId(null)
-    if (editorReturnSector === 'workshop') {
-      setActiveSector('workshop')
-      window.location.hash = '#workshop'
-    } else {
-      setActiveSector('orders')
-      setOrderPanel('list')
-      window.location.hash = '#orders'
-    }
-    setEditorReturnSector('orders')
-  }
-
-  // Narrow metadata correction: only six order details, never items, payments,
-  // prices, shipping state or manager ownership. The Worker performs the
-  // original-value + lifecycle/finance CAS before the actual update.
-  async function correctOrderMetadata(order: OrderRecord, next: {
-    orderDate:string;customerPhone:string;customerName:string;
-    city:string;deliveryType:string;comment:string;
-  }): Promise<boolean> {
-    const expected={
-      orderDate:String(order.order_date||'').trim(),
-      customerPhone:String(order.customer_phone||'').trim(),
-      customerName:String(order.customer_name||'').trim(),
-      city:String(order.city||'').trim(),
-      deliveryType:String(order.delivery_type||'').trim(),
-      comment:String(order.comment||'').trim(),
-    }
-    if(Object.keys(expected).every(key=>
-      expected[key as keyof typeof expected]===next[key as keyof typeof next]))return true
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const expectedState={
-        totalAmount:Number(order.total_amount||0),
-        receivedAmount:Number(order.received_amount||0),
-        debtAmount:Number(order.debt_amount||0),
-        returnAmount:Number(order.return_amount||0),
-        shippingStatus:String(order.shipping_status||'').trim(),
-        orderStatus:String(order.order_status||'').trim(),
-      }
-      const payload={metadataCorrection:{expected,next,expectedState}}
-      const criticalKey=`order-metadata-correction:${order.id}`
-      const critical=prepareCriticalRequest(criticalKey,payload)
-      const response=await apiFetch(`/api/orders/${order.id}`,{
-        method:'PATCH',headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const data=await readJsonResponse<{ok?:boolean;message?:string;order?:OrderRecord}>(
-        response,'Исправление реквизитов заказа')
-      if(!response.ok||data.ok===false)throw new Error(data.message||'Не удалось сохранить реквизиты.')
-      completeCriticalRequest(criticalKey,critical.requestId)
-      if(data.order)upsertOrderInState(data.order)
-      setMessage('Реквизиты заказа обновлены. Оплаты, товары и склад не менялись.')
-      void loadDashboard()
-      return true
-    }catch(error){
-      setError(error instanceof Error?error.message:'Не удалось обновить реквизиты.')
-      return false
-    }finally{
-      setSavingOrder(false)
-    }
-  }
-
-  // A recorded-price typo is NOT a new sale, cash refund, stock edit, or exchange cancellation.
-  // Send the minimal correction payload, never the whole editor draft.
-  async function correctRecordedOrderItemPrice(order: OrderRecord, item: OrderRecord['items'][number], nextUnitPrice: number): Promise<boolean> {
-    if (!Number.isSafeInteger(nextUnitPrice) || nextUnitPrice < 0 || !item.id) {
-      setError('Укажите корректную цену и выберите существующую позицию заказа.')
-      return false
-    }
-    if (nextUnitPrice === Number(item.unitPrice || 0)) return true
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload = {
-        itemPriceCorrections: [{
-          orderItemId: Number(item.id),
-          unitPrice: nextUnitPrice,
-          expectedUnitPrice: Number(item.unitPrice || 0),
-          expectedQuantity: Number(item.quantity || 0),
-          expectedLineTotal: Number(item.lineTotal || 0),
-          expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-        }],
-      }
-      const criticalKey = `recorded-price-correction:${order.id}:${item.id}`
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord; refreshRequired?: boolean }>(
-        response, 'Исправление записанной цены',
-      )
-      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось исправить цену.')
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (data.order) upsertOrderInState(data.order)
-      setMessage(`Цена позиции в заказе ${order.external_id} исправлена. Склад, обмены, возвраты и оплаты не затронуты.`)
-      void loadDashboard()
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось исправить записанную цену.')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
-  // An order with several independent price typos can be corrected in one
-  // atomic server request. Every line carries its original CAS facts; cash,
-  // inventory and linked exchange/return records are never included.
-  async function correctRecordedOrderItemPrices(
-    order: OrderRecord,
-    changes: Array<{item: OrderRecord['items'][number]; unitPrice: number}>,
-  ): Promise<boolean> {
-    if (!changes.length) return true
-    const ids = new Set<number>()
-    if (changes.some(({item, unitPrice}) => {
-      const id = Number(item?.id)
-      if (!Number.isSafeInteger(id) || id <= 0 || ids.has(id)
-        || !Number.isSafeInteger(unitPrice) || unitPrice < 0) return true
-      ids.add(id)
-      return false
-    })) {
-      setError('Выберите существующие позиции и укажите целые цены от 0 ₸ без повторов.')
-      return false
-    }
-    const payload = {
-      itemPriceCorrections: changes.map(({item,unitPrice}) => ({
-        orderItemId: Number(item.id),
-        unitPrice,
-        expectedUnitPrice: Number(item.unitPrice || 0),
-        expectedQuantity: Number(item.quantity || 0),
-        expectedLineTotal: Number(item.lineTotal || 0),
-        expectedCatalogPriceSnapshot: item.catalogPriceSnapshot ?? null,
-      })),
-    }
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    const sortedIds = [...ids].sort((a,b)=>a-b)
-    const criticalKey = `recorded-price-correction-batch:${order.id}:${sortedIds.join('-')}`
-    try {
-      const critical = prepareCriticalRequest(criticalKey, payload)
-      const response = await apiFetch(`/api/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-Idempotency-Key': critical.requestId },
-        body: JSON.stringify(critical.payload),
-      })
-      const data = await readJsonResponse<{ ok?: boolean; message?: string; order?: OrderRecord }>(
-        response, 'Исправление записанных цен',
-      )
-      if (!response.ok || data.ok === false) throw new Error(data.message || 'Не удалось сохранить исправления цен.')
-      completeCriticalRequest(criticalKey, critical.requestId)
-      if (data.order) upsertOrderInState(data.order)
-      setMessage(`Исправлено позиций: ${changes.length}. Склад, оплаты и обмены не изменены.`)
-      void loadDashboard()
-      return true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось исправить записанные цены.')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
-  type RetiredExchangePriceOption = {
-    exchangeId:number;orderItemId:number;productName:string;size:string;color:string;
-    originalUnitPrice:number;currentRecordedUnitPrice:number;
-  }
-
-  async function loadRetiredExchangePriceOptions(order:OrderRecord):Promise<RetiredExchangePriceOption[]> {
-    const response=await apiFetch(`/api/orders/${order.id}/exchange-old-price-candidates`)
-    const data=await readJsonResponse<{ok?:boolean;message?:string;items?:RetiredExchangePriceOption[]}>(
-      response,'Исторические цены обмена')
-    if(!response.ok || data.ok===false) throw new Error(data.message||'Не удалось загрузить старые позиции обмена.')
-    return Array.isArray(data.items)?data.items:[]
-  }
-
-  async function correctRetiredExchangePrice(order:OrderRecord, entry:RetiredExchangePriceOption, next:number):Promise<boolean> {
-    if(!Number.isSafeInteger(next)||next<0) {
-      setError('Укажите целую правильную цену.')
-      return false
-    }
-    if(next===entry.currentRecordedUnitPrice) return true
-    setSavingOrder(true)
-    setError(null)
-    setMessage(null)
-    try {
-      const payload={orderItemId:entry.orderItemId,expectedUnitPrice:entry.currentRecordedUnitPrice,newUnitPrice:next}
-      const key=`old-exchange-price:${entry.exchangeId}:${entry.orderItemId}`
-      const critical=prepareCriticalRequest(key,payload)
-      const response=await apiFetch(`/api/exchanges/${entry.exchangeId}/old-recorded-price`,{
-        method:'PATCH',
-        headers:{'Content-Type':'application/json','X-Idempotency-Key':critical.requestId},
-        body:JSON.stringify(critical.payload),
-      })
-      const result=await readJsonResponse<{ok?:boolean;message?:string}>(
-        response,'Исправление исторической цены обмена')
-      if(!response.ok||result.ok===false) throw new Error(result.message||'Не удалось исправить историческую цену.')
-      completeCriticalRequest(key,critical.requestId)
-      setMessage(`Исправленная цена позиции до обмена сохранена в истории заказа ${order.external_id}. Фактические оплаты и остатки не менялись.`)
-      void loadDashboard()
-      return true
-    } catch(error) {
-      setError(error instanceof Error?error.message:'Не удалось сохранить историческую цену.')
-      return false
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
-
   async function loadExchangeCancellationPreview(order:OrderRecord, exchangeId?:number):Promise<{
     availableExchangeIds:number[];
     preview:null|{
@@ -4277,80 +4100,6 @@ function removeDebtPayment(index: number) {
   // Admin correction of a recorded payment method, including an exchange-
   // linked extra payment. This is not a second payment and does not submit the
   // item/payment editor draft or rewrite the order after a completed exchange.
-  async function fetchCompleteOrderForEditing(order: OrderRecord): Promise<OrderRecord> {
-    // The list is an overview, never the source of truth for a complete itemized rewrite.
-    const response = await apiFetch(`/api/orders/${order.id}`, { cache: 'no-store' })
-    if (response.headers.get('X-Orders-App-Stale') === '1') {
-      throw new Error('Не удалось получить свежий состав заказа. Повторите открытие.')
-    }
-    const result = await readJsonResponse<{ ok?: boolean; order?: OrderRecord; message?: string }>(response, 'Полный состав заказа')
-    if (!response.ok || result.ok === false || !result.order || result.order.id !== order.id) {
-      throw new Error(result.message || 'Не удалось загрузить полный заказ. Редактирование не открыто.')
-    }
-    const fullOrder = result.order
-    const expectedCount = Math.max(order.items?.length || 0, Number(order.item_count || 0))
-    if ((fullOrder.items?.length || 0) < expectedCount) {
-      throw new Error('Получен неполный состав заказа. Редактирование остановлено, чтобы не потерять товары.')
-    }
-    return { ...fullOrder, item_count: fullOrder.items.length }
-  }
-
-  async function expandOrderItems(order: OrderRecord, visibleCount: number) {
-    const total = Math.max(order.items.length, Number(order.item_count || 0))
-    const wanted = Math.min(total, Math.max(3, visibleCount) + 5)
-    if (order.items.length >= wanted) {
-      setExpandedOrderItemCounts((current) => ({ ...current, [order.id]: wanted }))
-      return
-    }
-    try {
-      const fresh = await fetchCompleteOrderForEditing(order)
-      upsertOrderInState(fresh)
-      setExpandedOrderItemCounts((current) => ({ ...current, [order.id]: Math.min(fresh.items.length, wanted) }))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось показать остальные товары.')
-    }
-  }
-
-  async function handleEditOrder(order: OrderRecord, returnSector: 'orders' | 'workshop' = 'orders') {
-    if (!isAdmin) { setMessage('Полное редактирование доступно только администратору. Для исправления цены или реквизитов откройте «Доп. действия».'); return }
-    let completeOrder: OrderRecord
-    try {
-      completeOrder = await fetchCompleteOrderForEditing(order)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось открыть полный заказ.')
-      return
-    }
-    const projection = await getOrderOperationalProjection(completeOrder)
-    if (!projection.canEdit) {
-      setSelectedOrderId(order.id)
-      setEditorOpen(false)
-      setMessage(projection.hasCommittedDownstreamOperation
-        ? 'Заказ нельзя переписывать: по нему уже проведён возврат или обмен. Сначала отмените или исправьте эту последующую операцию штатным действием.'
-        : 'Этот заказ нельзя редактировать в рабочем режиме. Используйте его отдельное штатное действие или просмотр истории.')
-      return
-    }
-    setEditorReturnSector(returnSector)
-    upsertOrderInState(completeOrder)
-    setEditorOrderOverride(completeOrder)
-    setSelectedOrderId(completeOrder.id)
-    setEditorDraft(createEditorDraft(completeOrder))
-    setActiveSector('orders')
-    setOrderPanel('edit')
-    setEditorOpen(true)
-    window.location.hash = '#editor'
-    if (completeOrder.pricing_mode === 'itemized_v1') {
-      void Promise.all([
-        loadCatalogData(true),
-        // R7.5: the edit panel effect owns freshness; reuse its bounded stock snapshot here
-        // instead of issuing a second forced Warehouse + Boutique read for the same transition.
-        loadInventoryData('warehouse', false, '', false),
-        loadInventoryData('boutique', false, '', false),
-      ]).catch((err) => {
-        setError(err instanceof Error ? err.message : 'Не удалось обновить Каталог или остатки. Сервер всё равно перепроверит данные при сохранении.')
-      })
-    }
-  }
-
   function upsertOrderInState(nextOrder: OrderRecord) {
     setOrders((current) => {
       const exists = current.some((order) => order.id === nextOrder.id)

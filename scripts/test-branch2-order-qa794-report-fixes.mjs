@@ -6,13 +6,14 @@ import {spawn,spawnSync} from 'node:child_process'
 import {build} from 'esbuild'
 
 const appSource=fs.readFileSync('src/App.tsx','utf8')
+const editSession=fs.readFileSync('src/features/orders/orderEditSessionActions.ts','utf8')
 const relations=fs.readFileSync('worker/domains/orders-read.ts','utf8')
 const viewModel=fs.readFileSync('src/app/controllers/useOperationalViewModel.ts','utf8')
 const list=fs.readFileSync('src/features/sections/OrdersTableSection.tsx','utf8')
 const draft=fs.readFileSync('src/features/sections/CreateOrderSection.tsx','utf8')
-assert(appSource.includes('completeOrder = await fetchCompleteOrderForEditing(order)'),'F1: editor must load full detail')
-assert(appSource.includes('upsertOrderInState(completeOrder)'),'F1: list must receive full edit snapshot')
-assert(appSource.includes('Получен неполный состав заказа'),'F1: refuse incomplete edit')
+assert(appSource.includes('createOrderEditSessionActions({') && editSession.includes('completeOrder = await fetchCompleteOrderForEditing(order)'),'F1: editor must load full detail')
+assert(editSession.includes('upsertOrderInState(completeOrder)'),'F1: list must receive full edit snapshot')
+assert(editSession.includes('Получен неполный состав заказа'),'F1: refuse incomplete edit')
 assert(relations.includes('AS item_count'),'F1: list must include server count')
 assert(viewModel.indexOf('if (editorOrderOverride?.id === selectedOrderId) return editorOrderOverride') <
  viewModel.indexOf('const fromList = orders.find'),'F1: full editor snapshot must be preferred')
