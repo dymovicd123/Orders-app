@@ -12,6 +12,9 @@ import { listExchanges as legacyListExchanges } from '../worker/domains/returns-
 import { listExchanges as isolatedListExchanges } from '../worker/domains/order-exchange-list.ts'
 import { createExchange as extractedCreateExchange } from '../worker/domains/order-exchange-creation.ts'
 import { createExchange as publicCreateExchange } from '../worker/domains/returns-exchanges.ts'
+import { cancelExchange as publicCancelExchange } from '../worker/domains/returns-exchanges.ts'
+import { cancelExchange as extractedCancelExchange } from '../worker/domains/order-exchange-cancellation.ts'
+assert.strictEqual(publicCancelExchange,extractedCancelExchange,'Existing Exchange cancellation route must resolve to identical extracted implementation')
 assert.strictEqual(publicCreateExchange,extractedCreateExchange,'Worker legacy Exchange POST must call unchanged extracted creation implementation')
 import { receiveReturnedItem as publicReceiveReturnedItem } from '../worker/domains/returns-exchanges.ts'
 import { receiveReturnedItem as extractedReceiveReturnedItem } from '../worker/domains/order-returned-item-receipt.ts'
