@@ -6,6 +6,7 @@ export type OrderShipmentDisplay = {
   state: LineShipmentState
   label: string
   lines: Array<{
+    sourceIndex: number
     state: LineShipmentState
     label: string
     sentQuantity: number | null
@@ -31,7 +32,10 @@ export function projectOrderShipmentDisplay(
   order: Pick<OrderRecord, 'shipping_status' | 'items'>,
 ): OrderShipmentDisplay {
   const orderSent = order.shipping_status === 'sent'
-  const lines = (order.items || []).filter(item => Number(item.quantity || 0) > 0).map((item: OrderLine) => {
+  const lines = (order.items || [])
+    .map((item: OrderLine, sourceIndex: number) => ({ item, sourceIndex }))
+    .filter(({ item }) => Number(item.quantity || 0) > 0)
+    .map(({ item, sourceIndex }) => {
     const quantity = Math.max(1, Math.trunc(Number(item.quantity || 1)))
     // Stage 5's future canonical shipment ledger will populate this number.
     // Do not infer an arbitrary split quantity from a whole-line reservation.
@@ -70,7 +74,7 @@ export function projectOrderShipmentDisplay(
       : state === 'not_sent' ? 'Не отправлен'
         : state === 'partial' ? `Отправлено ${sentQuantity} из ${quantity}`
           : 'Отправка не уточнена'
-    return { state, label, sentQuantity, quantity }
+    return { sourceIndex, state, label, sentQuantity, quantity }
   })
 
   // Retained-only historical summaries have no line-level facts.
