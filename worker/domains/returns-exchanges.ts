@@ -17,7 +17,6 @@ import { buildItemizedOrderWritePlan, type ItemizedOrderWritePlan } from './orde
 import { fulfillOrderReservationsV2, reactivateReleasedOrderReservationV2, releaseOrderReservationV2, resolveCatalogProductAndVariantV2 } from './order-reservations.ts'
 import { getOrder, insertOrderContent } from './orders-write.ts'
 import { normalizeWorkshopTaskStatus, refreshOrderWorkshopStatusFromTasks } from './workshop.ts'
-import { assertWorkshopTaskDetailSchema } from './workshop-schema.ts'
 import { exchangeSetPaymentIds, moneyMethodsSummary, normalizeMoneyParts, splitRefundReversalStatements } from './return-exchange-payment-channels.ts'
 import type { MoneyPart, MoneyPartInput } from './return-exchange-payment-channels.ts'
 import { noStandaloneReturnSql } from './order-return-capacity.ts'
