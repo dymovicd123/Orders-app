@@ -255,7 +255,6 @@ const aftercareParams = {
   loadInventoryLifecycle: async () => receiptRefresh.push('lifecycle'),
   loadCashRegister: async () => {},
 }
-const receipt = createActions
 const after = aftercareActions({
   ...aftercareParams,
   apiFetch: async (url, init = {}) => {
