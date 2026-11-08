@@ -3,6 +3,14 @@ const read = (path) => fs.readFileSync(path, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
 try {
   const reservations = read('worker/domains/order-reservations.ts')
+  const { correctMistakenOrderHandoverWithCurrentExchange: publicCorrection } = await import('../worker/domains/returns-exchanges.ts')
+  const { correctMistakenOrderHandoverWithCurrentExchange: extractedCorrection } = await import('../worker/domains/order-handover-exchange-correction.ts')
+  check(publicCorrection === extractedCorrection, 'Legacy Returns/Exchanges entrypoint lost the live exchange handover correction')
+  await extractedCorrection({} , 0, {physicalOutcome:'not_issued'}).then(
+    () => { throw new Error('Missing order ID must fail before any database mutation') },
+    (error) => check(error?.message === 'Заказ не найден.', 'Order ID validation or error contract changed'),
+  )
+
   const orderDelete = read('worker/domains/order-delete.ts')
   const ordersWrite = read('worker/domains/orders-write.ts')
   const worker = read('worker/index.ts')
