@@ -29,6 +29,23 @@
 - **Тестовая схема, отдельный технический долг:** реальный Worker/SQLite тест `scripts/test-p0-legacy-partial-exchange-worker-sqlite-20261027.mjs` отмечает недостающую в цепочке миграций колонку `orders.manager_snapshot_name` и предупреждает об отсутствии `order_manager_audit` в disposable fixture. Сценарии денег/склада всё равно проходят, но эти сообщения не означают, что схема в Production отсутствует. Перед исправлением исследовать текущие миграции и фактическую схему изолированно; не запускать D1 migrations в Main в рамках структурного рефакторинга.
 - **Релизная дисциплина:** исходная/целевая ветка + exact SHA; релевантные CI зелёные; не менять Production D1; отдельно проверить Cloudflare deploy. Работа не считается закрытой, пока не пройдены проверки соответствующего среза.
 
+## Ревизия оставшихся тестов — проверка содержания, 8 ноября 2026
+
+Срез CI #834: исходно **355** файлов `scripts/test-*`, **28** не найденных в активных runner references кандидатов (это *не* список для удаления). После рассмотрения содержимого:
+- **3 живых контракта** добавлены в обязательный `release:check` (38 → **41**): `test-main-implicit-sku-guard-20261107.mjs` (поправлена устаревшая привязка к разнесённым Exchange modules), `test-catalog-exhaustive-sku-identity.mjs` (дубликаты/новые варианты после 200 SKU), `test-inventory-complete-cursor-pagination.mjs` (склад более 1000 позиций и корректный cursor).
+- **2 завершённых одноразовых Kaspi SQL-инцидента** перемещены *байт-в-байт* в `docs/ci-archive/tests/`: `asiya-23-kaspi-paid-20261019.mjs` и `main-kaspi-sent-backfill-20261018.mjs`. SQL остается в `scripts/ops`, все финансы и отправка покрываются действующими тестами. Не повторять эти SQL на Production D1.
+- **23 кандидата остаются осознанно сохранёнными** (числа 353 / 41 / 23 — ожидаемый результат нового аудита; подтвердить в точном CI). Они не считаются мёртвыми только потому, что не перечислены в текущем pipeline:
+
+| Класс | Тесты (пути относительно `scripts/`) | Решение |
+|---|---|---|
+| Каталог / физический склад (4) | `test-arrival-merged-sku-safety.mjs`, `test-catalog-stale-order-merge-bridge.mjs`, `test-main-arrival-standard-link-20261107.mjs`, `test-main-manual-source-identity-20261107.mjs` | **Сохранить** реальные SQLite/canonical SKU сценарии; выполнять при целевых изменениях каталога/прихода/резолвера, отдельно проверить покрытие перед переводом в обязательный gate |
+| Справочники и безопасные объединения (9) | `test-reference-characteristic-impact.mjs`, `test-reference-crud-integrity.mjs`, `test-reference-exhaustive-duplicates.mjs`, `test-reference-merge-choice-preview.mjs`, `test-reference-merge-history.mjs`, `test-reference-merge-monthly-apply.mjs`, `test-reference-payment-merge.mjs`, `test-reference-reason-choice-schema.mjs`, `test-reference-reason-merge.mjs` | **Сохранить** поведенческий SQLite/иммутабельность истории/платежей; проверить запуск как тематический набор при будущих правках справочников |
+| Актуальные интерфейсные сценарии (8) | `test-characteristic-sku-map-ui.mjs`, `test-main-active-warehouse-operation-ui-20261107.mjs`, `test-main-adaptive-clothing-filters-20261107.mjs`, `test-main-clothing-source-picker-20261107.mjs`, `test-main-picker-size-identities-20261107.mjs`, `test-main-sale-picker-20261107.mjs`, `test-reference-duplicates-discovery-r1.mjs`, `test-reference-sku-verified-stock-ui.mjs` | **Сохранить**; Chrome-приёмку / UI контракты запускать change-scoped, не превращать каждый браузерный тест в обязательный slow release |
+| Изоляция Branch2 (1) | `test-branch2-environment.mjs` | **Сохранить строго для Branch2**, не запускать против конфигурации Main |
+| Наследованный source-guard (1) | `test-main-warehouse-stock-truth-20261013.mjs` | **Не удалять автоматически**; сверить с современными UI/Worker контрактами, заменить хрупкие буквальные проверки на проверяемые инварианты до включения в постоянный gate |
+
+На момент ревизии точных hash-дубликатов не было. Нельзя «добить» оставшиеся 23 удалением без доказательства заменяющего покрытия. Следующий cleanup имеет смысл **только change-scoped и с осмысленным владельцем**, иначе считать пункты поддерживаемым тестовым инвентарём, а не блокером развития.
+
 ## Чёткие критерии завершения очистки — без бесконечного дробления
 
 Работа не считается завершённой только потому, что отдельные SQL-функции вынесены. Закрыть по нижеследующим проверяемым условиям, не делая PR ради количества строк:
