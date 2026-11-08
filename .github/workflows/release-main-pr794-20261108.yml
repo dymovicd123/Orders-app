@@ -23,7 +23,7 @@ jobs:
   production-code-only:
     if: >-
       (github.event_name == 'pull_request'
-       && github.event.pull_request.number == 0
+       && github.event.pull_request.number == 799
        && github.event.pull_request.head.ref == 'release/main-sent-ui-20261108'
        && github.event.pull_request.head.repo.full_name == github.repository
        && github.event.pull_request.base.sha == '57f9eb2262001d893a98dceb7d7b8b0dc5200ce8')
@@ -55,7 +55,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
             test "$GITHUB_HEAD_REF" = 'release/main-sent-ui-20261108'
             test "$GITHUB_BASE_REF" = main
-            jq -e '.pull_request.number == 0
+            jq -e '.pull_request.number == 799
               and .pull_request.head.repo.full_name == .repository.full_name
               and .pull_request.base.sha == "57f9eb2262001d893a98dceb7d7b8b0dc5200ce8"' "$GITHUB_EVENT_PATH"
             git merge-base --is-ancestor 57f9eb2262001d893a98dceb7d7b8b0dc5200ce8 HEAD
