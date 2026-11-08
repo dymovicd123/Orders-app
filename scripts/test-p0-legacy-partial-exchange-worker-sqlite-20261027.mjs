@@ -10,6 +10,10 @@ import { createReturn as legacyCreateReturn, noStandaloneReturnSql as legacyCapa
 import { createReturn as isolatedCreateReturn } from '../worker/domains/order-return-creation.ts'
 import { listExchanges as legacyListExchanges } from '../worker/domains/returns-exchanges.ts'
 import { listExchanges as isolatedListExchanges } from '../worker/domains/order-exchange-list.ts'
+import { receiveReturnedItem as publicReceiveReturnedItem } from '../worker/domains/returns-exchanges.ts'
+import { receiveReturnedItem as extractedReceiveReturnedItem } from '../worker/domains/order-returned-item-receipt.ts'
+assert.strictEqual(publicReceiveReturnedItem, extractedReceiveReturnedItem,
+  'Existing delayed Return/Exchange receipt API must preserve its exact implementation export')
 
 assert.strictEqual(legacyListExchanges, isolatedListExchanges,
   'Existing Exchange GET route must use the identical extracted read-only implementation')
