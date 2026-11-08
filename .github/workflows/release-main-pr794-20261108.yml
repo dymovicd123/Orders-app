@@ -1,4 +1,4 @@
-name: PR794 One-time Main Worker code release
+name: One-time Main completed shipment UI release
 
 on:
   pull_request:
@@ -16,20 +16,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: orders-app-production-pr794-release
+  group: orders-app-production-shipping-status-20261108
   cancel-in-progress: false
 
 jobs:
   production-code-only:
     if: >-
       (github.event_name == 'pull_request'
-       && github.event.pull_request.number == 795
-       && github.event.pull_request.head.ref == 'release/main-pr794-production-20261108'
+       && github.event.pull_request.number == 0
+       && github.event.pull_request.head.ref == 'release/main-sent-ui-20261108'
        && github.event.pull_request.head.repo.full_name == github.repository
-       && github.event.pull_request.base.sha == '4c750922353826ec6995c5de5e603e80221bb9c0')
-      || (github.ref == 'refs/heads/main'
-       && github.event_name == 'push'
-       && github.event.head_commit.message == 'release(main): deploy PR794 validated Worker to production')
+       && github.event.pull_request.base.sha == '57f9eb2262001d893a98dceb7d7b8b0dc5200ce8')
+
     name: Production Worker release, no database migration
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -55,13 +53,13 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
-            test "$GITHUB_HEAD_REF" = 'release/main-pr794-production-20261108'
+            test "$GITHUB_HEAD_REF" = 'release/main-sent-ui-20261108'
             test "$GITHUB_BASE_REF" = main
-            jq -e '.pull_request.number == 795
+            jq -e '.pull_request.number == 0
               and .pull_request.head.repo.full_name == .repository.full_name
-              and .pull_request.base.sha == "4c750922353826ec6995c5de5e603e80221bb9c0"' "$GITHUB_EVENT_PATH"
-            git merge-base --is-ancestor 4c750922353826ec6995c5de5e603e80221bb9c0 HEAD
-            test "$(git diff --name-only 4c750922353826ec6995c5de5e603e80221bb9c0 HEAD)" = '.github/workflows/release-main-pr794-20261108.yml'
+              and .pull_request.base.sha == "57f9eb2262001d893a98dceb7d7b8b0dc5200ce8"' "$GITHUB_EVENT_PATH"
+            git merge-base --is-ancestor 57f9eb2262001d893a98dceb7d7b8b0dc5200ce8 HEAD
+            test "$(git diff --name-only 57f9eb2262001d893a98dceb7d7b8b0dc5200ce8 HEAD)" = '.github/workflows/release-main-pr794-20261108.yml'
           else
             test "$GITHUB_REF" = 'refs/heads/main'
             git merge-base --is-ancestor f315cbb8fd4161a61a80dee1c205426d93673883 HEAD
@@ -78,7 +76,7 @@ jobs:
           assert.match(config,/"database_name"\s*:\s*"orders_db_prod"/)
           assert.match(config,/"database_id"\s*:\s*"17e68a41-1d58-4a36-8a63-47c3e32443c4"/)
           assert.doesNotMatch(config,/orders_db_branch2_mirror_20261027/)
-          console.log('MAIN_PR794_EXACT_RELEASE_CONFIG_VERIFIED')
+          console.log('MAIN_SHIPPING_UI_EXACT_CONFIG_VERIFIED')
           NODE
       - run: npm ci
       - name: Business release checks on Main commit
@@ -127,4 +125,4 @@ jobs:
           NODE
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/auth/status")" = 200
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$HOST/api/orders/source-picker")" = 401
-          echo 'MAIN_PR794_WORKER_DEPLOY_VERIFIED'
+          echo 'MAIN_SHIPPING_UI_WORKER_DEPLOY_VERIFIED'
