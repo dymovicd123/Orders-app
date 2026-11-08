@@ -1335,7 +1335,6 @@ function App() {
 
   const {
     selectInventoryOperationVariant,
-    selectInventoryOperationProduct,
     updateInventoryDirectProductInput,
     updateInventoryOperationVariantField,
     setInventoryVariantOperationQuantity,
