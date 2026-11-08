@@ -179,9 +179,13 @@ export async function dispatchSelectedCompleteOrderLines(
   for(const item of selectedPhysicalStock) {
     const key=`${item.sourceType}:${toInt(item.variantId,0)}`
     const previous=groups.get(key)
+    const unresolved=item.reservationStatus==='unresolved'
     groups.set(key,{
       source:item.sourceType as 'warehouse'|'boutique',variantId:toInt(item.variantId,0),
       quantity:(previous?.quantity||0)+item.quantity,
+      activeQuantity:(previous?.activeQuantity||0)+(unresolved?0:item.quantity),
+      unresolvedQuantity:(previous?.unresolvedQuantity||0)+(unresolved?item.quantity:0),
+      needsConfirmation:false,
       stockId:0,before:0,reservedBefore:0,productId:0,productName:'',
       gender:null,color:null,material:null,length:null,size:null,
     })
@@ -201,8 +205,29 @@ export async function dispatchSelectedCompleteOrderLines(
     group.productId=toInt(stock.product_id,0);group.productName=cleanText(stock.product_name)
     group.gender=cleanText(stock.gender)||null;group.color=cleanText(stock.color)||null
     group.material=cleanText(stock.material)||null;group.length=cleanText(stock.length)||null;group.size=cleanText(stock.size)||null
-    if(group.before<group.quantity || group.reservedBefore<group.quantity) fail(`Не хватает товара «${group.productName}». Проверьте остаток перед отправкой.`)
+    group.needsConfirmation=group.before<group.quantity
+      || group.reservedBefore<group.activeQuantity || group.unresolvedQuantity>0
   }
+  const requiredConfirmations=[] as DispatchStockConfirmationRequired['items']
+  for(const group of groups.values()){
+    const key=`${group.source}:${group.variantId}`
+    const confirmation=confirmations.find(row=>`${row.source}:${row.variantId}`===key)
+    if(confirmation && (confirmation.expectedQuantity!==group.before || confirmation.operationQuantity!==group.quantity)){
+      fail('Остаток или выбранное количество изменились. Обновите отправку и подтвердите ещё раз.')
+    }
+    if(group.needsConfirmation && !confirmation){
+      requiredConfirmations.push({
+        source:group.source,variantId:group.variantId,
+        expectedQuantity:group.before,trackedPhysicalQuantity:group.before,
+        operationQuantity:group.quantity,productName:group.productName,
+        reservationShortage:group.reservedBefore<group.activeQuantity || group.unresolvedQuantity>0,
+      })
+    }
+  }
+  if(confirmations.some(row=>!groups.has(`${row.source}:${row.variantId}`))){
+    fail('В подтверждении есть товар, которого нет в выбранной отправке.')
+  }
+  if(requiredConfirmations.length)throw new DispatchStockConfirmationRequired(requiredConfirmations)
 
   // Commit in one D1 transaction. A competing worker must make a required
   // predicate fail and trigger the deliberate unique-key rollback below.
@@ -248,9 +273,9 @@ export async function dispatchSelectedCompleteOrderLines(
        WHERE NOT EXISTS (
          SELECT 1 FROM inventory_reservations r JOIN order_items oi ON oi.id=r.order_item_id
          JOIN orders o ON o.id=r.order_id
-         WHERE r.id=? AND r.order_id=? AND r.order_item_id=? AND r.status='active'
+         WHERE r.id=? AND r.order_id=? AND r.order_item_id=? AND r.status=?
            AND r.quantity=? AND r.variant_id=? AND r.inventory_source=?
-           AND oi.quantity=? AND oi.stock_writeoff_status='reserved'
+           AND oi.quantity=? AND oi.stock_writeoff_status=?
            AND (o.shipping_status<>'sent' OR EXISTS(
              SELECT 1 FROM inventory_lifecycle_events le
              JOIN exchanges e ON e.id=le.operation_id
@@ -266,7 +291,11 @@ export async function dispatchSelectedCompleteOrderLines(
            AND o.order_status NOT IN ('archived','deleted')
            AND COALESCE(o.archived_at,'')=''
        )`
-    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity,toInt(item.exchangeEventId,0)))
+    ).bind(stamp,toInt(r.id,0),orderId,item.orderItemId,
+      item.reservationStatus==='unresolved'?'unresolved':'active',
+      item.originalQuantity,item.variantId,item.sourceType,item.originalQuantity,
+      item.reservationStatus==='unresolved'?'pending_reservation':'reserved',
+      toInt(item.exchangeEventId,0)))
   }
   for(const item of selectedWorkshop) {
     statements.push(db.prepare(
