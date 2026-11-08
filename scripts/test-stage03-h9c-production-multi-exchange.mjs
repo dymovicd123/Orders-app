@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
 
 const read = path => fs.readFileSync(path, 'utf8')
 const check = (condition, message) => { if (!condition) throw new Error(message) }
@@ -22,6 +24,7 @@ check(!wrangler.includes('orders_db_branch2') && !wrangler.includes('40065052-85
 const saveExchange = between(app, 'async function saveExchange()', '\n\n  async function receiveReturnedItemAction')
 check(!saveExchange.includes('itemizedExchange && pairDrafts.length !== 1'), 'H9C Production still blocks itemized multi-pair exchange')
 check(saveExchange.includes('itemizedExchange && unsavedPairs.length > 1'), 'H9C Production multi-pair save branch missing')
+check(saveExchange.includes('prepareLegacyExchangePairs(exchangeSelectedOrder, exchangeDraft, getOrderSourceAvailability)'), 'App must validate legacy Exchange pairs before any write')
 check(saveExchange.includes("apiFetch('/api/exchanges/batch'"), 'H9C Production batch endpoint call missing')
 check(saveExchange.includes('expectedOrderTotal: Number(exchangeSelectedOrder.total_amount)'), 'H9C Production order-total stale snapshot missing')
 for (const field of ['expectedOldActiveQuantity', 'expectedOldUnitPrice', 'expectedOldLineTotal', 'expectedOldCatalogPriceSnapshot']) {
@@ -55,5 +58,81 @@ check(batch.includes('const childRequestId =') && batch.includes('criticalOperat
 check(batch.includes('await createExchange(db, {'), 'H9C Production batch does not reuse proven single-exchange mutation path')
 check(batch.includes('completedPairs}_done') && batch.includes('advanceCriticalOperation(db, criticalOperation'), 'H9C Production resumable progress checkpoint missing')
 check(batch.includes('await completeCriticalOperation(db, criticalOperation, response)'), 'H9C Production parent completion cache missing')
+
+// Execute the actual extracted pure validator: no API/D1, no fixture mutation.
+// Live execution guards partial repeats, inherited sources and physical observation.
+const compiled = await build({entryPoints:['src/app/legacyExchangePreparation.ts'],
+  bundle:true,platform:'node',format:'esm',write:false,target:'es2022',logLevel:'silent'})
+const implementation = await import('data:text/javascript;base64,'+Buffer.from(compiled.outputFiles[0].text).toString('base64'))
+const {prepareLegacyExchangePairs} = implementation
+const soldItem = {id:51,productName:'СТАРАЯ ВЕЩЬ',sourceType:'boutique',
+  quantity:2,availableOperationQuantity:2,unitPrice:4000,lineTotal:8000,catalogPriceSnapshot:4100}
+const secondItem = {id:52,productName:'ВТОРАЯ ВЕЩЬ',sourceType:'warehouse',
+  quantity:1,availableOperationQuantity:1,unitPrice:3000,lineTotal:3000,catalogPriceSnapshot:3200}
+const oldOrder = {id:80,pricing_mode:'legacy_manual_total',items:[soldItem,secondItem]}
+const newGood = {productName:'ЗАМЕНА',sourceType:'warehouse',quantity:1,
+  unitPrice:4800,catalogPriceSnapshot:5000,stockObservationEnabled:false,observedPhysicalQuantity:99}
+const draft = {queuedPairs:[],oldItemId:51,oldQuantity:1,oldPhysicalState:'pending',
+  currentPairKey:'now-1',newItem:newGood,newSourceWasManuallyChanged:false,
+  financialAction:'none',financialAmount:0,paymentMethod:'',comment:'UI legacy validation'}
+const canIssue = (item,q) => ({canObservePhysical:true,currentPhysical:Math.max(q,10)})
+const basic=prepareLegacyExchangePairs(oldOrder,draft,canIssue)
+assert.equal(basic.ok,true)
+assert.equal(basic.unsavedPairs.length,1)
+assert.equal(basic.pairDrafts.length,1)
+assert.equal(basic.unsavedPairs[0].effectiveNewItem.sourceType,'boutique',
+ 'Without explicit manager override, replacement must inherit original boutique source')
+assert.equal(basic.unsavedPairs[0].effectiveNewItem.observedPhysicalQuantity,null,
+ 'A previous stock observation must never carry into a different exchange')
+assert.equal(basic.unsavedPairs[0].oldPhysicalState,'pending')
+assert.equal(basic.unsavedPairs[0].oldReturnSource,'none')
+assert.equal(basic.unsavedPairs[0].isQueued,false)
+const manual=prepareLegacyExchangePairs(oldOrder,{...draft,newSourceWasManuallyChanged:true},canIssue)
+assert.equal(manual.ok,true)
+assert.equal(manual.unsavedPairs[0].effectiveNewItem.sourceType,'warehouse',
+ 'Explicit new-source choice must not be silently overwritten')
+const queued={draftKey:'old-1',oldItemId:51,oldQuantity:1,oldPhysicalState:'warehouse',
+  oldReturnSource:'warehouse',newItem:newGood,newSourceWasManuallyChanged:false,saved:false}
+const multi=prepareLegacyExchangePairs(oldOrder,{...draft,queuedPairs:[queued]},canIssue)
+assert.equal(multi.ok,true)
+assert.equal(multi.pairDrafts.length,2)
+assert.equal(multi.unsavedPairs.length,2)
+assert.equal(multi.unsavedPairs[0].isQueued,true)
+assert.equal(multi.unsavedPairs[1].isQueued,false)
+assert.deepEqual(multi.unsavedPairs.map(p=>p.oldQuantity),[1,1])
+assert.deepEqual(multi.unsavedPairs.map(p=>p.oldReturnSource),['warehouse','none'])
+assert.match(prepareLegacyExchangePairs(oldOrder,{...draft,queuedPairs:[{...queued,oldQuantity:2}]},canIssue).error,
+ /суммарно выбрано 3 шт., доступно 2 шт/,
+ 'The aggregate old SKU quantity cap must apply across queued and current rows')
+const saved={...queued,saved:true}
+const partial=prepareLegacyExchangePairs(oldOrder,{...draft,queuedPairs:[saved]},canIssue)
+assert.equal(partial.ok,true)
+assert.equal(partial.pairDrafts.length,2)
+assert.equal(partial.unsavedPairs.length,1,'Saved child exchange must never be submitted a second time')
+assert.equal(partial.unsavedPairs[0].index,1,'Final money action must remain on the final pair')
+assert.match(prepareLegacyExchangePairs(oldOrder,{...draft,queuedPairs:[saved],newItem:{...newGood,productName:''}},canIssue).error,
+ /уже были сохранены/,'Replay with only saved rows must not write again')
+assert.match(prepareLegacyExchangePairs(oldOrder,{...draft,queuedPairs:[],newItem:{...newGood,productName:''}},canIssue).error,
+ /Добавьте хотя бы одну позицию/)
+assert.match(prepareLegacyExchangePairs(oldOrder,{...draft,oldItemId:999,queuedPairs:[{...queued,oldItemId:999}]},canIssue).error,
+ /старая вещь уже недоступна/)
+assert.match(prepareLegacyExchangePairs(oldOrder,{...draft,financialAction:'refund',financialAmount:0},canIssue).error,
+ /сумму доплаты или возврата/)
+assert.match(prepareLegacyExchangePairs(oldOrder,{...draft,financialAction:'extra_payment',financialAmount:200},canIssue).error,
+ /способ оплаты/)
+assert.match(prepareLegacyExchangePairs(oldOrder,draft,()=>({canObservePhysical:true,currentPhysical:0})).error,
+ /Подтвердите только наличие/)
+const observed=prepareLegacyExchangePairs(oldOrder,{...draft,newItem:{...newGood,stockObservationEnabled:true}},()=>({canObservePhysical:true,currentPhysical:0}))
+assert.equal(observed.ok,true,
+ 'Confirmed concrete physical quantity must not be blocked by an inferred free stock shortage')
+const itemized={...oldOrder,pricing_mode:'itemized_v1'}
+assert.equal(prepareLegacyExchangePairs(itemized,draft,canIssue).ok,true)
+assert.match(prepareLegacyExchangePairs({...itemized,items:[{...soldItem,lineTotal:0}]},draft,canIssue).error,
+ /ценовые данные старой позиции/)
+assert.match(prepareLegacyExchangePairs(itemized,{...draft,newItem:{...newGood,unitPrice:undefined}},canIssue).error,
+ /фактическую цену продажи/)
+assert.match(prepareLegacyExchangePairs(itemized,{...draft,newItem:{...newGood,catalogPriceSnapshot:-1}},canIssue).error,
+ /снимок цены Каталога/)
+console.log('LEGACY_EXCHANGE_PURE_PREPARATION_CAPACITY_PRICE_PARTIAL_REPLAY_PASS')
 
 console.log('STAGE03-H9C PRODUCTION MULTI-EXCHANGE PASSED — Production has the Branch2-tested multi-position itemized Exchange path with stale-safe aggregate validation, resumable idempotency and repeated-SKU stock protection')
